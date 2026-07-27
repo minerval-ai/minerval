@@ -9,10 +9,11 @@ How the production deployment is wired across Vercel, AWS, and Cloudflare.
 | `episteme.wiki` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Episteme`) |
 | `api.claimgraph.io` | Backend API | AWS ALB → ECS Fargate (`infra/`) |
 | `claimgraph.io` (+ `www`) | 301 redirect → `https://episteme.wiki` | Cloudflare Redirect Rule (no origin) |
+| `minerval.ai` (+ `www`) | 301 redirect → `https://episteme.wiki` | Cloudflare Redirect Rule (no origin) |
 
-DNS for all three zones is hosted on **Cloudflare**. `episteme.wiki` is registered with
-Cloudflare Registrar; `claimgraph.io` is registered elsewhere with nameservers pointed at
-Cloudflare.
+DNS for all four zones is hosted on **Cloudflare**. `episteme.wiki` and `minerval.ai` are
+registered with Cloudflare Registrar; `claimgraph.io` is registered elsewhere with
+nameservers pointed at Cloudflare.
 
 ## Request flow
 
@@ -39,6 +40,14 @@ server-to-server there is no CORS configuration to maintain.
   `AAAA @ 100::` + `CNAME www → claimgraph.io` (proxied, placeholders for the redirect rule).
 - **Redirect rule** (Cloudflare → Rules → Redirect Rules): host `claimgraph.io`/`www` →
   301 `concat("https://episteme.wiki", http.request.uri.path)`.
+- **minerval.ai DNS** (Cloudflare): `AAAA @ 100::` + `CNAME www → minerval.ai` (both
+  proxied, placeholders for the redirect rule — there is no origin).
+- **minerval.ai redirect rule** (Cloudflare → Rules → Redirect Rules): filter
+  `(http.host eq "minerval.ai") or (http.host eq "www.minerval.ai")` → dynamic 301
+  `concat("https://episteme.wiki", http.request.uri)`. Note `http.request.uri` (not
+  `.uri.path`): it carries the query string through as well, so
+  `minerval.ai/claims/x?tab=y` lands on `episteme.wiki/claims/x?tab=y`. Universal SSL
+  covers apex + `www` at the edge; no origin cert exists or is needed.
 - **TLS to the origin**: the ALB has an HTTPS:443 listener with an ACM certificate for
   `api.claimgraph.io` (see `infra/lib/api-stack.ts`). Cloudflare SSL/TLS mode for the
   claimgraph.io zone should be **Full (Strict)** so the Cloudflare→ALB leg is encrypted and
