@@ -27,6 +27,11 @@ none of it is a code change:
    mid-flight). Remove the old names once the new ones are live.
 4. Keep `episteme.wiki` bound and add a Cloudflare Redirect Rule 301-ing it to
    `minerval.ai`, alongside the existing `claimgraph.io` rule, so old links survive.
+5. Drop the `PUBLIC_WEB_BASE_URL` pin in `infra/lib/api-stack.ts` and redeploy, so the API
+   falls back to its `https://minerval.ai` code default. Until then the API keeps sending
+   OAuth users to `episteme.wiki/oauth/consent` and stamping `episteme.wiki` claim links
+   into MCP results and extension responses — pointing those at a zone that does not
+   resolve yet would break MCP sign-in outright.
 
 ## Request flow
 
