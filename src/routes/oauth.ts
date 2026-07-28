@@ -124,7 +124,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   const protectedResourceMetadata = {
     resource: `${issuer}/mcp`,
-    resource_name: "Episteme claim graph",
+    resource_name: "Minerval claim graph",
     authorization_servers: [issuer],
     bearer_methods_supported: ["header"],
     scopes_supported: SCOPES_SUPPORTED,

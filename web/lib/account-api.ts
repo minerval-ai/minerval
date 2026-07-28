@@ -7,8 +7,9 @@ import "server-only";
 // Account data must never be cached across users — every call is no-store
 // (unlike the public claim reads in api.ts, which revalidate on a window).
 
-const BASE = process.env.EPISTEME_API_URL?.replace(/\/$/, "");
-const KEY = process.env.EPISTEME_API_KEY;
+// EPISTEME_* is the pre-rebrand spelling, kept as a fallback (see lib/api.ts).
+const BASE = (process.env.MINERVAL_API_URL ?? process.env.EPISTEME_API_URL)?.replace(/\/$/, "");
+const KEY = process.env.MINERVAL_API_KEY ?? process.env.EPISTEME_API_KEY;
 
 export function accountApiConfigured(): boolean {
   return Boolean(BASE);
@@ -33,7 +34,7 @@ async function accountFetch<T>(
     actingUser?: string;
   } = {}
 ): Promise<T> {
-  if (!BASE) throw new Error("EPISTEME_API_URL is not set");
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -48,7 +49,7 @@ async function accountFetch<T>(
   });
   if (!res.ok) {
     let code: string | undefined;
-    let message = `Episteme API ${res.status} for ${path}`;
+    let message = `Minerval API ${res.status} for ${path}`;
     try {
       // Two error shapes exist: flat { error, code } on the account routes and
       // an { error: { code, message } } envelope on the governed write routes.

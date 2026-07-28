@@ -325,7 +325,7 @@ export function GraphView({
       setEdgesShown(false);
       window.setTimeout(() => setEdgesShown(true), 280);
       if (opts?.push !== false && !embed) {
-        window.history.pushState({ epistemeMap: id }, "", `/claims/${encodeURIComponent(id)}/map`);
+        window.history.pushState({ minervalMap: id }, "", `/claims/${encodeURIComponent(id)}/map`);
       }
     },
     [view.detail, compact, settle, embed],

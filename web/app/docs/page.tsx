@@ -7,7 +7,7 @@ import { DocLayout } from "@/components/DocLayout";
 // prompts) are subpages, linked from "The full texts".
 
 export const metadata = {
-  title: "How Episteme works · Episteme",
+  title: "How Minerval works · Minerval",
   description:
     "What the claim graph is, how claims move through it, and the full texts that govern the administrators.",
 };
@@ -25,7 +25,7 @@ export default function DocsPage() {
     <DocLayout toc={toc}>
       <div className="doc">
         <p className="sc" style={{ marginBottom: ".5rem" }}>Documentation</p>
-        <h1>How Episteme works</h1>
+        <h1>How Minerval works</h1>
         <p className="lede">
           What the claim graph is, how a claim moves through it, and the full texts that
           govern the administrators: the constitution, the architecture and policies, and
@@ -35,7 +35,7 @@ export default function DocsPage() {
         <h2 id="the-idea">The idea</h2>
         <p className="dropcap">
           Across the internet the same claims get investigated over and over, and the
-          reasoning is thrown out the moment a session ends. Episteme keeps that work,
+          reasoning is thrown out the moment a session ends. Minerval keeps that work,
           and builds on it. It is an open repository of the world&rsquo;s claims, maintained by LLM
           administrators bound by a public constitution. Picture Wikipedia, if its pages
           were not topics but individual claims, each one weighed against the evidence and
@@ -54,7 +54,7 @@ export default function DocsPage() {
           they differ on values when they actually differ about empirical consequences.
         </p>
         <p>
-          Episteme weighs evidence and reaches verdicts, but it will not write down a
+          Minerval weighs evidence and reaches verdicts, but it will not write down a
           prior for every question and call that the answer. Neutral, not nihilist: the
           job is to make the structure of a disagreement visible, and to keep genuinely
           open questions legible as open. The work of decomposing a claim is done once,
@@ -157,7 +157,7 @@ export default function DocsPage() {
             its provenance, and its full assessment history.
           </li>
           <li>
-            <a href="https://github.com/Episteme-Foundation/episteme/tree/main/extension">
+            <a href="https://github.com/minerval-ai/minerval/tree/main/extension">
               The browser extension
             </a>
             : claims on any webpage, colour-coded by verdict as you read.

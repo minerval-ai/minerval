@@ -18,7 +18,7 @@ const STEPS: { target: string; title: string; body: string }[] = [
     target: "search",
     title: "It starts with a claim",
     body:
-      "Everything on Episteme is a claim: one checkable statement, broken down " +
+      "Everything on Minerval is a claim: one checkable statement, broken down " +
       "into the smaller claims it rests on. Search any topic to find its claims.",
   },
   {

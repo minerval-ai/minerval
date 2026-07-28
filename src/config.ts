@@ -63,7 +63,7 @@ const configSchema = z.object({
   // Public web frontend base URL, used to build human-readable claim-page
   // links returned by the MCP server (#73) and to send OAuth users to the
   // consent page.
-  publicWebBaseUrl: z.string().default("https://episteme.wiki"),
+  publicWebBaseUrl: z.string().default("https://minerval.ai"),
 
   // This API's own public base URL — the OAuth issuer identifier and the base
   // for the endpoint URLs advertised in /.well-known metadata. Must match

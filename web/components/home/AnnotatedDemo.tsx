@@ -109,12 +109,12 @@ export function AnnotatedDemo() {
   );
 
   return (
-    <div className={styles.browser} role="group" aria-label="The Episteme extension annotating a news article">
+    <div className={styles.browser} role="group" aria-label="The Minerval extension annotating a news article">
       <div className={styles.chrome}>
         <span className={styles.dots} aria-hidden><i /><i /><i /></span>
         <span className={styles.urlbar}>news.example.com/2022/economy/a-year-of-soaring-prices-in-charts</span>
         <span className={styles.extPill}>
-          <span className={styles.glyph} aria-hidden />episteme <span className={styles.count}>· 7 claims</span>
+          <span className={styles.glyph} aria-hidden />minerval <span className={styles.count}>· 7 claims</span>
         </span>
       </div>
       <div className={styles.pagebody}>
@@ -142,7 +142,7 @@ export function AnnotatedDemo() {
           </p>
         </article>
 
-        <aside className={styles.marginCol} aria-label="Episteme margin notes">
+        <aside className={styles.marginCol} aria-label="Minerval margin notes">
           <p className={styles.marginHint}>Hover or tap an underlined claim ↤</p>
           <div className={styles.mcards}>
             {CARDS.map((c) => (

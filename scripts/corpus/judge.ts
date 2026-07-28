@@ -12,7 +12,7 @@
 import { completeStructured } from "../../src/llm/client.js";
 import { loadConfig } from "../../src/config.js";
 
-const CONSTITUTION_STANDARDS = `Standards, from the Episteme constitution (cited by section):
+const CONSTITUTION_STANDARDS = `Standards, from the Minerval constitution (cited by section):
 - Claim bar (§2): a claim is a single reusable proposition that informed people could dispute with evidence or reasons, the kind that could anchor a long-running debate. Arguments ("X therefore Y"), one author's framing, uncontested definitions, and settled textbook or bedrock facts are not claims.
 - Canonical form (§3): the shortest neutral statement of the proposition as actually debated, about fifteen words and rarely more than twenty-five, acceptable to either side as a fair statement of what is in dispute.
 - Decomposition (§6): subclaims must themselves pass the claim bar; the steps of a derivation, undisputed definitions, and facts specific to one source belong in prose, not nodes. Decomposition ends where the discourse ends, not where logic bottoms out. Depth is an effort decision governed by importance (§19): an unexpanded dependency on a minor claim is a prioritization, not a gap, and marking a simple claim atomic is correct.

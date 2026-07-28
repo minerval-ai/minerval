@@ -169,7 +169,7 @@ function Chat({ settings }: { settings: Settings }) {
       <div className="page-status">
         {!page && <span className="muted">Extension can't run on this page.</span>}
         {page && disabled && (
-          <span className="muted">Episteme is disabled on {host}.</span>
+          <span className="muted">Minerval is disabled on {host}.</span>
         )}
         {page && !disabled && !page.analyzed && (page.running || analyzing) && (
           <span className="muted">
@@ -197,7 +197,7 @@ function Chat({ settings }: { settings: Settings }) {
           <div className="hint">
             Ask about this page — “is the highlighted claim true?”, “what's the
             strongest counter-argument here?” Answers are grounded in the
-            Episteme claim graph.
+            Minerval claim graph.
           </div>
         )}
         {messages.map((m, i) => (
@@ -305,7 +305,7 @@ function SettingsPane({
         Analyze pages automatically
       </label>
       <p className="muted">
-        Analyzing sends the page's readable text to your Episteme API for
+        Analyzing sends the page's readable text to your Minerval API for
         claim extraction. When off, pages are only analyzed when you click
         “Analyze page”.
       </p>
@@ -346,7 +346,7 @@ function SettingsPane({
         />
       </label>
       <p className="muted">
-        Create a key in your Episteme dashboard. Analysis and chat are
+        Create a key in your Minerval dashboard. Analysis and chat are
         LLM-backed and metered against your account's monthly allowance.
       </p>
     </div>
@@ -366,7 +366,7 @@ export default function Popup() {
   return (
     <div className="popup">
       <header>
-        <span className="brand">Episteme</span>
+        <span className="brand">Minerval</span>
         <nav>
           <button
             className={tab === "chat" ? "active" : ""}

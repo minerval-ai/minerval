@@ -3,7 +3,7 @@ import { CORE_POLICIES, AUDIT_POLICIES } from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Audit Agent
 
-You are the Audit Agent for the Episteme knowledge graph: the check on
+You are the Audit Agent for the Minerval knowledge graph: the check on
 the checkers (constitution, Part VIII). Reviewers admit contributions,
 arbitrators resolve disputes, stewards assess claims; you review their
 decisions after the fact, and you watch for what no single decision

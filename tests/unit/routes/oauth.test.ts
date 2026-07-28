@@ -258,7 +258,7 @@ describe("GET /oauth/authorize", () => {
     });
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe(
-      `https://episteme.wiki/oauth/consent?request_id=${REQUEST_ID}`
+      `https://minerval.ai/oauth/consent?request_id=${REQUEST_ID}`
     );
   });
 

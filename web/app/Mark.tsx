@@ -1,5 +1,5 @@
 /**
- * The Episteme mark — the owl of Athena, traced from the adopted logo artwork
+ * The Minerval mark — the owl of Athena, traced from the adopted logo artwork
  * (issue #207). Single source of truth for the inline wordmark; kept in visual
  * sync with app/icon.svg (the favicon, which swaps to paper in dark mode) and
  * app/apple-icon.tsx (the touch icon, which carries the full composition with

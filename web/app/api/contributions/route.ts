@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
   if (!accountApiConfigured()) {
     return NextResponse.json(
-      { error: "This deployment is not connected to an Episteme API." },
+      { error: "This deployment is not connected to a Minerval API." },
       { status: 503 },
     );
   }
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       const { status, error } = friendlyError(err);
       return NextResponse.json({ error, code: err.code }, { status });
     }
-    console.error("[episteme] contribution submit failed:", err);
+    console.error("[minerval] contribution submit failed:", err);
     return NextResponse.json(
       { error: "The contribution could not be submitted. Please try again later." },
       { status: 502 },

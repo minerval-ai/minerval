@@ -6,18 +6,32 @@ How the production deployment is wired across Vercel, AWS, and Cloudflare.
 
 | Domain | Role | Hosting |
 | --- | --- | --- |
-| `episteme.wiki` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Episteme`) |
+| `minerval.ai` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Episteme`) |
 | `api.claimgraph.io` | Backend API | AWS ALB → ECS Fargate (`infra/`) |
-| `claimgraph.io` (+ `www`) | 301 redirect → `https://episteme.wiki` | Cloudflare Redirect Rule (no origin) |
+| `claimgraph.io` (+ `www`) | 301 redirect → `https://minerval.ai` | Cloudflare Redirect Rule (no origin) |
 
-DNS for all three zones is hosted on **Cloudflare**. `episteme.wiki` is registered with
+DNS for all three zones is hosted on **Cloudflare**. `minerval.ai` is registered with
 Cloudflare Registrar; `claimgraph.io` is registered elsewhere with nameservers pointed at
-Cloudflare.
+Cloudflare. The Vercel project and team are still named `episteme` — pre-rebrand
+identifiers that are not user-visible.
+
+### Pending: the `episteme.wiki` → `minerval.ai` cutover
+
+The codebase now points at `minerval.ai` everywhere. The hosting side has to follow, and
+none of it is a code change:
+
+1. Add the `minerval.ai` zone in Cloudflare and the `A @ / A www 76.76.21.21` records below.
+2. Bind `minerval.ai` (+ `www`) as a domain on the Vercel project and let it issue TLS.
+3. Rename the Vercel env vars to `MINERVAL_API_URL` / `MINERVAL_API_KEY` (the app reads the
+   `EPISTEME_*` names as a fallback, so the order does not matter and nothing breaks
+   mid-flight). Remove the old names once the new ones are live.
+4. Keep `episteme.wiki` bound and add a Cloudflare Redirect Rule 301-ing it to
+   `minerval.ai`, alongside the existing `claimgraph.io` rule, so old links survive.
 
 ## Request flow
 
 ```
-Browser ──HTTPS──> episteme.wiki (Vercel, Next.js)
+Browser ──HTTPS──> minerval.ai (Vercel, Next.js)
                         │  server-side only (BFF)
                         └──HTTPS──> api.claimgraph.io (Cloudflare proxy)
                                         └──> AWS ALB :443 ──> ECS Fargate :3000
@@ -29,16 +43,17 @@ server-to-server there is no CORS configuration to maintain.
 
 ## Configuration that makes it work
 
-- **Vercel → API binding**: project env var `EPISTEME_API_URL = https://api.claimgraph.io`
+- **Vercel → API binding**: project env var `MINERVAL_API_URL = https://api.claimgraph.io`
   (Production + Preview). This is the *only* place the API base URL lives — it is not
-  hardcoded anywhere in the codebase (`web/lib/api.ts` reads `process.env.EPISTEME_API_URL`).
+  hardcoded anywhere in the codebase (`web/lib/api.ts` reads `process.env.MINERVAL_API_URL`,
+  falling back to the pre-rebrand `EPISTEME_API_URL` while both exist).
   Changing the backend endpoint is purely a Vercel env change + redeploy.
-- **episteme.wiki DNS** (Cloudflare, both records **DNS-only / grey cloud** so Vercel can
+- **minerval.ai DNS** (Cloudflare, both records **DNS-only / grey cloud** so Vercel can
   issue TLS): `A @ 76.76.21.21`, `A www 76.76.21.21`.
 - **claimgraph.io DNS** (Cloudflare): `CNAME api → <ALB DNS name>` (proxied),
   `AAAA @ 100::` + `CNAME www → claimgraph.io` (proxied, placeholders for the redirect rule).
 - **Redirect rule** (Cloudflare → Rules → Redirect Rules): host `claimgraph.io`/`www` →
-  301 `concat("https://episteme.wiki", http.request.uri.path)`.
+  301 `concat("https://minerval.ai", http.request.uri.path)`.
 - **TLS to the origin**: the ALB has an HTTPS:443 listener with an ACM certificate for
   `api.claimgraph.io` (see `infra/lib/api-stack.ts`). Cloudflare SSL/TLS mode for the
   claimgraph.io zone should be **Full (Strict)** so the Cloudflare→ALB leg is encrypted and

@@ -1,9 +1,9 @@
 {
   "name": "episteme-extension",
-  "displayName": "Episteme",
+  "displayName": "Minerval",
   "version": "0.1.0",
-  "description": "Reads the page you're reading against the Episteme claim graph: flags egregiously misleading claims, explains contested ones, and answers questions grounded in the graph.",
-  "author": "Episteme",
+  "description": "Reads the page you're reading against the Minerval claim graph: flags egregiously misleading claims, explains contested ones, and answers questions grounded in the graph.",
+  "author": "Minerval",
   "packageManager": "npm@10.0.0",
   "scripts": {
     "dev": "plasmo dev",
@@ -24,7 +24,7 @@
     "typescript": "^5.7.0"
   },
   "manifest": {
-    "name": "Episteme",
+    "name": "Minerval",
     "permissions": ["storage", "tabs"],
     "host_permissions": ["http://*/*", "https://*/*"]
   }

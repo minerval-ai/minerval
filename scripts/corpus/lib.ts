@@ -3,7 +3,7 @@
  *
  * Importing this module has one critical side effect: it points DATABASE_URL at
  * an isolated corpus database so that resets and runs never touch the main
- * Episteme graph. This MUST run before any src/* code calls loadConfig() (which
+ * Minerval graph. This MUST run before any src/* code calls loadConfig() (which
  * caches on first read), so every corpus entry script imports this file first.
  */
 import { config as loadDotenv } from "dotenv";

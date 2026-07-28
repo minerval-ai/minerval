@@ -11,27 +11,30 @@ import type {
   TrajectoryPoint,
 } from "./types";
 
-// Server-only client for the Episteme Fastify API. The API key is read from the
+// Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
 // browser. This module is the "BFF": React Server Components and route handlers
 // call it; the browser never talks to the backend directly.
 
-const BASE = process.env.EPISTEME_API_URL?.replace(/\/$/, "");
-const KEY = process.env.EPISTEME_API_KEY;
+// The EPISTEME_* names are the pre-rebrand spelling, still read as a fallback so
+// a deploy that has not had its env renamed yet keeps working. Drop them once
+// MINERVAL_API_URL / MINERVAL_API_KEY are set everywhere.
+const BASE = (process.env.MINERVAL_API_URL ?? process.env.EPISTEME_API_URL)?.replace(/\/$/, "");
+const KEY = process.env.MINERVAL_API_KEY ?? process.env.EPISTEME_API_KEY;
 
 export function apiConfigured(): boolean {
   return Boolean(BASE);
 }
 
 async function apiGet<T>(path: string): Promise<T> {
-  if (!BASE) throw new Error("EPISTEME_API_URL is not set");
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, {
     headers: KEY ? { "x-api-key": KEY } : {},
     // The graph changes as claims are reassessed; revalidate on a short window.
     next: { revalidate: 30 },
   });
   if (!res.ok) {
-    throw new Error(`Episteme API ${res.status} ${res.statusText} for ${path}`);
+    throw new Error(`Minerval API ${res.status} ${res.statusText} for ${path}`);
   }
   return (await res.json()) as T;
 }

@@ -77,7 +77,7 @@ export default async function Home() {
 
       {/* how it works: the docs triptych closes the page */}
       <section className={styles.section}>
-        <h2>How Episteme works</h2>
+        <h2>How Minerval works</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".92rem", maxWidth: "40rem", marginTop: ".4rem" }}>
           The graph is maintained by seven LLM administrators. Every decision carries a
           reasoning trace, and every trace is open to challenge.

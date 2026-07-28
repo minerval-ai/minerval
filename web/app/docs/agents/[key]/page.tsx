@@ -10,7 +10,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
   const a = getAgent(key);
-  return { title: a ? `${a.name} · Episteme agents` : "Agent · Episteme" };
+  return { title: a ? `${a.name} · Minerval agents` : "Agent · Minerval" };
 }
 
 export default async function AgentPage({ params }: { params: Promise<{ key: string }> }) {

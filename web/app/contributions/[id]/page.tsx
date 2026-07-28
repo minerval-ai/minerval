@@ -60,7 +60,7 @@ export async function generateMetadata({
   const label = detail
     ? TYPE_LABELS[detail.contribution.contribution_type] ?? "Contribution"
     : "Contribution";
-  return { title: `${label} — Episteme` };
+  return { title: `${label} — Minerval` };
 }
 
 export default async function ContributionPage({
@@ -74,8 +74,8 @@ export default async function ContributionPage({
       <div className="col">
         <h1>Contribution</h1>
         <p>
-          The frontend is not connected to an Episteme API (set{" "}
-          <code>EPISTEME_API_URL</code>), so contribution records are
+          The frontend is not connected to a Minerval API (set{" "}
+          <code>MINERVAL_API_URL</code>), so contribution records are
           unavailable.
         </p>
       </div>

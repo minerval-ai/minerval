@@ -17,7 +17,7 @@ import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
 import type { ContributorProfile } from "../../lib/types";
 
-export const metadata: Metadata = { title: "Account — Episteme" };
+export const metadata: Metadata = { title: "Account — Minerval" };
 export const dynamic = "force-dynamic";
 
 function usd(micro: number): string {
@@ -46,8 +46,8 @@ export default async function AccountPage() {
       <div className="col">
         <h1>Account</h1>
         <p>
-          The frontend is not connected to an Episteme API (set{" "}
-          <code>EPISTEME_API_URL</code>), so account data is unavailable.
+          The frontend is not connected to a Minerval API (set{" "}
+          <code>MINERVAL_API_URL</code>), so account data is unavailable.
         </p>
       </div>
     );
@@ -132,7 +132,7 @@ export default async function AccountPage() {
       <section>
         <h2>API keys</h2>
         <p>
-          Keys authenticate requests to the Episteme API as you (header{" "}
+          Keys authenticate requests to the Minerval API as you (header{" "}
           <code>x-api-key</code>). Create one per surface — a CLI, the browser
           extension — so each can be revoked independently.
         </p>

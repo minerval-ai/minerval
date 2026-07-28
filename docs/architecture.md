@@ -1,6 +1,6 @@
-# Episteme Architecture
+# Minerval Architecture
 
-This document describes the Episteme system as it is built today: the domain
+This document describes the Minerval system as it is built today: the domain
 model, the agent pipeline that populates it, the data layer underneath, and the
 surfaces that serve it. It is a description of the running architecture, not a
 roadmap. Where a design decision has interesting consequences, the reasoning is
@@ -16,7 +16,7 @@ for each agent.
 
 ## System Overview
 
-Episteme turns documents into a queryable graph of claims. Ingestion is the
+Minerval turns documents into a queryable graph of claims. Ingestion is the
 expensive, write-side work: an LLM pipeline reads a source, pulls out atomic
 claims, decides whether each is new, decomposes it into its supporting
 structure, and assesses its validity. Serving is the cheap, read-side work: the
@@ -526,7 +526,7 @@ API host.
 
 ### The web app
 
-This site, a Next.js app at `episteme.wiki`. It talks to the API server-side
+This site, a Next.js app at `minerval.ai`. It talks to the API server-side
 with a service key, forwarding the signed-in user's identity through an
 acting-user header, so browser traffic never carries API credentials.
 
@@ -579,7 +579,7 @@ without touching the metering.
 The API runs as a container on ECS Fargate behind an application load balancer
 at `api.claimgraph.io`, with RDS PostgreSQL (pgvector) and SQS, all provisioned
 by CDK; a push to main deploys after typecheck and tests, and migrations run at
-container start. The web app deploys separately to Vercel at `episteme.wiki`.
+container start. The web app deploys separately to Vercel at `minerval.ai`.
 Local development uses docker-compose Postgres and the in-memory queue runner,
 so the whole pipeline runs on a laptop with no AWS dependencies.
 

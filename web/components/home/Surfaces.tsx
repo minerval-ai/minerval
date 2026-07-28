@@ -20,7 +20,7 @@ type SetupId = "cc" | "cursor" | "claude" | "rest";
 const SETUPS: { id: SetupId; label: string; code: string }[] = [
   {
     id: "cc", label: "Claude Code",
-    code: `claude mcp add --transport http episteme \\
+    code: `claude mcp add --transport http minerval \\
   https://api.claimgraph.io/mcp
 # Signs you in via OAuth on first use; or skip the
 # browser with --header "x-api-key: YOUR_KEY"`,
@@ -30,7 +30,7 @@ const SETUPS: { id: SetupId; label: string; code: string }[] = [
     code: `// ~/.cursor/mcp.json
 {
   "mcpServers": {
-    "episteme": {
+    "minerval": {
       "url": "https://api.claimgraph.io/mcp",
       "headers": { "x-api-key": "YOUR_KEY" }
     }
@@ -40,7 +40,7 @@ const SETUPS: { id: SetupId; label: string; code: string }[] = [
   {
     id: "claude", label: "Claude.ai",
     code: `# Claude.ai → Settings → Connectors → Add custom connector
-Name:  Episteme
+Name:  Minerval
 URL:   https://api.claimgraph.io/mcp
 # Leave the OAuth client ID/secret fields empty: the connector
 # registers itself and walks you through sign-in and consent.`,
@@ -65,7 +65,7 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
   {
     label: "Free reads · no LLM work",
     tools: [
-      { name: "search_claims", desc: "Hybrid semantic + keyword search over Episteme’s canonical claims." },
+      { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims." },
       { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, confidence, and reasoning." },
       { name: "get_decomposition", desc: "The recursive subclaim tree, every node with its relation and verdict." },
     ],
@@ -169,7 +169,7 @@ export function Surfaces({
             claim it matches, its reasoning, and the subclaims beneath it. Pre-computed,
             not hallucinated: the decomposition is checked once and applied live.
           </p>
-          <a className={styles.cta} href="https://github.com/Episteme-Foundation/episteme/tree/main/extension">
+          <a className={styles.cta} href="https://github.com/minerval-ai/minerval/tree/main/extension">
             Get the extension →
           </a>
         </div>
@@ -187,7 +187,7 @@ export function Surfaces({
       <div id="panel-mcp" role="tabpanel" aria-labelledby="tab-mcp" hidden={tab !== "mcp"}>
         <div className={styles.panelCopy}>
           <p>
-            Point your AI at the graph. Episteme is a remote MCP server, so an agent
+            Point your AI at the graph. Minerval is a remote MCP server, so an agent
             grounds its answers in claims that have already been weighed instead of
             re-deriving them, with the reasoning and evidence attached. The same graph is
             a plain REST API.

@@ -189,7 +189,7 @@ export function buildAnnotations(input: {
         context: c.context,
         source_location: c.source_location,
         verdict: "unknown" as const,
-        why: "This claim isn't in the Episteme graph yet.",
+        why: "This claim isn't in the Minerval graph yet.",
         confidence: 0,
         stance: c.stance,
         claim: null,

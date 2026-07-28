@@ -7,7 +7,7 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
   await app.register(swagger.default, {
     openapi: {
       info: {
-        title: "Episteme API",
+        title: "Minerval API",
         description:
           "Knowledge graph of claims with transparent provenance and validity assessment",
         version: "0.1.0",

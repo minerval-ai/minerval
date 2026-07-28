@@ -40,7 +40,7 @@ async function fetchPost(id: string): Promise<LwPost> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Episteme corpus fetch)",
+      "User-Agent": "Mozilla/5.0 (Minerval corpus fetch)",
     },
     body: JSON.stringify({ query }),
   });

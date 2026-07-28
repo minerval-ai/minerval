@@ -72,7 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   secret:
     process.env.AUTH_SECRET ??
-    (isProduction ? undefined : "episteme-dev-secret-not-for-production"),
+    (isProduction ? undefined : "minerval-dev-secret-not-for-production"),
   callbacks: {
     async jwt({ token, account, user }) {
       // First sign-in: derive the stable subject and provision the account

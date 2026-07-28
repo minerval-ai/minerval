@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         ReplyToAddresses: [email],
         Content: {
           Simple: {
-            Subject: { Data: `[episteme.wiki contact] ${name || email}` },
+            Subject: { Data: `[minerval.ai contact] ${name || email}` },
             Body: {
               Text: {
                 Data: `From: ${name || "(no name)"} <${email}>\n\n${message}`,
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       }),
     );
   } catch (err) {
-    console.error("[episteme] contact send failed:", err);
+    console.error("[minerval] contact send failed:", err);
     return NextResponse.json(
       { error: "The message could not be sent. Please try again later." },
       { status: 502 },

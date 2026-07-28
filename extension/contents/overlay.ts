@@ -37,7 +37,7 @@ const MIN_CONTENT_CHARS = 80;
 // Public site for contribution deep links (#174). Claim pages come back from
 // the API with their full URL; only the propose-a-claim path (no claim to
 // link to) needs a base of its own.
-const WEB_BASE = "https://episteme.wiki";
+const WEB_BASE = "https://minerval.ai";
 const MAX_QUOTE_CHARS = 300;
 
 /** Claim-page contribute link, quoting the highlighted passage. */
@@ -134,12 +134,12 @@ let cardHideTimer: number | undefined;
 function ensureContainer(): HTMLDivElement {
   if (container && container.isConnected) return container;
   const style = document.createElement("style");
-  style.setAttribute("data-episteme-ui", "");
+  style.setAttribute("data-minerval-ui", "");
   style.textContent = STYLE;
   document.documentElement.appendChild(style);
 
   container = document.createElement("div");
-  container.setAttribute("data-episteme-ui", "");
+  container.setAttribute("data-minerval-ui", "");
   Object.assign(container.style, {
     position: "absolute",
     top: "0",
@@ -180,7 +180,7 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
   if (!card) {
     card = document.createElement("div");
     card.className = "ep-card";
-    card.setAttribute("data-episteme-ui", "");
+    card.setAttribute("data-minerval-ui", "");
     card.addEventListener("mouseenter", () => window.clearTimeout(cardHideTimer));
     card.addEventListener("mouseleave", scheduleHideCard);
     ensureContainer().appendChild(card);
@@ -223,7 +223,7 @@ async function openPanel(a: PageAnnotation): Promise<void> {
   closePanel();
   panel = document.createElement("div");
   panel.className = "ep-panel";
-  panel.setAttribute("data-episteme-ui", "");
+  panel.setAttribute("data-minerval-ui", "");
 
   const status = a.claim?.status ?? "unknown";
   panel.innerHTML = `
@@ -242,9 +242,9 @@ async function openPanel(a: PageAnnotation): Promise<void> {
     <div class="ep-detail"><p class="ep-muted">Loading decomposition & evidence…</p></div>
     ${
       a.claim
-        ? `<p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on episteme.wiki →</a><br>
+        ? `<p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on minerval.ai →</a><br>
            <a href="${esc(contributeUrl(a.claim.url, a.original_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
-        : `<p class="ep-muted">This claim isn't in the Episteme graph yet.
+        : `<p class="ep-muted">This claim isn't in the Minerval graph yet.
            <a href="${esc(proposeUrl(a.original_text))}" target="_blank" rel="noopener">Propose it →</a></p>`
     }`;
   panel.querySelector(".ep-close")!.addEventListener("click", closePanel);
@@ -460,7 +460,7 @@ function watchPage(): void {
     if (
       mutations.every((m) =>
         m.target instanceof Element
-          ? m.target.closest("[data-episteme-ui]") !== null
+          ? m.target.closest("[data-minerval-ui]") !== null
           : false
       )
     ) {

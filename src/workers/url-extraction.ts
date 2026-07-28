@@ -217,7 +217,7 @@ function clampUnit(value: unknown): number | undefined {
 async function fetchUrlContent(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "Episteme/1.0 (Knowledge Graph Indexer)",
+      "User-Agent": "Minerval/1.0 (Knowledge Graph Indexer)",
     },
   });
 

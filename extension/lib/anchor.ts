@@ -103,7 +103,7 @@ export function buildTextIndex(root: Node): TextIndex {
     if (SKIP_TAGS.has(el.tagName)) return;
     if (el instanceof HTMLElement && el.hidden) return;
     if (el.getAttribute("aria-hidden") === "true") return;
-    if (el.hasAttribute("data-episteme-ui")) return;
+    if (el.hasAttribute("data-minerval-ui")) return;
     if (!isVisible(el)) return;
 
     const isBlock = BLOCK_TAGS.has(el.tagName);

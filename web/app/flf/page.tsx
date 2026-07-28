@@ -4,17 +4,17 @@ import s from "./flf.module.css";
 // TEMPORARY submission page (issue #78) for the FLF Epistack competition. It is a
 // plain reference document: it points reviewers at the live graph, the docs, and
 // the code, then answers the competition's "what we're looking for" questions by
-// describing what Episteme actually does today, quoting the constitution, and
+// describing what Minerval actually does today, quoting the constitution, and
 // linking real claims. Where we do not have a full answer, it says so.
 // Self-contained under /flf; delete the route to remove it whole.
 
 export const metadata = {
-  title: "Episteme · FLF Epistack submission notes",
+  title: "Minerval · FLF Epistack submission notes",
   description:
-    "How Episteme handles the ingestion, structure, and assessment questions in the FLF Epistack brief, with the constitution quoted and real claims linked.",
+    "How Minerval handles the ingestion, structure, and assessment questions in the FLF Epistack brief, with the constitution quoted and real claims linked.",
 };
 
-const GH = "https://github.com/Episteme-Foundation/episteme";
+const GH = "https://github.com/minerval-ai/minerval";
 // Real, live claims chosen as worked examples, drawn from all three FLF case
 // studies now in the graph: SARS-CoV-2 origins, LHC micro black holes, egg health.
 const LAB_ORIGIN = "ec268800-7ee7-42de-a29d-395c50e83148"; // "SARS-CoV-2 has a laboratory origin"
@@ -45,9 +45,9 @@ export default function FlfPage() {
     <div className="doc">
       <header className={s.hero}>
         <p className={s.kicker}>FLF Epistack · submission notes</p>
-        <h1>How Episteme handles the ingestion, structure, and assessment questions</h1>
+        <h1>How Minerval handles the ingestion, structure, and assessment questions</h1>
         <p>
-          Episteme is a public knowledge graph of claims. It reads sources, extracts the
+          Minerval is a public knowledge graph of claims. It reads sources, extracts the
           propositions they assert, links each claim to every source that speaks to it,
           decomposes a claim into what it rests on, and assesses how well the evidence supports
           it. The graph is maintained by LLM administrators bound by a public constitution, and
@@ -93,7 +93,7 @@ export default function FlfPage() {
           </div>
           <div className={s.linkRow}>
             <span className={s.what}>The source</span>
-            <span className={s.where}><a href={GH}>github.com/Episteme-Foundation/episteme</a></span>
+            <span className={s.where}><a href={GH}>github.com/minerval-ai/minerval</a></span>
           </div>
         </div>
 
@@ -138,7 +138,7 @@ export default function FlfPage() {
             back through the chain of who cited whom to its ultimate origin. Doing that exhaustively
             takes a great deal of recursive search, and it is not necessary for judging whether a
             claim is true, so we have not built it. It is clearly valuable and it belongs on the
-            claim page, and we intend to pursue it. It should get easier as Episteme scales and more
+            claim page, and we intend to pursue it. It should get easier as Minerval scales and more
             original sources are already in the graph to trace back to.
           </p>
         </div>
@@ -369,7 +369,7 @@ export default function FlfPage() {
             that are in fact routinely made. The agents are told to map the arguments in good faith
             and keep an open mind, but they still carry a bias toward consensus and share many of the
             blind spots of the existing epistemic environment. Casting a wider net at ingestion is
-            part of the answer. The other part is that Episteme is built to be open to the public, so
+            part of the answer. The other part is that Minerval is built to be open to the public, so
             that the perspectives an agent misses can be contributed and then held to the same
             standard as everything else.
           </p>
