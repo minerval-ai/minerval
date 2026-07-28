@@ -70,6 +70,15 @@ export class ApiStack extends cdk.Stack {
         // public host clients dial, since it's baked into the /.well-known
         // metadata and token endpoint URLs.
         PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
+        // Where the API sends users and points claim links: the OAuth consent
+        // redirect (/oauth/authorize → /oauth/consent), MCP page_url values,
+        // and the extension's claim links. Production had been riding the code
+        // default, which the rebrand (#303) moved to minerval.ai before that
+        // zone exists — which would have sent the MCP sign-in flow to a domain
+        // that does not resolve. Pinned to the live domain until the DNS
+        // cutover in docs/infrastructure.md lands; flip it then and the default
+        // takes over again.
+        PUBLIC_WEB_BASE_URL: "https://episteme.wiki",
         // The Steward assesses/decomposes the main claims — use Fable 5 there
         // (issue #77). The importance-priority drain means Fable only ever runs
         // on the top of the queue; the rest stay embedded stubs until budget
