@@ -3,7 +3,7 @@ import Link from "next/link";
 import { apiConfigured, fetchLeaderboard } from "../../lib/api";
 
 export const metadata: Metadata = {
-  title: "Contributors — Episteme",
+  title: "Contributors — Minerval",
   description:
     "The contributors whose accepted challenges, evidence, and proposals have most improved the graph.",
 };
@@ -16,8 +16,8 @@ export default async function ContributorsPage() {
       <div className="col">
         <h1>Contributors</h1>
         <p>
-          The frontend is not connected to an Episteme API (set{" "}
-          <code>EPISTEME_API_URL</code>), so contributor data is unavailable.
+          The frontend is not connected to a Minerval API (set{" "}
+          <code>MINERVAL_API_URL</code>), so contributor data is unavailable.
         </p>
       </div>
     );

@@ -1,6 +1,6 @@
 # Remote MCP server
 
-Episteme exposes the claim graph as a **remote MCP server** (Model Context
+Minerval exposes the claim graph as a **remote MCP server** (Model Context
 Protocol over streamable HTTP), so any MCP client — Claude Code, Claude.ai /
 Cowork, Cursor, ChatGPT — can query claims, inspect decompositions and
 assessments, fact-check text, and submit contributions from an agentic
@@ -26,7 +26,7 @@ full authorization server for its own `/mcp` resource: discovery metadata
 authorization-code grant with mandatory PKCE S256, and refresh-token rotation
 with reuse detection. The interactive login/consent half lives on the web
 frontend (which owns sessions, #70): `GET /oauth/authorize` validates the
-request and parks it, sends the browser to `episteme.wiki/oauth/consent`,
+request and parks it, sends the browser to `minerval.ai/oauth/consent`,
 the user signs in and approves, and the consent page redirects back to the
 client with the code. Unauthenticated `/mcp` calls get a 401 with a
 `WWW-Authenticate: Bearer resource_metadata=...` challenge so spec-compliant
@@ -61,7 +61,7 @@ the connector registers itself and walks the sign-in/consent flow.
 ### Connecting from Claude Code
 
 ```bash
-claude mcp add --transport http episteme https://<api-host>/mcp \
+claude mcp add --transport http minerval https://<api-host>/mcp \
   --header "x-api-key: <your-key>"
 ```
 
@@ -81,7 +81,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 - **`search_claims`** `{query, limit?, assessed?, min_importance?}` — hybrid
   vector + keyword search over canonical claims. Each result carries its
-  current assessment status/confidence and an `episteme.wiki` page link.
+  current assessment status/confidence and a `minerval.ai` page link.
 - **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
   — canonical form, current assessment (status, confidence, reasoning),
   source instances, arguments, dependents, page link.
@@ -124,7 +124,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 ## Configuration
 
 - `PUBLIC_WEB_BASE_URL` — base URL used for `page_url` links in tool results
-  and for the OAuth consent page (default `https://episteme.wiki`).
+  and for the OAuth consent page (default `https://minerval.ai`).
 - `PUBLIC_API_BASE_URL` — this API's public base URL: the OAuth issuer and
   the base for `/.well-known` endpoint URLs (default `http://localhost:3000`,
   `https://api.claimgraph.io` in production).

@@ -8,7 +8,7 @@ import {
 } from "../../../lib/account-api";
 import { approveConsentAction, denyConsentAction } from "./actions";
 
-export const metadata: Metadata = { title: "Authorize access — Episteme" };
+export const metadata: Metadata = { title: "Authorize access — Minerval" };
 export const dynamic = "force-dynamic";
 
 // The consent half of the OAuth flow for remote MCP connectors (Claude.ai,
@@ -66,7 +66,7 @@ export default async function ConsentPage({
             (<a href={request.client.uri}>{request.client.uri}</a>)
           </>
         ) : null}{" "}
-        is asking to connect to the Episteme claim graph as{" "}
+        is asking to connect to the Minerval claim graph as{" "}
         <strong>{session!.user?.name ?? session!.externalId}</strong>.
       </p>
       <p>

@@ -59,7 +59,7 @@ describe("buildAnnotations", () => {
     status: "verified",
     statusConfidence: 0.9,
     subclaimCount: 3,
-    claimUrl: "https://episteme.wiki/claims/22222222-2222-2222-2222-222222222222",
+    claimUrl: "https://minerval.ai/claims/22222222-2222-2222-2222-222222222222",
   };
   const base = {
     original_text: "GDP dropped in 2020",

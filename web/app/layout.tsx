@@ -4,7 +4,7 @@ import { Mark } from "./Mark";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Episteme · an open repository of claims",
+  title: "Minerval · an open repository of claims",
   description:
     "A knowledge graph of claims with transparent provenance, decomposition, and validity assessment.",
 };
@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="masthead">
           <div className="masthead-inner">
             <Link href="/" className="wordmark plain">
-              <span className="glyph" aria-hidden><Mark size="0.82em" /></span>Episteme
+              <span className="glyph" aria-hidden><Mark size="0.82em" /></span>Minerval
             </Link>
             <nav>
               <Link href="/claims">claims</Link>
@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="site">
           <div className="inner">
             <p style={{ margin: "0 0 .7rem" }}>
-              Episteme is infrastructure for thought: a shared map of claims, evidence, and
+              Minerval is infrastructure for thought: a shared map of claims, evidence, and
               argument, maintained by LLM administrators under a public constitution.
               Assessments are based on evidence and reasoning, open to inspection and correction.
             </p>
@@ -43,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* /contributors stays reachable by URL but is not linked until
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>
-              <a href="https://github.com/Episteme-Foundation/episteme">source</a>
+              <a href="https://github.com/minerval-ai/minerval">source</a>
             </nav>
           </div>
         </footer>

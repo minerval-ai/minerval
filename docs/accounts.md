@@ -1,6 +1,6 @@
 # Accounts, API keys & usage metering
 
-Implementation of [issue #70](https://github.com/Episteme-Foundation/episteme/issues/70):
+Implementation of [issue #70](https://github.com/minerval-ai/minerval/issues/70):
 one identity for users and contributors, dashboard-managed API keys, and a
 per-token meter under every LLM call. It deliberately stops short of payments —
 but the meter is shaped so Stripe usage-based credits drop in as configuration,
@@ -134,9 +134,10 @@ configured.
   `aws secretsmanager put-secret-value --secret-id episteme/api-keys
   --secret-string "<key>"` and force a new service deployment). The API fails
   closed in production without it.
-- The web frontend needs: `EPISTEME_API_KEY` (the same value as an
-  `episteme/api-keys` entry), `AUTH_SECRET`, and OAuth provider secrets in
-  Vercel.
+- The web frontend needs: `MINERVAL_API_KEY` (the same value as an
+  `episteme/api-keys` entry — the secret name is still the pre-rebrand one),
+  `AUTH_SECRET`, and OAuth provider secrets in Vercel. The old
+  `EPISTEME_API_KEY` name is still read as a fallback.
 - Metering never fails a call: `meterLlmUsage` catches and logs. The
   in-memory budget tracker (process circuit breaker) is unchanged and
   independent.

@@ -1,4 +1,4 @@
-/** Wire types shared with the Episteme API (see src/services/extension-service.ts). */
+/** Wire types shared with the Minerval API (see src/services/extension-service.ts). */
 
 export type Verdict =
   | "egregious"
@@ -72,7 +72,7 @@ export interface Settings {
   markupLevel: MarkupLevel;
   /**
    * Analyze pages without being asked. Off by default: page text is sent to
-   * the Episteme API, so sending is opt-in (globally or per site).
+   * the Minerval API, so sending is opt-in (globally or per site).
    */
   autoAnalyze: boolean;
   /** Per-host overrides of the global behavior. */

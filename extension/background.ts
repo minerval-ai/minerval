@@ -7,7 +7,7 @@ import type {
 } from "~lib/types";
 
 /**
- * Background service worker: the only place that talks to the Episteme API
+ * Background service worker: the only place that talks to the Minerval API
  * (so the API key never enters page contexts), plus a per-worker analysis
  * cache and the toolbar badge.
  *

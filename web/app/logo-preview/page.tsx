@@ -49,7 +49,7 @@ function MastheadSim({ svg }: { svg: string }) {
         <span style={{ marginRight: "0.4rem", display: "inline-flex" }}>
           <Glyph svg={svg} px={17} />
         </span>
-        Episteme
+        Minerval
       </span>
       <nav
         style={{
@@ -86,7 +86,7 @@ function TabSim({ svg, dark }: { svg: string; dark?: boolean }) {
       }}
     >
       <Glyph svg={svg} px={16} />
-      Episteme · an open repos…
+      Minerval · an open repos…
     </span>
   );
 }
@@ -234,7 +234,7 @@ function BitmapCard({ base, title, note }: { base: string; title: string; note: 
           <span style={{ marginRight: "0.4rem", display: "inline-flex" }}>
             <BitmapGlyph base={base} px={17} />
           </span>
-          Episteme
+          Minerval
         </span>
         <nav style={{ display: "flex", gap: "1.15rem", marginLeft: "auto", fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--ink-soft)" }}>
           <span>claims</span>
@@ -270,7 +270,7 @@ function BitmapCard({ base, title, note }: { base: string; title: string; note: 
               }}
             >
               <BitmapGlyph base={base} px={16} />
-              Episteme · an open repos…
+              Minerval · an open repos…
             </span>
           ))}
         </div>
@@ -376,7 +376,7 @@ function DarkModeSection() {
                         }}
                       >
                         <Glyph svg={recolor(fill)} px={16} />
-                        Episteme…
+                        Minerval…
                       </span>
                     </div>
                   </td>
@@ -422,7 +422,7 @@ export default function LogoPreview() {
         ships.
       </p>
       <section id="sec-bitmap">
-        <h2 style={{ fontSize: "1.05rem", marginTop: "2rem" }}>Uploaded bitmap · Episteme Logo.png</h2>
+        <h2 style={{ fontSize: "1.05rem", marginTop: "2rem" }}>Uploaded bitmap · Minerval Logo.png</h2>
         <BitmapCard
           base="owl-ink"
           title="owl-ink (original color #063f1d, white removed)"

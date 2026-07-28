@@ -16,7 +16,7 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
   });
 }
 
-// Single seam the pages call. When EPISTEME_API_URL is configured we serve live
+// Single seam the pages call. When MINERVAL_API_URL is configured we serve live
 // data; otherwise we fall back to the design fixtures, so the UI is always
 // viewable. Live errors degrade to fixtures rather than crashing the page.
 
@@ -29,7 +29,7 @@ export async function loadClaim(
   try {
     return { detail: await fetchClaimDetail(id), source: "live" };
   } catch (err) {
-    console.error("[episteme] live claim fetch failed, using fixture:", err);
+    console.error("[minerval] live claim fetch failed, using fixture:", err);
     return { detail: getClaim(id), source: "fixture" };
   }
 }
@@ -44,7 +44,7 @@ export async function loadClaimEvents(
   try {
     return { events: await fetchClaimEvents(id), source: "live" };
   } catch (err) {
-    console.error("[episteme] live claim events fetch failed, using fixture:", err);
+    console.error("[minerval] live claim events fetch failed, using fixture:", err);
     return { events: getClaimEvents(id), source: "fixture" };
   }
 }
@@ -64,7 +64,7 @@ export async function loadTerritories(): Promise<Territory[]> {
         const detail = await fetchClaimTree(t.anchorId);
         return { ...t, stats: computeTerritoryStats(detail) };
       } catch (err) {
-        console.error(`[episteme] territory "${t.key}" fetch failed:`, err);
+        console.error(`[minerval] territory "${t.key}" fetch failed:`, err);
         return { ...t, stats: null };
       }
     }),
@@ -85,7 +85,7 @@ export async function loadClaims(
       : await fetchList(40, filters);
     return { results, source: "live" };
   } catch (err) {
-    console.error("[episteme] live claim list failed, using fixture:", err);
+    console.error("[minerval] live claim list failed, using fixture:", err);
     return { results: applyFilters(listClaims(), filters), source: "fixture" };
   }
 }

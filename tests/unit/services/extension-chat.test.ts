@@ -25,7 +25,7 @@ vi.mock("../../../src/services/assessment-service.js", () => ({
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
-    publicWebBaseUrl: "https://episteme.wiki",
+    publicWebBaseUrl: "https://minerval.ai",
     extensionModel: "test-model",
     extensionMaxClaims: 10,
   }),
@@ -65,13 +65,13 @@ describe("chatAboutPage citation hydration", () => {
         id: A,
         canonical_form: `claim ${A}`,
         status: "verified",
-        url: `https://episteme.wiki/claims/${A}`,
+        url: `https://minerval.ai/claims/${A}`,
       },
       {
         id: B,
         canonical_form: `claim ${B}`,
         status: null,
-        url: `https://episteme.wiki/claims/${B}`,
+        url: `https://minerval.ai/claims/${B}`,
       },
     ]);
   });

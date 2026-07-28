@@ -1,6 +1,6 @@
-# Episteme browser extension
+# Minerval browser extension
 
-Read the web with the [Episteme](https://episteme.wiki) claim graph switched
+Read the web with the [Minerval](https://minerval.ai) claim graph switched
 on. The extension recognises claims on the page you're reading, underlines
 each by what the graph knows about it, and answers questions in a popup chat
 grounded in the graph, with claim citations.
@@ -11,8 +11,8 @@ There's no web-store listing yet, so the extension is built from source and
 loaded unpacked. You'll need [Node.js](https://nodejs.org) 18 or newer.
 
 ```bash
-git clone https://github.com/Episteme-Foundation/episteme.git
-cd episteme/extension
+git clone https://github.com/minerval-ai/minerval.git
+cd minerval/extension
 npm install
 npm run build
 ```
@@ -26,10 +26,10 @@ Arc):
 
 ## Set it up
 
-Analysis and chat run against your Episteme account:
+Analysis and chat run against your Minerval account:
 
-1. Sign in at [episteme.wiki](https://episteme.wiki) and create an API key
-   under [Account · API keys](https://episteme.wiki/account). Keys look like
+1. Sign in at [minerval.ai](https://minerval.ai) and create an API key
+   under [Account · API keys](https://minerval.ai/account). Keys look like
    `epk_…`.
 2. Click the extension icon and open its **Settings** tab.
 3. Set the API base URL to `https://api.claimgraph.io` and paste your key.
@@ -49,7 +49,7 @@ Conservative by default, progressively disclosing:
 - **Hover**: compact card with the canonical claim, graph status, and a
   one-line why.
 - **Click**: full panel with the decomposition into subclaims, evidence and
-  arguments for/against, and a link to the claim's page on episteme.wiki.
+  arguments for/against, and a link to the claim's page on minerval.ai.
 
 Markup is non-destructive: highlights are overlay elements anchored to the
 rendered text, re-anchored when the page mutates. The page's DOM text is
@@ -57,7 +57,7 @@ never rewritten.
 
 ## Privacy
 
-Analyzing a page sends its readable text to the Episteme API for claim
+Analyzing a page sends its readable text to the Minerval API for claim
 extraction. Because of that, **nothing is sent automatically by default**:
 you trigger analysis from the popup, or opt a site (or everything) into
 automatic analysis in settings. Any site can be disabled entirely.

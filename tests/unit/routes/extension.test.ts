@@ -151,7 +151,7 @@ describe("extension routes", () => {
           id: "11111111-2222-3333-4444-555555555555",
           canonical_form: "C",
           status: "verified",
-          url: "https://episteme.wiki/claims/11111111-2222-3333-4444-555555555555",
+          url: "https://minerval.ai/claims/11111111-2222-3333-4444-555555555555",
         },
       ],
     });

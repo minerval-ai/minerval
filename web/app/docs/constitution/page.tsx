@@ -4,7 +4,7 @@ import { Markdown } from "@/components/Markdown";
 import { DocLayout } from "@/components/DocLayout";
 import { extractToc } from "@/lib/toc";
 
-export const metadata = { title: "The Administrator Constitution · Episteme" };
+export const metadata = { title: "The Administrator Constitution · Minerval" };
 
 export default function ConstitutionPage() {
   const text = getDoc("constitution");

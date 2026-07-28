@@ -1,4 +1,4 @@
-# Episteme Agent Policies
+# Minerval Agent Policies
 
 This document is the operational layer between the [Admin Constitution](../admin_constitution.md) and the agents that run the graph. The constitution carries the doctrine; these policies turn it into working definitions and per-role decision criteria that the governance agents cite by name when they decide. Where a policy and the constitution appear to diverge, the constitution wins, and the policy needs fixing.
 

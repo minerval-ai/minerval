@@ -1,4 +1,4 @@
-// Mirrors the Episteme API (src/schemas/*). Kept hand-written for now; will be
+// Mirrors the Minerval API (src/schemas/*). Kept hand-written for now; will be
 // replaced by a client generated from the Fastify OpenAPI spec.
 
 export type AssessmentStatus =

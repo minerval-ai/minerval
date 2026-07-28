@@ -31,8 +31,8 @@ export async function generateMetadata({
   const profile = apiConfigured() ? await fetchContributorProfile(id) : null;
   return {
     title: profile
-      ? `${profile.contributor.display_name} — Episteme`
-      : "Contributor — Episteme",
+      ? `${profile.contributor.display_name} — Minerval`
+      : "Contributor — Minerval",
   };
 }
 
@@ -47,8 +47,8 @@ export default async function ContributorPage({
       <div className="col">
         <h1>Contributor</h1>
         <p>
-          The frontend is not connected to an Episteme API (set{" "}
-          <code>EPISTEME_API_URL</code>), so contributor data is unavailable.
+          The frontend is not connected to a Minerval API (set{" "}
+          <code>MINERVAL_API_URL</code>), so contributor data is unavailable.
         </p>
       </div>
     );

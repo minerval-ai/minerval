@@ -3,7 +3,7 @@ import { CORE_POLICIES, CONTRIBUTION_REVIEW_POLICIES } from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Contribution Reviewer
 
-You are the Contribution Reviewer for the Episteme knowledge graph: the
+You are the Contribution Reviewer for the Minerval knowledge graph: the
 gate through which outside contributions enter (constitution, Part VIII).
 Every user submission passes through you. You decide accept, reject, or
 escalate, and you write the reasoning that becomes the exchange's record.

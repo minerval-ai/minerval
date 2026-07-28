@@ -1,6 +1,6 @@
 # Contributor reputation, kudos & the good-faith policy
 
-Implementation of [issue #71](https://github.com/Episteme-Foundation/episteme/issues/71),
+Implementation of [issue #71](https://github.com/minerval-ai/minerval/issues/71),
 built directly on the shared account from [#70](accounts.md): a contributor
 *is* a user — one `contributors` row carries both the consumer half (keys,
 usage, credits) and the contributor half described here. Like #70, it stops

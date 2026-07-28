@@ -1,5 +1,5 @@
 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <!-- Episteme — the owl of Athena (issue #207). Dark ink by default; swaps to
+  <!-- Minerval — the owl of Athena (issue #207). Dark ink by default; swaps to
        paper in dark mode so the mark stays visible on dark tab strips. Safari
        ignores SVG favicons and falls back to the touch icon's opaque tile. -->
   <style>

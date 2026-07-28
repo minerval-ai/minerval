@@ -345,7 +345,7 @@ describe("MCP tools", () => {
       id: CLAIM_ID,
       canonical_form: CLAIM_ROW.text,
       assessment_status: "well_supported",
-      page_url: `https://episteme.wiki/claims/${CLAIM_ID}`,
+      page_url: `https://minerval.ai/claims/${CLAIM_ID}`,
     });
     await client.close();
   });

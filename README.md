@@ -1,12 +1,12 @@
-# Episteme
+# Minerval
 
 **LLMs as epistemic infrastructure.**
 
-Episteme turns documents into a shared, queryable graph of claims. An LLM
+Minerval turns documents into a shared, queryable graph of claims. An LLM
 pipeline reads a source, pulls out the atomic claims it asserts, decides
 whether each already exists in the graph, decomposes it into the subclaims and
 arguments it rests on, and assesses its validity — with every judgment traced
-and open to challenge. The graph is live at [episteme.wiki](https://episteme.wiki),
+and open to challenge. The graph is live at [minerval.ai](https://minerval.ai),
 served by a public API at `api.claimgraph.io`, and reachable from a browser
 extension and an MCP server.
 
@@ -17,7 +17,7 @@ app, the extension, the evaluation harness, and the infrastructure.
 
 Most epistemic tools work at the level of documents — an article is
 fact-checked, a page is encyclopedic. But disputes live at the level of
-*claims*, and the same claim recurs across thousands of documents. Episteme
+*claims*, and the same claim recurs across thousands of documents. Minerval
 takes the claim as its atomic unit and does the expensive work once: a claim is
 extracted, canonicalized, decomposed, and assessed a single time, then reused
 everywhere it appears.
@@ -121,7 +121,7 @@ handling, persistence, serving surfaces — is in
 
 ## Surfaces
 
-- **Web app** — [episteme.wiki](https://episteme.wiki), a Next.js app for
+- **Web app** — [minerval.ai](https://minerval.ai), a Next.js app for
   browsing claims, decomposition trees, arguments, assessments, and
   contribution history.
 - **API** — Fastify at `api.claimgraph.io`. Reads are public; anything that
@@ -140,7 +140,7 @@ handling, persistence, serving surfaces — is in
 | Path | Contents |
 |------|----------|
 | [`src/`](src/) | The API (Fastify), the agent pipeline (`llm/`, `workers/`), services, and the Drizzle schema (`db/`) |
-| [`web/`](web/) | The Next.js web app deployed at episteme.wiki |
+| [`web/`](web/) | The Next.js web app deployed at minerval.ai |
 | [`extension/`](extension/) | The Plasmo browser extension |
 | [`corpus/`](corpus/) | The evaluation harness: pinned document clusters, scoring rubric, LLM-judge scoring |
 | [`docs/`](docs/) | Architecture, policies, MCP, accounts, reputation, graph epochs, infrastructure |
@@ -188,6 +188,6 @@ MIT — see [LICENSE](LICENSE).
 
 *"The owl of Minerva spreads its wings only with the falling of the dusk."* — Hegel
 
-Understanding, Hegel thought, arrives only in retrospect. Episteme is an
+Understanding, Hegel thought, arrives only in retrospect. Minerval is an
 attempt to do better: to map claims as they are made, not after the dust has
 settled.

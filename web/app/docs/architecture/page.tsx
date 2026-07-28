@@ -4,7 +4,7 @@ import { Markdown } from "@/components/Markdown";
 import { DocLayout } from "@/components/DocLayout";
 import { extractToc } from "@/lib/toc";
 
-export const metadata = { title: "Architecture & policies · Episteme" };
+export const metadata = { title: "Architecture & policies · Minerval" };
 
 export default function ArchitecturePage() {
   const architecture = getDoc("architecture");

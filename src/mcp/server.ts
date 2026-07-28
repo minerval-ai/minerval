@@ -174,7 +174,7 @@ async function matchAssertion(assertion: string, context?: string) {
 
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
   const server = new McpServer({
-    name: "episteme",
+    name: "minerval",
     version: "0.1.0",
   });
 
@@ -185,12 +185,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     {
       title: "Search claims",
       description:
-        "Search Episteme's claim graph. A claim is a single reusable " +
+        "Search Minerval's claim graph. A claim is a single reusable " +
         "proposition about the world that informed people could dispute with " +
         "evidence or reasons; each is stored once, under a neutral canonical " +
         "wording shared by the claim and its denial. Combined semantic and " +
         "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status and a link to its episteme.wiki page. " +
+        "current assessment status and a link to its minerval.ai page. " +
         "Free.",
       inputSchema: {
         query: z.string().min(1).max(500).describe("Free-text search query"),
@@ -320,7 +320,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     {
       title: "Match an assertion to a canonical claim",
       description:
-        "Ask Episteme's Matcher whether an assertion is already a claim in " +
+        "Ask Minerval's Matcher whether an assertion is already a claim in " +
         "the graph, under any wording or as its negation (a claim and its " +
         "denial are one node). On a match, returns the canonical claim, " +
         "whether the assertion affirms or denies it, and its current " +
@@ -351,7 +351,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     {
       title: "Extract claims from text",
       description:
-        "Run a passage through Episteme's Extractor to surface the claims it " +
+        "Run a passage through Minerval's Extractor to surface the claims it " +
         "asserts or relies on: single reusable propositions that informed " +
         "people could dispute, each with a proposed canonical form, claim " +
         "type, and provisional importance. Claims are scarce relative to " +
@@ -655,9 +655,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
   server.registerPrompt(
     "fact_check_document",
     {
-      title: "Fact-check a document against Episteme",
+      title: "Fact-check a document against Minerval",
       description:
-        "Check every disputable claim a document makes against the Episteme " +
+        "Check every disputable claim a document makes against the Minerval " +
         "claim graph and report what the graph's assessments establish.",
       argsSchema: {
         document: z.string().describe("The document text to fact-check"),
@@ -670,7 +670,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           content: {
             type: "text",
             text:
-              "Fact-check the following document against the Episteme claim graph.\n\n" +
+              "Fact-check the following document against the Minerval claim graph.\n\n" +
               "Use the `assess_text` tool on the document, chunking it if it is " +
               "long. For each judged claim, report the verdict the graph " +
               "returned, not your own recollection. A verdict of `unknown` " +
@@ -705,7 +705,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           content: {
             type: "text",
             text:
-              "Check this assertion against the Episteme claim graph using the " +
+              "Check this assertion against the Minerval claim graph using the " +
               "`match_claim` tool, then explain its standing: the canonical " +
               "claim it maps to, if any, and the current assessment with its " +
               "confidence. Call `get_decomposition` if you need to show where " +

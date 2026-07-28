@@ -6,7 +6,7 @@ import type {
 } from "./types";
 
 /**
- * Episteme API client. Runs in the background service worker only, so page
+ * Minerval API client. Runs in the background service worker only, so page
  * scripts never see the API key. Both agentic endpoints authenticate with the
  * user's API key and are metered per-token server-side (#70).
  */
@@ -27,7 +27,7 @@ async function request<T>(
   const settings = await getSettings();
   if (!settings.apiKey && !settings.apiBaseUrl.includes("localhost")) {
     throw new ApiError(
-      "No API key configured. Create one in your Episteme dashboard and paste it in the extension settings.",
+      "No API key configured. Create one in your Minerval dashboard and paste it in the extension settings.",
       401
     );
   }
