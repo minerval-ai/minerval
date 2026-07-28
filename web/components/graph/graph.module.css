@@ -57,6 +57,12 @@
   background: var(--paper);
   height: max(30rem, calc(100vh - 16.5rem));
   overflow: hidden;              /* fits: nothing to scroll */
+  /* The stage owns its own stacking context, so the layering inside it (nodes,
+     focus card, preview) is local and can never out-paint chrome outside it.
+     Without this, `position: relative` alone leaves the stage's children in the
+     root stacking context, and the preview's z-index rode over the sticky
+     masthead (z-index 20) once the page scrolled the stage under it. */
+  isolation: isolate;
 }
 .stage.scrollable { overflow: auto; }  /* floor-scale overflow: native scroll only */
 
