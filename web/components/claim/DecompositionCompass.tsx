@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { TreeNode } from "@/lib/types";
 import {
   decompositionEffects, effectCounts, topLevelEffects, groupByArgument,
-  EFFECT, EFFECT_ORDER, DEFINED_IN, BASIS,
+  EFFECT, EFFECT_ORDER, EFFECT_LEAN, EFFECT_LEAN_ORDER, DEFINED_IN, BASIS,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
 import styles from "./margins.module.css";
@@ -69,13 +69,26 @@ function scrollToArg(key: string) {
 // prose-free jump-list of the claim's top-level lines of reasoning. The reading
 // happens in the centre column (#204); the rail only summarises and navigates.
 export function DecompositionCompass({ tree }: { tree: TreeNode }) {
-  const scored = decompositionEffects(tree);
+  // Direct subclaims only (#189): the same population the centre column
+  // renders, so the bar, the count, and the reading below it never disagree.
+  // Flattening the whole descendant tree put deep grandchildren on equal
+  // footing with this claim's own lines of reasoning — and a sub-premise of an
+  // opposing argument would render as a peer of the claim's direct arguments.
+  // The recursive subtree contributes only the quiet total under the count.
+  const scored = topLevelEffects(tree);
   const counts = effectCounts(scored);
   const total = scored.length;
-  const present = EFFECT_ORDER.filter((e) => counts[e] > 0);
-  // Top-level groups only, matching what the centre renders and keying on the
-  // same argKey so a click scrolls to the right block.
-  const groups = groupByArgument(topLevelEffects(tree));
+  const deepTotal = decompositionEffects(tree).length;
+  // Assessed effects render solid; the unassessed remainder renders hatched,
+  // split by which way each edge points, so a claim whose in-favour side is
+  // still queued never reads as all-against (#189).
+  const present = EFFECT_ORDER.filter((e) => e !== "unassessed" && counts[e] > 0);
+  const leanCounts = { for: 0, against: 0 };
+  for (const s of scored) if (s.effect === "unassessed") leanCounts[s.lean] += 1;
+  const leansPresent = EFFECT_LEAN_ORDER.filter((l) => leanCounts[l] > 0);
+  // The same top-level groups the centre renders, keyed on the same argKey so
+  // a click scrolls to the right block.
+  const groups = groupByArgument(scored);
   const namedCount = groups.filter((g) => g.named).length;
   const activeArg = useActiveArg();
 
@@ -103,14 +116,27 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
         <span className="sc">Decomposition</span>
         <span className={styles.railCount}>
           {total}
-          <span className={styles.railCountUnit}>subclaim{total === 1 ? "" : "s"}</span>
+          <span className={styles.railCountUnit}>direct subclaim{total === 1 ? "" : "s"}</span>
         </span>
+        {/* the two counts a reader might meet must be labelled, not left to
+            fight: the compass reads this claim's own subclaims, the map holds
+            the rest (#189) */}
+        {deepTotal > total && (
+          <span className={styles.railTotal}>{deepTotal} in the full decomposition</span>
+        )}
       </div>
 
-      {/* the compass: how the body of subclaims bears on THIS claim */}
-      <div className={styles.distBar} title="how the subclaims bear on this claim" aria-hidden>
+      {/* the compass: how the direct subclaims bear on THIS claim */}
+      <div className={styles.distBar} title="how the direct subclaims bear on this claim" aria-hidden>
         {present.map((e) => (
           <span key={e} className={EFFECT[e].cls} style={{ width: `${(counts[e] / total) * 100}%` }} />
+        ))}
+        {leansPresent.map((l) => (
+          <span
+            key={`unassessed-${l}`}
+            className={`${styles.unassessedSeg} ${EFFECT_LEAN[l].cls}`}
+            style={{ width: `${(leanCounts[l] / total) * 100}%` }}
+          />
         ))}
       </div>
       <ul className={styles.legend}>
@@ -120,6 +146,15 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
             <span className={styles.legendN}>{counts[e]}</span>
             <Term gloss={EFFECT[e].gloss} href={DEFINED_IN.effect} className={styles.legendLbl} align="start">
               {EFFECT[e].label}
+            </Term>
+          </li>
+        ))}
+        {leansPresent.map((l) => (
+          <li key={`unassessed-${l}`} className={EFFECT_LEAN[l].cls}>
+            <span className={`swatch ${styles.unassessedSwatch} ${EFFECT_LEAN[l].cls}`} aria-hidden />
+            <span className={styles.legendN}>{leanCounts[l]}</span>
+            <Term gloss={EFFECT_LEAN[l].gloss} href={DEFINED_IN.effect} className={styles.legendLbl} align="start">
+              {EFFECT_LEAN[l].label}
             </Term>
           </li>
         ))}

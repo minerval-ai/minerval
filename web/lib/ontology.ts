@@ -326,21 +326,49 @@ export function importanceFloorValue(min: number | undefined): ImportanceFloor {
 // reassuring green. So we score every node by its effect on the ROOT claim,
 // composing edge polarity down the tree (`contradicts` flips the sign) and
 // combining it with how established the node itself is.
+//
+// "Unassessed" is its own state, NOT a flavour of "unsettled" (#189): a node
+// the Steward has not reached yet says nothing about the claim, whereas an
+// assessed-but-inconclusive node is itself a finding. Folding the two together
+// biased the compass toward whichever side happened to be assessed first — a
+// Supported claim whose in-favour side was still queued read as all-against.
 // ---------------------------------------------------------------------------
 
-export type Effect = "supports" | "against" | "uncertain" | "weak";
+export type Effect = "supports" | "against" | "uncertain" | "weak" | "unassessed";
 
 export const EFFECT: Record<Effect, { label: string; cls: string; gloss: string }> = {
-  supports:  { label: "in favour", cls: "st-supported",    gloss: "established evidence that bears in favour of this claim" },
-  against:   { label: "against",   cls: "st-contradicted", gloss: "established evidence that weighs against this claim" },
-  uncertain: { label: "contested", cls: "st-contested",    gloss: "credible argument exists on more than one side" },
-  weak:      { label: "unsettled", cls: "st-unknown",      gloss: "too unsupported or unknown to move the needle either way" },
+  supports:   { label: "in favour",  cls: "st-supported",    gloss: "established evidence that bears in favour of this claim" },
+  against:    { label: "against",    cls: "st-contradicted", gloss: "established evidence that weighs against this claim" },
+  uncertain:  { label: "contested",  cls: "st-contested",    gloss: "credible argument exists on more than one side" },
+  weak:       { label: "unsettled",  cls: "st-unknown",      gloss: "assessed, but too unsupported or unknown to move the needle either way" },
+  unassessed: { label: "unassessed", cls: "st-unassessed",   gloss: "no assessment yet, so nothing bears on this claim from here — likely still queued" },
 };
 
-// Reading order for the bar/legend: favour, contested, against, unsettled. We
-// deliberately do NOT lead with "verified" — the point is to stop the eye
-// reading green-first when the green doesn't actually support the claim.
-export const EFFECT_ORDER: Effect[] = ["supports", "uncertain", "against", "weak"];
+// Reading order for the bar/legend: favour, contested, against, unsettled,
+// then the still-queued remainder. We deliberately do NOT lead with "verified"
+// — the point is to stop the eye reading green-first when the green doesn't
+// actually support the claim.
+export const EFFECT_ORDER: Effect[] = ["supports", "uncertain", "against", "weak", "unassessed"];
+
+// Which way a node's edge chain points, independent of any assessment: the
+// direction it WOULD bear if it were established. For an unassessed node this
+// is the only directional signal there is, so surfaces render it distinctly
+// (hatched, lightened — a direction, never a verdict). When steward-seeded
+// prior credences land (#285) they will refine this, not replace the state.
+export type EffectLean = "for" | "against";
+
+export const EFFECT_LEAN_ORDER: EffectLean[] = ["for", "against"];
+
+export const EFFECT_LEAN: Record<EffectLean, { label: string; cls: string; gloss: string }> = {
+  for: {
+    label: "unassessed · edge for", cls: "st-supported",
+    gloss: "Not yet assessed. Its edge points in favour of this claim — a direction, not a verdict.",
+  },
+  against: {
+    label: "unassessed · edge against", cls: "st-contradicted",
+    gloss: "Not yet assessed. Its edge points against this claim — a direction, not a verdict.",
+  },
+};
 
 // Only `contradicts` reverses polarity. requires / supports / specifies /
 // defines / assumes are all structurally affirmative edges (a failed
@@ -351,8 +379,11 @@ function flipsPolarity(relation: string | null): boolean {
 }
 
 // sign: +1 if, walking from the root, this node ultimately bears in favour of
-// the root; -1 if it bears against it.
+// the root; -1 if it bears against it. A node with no assessment scores
+// "unassessed", never "weak" — pending is not a finding (#189, cf. #160's
+// UNASSESSED_META for statuses).
 function nodeEffect(status: string | null, sign: number): Effect {
+  if (status == null) return "unassessed";
   if (status === "contested") return "uncertain";
   let truth = 0; // +1 established, -1 refuted, 0 unknown
   if (status === "verified" || status === "supported") truth = 1;
@@ -366,6 +397,18 @@ function nodeEffect(status: string | null, sign: number): Effect {
 export interface ScoredNode {
   node: TreeNode;
   effect: Effect;
+  // The structural direction of the node's edge chain toward the root — where
+  // it would push if established. Carried for every node; it only drives
+  // rendering where the effect is "unassessed".
+  lean: EffectLean;
+}
+
+function scoreNode(node: TreeNode, sign: number): ScoredNode {
+  return {
+    node,
+    effect: nodeEffect(node.assessment_status, sign),
+    lean: sign < 0 ? "against" : "for",
+  };
 }
 
 // Flatten the decomposition (excluding the root) in outline order, tagging each
@@ -375,7 +418,7 @@ export function decompositionEffects(root: TreeNode): ScoredNode[] {
   const walk = (node: TreeNode, sign: number) => {
     for (const child of node.children) {
       const childSign = flipsPolarity(child.relation_type) ? -sign : sign;
-      out.push({ node: child, effect: nodeEffect(child.assessment_status, childSign) });
+      out.push(scoreNode(child, childSign));
       walk(child, childSign);
     }
   };
@@ -384,29 +427,33 @@ export function decompositionEffects(root: TreeNode): ScoredNode[] {
 }
 
 // The direct children only, each tagged with its effect on this claim. Surfaces
-// that summarise a claim by its own top-level lines of reasoning (the compass
-// jump-list, #204) group these, rather than the whole recursive subtree.
+// that summarise a claim by its own top-level lines of reasoning (the compass,
+// #204/#189) score these, rather than the whole recursive subtree.
 export function topLevelEffects(root: TreeNode): ScoredNode[] {
-  return root.children.map((child) => ({
-    node: child,
-    effect: nodeEffect(child.assessment_status, flipsPolarity(child.relation_type) ? -1 : 1),
-  }));
+  return root.children.map((child) =>
+    scoreNode(child, flipsPolarity(child.relation_type) ? -1 : 1),
+  );
 }
 
 export function effectCounts(scored: ScoredNode[]): Record<Effect, number> {
-  const counts: Record<Effect, number> = { supports: 0, against: 0, uncertain: 0, weak: 0 };
+  const counts: Record<Effect, number> = {
+    supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0,
+  };
   for (const s of scored) counts[s.effect] += 1;
   return counts;
 }
 
 // Collapse a set of effects into a single net effect for an argument: which way,
 // on balance, does this line of reasoning push the main claim? A genuine split
-// reads as contested; an argument with nothing established reads as unsettled.
+// reads as contested; an argument with nothing established reads as unsettled;
+// an argument nothing of which has been assessed reads as unassessed, so a
+// still-queued line of reasoning never masquerades as an evaluated one (#189).
 export function netEffect(counts: Record<Effect, number>): Effect {
   if (counts.supports > counts.against) return "supports";
   if (counts.against > counts.supports) return "against";
   if (counts.supports > 0 || counts.uncertain > 0) return "uncertain";
-  return "weak";
+  if (counts.weak > 0) return "weak";
+  return counts.unassessed > 0 ? "unassessed" : "weak";
 }
 
 export interface ArgumentGroup {
@@ -447,7 +494,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         evaluation: s.node.argument_evaluation ?? null,
         named: Boolean(s.node.argument_name),
         nodes: [],
-        counts: { supports: 0, against: 0, uncertain: 0, weak: 0 },
+        counts: { supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0 },
         net: "weak",
       };
       byId.set(id, g);

@@ -78,6 +78,14 @@
   color: var(--faint);
 }
 
+/* the recursive total, labelled so it can never be mistaken for the direct
+   count the compass actually reads (#189) */
+.railTotal {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
 /* ----- left: status-distribution bar + legend (the compass) -------------- */
 .distBar {
   display: flex;
@@ -91,6 +99,22 @@
   background: currentColor;
   display: block;
   height: 100%;
+}
+
+/* unassessed segments: hatched and lightened, tinted by the direction the
+   edge points — a direction, never a verdict. Solid colour in this bar means
+   an assessed effect; these must not masquerade as one (#189). */
+.distBar > span.unassessedSeg {
+  background: repeating-linear-gradient(-45deg, currentColor 0 3px, transparent 3px 6px);
+  opacity: 0.55;
+}
+
+/* the matching legend swatch: same hatch, dashed edge like every unassessed
+   marker on the site (cf. .swatch.st-unassessed, #160) */
+.legend .unassessedSwatch {
+  background: repeating-linear-gradient(-45deg, currentColor 0 2px, transparent 2px 4px);
+  border-style: dashed;
+  opacity: 0.7;
 }
 
 .legend {
