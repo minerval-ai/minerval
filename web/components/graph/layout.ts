@@ -62,6 +62,10 @@ export interface ClaimBits {
   status: AssessmentStatus | null;
   confidence: number | null;       // verdict confidence — meta, not P(true)
   credence: number | null;         // the Steward's P(claim true), when stated (#238)
+  // Steward-seeded prior credence (#285): the parent Steward's preliminary
+  // P(true), carried only while the claim is unassessed. A confident seed
+  // tints the node's unassessed glyph; it never fills `status` or `credence`.
+  seedCredence?: number | null;
   relation: RelationType | null;   // the edge that connects it toward the focus
   reasoning: string | null;        // why that edge holds (claim_relationships.reasoning)
   argumentId: string | null;
@@ -166,6 +170,9 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     claimType: n.claim_type,
     status: n.assessment_status,
     confidence: n.assessment_confidence,
+    // The API already nulls the seed once a node is assessed; the guard here
+    // keeps the invariant even against a fixture or an optimistic partial.
+    seedCredence: n.assessment_status == null ? n.seed_credence ?? null : null,
     credence: n.assessment_credence ?? null,
     relation: n.relation_type,
     reasoning: n.reasoning,
@@ -452,6 +459,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       status: detail.assessment?.status ?? null,
       confidence: detail.assessment?.confidence ?? null,
       credence: detail.assessment?.claim_credence ?? null,
+      seedCredence: detail.assessment ? null : detail.seed?.credence ?? null,
       relation: null,
       reasoning: null,
       argumentId: null, argumentName: null, argumentStance: null,

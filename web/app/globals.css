@@ -211,6 +211,39 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
    verdict, echoing the dashed Unassessed badge: pending, not judged */
 .swatch.st-unassessed { background: transparent; border-style: dashed; }
 
+/* steward-seeded prior on an unassessed claim (#285): tinted by where the
+   seed credence points, but hatched and dashed like every unassessed marker
+   — a hint pending the claim's own assessment, never a solid verdict */
+.swatch.seeded {
+  background: repeating-linear-gradient(-45deg, currentColor 0 2px, transparent 2px 4px);
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+/* the preliminary note block on an unassessed claim's page (#285): dashed
+   like every unassessed marker, quiet — a colleague's margin note, not the
+   assessment lead it is waiting to be replaced by */
+.seed-prelim {
+  border: 1px dashed var(--st-unassessed);
+  border-radius: 2px;
+  background: var(--st-unassessed-tint);
+  padding: 0.7rem 0.9rem 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.seed-prelim-label {
+  font-family: var(--sans);
+  font-size: 0.76rem;
+  color: var(--muted);
+  margin: 0;
+}
+.seed-prelim-credence { margin: 0.4rem 0 0; }
+.seed-prelim-note {
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0;
+  white-space: pre-line;
+}
+
 .badge.st-verified    { background: var(--st-verified-tint); }
 .badge.st-supported   { background: var(--st-supported-tint); }
 .badge.st-contested   { background: var(--st-contested-tint); }

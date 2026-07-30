@@ -13,6 +13,7 @@ import {
   claimTypeMeta, decompositionNote, statusMeta,
   nodeStatusMeta, UNASSESSED_META, VERDICT_CONFIDENCE_GLOSS, CREDENCE_GLOSS,
   DEFINED_IN, STEWARD_SOURCE, isAssumesRelation,
+  seedVerity, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { ArgumentText } from "@/components/ArgumentText";
@@ -117,9 +118,22 @@ const MAP_KEY = {
   argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Arguments are not destinations; click their claims to explore.",
 } as const;
 
+// Which status-colour family an unassessed node borrows when the parent
+// Steward seeded it with a confident prior credence (#285): greenish when the
+// seed says likely true, reddish when likely false, neutral otherwise. The
+// node's glyph stays the hollow unassessed ◌ — a tint, never a verdict.
+function seedTintKey(seedCredence: number | null | undefined): string {
+  const v = seedVerity(seedCredence);
+  return v > 0 ? "supported" : v < 0 ? "contradicted" : "unassessed";
+}
+
 // null is "unassessed" (pending), never the assessed "Unknown" verdict (#160).
-function statusVars(status: AssessmentStatus | null): React.CSSProperties {
-  const s = status ?? "unassessed";
+// An unassessed node with a confident seed borrows that direction's tint.
+function statusVars(
+  status: AssessmentStatus | null,
+  seedCredence?: number | null,
+): React.CSSProperties {
+  const s = status ?? seedTintKey(seedCredence);
   return {
     color: `var(--st-${s})`,
     background: `var(--st-${s}-tint)`,
@@ -141,14 +155,21 @@ const BED_CLS: Record<string, string> = {
   fact: styles.bedFact, open: styles.bedOpen, value: styles.bedValue,
 };
 
-function Glyph({ status, size }: { status: AssessmentStatus | null; size?: string }) {
+function Glyph({
+  status, size, seedCredence,
+}: { status: AssessmentStatus | null; size?: string; seedCredence?: number | null }) {
   // nodeStatusMeta: an unassessed claim gets the hollow ◌, not Unknown's "?"
   // — "not yet judged" and "judged unknowable" are different facts (#160).
+  // With a confident steward-seeded prior (#285) the hollow glyph borrows the
+  // seed's tint: still ◌, still unassessed, but scannable.
   const meta = nodeStatusMeta(status);
   return (
     <span
       className={styles.glyph}
-      style={{ color: `var(--st-${status ?? "unassessed"})`, fontSize: size }}
+      style={{
+        color: status ? `var(--st-${status})` : `var(--st-${seedTintKey(seedCredence)})`,
+        fontSize: size,
+      }}
       aria-hidden
     >
       {meta.glyph}
@@ -258,6 +279,7 @@ export function GraphView({
               id: node.id, text: node.text, claimType: node.claim_type,
               status: node.assessment_status, confidence: node.assessment_confidence,
               credence: node.assessment_credence ?? null,
+              seedCredence: node.assessment_status == null ? node.seed_credence ?? null : null,
               relation: node.relation_type, reasoning: node.reasoning,
               argumentId: node.argument_id, argumentName: node.argument_name,
               argumentStance: node.argument_stance,
@@ -565,6 +587,14 @@ export function GraphView({
                   credence {d.assessment.claim_credence.toFixed(2)}
                 </Term>
               )}
+              {/* Steward-seeded prior (#285): an unassessed focus with a seed
+                  shows the preliminary figure beside the dashed badge, worded
+                  as what it is — never the assessed "credence". */}
+              {!d.assessment && d.seed?.credence != null && (
+                <Term gloss={SEED_PRELIM_GLOSS} href={DEFINED_IN.confidence} align="start" className={styles.confNum}>
+                  preliminary credence {d.seed.credence.toFixed(2)}
+                </Term>
+              )}
             </div>
           </>
         );
@@ -573,7 +603,7 @@ export function GraphView({
         return (
           <>
             <div className={styles.chipHead}>
-              <Glyph status={c.status} />
+              <Glyph status={c.status} seedCredence={c.seedCredence} />
             </div>
             <div className={styles.t1Text}>{c.text}</div>
             <div className={styles.chipFoot}>
@@ -608,7 +638,7 @@ export function GraphView({
         const c = n.claim!;
         return (
           <>
-            <div className={styles.chipHead}><Glyph status={c.status} size="0.56rem" /></div>
+            <div className={styles.chipHead}><Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} /></div>
             <div className={styles.t2Text}>{c.text}</div>
             <BedStrip bed={c.bedrock} />
           </>
@@ -616,6 +646,19 @@ export function GraphView({
       }
       case "mini":
         return nodeStatusMeta(n.claim!.status).glyph;
+      case "side": {
+        const c = n.claim!;
+        return (
+          <>
+            <div className={styles.chipHead}>
+              <Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} />
+              <span className={styles.atomicTag}>assumed</span>
+            </div>
+            <div className={styles.sideText}>{c.text}</div>
+            <BedStrip bed={c.bedrock} />
+          </>
+        );
+      }
       case "dep":
       case "depstub": {
         const c = n.claim!;
@@ -637,19 +680,6 @@ export function GraphView({
         );
       case "more":
         return n.more!.label;
-      case "side": {
-        const c = n.claim!;
-        return (
-          <>
-            <div className={styles.chipHead}>
-              <Glyph status={c.status} size="0.56rem" />
-              <span className={styles.atomicTag}>assumed</span>
-            </div>
-            <div className={styles.sideText}>{c.text}</div>
-            <BedStrip bed={c.bedrock} />
-          </>
-        );
-      }
     }
   };
 
@@ -763,7 +793,7 @@ export function GraphView({
                     top: n.y,
                     width: n.w,
                     height: n.h,
-                    ...(isMini ? statusVars(n.claim!.status) : null),
+                    ...(isMini ? statusVars(n.claim!.status, n.claim!.seedCredence) : null),
                   }}
                   role={interactive ? "button" : undefined}
                   tabIndex={interactive ? 0 : undefined}
@@ -926,6 +956,15 @@ export function GraphView({
                       {c.credence != null && (
                         <span className={styles.confNum} title={CREDENCE_GLOSS}>
                           credence {c.credence.toFixed(2)}
+                        </span>
+                      )}
+                      {/* Steward-seeded prior (#285), labelled preliminary so
+                          it can never read as an assessed credence. Shown for
+                          any seeded figure — the tint needs confidence, but
+                          the number itself is honest at any value. */}
+                      {c.status == null && c.seedCredence != null && (
+                        <span className={styles.confNum} title={SEED_PRELIM_GLOSS}>
+                          preliminary credence {c.seedCredence.toFixed(2)}
                         </span>
                       )}
                     </div>

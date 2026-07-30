@@ -7,6 +7,7 @@ import {
   RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
   groupByArgument, topLevelEffects, type ArgumentGroup,
+  seedVerity, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap, hasClaimLinks } from "@/lib/claim-links";
 import { ArgumentText } from "./ArgumentText";
@@ -44,6 +45,25 @@ function StanceTag({ stance }: { stance: Stance }) {
   );
 }
 
+// An unassessed subclaim carrying a confident steward-seeded prior (#285)
+// renders a hatched, dashed swatch tinted by where the seed credence points —
+// preliminary-styled so it never reads as the solid swatch of a real verdict.
+// Mid-range seeds (an honest "don't know yet") render nothing, like any
+// unassessed node.
+function SeedSwatch({ node }: { node: TreeNode }) {
+  if (node.assessment_status) return null;
+  const verity = seedVerity(node.seed_credence);
+  if (verity === 0) return null;
+  const cls = verity > 0 ? "st-supported" : "st-contradicted";
+  return (
+    <span
+      className={`swatch seeded ${cls}`}
+      title={`Unassessed · preliminary credence ${node.seed_credence!.toFixed(2)}. ${SEED_PRELIM_GLOSS}`}
+      aria-label="unassessed, with a preliminary steward-seeded credence"
+    />
+  );
+}
+
 // A single subclaim in a basis / label-only argument list: a quiet link with its
 // status swatch, the relation it holds, and the ↗ to open its page. No claim-type
 // chip and no nested tree — the reading-first center leaves deeper structure to
@@ -55,7 +75,7 @@ function BasisNode({ node }: { node: TreeNode }) {
   return (
     <li className="basis-item">
       <div className="basis-row">
-        {node.assessment_status && <Swatch status={node.assessment_status} />}{" "}
+        {node.assessment_status ? <Swatch status={node.assessment_status} /> : <SeedSwatch node={node} />}{" "}
         {rel && (
           <Term
             gloss={rel.gloss}

@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import type { TreeNode } from "@/lib/types";
 import {
   decompositionEffects, effectCounts, topLevelEffects, groupByArgument,
-  EFFECT, EFFECT_ORDER, EFFECT_LEAN, EFFECT_LEAN_ORDER, DEFINED_IN, BASIS,
+  unassessedTintOf, EFFECT, EFFECT_ORDER,
+  UNASSESSED_TINT, UNASSESSED_TINT_ORDER, type UnassessedTint,
+  DEFINED_IN, BASIS,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
 import styles from "./margins.module.css";
@@ -80,12 +82,19 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
   const total = scored.length;
   const deepTotal = decompositionEffects(tree).length;
   // Assessed effects render solid; the unassessed remainder renders hatched,
-  // split by which way each edge points, so a claim whose in-favour side is
-  // still queued never reads as all-against (#189).
+  // split by direction, so a claim whose in-favour side is still queued never
+  // reads as all-against (#189). Where the parent Steward seeded a confident
+  // prior credence (#285), the seed's direction refines the structural edge
+  // lean — a stronger tint, still hatched, still labelled unassessed.
   const present = EFFECT_ORDER.filter((e) => e !== "unassessed" && counts[e] > 0);
-  const leanCounts = { for: 0, against: 0 };
-  for (const s of scored) if (s.effect === "unassessed") leanCounts[s.lean] += 1;
-  const leansPresent = EFFECT_LEAN_ORDER.filter((l) => leanCounts[l] > 0);
+  const tintCounts: Record<UnassessedTint, number> = {
+    "seed-for": 0, "lean-for": 0, "seed-against": 0, "lean-against": 0,
+  };
+  for (const s of scored) {
+    const t = unassessedTintOf(s);
+    if (t) tintCounts[t] += 1;
+  }
+  const tintsPresent = UNASSESSED_TINT_ORDER.filter((t) => tintCounts[t] > 0);
   // The same top-level groups the centre renders, keyed on the same argKey so
   // a click scrolls to the right block.
   const groups = groupByArgument(scored);
@@ -131,11 +140,11 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
         {present.map((e) => (
           <span key={e} className={EFFECT[e].cls} style={{ width: `${(counts[e] / total) * 100}%` }} />
         ))}
-        {leansPresent.map((l) => (
+        {tintsPresent.map((t) => (
           <span
-            key={`unassessed-${l}`}
-            className={`${styles.unassessedSeg} ${EFFECT_LEAN[l].cls}`}
-            style={{ width: `${(leanCounts[l] / total) * 100}%` }}
+            key={`unassessed-${t}`}
+            className={`${styles.unassessedSeg}${UNASSESSED_TINT[t].seeded ? ` ${styles.seededSeg}` : ""} ${UNASSESSED_TINT[t].cls}`}
+            style={{ width: `${(tintCounts[t] / total) * 100}%` }}
           />
         ))}
       </div>
@@ -149,12 +158,15 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
             </Term>
           </li>
         ))}
-        {leansPresent.map((l) => (
-          <li key={`unassessed-${l}`} className={EFFECT_LEAN[l].cls}>
-            <span className={`swatch ${styles.unassessedSwatch} ${EFFECT_LEAN[l].cls}`} aria-hidden />
-            <span className={styles.legendN}>{leanCounts[l]}</span>
-            <Term gloss={EFFECT_LEAN[l].gloss} href={DEFINED_IN.effect} className={styles.legendLbl} align="start">
-              {EFFECT_LEAN[l].label}
+        {tintsPresent.map((t) => (
+          <li key={`unassessed-${t}`} className={UNASSESSED_TINT[t].cls}>
+            <span
+              className={`swatch ${styles.unassessedSwatch}${UNASSESSED_TINT[t].seeded ? ` ${styles.seededSwatch}` : ""} ${UNASSESSED_TINT[t].cls}`}
+              aria-hidden
+            />
+            <span className={styles.legendN}>{tintCounts[t]}</span>
+            <Term gloss={UNASSESSED_TINT[t].gloss} href={DEFINED_IN.effect} className={styles.legendLbl} align="start">
+              {UNASSESSED_TINT[t].label}
             </Term>
           </li>
         ))}

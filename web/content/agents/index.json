@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 5537,
-    "fullChars": 46011
+    "fullChars": 46146
   },
   {
     "key": "matcher",
@@ -21,7 +21,7 @@
     "model": "Claude Haiku 4.5",
     "hasConstitution": true,
     "roleChars": 3870,
-    "fullChars": 44344
+    "fullChars": 44479
   },
   {
     "key": "contribution-reviewer",
@@ -33,7 +33,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 10085,
-    "fullChars": 50559
+    "fullChars": 50694
   },
   {
     "key": "claim-steward",
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5",
     "hasConstitution": true,
-    "roleChars": 14636,
-    "fullChars": 55110
+    "roleChars": 15968,
+    "fullChars": 56577
   },
   {
     "key": "curator",
@@ -57,7 +57,7 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 3511,
-    "fullChars": 43985
+    "fullChars": 44120
   },
   {
     "key": "dispute-arbitrator",
@@ -69,7 +69,7 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 7439,
-    "fullChars": 47913
+    "fullChars": 48048
   },
   {
     "key": "audit-agent",
@@ -81,6 +81,6 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 7213,
-    "fullChars": 47687
+    "fullChars": 47822
   }
 ]

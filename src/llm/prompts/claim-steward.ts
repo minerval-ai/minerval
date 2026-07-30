@@ -66,6 +66,20 @@ premise the claim takes as given, usually settled). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
+When you mint a new subclaim, seed it: you have already formed a view of
+whether the dependency holds while judging what your claim turns on, so pass
+seed_credence on add_decomposition_edge — your prior that the subclaim is
+true — and, where a sentence of context would help its eventual Steward or an
+early reader, a brief seed_note (a paragraph or two at most). The seed is a
+hint, not an assessment: the subclaim stays unassessed until its own Steward
+runs, and every surface labels the seed preliminary and attributes it to you
+automatically, so never write "this is preliminary" into the note yourself.
+Two limits hold. Seed only your DIRECT subclaims at creation — do not
+decompose a subclaim's own dependencies or write anything approaching its
+full assessment; and omit seed_credence where one number would be false
+precision, exactly as with claim_credence. Seeding is for the decomposition
+path only; claims arriving from extraction carry no prior, by design.
+
 ## Arguments
 
 Where distinct lines of reasoning bear on the claim (§7), group each one's
@@ -151,6 +165,10 @@ the source instances, and the direct evidence, never a mechanical roll-up:
 - A claim with no subclaims is assessed from its instances and outside
   evidence. Where the question bottoms out in values, make that explicit and
   leave the choice to the reader (§25).
+- Your claim may carry a preliminary_seed: the prior credence and note its
+  parent claim's Steward recorded when minting it. Weigh it as one input from
+  a colleague who saw the claim in context, nothing more; your assessment
+  supersedes it, and agreeing with it is not a goal.
 
 Record the verdict with update_claim_assessment: a status from §10 (verified,
 supported, contested, unsupported, contradicted, unknown) and two numbers.

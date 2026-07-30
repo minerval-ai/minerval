@@ -148,6 +148,70 @@ describe("steward add_decomposition_edge", () => {
     const claimRow = insertedValues.find((r) => "text" in r);
     expect(claimRow).not.toHaveProperty("contestation");
   });
+
+  it("stores the seed prior on the claim row with the parent as its author (#285)", async () => {
+    const parentId = "22222222-2222-2222-2222-222222222222";
+    const out = await executeStewardTool("add_decomposition_edge", {
+      parent_id: parentId,
+      child_text: "Atmospheric CO2 concentration has risen since 1850",
+      relation: "requires",
+      reasoning: "load-bearing premise",
+      seed_credence: 0.97,
+      seed_note: "Directly measured at Mauna Loa since 1958 and via ice cores before.",
+    });
+    expect(JSON.parse(out).success).toBe(true);
+    const claimRow = insertedValues.find((r) => "text" in r);
+    // On the CLAIMS row — never an assessments row, so no is_current query,
+    // history, or trajectory read can ever surface the seed as an assessment.
+    expect(claimRow).toMatchObject({
+      seedCredence: 0.97,
+      seedNote: "Directly measured at Mauna Loa since 1958 and via ice cores before.",
+      seedSourceClaimId: parentId,
+    });
+    expect(insertedValues.find((r) => "status" in r)).toBeUndefined();
+  });
+
+  it("clamps the seed credence into [0, 1] like every unit-interval input", async () => {
+    await executeStewardTool("add_decomposition_edge", {
+      parent_id: "22222222-2222-2222-2222-222222222222",
+      child_text: "A subclaim with an out-of-range prior",
+      relation: "supports",
+      reasoning: "supporting evidence",
+      seed_credence: 1.4,
+    });
+    const claimRow = insertedValues.find((r) => "text" in r);
+    expect(claimRow?.seedCredence).toBe(1);
+    expect(claimRow?.seedSourceClaimId).toBe("22222222-2222-2222-2222-222222222222");
+  });
+
+  it("leaves all seed columns unset when no seed is given (extraction parity)", async () => {
+    await executeStewardTool("add_decomposition_edge", {
+      parent_id: "22222222-2222-2222-2222-222222222222",
+      child_text: "Subclaim minted without a prior",
+      relation: "requires",
+      reasoning: "needed dependency",
+    });
+    const claimRow = insertedValues.find((r) => "text" in r);
+    expect(claimRow).not.toHaveProperty("seedCredence");
+    expect(claimRow).not.toHaveProperty("seedNote");
+    expect(claimRow).not.toHaveProperty("seedSourceClaimId");
+  });
+
+  it("bounces a seed note long enough to be a full assessment", async () => {
+    const out = await executeStewardTool("add_decomposition_edge", {
+      parent_id: "22222222-2222-2222-2222-222222222222",
+      child_text: "A subclaim whose seed note overreaches",
+      relation: "requires",
+      reasoning: "needed dependency",
+      seed_credence: 0.8,
+      seed_note: "x".repeat(2100),
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/its own Steward/);
+    // Nothing was written: the steward re-calls with a briefer note.
+    expect(insertedValues.find((r) => "text" in r)).toBeUndefined();
+  });
 });
 
 describe("steward log_stewardship_decision", () => {

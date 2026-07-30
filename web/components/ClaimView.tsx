@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ClaimDetail } from "@/lib/types";
 import {
   statusMeta, isStatus, claimTypeMeta, decompositionNote,
-  DEFINED_IN, VERDICT_CONFIDENCE_GLOSS,
+  DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { modelDisplayName } from "@/lib/model-names";
@@ -26,6 +26,14 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
   // status. Only treat it as a real assessment when the status is on-enum.
   const assessment =
     detail.assessment && isStatus(detail.assessment.status) ? detail.assessment : null;
+  // Steward-seeded prior (#285): the parent claim's Steward's preliminary
+  // credence and note. The API only serves it while the claim is unassessed;
+  // the gate here keeps the invariant even against a stale cache — a seed
+  // must never render beside a real assessment.
+  const seed =
+    !assessment && detail.seed && (detail.seed.credence != null || detail.seed.note)
+      ? detail.seed
+      : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
@@ -60,6 +68,35 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           Not yet assessed — this claim has been extracted but has not completed the
           assessment pipeline.
         </p>
+      )}
+
+      {/* Steward-seeded prior (#285): the hint left by the Steward of the
+          parent claim when it created this subclaim. The label is applied
+          here, mechanically — the authoring Steward never writes its own
+          disclaimer — and the whole block disappears the moment this claim's
+          own assessment lands (the API stops serving the seed). */}
+      {seed && (
+        <aside className="seed-prelim" aria-label="Preliminary note">
+          <p className="seed-prelim-label">
+            <span className="sc">Preliminary</span>
+            {" — from the Steward of "}
+            {seed.seeded_by ? (
+              <Link href={`/claims/${seed.seeded_by.id}`}>{seed.seeded_by.text}</Link>
+            ) : (
+              "the claim this one was decomposed from"
+            )}
+            , recorded when this subclaim was created and pending this
+            claim&apos;s own assessment.
+          </p>
+          {seed.credence != null && (
+            <p className="seed-prelim-credence">
+              <Term gloss={SEED_PRELIM_GLOSS} href={DEFINED_IN.confidence} className="conf-quiet">
+                preliminary credence {seed.credence.toFixed(2)}
+              </Term>
+            </p>
+          )}
+          {seed.note && <p className="seed-prelim-note">{seed.note}</p>}
+        </aside>
       )}
 
       {/* assessment band */}

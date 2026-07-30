@@ -351,10 +351,12 @@ export const EFFECT: Record<Effect, { label: string; cls: string; gloss: string 
 export const EFFECT_ORDER: Effect[] = ["supports", "uncertain", "against", "weak", "unassessed"];
 
 // Which way a node's edge chain points, independent of any assessment: the
-// direction it WOULD bear if it were established. For an unassessed node this
-// is the only directional signal there is, so surfaces render it distinctly
-// (hatched, lightened — a direction, never a verdict). When steward-seeded
-// prior credences land (#285) they will refine this, not replace the state.
+// direction it WOULD bear if it were established. For an unseeded unassessed
+// node this is the only directional signal there is, so surfaces render it
+// distinctly (hatched, lightened — a direction, never a verdict). A confident
+// steward-seeded prior credence (#285) REFINES this — same unassessed state,
+// same preliminary styling, but the tint now says where the seed points
+// instead of merely where the edge does.
 export type EffectLean = "for" | "against";
 
 export const EFFECT_LEAN_ORDER: EffectLean[] = ["for", "against"];
@@ -369,6 +371,34 @@ export const EFFECT_LEAN: Record<EffectLean, { label: string; cls: string; gloss
     gloss: "Not yet assessed. Its edge points against this claim — a direction, not a verdict.",
   },
 };
+
+// ---------------------------------------------------------------------------
+// Steward-seeded prior credence (#285). When a parent claim's Steward mints a
+// subclaim it may seed a prior credence — its probability the subclaim is
+// true — and a brief preliminary note. The subclaim STILL reads as
+// unassessed: the seed never changes state, only how the unassessed node is
+// tinted in scan-over-many surfaces (map, compass, tree). Only a confident
+// seed colours anything; a mid-range prior is an honest "don't know yet" and
+// renders exactly like an unseeded node.
+// ---------------------------------------------------------------------------
+
+export const SEED_LEANS_TRUE = 0.75;   // seed credence at/above: likely true
+export const SEED_LEANS_FALSE = 0.25;  // seed credence at/below: likely false
+
+// What a seed says about the node's OWN truth: +1 likely true, -1 likely
+// false, 0 no confident signal. This is the map's tint (the map colours each
+// claim by its own standing); the compass/tree compose it with edge polarity.
+export function seedVerity(credence: number | null | undefined): -1 | 0 | 1 {
+  if (credence == null) return 0;
+  if (credence >= SEED_LEANS_TRUE) return 1;
+  if (credence <= SEED_LEANS_FALSE) return -1;
+  return 0;
+}
+
+// The mechanical "preliminary" label (#285): every surface that shows a seed
+// says what it is, so it can never read as an assessment.
+export const SEED_PRELIM_GLOSS =
+  "Preliminary credence: the prior probability the parent claim's Steward gave this claim when creating it, pending this claim's own assessment. A seed, not a verdict — the claim is still unassessed.";
 
 // Only `contradicts` reverses polarity. requires / supports / specifies /
 // defines / assumes are all structurally affirmative edges (a failed
@@ -401,14 +431,55 @@ export interface ScoredNode {
   // it would push if established. Carried for every node; it only drives
   // rendering where the effect is "unassessed".
   lean: EffectLean;
+  // Where a confident steward-seeded prior says the node WOULD push the root
+  // (#285): the seed's likely-truth composed with the edge chain's sign, so a
+  // likely-FALSE premise on a supporting chain tints AGAINST even though its
+  // edge leans for. Null when there is no seed, the seed is mid-range, or the
+  // node is assessed (a real assessment supersedes any seed).
+  seed: EffectLean | null;
 }
 
 function scoreNode(node: TreeNode, sign: number): ScoredNode {
+  const effect = nodeEffect(node.assessment_status, sign);
+  const verity = effect === "unassessed" ? seedVerity(node.seed_credence) : 0;
   return {
     node,
-    effect: nodeEffect(node.assessment_status, sign),
+    effect,
     lean: sign < 0 ? "against" : "for",
+    seed: verity === 0 ? null : sign * verity > 0 ? "for" : "against",
   };
+}
+
+// How an unassessed node is tinted (#285/#189): the seed's refined direction
+// when a confident seed exists, the structural edge lean otherwise. Null for
+// assessed nodes — their effect colours them solid.
+export type UnassessedTint = "seed-for" | "seed-against" | "lean-for" | "lean-against";
+
+export const UNASSESSED_TINT_ORDER: UnassessedTint[] = [
+  "seed-for", "lean-for", "seed-against", "lean-against",
+];
+
+export const UNASSESSED_TINT: Record<
+  UnassessedTint,
+  { label: string; cls: string; gloss: string; seeded: boolean }
+> = {
+  "seed-for": {
+    label: "unassessed · leans in favour", cls: "st-supported", seeded: true,
+    gloss:
+      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would bear in favour of this claim — a hint pending its own assessment, not a verdict.",
+  },
+  "seed-against": {
+    label: "unassessed · leans against", cls: "st-contradicted", seeded: true,
+    gloss:
+      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would weigh against this claim — a hint pending its own assessment, not a verdict.",
+  },
+  "lean-for": { ...EFFECT_LEAN.for, seeded: false },
+  "lean-against": { ...EFFECT_LEAN.against, seeded: false },
+};
+
+export function unassessedTintOf(s: ScoredNode): UnassessedTint | null {
+  if (s.effect !== "unassessed") return null;
+  return s.seed ? `seed-${s.seed}` : `lean-${s.lean}`;
 }
 
 // Flatten the decomposition (excluding the root) in outline order, tagging each

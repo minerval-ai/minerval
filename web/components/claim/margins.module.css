@@ -109,12 +109,24 @@
   opacity: 0.55;
 }
 
+/* steward-seeded segments (#285): a confident preliminary credence carries
+   more signal than a bare edge direction, so the hatch reads a shade
+   stronger — but it stays a hatch. Solid is reserved for assessed effects. */
+.distBar > span.unassessedSeg.seededSeg {
+  opacity: 0.78;
+}
+
 /* the matching legend swatch: same hatch, dashed edge like every unassessed
    marker on the site (cf. .swatch.st-unassessed, #160) */
 .legend .unassessedSwatch {
   background: repeating-linear-gradient(-45deg, currentColor 0 2px, transparent 2px 4px);
   border-style: dashed;
   opacity: 0.7;
+}
+
+/* the seeded legend swatch matches its stronger bar segment (#285) */
+.legend .unassessedSwatch.seededSwatch {
+  opacity: 0.92;
 }
 
 .legend {

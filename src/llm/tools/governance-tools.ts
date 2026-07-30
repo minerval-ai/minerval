@@ -275,6 +275,19 @@ async function getClaimWithContext(claimId: string) {
     evaluations.map((e) => [e.argument_id, e])
   );
 
+  // Steward-seeded prior (#285): the hint the parent claim's Steward left when
+  // it minted this claim. Served only while the claim has no current
+  // assessment — once its own Steward has judged, the seed is history and must
+  // not sit beside the verdict as a second opinion.
+  const preliminarySeed =
+    !assessment && (claim.seedCredence != null || claim.seedNote != null)
+      ? {
+          credence: claim.seedCredence,
+          note: claim.seedNote,
+          seeded_by_claim_id: claim.seedSourceClaimId,
+        }
+      : null;
+
   return {
     claim: {
       id: claim.id,
@@ -286,6 +299,9 @@ async function getClaimWithContext(claimId: string) {
       children_total: claim.childrenTotal,
       children_assessed: claim.childrenAssessed,
     },
+    // The parent Steward's preliminary prior, when one exists and the claim is
+    // still unassessed: one input among many, superseded by a real assessment.
+    ...(preliminarySeed ? { preliminary_seed: preliminarySeed } : {}),
     current_assessment: assessment
       ? {
           status: assessment.status,

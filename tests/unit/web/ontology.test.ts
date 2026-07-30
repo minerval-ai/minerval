@@ -8,7 +8,8 @@ import { describe, it, expect } from "vitest";
 // a queued side's direction without dressing it up as a verdict.
 import {
   decompositionEffects, topLevelEffects, effectCounts, netEffect,
-  groupByArgument, type Effect,
+  groupByArgument, seedVerity, unassessedTintOf,
+  SEED_LEANS_TRUE, SEED_LEANS_FALSE, type Effect,
 } from "../../../web/lib/ontology";
 import type { TreeNode } from "../../../web/lib/types";
 
@@ -108,6 +109,78 @@ describe("netEffect", () => {
 
   it("reads an entirely unassessed line of reasoning as unassessed", () => {
     expect(netEffect({ ...zero, unassessed: 3 })).toBe("unassessed");
+  });
+});
+
+// Steward-seeded prior credences (#285): a confident seed refines an
+// unassessed node's tint — composed with edge polarity like everything else —
+// while the node's EFFECT stays "unassessed". The seed colours; it never
+// upgrades pending into a finding.
+describe("steward-seeded priors", () => {
+  it("keeps the effect unassessed no matter how confident the seed is", () => {
+    const [s] = topLevelEffects(root([node({ seed_credence: 0.99 })]));
+    expect(s.effect).toBe("unassessed");
+  });
+
+  it("refines the tint toward the seed's direction on a supporting edge", () => {
+    const [s] = topLevelEffects(root([node({ seed_credence: 0.9 })]));
+    expect(s.seed).toBe("for");
+    expect(unassessedTintOf(s)).toBe("seed-for");
+  });
+
+  it("a likely-FALSE seed flips the tint against, even though the edge leans for", () => {
+    const [s] = topLevelEffects(root([node({ relation_type: "requires", seed_credence: 0.1 })]));
+    expect(s.lean).toBe("for");
+    expect(s.seed).toBe("against");
+    expect(unassessedTintOf(s)).toBe("seed-against");
+  });
+
+  it("a likely-TRUE seed on a contradicts edge tints against the root", () => {
+    const [s] = topLevelEffects(root([
+      node({ relation_type: "contradicts", seed_credence: 0.9 }),
+    ]));
+    expect(s.seed).toBe("against");
+    expect(unassessedTintOf(s)).toBe("seed-against");
+  });
+
+  it("composes the seed with polarity down the tree, like every other signal", () => {
+    // an opposing line whose own premise is seeded likely-true: two flips
+    const grandchild = node({ relation_type: "contradicts", seed_credence: 0.9 });
+    const child = node({ relation_type: "contradicts", children: [grandchild] });
+    const scored = decompositionEffects(root([child]));
+    expect(scored[1]).toMatchObject({ effect: "unassessed", seed: "for" });
+  });
+
+  it("a mid-range seed is an honest don't-know: no tint beyond the edge lean", () => {
+    const [s] = topLevelEffects(root([node({ seed_credence: 0.5 })]));
+    expect(s.seed).toBeNull();
+    expect(unassessedTintOf(s)).toBe("lean-for");
+  });
+
+  it("a real assessment supersedes the seed entirely", () => {
+    const [s] = topLevelEffects(root([
+      node({ assessment_status: "contradicted", seed_credence: 0.95 }),
+    ]));
+    expect(s.effect).toBe("against");
+    expect(s.seed).toBeNull();
+    expect(unassessedTintOf(s)).toBeNull();
+  });
+
+  it("seedVerity draws its thresholds inclusively", () => {
+    expect(seedVerity(null)).toBe(0);
+    expect(seedVerity(undefined)).toBe(0);
+    expect(seedVerity(SEED_LEANS_TRUE)).toBe(1);
+    expect(seedVerity(SEED_LEANS_FALSE)).toBe(-1);
+    expect(seedVerity(SEED_LEANS_TRUE - 0.01)).toBe(0);
+    expect(seedVerity(SEED_LEANS_FALSE + 0.01)).toBe(0);
+  });
+
+  it("does not change the argument's net effect — pending is still not a finding", () => {
+    const counts = effectCounts(topLevelEffects(root([
+      node({ seed_credence: 0.95 }),
+      node({ seed_credence: 0.9 }),
+    ])));
+    expect(netEffect(counts)).toBe("unassessed");
   });
 });
 
