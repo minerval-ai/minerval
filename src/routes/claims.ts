@@ -68,6 +68,9 @@ export const assessmentSchema = {
     reasoning_trace: { type: "string" },
     subclaim_summary: { type: "object", additionalProperties: true },
     assessed_at: { type: "string", format: "date-time" },
+    // Raw API id of the model that produced the assessment (#294); null for
+    // rows written before the column existed.
+    model: { type: "string", nullable: true },
   },
 } as const;
 
@@ -740,6 +743,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     trigger: { type: "string", nullable: true },
                     trigger_context: { type: "string", nullable: true },
                     assessed_at: { type: "string", format: "date-time" },
+                    model: { type: "string", nullable: true },
                   },
                 },
               },
@@ -1042,7 +1046,7 @@ function formatClaim(claim: { id: string; text: string; claimType: string; state
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null }) {
   return {
     id: a.id,
     status: a.status,
@@ -1058,6 +1062,8 @@ export function formatAssessment(a: { id: string; status: string; confidence: nu
     // Guarantee a non-null object so clients can safely Object.entries() it (issue #17).
     subclaim_summary: a.subclaimSummary ?? {},
     assessed_at: a.assessedAt.toISOString(),
+    // The assessor behind the verdict (#294); null for legacy rows.
+    model: a.model ?? null,
   };
 }
 
@@ -1074,6 +1080,7 @@ function formatAssessmentHistory(a: {
   trigger: string | null;
   triggerContext: string | null;
   assessedAt: Date;
+  model?: string | null;
 }) {
   return {
     id: a.id,
@@ -1088,6 +1095,7 @@ function formatAssessmentHistory(a: {
     trigger: a.trigger,
     trigger_context: a.triggerContext,
     assessed_at: a.assessedAt.toISOString(),
+    model: a.model ?? null,
   };
 }
 

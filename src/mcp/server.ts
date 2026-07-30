@@ -82,6 +82,7 @@ function formatAssessment(
     summary: string | null;
     reasoningTrace: string;
     assessedAt: Date;
+    model?: string | null;
   } | null
 ) {
   if (!a) return null;
@@ -96,6 +97,8 @@ function formatAssessment(
     summary: a.summary ?? a.reasoningTrace,
     reasoning_trace: a.reasoningTrace,
     assessed_at: a.assessedAt.toISOString(),
+    // The assessor behind the verdict (#294); null for legacy rows.
+    model: a.model ?? null,
   };
 }
 
