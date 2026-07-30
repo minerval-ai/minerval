@@ -372,6 +372,28 @@ export function getStewardToolDefinitions(): Tool[] {
               "it is recorded for effort allocation and does not affect " +
               "processing yet.",
           },
+          seed_credence: {
+            type: "number",
+            description:
+              "Your prior credence (0.0-1.0) that this subclaim, as stated, is " +
+              "TRUE — the same judgment you form anyway while weighing what the " +
+              "parent turns on, recorded so the subclaim can be read at a " +
+              "glance before its own Steward runs. A seed, not an assessment: " +
+              "the subclaim stays unassessed, the system marks the seed " +
+              "preliminary and attributes it to you mechanically, and its own " +
+              "Steward's verdict supersedes it. Omit it where one number would " +
+              "be false precision, exactly as with claim_credence.",
+          },
+          seed_note: {
+            type: "string",
+            description:
+              "Optional brief preliminary note to accompany seed_credence: a " +
+              "paragraph or two on why the prior sits where it does, written " +
+              "in the reader-facing register. NOT a full assessment — no " +
+              "sub-decomposition, no verdict language, and do not write 'this " +
+              "is preliminary' yourself; the page labels the note preliminary " +
+              "and names you (the parent claim's Steward) automatically.",
+          },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
       },
@@ -957,6 +979,29 @@ export async function executeStewardTool(
         // Recorded on the new subclaim for the eventual stakes/yield split
         // (#172 phase 1); the deferral gate below still reads only importance.
         const contestation = clampUnit(input.contestation);
+        // Steward-seeded prior (#285): the parent Steward's credence that this
+        // subclaim is true, plus an optional brief note. Stored on the claim
+        // row — never as an assessment — so the subclaim still reads as
+        // unassessed everywhere; read paths label the seed preliminary and
+        // attribute it to the parent claim mechanically (seedSourceClaimId).
+        const seedCredence = clampUnit(input.seed_credence);
+        const seedNote =
+          typeof input.seed_note === "string" && input.seed_note.trim()
+            ? input.seed_note.trim()
+            : undefined;
+        // A paragraph or two, not an assessment: links cost little here, so the
+        // cap is roomier than the prose it should hold, but it stops the seed
+        // from becoming the full assessment that belongs to the subclaim's own
+        // Steward.
+        if (seedNote && seedNote.length > 2000) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `seed_note is ${seedNote.length} chars; keep it under 2000. ` +
+              `It is a brief preliminary note (a paragraph or two), not the ` +
+              `subclaim's assessment — that belongs to its own Steward.`,
+          });
+        }
 
         const db = getDb();
 
@@ -993,6 +1038,13 @@ export async function executeStewardTool(
             embedding: embedding ?? undefined,
             ...(importance !== undefined ? { importance } : {}),
             ...(contestation !== undefined ? { contestation } : {}),
+            ...(seedCredence !== undefined ? { seedCredence } : {}),
+            ...(seedNote !== undefined ? { seedNote } : {}),
+            // Provenance for the mechanical "preliminary" label: which claim's
+            // Steward wrote the seed. Stamped whenever any seed field is given.
+            ...(seedCredence !== undefined || seedNote !== undefined
+              ? { seedSourceClaimId: parentId }
+              : {}),
             ...(gated ? { stewardState: "deferred" } : {}),
             pipelineEpoch,
             createdBy: "claim_steward",
@@ -1033,6 +1085,12 @@ export async function executeStewardTool(
           success: true,
           message:
             `Added subclaim to ${parentId}: "${childText}" (${relation})` +
+            (seedCredence !== undefined
+              ? `; seeded with prior credence ${seedCredence}` +
+                (seedNote ? " and a preliminary note" : "")
+              : seedNote
+                ? `; seeded with a preliminary note`
+                : "") +
             (gated
               ? `; kept as a deferred embedded stub (importance ` +
                 `${effectiveImportance} below the decomposition threshold ` +

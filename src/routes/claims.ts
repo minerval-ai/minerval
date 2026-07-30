@@ -231,6 +231,25 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               claim: claimSchema,
               assessment: assessmentSchema,
               subclaim_count: { type: "integer" },
+              // Steward-seeded prior (#285): the parent claim's Steward's
+              // preliminary credence/note, served only while this claim has
+              // no current assessment — the claim still reads as unassessed.
+              seed: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  credence: { type: "number", nullable: true },
+                  note: { type: "string", nullable: true },
+                  seeded_by: {
+                    type: "object",
+                    nullable: true,
+                    properties: {
+                      id: { type: "string", format: "uuid" },
+                      text: { type: "string" },
+                    },
+                  },
+                },
+              },
               tree: { type: "object", nullable: true, additionalProperties: true },
               arguments: { type: "array", nullable: true },
               instances: { type: "array", nullable: true },
@@ -270,6 +289,22 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
         };
+
+        // Steward-seeded prior (#285): surfaced only while the claim has no
+        // current assessment. Once its own Steward has judged, the seed is
+        // history — it must never sit beside the verdict as a second opinion.
+        if (!assessment && (claim.seedCredence != null || claim.seedNote != null)) {
+          let seededBy: { id: string; text: string } | null = null;
+          if (claim.seedSourceClaimId) {
+            const source = await getClaimById(claim.seedSourceClaimId);
+            if (source) seededBy = { id: source.id, text: source.text };
+          }
+          response.seed = {
+            credence: claim.seedCredence,
+            note: claim.seedNote,
+            seeded_by: seededBy,
+          };
+        }
 
         // Standard: + full tree (depth-capped on request — the claim map
         // renders three rings per view and shouldn't pay for five)

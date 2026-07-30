@@ -78,7 +78,7 @@ When should a claim be decomposed? That is a question of effort, governed by imp
 
 ### 7. Arguments
 
-A claim may have several distinct arguments: coherent, self-contained lines of reasoning that bear on its truth. Each argument groups its own subclaims; different arguments may share subclaims while arranging them differently, or rest on different premises entirely. "God exists" carries the cosmological argument, the teleological argument, and the argument from evil against, each a structured set of premises that could in principle succeed or fail on its own. The same shape recurs in policy (independent cases for and against a minimum wage increase) and in empirical science (CMB measurements, stellar evolution, and nucleosynthesis independently supporting the age of the universe). For a simple claim with one natural line of support, the structure is transparent and no explicit grouping is needed.
+A claim may have several distinct arguments: coherent, self-contained lines of reasoning that bear on its truth. Each argument groups its own subclaims; different arguments may share subclaims while arranging them differently, or rest on different premises entirely. "God exists" carries the cosmological argument, the teleological argument, and the argument from evil against, each a structured set of premises that could in principle succeed or fail on its own. The same shape recurs in policy (independent cases for and against a minimum wage increase) and in empirical science (CMB measurements, stellar evolution, and nucleosynthesis independently supporting the age of the universe). For a simple claim with one natural line of support, the structure is transparent and no explicit grouping is needed; those ungrouped subclaims are the claim's basis, the dependencies it rests on directly before any are gathered under a named argument.
 
 Every named argument carries a written form: one to three sentences stating the inference plainly, referencing each of its attached subclaims inline. Connective language ("therefore," "because," "given that") lives here and only here; claims remain single propositions. The written form states the inference without judging it. Every attached subclaim appears in the prose, but the prose may also carry what the argument needs and the graph does not: minor premises, steps, and evidence that are not proper claims (§2). If such a step is later disputed, it can be promoted to a claim and attached; until then it lives in the prose.
 
@@ -386,11 +386,26 @@ premise the claim takes as given, usually settled). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
+When you mint a new subclaim, seed it: you have already formed a view of
+whether the dependency holds while judging what your claim turns on, so pass
+seed_credence on add_decomposition_edge — your prior that the subclaim is
+true — and, where a sentence of context would help its eventual Steward or an
+early reader, a brief seed_note (a paragraph or two at most). The seed is a
+hint, not an assessment: the subclaim stays unassessed until its own Steward
+runs, and every surface labels the seed preliminary and attributes it to you
+automatically, so never write "this is preliminary" into the note yourself.
+Two limits hold. Seed only your DIRECT subclaims at creation — do not
+decompose a subclaim's own dependencies or write anything approaching its
+full assessment; and omit seed_credence where one number would be false
+precision, exactly as with claim_credence. Seeding is for the decomposition
+path only; claims arriving from extraction carry no prior, by design.
+
 ## Arguments
 
 Where distinct lines of reasoning bear on the claim (§7), group each one's
 subclaims under a named argument: add_argument, then pass the returned
-argument_id on the edges. One natural line of support needs no named argument.
+argument_id on the edges. One natural line of support needs no named argument;
+its subclaims stand as the claim's basis, the dependencies it rests on directly.
 
 Every named argument carries a written form. After attaching its edges, call
 write_argument with one to three sentences stating how the subclaims combine,
@@ -470,6 +485,10 @@ the source instances, and the direct evidence, never a mechanical roll-up:
 - A claim with no subclaims is assessed from its instances and outside
   evidence. Where the question bottoms out in values, make that explicit and
   leave the choice to the reader (§25).
+- Your claim may carry a preliminary_seed: the prior credence and note its
+  parent claim's Steward recorded when minting it. Weigh it as one input from
+  a colleague who saw the claim in context, nothing more; your assessment
+  supersedes it, and agreeing with it is not a goal.
 
 Record the verdict with update_claim_assessment: a status from §10 (verified,
 supported, contested, unsupported, contradicted, unknown) and two numbers.

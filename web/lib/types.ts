@@ -44,6 +44,12 @@ export interface TreeNode {
   // stated none (the omission is information, constitution §10). Optional so
   // a frontend deploy ahead of the API degrades to no figure.
   assessment_credence?: number | null;
+  // Steward-seeded prior credence (#285): the parent claim's Steward's
+  // preliminary probability that this claim is true, recorded when the
+  // subclaim was minted. The API serves it only while the node has NO current
+  // assessment — the node still reads as unassessed; a confident seed merely
+  // tints it in scan surfaces (hatched, preliminary-styled, never a verdict).
+  seed_credence?: number | null;
   argument_id: string | null;
   argument_name: string | null;
   argument_stance: Stance | null;
@@ -207,10 +213,25 @@ export interface ContributionExchange {
   } | null;
 }
 
+// The Steward-seeded prior on an unassessed claim (#285): the prior credence
+// and brief preliminary note the PARENT claim's Steward recorded when it
+// minted this claim as a subclaim. Served by the API only while the claim has
+// no current assessment; `seeded_by` names the authoring claim so the UI can
+// apply the "preliminary, pending this claim's own assessment" label
+// mechanically. Never a substitute for an Assessment.
+export interface ClaimSeed {
+  credence: number | null;
+  note: string | null;
+  seeded_by: { id: string; text: string } | null;
+}
+
 export interface ClaimDetail {
   claim: ClaimCore;
   assessment: Assessment | null;
   subclaim_count: number;
+  // Steward-seeded prior (#285); absent when the claim is assessed, unseeded,
+  // or the API predates the field.
+  seed?: ClaimSeed | null;
   tree?: TreeNode;
   arguments?: ArgumentItem[];
   instances?: Instance[];

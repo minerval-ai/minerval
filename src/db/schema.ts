@@ -102,6 +102,25 @@ export const claims = pgTable(
     // attempt cap, so a truly poison claim stops spinning while a transient
     // outage never permanently strands the graph.
     stewardAttempts: integer("steward_attempts").notNull().default(0),
+    // --- Steward-seeded prior (#285) ---
+    // When a parent claim's Steward mints this claim as a subclaim during
+    // decomposition, it may seed a prior credence (its probability the subclaim
+    // is true) and a brief preliminary note. Deliberately columns on the claim
+    // row, NOT an assessments row: the seed must never satisfy an is_current
+    // assessment query, appear in assessment history, or move the claim out of
+    // "unassessed" — it is a hint that lowers the eventual Steward's activation
+    // energy, colorable in scan-over-many views but never a verdict. Read paths
+    // stop serving it the moment the claim gains a current assessment. The
+    // decomposition path only: Extractor-minted claims never carry one (their
+    // source would bias the prior). NULL = no seed.
+    seedCredence: real("seed_credence"),
+    seedNote: text("seed_note"),
+    // Which claim's Steward wrote the seed — the provenance the mechanical
+    // "preliminary" disclaimer names. SET NULL so the seed survives its author.
+    seedSourceClaimId: uuid("seed_source_claim_id").references(
+      (): any => claims.id,
+      { onDelete: "set null" }
+    ),
     embedding: vector("embedding"),
     textSearch: tsvector("text_search").generatedAlwaysAs(
       (): SQL => sql`to_tsvector('english', ${claims.text})`

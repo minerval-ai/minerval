@@ -9,6 +9,10 @@ interface TreeRootRow {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
+  // Steward-seeded prior credence (#285), served only while the claim has no
+  // current assessment (the SQL nulls it out once one exists) so a seed can
+  // never sit beside — or masquerade as — a real credence.
+  seed_credence: number | null;
 }
 
 interface TreeEdgeRow {
@@ -29,6 +33,7 @@ interface TreeEdgeRow {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
+  seed_credence: number | null;
 }
 
 /**
@@ -69,7 +74,8 @@ export async function getClaimTree(
   const [root] = await rawQuery<TreeRootRow>(
     `SELECT c.id, c.text, c.claim_type, c.state,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
-            a.claim_credence AS assessment_credence
+            a.claim_credence AS assessment_credence,
+            CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence
        FROM claims c
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
       WHERE c.id = $1`,
@@ -95,7 +101,8 @@ export async function getClaimTree(
               arg.content AS argument_content,
               ae.verdict AS argument_verdict, ae.content AS argument_evaluation,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
-              a.claim_credence AS assessment_credence
+              a.claim_credence AS assessment_credence,
+              CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.child_claim_id
          LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
@@ -263,6 +270,7 @@ function assembleTree(
       assessment_status: node.assessment_status,
       assessment_confidence: node.assessment_confidence,
       assessment_credence: node.assessment_credence,
+      seed_credence: node.seed_credence,
       argument_id: edge?.argument_id ?? null,
       argument_name: edge?.argument_name ?? null,
       argument_stance: edge?.argument_stance ?? null,

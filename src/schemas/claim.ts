@@ -117,6 +117,11 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     // stated none (constitution §10: the omission is itself information).
     // Optional so pre-deploy responses still parse.
     assessment_credence: z.number().nullable().optional(),
+    // Steward-seeded prior credence (#285): the parent claim's Steward's
+    // preliminary probability the claim is true, recorded when the subclaim
+    // was minted. Present only while the node has NO current assessment (the
+    // node still reads as unassessed); a hint for scan surfaces, not a verdict.
+    seed_credence: z.number().nullable().optional(),
     argument_id: uuidSchema.nullable(),
     argument_name: z.string().nullable(),
     argument_stance: stanceEnum.nullable(),
@@ -153,6 +158,7 @@ export interface TreeNode {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence?: number | null;
+  seed_credence?: number | null;
   argument_id: string | null;
   argument_name: string | null;
   argument_stance: string | null;
@@ -168,6 +174,19 @@ export const claimDetailResponse = z.object({
   claim: claimResponse,
   assessment: assessmentResponse.nullable(),
   subclaim_count: z.number(),
+  // Steward-seeded prior (#285): served only while the claim has no current
+  // assessment. `seeded_by` names the parent claim whose Steward wrote it, so
+  // the UI can label the note preliminary and attribute it mechanically.
+  seed: z
+    .object({
+      credence: z.number().nullable(),
+      note: z.string().nullable(),
+      seeded_by: z
+        .object({ id: uuidSchema, text: z.string() })
+        .nullable(),
+    })
+    .nullable()
+    .optional(),
   tree: treeNodeResponse.optional(),
   arguments: z
     .array(
