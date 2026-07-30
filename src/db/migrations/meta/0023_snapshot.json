@@ -1,6 +1,6 @@
 {
-  "id": "64a90f7f-1ddc-4bd3-a4aa-a0136e9f769c",
-  "prevId": "da8ffb4a-4b93-4171-b8d6-426f446699cf",
+  "id": "4c25aead-45cb-4308-bd64-9d58c9f605c2",
+  "prevId": "64a90f7f-1ddc-4bd3-a4aa-a0136e9f769c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1550,6 +1550,24 @@
           "notNull": true,
           "default": 0
         },
+        "seed_credence": {
+          "name": "seed_credence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_note": {
+          "name": "seed_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_source_claim_id": {
+          "name": "seed_source_claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "embedding": {
           "name": "embedding",
           "type": "vector(1536)",
@@ -1675,6 +1693,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "claims_seed_source_claim_id_claims_id_fk": {
+          "name": "claims_seed_source_claim_id_claims_id_fk",
+          "tableFrom": "claims",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "seed_source_claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

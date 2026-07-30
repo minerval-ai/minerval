@@ -181,6 +181,10 @@ ${structureStep}
       return executeStewardTool(name, toolInput, {
         trigger: input.trigger,
         context: input.context,
+        // Recorded on the assessment row (#294): the verdict names the model
+        // that produced it. This is the same resolved id every LLM call in
+        // this run uses.
+        model,
       });
     },
   });

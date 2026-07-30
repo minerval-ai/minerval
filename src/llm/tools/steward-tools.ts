@@ -525,8 +525,10 @@ export async function executeStewardTool(
   input: Record<string, unknown>,
   // Why this run happened (the enqueued trigger/context). Threaded into the
   // assessment row (#182) so a re-assessment records its actual cause rather
-  // than a generic "steward_reassessment".
-  run: { trigger?: string; context?: string } = {}
+  // than a generic "steward_reassessment". `model` is the raw API id of the
+  // model running this stewardship, recorded on the assessment row (#294) so
+  // every verdict names its assessor.
+  run: { trigger?: string; context?: string; model?: string } = {}
 ): Promise<string> {
   try {
     switch (toolName) {
@@ -616,6 +618,9 @@ export async function executeStewardTool(
           isCurrent: true,
           trigger: run.trigger ?? "steward_reassessment",
           triggerContext: run.context?.trim() ? run.context : null,
+          // Which model produced this verdict (#294). Null only when the run
+          // context doesn't carry it (e.g. legacy call sites).
+          model: run.model ?? null,
         });
 
         // Argument evaluations are derived within the assessment (issue #173),

@@ -12,6 +12,7 @@ describe("formatAssessment", () => {
     reasoningTrace: "because",
     subclaimSummary: { a: 1 } as unknown,
     assessedAt: new Date("2026-01-01T00:00:00.000Z"),
+    model: "claude-fable-5",
   };
 
   it("serializes a fully-populated assessment with snake_case fields", () => {
@@ -24,7 +25,14 @@ describe("formatAssessment", () => {
       reasoning_trace: "because",
       subclaim_summary: { a: 1 },
       assessed_at: "2026-01-01T00:00:00.000Z",
+      model: "claude-fable-5",
     });
+  });
+
+  it("keeps the model null for legacy rows that predate the column (#294)", () => {
+    expect(formatAssessment({ ...base, model: null }).model).toBeNull();
+    const { model: _model, ...withoutModel } = base;
+    expect(formatAssessment(withoutModel).model).toBeNull();
   });
 
   it("keeps an unstated credence null — distinct from credence 0 (constitution §7)", () => {

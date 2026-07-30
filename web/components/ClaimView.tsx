@@ -5,6 +5,7 @@ import {
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
+import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
 import { AssessmentText } from "./AssessmentText";
@@ -109,8 +110,13 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           <VerdictConfidence value={assessment.confidence} />
           {/* The one date most readers want (#196). assessed_at, not
               updated_at: only the former honestly means "last assessed"
-              (#160). */}
-          <span className="assess-when">last assessed {fmtDate(assessment.assessed_at)}</span>
+              (#160). The assessing model rides along (#294): a verdict is only
+              as trustworthy as its assessor. Legacy assessments have no
+              recorded model — date only, no dangling separator. */}
+          <span className="assess-when">
+            last assessed {fmtDate(assessment.assessed_at)}
+            {assessment.model ? ` · ${modelDisplayName(assessment.model)}` : ""}
+          </span>
           {/* No subclaim-status chips here: subclaim_summary is never computed
               by the pipeline (always {}), so the chips only ever rendered for
               fixtures — a feature that looked implemented but wasn't (#160).
