@@ -289,17 +289,24 @@ export async function applyReviewOutcome(
  * contribution earned nothing, unlike a direct accept. This applies the
  * consequences the original review would have carried: the reputation event,
  * counters (resolving the escalated counter into the final disposition), and
- * kudos on acceptance.
+ * kudos on acceptance. When the Arbitrator's rejection carries a bad-faith
+ * finding (#213), the flag's consequences ride along exactly as they would
+ * have on a flagged review: the second ledger event, the flag count,
+ * must-pay standing, and the auto-suspension check. reverseReviewOutcome
+ * already reverses the rejection+flag event pair on a later appeal.
  *
  * No-op (null) when the contribution already carries any reputation event: a
  * decided outcome was applied at review time (undoing it is
  * reverseReviewOutcome's job), or this resolution already ran. That check is
  * what makes the call idempotent and safe to attempt on every uphold or
- * overturn.
+ * overturn — and it is why a bad-faith finding only takes effect on the
+ * escalation path: an appealed rejection already applied its outcome, and
+ * this path will not stack a late flag on top of it.
  */
 export async function applyArbitrationOutcome(input: {
   contributionId: string;
   finalDecision: "accept" | "reject";
+  suspectedBadFaith?: boolean;
 }): Promise<ReviewOutcomeSummary | null> {
   const priorEvents = await rawQuery<{ reason: string }>(
     `SELECT reason FROM reputation_events
@@ -335,11 +342,18 @@ export async function applyArbitrationOutcome(input: {
   );
   if (!contributor) return null;
 
+  // Same guard as applyReviewOutcome: the flag is only coherent on a
+  // rejection, so it can never fire alongside an acceptance by accident.
+  const badFaith =
+    input.suspectedBadFaith === true && input.finalDecision === "reject";
+
   const delta = reputationDeltaFor(input.finalDecision);
+  const totalDelta = delta + (badFaith ? REPUTATION_RULES.badFaithFlag : 0);
   const previousScore = contributor.reputation_score;
-  const newScore = clampScore(previousScore + delta);
+  const newScore = clampScore(previousScore + totalDelta);
   const suspend =
     !contributor.is_suspended && newScore < REPUTATION_RULES.suspendBelow;
+  const standing = badFaith ? "must_pay" : contributor.contribution_standing;
 
   // The escalated counter resolves into the final disposition, but only when
   // the escalation was recorded as a review — the counter's only source.
@@ -363,33 +377,58 @@ export async function applyArbitrationOutcome(input: {
        }
        ${finalCounter} = ${finalCounter} + 1,
        reputation_score = $1,
-       is_suspended = is_suspended OR $2,
-       suspension_reason = CASE WHEN $2 THEN $3 ELSE suspension_reason END,
-       suspended_at = CASE WHEN $2 THEN now() ELSE suspended_at END,
+       contribution_standing = $2,
+       bad_faith_flags = bad_faith_flags + $3,
+       is_suspended = is_suspended OR $4,
+       suspension_reason = CASE WHEN $4 THEN $5 ELSE suspension_reason END,
+       suspended_at = CASE WHEN $4 THEN now() ELSE suspended_at END,
        last_active_at = now()
-     WHERE id = $4`,
+     WHERE id = $6`,
     [
       newScore,
+      standing,
+      badFaith ? 1 : 0,
       suspend,
-      `${AUTO_SUSPENSION_PREFIX} score fell below ${REPUTATION_RULES.suspendBelow} after repeated rejections`,
+      `${AUTO_SUSPENSION_PREFIX} score fell below ${REPUTATION_RULES.suspendBelow} after ${
+        badFaith ? "a suspected bad-faith contribution" : "repeated rejections"
+      }`,
       contribution.contributor_id,
     ]
   );
 
-  await rawQuery(
-    `INSERT INTO reputation_events
-       (contributor_id, contribution_id, review_id, delta, score_after, reason)
-     VALUES ($1, $2, NULL, $3, $4, $5)`,
-    [
-      contribution.contributor_id,
-      input.contributionId,
+  // One event per cause, exactly as applyReviewOutcome writes them, so a
+  // later appeal reverses an arbitrated flag the same way as a reviewed one.
+  const events: Array<{ delta: number; reason: string }> = [
+    {
       delta,
-      newScore,
-      input.finalDecision === "accept"
-        ? REPUTATION_REASONS.accepted
-        : REPUTATION_REASONS.rejected,
-    ]
-  );
+      reason:
+        input.finalDecision === "accept"
+          ? REPUTATION_REASONS.accepted
+          : REPUTATION_REASONS.rejected,
+    },
+  ];
+  if (badFaith) {
+    events.push({
+      delta: REPUTATION_RULES.badFaithFlag,
+      reason: REPUTATION_REASONS.badFaith,
+    });
+  }
+  let running = previousScore;
+  for (const event of events) {
+    running = clampScore(running + event.delta);
+    await rawQuery(
+      `INSERT INTO reputation_events
+         (contributor_id, contribution_id, review_id, delta, score_after, reason)
+       VALUES ($1, $2, NULL, $3, $4, $5)`,
+      [
+        contribution.contributor_id,
+        input.contributionId,
+        event.delta,
+        running,
+        event.reason,
+      ]
+    );
+  }
 
   let kudosAwarded = 0;
   if (input.finalDecision === "accept") {
@@ -406,7 +445,7 @@ export async function applyArbitrationOutcome(input: {
     contributorId: contribution.contributor_id,
     previousScore,
     newScore,
-    standing: contributor.contribution_standing,
+    standing,
     suspended: contributor.is_suspended || suspend,
     kudosAwarded,
   };

@@ -36,6 +36,7 @@ vi.mock("../../../src/services/reputation-service.js", () => ({
   reverseReviewOutcome: mocks.reverseReviewOutcome,
   applyArbitrationOutcome: mocks.applyArbitrationOutcome,
   AUDIT_SUSPENSION_PREFIX: "audit:",
+  BAD_FAITH_CATEGORIES: ["spam", "vandalism", "sybil", "misinformation"],
 }));
 vi.mock("../../../src/services/intake-service.js", () => ({
   materializeAcceptedIntake: mocks.materializeAcceptedIntake,
@@ -219,8 +220,110 @@ describe("record_arbitration_decision reputation wiring", () => {
     expect(mocks.applyArbitrationOutcome).toHaveBeenCalledWith({
       contributionId: "contrib-1",
       finalDecision: "reject",
+      suspectedBadFaith: false,
     });
     expect(mocks.reverseReviewOutcome).not.toHaveBeenCalled();
+  });
+
+  it("carries a bad-faith finding into the uphold resolution (#213)", async () => {
+    mocks.applyArbitrationOutcome.mockResolvedValue({
+      contributorId: "c-1",
+      previousScore: 50,
+      newScore: 34,
+      standing: "must_pay",
+      suspended: false,
+      kudosAwarded: 0,
+    });
+
+    const result = JSON.parse(
+      await executeArbitratorTool("record_arbitration_decision", {
+        contribution_id: "contrib-1",
+        outcome: "uphold_original",
+        decision: "The rejection stands, and the abuse was deliberate.",
+        reasoning: "Fabricated citations across the record.",
+        suspected_bad_faith: true,
+        bad_faith_category: "misinformation",
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(mocks.applyArbitrationOutcome).toHaveBeenCalledWith({
+      contributionId: "contrib-1",
+      finalDecision: "reject",
+      suspectedBadFaith: true,
+    });
+    expect(mocks.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspectedBadFaith: true,
+        badFaithCategory: "misinformation",
+      })
+    );
+    expect(result.contributor_outcome_applied).toMatchObject({
+      standing: "must_pay",
+    });
+    expect(result.note).toBeUndefined();
+  });
+
+  it("refuses a category-less flag before any write (#179 mirrored)", async () => {
+    const result = JSON.parse(
+      await executeArbitratorTool("record_arbitration_decision", {
+        contribution_id: "contrib-1",
+        outcome: "uphold_original",
+        decision: "The rejection stands.",
+        reasoning: "Deliberate abuse.",
+        suspected_bad_faith: true,
+      })
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("bad_faith_category");
+    expect(mocks.insertValues).not.toHaveBeenCalled();
+    expect(mocks.applyArbitrationOutcome).not.toHaveBeenCalled();
+  });
+
+  it("records the flag flag-free on a non-uphold outcome, with a note", async () => {
+    const result = JSON.parse(
+      await executeArbitratorTool("record_arbitration_decision", {
+        contribution_id: "contrib-1",
+        outcome: "mark_contested",
+        decision: "A real disagreement.",
+        reasoning: "Both readings survive scrutiny.",
+        suspected_bad_faith: true,
+        bad_faith_category: "spam",
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.note).toContain("not 'uphold_original'");
+    expect(mocks.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspectedBadFaith: false,
+        badFaithCategory: null,
+      })
+    );
+  });
+
+  it("notes when the finding applies no late penalty on an appeal", async () => {
+    // resolution stays null: the appealed rejection already applied its
+    // outcome at review time, so the escalation path has nothing to apply.
+    mocks.applyArbitrationOutcome.mockResolvedValue(null);
+
+    const result = JSON.parse(
+      await executeArbitratorTool("record_arbitration_decision", {
+        contribution_id: "contrib-1",
+        outcome: "uphold_original",
+        decision: "The rejection stands, and the abuse was deliberate.",
+        reasoning: "Sybil coordination is plain in the record.",
+        suspected_bad_faith: true,
+        bad_faith_category: "sybil",
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.note).toContain("not stacked");
+    expect(mocks.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ suspectedBadFaith: true })
+    );
   });
 
   it("touches no reputation path on mark_contested", async () => {

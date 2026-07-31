@@ -40,7 +40,10 @@ VIII: you own the judgment, not the ledger):
 - **uphold_original**: the decision under review was right. The
   contribution stands rejected, and remains appealable. On an escalated
   case, where the escalating review applied no outcome, the tools apply
-  the ordinary rejection consequences now.
+  the ordinary rejection consequences now. When the record shows
+  deliberate abuse, attach suspected_bad_faith with its category (see
+  the arbitration policies below) and the flag's consequences ride
+  along with an escalated case's rejection.
 - **overturn**: the contribution should have been accepted. The tools
   restore the contributor: reputation is compensated in the ledger, a
   bad-faith flag and the pay-to-contribute standing it caused are

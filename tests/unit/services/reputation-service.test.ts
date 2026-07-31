@@ -335,6 +335,69 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
     expect(mocks.awardKudos).not.toHaveBeenCalled();
   });
 
+  it("reject with bad faith: two events, flag count, must-pay standing (#213)", async () => {
+    routeQueries({ escalationReview: true });
+    const outcome = await applyArbitrationOutcome({
+      contributionId: CONTRIBUTION_ID,
+      finalDecision: "reject",
+      suspectedBadFaith: true,
+    });
+
+    expect(outcome).toMatchObject({
+      newScore:
+        50 + REPUTATION_RULES.rejected + REPUTATION_RULES.badFaithFlag,
+      standing: "must_pay",
+      suspended: false,
+    });
+
+    const { sql, params } = updateCall();
+    expect(sql).toContain("bad_faith_flags = bad_faith_flags + $3");
+    expect(params[1]).toBe("must_pay");
+    expect(params[2]).toBe(1);
+
+    // The same rejection+flag event pair applyReviewOutcome writes, so
+    // reverseReviewOutcome can undo an arbitrated flag on a later appeal.
+    const events = eventInserts();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toContain(REPUTATION_REASONS.rejected);
+    expect(events[1]).toContain(REPUTATION_REASONS.badFaith);
+    expect(mocks.awardKudos).not.toHaveBeenCalled();
+  });
+
+  it("bad faith drives the auto-suspension check off the flagged score", async () => {
+    routeQueries({
+      contributor: primeContributor({ reputation_score: 20 }),
+      escalationReview: true,
+    });
+    const outcome = await applyArbitrationOutcome({
+      contributionId: CONTRIBUTION_ID,
+      finalDecision: "reject",
+      suspectedBadFaith: true,
+    });
+
+    expect(outcome!.newScore).toBe(4);
+    expect(outcome!.suspended).toBe(true);
+    const { params } = updateCall();
+    expect(params[4]).toContain(AUTO_SUSPENSION_PREFIX);
+    expect(params[4]).toContain("suspected bad-faith contribution");
+  });
+
+  it("ignores the flag on an accepting resolution", async () => {
+    routeQueries({ escalationReview: true });
+    const outcome = await applyArbitrationOutcome({
+      contributionId: CONTRIBUTION_ID,
+      finalDecision: "accept",
+      suspectedBadFaith: true,
+    });
+
+    expect(outcome).toMatchObject({
+      newScore: 50 + REPUTATION_RULES.accepted,
+      standing: "good",
+    });
+    expect(eventInserts()).toHaveLength(1);
+    expect(updateCall().params[2]).toBe(0);
+  });
+
   it("no-ops when the review already applied an outcome", async () => {
     routeQueries({
       events: [

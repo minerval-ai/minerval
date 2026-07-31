@@ -60,6 +60,17 @@ deliberately high: sincere-but-wrong is a plain reject; ambiguous suspicion
 escalates. The flag is persisted on `contribution_reviews`
 (`suspected_bad_faith`, `bad_faith_category`).
 
+The Dispute Arbitrator holds the same power at the second instance
+([#213](https://github.com/minerval-ai/minerval/issues/213)): alongside an
+`uphold_original`, `record_arbitration_decision` may set
+`suspected_bad_faith` with a category (persisted on `arbitration_results`),
+so the "ambiguous suspicion escalates" path can still end in a flag once the
+full case record confirms deliberate abuse. On an escalated case — where the
+escalating review applied no outcome — `applyArbitrationOutcome` carries the
+flag's full consequences with the rejection (both ledger events, flag count,
+must-pay standing, auto-suspension check). On an appeal of an
+already-applied rejection the finding is recorded without a late penalty.
+
 One flag sets `contributors.contribution_standing = 'must_pay'` (and
 increments `bad_faith_flags`). In must-pay standing, `POST /contributions`
 returns **`402 DEPOSIT_REQUIRED`** — the payment seam. When deposits land

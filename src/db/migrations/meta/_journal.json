@@ -169,6 +169,13 @@
       "when": 1785421793759,
       "tag": "0023_steward_seed_priors",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785539651368,
+      "tag": "0024_arbitration_bad_faith",
+      "breakpoints": true
     }
   ]
 }

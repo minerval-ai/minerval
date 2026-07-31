@@ -41,7 +41,9 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
 }));
 vi.mock("../../../../src/services/reputation-service.js", () => ({
   reverseReviewOutcome: vi.fn(async () => null),
+  applyArbitrationOutcome: vi.fn(async () => null),
   AUDIT_SUSPENSION_PREFIX: "audit:",
+  BAD_FAITH_CATEGORIES: ["spam", "vandalism", "sybil", "misinformation"],
 }));
 vi.mock("../../../../src/services/intake-service.js", () => ({
   isIntakeContributionType: () => false,
