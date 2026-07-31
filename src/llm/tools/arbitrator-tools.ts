@@ -19,6 +19,7 @@ import {
   applyArbitrationOutcome,
   reverseReviewOutcome,
   AUDIT_SUSPENSION_PREFIX,
+  BAD_FAITH_CATEGORIES,
 } from "../../services/reputation-service.js";
 import {
   isIntakeContributionType,
@@ -38,8 +39,9 @@ export function getArbitratorToolDefinitions(): Tool[] {
         "(reputation, standing, any reputation-imposed suspension) and an " +
         "intake contribution is materialized through the Matcher; when the " +
         "case arrived by escalation and no outcome was ever applied, the " +
-        "final accept or reject consequences (reputation, kudos) are applied " +
-        "directly. Results are reported in the tool result.",
+        "final accept or reject consequences (reputation, kudos, and a " +
+        "bad-faith finding's penalty and standing when you attach one) are " +
+        "applied directly. Results are reported in the tool result.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -77,6 +79,26 @@ export function getArbitratorToolDefinitions(): Tool[] {
             type: "array",
             items: { type: "string" },
             description: "Policy codes cited in the decision",
+          },
+          suspected_bad_faith: {
+            type: "boolean",
+            description:
+              "Set true ONLY with an 'uphold_original' outcome when the full " +
+              "case record shows deliberate abuse (spam, vandalism, sybil " +
+              "coordination, deliberate misinformation), NOT for sincere " +
+              "contributions rejected on the merits. §13's high bar applies. " +
+              "The flag's consequences (reputation penalty, pay-to-contribute " +
+              "standing) apply when the case arrived by escalation and the " +
+              "outcome is being applied now; on an appeal of an " +
+              "already-applied rejection the finding is recorded but adds no " +
+              "late penalty. Appealable. Setting it requires " +
+              "bad_faith_category.",
+          },
+          bad_faith_category: {
+            type: "string",
+            enum: [...BAD_FAITH_CATEGORIES],
+            description:
+              "Required when suspected_bad_faith is true: which kind of abuse.",
           },
         },
         required: [
@@ -173,6 +195,34 @@ export async function executeArbitratorTool(
         const db = getDb();
         const policyCitations = (input.policy_citations as string[] | undefined) ?? [];
 
+        // A bad-faith finding is only coherent when the rejection stands
+        // (#213); on any other outcome it is recorded as flag-free so the
+        // flag's consequences can't fire by accident — same guard as the
+        // reviewer tool (#71: sincere contributions must never pay).
+        const suspectedBadFaith =
+          input.suspected_bad_faith === true && outcome === "uphold_original";
+        // Which kind of abuse is the arbitrator's judgment; code must not
+        // fabricate one by default (#179). Refuse the call before any write
+        // so the arbitrator can restate the decision with the category.
+        if (
+          suspectedBadFaith &&
+          !BAD_FAITH_CATEGORIES.includes(
+            input.bad_faith_category as (typeof BAD_FAITH_CATEGORIES)[number]
+          )
+        ) {
+          return JSON.stringify({
+            success: false,
+            error:
+              "suspected_bad_faith requires bad_faith_category (one of: " +
+              BAD_FAITH_CATEGORIES.join(", ") +
+              "). Nothing was recorded. Repeat the call naming the kind of " +
+              "abuse you found, or drop the flag if none applies.",
+          });
+        }
+        const badFaithCategory = suspectedBadFaith
+          ? (input.bad_faith_category as string)
+          : null;
+
         // An overturn that ACCEPTS an intake contribution (#157) must
         // materialize it, exactly as the reviewer's accept does — otherwise
         // an escalated proposal arbitrated in the contributor's favor would
@@ -197,6 +247,8 @@ export async function executeArbitratorTool(
           reasoning: policyCitations.length > 0
             ? `${reasoning}\n\nPolicy citations: ${policyCitations.join(", ")}`
             : reasoning,
+          suspectedBadFaith,
+          badFaithCategory,
           humanReviewRecommended: outcome === "human_review",
           arbitratedBy: "dispute_arbitrator",
         });
@@ -274,12 +326,27 @@ export async function executeArbitratorTool(
           resolution = await applyArbitrationOutcome({
             contributionId,
             finalDecision: "reject",
+            suspectedBadFaith,
           });
         }
 
         return JSON.stringify({
           success: true,
           message: `Arbitration decision recorded: ${outcome} for contribution ${contributionId}`,
+          ...(input.suspected_bad_faith === true && !suspectedBadFaith
+            ? {
+                note: "suspected_bad_faith was ignored because the outcome is not 'uphold_original'",
+              }
+            : {}),
+          ...(suspectedBadFaith && !resolution
+            ? {
+                note:
+                  "The bad-faith finding is recorded, but its consequences " +
+                  "were not applied: the rejection's outcome was already " +
+                  "applied at review time, and a late flag is not stacked on " +
+                  "top of it.",
+              }
+            : {}),
           ...(materialization ? { materialization } : {}),
           ...(restoration
             ? {

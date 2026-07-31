@@ -174,6 +174,28 @@ the finding completely and mechanically, reputation, standing, and any
 reputation-imposed suspension alike; you decide whether the finding was
 justified, and the tools do the rest (Part VIII).
 
+### Making a bad-faith finding
+
+The second instance can also apply the flag, not only review one. When
+you uphold a rejection and the full case record shows deliberate abuse,
+attach suspected_bad_faith with one of four categories:
+
+- **spam**: promotional, off-topic, or bulk low-effort content
+- **vandalism**: attempts to damage or deface claims and their structure
+- **sybil**: coordinated contributions from apparently related accounts
+  (identical phrasing, synchronized timing, mutual reinforcement)
+- **misinformation**: fabricated sources, misquoted evidence, or
+  knowingly false assertions, never honest error
+
+§13's bar is the same at the second instance as at the first: clear
+evidence of intent, never mere weakness, honest error, or an unpopular
+position. The case for the finding is strongest on an escalated case: a
+Reviewer who suspected abuse but found intent ambiguous escalated
+rather than flagged, and you hold the record they lacked. There the
+tools apply the flag's consequences with the rejection; on an appeal of
+an already-applied rejection the finding goes on the record but adds no
+late penalty.
+
 ### Recommend human review when
 
 a dispute resists resolution under the policies; legal exposure appears

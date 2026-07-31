@@ -765,6 +765,13 @@ export const arbitrationResults = pgTable("arbitration_results", {
   outcome: text("outcome").notNull(),
   decision: text("decision").notNull(),
   reasoning: text("reasoning").notNull(),
+  // Bad-faith finding by the second instance (#213), mirroring the review
+  // columns: only meaningful alongside an 'uphold_original' outcome, and the
+  // consequences apply only when the case arrived by escalation (an appealed
+  // rejection already applied its outcome). Appealable like any finding.
+  suspectedBadFaith: boolean("suspected_bad_faith").notNull().default(false),
+  // 'spam' | 'vandalism' | 'sybil' | 'misinformation' when flagged.
+  badFaithCategory: text("bad_faith_category"),
   consensusAchieved: boolean("consensus_achieved"),
   modelVotes: jsonb("model_votes"),
   humanReviewRecommended: boolean("human_review_recommended")
