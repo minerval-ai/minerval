@@ -18,7 +18,9 @@ export default function Privacy() {
       <p className="lede">
         Minerval collects the minimum it needs to run a metered claim-graph
         service, and nothing it collects is sold, shared for advertising, or
-        used to profile you.
+        used to track you anywhere else. What it does keep &mdash; including
+        a contributor&rsquo;s track record on the graph &mdash; is described
+        below.
       </p>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
         Effective July 31, 2026 · applies to minerval.ai, the Minerval API, and
@@ -32,6 +34,24 @@ export default function Privacy() {
         name, and nothing else from your provider profile. We never see or
         store a password. API keys you create are stored only as salted
         hashes; the full key is shown once, to you.
+      </p>
+
+      <h2 id="reputation">Contributor standing</h2>
+      <p>
+        The graph is an open commons, and contributions to it are attributed:
+        a contributor&rsquo;s track record is part of the graph&rsquo;s
+        public record, the same way a cited source&rsquo;s track record is.
+        From those outcomes each account accrues standing, which exists to
+        keep sincere participation free while spam and deliberate
+        manipulation carry a cost. Standing governs what an account may
+        contribute, and &mdash; because the graph weighs every source by its
+        reliability &mdash; a contributor&rsquo;s record may likewise inform
+        how much weight their submissions carry. It is built solely from
+        contributions you choose to make; reading claims, analyzing pages
+        with the extension, and API usage never affect it. Changes to
+        standing are recorded with the contribution that caused them, and
+        adverse outcomes can be appealed. Standing is never sold or used for
+        advertising.
       </p>
 
       <h2 id="usage">Usage metering</h2>
