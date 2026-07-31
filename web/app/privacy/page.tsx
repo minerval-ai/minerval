@@ -18,7 +18,9 @@ export default function Privacy() {
       <p className="lede">
         Minerval collects the minimum it needs to run a metered claim-graph
         service, and nothing it collects is sold, shared for advertising, or
-        used to profile you.
+        used to track you anywhere else. What it does keep &mdash; including
+        a contributor&rsquo;s track record on the graph &mdash; is described
+        below.
       </p>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
         Effective July 31, 2026 · applies to minerval.ai, the Minerval API, and
@@ -32,6 +34,22 @@ export default function Privacy() {
         name, and nothing else from your provider profile. We never see or
         store a password. API keys you create are stored only as salted
         hashes; the full key is shown once, to you.
+      </p>
+
+      <h2 id="reputation">Contributor standing</h2>
+      <p>
+        If you contribute to the graph, your contributions build a track
+        record: accepted and rejected contributions, kudos for accepted work,
+        and good-faith standing feed a per-account reputation score that
+        gates contribution privileges &mdash; rate limits, review thresholds,
+        and, at the extreme, suspension of the ability to contribute. This
+        record is built solely from actions you choose to take on the graph;
+        reading claims, analyzing pages with the extension, and API usage
+        never affect it. Every change to the score is recorded as an
+        auditable event tied to the contribution that caused it, adverse
+        outcomes are appealable, and a successful appeal restores standing
+        in full. It is used for nothing beyond governing contributions
+        &mdash; not advertising, and never shared.
       </p>
 
       <h2 id="usage">Usage metering</h2>
