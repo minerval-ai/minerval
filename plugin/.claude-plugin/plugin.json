@@ -1,0 +1,19 @@
+{
+  "name": "minerval",
+  "version": "0.1.0",
+  "description": "Claim lookup and graph-grounded fact-checking backed by Minerval's claim graph: slash commands, a fact-checker subagent, an opt-in doc-checking hook, and the remote MCP server connection.",
+  "author": {
+    "name": "Minerval",
+    "url": "https://minerval.ai"
+  },
+  "homepage": "https://minerval.ai",
+  "repository": "https://github.com/minerval-ai/minerval",
+  "license": "MIT",
+  "keywords": [
+    "fact-checking",
+    "claims",
+    "knowledge-graph",
+    "epistemics",
+    "mcp"
+  ]
+}

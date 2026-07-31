@@ -1,0 +1,16 @@
+{
+  "description": "Opt-in: after Claude writes or edits Markdown, remind it to check the new prose against the Minerval claim graph and warn on egregiously wrong claims. Off by default (cost + noise) — enable by exporting MINERVAL_FACTCHECK_HOOK=1.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/factcheck-docs.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

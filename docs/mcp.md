@@ -67,6 +67,17 @@ claude mcp add --transport http minerval https://<api-host>/mcp \
 
 (Or omit the header and let `/mcp` trigger the OAuth flow interactively.)
 
+Easier still is the **Claude Code / Cowork plugin** (issue #74), which
+bundles this connection plus slash commands, a fact-checker subagent, and an
+opt-in doc-checking hook — the repo doubles as its marketplace:
+
+```
+/plugin marketplace add minerval-ai/minerval
+/plugin install minerval@minerval
+```
+
+See [plugin/README.md](../plugin/README.md) for auth and usage.
+
 ## Metering
 
 Tool calls follow the same free-vs-metered split as the REST API (#70):
