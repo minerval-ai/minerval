@@ -2,7 +2,7 @@
   "name": "episteme-extension",
   "displayName": "Minerval",
   "version": "0.1.0",
-  "description": "Reads the page you're reading against the Minerval claim graph: flags egregiously misleading claims, explains contested ones, and answers questions grounded in the graph.",
+  "description": "Reads the page against the Minerval claim graph: flags misleading claims, explains contested ones, answers questions with citations.",
   "author": "Minerval",
   "packageManager": "npm@10.0.0",
   "scripts": {
@@ -25,7 +25,7 @@
   },
   "manifest": {
     "name": "Minerval",
-    "permissions": ["storage", "tabs"],
+    "permissions": ["storage"],
     "host_permissions": ["http://*/*", "https://*/*"]
   }
 }
