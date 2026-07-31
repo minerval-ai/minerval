@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "minerval": {
+      "type": "http",
+      "url": "${MINERVAL_MCP_URL:-https://api.claimgraph.io/mcp}",
+      "headers": {
+        "x-api-key": "${MINERVAL_API_KEY:-}"
+      }
+    }
+  }
+}
