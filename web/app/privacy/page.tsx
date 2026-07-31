@@ -38,18 +38,17 @@ export default function Privacy() {
 
       <h2 id="reputation">Contributor standing</h2>
       <p>
-        If you contribute to the graph, your contributions build a track
-        record: accepted and rejected contributions, kudos for accepted work,
-        and good-faith standing feed a per-account reputation score that
-        gates contribution privileges &mdash; rate limits, review thresholds,
-        and, at the extreme, suspension of the ability to contribute. This
-        record is built solely from actions you choose to take on the graph;
-        reading claims, analyzing pages with the extension, and API usage
-        never affect it. Every change to the score is recorded as an
-        auditable event tied to the contribution that caused it, adverse
-        outcomes are appealable, and a successful appeal restores standing
-        in full. It is used for nothing beyond governing contributions
-        &mdash; not advertising, and never shared.
+        The graph is an open commons, and contributions to it are attributed:
+        if you contribute, the outcomes of your contributions build a
+        per-account record of standing. That record exists for one reason
+        &mdash; to keep sincere participation free while spam and deliberate
+        manipulation carry a cost &mdash; and it governs only what an account
+        may contribute. It is built solely from contributions you choose to
+        make; reading claims, analyzing pages with the extension, and API
+        usage never affect it. Changes to standing are recorded with the
+        contribution that caused them, and adverse outcomes can be appealed.
+        Standing is used for nothing else &mdash; not advertising, and never
+        shared.
       </p>
 
       <h2 id="usage">Usage metering</h2>
