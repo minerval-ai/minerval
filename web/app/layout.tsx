@@ -43,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* /contributors stays reachable by URL but is not linked until
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>
+              <Link href="/privacy">privacy</Link>
               <a href="https://github.com/minerval-ai/minerval">source</a>
             </nav>
           </div>

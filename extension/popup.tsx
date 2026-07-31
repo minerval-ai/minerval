@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./popup.css";
+import { Mark } from "~lib/mark";
 import {
   getSettings,
   saveSettings,
@@ -366,7 +367,9 @@ export default function Popup() {
   return (
     <div className="popup">
       <header>
-        <span className="brand">Minerval</span>
+        <span className="brand">
+          <Mark size="0.95em" /> Minerval
+        </span>
         <nav>
           <button
             className={tab === "chat" ? "active" : ""}

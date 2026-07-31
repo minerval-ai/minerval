@@ -33,6 +33,31 @@ none of it is a code change:
    into MCP results and extension responses — pointing those at a zone that does not
    resolve yet would break MCP sign-in outright.
 
+### Email on `minerval.ai` (Google Workspace)
+
+Email is independent of the web cutover above — MX/TXT records don't touch the `A` records
+Vercel needs, so this can happen before, after, or during it. The zone already exists in
+Cloudflare (Cloudflare Registrar requires it), so it's purely additive:
+
+1. Sign up at workspace.google.com for **Business Starter** (one seat) with domain
+   `minerval.ai`, admin `jackson@minerval.ai`. Verify ownership with the
+   `google-site-verification` TXT record the wizard hands out.
+2. DNS records in Cloudflare (MX/TXT are never proxied, so no grey/orange decisions):
+   - `MX @ 1 smtp.google.com` (Google's current single-record setup)
+   - `TXT @ "v=spf1 include:_spf.google.com ~all"`
+   - `TXT google._domainkey <value>` — generate under Admin console → Gmail →
+     Authenticate email, then hit "Start authentication"
+   - `TXT _dmarc "v=DMARC1; p=none; rua=mailto:jackson@minerval.ai"` — tighten `p=` once
+     DKIM/SPF have soaked
+3. Chrome Web Store (issue #135): register the developer account ($5 one-time) **signed in
+   as `jackson@minerval.ai`**, not a personal account — listings are effectively pinned to
+   the registering account (transfers are a support-ticket process). Verify the contact
+   email, then verify the `minerval.ai` domain property in Google Search Console (DNS TXT,
+   instant from the same Cloudflare zone) so the listing shows a verified publisher site.
+
+The store's privacy questionnaire will ask about data handling — the extension sends page
+text to the API on user action, so answer accordingly and link the site's privacy policy.
+
 ## Request flow
 
 ```
