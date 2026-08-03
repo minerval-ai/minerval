@@ -80,6 +80,8 @@ const CLAIM_VERDICT_SCHEMA = {
     },
   },
   required: ["index", "verdict", "why", "confidence"],
+  // Required by native structured outputs' strict schema subset.
+  additionalProperties: false,
 };
 
 // Tag every LLM call in this agent for the per-token meter (#70); the

@@ -4,7 +4,6 @@ type MessageParam = Anthropic.MessageParam;
 type ContentBlock = Anthropic.ContentBlock;
 type ToolUseBlock = Anthropic.ToolUseBlock;
 type TextBlock = Anthropic.TextBlock;
-type Tool = Anthropic.Tool;
 type ToolUnion = Anthropic.Messages.ToolUnion;
 type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 import { loadConfig } from "../config.js";
@@ -166,8 +165,10 @@ async function createMessage(
 
 /**
  * Fail loudly on stop_reason "refusal" instead of returning empty content (or
- * a misleading "Model did not use the respond tool" from completeStructured).
- * On Fable models this fires only when the Opus fallback refused too.
+ * schema-violating output from completeStructured — on a refusal the API does
+ * not guarantee the output matches the requested schema, so this must run
+ * before any parsing). On Fable models this fires only when the Opus fallback
+ * refused too.
  */
 function checkRefusal(response: Anthropic.Message, model: string): void {
   if (response.stop_reason === "refusal") {
@@ -286,8 +287,16 @@ export async function completeWithTools(options: {
 }
 
 /**
- * Get a structured response by forcing tool use.
- * The model is asked to call a "respond" tool whose input_schema matches the desired shape.
+ * Get a structured response via the API's native structured outputs
+ * (`output_config.format`): the API constrains generation to the schema and
+ * returns the JSON as text content, which we parse and return.
+ *
+ * Schema restrictions apply (a strict JSON Schema subset): every object must
+ * set `additionalProperties: false` with a complete `required` array; numeric
+ * bounds (minimum/maximum), string length constraints, and recursive schemas
+ * are not supported — validate those in code instead. The first request with a
+ * new schema pays a one-time server-side compilation cost; compiled schemas
+ * are cached for 24 hours.
  */
 export async function completeStructured<T>(options: {
   messages: MessageParam[];
@@ -297,40 +306,63 @@ export async function completeStructured<T>(options: {
   model?: string;
   maxTokens?: number;
   temperature?: number;
-  serverTools?: ToolUnion[];
 }): Promise<T> {
-  const tool: Tool = {
-    name: "respond",
-    description: `Provide the response as a ${options.schemaName}`,
-    input_schema: options.schema as Tool["input_schema"],
-  };
+  checkBudget();
 
-  const allTools: ToolUnion[] = [tool, ...(options.serverTools ?? [])];
+  const model = options.model ?? DEFAULT_MODEL;
+  const maxTokens = options.maxTokens ?? 8192;
 
-  const enhancedSystem = (options.system ?? "") +
-    "\n\nYou must use the 'respond' tool to provide your response. Do not respond with plain text.";
-
-  const result = await completeWithTools({
+  // No tools on this request — the system prompt block from cachedSystem is
+  // the sole cache breakpoint, and its cache_control applies regardless.
+  const response = await createMessage({
+    model,
     messages: options.messages,
-    tools: allTools,
-    system: enhancedSystem,
-    model: options.model,
-    maxTokens: options.maxTokens,
-    temperature: options.temperature,
+    max_tokens: maxTokens,
+    ...temperatureParam(model, options.temperature),
+    ...(options.system ? { system: cachedSystem(options.system) } : {}),
+    output_config: {
+      format: { type: "json_schema", schema: options.schema },
+    },
   });
+  // On a refusal the output is not guaranteed to match the schema — fail
+  // loudly before attempting to parse.
+  checkRefusal(response, model);
 
-  // Find the respond tool_use (skip server_tool_use blocks from web search etc.)
-  const respondToolUse = result.toolUses.find((tu) => tu.name === "respond");
+  recordCallUsage(response.model ?? model, response.usage);
+  logCacheUsage(response.usage);
 
-  if (!respondToolUse) {
-    throw new Error("Model did not use the respond tool");
+  // The structured response arrives as JSON text in the text content block(s).
+  let text = "";
+  for (const block of response.content) {
+    if (block.type === "text") {
+      text += (block as TextBlock).text;
+    }
   }
 
-  return respondToolUse.input as T;
+  if (response.stop_reason === "max_tokens") {
+    // Truncated output is invalid/incomplete JSON (this bites on large inputs —
+    // a 9k-word document once overflowed the extractor). Fail with an
+    // actionable message instead of a bare JSON parse error.
+    throw new Error(
+      `Structured response "${options.schemaName}" was truncated at ` +
+        `max_tokens (${maxTokens}) and cannot be parsed. Increase maxTokens ` +
+        `or reduce the input size.`
+    );
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      `Structured response "${options.schemaName}" was not valid JSON ` +
+        `(stop_reason: ${response.stop_reason ?? "unknown"}).`
+    );
+  }
 }
 
 /**
- * Get a structured list response by forcing tool use with an items wrapper.
+ * Get a structured list response by wrapping the item schema in an
+ * `{ items: [...] }` object (structured outputs require a top-level object).
  */
 export async function completeStructuredList<T>(options: {
   messages: MessageParam[];
@@ -350,6 +382,7 @@ export async function completeStructuredList<T>(options: {
       },
     },
     required: ["items"],
+    additionalProperties: false,
   };
 
   const result = await completeStructured<{ items: T[] }>({
@@ -363,9 +396,9 @@ export async function completeStructuredList<T>(options: {
   });
 
   if (!Array.isArray(result?.items)) {
-    // Almost always means the tool call was truncated at max_tokens, leaving an
-    // incomplete/empty input object. Fail with an actionable message instead of
-    // a downstream "x is not iterable".
+    // Defensive: completeStructured already throws on max_tokens truncation
+    // and on unparseable JSON, but fail with an actionable message here too
+    // rather than a downstream "x is not iterable".
     throw new Error(
       `Structured list "${options.schemaName}" returned no items array — the ` +
         `response was likely truncated at max_tokens (${options.maxTokens ?? 8192}). ` +

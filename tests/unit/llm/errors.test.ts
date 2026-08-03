@@ -61,7 +61,13 @@ describe("isTransientApiError", () => {
     expect(
       isTransientApiError(new Error("Cannot read properties of undefined (reading 'id')"))
     ).toBe(false);
-    expect(isTransientApiError(new Error("Model did not use the respond tool"))).toBe(false);
+    expect(
+      isTransientApiError(
+        new Error(
+          'Structured response "ExtractedClaim" was truncated at max_tokens (8192) and cannot be parsed.'
+        )
+      )
+    ).toBe(false);
   });
 
   it("does not treat a refusal as transient (it is a real, non-retryable stop)", () => {
