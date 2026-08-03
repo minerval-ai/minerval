@@ -435,3 +435,27 @@ export interface ContributionDetail {
     reviewed_by: string;
   } | null;
 }
+
+// "Cite this claim" (#290): the conventional citation served by
+// GET /claims/:id/citation (format=json), fetched through the BFF. The
+// endpoint's envelope also carries the full evidence record, which the web
+// panel offers as a JSON download rather than re-rendering.
+export interface ClaimCitation {
+  author: string;
+  title: string;
+  claim_id: string;
+  assessment_id: string | null;
+  assessment_version: number | null;
+  status: string | null;
+  assessed_at: string | null;
+  retrieved_at: string;
+  url: string;
+  text: string;
+  bibtex: string;
+  csl: Record<string, unknown>;
+}
+
+export interface ClaimCitationPayload {
+  citation: ClaimCitation;
+  evidence_record: Record<string, unknown>;
+}

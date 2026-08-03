@@ -33,6 +33,32 @@ none of it is a code change:
    into MCP results and extension responses — pointing those at a zone that does not
    resolve yet would break MCP sign-in outright.
 
+### Persistent citation URLs (w3id.org)
+
+"Cite this claim" (#290) mints citations whose URL is the claim page under
+`minerval.ai`. The load-bearing identifier is the claim id + assessment
+version, not the domain — but for institution-grade permanence (citations
+outliving any future rebrand, the way `episteme.wiki`-era links now depend on
+a redirect rule), the scholarly mechanism is a
+[w3id.org](https://w3id.org) namespace: a community-guaranteed redirect
+service configured via PR to
+[perma-id/w3id.org](https://github.com/perma-id/w3id.org).
+
+The registration is prepared in `infra/w3id/` — two files to copy into a fork
+of that repo as `minerval/README.md` + `minerval/.htaccess`, giving
+`https://w3id.org/minerval/claim/<claim-id>` → `minerval.ai/claims/<claim-id>`.
+The PR must come from the account that will maintain the namespace (it names
+Jackson as contact). After it merges:
+
+1. Verify `curl -sI https://w3id.org/minerval/claim/test` 302s to the claim page.
+2. Set `CITATION_URL_BASE=https://w3id.org/minerval/claim` on the API
+   (`infra/lib/api-stack.ts` env) — citations then carry the permanent form.
+   Until then the code default cites `minerval.ai` directly, which resolves
+   without the extra hop.
+
+The companion nanopublication/RDF export (see #290's non-goals) should reuse
+the same namespace for its IRIs when it lands.
+
 ### Email on `minerval.ai` (Google Workspace)
 
 Email is independent of the web cutover above — MX/TXT records don't touch the `A` records

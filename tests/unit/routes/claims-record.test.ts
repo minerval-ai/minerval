@@ -44,6 +44,9 @@ vi.mock("../../../src/services/argument-service.js", () => ({
 vi.mock("../../../src/services/intake-service.js", () => ({
   createClaimProposal: vi.fn(),
 }));
+vi.mock("../../../src/services/citation-service.js", () => ({
+  assembleClaimCitation: vi.fn(),
+}));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
 }));

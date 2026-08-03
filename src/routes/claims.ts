@@ -19,6 +19,7 @@ import {
   getEvaluationStateForClaim,
 } from "../services/argument-service.js";
 import { createClaimProposal } from "../services/intake-service.js";
+import { assembleClaimCitation } from "../services/citation-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 
@@ -361,6 +362,71 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         }
 
         return reply.send(response);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/citation — "Cite this claim" (#290): a conventional
+  // scholarly citation (author = Minerval, pinned to the current assessment
+  // version) plus the grounded evidence record — assessment + reasoning,
+  // arguments with their basis subclaims, source instances with verbatim
+  // quotes, and live disagreement. Read-only: renders existing state.
+  //
+  // format=json is the full envelope; bibtex and csl serve just that rendering
+  // with its conventional content type, so `curl .../citation?format=bibtex`
+  // drops straight into a .bib file. No response schema on purpose: the
+  // payload is format-dependent (BibTeX is plain text), so fastify's
+  // fixed-schema serializer can't cover it.
+  app.get<{ Params: { claim_id: string }; Querystring: { format?: string } }>(
+    "/:claim_id/citation",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Cite this claim: a formal citation plus the grounded evidence record",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            format: {
+              type: "string",
+              enum: ["json", "bibtex", "csl"],
+              default: "json",
+            },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const { claim_id } = request.params;
+        const format = request.query.format ?? "json";
+
+        const result = await assembleClaimCitation(claim_id);
+        if (!result) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+
+        if (format === "bibtex") {
+          return reply
+            .type("application/x-bibtex; charset=utf-8")
+            .send(result.citation.bibtex);
+        }
+        if (format === "csl") {
+          return reply
+            .type("application/vnd.citationstyles.csl+json; charset=utf-8")
+            .send(JSON.stringify(result.citation.csl));
+        }
+        return reply.send(result);
       },
     }
   );
