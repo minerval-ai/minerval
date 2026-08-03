@@ -8,7 +8,7 @@
  * follow-up) decrements against these derived costs; changing a price here
  * only affects new rows.
  *
- * Rates are USD per million tokens (Anthropic list prices, 2026-06):
+ * Rates are USD per million tokens (Anthropic list prices, 2026-08):
  *   - cache reads bill at 0.1× the input rate
  *   - 5-minute ephemeral cache writes bill at 1.25× the input rate (the only
  *     TTL client.ts uses)
@@ -27,7 +27,14 @@ const MODEL_RATES: Record<string, ModelRates> = {
   // Fable/Mythos 5 share pricing.
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50 },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50 },
+  // Opus 5 and the 4.x line share pricing. All three 4.x entries are listed
+  // because any *_MODEL env override can route an agent to them (see #11's
+  // validation), and an unlisted model meters at the Fable-tier fallback —
+  // double the real Opus rate against the user's credit grant.
+  "claude-opus-5": { inputPerMtok: 5, outputPerMtok: 25 },
   "claude-opus-4-8": { inputPerMtok: 5, outputPerMtok: 25 },
+  "claude-opus-4-7": { inputPerMtok: 5, outputPerMtok: 25 },
+  "claude-opus-4-6": { inputPerMtok: 5, outputPerMtok: 25 },
   // Sonnet 5 list price; there is an intro rate ($2/$10) through 2026-08-31 —
   // we meter at list so derived costs never understate what credits will owe.
   "claude-sonnet-5": { inputPerMtok: 3, outputPerMtok: 15 },

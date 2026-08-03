@@ -102,8 +102,9 @@ ${subs}`;
     model,
     // Claude-5 judge models think before answering, and thinking counts against
     // max_tokens: too low a budget is spent thinking and the structured JSON
-    // output is truncated. Give comfortable headroom for a small JSON verdict.
-    maxTokens: 4096,
+    // output is truncated. Give comfortable headroom for a small JSON verdict —
+    // the cap is a backstop, not a budget.
+    maxTokens: 8192,
   });
 
   return {

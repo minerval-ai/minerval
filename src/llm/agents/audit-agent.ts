@@ -56,7 +56,12 @@ when the decisions under review hold up.`;
     tools,
     system: getAuditAgentSystemPrompt(),
     model,
-    maxTokens: 8192,
+    // Headroom, not a budget: thinking is always on for this agent tier and
+    // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
+    // terminal — a truncated final turn loses the run's work. 16384 matches
+    // the extractor's post-incident ceiling; pacing belongs to the iteration
+    // budget notice, not this cap.
+    maxTokens: 16384,
     maxIterations: 10,
     executeTool: async (name, toolInput) => {
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);

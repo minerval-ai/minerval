@@ -135,7 +135,12 @@ ${structureStep}
     tools,
     system: getClaimStewardSystemPrompt(),
     model,
-    maxTokens: 8192,
+    // Headroom, not a budget: thinking is always on for this agent tier and
+    // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
+    // terminal — a truncated final turn loses the run's work. 16384 matches
+    // the extractor's post-incident ceiling; pacing belongs to the iteration
+    // budget notice, not this cap.
+    maxTokens: 16384,
     // A pure runaway backstop — judgment, not the iteration count, decides when
     // to stop. The Steward now decomposes AND assesses in one loop, so this is
     // set high; real spend is bounded by stewardMaxRuns + the LLM budget tracker.
