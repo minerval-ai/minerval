@@ -12,9 +12,11 @@ import {
   claims,
   assessments,
   claimRelationships,
+  claimInstances,
   auditLog,
 } from "../../db/schema.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
+import { getOrCreateSource } from "../../services/source-service.js";
 import {
   ARGUMENT_VERDICTS,
   addArgument,
@@ -133,6 +135,92 @@ export function getStewardToolDefinitions(): Tool[] {
           },
         },
         required: ["claim_id", "status", "confidence", "assessment", "reasoning_trace"],
+      },
+    },
+    {
+      name: "record_claim_instance",
+      description:
+        "Record an in-the-wild instance of the claim you steward: a source " +
+        "you read during this pass that itself asserts the claim (or its " +
+        "negation). A cheap side effect of the evidence reading you are " +
+        "doing anyway — never search just to farm instances. Record only " +
+        "genuine assertions: a source that merely mentions the claim, " +
+        "questions it, or reports on the debate without taking a side is " +
+        "not an instance; a source quoting someone who asserts it is an " +
+        "instance whose speaker is the person quoted. One instance per " +
+        "(claim, source): re-recording the same source is deduplicated, so " +
+        "re-assessments never pile up duplicates.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim this is an instance of",
+          },
+          url: {
+            type: "string",
+            description:
+              "URL of the source document you read. This is the instance's " +
+              "provenance; sources are found-or-created by URL.",
+          },
+          title: {
+            type: "string",
+            description: "Title of the source document",
+          },
+          original_text: {
+            type: "string",
+            description:
+              "The verbatim passage where the source states the claim (or " +
+              "its negation) — the statement itself, not your paraphrase.",
+          },
+          context: {
+            type: "string",
+            description:
+              "Brief surrounding context: what the source was arguing or " +
+              "reporting when it made the statement.",
+          },
+          stance: {
+            type: "string",
+            enum: ["affirms", "denies"],
+            description:
+              "Whether this source asserts the canonical claim (affirms) or " +
+              "its negation (denies).",
+          },
+          speaker: {
+            type: "string",
+            description:
+              "Who asserted it, where identifiable: the author, or for a " +
+              "quote the person quoted (not the outlet reporting it).",
+          },
+          publication: {
+            type: "string",
+            description:
+              "The publication/outlet the statement appeared in, where " +
+              "identifiable.",
+          },
+          source_date: {
+            type: "string",
+            description:
+              "When the statement was made, as stated by the source, " +
+              "ISO-8601 to the precision known: '2023', '2023-05', or " +
+              "'2023-05-14'. Omit rather than guess.",
+          },
+          link: {
+            type: "string",
+            description:
+              "Deep link to the statement itself where it differs from the " +
+              "source URL (an anchor, a tweet inside a thread, a timestamped " +
+              "video link). Omit when the source URL already is the link.",
+          },
+          confidence: {
+            type: "number",
+            description:
+              "0.0-1.0: how confident you are this is a genuine assertion " +
+              "of THIS claim (not a near-miss proposition or a passing " +
+              "mention). Defaults to 1.",
+          },
+        },
+        required: ["claim_id", "url", "original_text", "stance"],
       },
     },
     {
@@ -652,6 +740,130 @@ export async function executeStewardTool(
           message:
             `Assessment updated for claim ${claimId}: ${status} (${confidence})` +
             (parts.length > 0 ? ` ${parts.join(" ")}` : ""),
+        });
+      }
+
+      case "record_claim_instance": {
+        const claimId = input.claim_id as string;
+        const url = typeof input.url === "string" ? input.url.trim() : "";
+        const originalText =
+          typeof input.original_text === "string"
+            ? input.original_text.trim()
+            : "";
+        // Same normalization as the assessment status: the prompt discusses
+        // stances in prose, so a cased value must not escape the enum.
+        const stance = String(input.stance ?? "").toLowerCase();
+        const optText = (v: unknown): string | undefined =>
+          typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+        if (!/^https?:\/\//i.test(url)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "url must be the http(s) URL of the source you read; an " +
+              "instance without provenance is not recordable.",
+          });
+        }
+        if (!originalText) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "original_text is required: the verbatim passage where the " +
+              "source states the claim (or its negation).",
+          });
+        }
+        // A passage, not a document: an instance records where the claim was
+        // stated, and the source row keeps the document.
+        if (originalText.length > 2000) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `original_text is ${originalText.length} chars; keep it under ` +
+              `2000. Record the passage that states the claim, not the ` +
+              `surrounding document.`,
+          });
+        }
+        if (stance !== "affirms" && stance !== "denies") {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown stance "${stance}". Use "affirms" (the source asserts ` +
+              `the canonical claim) or "denies" (it asserts the negation).`,
+          });
+        }
+
+        // A hallucinated claim id would otherwise surface as an opaque FK
+        // error from the insert.
+        const claimRows = await rawQuery<{ id: string }>(
+          `SELECT id FROM claims WHERE id = $1`,
+          [claimId]
+        );
+        if (claimRows.length === 0) {
+          return JSON.stringify({
+            success: false,
+            message: `Claim not found: ${claimId}`,
+          });
+        }
+
+        // Found-or-created by URL, WITHOUT enqueueing extraction: recording a
+        // sighting must stay a cheap side effect of this run, never spawn an
+        // extraction pipeline for the source.
+        const source = await getOrCreateSource({
+          url,
+          title: optText(input.title),
+        });
+
+        // Dedup on (claim, source) so re-assessments that reread the same
+        // source don't pile up duplicate instances (#278).
+        const [existing] = await rawQuery<{ id: string; stance: string }>(
+          `SELECT id, stance FROM claim_instances
+           WHERE claim_id = $1 AND source_id = $2
+           LIMIT 1`,
+          [claimId, source.id]
+        );
+        if (existing) {
+          return JSON.stringify({
+            success: true,
+            deduplicated: true,
+            instance_id: existing.id,
+            message:
+              `This source is already recorded as an instance of this claim ` +
+              `(stance: ${existing.stance}); nothing new was written.` +
+              (existing.stance !== stance
+                ? ` Note: the existing instance's stance differs from the one ` +
+                  `you just observed — if the source genuinely takes both ` +
+                  `sides, or the recorded stance looks wrong, weigh that in ` +
+                  `your assessment and note it in your reasoning_trace.`
+                : ""),
+          });
+        }
+
+        const db = getDb();
+        const [instance] = await db
+          .insert(claimInstances)
+          .values({
+            claimId,
+            sourceId: source.id,
+            originalText,
+            context: optText(input.context),
+            stance,
+            confidence: clampUnit(input.confidence) ?? 1.0,
+            speaker: optText(input.speaker),
+            publication: optText(input.publication),
+            sourceDate: optText(input.source_date),
+            link: optText(input.link),
+            createdBy: "claim_steward",
+          })
+          .returning();
+
+        return JSON.stringify({
+          success: true,
+          instance_id: instance!.id,
+          source_id: source.id,
+          message:
+            `Recorded a ${stance} instance of claim ${claimId} from ` +
+            `${source.url ?? url}. It now counts among the claim's source ` +
+            `instances; weigh its stance in your assessment like any other.`,
         });
       }
 

@@ -194,6 +194,35 @@ not confidence — a CONTESTED verdict can be high-confidence and zero-yield.
 Nothing reads it yet; it is recorded so future scheduling can tell saturated
 claims from ones still worth deeper work.
 
+## Recording Instances
+
+Your web searches read a lot of the discourse, and every time a source you
+read states your claim — or its negation — in its own voice, that is a real
+in-the-wild instance with provenance the graph should keep. Record it with
+record_claim_instance as you go. This is a side effect of evidence reading
+you are already doing, never a goal: do not spend searches hunting instances,
+and do not let recording crowd out the assessment the run exists for.
+
+What counts is an assertion, not an appearance of the words. A source that
+asserts the claim (stance affirms) or its negation (stance denies) is an
+instance. A source that merely mentions the claim, asks whether it is true,
+or reports neutrally that others assert it is not. Quotes attribute to the
+voice that asserts: for "X said [the claim]", the instance's speaker is X,
+not the outlet quoting them — and if the article endorses it in its own
+voice too, that is the publication's own instance. Prefer originators over
+aggregators: when a piece is plainly repeating someone else's assertion and
+you have the original, record the original; when the original is out of
+reach, record what you read and name the original speaker where identifiable.
+
+Capture the passage verbatim in original_text, and fill the metadata you
+actually saw — speaker, publication, source_date (ISO-8601, to the precision
+known), and a deep link where the statement sits somewhere more specific
+than the source URL. Omit what you would have to guess; importance ranking
+sorts instances later, so a long-tail sighting is still worth keeping.
+Recording is deduplicated per (claim, source), so re-reading a source on a
+later pass costs nothing; recorded instances then count among the claim's
+source instances, and their stances feed your assessment like any other.
+
 ## Writing the Assessment: Two Audiences
 
 update_claim_assessment takes two texts for two readers, both written in the

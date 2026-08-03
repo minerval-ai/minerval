@@ -91,6 +91,7 @@ async function runClaimStewardImpl(input: {
 
   const iterationBudget = config.stewardMaxIterations;
   let newSubclaimsThisRun = 0;
+  let instancesRecordedThisRun = 0;
 
   const userMessage = `You have been triggered to steward a claim.
 
@@ -120,7 +121,9 @@ ${structureStep}
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
    Use web_search for external evidence where it would change the verdict.
    Credible instances that BOTH affirm and deny the claim are a strong signal
-   toward CONTESTED.
+   toward CONTESTED. When a source you read itself asserts the claim (or its
+   negation) — not merely reports on the debate — record that sighting with
+   record_claim_instance as you go (see "Recording Instances").
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit
@@ -182,6 +185,23 @@ ${structureStep}
           });
         }
         newSubclaimsThisRun++;
+      }
+      // Same runaway-guard shape for instance recording (#278): capturing
+      // sightings is a cheap side effect of evidence reading, and this cap
+      // only stops a loop from farming instances instead of assessing.
+      if (name === "record_claim_instance") {
+        const cap = config.stewardMaxInstancesPerRun;
+        if (cap > 0 && instancesRecordedThisRun >= cap) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This run has already recorded ${instancesRecordedThisRun} ` +
+              `instances, the per-run backstop (${cap}). Do not record more ` +
+              `in this pass: note any remaining sightings in your ` +
+              `reasoning_trace and proceed to your assessment.`,
+          });
+        }
+        instancesRecordedThisRun++;
       }
       return executeStewardTool(name, toolInput, {
         trigger: input.trigger,
