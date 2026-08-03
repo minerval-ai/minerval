@@ -1,11 +1,15 @@
 /**
- * Single source of truth for Anthropic API model IDs.
+ * Single source of truth for Anthropic API model IDs, and for the
+ * Anthropic-specific model behaviours the direct adapter keys off.
  *
- * The LLM client talks to the Anthropic Messages API directly (see client.ts),
- * which only accepts plain IDs like "claude-sonnet-4-6". Bedrock/Vertex-style
- * IDs ("us.anthropic.claude-...") 404 there. Keep every model default here and
- * validate config overrides with isAnthropicModelId so the Bedrock prefix can't
- * silently drift back into the defaults (see issue #11).
+ * The Anthropic adapter (src/llm/providers/anthropic.ts) talks to the Messages
+ * API directly, which only accepts plain IDs like "claude-sonnet-4-6".
+ * Bedrock/Vertex-style IDs ("us.anthropic.claude-...") 404 there and resolve to
+ * no provider at all, so config rejects them (see issue #11).
+ *
+ * These are the DEFAULTS. Any agent can be pointed at another provider with its
+ * *_MODEL env var — which backend an ID routes to is decided by ID shape in
+ * src/llm/providers/routing.ts, the single source of truth for routing.
  */
 export const MODELS = {
   /**

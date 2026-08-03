@@ -509,6 +509,10 @@ export const llmUsage = pgTable(
     // agent's entry point via the usage context.
     agent: text("agent").notNull().default("unknown"),
     model: text("model").notNull(),
+    // Which backend served the call: anthropic | openai | openrouter (see
+    // src/llm/providers/routing.ts). Defaults to anthropic so rows written
+    // before multi-provider support keep their true provider.
+    provider: text("provider").notNull().default("anthropic"),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     cacheReadTokens: integer("cache_read_tokens").notNull().default(0),

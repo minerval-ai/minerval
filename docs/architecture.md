@@ -51,9 +51,11 @@ The stack is TypeScript end to end: a Fastify API, background workers driven by
 a job queue (AWS SQS in production, an in-memory runner locally), and
 PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
-models sit behind every agent; the client calls the Anthropic Messages API
-directly, model ids are centralized in `src/llm/models.ts`, and in production
-the load-bearing agents run on Claude Fable 5.
+models sit behind every agent by default; the client calls the Anthropic
+Messages API directly, model ids are centralized in `src/llm/models.ts`, and in
+production the load-bearing agents run on Claude Fable 5. Any agent can be
+pointed at OpenAI or OpenRouter instead with a single env var — see
+[Providers](#providers).
 
 ---
 
@@ -425,6 +427,51 @@ with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Because stewardship drains in importance
 order, the most capable model is always spent on the most load-bearing claims;
 when a budget caps a run, what goes unassessed is the tail.
+
+### Providers
+
+Every agent talks to a model through five functions in `src/llm/client.ts` —
+`complete`, `completeWithTools`, `completeStructured`, `completeStructuredList`,
+`toolUseLoop`. Those signatures speak the Anthropic dialect and never change,
+so switching an agent to another vendor is one env var and no code change:
+`MATCHER_MODEL=gpt-5-nano`, `CURATOR_MODEL=qwen/qwen3-235b-a22b`.
+
+Which backend serves a call is decided by the **shape of the model id**
+(`src/llm/providers/routing.ts`, the single source of truth):
+
+| ID shape | Provider | Example |
+|----------|----------|---------|
+| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-fable-5` |
+| `gpt-…` or `o<digit>` | OpenAI direct (Chat Completions) | `gpt-5-nano`, `o3` |
+| contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
+| anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
+
+Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
+message — they 404 against the Anthropic API (issue #11).
+
+Each adapter in `src/llm/providers/` speaks its own platform's native dialect
+rather than a lowest-common-denominator abstraction. Structured output, for
+instance, is native `output_config.format` on Anthropic, a strict `json_schema`
+response format on OpenAI, and a forced `respond` function call on OpenRouter
+(the most portable mechanism across its model zoo). Each provider also carries
+its own temperature allowlist, since reasoning models reject sampling params.
+
+**Anthropic-only, by design:** server tools (`web_search`), container-backed
+execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
+fallback. Routing an agent that uses a server tool — the Claim Steward does — to
+a non-Anthropic model fails immediately with a message naming the capability,
+rather than silently dropping it. OpenAI gets automatic prefix caching with a
+stable `prompt_cache_key` per agent instead.
+
+**Metering** stays at one chokepoint regardless of provider. Anthropic and
+OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
+reports its own computed cost per call, which overrides the table (no rate table
+can cover its zoo). Unknown model ids fall back to the top-tier rate so nothing
+ever meters as free. Every usage row records which provider served it.
+
+Missing credentials fail as a clear configuration error at call time, not as an
+opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
+`OPENROUTER_API_KEY`.
 
 ### Queues and failure handling
 
