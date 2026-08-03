@@ -56,8 +56,10 @@ Jackson as contact). After it merges:
    Until then the code default cites `minerval.ai` directly, which resolves
    without the extra hop.
 
-The companion nanopublication/RDF export (see #290's non-goals) should reuse
-the same namespace for its IRIs when it lands.
+The nanopublication export (#292, `GET /claims/:id/nanopub`) already mints
+its `mv:` vocabulary IRIs under `https://w3id.org/minerval/vocab#` (see
+`docs/vocab.md`), and its claim IRIs follow `CITATION_URL_BASE` like
+citations do — both resolve fully once the namespace is registered.
 
 ### Email on `minerval.ai` (Google Workspace)
 

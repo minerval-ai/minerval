@@ -79,7 +79,12 @@ export interface EvidenceRecord {
     evidence_urls: string[];
     verdict: string | null;
     evaluation: string | null;
-    subclaims: { id: string; text: string; status: string | null }[];
+    subclaims: {
+      id: string;
+      text: string;
+      relation: string;
+      status: string | null;
+    }[];
   }[];
   instances: {
     id: string;
@@ -180,13 +185,14 @@ export function citationUrl(claimId: string): string {
 }
 
 /**
- * Assemble the full citable unit for a claim: the conventional citation in
- * every format, plus the evidence record. Returns null for an unknown claim.
+ * Assemble the evidence record for a claim: why the graph currently holds it,
+ * as a self-contained structure. The shared seam between "Cite this claim"
+ * (#290) and the nanopublication export (#292) — both render this, neither
+ * assesses anything. Returns null for an unknown claim.
  */
-export async function assembleClaimCitation(
-  claimId: string,
-  retrievedAt: Date = new Date()
-): Promise<{ citation: ClaimCitation; evidence_record: EvidenceRecord } | null> {
+export async function assembleEvidenceRecord(
+  claimId: string
+): Promise<EvidenceRecord | null> {
   const claim = await getClaimById(claimId);
   if (!claim) return null;
 
@@ -220,9 +226,10 @@ export async function assembleClaimCitation(
     argument_id: string;
     id: string;
     text: string;
+    relation: string;
     status: string | null;
   }>(
-    `SELECT cr.argument_id, c.id, c.text, a.status
+    `SELECT cr.argument_id, c.id, c.text, cr.relation_type AS relation, a.status
        FROM claim_relationships cr
        JOIN claims c ON c.id = cr.child_claim_id
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
@@ -231,10 +238,13 @@ export async function assembleClaimCitation(
       ORDER BY cr.created_at`,
     [claimId]
   );
-  const subclaimsByArgument = new Map<string, { id: string; text: string; status: string | null }[]>();
+  const subclaimsByArgument = new Map<
+    string,
+    { id: string; text: string; relation: string; status: string | null }[]
+  >();
   for (const row of subclaimRows) {
     const list = subclaimsByArgument.get(row.argument_id) ?? [];
-    list.push({ id: row.id, text: row.text, status: row.status });
+    list.push({ id: row.id, text: row.text, relation: row.relation, status: row.status });
     subclaimsByArgument.set(row.argument_id, list);
   }
 
@@ -314,15 +324,29 @@ export async function assembleClaimCitation(
     },
   };
 
+  return evidenceRecord;
+}
+
+/**
+ * Assemble the full citable unit for a claim: the conventional citation in
+ * every format, plus the evidence record. Returns null for an unknown claim.
+ */
+export async function assembleClaimCitation(
+  claimId: string,
+  retrievedAt: Date = new Date()
+): Promise<{ citation: ClaimCitation; evidence_record: EvidenceRecord } | null> {
+  const record = await assembleEvidenceRecord(claimId);
+  if (!record) return null;
+
   const input: CitationInput = {
-    title: claim.text,
-    claimId: claim.id,
-    assessmentId: assessment?.id ?? null,
-    assessmentVersion: version,
-    status: assessment?.status ?? null,
-    assessedAt: assessment?.assessedAt ?? null,
+    title: record.claim.text,
+    claimId: record.claim.id,
+    assessmentId: record.assessment?.id ?? null,
+    assessmentVersion: record.assessment?.version ?? null,
+    status: record.assessment?.status ?? null,
+    assessedAt: record.assessment ? new Date(record.assessment.assessed_at) : null,
     retrievedAt,
-    url: citationUrl(claim.id),
+    url: citationUrl(record.claim.id),
   };
 
   const citation: ClaimCitation = {
@@ -340,5 +364,5 @@ export async function assembleClaimCitation(
     csl: formatCslJson(input),
   };
 
-  return { citation, evidence_record: evidenceRecord };
+  return { citation, evidence_record: record };
 }

@@ -20,6 +20,7 @@ import {
 } from "../services/argument-service.js";
 import { createClaimProposal } from "../services/intake-service.js";
 import { assembleClaimCitation } from "../services/citation-service.js";
+import { assembleClaimNanopub } from "../services/nanopub-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 
@@ -427,6 +428,58 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             .send(JSON.stringify(result.citation.csl));
         }
         return reply.send(result);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/nanopub — the nanopublication export (#292): the
+  // same evidence record as /citation, serialized as RDF in the nanopub shape
+  // (assertion / provenance / publication-info) for scholarly-web and
+  // linked-data consumers. TriG by default, JSON-LD on request. Read-only;
+  // credence is omitted exactly where the graph omits it (§10), and exported
+  // prose resolves [[claim:...]] machinery to canonical text (§12). No
+  // response schema: both formats are opaque serializations, not
+  // field-mapped JSON.
+  app.get<{ Params: { claim_id: string }; Querystring: { format?: string } }>(
+    "/:claim_id/nanopub",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Export the claim + assessment + evidence as a nanopublication (RDF)",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            format: {
+              type: "string",
+              enum: ["trig", "jsonld"],
+              default: "trig",
+            },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const { claim_id } = request.params;
+        const format = request.query.format === "jsonld" ? "jsonld" : "trig";
+
+        const result = await assembleClaimNanopub(claim_id, format);
+        if (!result) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+
+        return reply.type(result.contentType).send(result.body);
       },
     }
   );

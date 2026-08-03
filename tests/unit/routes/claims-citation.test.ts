@@ -10,6 +10,7 @@ const CLAIM_ID = "11111111-1111-1111-1111-111111111111";
 
 const mocks = vi.hoisted(() => ({
   assembleClaimCitation: vi.fn(),
+  assembleClaimNanopub: vi.fn(),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
@@ -44,6 +45,9 @@ vi.mock("../../../src/services/intake-service.js", () => ({
 }));
 vi.mock("../../../src/services/citation-service.js", () => ({
   assembleClaimCitation: mocks.assembleClaimCitation,
+}));
+vi.mock("../../../src/services/nanopub-service.js", () => ({
+  assembleClaimNanopub: mocks.assembleClaimNanopub,
 }));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
@@ -94,6 +98,10 @@ function assembled() {
 
 beforeEach(() => {
   mocks.assembleClaimCitation.mockReset().mockResolvedValue(assembled());
+  mocks.assembleClaimNanopub.mockReset().mockResolvedValue({
+    contentType: "application/trig; charset=utf-8",
+    body: "@prefix np: <http://www.nanopub.org/nschema#> .",
+  });
 });
 
 describe("GET /claims/:claim_id/citation (#290)", () => {
@@ -148,6 +156,49 @@ describe("GET /claims/:claim_id/citation (#290)", () => {
     const res = await app.inject({
       method: "GET",
       url: `/claims/${CLAIM_ID}/citation?format=ris`,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("GET /claims/:claim_id/nanopub (#292)", () => {
+  it("404s for an unknown claim", async () => {
+    mocks.assembleClaimNanopub.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/nanopub` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  it("serves TriG by default under its content type", async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/nanopub` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/trig");
+    expect(res.body).toContain("@prefix np:");
+    expect(mocks.assembleClaimNanopub).toHaveBeenCalledWith(CLAIM_ID, "trig");
+  });
+
+  it("serves JSON-LD when asked", async () => {
+    mocks.assembleClaimNanopub.mockResolvedValue({
+      contentType: "application/ld+json; charset=utf-8",
+      body: '{"@context":{}}',
+    });
+    const app = await buildApp();
+    const res = await app.inject({
+      method: "GET",
+      url: `/claims/${CLAIM_ID}/nanopub?format=jsonld`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/ld+json");
+    expect(mocks.assembleClaimNanopub).toHaveBeenCalledWith(CLAIM_ID, "jsonld");
+  });
+
+  it("rejects an unknown format", async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: "GET",
+      url: `/claims/${CLAIM_ID}/nanopub?format=rdfxml`,
     });
     expect(res.statusCode).toBe(400);
   });
