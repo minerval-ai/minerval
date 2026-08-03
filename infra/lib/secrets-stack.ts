@@ -6,6 +6,7 @@ export class SecretsStack extends cdk.Stack {
   public readonly openaiApiKeySecret: secretsmanager.Secret;
   public readonly anthropicApiKeySecret: secretsmanager.Secret;
   public readonly apiKeysSecret: secretsmanager.Secret;
+  public readonly elicitApiKeySecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -35,6 +36,20 @@ export class SecretsStack extends cdk.Stack {
     // trusted keys (e.g. the web frontend's BFF key, which must match
     // EPISTEME_API_KEY in Vercel) — end-user keys are DB-backed and minted
     // from the dashboard. The API fails closed in production without this.
+    // Elicit connector for the Claim Steward (#299). Until the real key is
+    // populated this holds a CDK-generated placeholder, which fails Elicit
+    // tool discovery — the Steward's toolset then omits the elicit_* tools,
+    // so the connector stays effectively off until opted in.
+    this.elicitApiKeySecret = new secretsmanager.Secret(
+      this,
+      "ElicitApiKeySecret",
+      {
+        secretName: "episteme/elicit-api-key",
+        description:
+          "Elicit API key for Steward scholarly search (#299). Must be manually populated after deploy.",
+      }
+    );
+
     this.apiKeysSecret = new secretsmanager.Secret(this, "ApiKeysSecret", {
       secretName: "episteme/api-keys",
       description:

@@ -178,6 +178,23 @@ const configSchema = z.object({
   // claims or stop, and the recursion (child runs) is bounded economically by
   // stewardEnqueueMinImportance, not by this. 0 disables.
   stewardMaxNewSubclaimsPerRun: z.coerce.number().default(20),
+  // Elicit domain connector for the Steward (#299): scholarly search over
+  // Elicit's remote MCP server. Empty key (the default) disables the
+  // connector entirely — the Steward's toolset simply omits the elicit_*
+  // tools. Every call costs real money beyond tokens, so this is opt-in
+  // per deployment.
+  elicitApiKey: z.string().default(""),
+  elicitMcpUrl: z.string().default("https://elicit.com/api/mcp"),
+  // Importance gate (§19): only claims at or above this importance get the
+  // Elicit tools in their Steward run's toolset. Default 0.75 sits between
+  // the constitution's Major (≈0.6) and Central (≈0.9) anchors — Elicit is
+  // likely overkill for most claims, so only the highest-importance ones
+  // are offered it. 0 offers it on every claim (when the key is set).
+  stewardElicitMinImportance: z.coerce.number().default(0.75),
+  // Per-run backstop on Elicit calls, mirroring web_search's max_uses: the
+  // judgment about whether to call at all stays with the Steward, but one
+  // run cannot burn unbounded provider spend. 0 disables the cap.
+  stewardElicitMaxCallsPerRun: z.coerce.number().default(3),
   // Cap the total number of Curator invocations per process (0 = unlimited),
   // mirroring stewardMaxRuns for predictable test/deploy spend.
   curatorMaxRuns: z.coerce.number().default(0),
@@ -288,6 +305,10 @@ export function loadConfig(): Config {
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
     stewardMaxNewSubclaimsPerRun:
       process.env.STEWARD_MAX_NEW_SUBCLAIMS_PER_RUN,
+    elicitApiKey: process.env.ELICIT_API_KEY,
+    elicitMcpUrl: process.env.ELICIT_MCP_URL,
+    stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,
+    stewardElicitMaxCallsPerRun: process.env.STEWARD_ELICIT_MAX_CALLS_PER_RUN,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
     curatorSweepRate: process.env.CURATOR_SWEEP_RATE,
     matcherModel: process.env.MATCHER_MODEL,
