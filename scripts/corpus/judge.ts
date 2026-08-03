@@ -68,6 +68,8 @@ const SCHEMA = {
     note: { type: "string", description: "One or two sentences: the single most important observation." },
   },
   required: ["readability", "reasoning_fit", "impartiality", "claim_bar", "decomposition_granularity", "importance_judged", "flags", "note"],
+  // Required by native structured outputs' strict schema subset.
+  additionalProperties: false,
 };
 
 export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
@@ -99,9 +101,10 @@ ${subs}`;
     schemaName: "ClaimQualityVerdict",
     model,
     // Claude-5 judge models think before answering, and thinking counts against
-    // max_tokens: too low a budget is spent thinking and never emits the
-    // respond tool. Give comfortable headroom for a small JSON verdict.
-    maxTokens: 4096,
+    // max_tokens: too low a budget is spent thinking and the structured JSON
+    // output is truncated. Give comfortable headroom for a small JSON verdict —
+    // the cap is a backstop, not a budget.
+    maxTokens: 8192,
   });
 
   return {

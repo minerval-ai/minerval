@@ -30,7 +30,11 @@ const EXTRACTED_CLAIM_SCHEMA = {
     contestation: { type: "number", description: "Provisional contestation (0.0-1.0): how live the dispute around this proposition is in the discourse, on its own — ~0 for a settled fact stated in passing, ~1 for an actively argued crux with credible parties on both sides. The contestability half of the importance formula recorded separately; a prior the Steward will revise." },
     source_location: { type: ["string", "null"], description: "Where in the document this was found" },
   },
-  required: ["original_text", "proposed_canonical_form", "claim_type", "confidence", "importance", "contestation"],
+  // Native structured outputs require additionalProperties: false and a
+  // complete required array on every object; the nullable fields (context,
+  // source_location) are now required but may be null.
+  required: ["original_text", "context", "proposed_canonical_form", "claim_type", "confidence", "importance", "contestation", "source_location"],
+  additionalProperties: false,
 };
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
