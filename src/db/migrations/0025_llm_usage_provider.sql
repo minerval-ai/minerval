@@ -1,0 +1,1 @@
+ALTER TABLE "llm_usage" ADD COLUMN "provider" text DEFAULT 'anthropic' NOT NULL;

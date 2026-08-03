@@ -50,7 +50,25 @@ describe("loadConfig model defaults", () => {
   it("rejects a Bedrock-style override", async () => {
     process.env.GOVERNANCE_MODEL = "us.anthropic.claude-sonnet-4-20250514";
     const { loadConfig } = await import("../../src/config.js");
-    expect(() => loadConfig()).toThrow();
+    expect(() => loadConfig()).toThrow(/Bedrock/);
+  });
+
+  it("accepts an OpenAI model override", async () => {
+    process.env.GOVERNANCE_MODEL = "gpt-5-nano";
+    const { loadConfig } = await import("../../src/config.js");
+    expect(loadConfig().governanceModel).toBe("gpt-5-nano");
+  });
+
+  it("accepts an OpenRouter vendor/model override", async () => {
+    process.env.GOVERNANCE_MODEL = "qwen/qwen3-235b-a22b";
+    const { loadConfig } = await import("../../src/config.js");
+    expect(loadConfig().governanceModel).toBe("qwen/qwen3-235b-a22b");
+  });
+
+  it("rejects an ID that resolves to no provider", async () => {
+    process.env.GOVERNANCE_MODEL = "llama-3-70b";
+    const { loadConfig } = await import("../../src/config.js");
+    expect(() => loadConfig()).toThrow(/does not resolve to a known provider/);
   });
 });
 

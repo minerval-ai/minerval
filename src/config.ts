@@ -1,18 +1,29 @@
 import { z } from "zod";
-import { MODELS, isAnthropicModelId } from "./llm/models.js";
+import { MODELS } from "./llm/models.js";
+import {
+  isSupportedModelId,
+  unresolvableModelIdMessage,
+} from "./llm/providers/routing.js";
 
 const DEFAULT_DB_URL =
   "postgresql://episteme:episteme_dev@localhost:5432/episteme";
 
-// A model-ID field: defaults to an Anthropic API ID and rejects Bedrock-style
-// "us.anthropic.*" overrides, which 404 against the Anthropic API (issue #11).
+// A model-ID field: defaults to an Anthropic API ID and accepts any ID that
+// RESOLVES TO A KNOWN PROVIDER — "claude-…", "gpt-…"/"o3", or an OpenRouter
+// "vendor/model" (see src/llm/providers/routing.ts). Bedrock-style
+// "us.anthropic.*" IDs resolve to nothing and are still rejected with the
+// original helpful message, because they 404 against the Anthropic API
+// (issue #11).
 const modelId = (defaultId: string) =>
   z
     .string()
-    .refine(isAnthropicModelId, {
-      message:
-        'must be an Anthropic API model ID like "claude-sonnet-5", not a ' +
-        'Bedrock "us.anthropic.*" ID',
+    .superRefine((id, ctx) => {
+      if (!isSupportedModelId(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: unresolvableModelIdMessage(id),
+        });
+      }
     })
     .default(defaultId);
 
@@ -77,11 +88,13 @@ const configSchema = z.object({
   // identifiers is a config change, not a code change.
   citationUrlBase: z.string().default(""),
 
-  // OpenAI embeddings
+  // OpenAI — embeddings AND the OpenAI LLM provider (one key serves both).
   openaiApiKey: z.string().default(""),
 
   // Anthropic API
   anthropicApiKey: z.string().default(""),
+  // OpenRouter — the "vendor/model" provider (src/llm/providers/openrouter.ts).
+  openrouterApiKey: z.string().default(""),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / metering (#70)
@@ -203,7 +216,9 @@ const configSchema = z.object({
   // 1 sweeps every new claim. Still bounded by curatorMaxRuns + the LLM budget.
   curatorSweepRate: z.coerce.number().default(1),
 
-  // Governance — Anthropic API model IDs (see src/llm/models.ts).
+  // Governance — model IDs. Any provider-resolvable ID works (see
+  // src/llm/providers/routing.ts); the defaults below are Anthropic
+  // (src/llm/models.ts).
   // The Matcher is an agentic search loop; a small model suffices since the
   // judgment is "same proposition?" over candidates it retrieves itself.
   matcherModel: modelId(MODELS.haiku),
@@ -281,6 +296,7 @@ export function loadConfig(): Config {
     citationUrlBase: process.env.CITATION_URL_BASE,
     openaiApiKey: process.env.OPENAI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    openrouterApiKey: process.env.OPENROUTER_API_KEY,
     awsRegion: process.env.AWS_REGION,
     freeTierMonthlyUsd: process.env.FREE_TIER_MONTHLY_USD,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,

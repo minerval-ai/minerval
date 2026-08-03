@@ -15,10 +15,22 @@ import { getUsageContext } from "../llm/usage-context.js";
 
 export interface LlmCallUsage {
   model: string;
+  /**
+   * Which backend served the call (anthropic | openai | openrouter). Derivable
+   * from the model id (src/llm/providers/routing.ts), but recorded so usage
+   * queries can group by provider without re-deriving the routing rules in SQL.
+   */
+  provider?: string;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /**
+   * Cost the PROVIDER reported for this call, in micro-USD. Overrides the
+   * pricing table when present — see src/llm/pricing.ts. Only OpenRouter
+   * reports one.
+   */
+  providerCostMicroUsd?: number;
 }
 
 /**
@@ -37,10 +49,13 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       requestId: ctx.requestId ?? null,
       agent: ctx.agent ?? "unknown",
       model: call.model,
+      provider: call.provider ?? "anthropic",
       inputTokens: call.inputTokens,
       outputTokens: call.outputTokens,
       cacheReadTokens: call.cacheReadTokens ?? 0,
       cacheCreationTokens: call.cacheCreationTokens ?? 0,
+      // costMicroUsd honours call.providerCostMicroUsd when the provider
+      // reported one, and falls back to the rate table otherwise.
       costMicroUsd: costMicroUsd(call.model, call),
     });
   } catch (err) {
