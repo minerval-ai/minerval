@@ -7,22 +7,11 @@ grounded in the graph, with claim citations.
 
 ## Install
 
-There's no web-store listing yet, so the extension is built from source and
-loaded unpacked. You'll need [Node.js](https://nodejs.org) 18 or newer.
+[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci)
+— one click, with automatic updates. Works in Chrome and other Chromium
+browsers (Edge, Brave, Arc).
 
-```bash
-git clone https://github.com/minerval-ai/minerval.git
-cd minerval/extension
-npm install
-npm run build
-```
-
-Then load it into Chrome (or any Chromium browser such as Edge, Brave, or
-Arc):
-
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and select `extension/build/chrome-mv3-prod`.
+To run a local build instead, see [Development](#development).
 
 ## Set it up
 
@@ -81,12 +70,19 @@ Results are cached server-side by url + content hash.
 
 ## Development
 
+You'll need [Node.js](https://nodejs.org) 18 or newer.
+
 ```bash
 cd extension
 npm install
-npm run dev      # loads a dev build; point chrome://extensions at build/chrome-mv3-dev
+npm run dev      # dev build in build/chrome-mv3-dev
 npm run build    # production build in build/chrome-mv3-prod
 ```
+
+To load a local build: open `chrome://extensions`, turn on **Developer
+mode** (top right), click **Load unpacked**, and select the build directory
+above. A loaded local build runs alongside or instead of the store version —
+disable one of the two to avoid double annotations.
 
 Built with [Plasmo](https://www.plasmo.com/) (cross-browser MV3). Point the
 extension at a local API by setting the API base URL in settings

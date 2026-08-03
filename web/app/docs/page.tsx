@@ -157,7 +157,7 @@ export default function DocsPage() {
             its provenance, and its full assessment history.
           </li>
           <li>
-            <a href="https://github.com/minerval-ai/minerval/tree/main/extension">
+            <a href="https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci">
               The browser extension
             </a>
             : claims on any webpage, colour-coded by verdict as you read.

@@ -169,7 +169,7 @@ export function Surfaces({
             claim it matches, its reasoning, and the subclaims beneath it. Pre-computed,
             not hallucinated: the decomposition is checked once and applied live.
           </p>
-          <a className={styles.cta} href="https://github.com/minerval-ai/minerval/tree/main/extension">
+          <a className={styles.cta} href="https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci">
             Get the extension →
           </a>
         </div>
