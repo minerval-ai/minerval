@@ -172,6 +172,17 @@ Configuration:
   (between §19's Major ≈0.6 and Central ≈0.9 anchors).
 - `STEWARD_ELICIT_MAX_CALLS_PER_RUN` — per-run backstop, default `3`.
 
+In production the key comes from Secrets Manager
+(`episteme/elicit-api-key`, wired through the CDK stacks like the other
+API keys). Until the real key is set the secret holds a CDK-generated
+placeholder, which fails tool discovery and leaves the connector
+effectively off:
+
+```
+aws secretsmanager put-secret-value \
+  --secret-id episteme/elicit-api-key --secret-string '<key>'
+```
+
 GDELT (provenance) and FutureSearch (forecasts, gated on the #296
 calibration concern) are the other connectors named in #299; they are not
 wired yet.

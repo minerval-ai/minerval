@@ -19,6 +19,7 @@ export interface ApiStackProps extends cdk.StackProps {
   openaiApiKeySecret: secretsmanager.Secret;
   anthropicApiKeySecret: secretsmanager.Secret;
   apiKeysSecret: secretsmanager.Secret;
+  elicitApiKeySecret: secretsmanager.Secret;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -47,6 +48,7 @@ export class ApiStack extends cdk.Stack {
     props.openaiApiKeySecret.grantRead(taskDef.taskRole);
     props.anthropicApiKeySecret.grantRead(taskDef.taskRole);
     props.apiKeysSecret.grantRead(taskDef.taskRole);
+    props.elicitApiKeySecret.grantRead(taskDef.taskRole);
 
     const container = taskDef.addContainer("api", {
       image: ecs.ContainerImage.fromAsset("..", {
@@ -128,6 +130,11 @@ export class ApiStack extends cdk.Stack {
         API_KEYS: ecs.Secret.fromSecretsManager(props.apiKeysSecret),
         ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(
           props.anthropicApiKeySecret
+        ),
+        // Elicit connector (#299): opt-in; an invalid/placeholder key
+        // degrades to the tools being omitted from Steward runs.
+        ELICIT_API_KEY: ecs.Secret.fromSecretsManager(
+          props.elicitApiKeySecret
         ),
       },
     });
