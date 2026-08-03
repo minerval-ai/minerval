@@ -7,7 +7,7 @@ grounded in the graph, with claim citations.
 
 ## Install
 
-[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/minerval/EXTENSION_ID)
+[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci)
 — one click, with automatic updates. Works in Chrome and other Chromium
 browsers (Edge, Brave, Arc).
 
