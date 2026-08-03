@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  ClaimCitationPayload,
   ClaimDetail,
   ClaimEventsPage,
   ClaimFilters,
@@ -113,6 +114,13 @@ export async function fetchList(
     `/claims?${p.toString()}`,
   );
   return r.results;
+}
+
+// "Cite this claim" (#290): the citation in every format plus the evidence
+// record, pinned to the current assessment version. Fetched on demand when a
+// reader opens the cite panel, not with the page.
+export async function fetchClaimCitation(id: string): Promise<ClaimCitationPayload> {
+  return apiGet<ClaimCitationPayload>(`/claims/${id}/citation`);
 }
 
 export async function fetchContribution(

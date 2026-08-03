@@ -48,6 +48,12 @@ vi.mock("../../../src/services/intake-service.js", () => ({
   createClaimProposal: mocks.createClaimProposal,
   createSourceProposal: mocks.createSourceProposal,
 }));
+vi.mock("../../../src/services/citation-service.js", () => ({
+  assembleClaimCitation: vi.fn(),
+}));
+vi.mock("../../../src/services/nanopub-service.js", () => ({
+  assembleClaimNanopub: vi.fn(),
+}));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: mocks.gateContributor,
 }));

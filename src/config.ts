@@ -70,6 +70,13 @@ const configSchema = z.object({
   // what MCP clients dial (https://api.claimgraph.io in production).
   publicApiBaseUrl: z.string().default("http://localhost:3000"),
 
+  // Persistent citation URL base (#290). Empty (the default) makes citations
+  // carry the claim-page URL under publicWebBaseUrl. Once the w3id.org
+  // namespace is registered (docs/infrastructure.md), set this to
+  // "https://w3id.org/minerval/claim" so the cutover to permanent
+  // identifiers is a config change, not a code change.
+  citationUrlBase: z.string().default(""),
+
   // OpenAI embeddings
   openaiApiKey: z.string().default(""),
 
@@ -254,6 +261,7 @@ export function loadConfig(): Config {
     corsOrigins: process.env.CORS_ORIGINS,
     publicWebBaseUrl: process.env.PUBLIC_WEB_BASE_URL,
     publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL,
+    citationUrlBase: process.env.CITATION_URL_BASE,
     openaiApiKey: process.env.OPENAI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     awsRegion: process.env.AWS_REGION,

@@ -12,6 +12,7 @@ import { AssessmentText } from "./AssessmentText";
 import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
+import { CiteClaim } from "./claim/CiteClaim";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -245,6 +246,11 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           </p>
         </section>
       )}
+
+      {/* cite this claim (#290) — the reading column's exit: a conventional
+          citation pinned to the current assessment version, plus the evidence
+          record for carrying the page's provenance out of the graph. */}
+      <CiteClaim claimId={claim.id} />
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content. Hidden entirely when no
