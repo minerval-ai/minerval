@@ -141,3 +141,37 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   `https://api.claimgraph.io` in production).
 - Quota knobs are shared with the REST API: `AGENTIC_RATE_LIMIT_PER_HOUR`,
   `FREE_TIER_MONTHLY_USD`.
+
+## Minerval as MCP client: domain tools for the Steward (#299)
+
+The mirror image of this server: Episteme is an agentic *user*, not a
+builder, of external evidence infrastructure. The first connector is
+**Elicit** (scientific literature) — the Claim Steward consumes Elicit's
+remote MCP server as a client, via the adapter in
+`src/llm/tools/elicit-tools.ts`.
+
+- Only Elicit's quick search tools are exposed (`elicit_search_papers`,
+  `elicit_search_trials`); the long-running report / systematic-review tools
+  are deliberately excluded — that tier belongs to the researcher subagent
+  (#298) if it is ever warranted.
+- Availability is gated on claim importance (§19): Elicit is likely overkill
+  for most claims, and the Steward is instructed to reach for it only when
+  ordinary `web_search` proves insufficient. Only claims at or above
+  `STEWARD_ELICIT_MIN_IMPORTANCE` (default `0.75`) are offered the tools.
+- Provider failures degrade gracefully (§20): discovery failure omits the
+  tools, a failed call returns a structured error the Steward routes around.
+
+Configuration:
+
+- `ELICIT_API_KEY` — enables the connector (empty = disabled; calls cost
+  real money, so this is opt-in per deployment; see #300 for the external-
+  spend budget this will fold into).
+- `ELICIT_MCP_URL` — Elicit's MCP endpoint (default
+  `https://elicit.com/api/mcp`).
+- `STEWARD_ELICIT_MIN_IMPORTANCE` — importance gate, default `0.75`
+  (between §19's Major ≈0.6 and Central ≈0.9 anchors).
+- `STEWARD_ELICIT_MAX_CALLS_PER_RUN` — per-run backstop, default `3`.
+
+GDELT (provenance) and FutureSearch (forecasts, gated on the #296
+calibration concern) are the other connectors named in #299; they are not
+wired yet.

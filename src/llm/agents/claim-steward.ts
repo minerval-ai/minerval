@@ -4,8 +4,9 @@
  * Owns a claim over time: it ASSESSES the claim it stewards (there is no separate
  * Assessor — see #30), maintains its canonical form and decomposition, integrates
  * accepted contributions, and re-judges as evidence and depended-on claims change.
- * It always has web_search and may traverse the graph. Acts through tools -- no
- * structured return value.
+ * It always has web_search and may traverse the graph; on the highest-
+ * importance claims it may also get Elicit scholarly search (#299). Acts
+ * through tools -- no structured return value.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
@@ -26,6 +27,13 @@ import {
   getMatcherToolDefinition,
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
+import {
+  elicitEnabledForImportance,
+  getElicitToolDefinitions,
+  executeElicitTool,
+  isElicitTool,
+} from "../tools/elicit-tools.js";
+import { getClaimById } from "../../services/claim-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
 
@@ -64,11 +72,28 @@ async function runClaimStewardImpl(input: {
   const claimContextTools = getClaimContextToolDefinitions();
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
+  // Elicit domain tools (#299), gated on the claim's recorded importance:
+  // scholarly search is overkill for most claims, so only the highest-
+  // importance ones (stewardElicitMinImportance, §19) even see the tools.
+  // The importance read here is the pre-run value — the Extractor's prior or
+  // a previous pass's considered score; a claim whose importance this run
+  // RAISES past the gate gets the tools on its next pass, which is the
+  // conservative direction for a real-money connector. Discovery failure
+  // degrades to no tools, never a failed run (§20).
+  const claimRow = await getClaimById(input.claimId);
+  const elicitTools = elicitEnabledForImportance(
+    claimRow?.importance ?? 0.5,
+    config
+  )
+    ? await getElicitToolDefinitions(config)
+    : [];
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
+    ...elicitTools,
     webSearchTool,
   ];
 
@@ -91,6 +116,21 @@ async function runClaimStewardImpl(input: {
 
   const iterationBudget = config.stewardMaxIterations;
   let newSubclaimsThisRun = 0;
+  let elicitCallsThisRun = 0;
+
+  const elicitNote =
+    elicitTools.length > 0
+      ? `
+
+This claim's importance clears the bar for Elicit scholarly search: the
+elicit_* tools are in your toolset (up to ${
+          config.stewardElicitMaxCallsPerRun > 0
+            ? config.stewardElicitMaxCallsPerRun
+            : "unlimited"
+        } calls this run). They are
+likely overkill even here — reach for them only if ordinary web_search proves
+insufficient for a verdict that turns on the scientific literature.`
+      : "";
 
   const userMessage = `You have been triggered to steward a claim.
 
@@ -128,7 +168,7 @@ ${structureStep}
 6. If the canonical form needs improving, use update_canonical_form.
 7. Log your decision with log_stewardship_decision.
 8. If you established or changed a material assessment, use
-   notify_dependent_stewards so claims that depend on this one are re-judged.`;
+   notify_dependent_stewards so claims that depend on this one are re-judged.${elicitNote}`;
 
   await toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -156,6 +196,23 @@ ${structureStep}
     executeTool: async (name, toolInput) => {
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput);
+      }
+      // Elicit calls cost real money, not just tokens (#299/#300): a per-run
+      // backstop mirrors web_search's max_uses. The judgment about whether
+      // to call at all stays with the Steward.
+      if (isElicitTool(name)) {
+        const cap = config.stewardElicitMaxCallsPerRun;
+        if (cap > 0 && elicitCallsThisRun >= cap) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This run has already made ${elicitCallsThisRun} Elicit call(s), ` +
+              `the per-run backstop (${cap}). Work with what those searches ` +
+              `returned plus web_search, and record your assessment.`,
+          });
+        }
+        elicitCallsThisRun++;
+        return executeElicitTool(name, toolInput, config);
       }
       if (graphNames.has(name)) {
         return executeGraphTool(name, toolInput);
