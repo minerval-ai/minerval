@@ -1,26 +1,33 @@
 /**
  * Translation between the seam's Anthropic dialect and the OpenAI Chat
- * Completions dialect, shared by the OpenAI and OpenRouter adapters.
+ * Completions dialect — plus the provider-neutral helpers shared with the
+ * Responses translation next door.
  *
- * WHY CHAT COMPLETIONS RATHER THAN THE RESPONSES API
- * --------------------------------------------------
- * The seam's conversation type is `Anthropic.MessageParam`, and toolUseLoop
- * round-trips an assistant turn by appending it as Anthropic content blocks
- * (text + tool_use) followed by tool_result blocks. Chat Completions maps onto
- * that 1:1 — tool_use ↔ `tool_calls`, tool_result ↔ a `role:"tool"` message
- * keyed by the same id — so the round-trip is lossless with no provider-opaque
- * state smuggled through the loop. The Responses API instead wants a flat item
- * list where correct multi-turn use of a reasoning model also requires echoing
- * back reasoning items (`reasoning.encrypted_content`) that have no home in an
- * Anthropic-shaped assistant turn. Chat Completions is also the only dialect
- * OpenRouter exposes for our purposes, so one translator serves both adapters
- * and there is exactly one place to fix a round-tripping bug.
+ * WHO USES WHAT
+ * -------------
+ * The Chat Completions translation (toChatMessages / toChatTools /
+ * fromChatMessage / mapFinishReason / usageFromCompletion) is **OpenRouter's**,
+ * and OpenRouter's alone. The OpenAI direct adapter used to share it; it now
+ * speaks the Responses API (see responses-dialect.ts).
  *
- * The cost of this choice: OpenAI's hosted/server-side tools live on the
- * Responses API, and reasoning context is not carried between turns of a tool
- * loop. Neither is used today (server tools are Anthropic-only in this pass).
- * Everything Responses-specific would be contained to providers/openai.ts, so
- * swapping that one adapter later does not touch this module's consumers.
+ * WHY THEY DIVERGED
+ * -----------------
+ * The original argument for one shared Chat Completions translator was that it
+ * maps 1:1 onto the seam's Anthropic-shaped assistant turn (tool_use ↔
+ * `tool_calls`, tool_result ↔ a `role:"tool"` message) with no provider-opaque
+ * state smuggled through toolUseLoop, whereas Responses wants a flat item list
+ * and, for a reasoning model, wants reasoning items echoed back. That argument
+ * traded away the two things Responses is for: OpenAI's hosted server-side
+ * tools (web search, code interpreter) live only there, and reasoning context
+ * is only carried across turns of a tool loop there. Both are worth the opaque
+ * round-trip — which `rawContent` was already designed to permit — so the
+ * OpenAI adapter took it. OpenRouter has no equivalent surface for our
+ * purposes and stays here, unchanged.
+ *
+ * The genuinely dialect-independent pieces below — the Anthropic-only
+ * capability guard, strict-schema coercion, schema-name sanitising,
+ * tool-argument parsing, tool_result flattening — are imported by BOTH
+ * translations, so each still has exactly one place to fix a bug.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
@@ -68,7 +75,7 @@ export function assertAnthropicOnlyCapabilitiesUnused(
 }
 
 /** Flatten an Anthropic tool_result payload to the plain string OpenAI wants. */
-function toolResultText(
+export function toolResultText(
   content: Anthropic.ToolResultBlockParam["content"]
 ): string {
   if (typeof content === "string") return content;

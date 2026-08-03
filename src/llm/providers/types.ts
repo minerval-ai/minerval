@@ -6,8 +6,9 @@
  * src/llm/agents/ is written against it, and switching an agent to another
  * provider must be a single env var, never a code change. Each adapter is
  * responsible for translating that dialect into its own platform's native wire
- * format and back (see providers/openai-dialect.ts for the OpenAI-compatible
- * translation shared by the OpenAI and OpenRouter adapters).
+ * format and back (see providers/responses-dialect.ts for OpenAI's Responses
+ * translation and providers/openai-dialect.ts for OpenRouter's Chat
+ * Completions one, plus the helpers both share).
  */
 import type Anthropic from "@anthropic-ai/sdk";
 

@@ -442,7 +442,7 @@ Which backend serves a call is decided by the **shape of the model id**
 | ID shape | Provider | Example |
 |----------|----------|---------|
 | `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-fable-5` |
-| `gpt-…` or `o<digit>` | OpenAI direct (Chat Completions) | `gpt-5-nano`, `o3` |
+| `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
 
@@ -452,16 +452,37 @@ message — they 404 against the Anthropic API (issue #11).
 Each adapter in `src/llm/providers/` speaks its own platform's native dialect
 rather than a lowest-common-denominator abstraction. Structured output, for
 instance, is native `output_config.format` on Anthropic, a strict `json_schema`
-response format on OpenAI, and a forced `respond` function call on OpenRouter
+`text.format` on OpenAI, and a forced `respond` function call on OpenRouter
 (the most portable mechanism across its model zoo). Each provider also carries
 its own temperature allowlist, since reasoning models reject sampling params.
+
+**OpenAI direct speaks the Responses API**, not Chat Completions. Chat
+Completions was the earlier choice because it maps 1:1 onto the seam's
+Anthropic-shaped assistant turn; Responses wins anyway, because it is where
+OpenAI's hosted server-side tools (web search, code interpreter) live and where
+a reasoning model's chain of thought can be carried across turns of a tool
+loop. Every GPT-5 model is a reasoning model, so that second point is not
+optional. The adapter is stateless — `store: false`, full history resent every
+call, `previous_response_id` never used — which means reasoning only survives a
+tool loop if it is round-tripped explicitly: requests ask for
+`include: ["reasoning.encrypted_content"]`, and the turn's whole `output` array
+(reasoning items with their `encrypted_content`, message items, `function_call`
+items) rides back through the seam's provider-opaque `rawContent` and is
+replayed verbatim into the next request's `input`, in position, with tool
+results appended as `function_call_output` items keyed by `call_id`. OpenRouter
+has no equivalent surface for our purposes and keeps the Chat Completions
+translation in `providers/openai-dialect.ts`; the dialect-independent helpers
+stay shared between the two.
 
 **Anthropic-only, by design:** server tools (`web_search`), container-backed
 execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
 fallback. Routing an agent that uses a server tool — the Claim Steward does — to
 a non-Anthropic model fails immediately with a message naming the capability,
-rather than silently dropping it. OpenAI gets automatic prefix caching with a
-stable `prompt_cache_key` per agent instead.
+rather than silently dropping it. OpenAI's own hosted tools are not wired up
+yet, but they are ordinary entries in the Responses `tools` array, so the slot
+for them is the one `toResponsesTools` already builds. OpenAI gets automatic
+prefix caching with a stable `prompt_cache_key` per agent instead of explicit
+breakpoints.
 
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
 OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
