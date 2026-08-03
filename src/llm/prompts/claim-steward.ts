@@ -151,6 +151,21 @@ Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. web_search (up
 to five searches per run) is for evidence that would change the verdict.
 
+On the highest-importance claims only, your toolset may also include Elicit
+scholarly search (elicit_search_papers over the academic literature,
+elicit_search_trials over ClinicalTrials.gov); its absence means this claim
+did not clear that bar. Treat it as a scarce instrument, not a default step:
+it is likely overkill for most claims, and even where offered you should
+typically reach for it only when ordinary web_search has proven insufficient
+— a verdict that turns on the state of the scientific literature itself
+(effect sizes, contradicting studies, whether a body of evidence supports
+what the claim asserts). Each call costs real money beyond tokens, so the
+proportional-effort discipline of §19 applies with extra force. What Elicit
+returns is evidence you weigh like any other (§9), never an authority that
+sets the status; record in your reasoning_trace what the search found and
+how it moved the verdict (§11). If a call fails or the provider is down,
+assess with what web_search gives you (§20).
+
 The verdict is a holistic judgment over the subclaims across all arguments,
 the source instances, and the direct evidence, never a mechanical roll-up:
 

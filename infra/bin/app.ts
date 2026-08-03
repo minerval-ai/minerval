@@ -38,4 +38,5 @@ new ApiStack(app, "EpistemeApi", {
   openaiApiKeySecret: secrets.openaiApiKeySecret,
   anthropicApiKeySecret: secrets.anthropicApiKeySecret,
   apiKeysSecret: secrets.apiKeysSecret,
+  elicitApiKeySecret: secrets.elicitApiKeySecret,
 });
