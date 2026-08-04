@@ -8,6 +8,7 @@
  * this service is the durable, per-user record.
  */
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { loadConfig } from "../config.js";
 import { getDb } from "../db/client.js";
 import { apiKeys, llmUsage } from "../db/schema.js";
 import { costMicroUsd } from "../llm/pricing.js";
@@ -55,8 +56,12 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       cacheReadTokens: call.cacheReadTokens ?? 0,
       cacheCreationTokens: call.cacheCreationTokens ?? 0,
       // costMicroUsd honours call.providerCostMicroUsd when the provider
-      // reported one, and falls back to the rate table otherwise.
-      costMicroUsd: costMicroUsd(call.model, call),
+      // reported one, and falls back to the rate table otherwise. The markup
+      // multiplier turns raw provider cost into the billed rate every
+      // downstream consumer (free grant, credit burn, dashboard) sees.
+      costMicroUsd: Math.round(
+        costMicroUsd(call.model, call) * loadConfig().usageMarkupMultiplier
+      ),
     });
   } catch (err) {
     // Metering must never break the calling agent. Surface loudly in logs.

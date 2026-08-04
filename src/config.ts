@@ -98,8 +98,9 @@ const configSchema = z.object({
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / metering (#70)
-  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in USD of
-  // derived cost. Non-agentic reads are never metered. 0 disables the trial
+  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in billed
+  // USD (derived cost × usageMarkupMultiplier below). Non-agentic reads are
+  // never metered. 0 disables the trial
   // (all agentic use requires credits, which aren't purchasable yet → 402).
   freeTierMonthlyUsd: z.coerce.number().default(5),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
@@ -120,6 +121,12 @@ const configSchema = z.object({
   // Bounds on a single credit purchase, in whole USD.
   creditPurchaseMinUsd: z.coerce.number().default(5),
   creditPurchaseMaxUsd: z.coerce.number().default(500),
+  // Multiplier applied to derived model cost at the metering insert
+  // (usage-service). Everything downstream — free-tier grant, credit burn,
+  // dashboard usage — is denominated in these marked-up dollars. Raw provider
+  // cost is recoverable by dividing usage rows by the multiplier in effect
+  // when they were written; changing it only affects new rows.
+  usageMarkupMultiplier: z.coerce.number().positive().default(3),
 
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
@@ -326,6 +333,7 @@ export function loadConfig(): Config {
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     creditPurchaseMinUsd: process.env.CREDIT_PURCHASE_MIN_USD,
     creditPurchaseMaxUsd: process.env.CREDIT_PURCHASE_MAX_USD,
+    usageMarkupMultiplier: process.env.USAGE_MARKUP_MULTIPLIER,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,

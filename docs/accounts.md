@@ -103,8 +103,8 @@ ops (`GET /usage/system`, service-only).
 - Agentic endpoints carry the `requireAgenticQuota` guard:
   - a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
     in-memory) as a runaway backstop, and
-  - a monthly free-tier grant (`FREE_TIER_MONTHLY_USD`, default $5 of derived
-    model cost), then purchased credits (when billing is enabled). Both
+  - a monthly free-tier grant (`FREE_TIER_MONTHLY_USD`, default $5 of metered
+    usage), then purchased credits (when billing is enabled). Both
     exhausted → `402 QUOTA_EXCEEDED` with the entitlement in the body and a
     pointer to the account page's buy-credits flow.
 
@@ -119,7 +119,13 @@ call-site changes:
 - **`StripeBillingProvider`** (#309) — active when the key looks real
   (`sk_…`): the same free grant first, then purchased credits.
 
-**Credits are prepaid dollars, spent at derived model cost.** Grants live in
+**Credits are prepaid dollars, spent at metered usage rates** — derived model
+cost times `USAGE_MARKUP_MULTIPLIER` (default 3), applied once at the metering
+insert so the grant, credit burn, and dashboard all see the same billed
+dollars. Raw provider cost is recoverable by dividing a usage row by the
+multiplier in effect when it was written; changing the multiplier only affects
+new rows. User-facing copy says "in proportion to the model work involved" and
+deliberately does not name the rate. Grants live in
 `credits_ledger` (micro-USD; positive = purchase/promo, negative = refund/
 adjustment). Spend is *not* double-booked: `llm_usage.cost_micro_usd` already
 prices every call, so `src/services/credit-service.ts` derives

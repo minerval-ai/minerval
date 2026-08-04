@@ -145,11 +145,11 @@ export default async function AccountPage({
           Reading, search, and browsing the graph are free and unmetered.
           LLM-backed requests — submitting sources for extraction, proposing
           claims, and the coming browser-extension and query features — draw on
-          a monthly free allowance of <strong>{usd(grant)}</strong> in model
-          cost{creditsEnabled ? (
+          a monthly free allowance of <strong>{usd(grant)}</strong> of metered
+          usage{creditsEnabled ? (
             <>
-              , then on purchased credits (consumed at the same derived model
-              cost)
+              , then on purchased credits; each request draws in proportion to
+              the model work it involves
             </>
           ) : (
             <>. Paid credits are not available yet; the allowance resets

@@ -56,7 +56,8 @@ export async function createCreditCheckoutSession(input: {
             name: "Minerval API credits",
             description:
               "Prepaid credits for LLM-backed Minerval API usage. " +
-              "Consumed at derived model cost; no expiry.",
+              "Drawn down per request in proportion to the model work " +
+              "involved; no expiry.",
           },
         },
       },
