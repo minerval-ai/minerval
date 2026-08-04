@@ -36,11 +36,11 @@ describe("meterLlmUsage markup", () => {
     outputTokens: 1000,
   };
 
-  it("bills raw derived cost times the default multiplier (3)", async () => {
+  it("bills raw derived cost times the default multiplier (4)", async () => {
     const { meterLlmUsage } = await loadUsageService(undefined);
     await meterLlmUsage(call);
     expect(mocks.values).toHaveBeenCalledOnce();
-    expect(mocks.values.mock.calls[0][0].costMicroUsd).toBe(180_000);
+    expect(mocks.values.mock.calls[0][0].costMicroUsd).toBe(240_000);
   });
 
   it("honours USAGE_MARKUP_MULTIPLIER", async () => {

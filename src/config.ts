@@ -126,7 +126,7 @@ const configSchema = z.object({
   // dashboard usage — is denominated in these marked-up dollars. Raw provider
   // cost is recoverable by dividing usage rows by the multiplier in effect
   // when they were written; changing it only affects new rows.
-  usageMarkupMultiplier: z.coerce.number().positive().default(3),
+  usageMarkupMultiplier: z.coerce.number().positive().default(4),
 
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...

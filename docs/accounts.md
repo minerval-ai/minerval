@@ -120,7 +120,7 @@ call-site changes:
   (`sk_…`): the same free grant first, then purchased credits.
 
 **Credits are prepaid dollars, spent at metered usage rates** — derived model
-cost times `USAGE_MARKUP_MULTIPLIER` (default 3), applied once at the metering
+cost times `USAGE_MARKUP_MULTIPLIER` (default 4), applied once at the metering
 insert so the grant, credit burn, and dashboard all see the same billed
 dollars. Raw provider cost is recoverable by dividing a usage row by the
 multiplier in effect when it was written; changing the multiplier only affects
