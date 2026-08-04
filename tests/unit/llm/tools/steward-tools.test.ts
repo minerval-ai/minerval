@@ -41,6 +41,18 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueSteward: vi.fn(async () => {}),
 }));
 
+const SOURCE_ID = "44444444-4444-4444-4444-444444444444";
+
+// Found-or-created by URL, never enqueueing extraction — the tool must reuse
+// the intake-review-safe path (getOrCreateSource), not submitSource.
+vi.mock("../../../../src/services/source-service.js", () => ({
+  getOrCreateSource: vi.fn(async (input: { url: string; title?: string }) => ({
+    id: SOURCE_ID,
+    url: input.url,
+    title: input.title ?? input.url,
+  })),
+}));
+
 import { executeStewardTool } from "../../../../src/llm/tools/steward-tools.js";
 import {
   enqueueClaimPipeline,
@@ -211,6 +223,156 @@ describe("steward add_decomposition_edge", () => {
     expect(parsed.message).toMatch(/its own Steward/);
     // Nothing was written: the steward re-calls with a briefer note.
     expect(insertedValues.find((r) => "text" in r)).toBeUndefined();
+  });
+});
+
+describe("steward record_claim_instance", () => {
+  const CLAIM = "22222222-2222-2222-2222-222222222222";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    insertedValues.length = 0;
+  });
+
+  /** Existence check passes; dedup check falls through to the default [] mock. */
+  const claimExists = () =>
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ id: CLAIM }]);
+
+  it("records a steward-encountered instance with provenance and metadata (#278)", async () => {
+    claimExists();
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/interview",
+      title: "Interview transcript",
+      original_text: "The vaccine rollout, she said, plainly reduced mortality.",
+      context: "A retrospective on the 2021 rollout.",
+      stance: "affirms",
+      speaker: "Jane Doe",
+      publication: "The Example Times",
+      source_date: "2023-05",
+      link: "https://example.org/interview#t=1204",
+      confidence: 0.9,
+    });
+
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.instance_id).toBeTruthy();
+
+    const row = insertedValues.find((r) => "originalText" in r);
+    expect(row).toMatchObject({
+      claimId: CLAIM,
+      sourceId: SOURCE_ID,
+      originalText: "The vaccine rollout, she said, plainly reduced mortality.",
+      context: "A retrospective on the 2021 rollout.",
+      stance: "affirms",
+      confidence: 0.9,
+      speaker: "Jane Doe",
+      publication: "The Example Times",
+      sourceDate: "2023-05",
+      link: "https://example.org/interview#t=1204",
+      // Distinguishes steward sightings from ingest-time extraction rows.
+      createdBy: "claim_steward",
+    });
+  });
+
+  it("normalizes a prose-cased stance and defaults confidence to 1", async () => {
+    claimExists();
+    await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/oped",
+      original_text: "This is simply not true.",
+      stance: "DENIES",
+    });
+    const row = insertedValues.find((r) => "originalText" in r);
+    expect(row?.stance).toBe("denies");
+    expect(row?.confidence).toBe(1.0);
+    // Metadata the steward didn't see stays unset (NULL), never guessed.
+    expect(row?.speaker).toBeUndefined();
+    expect(row?.sourceDate).toBeUndefined();
+  });
+
+  it("dedups on (claim, source) so re-assessments don't pile up duplicates", async () => {
+    claimExists();
+    // The dedup query finds an existing instance for this pair.
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      { id: "55555555-5555-5555-5555-555555555555", stance: "affirms" },
+    ]);
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/interview",
+      original_text: "Restating the same claim on a re-read.",
+      stance: "affirms",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.deduplicated).toBe(true);
+    expect(parsed.instance_id).toBe("55555555-5555-5555-5555-555555555555");
+    expect(insertedValues.find((r) => "originalText" in r)).toBeUndefined();
+  });
+
+  it("flags a stance conflict with the already-recorded instance instead of writing", async () => {
+    claimExists();
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      { id: "55555555-5555-5555-5555-555555555555", stance: "affirms" },
+    ]);
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/interview",
+      original_text: "Actually the source denies it here.",
+      stance: "denies",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.deduplicated).toBe(true);
+    expect(parsed.message).toMatch(/stance differs/);
+    expect(insertedValues.find((r) => "originalText" in r)).toBeUndefined();
+  });
+
+  it("bounces an out-of-enum stance without writing anything", async () => {
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/a",
+      original_text: "Some passage.",
+      stance: "mentions",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/affirms/);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("requires an http(s) url — an instance without provenance is not recordable", async () => {
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      original_text: "Some passage.",
+      stance: "affirms",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces a hallucinated claim id with a readable message (not an FK error)", async () => {
+    // The existence check finds nothing (default rawQuery mock returns []).
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: "99999999-9999-9999-9999-999999999999",
+      url: "https://example.org/a",
+      original_text: "Some passage.",
+      stance: "affirms",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/not found/i);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces a document-sized original_text (record the passage, not the page)", async () => {
+    const out = await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/a",
+      original_text: "x".repeat(2100),
+      stance: "affirms",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(insertedValues).toHaveLength(0);
   });
 });
 

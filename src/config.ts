@@ -191,6 +191,13 @@ const configSchema = z.object({
   // claims or stop, and the recursion (child runs) is bounded economically by
   // stewardEnqueueMinImportance, not by this. 0 disables.
   stewardMaxNewSubclaimsPerRun: z.coerce.number().default(20),
+  // Blast-radius backstop on a single Steward run (#278): the maximum number
+  // of claim instances one run may record (record_claim_instance). Recording
+  // instances is a cheap side effect of evidence reading the Steward does
+  // anyway — this cap only stops a runaway loop from ballooning a run, it is
+  // not a target. web_search is capped at 5 calls per run, so the default
+  // leaves room for a couple of instances per source read. 0 disables.
+  stewardMaxInstancesPerRun: z.coerce.number().default(10),
   // Elicit domain connector for the Steward (#299): scholarly search over
   // Elicit's remote MCP server. Empty key (the default) disables the
   // connector entirely — the Steward's toolset simply omits the elicit_*
@@ -321,6 +328,7 @@ export function loadConfig(): Config {
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
     stewardMaxNewSubclaimsPerRun:
       process.env.STEWARD_MAX_NEW_SUBCLAIMS_PER_RUN,
+    stewardMaxInstancesPerRun: process.env.STEWARD_MAX_INSTANCES_PER_RUN,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
     stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,

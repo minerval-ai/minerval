@@ -355,6 +355,22 @@ export const claimInstances = pgTable(
     // disagreement lives on the claim instead of in two mirror-image pages.
     stance: text("stance").notNull().default("affirms"),
     confidence: real("confidence").notNull().default(1.0),
+    // Attribution metadata (#278/#281), all nullable — many instances won't
+    // have all of these. Who asserted it (the speaker/author, which for a
+    // quote is the person quoted, not the outlet reporting it), where it
+    // appeared (the publication/outlet), when (as stated by the source,
+    // ISO-8601 to whatever precision is known: "2023", "2023-05", or
+    // "2023-05-14" — text, because partial dates are common and ISO text
+    // still sorts), and a deep link to the statement itself where it differs
+    // from the source document's URL (an anchor, a tweet inside a thread).
+    speaker: text("speaker"),
+    publication: text("publication"),
+    sourceDate: text("source_date"),
+    link: text("link"),
+    // Which agent recorded the instance: "extractor" (ingest-time extraction,
+    // the historical default) or "claim_steward" (encountered during
+    // assessment web search, #278).
+    createdBy: text("created_by").notNull().default("extractor"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -241,6 +241,12 @@ async function getClaimWithContext(claimId: string) {
       context: claimInstances.context,
       stance: claimInstances.stance,
       confidence: claimInstances.confidence,
+      // Attribution metadata (#278/#281), null where unknown: lets a reader
+      // (and a re-running Steward) weigh who said it, where, and when.
+      speaker: claimInstances.speaker,
+      publication: claimInstances.publication,
+      sourceDate: claimInstances.sourceDate,
+      link: claimInstances.link,
       sourceTitle: sources.title,
       sourceType: sources.sourceType,
       sourceUrl: sources.url,
@@ -328,6 +334,12 @@ async function getClaimWithContext(claimId: string) {
       // sources on both sides is a strong CONTESTED signal (#28/#30).
       stance: inst.stance,
       confidence: inst.confidence,
+      // Null where unrecorded — most extraction-era instances carry none of
+      // these; steward-recorded sightings (#278) fill what the source showed.
+      speaker: inst.speaker,
+      publication: inst.publication,
+      source_date: inst.sourceDate,
+      link: inst.link,
       source_title: inst.sourceTitle,
       source_type: inst.sourceType,
       source_url: inst.sourceUrl,
