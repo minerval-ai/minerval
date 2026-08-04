@@ -27,11 +27,10 @@ none of it is a code change:
    mid-flight). Remove the old names once the new ones are live.
 4. Keep `episteme.wiki` bound and add a Cloudflare Redirect Rule 301-ing it to
    `minerval.ai`, alongside the existing `claimgraph.io` rule, so old links survive.
-5. Drop the `PUBLIC_WEB_BASE_URL` pin in `infra/lib/api-stack.ts` and redeploy, so the API
-   falls back to its `https://minerval.ai` code default. Until then the API keeps sending
-   OAuth users to `episteme.wiki/oauth/consent` and stamping `episteme.wiki` claim links
-   into MCP results and extension responses — pointing those at a zone that does not
-   resolve yet would break MCP sign-in outright.
+5. ~~Drop the `PUBLIC_WEB_BASE_URL` pin in `infra/lib/api-stack.ts` and redeploy~~ — done
+   (the pin was still leaking `episteme.wiki` into citations, MCP links, and OAuth after
+   the domain went live; the API now rides its `https://minerval.ai` code default).
+   Takes effect on the next API deploy.
 
 ### Persistent citation URLs (w3id.org)
 
@@ -44,17 +43,15 @@ a redirect rule), the scholarly mechanism is a
 service configured via PR to
 [perma-id/w3id.org](https://github.com/perma-id/w3id.org).
 
-The registration is prepared in `infra/w3id/` — two files to copy into a fork
-of that repo as `minerval/README.md` + `minerval/.htaccess`, giving
-`https://w3id.org/minerval/claim/<claim-id>` → `minerval.ai/claims/<claim-id>`.
-The PR must come from the account that will maintain the namespace (it names
-Jackson as contact). After it merges:
-
-1. Verify `curl -sI https://w3id.org/minerval/claim/test` 302s to the claim page.
-2. Set `CITATION_URL_BASE=https://w3id.org/minerval/claim` on the API
-   (`infra/lib/api-stack.ts` env) — citations then carry the permanent form.
-   Until then the code default cites `minerval.ai` directly, which resolves
-   without the extra hop.
+The namespace is **registered** (perma-id/w3id.org PR merged 2026-08-03,
+submitted from Jackson's fork; the submitted files live in `infra/w3id/`):
+`https://w3id.org/minerval/claim/<claim-id>` → `minerval.ai/claims/<claim-id>`,
+and `https://w3id.org/minerval/vocab` → the `mv:` vocabulary docs.
+`CITATION_URL_BASE=https://w3id.org/minerval/claim` is set in
+`infra/lib/api-stack.ts` (#322), so citations and nanopub claim IRIs carry the
+permanent form from the next API deploy. Verify after deploying:
+`curl -sI https://w3id.org/minerval/claim/test` should 302 to the claim page,
+and `GET /claims/:id/citation` should return `w3id.org` URLs.
 
 The nanopublication export (#292, `GET /claims/:id/nanopub`) already mints
 its `mv:` vocabulary IRIs under `https://w3id.org/minerval/vocab#` (see
