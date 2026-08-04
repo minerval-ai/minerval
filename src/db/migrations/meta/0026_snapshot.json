@@ -1,6 +1,6 @@
 {
-  "id": "44959de5-52d5-4a52-9d75-b8d48e3b0711",
-  "prevId": "f40ecd19-868b-49ab-ab58-fa80e443bcc5",
+  "id": "28037f64-5f09-42a7-889c-04777ca343ba",
+  "prevId": "44959de5-52d5-4a52-9d75-b8d48e3b0711",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1204,6 +1204,37 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "speaker": {
+          "name": "speaker",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "publication": {
+          "name": "publication",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_date": {
+          "name": "source_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "link": {
+          "name": "link",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'extractor'"
         },
         "created_at": {
           "name": "created_at",
