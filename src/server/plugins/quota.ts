@@ -17,7 +17,10 @@
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { loadConfig } from "../../config.js";
-import { getBillingProvider } from "../../services/billing-service.js";
+import {
+  getBillingProvider,
+  serializeEntitlement,
+} from "../../services/billing-service.js";
 
 // callerKey → timestamps (ms) of requests within the last hour
 const windows = new Map<string, number[]>();
@@ -47,12 +50,7 @@ export interface QuotaDecision {
   statusCode?: 429 | 402;
   code?: "RATE_LIMITED" | "QUOTA_EXCEEDED";
   message?: string;
-  entitlement?: {
-    plan: string;
-    monthly_grant_micro_usd: number;
-    used_micro_usd: number;
-    remaining_micro_usd: number;
-  };
+  entitlement?: ReturnType<typeof serializeEntitlement>;
 }
 
 /**
@@ -90,16 +88,15 @@ export async function checkAgenticQuota(
         allowed: false,
         statusCode: 402,
         code: "QUOTA_EXCEEDED",
-        message:
-          "Monthly free-tier allowance for LLM-backed requests is exhausted. " +
-          "Purchasing credits is not yet available; the allowance resets at " +
-          "the start of next month.",
-        entitlement: {
-          plan: entitlement.plan,
-          monthly_grant_micro_usd: entitlement.monthlyGrantMicroUsd,
-          used_micro_usd: entitlement.usedMicroUsd,
-          remaining_micro_usd: entitlement.remainingMicroUsd,
-        },
+        message: entitlement.creditsEnabled
+          ? "Monthly free-tier allowance for LLM-backed requests is exhausted " +
+            "and no purchased credits remain. Buy credits from your account " +
+            `page (${config.publicWebBaseUrl}/account) to continue; the free ` +
+            "allowance also resets at the start of next month."
+          : "Monthly free-tier allowance for LLM-backed requests is exhausted. " +
+            "Purchasing credits is not yet available; the allowance resets at " +
+            "the start of next month.",
+        entitlement: serializeEntitlement(entitlement),
       };
     }
   }

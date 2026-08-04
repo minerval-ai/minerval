@@ -17,6 +17,7 @@ import { userRoutes } from "../routes/users.js";
 import { contributorRoutes } from "../routes/contributors.js";
 import { apiKeyRoutes } from "../routes/api-keys.js";
 import { usageRoutes } from "../routes/usage.js";
+import { billingRoutes } from "../routes/billing.js";
 import { mcpRoutes } from "../routes/mcp.js";
 import { oauthRoutes } from "../routes/oauth.js";
 import { extensionRoutes } from "../routes/extension.js";
@@ -59,6 +60,7 @@ export async function buildApp() {
   await app.register(contributorRoutes, { prefix: "/contributors" });
   await app.register(apiKeyRoutes, { prefix: "/api-keys" });
   await app.register(usageRoutes, { prefix: "/usage" });
+  await app.register(billingRoutes, { prefix: "/billing" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);

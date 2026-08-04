@@ -5,7 +5,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Contributor } from "../db/schema.js";
 import { provisionUser, getContributorById } from "../services/contributor-service.js";
-import { getBillingProvider } from "../services/billing-service.js";
+import {
+  getBillingProvider,
+  serializeEntitlement,
+} from "../services/billing-service.js";
 import { trustLevelFor } from "../services/reputation-service.js";
 
 export function serializeUser(user: Contributor) {
@@ -85,12 +88,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       }
       return reply.send({
         user: serializeUser(user),
-        entitlement: {
-          plan: entitlement.plan,
-          monthly_grant_micro_usd: entitlement.monthlyGrantMicroUsd,
-          used_micro_usd: entitlement.usedMicroUsd,
-          remaining_micro_usd: entitlement.remainingMicroUsd,
-        },
+        entitlement: serializeEntitlement(entitlement),
       });
     },
   });

@@ -99,6 +99,16 @@ export interface Entitlement {
   monthly_grant_micro_usd: number;
   used_micro_usd: number;
   remaining_micro_usd: number;
+  // Credits (#309). Optional so the frontend tolerates an older API.
+  credit_balance_micro_usd?: number;
+  credits_enabled?: boolean;
+}
+
+export interface CreditLedgerEntry {
+  id: string;
+  amount_micro_usd: number;
+  reason: string;
+  created_at: string;
 }
 
 export interface ApiKeyMeta {
@@ -180,6 +190,31 @@ export async function createApiKey(
     body: { name },
     actingUser: externalId,
   });
+}
+
+// --- Credits (#309) ----------------------------------------------------------
+
+/** Start a Stripe Checkout session; returns the hosted payment URL. */
+export async function createCreditCheckout(
+  externalId: string,
+  amountUsd: number
+): Promise<string> {
+  const r = await accountFetch<{ checkout_url: string }>("/billing/checkout", {
+    method: "POST",
+    body: { amount_usd: amountUsd },
+    actingUser: externalId,
+  });
+  return r.checkout_url;
+}
+
+export async function fetchCreditLedger(
+  externalId: string
+): Promise<CreditLedgerEntry[]> {
+  const r = await accountFetch<{ entries: CreditLedgerEntry[] }>(
+    "/billing/ledger",
+    { actingUser: externalId }
+  );
+  return r.entries;
 }
 
 export async function revokeApiKey(

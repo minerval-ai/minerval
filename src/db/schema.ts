@@ -553,6 +553,42 @@ export const llmUsage = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// credits_ledger
+//
+// Purchased-credit grants (#309) — the table the billing seam predicted
+// (src/services/billing-service.ts). One row per credit event, in micro-USD:
+// positive = a grant (Stripe Checkout purchase, promo, manual adjustment),
+// negative = a clawback (refund, correction). Metered SPEND is deliberately
+// NOT duplicated here: llm_usage already stores cost_micro_usd per call, so a
+// user's paid consumption is derived as their monthly usage beyond the free
+// grant, and balance = SUM(ledger) − that overage (see credit-service.ts).
+//
+// stripeCheckoutSessionId is UNIQUE so webhook delivery is idempotent — Stripe
+// retries and can emit both checkout.session.completed and
+// async_payment_succeeded for one purchase; one session credits exactly once.
+// ---------------------------------------------------------------------------
+export const creditsLedger = pgTable(
+  "credits_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // Positive = grant, negative = clawback. Micro-USD (1e-6 USD), matching
+    // llm_usage.cost_micro_usd so balance arithmetic never converts units.
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // purchase | refund | promo | adjustment
+    reason: text("reason").notNull().default("purchase"),
+    stripeEventId: text("stripe_event_id"),
+    stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_credits_ledger_user").on(table.userId)]
+);
+
+// ---------------------------------------------------------------------------
 // oauth_clients
 //
 // OAuth 2.1 clients for the remote MCP server (#73 follow-up): hosted MCP
@@ -1055,6 +1091,8 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 export type LlmUsage = typeof llmUsage.$inferSelect;
 export type NewLlmUsage = typeof llmUsage.$inferInsert;
+export type CreditsLedgerEntry = typeof creditsLedger.$inferSelect;
+export type NewCreditsLedgerEntry = typeof creditsLedger.$inferInsert;
 export type OAuthClient = typeof oauthClients.$inferSelect;
 export type NewOAuthClient = typeof oauthClients.$inferInsert;
 export type OAuthAuthorizationRequest =
