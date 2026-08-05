@@ -82,7 +82,7 @@ export interface AccountUser {
   avatar_url: string | null;
   reputation_score: number;
   trust_level: string;
-  kudos: number;
+  owls_earned: number;
   contribution_standing: string;
   bad_faith_flags: number;
   contributions_accepted: number;
@@ -95,19 +95,30 @@ export interface AccountUser {
 }
 
 export interface Entitlement {
-  plan: string;
-  monthly_grant_micro_usd: number;
-  used_micro_usd: number;
-  remaining_micro_usd: number;
-  // Credits (#309). Optional so the frontend tolerates an older API.
-  credit_balance_micro_usd?: number;
-  credits_enabled?: boolean;
+  owl_balance: number;
+  owl_balance_micro_usd: number;
+  owl_price_micro_usd: number;
+  prices_owls: Record<string, number>;
+  credits_enabled: boolean;
+  signup_grant_owls: number;
+  monthly_grant_owls: number;
 }
 
-export interface CreditLedgerEntry {
+export interface OwlPack {
+  id: string;
+  owls: number;
+  price_cents: number;
+  discount_percent: number;
+}
+
+export interface OwlLedgerEntry {
   id: string;
   amount_micro_usd: number;
   reason: string;
+  op: string | null;
+  claim_id: string | null;
+  contribution_id: string | null;
+  job_id: string | null;
   created_at: string;
 }
 
@@ -163,7 +174,7 @@ export async function provisionUser(input: {
 
 export async function fetchAccount(
   externalId: string
-): Promise<{ user: AccountUser; entitlement: Entitlement }> {
+): Promise<{ user: AccountUser; entitlement: Entitlement; packs: OwlPack[] }> {
   return accountFetch("/users/me", { actingUser: externalId });
 }
 
@@ -192,25 +203,25 @@ export async function createApiKey(
   });
 }
 
-// --- Credits (#309) ----------------------------------------------------------
+// --- Owls --------------------------------------------------------------------
 
-/** Start a Stripe Checkout session; returns the hosted payment URL. */
-export async function createCreditCheckout(
+/** Start a Stripe Checkout session for an owl pack; returns the payment URL. */
+export async function createOwlPackCheckout(
   externalId: string,
-  amountUsd: number
+  packId: string
 ): Promise<string> {
   const r = await accountFetch<{ checkout_url: string }>("/billing/checkout", {
     method: "POST",
-    body: { amount_usd: amountUsd },
+    body: { pack_id: packId },
     actingUser: externalId,
   });
   return r.checkout_url;
 }
 
-export async function fetchCreditLedger(
+export async function fetchOwlLedger(
   externalId: string
-): Promise<CreditLedgerEntry[]> {
-  const r = await accountFetch<{ entries: CreditLedgerEntry[] }>(
+): Promise<OwlLedgerEntry[]> {
+  const r = await accountFetch<{ entries: OwlLedgerEntry[] }>(
     "/billing/ledger",
     { actingUser: externalId }
   );

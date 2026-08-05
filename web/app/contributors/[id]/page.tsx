@@ -5,11 +5,6 @@ import { apiConfigured, fetchContributorProfile } from "../../../lib/api";
 
 export const revalidate = 60;
 
-const KUDOS_REASON_LABELS: Record<string, string> = {
-  accepted_contribution: "accepted contribution",
-  survived_appeal: "survived appeal scrutiny",
-};
-
 const TYPE_LABELS: Record<string, string> = {
   challenge: "challenge",
   support: "supporting evidence",
@@ -71,7 +66,7 @@ export default async function ContributorPage({
       <section>
         <h2>Standing</h2>
         <div className="usage-chips">
-          <span className="summary-chip">{c.kudos} kudos</span>
+          <span className="summary-chip">{c.owls_earned} owls earned</span>
           <span className="summary-chip">
             reputation {c.reputation_score.toFixed(0)}
           </span>
@@ -126,23 +121,31 @@ export default async function ContributorPage({
         </section>
       )}
 
-      {profile.recent_kudos.length > 0 && (
+      {profile.recent_awards.length > 0 && (
         <section>
-          <h2>Recent kudos</h2>
+          <h2>Recent owl awards</h2>
           <table className="account-table">
             <thead>
               <tr>
-                <th>amount</th>
+                <th>owls</th>
                 <th>for</th>
                 <th>date</th>
               </tr>
             </thead>
             <tbody>
-              {profile.recent_kudos.map((k) => (
-                <tr key={k.id}>
-                  <td>+{k.amount}</td>
-                  <td>{KUDOS_REASON_LABELS[k.reason] ?? k.reason}</td>
-                  <td>{k.created_at.slice(0, 10)}</td>
+              {profile.recent_awards.map((a) => (
+                <tr key={a.id}>
+                  <td>+{a.owls}</td>
+                  <td>
+                    {a.contribution_id ? (
+                      <Link href={`/contributions/${a.contribution_id}`}>
+                        accepted contribution
+                      </Link>
+                    ) : (
+                      "accepted contribution"
+                    )}
+                  </td>
+                  <td>{a.created_at.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>

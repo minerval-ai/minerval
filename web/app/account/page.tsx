@@ -4,17 +4,18 @@ import { auth } from "../../auth";
 import {
   accountApiConfigured,
   fetchAccount,
-  fetchCreditLedger,
+  fetchOwlLedger,
   fetchUsage,
   listApiKeys,
   AccountApiError,
   type AccountUser,
   type ApiKeyMeta,
-  type CreditLedgerEntry,
+  type OwlLedgerEntry,
+  type OwlPack,
   type Entitlement,
   type UsageSummary,
 } from "../../lib/account-api";
-import { BuyCredits } from "./BuyCredits";
+import { BuyOwls } from "./BuyOwls";
 import { KeyCreator } from "./KeyCreator";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
@@ -26,6 +27,18 @@ export const dynamic = "force-dynamic";
 function usd(micro: number): string {
   const dollars = micro / 1_000_000;
   return dollars >= 1 ? `$${dollars.toFixed(2)}` : `$${dollars.toFixed(4)}`;
+}
+
+/** Owls, trimmed: 5 → "5", 0.75 → "0.75", -0.1 → "−0.1". */
+function owls(n: number): string {
+  const s = Number(n.toFixed(3)).toString();
+  return s.startsWith("-") ? s.replace("-", "\u2212") : s;
+}
+
+/** A ledger row's human line: what the entry was for. */
+function ledgerLabel(e: OwlLedgerEntry): string {
+  const reason = e.reason.replace(/_/g, " ");
+  return e.op ? `${reason} · ${e.op.replace(/_/g, " ")}` : reason;
 }
 
 function tokens(n: number): string {
@@ -63,6 +76,7 @@ export default async function AccountPage({
 
   let user: AccountUser;
   let entitlement: Entitlement;
+  let packs: OwlPack[];
   let usage: UsageSummary;
   let keys: ApiKeyMeta[];
   try {
@@ -73,6 +87,7 @@ export default async function AccountPage({
     ]);
     user = account.user;
     entitlement = account.entitlement;
+    packs = account.packs ?? [];
     usage = usageSummary;
     keys = keyList;
   } catch (err) {
@@ -94,23 +109,19 @@ export default async function AccountPage({
     user.id
   );
 
-  // Credits (#309) — only when the API deployment has Stripe switched on.
+  // Purchases are possible only when the API deployment has Stripe on; the
+  // ledger (grants, charges, awards) exists either way.
   const creditsEnabled = entitlement.credits_enabled === true;
-  const creditBalance = entitlement.credit_balance_micro_usd ?? 0;
-  let ledger: CreditLedgerEntry[] = [];
-  if (creditsEnabled) {
-    try {
-      ledger = await fetchCreditLedger(externalId);
-    } catch {
-      // A ledger hiccup shouldn't take down the whole account page.
-    }
+  let ledger: OwlLedgerEntry[] = [];
+  try {
+    ledger = await fetchOwlLedger(externalId);
+  } catch {
+    // A ledger hiccup shouldn't take down the whole account page.
   }
 
   const activeKeys = keys.filter((k) => !k.revoked_at);
   const revokedKeys = keys.filter((k) => k.revoked_at);
-  const grant = entitlement.monthly_grant_micro_usd;
-  const usedShare =
-    grant > 0 ? Math.min(1, entitlement.used_micro_usd / grant) : 1;
+  const prices = entitlement.prices_owls ?? {};
 
   return (
     <div className="col-wide account">
@@ -128,69 +139,104 @@ export default async function AccountPage({
         {dateish(user.created_at)}
       </p>
 
-      {/* ------------------------------------------------ plan / allowance */}
+      {/* ------------------------------------------------ owls */}
       <section>
-        <h2>Plan</h2>
+        <h2>Owls</h2>
         {purchase === "success" && (
           <p className="key-reveal" role="status">
-            Payment received — credits are applied as soon as Stripe confirms
-            the purchase (usually seconds; refresh if the balance hasn&rsquo;t
+            Payment received — owls land as soon as Stripe confirms the
+            purchase (usually seconds; refresh if the balance hasn&rsquo;t
             moved yet).
           </p>
         )}
         {purchase === "cancelled" && (
           <p role="status">Purchase cancelled — nothing was charged.</p>
         )}
+        <p className="owl-balance">
+          <strong>{owls(entitlement.owl_balance)}</strong>{" "}
+          owl{entitlement.owl_balance === 1 ? "" : "s"}
+        </p>
         <p>
-          Reading, search, and browsing the graph are free and unmetered.
-          LLM-backed requests — submitting sources for extraction, proposing
-          claims, and the coming browser-extension and query features — draw on
-          a monthly free allowance of <strong>{usd(grant)}</strong> of metered
-          usage{creditsEnabled ? (
+          The owl is Minerval&rsquo;s unit of account: one owl (~
+          {usd(entitlement.owl_price_micro_usd)}) buys one claim assessment —
+          a Steward agent examining evidence and reasoning about a claim you
+          care about. Smaller actions cost fractions of an owl. Reading,
+          search, and browsing the graph are always free, and accepted
+          contributions <em>earn</em> owls. New accounts start with{" "}
+          {entitlement.signup_grant_owls} free owls
+          {entitlement.monthly_grant_owls > 0 && (
             <>
-              , then on purchased credits; each request draws in proportion to
-              the model work it involves
+              , plus {owls(entitlement.monthly_grant_owls)} more each month
             </>
-          ) : (
-            <>. Paid credits are not available yet; the allowance resets
-            monthly</>
           )}
           .
         </p>
-        <div className="meter" aria-hidden>
-          <div className="meter-fill" style={{ width: `${usedShare * 100}%` }} />
-        </div>
-        <p className="meter-caption">
-          {usd(entitlement.used_micro_usd)} of {usd(grant)} free allowance used
-          this month · {usd(entitlement.remaining_micro_usd)} remaining
-          {creditsEnabled && <> · credit balance {usd(creditBalance)}</>}
-        </p>
-        {creditsEnabled && (
+        <table className="account-table">
+          <thead>
+            <tr>
+              <th>action</th>
+              <th>price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ["propose a claim (reviewed, then assessed)", prices.claim_proposal],
+              ["order a claim assessment", prices.assessment],
+              ["submit a source for extraction", prices.source_ingest],
+              ["extension page analysis", prices.extension_analysis],
+              ["extension chat exchange", prices.extension_chat],
+              ["API text analysis (match / extract / assess)", prices.text_analysis],
+            ]
+              .filter(([, price]) => typeof price === "number")
+              .map(([label, price]) => (
+                <tr key={String(label)}>
+                  <td>{label}</td>
+                  <td>
+                    {owls(Number(price))} owl{Number(price) === 1 ? "" : "s"}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+        {creditsEnabled && packs.length > 0 && (
           <>
-            <BuyCredits />
-            {ledger.length > 0 && (
-              <>
-                <h3>Credit history</h3>
-                <table className="account-table">
-                  <thead>
-                    <tr>
-                      <th>date</th>
-                      <th>amount</th>
-                      <th>reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ledger.map((e) => (
-                      <tr key={e.id}>
-                        <td>{dateish(e.created_at)}</td>
-                        <td>{usd(e.amount_micro_usd)}</td>
-                        <td>{e.reason.replace(/_/g, " ")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+            <h3>Buy owls</h3>
+            <BuyOwls packs={packs} />
+          </>
+        )}
+        {ledger.length > 0 && (
+          <>
+            <h3>Owl history</h3>
+            <table className="account-table">
+              <thead>
+                <tr>
+                  <th>date</th>
+                  <th>owls</th>
+                  <th>what</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map((e) => (
+                  <tr key={e.id}>
+                    <td>{dateish(e.created_at)}</td>
+                    <td>
+                      {owls(e.amount_micro_usd / entitlement.owl_price_micro_usd)}
+                    </td>
+                    <td>
+                      {e.claim_id ? (
+                        <a href={`/claims/${e.claim_id}`}>{ledgerLabel(e)}</a>
+                      ) : e.contribution_id ? (
+                        <a href={`/contributions/${e.contribution_id}`}>
+                          {ledgerLabel(e)}
+                        </a>
+                      ) : (
+                        ledgerLabel(e)
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         )}
       </section>
@@ -350,7 +396,9 @@ export default async function AccountPage({
           <a href={`/contributors/${user.id}`}>public profile</a>.
         </p>
         <div className="usage-chips">
-          <span className="summary-chip">{user.kudos} kudos</span>
+          <span className="summary-chip">
+            {owls(user.owls_earned)} owls earned
+          </span>
           <span className="summary-chip">
             reputation {user.reputation_score.toFixed(0)} ({user.trust_level})
           </span>
@@ -362,9 +410,11 @@ export default async function AccountPage({
         </div>
         <p>
           Good-faith contribution is always free — a rejected-but-sincere
-          contribution costs nothing. Accepted contributions raise reputation
-          and earn kudos in proportion to the importance of the claim they
-          improve.
+          contribution costs nothing (any proposal charge is refunded).
+          Accepted contributions raise reputation and earn spendable owls in
+          proportion to the importance of the claim they improve — the
+          contributors who build the graph get real say over what it assesses
+          next.
         </p>
         {profile && profile.recent_contributions.length > 0 && (
           <>
@@ -404,7 +454,7 @@ export default async function AccountPage({
             account to pay-to-contribute standing. Deposits are not yet
             available, so contributing is paused — but the flag is appealable
             (<code>POST /appeals</code>), and a successful appeal restores
-            your standing, reputation, and kudos in full.
+            your standing, reputation, and owls in full.
           </p>
         )}
       </section>

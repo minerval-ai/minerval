@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "../../auth";
 import {
   createApiKey,
-  createCreditCheckout,
+  createOwlPackCheckout,
   revokeApiKey,
   AccountApiError,
 } from "../../lib/account-api";
@@ -50,27 +50,25 @@ export async function revokeKeyAction(formData: FormData): Promise<void> {
   revalidatePath("/account");
 }
 
-export interface BuyCreditsState {
+export interface BuyOwlsState {
   error?: string;
 }
 
 // Sends the buyer to Stripe-hosted Checkout; on success the webhook credits
-// the ledger and Stripe redirects back to /account. The acting identity comes
-// from the server session, so the only user-controlled input is the amount —
-// which the API re-validates against its configured bounds.
-export async function buyCreditsAction(
-  _prev: BuyCreditsState,
+// the owl ledger and Stripe redirects back to /account. The acting identity
+// comes from the server session, so the only user-controlled input is the
+// pack id — which the API validates against its configured pack list.
+export async function buyOwlsAction(
+  _prev: BuyOwlsState,
   formData: FormData
-): Promise<BuyCreditsState> {
+): Promise<BuyOwlsState> {
   const session = await auth();
   if (!session?.externalId) return { error: "Not signed in." };
-  const amount = Number(formData.get("amount_usd"));
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { error: "Enter a dollar amount." };
-  }
+  const packId = String(formData.get("pack_id") ?? "");
+  if (!packId) return { error: "Pick a pack." };
   let checkoutUrl: string;
   try {
-    checkoutUrl = await createCreditCheckout(session.externalId, amount);
+    checkoutUrl = await createOwlPackCheckout(session.externalId, packId);
   } catch (err) {
     const message =
       err instanceof AccountApiError

@@ -251,9 +251,10 @@ writes without review.
 
 **Contributors** are the account layer as well as the reputation layer; there
 is one account table, and everyone on it is a potential contributor. Reputation
-and kudos are kept as append-only event ledgers (`reputation_events`,
-`kudos_events`) with denormalized totals on the contributor row, so every score
-change traces back to the decision that caused it. Reviews can flag suspected
+and owl awards are kept as append-only event ledgers (`reputation_events`,
+`owl_ledger`) with denormalized totals on the contributor row, so every score
+change traces back to the decision that caused it. Accepted contributions earn
+spendable owls — the same unit that buys assessments. Reviews can flag suspected
 bad faith, and a contributor's standing feeds back into how much their
 contributions are trusted. This is the machinery the governance agents operate;
 the rules they apply live in the operational policies below.
@@ -396,7 +397,7 @@ These act through tools over the life of a claim and the graph:
   `audit_runs` row), and every consequence — a re-review, a reputation
   adjustment through the ledger, a suspension — requires the finding that
   justifies it. A re-review first neutralizes the superseded decision's
-  consequences (reputation, counters, kudos, a still-active bad-faith flag)
+  consequences (reputation, counters, owl awards, a still-active bad-faith flag)
   so the fresh review's effects don't stack on the old ones. Audit
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
@@ -485,8 +486,8 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
 
 Around that core sit the account and operations tables: `contributors` doubles
 as the account table, `api_keys` holds hashed keys, `llm_usage` meters every
-model call, `reputation_events` and `kudos_events` are the append-only score
-ledgers, `reconciliation_events` is the Curator's reversible audit log,
+model call, `reputation_events` and `owl_ledger` are the append-only score
+and currency ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
 run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks

@@ -194,7 +194,7 @@ export default async function ContributionPage({
                 A rejection can be appealed (<code>POST /appeals</code> with
                 this contribution&rsquo;s id); appeals go to the Dispute
                 Arbitrator, and an overturned decision restores standing,
-                reputation, and kudos in full.
+                reputation, and owls in full.
               </p>
             )}
           </>

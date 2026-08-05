@@ -31,11 +31,11 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
         error:
           "You have reached the hourly contribution limit for this account. Please try again later.",
       };
-    case "QUOTA_EXCEEDED":
+    case "INSUFFICIENT_OWLS":
       return {
         status: 402,
         error:
-          "Your monthly free-tier allowance is exhausted; it resets next month. Proposing a claim triggers review work, which draws on the allowance.",
+          "Proposing a claim costs 1 owl and your balance can't cover it. Buy owls from your account page — a free owl also lands at the start of each month.",
       };
     default:
       return {

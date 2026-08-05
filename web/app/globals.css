@@ -917,6 +917,21 @@ html { scroll-behavior: smooth; }
 .key-create button:disabled { color: var(--faint); cursor: default; }
 .form-error { font-family: var(--sans); font-size: 0.8rem; color: var(--st-contradicted); }
 
+/* owl balance + purchase packs */
+.owl-balance { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; }
+.owl-packs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.8rem 0 0.4rem; }
+.owl-pack {
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+  font-family: var(--sans); padding: 0.6rem 1rem; min-width: 6.5rem;
+  border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--paper-card); color: var(--ink); cursor: pointer;
+}
+.owl-pack:hover:not(:disabled) { background: var(--paper-sunk); }
+.owl-pack:disabled { color: var(--faint); cursor: default; }
+.owl-pack-count { font-size: 0.86rem; font-weight: 600; }
+.owl-pack-price { font-size: 0.82rem; }
+.owl-pack-discount { font-size: 0.72rem; color: var(--muted); }
+
 /* the one-time key reveal — deliberately loud relative to the quiet page */
 .key-reveal {
   border: 1px solid var(--st-contested); background: var(--st-contested-tint);

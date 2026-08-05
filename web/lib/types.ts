@@ -365,7 +365,7 @@ export interface LeaderboardContributor {
   id: string;
   display_name: string;
   avatar_url: string | null;
-  kudos: number;
+  owls_earned: number;
   reputation_score: number;
   trust_level: string;
   contributions_accepted: number;
@@ -380,7 +380,7 @@ export interface ContributorProfile {
     member_since: string;
     reputation_score: number;
     trust_level: string;
-    kudos: number;
+    owls_earned: number;
     contribution_standing: string;
     is_verified: boolean;
     is_suspended: boolean;
@@ -399,12 +399,10 @@ export interface ContributorProfile {
     review_status: string;
     submitted_at: string;
   }>;
-  recent_kudos: Array<{
+  recent_awards: Array<{
     id: string;
     contribution_id: string | null;
-    amount: number;
-    reason: string;
-    awarded_by: string;
+    owls: number;
     created_at: string;
   }>;
 }

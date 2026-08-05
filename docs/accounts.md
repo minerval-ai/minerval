@@ -1,12 +1,12 @@
-# Accounts, API keys & usage metering
+# Accounts, API keys, owls & usage metering
 
-Implementation of [issue #70](https://github.com/minerval-ai/minerval/issues/70):
-one identity for users and contributors, dashboard-managed API keys, and a
-per-token meter under every LLM call. #70 deliberately stopped short of
-payments; [issue #309](https://github.com/minerval-ai/minerval/issues/309)
-attached Stripe at the seam #70 left — purchased usage credits via Stripe
-Checkout, enabled purely by configuration (see
-[Billing & credits](#billing--credits-stripe)).
+One identity for users and contributors (#70), dashboard-managed API keys, a
+per-token meter under every LLM call — and the **owl**, the platform's unit
+of account. One owl has a fixed $4 face value and buys one claim assessment
+(~$1 of frontier-model work at the same 4× margin the metered era charged).
+Every price on the platform is quoted in owls, purchases go through Stripe
+Checkout in fixed packs with bulk discounts, and accepted contributions EARN
+owls — one currency for spending and recognition alike.
 
 ## One identity
 
@@ -14,17 +14,17 @@ A *user* (API consumer) and a *contributor* (graph editor) are the same
 account: one row in `contributors`. The auth subject is
 `contributors.external_id`, in the form `<provider>:<subject>`
 (e.g. `github:12345`). Consumer concerns (keys, usage, credits) and
-contributor concerns (reputation, kudos, good-faith standing — issue #71,
-see [reputation.md](reputation.md)) hang off the same row.
+contributor concerns (reputation, owl awards, good-faith standing — issue
+#71, see [reputation.md](reputation.md)) hang off the same row.
 
 ```
  human ──► web sign-in (Auth.js: GitHub/Google OAuth)
               │  provision: POST /users/provision  (service key)
               ▼
         contributors row  (external_id = "github:12345")
-              │                         │
-        api_keys (hashed)          reputation / kudos (#71)
-              │
+              │                │                │
+        api_keys (hashed)   owl_ledger     reputation (#71)
+              │             (the balance)
         llm_usage rows  (per LLM call: agent, model, tokens, cost)
 ```
 
@@ -89,73 +89,105 @@ Attribution rides in an `AsyncLocalStorage` context
   points, so any call site is attributed correctly.
 
 **Attribution boundary:** user-initiated agentic work (extraction, matching
-from `POST /sources` / `POST /claims/propose`) is billed to the requester.
-Governance work — Steward assessment sweeps, Curator reconciliation, audits,
-contribution review — is *system* usage (`user_id IS NULL`): the graph's
-upkeep belongs to everyone, and good-faith contribution stays free (#71).
+from `POST /sources` / `POST /claims/propose`) is attributed to the
+requester. Governance work — Steward assessment sweeps, Curator
+reconciliation, audits, contribution review — is *system* usage
+(`user_id IS NULL`): the graph's upkeep belongs to everyone, and good-faith
+contribution stays free (#71). The meter is **internal cost observability**;
+what the user owes is the owl ledger, below.
 
 Usage is queryable per user/key/day/agent (`GET /usage`) and in aggregate for
 ops (`GET /usage/system`, service-only).
 
-## Free tier & quotas
+## The owl: prices, free tier & quotas
 
-- Non-agentic reads: free, unmetered, generous.
-- Agentic endpoints carry the `requireAgenticQuota` guard:
-  - a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
-    in-memory) as a runaway backstop, and
-  - a monthly free-tier grant (`FREE_TIER_MONTHLY_USD`, default $5 of metered
-    usage), then purchased credits (when billing is enabled). Both
-    exhausted → `402 QUOTA_EXCEEDED` with the entitlement in the body and a
-    pointer to the account page's buy-credits flow.
+The price list lives in `src/services/owl.ts` and rides on every entitlement
+and 402 body, so what things cost is legible before anything is spent (§15):
 
-## Billing & credits (Stripe)
+| operation | price (default) | config |
+|---|---|---|
+| propose a claim (`POST /claims/propose`) | **1 owl** | `PRICE_CLAIM_PROPOSAL_OWLS` |
+| order a claim assessment (Stage 2) | **1 owl** | `PRICE_ASSESSMENT_OWLS` |
+| submit a source (`POST /sources`) | 0.1 owl | `PRICE_SOURCE_INGEST_OWLS` |
+| extension page analysis | 0.1 owl | `PRICE_EXTENSION_ANALYSIS_OWLS` |
+| extension chat exchange | 0.1 owl | `PRICE_EXTENSION_CHAT_OWLS` |
+| MCP text tools (match/extract/assess) | 0.1 owl | `PRICE_TEXT_ANALYSIS_OWLS` |
 
-`src/services/billing-service.ts` defines the `BillingProvider` interface with
-two implementations, selected by configuration exactly as #70 planned — no
-call-site changes:
+Open-ended operations (deep decomposition, grantor agents) are deliberately
+NOT priced flat — they are funded with escrowed owl budgets (Stage 2+).
 
-- **`FreeTierBillingProvider`** — active while `STRIPE_SECRET_KEY` is unset or
-  a placeholder: monthly free grant only, purchases unavailable.
-- **`StripeBillingProvider`** (#309) — active when the key looks real
-  (`sk_…`): the same free grant first, then purchased credits.
+**Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
+a claim you care about, get it assessed" ×5 — plus a 1 owl/month trickle
+(`MONTHLY_GRANT_OWLS`). Both are lazy, idempotent ledger grants
+(`signup:<user>` / `monthly:<user>:<YYYY-MM>` idempotency keys) written by
+whichever entitlement read sees the user first.
 
-**Credits are prepaid dollars, spent at metered usage rates** — derived model
-cost times `USAGE_MARKUP_MULTIPLIER` (default 4), applied once at the metering
-insert so the grant, credit burn, and dashboard all see the same billed
-dollars. Raw provider cost is recoverable by dividing a usage row by the
-multiplier in effect when it was written; changing the multiplier only affects
-new rows. User-facing copy says "in proportion to the model work involved" and
-deliberately does not name the rate. Grants live in
-`credits_ledger` (micro-USD; positive = purchase/promo, negative = refund/
-adjustment). Spend is *not* double-booked: `llm_usage.cost_micro_usd` already
-prices every call, so `src/services/credit-service.ts` derives
+**Quota gate** (`src/server/plugins/quota.ts`): agentic endpoints carry
+`requireAgenticQuota(op)`:
+
+- a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
+  in-memory) as a runaway backstop;
+- an affordability **check** (balance ≥ price) before any work — otherwise
+  `402 INSUFFICIENT_OWLS` with the price, balance, price list, and packs in
+  the body;
+- the **charge**, taken only when the operation actually starts (after
+  validation, right before the LLM work — `chargeAgenticOp` /
+  `withAgenticCharge`), never at request arrival. A failure after the charge
+  refunds; an extension-analysis cache hit refunds; an intake REJECTION of a
+  charged proposal refunds automatically (good-faith submission is free,
+  #71).
+
+Service traffic with no acting user is system work and exempt from pricing.
+
+## The owl ledger
+
+`owl_ledger` is the one spendable balance: every earn and spend is an
+explicit signed row in face-value micro-USD, and
 
 ```
-balance = SUM(credits_ledger) − Σ_months max(0, month_usage − free_grant)
+balance = SUM(owl_ledger.amount_micro_usd)
 ```
 
-— the "credit accounting is a SUM" shape the seam was built for. The same
-one-operation overshoot slack as the free tier applies at the credit floor.
+Reasons: `purchase`, `signup_grant`, `monthly_grant`, `contribution_award`,
+`charge`, `refund`, `escrow_hold`/`escrow_refund` (budgeted jobs, Stage 2),
+`admin_adjust`. Charges carry the operation (`op`) and link to the claim or
+contribution they paid for, so the account history reads as "1 owl —
+assessment of claim X". Charges are balance-guarded single-statement inserts;
+two racing requests can overshoot by at most one operation each (the same
+slack the metered era accepted).
 
-**Purchase flow** (`src/routes/billing.ts`):
+**Earning owls (#71):** an accepted contribution awards importance-scaled
+points (1–5, the old kudos rule) × `CONTRIBUTION_AWARD_OWL_PER_POINT`
+(default 0.25 owl), with a +2-point bonus for acceptances that survive appeal
+scrutiny. The leaderboard (`GET /contributors`) ranks **lifetime owls
+earned** (`contributors.owls_earned_micro_usd`) — purchases never move it and
+spending never lowers it. Audit supersession claws awards back.
 
-1. `POST /billing/checkout` (dashboard-session trust, like key minting)
-   creates a Stripe Checkout Session for $5–$500 (configurable) and returns
-   the Stripe-hosted payment URL; the buyer pays on Stripe's page.
-2. Stripe calls `POST /billing/webhook` (signature-verified against
-   `STRIPE_WEBHOOK_SECRET` over the raw body; no API key — Stripe is
-   authenticated by the signature). A paid `checkout.session.completed` /
-   `async_payment_succeeded` inserts a ledger grant, idempotently — the
-   checkout-session id is unique, so Stripe's retries and duplicate success
-   events credit exactly once.
-3. `GET /billing/ledger` powers the dashboard's credit history; the balance
-   rides on the entitlement in `/users/me` and `/usage`
-   (`credit_balance_micro_usd`, `credits_enabled`).
+## Buying owls (Stripe)
 
-Invoices/receipts stay on Stripe-hosted surfaces (enable receipt emails in the
-Stripe dashboard). Refunds issued in the Stripe dashboard are *not* yet synced
-automatically — record a negative `credits_ledger` row by hand (reason
-`refund`) until a `charge.refunded` handler lands.
+Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` —
+`stripeConfigured()`); a placeholder keeps the deployment on free grants
+only. Owls are sold in fixed packs with bulk discounts (`OWL_PACKS`,
+default `5:2000,15:5500,40:14000,125:40000` as owls:cents — $20 face value
+up to 20% off at 125 owls):
+
+1. `GET /billing/packs` (public) lists the packs.
+2. `POST /billing/checkout` (dashboard-session trust, like key minting)
+   takes a `pack_id` and returns the Stripe-hosted payment URL.
+3. Stripe calls `POST /billing/webhook` (signature-verified against
+   `STRIPE_WEBHOOK_SECRET` over the raw body). A paid
+   `checkout.session.completed` / `async_payment_succeeded` credits the
+   pack's **face value** (owls × $4) — the discount is cheaper cash for the
+   same owls, not fewer owls — idempotently via the `stripe:<session_id>`
+   idempotency key.
+4. `GET /billing/ledger` powers the dashboard's owl history; the balance and
+   price list ride on the entitlement in `/users/me` and `/usage`.
+
+Owls are strictly one-way: bought or earned, then spent — never redeemable
+for cash. Invoices/receipts stay on Stripe-hosted surfaces. Refunds issued in
+the Stripe dashboard are *not* yet synced automatically — record a negative
+`owl_ledger` row by hand (reason `admin_adjust`) until a `charge.refunded`
+handler lands.
 
 **Turning payments on** (per deployment):
 
@@ -169,11 +201,11 @@ automatically — record a negative `credits_ledger` row by hand (reason
 
 ## Dashboard
 
-`/account` on the web app: profile, free-tier meter, credit balance +
-buy-credits flow and credit history (when billing is enabled), key management
-(create/name/revoke — plaintext shown exactly once), usage by day / agent /
-key, and contributor standing. `/signin` lists whichever providers are
-configured.
+`/account` on the web app: profile, owl balance with the price list, pack
+purchase flow (when billing is enabled) and the itemized owl history, key
+management (create/name/revoke — plaintext shown exactly once), usage by
+day / agent / key (cost observability), and contributor standing including
+owls earned. `/signin` lists whichever providers are configured.
 
 ## Operational notes
 
