@@ -6,9 +6,11 @@ import type { FastifyInstance } from "fastify";
 import type { Contributor } from "../db/schema.js";
 import { provisionUser, getContributorById } from "../services/contributor-service.js";
 import {
-  getBillingProvider,
+  getEntitlement,
   serializeEntitlement,
+  serializeOwlPacks,
 } from "../services/billing-service.js";
+import { microUsdToOwls } from "../services/owl.js";
 import { trustLevelFor } from "../services/reputation-service.js";
 
 export function serializeUser(user: Contributor) {
@@ -20,7 +22,7 @@ export function serializeUser(user: Contributor) {
     avatar_url: user.avatarUrl,
     reputation_score: user.reputationScore,
     trust_level: trustLevelFor(user.reputationScore, user.isSuspended),
-    kudos: user.kudos,
+    owls_earned: microUsdToOwls(user.owlsEarnedMicroUsd),
     contribution_standing: user.contributionStanding,
     bad_faith_flags: user.badFaithFlags,
     contributions_accepted: user.contributionsAccepted,
@@ -81,7 +83,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.auth!.userId!;
       const [user, entitlement] = await Promise.all([
         getContributorById(userId),
-        getBillingProvider().getEntitlement(userId),
+        getEntitlement(userId),
       ]);
       if (!user) {
         return reply.code(404).send({ error: "Account not found" });
@@ -89,6 +91,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         user: serializeUser(user),
         entitlement: serializeEntitlement(entitlement),
+        packs: serializeOwlPacks(),
       });
     },
   });

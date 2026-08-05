@@ -235,7 +235,7 @@ export async function executeReviewerTool(
           })
           .where(eq(contributions.id, contributionId));
 
-        // Counters, reputation ledger, standing, and kudos — one write path
+        // Counters, reputation ledger, standing, and owl awards — one write path
         // in the reputation service (#71).
         const outcome = await applyReviewOutcome({
           contributionId,
@@ -285,7 +285,7 @@ export async function executeReviewerTool(
                   reputation: outcome.newScore,
                   standing: outcome.standing,
                   suspended: outcome.suspended,
-                  kudos_awarded: outcome.kudosAwarded,
+                  owls_awarded: outcome.owlsAwarded,
                 },
               }
             : {}),

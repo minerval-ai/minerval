@@ -97,35 +97,66 @@ const configSchema = z.object({
   openrouterApiKey: z.string().default(""),
   awsRegion: z.string().default("us-east-1"),
 
-  // Accounts / metering (#70)
-  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in billed
-  // USD (derived cost × usageMarkupMultiplier below). Non-agentic reads are
-  // never metered. 0 disables the trial
-  // (all agentic use requires credits, which aren't purchasable yet → 402).
-  freeTierMonthlyUsd: z.coerce.number().default(5),
+  // Accounts / owls (#70, owl economy)
+  // Face value of one owl — the platform's unit of account — in micro-USD.
+  // $4 ≈ one claim assessment (~$1 of frontier-model work at the same 4×
+  // margin usageMarkupMultiplier applied in the metered era).
+  owlPriceMicroUsd: z.coerce.number().positive().default(4_000_000),
+  // Flat prices for bounded agentic operations, in owls (fractions allowed).
+  // These are the whole price list — see src/services/owl.ts. Open-ended
+  // work (deep decomposition, grantor agents) is budgeted, not priced.
+  priceClaimProposalOwls: z.coerce.number().default(1),
+  priceAssessmentOwls: z.coerce.number().default(1),
+  priceSourceIngestOwls: z.coerce.number().default(0.1),
+  priceExtensionAnalysisOwls: z.coerce.number().default(0.1),
+  priceExtensionChatOwls: z.coerce.number().default(0.1),
+  priceTextAnalysisOwls: z.coerce.number().default(0.1),
+  // Free tier: a one-time signup grant (the "see a claim you care about,
+  // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
+  // trickle so returning users always have something. 0 disables either.
+  signupGrantOwls: z.coerce.number().default(5),
+  monthlyGrantOwls: z.coerce.number().default(1),
+  // Owls earned per kudos point of an accepted contribution (the old 1–5
+  // scale from claim importance, now paid in the spendable currency at a
+  // deliberately retuned rate: 0.25 owl/point → $1–$5 face per acceptance).
+  contributionAwardOwlPerPoint: z.coerce.number().default(0.25),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
   // A blunt in-memory backstop against runaway clients; the real spend
-  // guardrail is the metered monthly grant above.
+  // guardrail is the owl balance.
   agenticRateLimitPerHour: z.coerce.number().default(30),
 
-  // Stripe (#309). Empty/placeholder secret key = payments off: the free-tier
-  // provider stays active and /billing/checkout returns 503. The provider
-  // swap keys off the secret LOOKING like a Stripe key ("sk_…") because infra
-  // provisions placeholder secrets before they're populated — see
+  // Stripe (#309). Empty/placeholder secret key = payments off: owls can't
+  // be purchased (free grants still work) and /billing/checkout returns 503.
+  // The swap keys off the secret LOOKING like a Stripe key ("sk_…") because
+  // infra provisions placeholder secrets before they're populated — see
   // stripeConfigured() in src/services/billing-service.ts.
   stripeSecretKey: z.string().default(""),
   // Signing secret for the /billing/webhook endpoint ("whsec_…"), from the
-  // Stripe dashboard's webhook-endpoint config. Required for credits to be
-  // granted — without it every webhook delivery is rejected.
+  // Stripe dashboard's webhook-endpoint config. Required for purchases to be
+  // credited — without it every webhook delivery is rejected.
   stripeWebhookSecret: z.string().default(""),
-  // Bounds on a single credit purchase, in whole USD.
-  creditPurchaseMinUsd: z.coerce.number().default(5),
-  creditPurchaseMaxUsd: z.coerce.number().default(500),
+  // Purchase packs: "owls:cents" pairs, comma-separated. Larger packs price
+  // owls below the $4 face value — the bulk discount.
+  owlPacks: z
+    .string()
+    .transform((s) =>
+      s
+        .split(",")
+        .map((entry) => entry.trim().split(":"))
+        .filter((parts) => parts.length === 2)
+        .map(([owls, cents]) => ({
+          owls: Number(owls),
+          priceCents: Number(cents),
+        }))
+        .filter((p) => p.owls > 0 && p.priceCents > 0)
+    )
+    .default("5:2000,15:5500,40:14000,125:40000"),
   // Multiplier applied to derived model cost at the metering insert
-  // (usage-service). Everything downstream — free-tier grant, credit burn,
-  // dashboard usage — is denominated in these marked-up dollars. Raw provider
-  // cost is recoverable by dividing usage rows by the multiplier in effect
-  // when they were written; changing it only affects new rows.
+  // (usage-service). Usage rows stay internal cost observability (the bill
+  // is the owl ledger), but the marked-up denomination is kept so historic
+  // rows and margin math stay comparable. Raw provider cost is recoverable
+  // by dividing usage rows by the multiplier in effect when they were
+  // written; changing it only affects new rows.
   usageMarkupMultiplier: z.coerce.number().positive().default(4),
 
   // Reputation / good-faith policy (#71)
@@ -326,13 +357,21 @@ export function loadConfig(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
     awsRegion: process.env.AWS_REGION,
-    freeTierMonthlyUsd: process.env.FREE_TIER_MONTHLY_USD,
+    owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
+    priceClaimProposalOwls: process.env.PRICE_CLAIM_PROPOSAL_OWLS,
+    priceAssessmentOwls: process.env.PRICE_ASSESSMENT_OWLS,
+    priceSourceIngestOwls: process.env.PRICE_SOURCE_INGEST_OWLS,
+    priceExtensionAnalysisOwls: process.env.PRICE_EXTENSION_ANALYSIS_OWLS,
+    priceExtensionChatOwls: process.env.PRICE_EXTENSION_CHAT_OWLS,
+    priceTextAnalysisOwls: process.env.PRICE_TEXT_ANALYSIS_OWLS,
+    signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
+    monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
+    contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    creditPurchaseMinUsd: process.env.CREDIT_PURCHASE_MIN_USD,
-    creditPurchaseMaxUsd: process.env.CREDIT_PURCHASE_MAX_USD,
+    owlPacks: process.env.OWL_PACKS,
     usageMarkupMultiplier: process.env.USAGE_MARKUP_MULTIPLIER,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:

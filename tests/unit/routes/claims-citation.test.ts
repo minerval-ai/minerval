@@ -60,7 +60,7 @@ async function buildApp() {
   const app = Fastify();
   app.decorateRequest("auth", null);
   app.decorate("authenticate", async () => {});
-  app.decorate("requireAgenticQuota", async () => {});
+  app.decorate("requireAgenticQuota", () => async () => {});
   await app.register(claimRoutes, { prefix: "/claims" });
   return app;
 }

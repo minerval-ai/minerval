@@ -419,7 +419,7 @@ export const jobs = pgTable(
 // `externalId` is the auth subject in the form "<provider>:<subject>"
 // (e.g. "github:12345"), minted by the web app's sign-in flow; the API never
 // talks to the auth provider itself. Consumer concerns (API keys, usage,
-// credits) and contributor concerns (reputation, kudos — #71) both hang off
+// credits) and contributor concerns (reputation, owl awards — #71) both hang off
 // this row.
 // ---------------------------------------------------------------------------
 export const contributors = pgTable("contributors", {
@@ -434,9 +434,14 @@ export const contributors = pgTable("contributors", {
   contributionsEscalated: integer("contributions_escalated")
     .notNull()
     .default(0),
-  // Kudos total (#71) — denormalized SUM of kudos_events for cheap profile and
-  // leaderboard reads; kudos_events is the source of truth.
-  kudos: integer("kudos").notNull().default(0),
+  // Lifetime owls EARNED from accepted contributions (#71 recognition, now
+  // paid in the spendable currency) — denormalized SUM of the owl_ledger's
+  // contribution_award rows, in face-value micro-USD, for cheap profile and
+  // leaderboard reads. Lifetime-earned (not balance) so spending owls never
+  // lowers a contributor's standing; owl_ledger is the source of truth.
+  owlsEarnedMicroUsd: bigint("owls_earned_micro_usd", { mode: "number" })
+    .notNull()
+    .default(0),
   // Good-faith-free / bad-faith-pay standing (#71):
   //   'good'     — contribution is free (always, even when rejected on merits).
   //   'must_pay' — a suspected-bad-faith flag was recorded; contributing now
@@ -553,39 +558,59 @@ export const llmUsage = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// credits_ledger
+// owl_ledger
 //
-// Purchased-credit grants (#309) — the table the billing seam predicted
-// (src/services/billing-service.ts). One row per credit event, in micro-USD:
-// positive = a grant (Stripe Checkout purchase, promo, manual adjustment),
-// negative = a clawback (refund, correction). Metered SPEND is deliberately
-// NOT duplicated here: llm_usage already stores cost_micro_usd per call, so a
-// user's paid consumption is derived as their monthly usage beyond the free
-// grant, and balance = SUM(ledger) − that overage (see credit-service.ts).
+// The one spendable balance: owls, the platform's unit of account (1 owl =
+// OWL_PRICE_MICRO_USD of face value, ~$4 ≈ one claim assessment). Every earn
+// and every spend is an explicit signed row in face-value micro-USD, and
+// balance = SUM(amount_micro_usd) — no derived drawdown against llm_usage
+// (which remains internal cost observability, not the bill). Positive rows:
+// purchases (Stripe packs), signup/monthly free grants, contribution awards,
+// escrow refunds. Negative rows: flat-price charges, escrow holds, clawbacks.
 //
-// stripeCheckoutSessionId is UNIQUE so webhook delivery is idempotent — Stripe
-// retries and can emit both checkout.session.completed and
-// async_payment_succeeded for one purchase; one session credits exactly once.
+// idempotencyKey is UNIQUE so every grant path is safely re-runnable: Stripe
+// webhook retries ("stripe:<session_id>"), the one-time signup grant
+// ("signup:<user_id>"), and the monthly trickle ("monthly:<user_id>:<YYYY-MM>")
+// each credit exactly once.
+//
+// claimId / contributionId / jobId attribute the row for the account-page
+// history ("1 owl — assessment of claim X"); they never affect the balance.
+// jobId points at the budgeted-jobs entity (escrow holds/refunds) and is a
+// plain uuid until that table lands.
 // ---------------------------------------------------------------------------
-export const creditsLedger = pgTable(
-  "credits_ledger",
+export const owlLedger = pgTable(
+  "owl_ledger",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),
-    // Positive = grant, negative = clawback. Micro-USD (1e-6 USD), matching
-    // llm_usage.cost_micro_usd so balance arithmetic never converts units.
+    // Signed face value in micro-USD (1e-6 USD), matching
+    // llm_usage.cost_micro_usd so cost/price arithmetic never converts units.
     amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
-    // purchase | refund | promo | adjustment
+    // purchase | signup_grant | monthly_grant | contribution_award | charge |
+    // refund | escrow_hold | escrow_refund | admin_adjust
     reason: text("reason").notNull().default("purchase"),
+    // For charges/refunds: the priced operation (claim_proposal,
+    // source_ingest, extension_analysis, …) — see src/services/owl.ts.
+    op: text("op"),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    contributionId: uuid("contribution_id").references(() => contributions.id, {
+      onDelete: "set null",
+    }),
+    jobId: uuid("job_id"),
+    idempotencyKey: text("idempotency_key").unique(),
     stripeEventId: text("stripe_event_id"),
-    stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("idx_credits_ledger_user").on(table.userId)]
+  (table) => [
+    index("idx_owl_ledger_user_time").on(table.userId, table.createdAt),
+    index("idx_owl_ledger_contribution").on(table.contributionId),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -881,44 +906,6 @@ export const reputationEvents = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// kudos_events
-//
-// Append-only ledger of kudos (#71) — recognition of *helpful* contributions,
-// deliberately separate from reputation (which gates privileges). Mirrors the
-// llm_usage meter's shape (per-event rows, time-bucketed indexes) so it can
-// later convert to payouts for top contributors the way llm_usage maps onto a
-// consumer credits ledger. `contributors.kudos` caches the SUM.
-// ---------------------------------------------------------------------------
-export const kudosEvents = pgTable(
-  "kudos_events",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    contributorId: uuid("contributor_id")
-      .notNull()
-      .references(() => contributors.id, { onDelete: "cascade" }),
-    contributionId: uuid("contribution_id").references(() => contributions.id, {
-      onDelete: "set null",
-    }),
-    amount: integer("amount").notNull(),
-    // 'accepted_contribution' | 'survived_appeal' — see kudos-service.ts
-    reason: text("reason").notNull(),
-    // Who assigned it: 'system' (deterministic rules) today; peer signal or
-    // review agents may join later without a schema change.
-    awardedBy: text("awarded_by").notNull().default("system"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("idx_kudos_events_contributor_time").on(
-      table.contributorId,
-      table.createdAt
-    ),
-    index("idx_kudos_events_time").on(table.createdAt),
-  ]
-);
-
-// ---------------------------------------------------------------------------
 // reconciliation_events
 //
 // An append-only audit log of the Curator's re-individuation surgery (§18):
@@ -1091,8 +1078,8 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 export type LlmUsage = typeof llmUsage.$inferSelect;
 export type NewLlmUsage = typeof llmUsage.$inferInsert;
-export type CreditsLedgerEntry = typeof creditsLedger.$inferSelect;
-export type NewCreditsLedgerEntry = typeof creditsLedger.$inferInsert;
+export type OwlLedgerEntry = typeof owlLedger.$inferSelect;
+export type NewOwlLedgerEntry = typeof owlLedger.$inferInsert;
 export type OAuthClient = typeof oauthClients.$inferSelect;
 export type NewOAuthClient = typeof oauthClients.$inferInsert;
 export type OAuthAuthorizationRequest =
@@ -1111,8 +1098,6 @@ export type ArbitrationResult = typeof arbitrationResults.$inferSelect;
 export type NewArbitrationResult = typeof arbitrationResults.$inferInsert;
 export type ReputationEvent = typeof reputationEvents.$inferSelect;
 export type NewReputationEvent = typeof reputationEvents.$inferInsert;
-export type KudosEvent = typeof kudosEvents.$inferSelect;
-export type NewKudosEvent = typeof kudosEvents.$inferInsert;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;
 export type AuditRun = typeof auditRuns.$inferSelect;

@@ -1,24 +1,27 @@
 /**
- * Public contributor surfaces (#71): the kudos leaderboard and per-contributor
- * profiles. Reads stay open (no auth), like claim reads — recognition only
- * works if it's visible. Private account fields (email, external auth subject)
- * are never exposed here; that's what /users/me is for.
+ * Public contributor surfaces (#71): the owls-earned leaderboard and
+ * per-contributor profiles. Reads stay open (no auth), like claim reads —
+ * recognition only works if it's visible. The leaderboard ranks lifetime
+ * owls EARNED from accepted contributions: purchases never move it and
+ * spending never lowers it. Private account fields (email, external auth
+ * subject, spendable balance) are never exposed here; that's /users/me.
  */
 import type { FastifyInstance } from "fastify";
 import { getContributorById } from "../services/contributor-service.js";
 import { listContributions } from "../services/contribution-service.js";
 import {
   getLeaderboard,
-  listKudosEvents,
-} from "../services/kudos-service.js";
+  listRecentAwards,
+} from "../services/contribution-award-service.js";
+import { microUsdToOwls } from "../services/owl.js";
 import { trustLevelFor } from "../services/reputation-service.js";
 
 export async function contributorRoutes(app: FastifyInstance): Promise<void> {
-  // GET /contributors — the kudos leaderboard.
+  // GET /contributors — the owls-earned leaderboard.
   app.get<{ Querystring: { limit?: number } }>("/", {
     schema: {
       tags: ["contributors"],
-      summary: "Top contributors by kudos",
+      summary: "Top contributors by owls earned",
       querystring: {
         type: "object",
         properties: {
@@ -37,7 +40,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                   id: { type: "string", format: "uuid" },
                   display_name: { type: "string" },
                   avatar_url: { type: "string", nullable: true },
-                  kudos: { type: "integer" },
+                  owls_earned: { type: "number" },
                   reputation_score: { type: "number" },
                   trust_level: { type: "string" },
                   contributions_accepted: { type: "integer" },
@@ -57,7 +60,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
           id: r.id,
           display_name: r.displayName,
           avatar_url: r.avatarUrl,
-          kudos: r.kudos,
+          owls_earned: r.owlsEarned,
           reputation_score: r.reputationScore,
           trust_level: trustLevelFor(r.reputationScore, false),
           contributions_accepted: r.contributionsAccepted,
@@ -93,7 +96,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                 member_since: { type: "string", format: "date-time" },
                 reputation_score: { type: "number" },
                 trust_level: { type: "string" },
-                kudos: { type: "integer" },
+                owls_earned: { type: "number" },
                 contribution_standing: { type: "string" },
                 is_verified: { type: "boolean" },
                 is_suspended: { type: "boolean" },
@@ -117,7 +120,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                 },
               },
             },
-            recent_kudos: {
+            recent_awards: {
               type: "array",
               items: {
                 type: "object",
@@ -128,9 +131,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                     format: "uuid",
                     nullable: true,
                   },
-                  amount: { type: "integer" },
-                  reason: { type: "string" },
-                  awarded_by: { type: "string" },
+                  owls: { type: "number" },
                   created_at: { type: "string", format: "date-time" },
                 },
               },
@@ -159,13 +160,13 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const [contributions, kudos] = await Promise.all([
+      const [contributions, awards] = await Promise.all([
         listContributions({
           contributorId: contributor.id,
           limit: 10,
           offset: 0,
         }),
-        listKudosEvents(contributor.id, 10),
+        listRecentAwards(contributor.id, 10),
       ]);
 
       const total =
@@ -184,7 +185,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
             contributor.reputationScore,
             contributor.isSuspended
           ),
-          kudos: contributor.kudos,
+          owls_earned: microUsdToOwls(contributor.owlsEarnedMicroUsd),
           contribution_standing: contributor.contributionStanding,
           is_verified: contributor.isVerified,
           is_suspended: contributor.isSuspended,
@@ -204,13 +205,11 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
           review_status: c.reviewStatus,
           submitted_at: c.submittedAt.toISOString(),
         })),
-        recent_kudos: kudos.map((k) => ({
-          id: k.id,
-          contribution_id: k.contributionId,
-          amount: k.amount,
-          reason: k.reason,
-          awarded_by: k.awardedBy,
-          created_at: k.createdAt.toISOString(),
+        recent_awards: awards.map((a) => ({
+          id: a.id,
+          contribution_id: a.contributionId,
+          owls: a.owls,
+          created_at: a.createdAt.toISOString(),
         })),
       });
     },

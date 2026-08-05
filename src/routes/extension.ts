@@ -8,10 +8,12 @@
  * the extension polls GET /extension/analysis/:content_hash.
  *
  * POST endpoints are agentic (extractor + matcher + extension agent): they
- * authenticate with an API key and pass the metered quota gate (#70), with
- * LLM work inside runWithUsageContext so every token is attributed to the
- * calling user/key — including work that continues after a 202 is returned.
- * The poll endpoint authenticates but is not metered (no LLM work).
+ * authenticate with an API key and pass the owl quota gate, charged at their
+ * flat price (extension_analysis / extension_chat — src/services/owl.ts)
+ * when the work starts, with LLM work inside runWithUsageContext so every
+ * token is attributed to the calling user/key — including work that
+ * continues after a 202 is returned. A cache hit refunds the charge (no
+ * model work happened). The poll endpoint authenticates but is free.
  */
 import type { FastifyInstance } from "fastify";
 import {
@@ -26,6 +28,10 @@ import {
   type AnalysisState,
 } from "../services/extension-service.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
+import {
+  refundAgenticOp,
+  withAgenticCharge,
+} from "../server/plugins/quota.js";
 import type { FastifyReply } from "fastify";
 
 function sendAnalysisState(reply: FastifyReply, state: AnalysisState) {
@@ -94,20 +100,35 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    preHandler: [app.authenticate, app.requireAgenticQuota],
+    preHandler: [
+      app.authenticate,
+      app.requireAgenticQuota("extension_analysis"),
+    ],
     handler: async (request, reply) => {
       const body = extensionAnalyzeBody.parse(request.body);
 
-      const state = await runWithUsageContext(
-        {
-          userId: request.auth?.userId ?? null,
-          apiKeyId: request.auth?.apiKeyId ?? null,
-          requestId: request.id,
-        },
-        () => startAnalysis(body)
+      const run = await withAgenticCharge(
+        request.auth,
+        "extension_analysis",
+        {},
+        () =>
+          runWithUsageContext(
+            {
+              userId: request.auth?.userId ?? null,
+              apiKeyId: request.auth?.apiKeyId ?? null,
+              requestId: request.id,
+            },
+            () => startAnalysis(body)
+          )
       );
+      if (!run.ok) return app.sendQuotaDenial(reply, run.denied);
 
-      return sendAnalysisState(reply, state);
+      // A cache hit did no model work — return the charge.
+      if (run.value.state === "ready" && run.value.cached) {
+        await refundAgenticOp(request.auth, "extension_analysis");
+      }
+
+      return sendAnalysisState(reply, run.value);
     },
   });
 
@@ -156,20 +177,27 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    preHandler: [app.authenticate, app.requireAgenticQuota],
+    preHandler: [app.authenticate, app.requireAgenticQuota("extension_chat")],
     handler: async (request, reply) => {
       const body = extensionChatBody.parse(request.body);
 
-      const result = await runWithUsageContext(
-        {
-          userId: request.auth?.userId ?? null,
-          apiKeyId: request.auth?.apiKeyId ?? null,
-          requestId: request.id,
-        },
-        () => chatAboutPage(body)
+      const run = await withAgenticCharge(
+        request.auth,
+        "extension_chat",
+        {},
+        () =>
+          runWithUsageContext(
+            {
+              userId: request.auth?.userId ?? null,
+              apiKeyId: request.auth?.apiKeyId ?? null,
+              requestId: request.id,
+            },
+            () => chatAboutPage(body)
+          )
       );
+      if (!run.ok) return app.sendQuotaDenial(reply, run.denied);
 
-      return reply.send(result);
+      return reply.send(run.value);
     },
   });
 }

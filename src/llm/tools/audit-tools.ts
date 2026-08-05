@@ -149,7 +149,7 @@ export function getAuditToolDefinitions(): Tool[] {
       name: "recommend_re_review",
       description:
         "Send a decision back through the normal process: neutralizes the " +
-        "original review's consequences (reputation, counters, kudos, a " +
+        "original review's consequences (reputation, counters, owl awards, a " +
         "still-active bad-faith flag), marks it superseded, and returns the " +
         "contribution to the review queue for a fresh decision. Prefer this " +
         "to correcting outcomes yourself. Requires the finding_id from " +
@@ -407,7 +407,7 @@ export async function executeAuditTool(
         }
 
         // Undo the original decision's consequences before the fresh review
-        // applies its own — otherwise reputation, counters, and kudos stack
+        // applies its own — otherwise reputation, counters, and owl awards stack
         // twice for one contribution (#180).
         const neutralization = await neutralizeReviewOutcome({ contributionId });
 
@@ -428,7 +428,7 @@ export async function executeAuditTool(
                   superseded_review_id: neutralization.supersededReviewId,
                   contributor_reputation: neutralization.newScore,
                   bad_faith_flag_cleared: neutralization.badFaithFlagCleared,
-                  kudos_reversed: neutralization.kudosReversed,
+                  owls_reversed: neutralization.owlsReversed,
                 },
               }
             : { note: "no live review existed; contribution re-enqueued as-is" }),

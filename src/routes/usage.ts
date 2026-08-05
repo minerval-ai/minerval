@@ -9,7 +9,7 @@ import {
   type UsageTotals,
 } from "../services/usage-service.js";
 import {
-  getBillingProvider,
+  getEntitlement,
   serializeEntitlement,
 } from "../services/billing-service.js";
 
@@ -50,7 +50,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
       const days = parseDays((request.query as { days?: number }).days);
       const [summary, entitlement] = await Promise.all([
         getUsageSummary(userId, days),
-        getBillingProvider().getEntitlement(userId),
+        getEntitlement(userId),
       ]);
       return reply.send({
         days,

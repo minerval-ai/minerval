@@ -21,11 +21,13 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import {
-  awardKudos,
-  kudosForImportance,
-  KUDOS_REASONS,
-  SURVIVED_APPEAL_BONUS,
-} from "./kudos-service.js";
+  awardContributionOwls,
+  clawbackContributionOwls,
+  owlsForImportance,
+  awardPointsForImportance,
+  SURVIVED_APPEAL_BONUS_POINTS,
+} from "./contribution-award-service.js";
+import { refundChargeForContribution } from "./owl-ledger-service.js";
 
 // ---------------------------------------------------------------------------
 // Rules (pure, exported for tests and prompts)
@@ -121,7 +123,7 @@ export function trustLevelFor(score: number, isSuspended: boolean): string {
 }
 
 // ---------------------------------------------------------------------------
-// Review outcome → reputation / standing / kudos
+// Review outcome → reputation / standing / owl awards
 // ---------------------------------------------------------------------------
 
 export interface ReviewOutcomeInput {
@@ -138,14 +140,14 @@ export interface ReviewOutcomeSummary {
   newScore: number;
   standing: string;
   suspended: boolean;
-  kudosAwarded: number;
+  owlsAwarded: number;
 }
 
 /**
  * Apply the full consequences of a review decision: contribution counters,
- * reputation events + score, bad-faith standing, auto-suspension, and kudos
- * for acceptances. Called by the reviewer tool after the review row is
- * written (and by nothing else — one write path).
+ * reputation events + score, bad-faith standing, auto-suspension, and owl
+ * awards for acceptances. Called by the reviewer tool after the review row
+ * is written (and by nothing else — one write path).
  */
 export async function applyReviewOutcome(
   input: ReviewOutcomeInput
@@ -154,7 +156,7 @@ export async function applyReviewOutcome(
   // (a rejected propose_claim never materializes; propose_source never gets
   // one), and reputation, standing, and the bad-faith defense (#157) must
   // apply to them all the same. A claim-less acceptance earns the minimum
-  // kudos via importance 0.
+  // award via importance 0.
   const [contribution] = await rawQuery<{
     contributor_id: string;
     importance: number;
@@ -254,17 +256,19 @@ export async function applyReviewOutcome(
     );
   }
 
-  // Recognition: accepted contributions earn kudos scaled by how load-bearing
-  // the target claim is.
-  let kudosAwarded = 0;
+  // Recognition: accepted contributions earn spendable owls scaled by how
+  // load-bearing the target claim is. A rejection refunds any proposal
+  // charge linked to this contribution — good-faith submission that didn't
+  // pass costs nothing (#71).
+  let owlsAwarded = 0;
   if (input.decision === "accept") {
-    kudosAwarded = kudosForImportance(contribution.importance);
-    await awardKudos({
+    owlsAwarded = await awardContributionOwls({
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
-      amount: kudosAwarded,
-      reason: KUDOS_REASONS.acceptedContribution,
+      owls: owlsForImportance(contribution.importance),
     });
+  } else if (input.decision === "reject") {
+    await refundChargeForContribution(input.contributionId);
   }
 
   return {
@@ -273,7 +277,7 @@ export async function applyReviewOutcome(
     newScore,
     standing,
     suspended: contributor.is_suspended || suspend,
-    kudosAwarded,
+    owlsAwarded,
   };
 }
 
@@ -289,7 +293,7 @@ export async function applyReviewOutcome(
  * contribution earned nothing, unlike a direct accept. This applies the
  * consequences the original review would have carried: the reputation event,
  * counters (resolving the escalated counter into the final disposition), and
- * kudos on acceptance. When the Arbitrator's rejection carries a bad-faith
+ * owls on acceptance. When the Arbitrator's rejection carries a bad-faith
  * finding (#213), the flag's consequences ride along exactly as they would
  * have on a flagged review: the second ledger event, the flag count,
  * must-pay standing, and the auto-suspension check. reverseReviewOutcome
@@ -430,15 +434,15 @@ export async function applyArbitrationOutcome(input: {
     );
   }
 
-  let kudosAwarded = 0;
+  let owlsAwarded = 0;
   if (input.finalDecision === "accept") {
-    kudosAwarded = kudosForImportance(contribution.importance);
-    await awardKudos({
+    owlsAwarded = await awardContributionOwls({
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
-      amount: kudosAwarded,
-      reason: KUDOS_REASONS.acceptedContribution,
+      owls: owlsForImportance(contribution.importance),
     });
+  } else {
+    await refundChargeForContribution(input.contributionId);
   }
 
   return {
@@ -447,7 +451,7 @@ export async function applyArbitrationOutcome(input: {
     newScore,
     standing,
     suspended: contributor.is_suspended || suspend,
-    kudosAwarded,
+    owlsAwarded,
   };
 }
 
@@ -461,7 +465,7 @@ export interface ReversalSummary {
   newScore: number;
   standingRestored: boolean;
   unsuspended: boolean;
-  kudosAwarded: number;
+  owlsAwarded: number;
 }
 
 /**
@@ -469,7 +473,7 @@ export interface ReversalSummary {
  * compensate the reputation ledger, move the rejected counter to accepted,
  * clear the bad-faith flag (restoring 'good' standing when it was the only
  * one), lift a reputation-imposed suspension, and award the accepted +
- * survived-appeal kudos. Idempotent per contribution.
+ * survived-appeal owls. Idempotent per contribution.
  */
 export async function reverseReviewOutcome(input: {
   contributionId: string;
@@ -578,14 +582,16 @@ export async function reverseReviewOutcome(input: {
     ]
   );
 
-  // The contribution is now accepted AND survived scrutiny.
-  const kudosAwarded =
-    kudosForImportance(contribution.importance) + SURVIVED_APPEAL_BONUS;
-  await awardKudos({
+  // The contribution is now accepted AND survived scrutiny: the importance
+  // award plus the survived-appeal bonus, in owls.
+  const config = loadConfig();
+  const owlsAwarded = await awardContributionOwls({
     contributorId: contribution.contributor_id,
     contributionId: input.contributionId,
-    amount: kudosAwarded,
-    reason: KUDOS_REASONS.survivedAppeal,
+    owls:
+      (awardPointsForImportance(contribution.importance) +
+        SURVIVED_APPEAL_BONUS_POINTS) *
+      config.contributionAwardOwlPerPoint,
   });
 
   return {
@@ -594,7 +600,7 @@ export async function reverseReviewOutcome(input: {
     newScore,
     standingRestored,
     unsuspended: unsuspend,
-    kudosAwarded,
+    owlsAwarded,
   };
 }
 
@@ -608,7 +614,7 @@ export interface NeutralizationSummary {
   previousScore: number;
   newScore: number;
   badFaithFlagCleared: boolean;
-  kudosReversed: number;
+  owlsReversed: number;
   unsuspended: boolean;
 }
 
@@ -616,13 +622,13 @@ export interface NeutralizationSummary {
  * Undo the standing consequences of a contribution's live review so an audit
  * re-review can judge it afresh (#180). Without this, a re-review would call
  * applyReviewOutcome a second time and stack a second set of reputation
- * events, counters, and kudos on top of the first.
+ * events, counters, and owl awards on top of the first.
  *
  * Marks the review row(s) superseded (history stays; get_recent_decisions
  * shows only live decisions), inserts one compensating reputation event that
  * zeroes the contribution's net ledger effect, decrements the counter the
  * original decision incremented, clears a still-active bad-faith flag, claws
- * back kudos, and lifts a reputation-imposed suspension when the restored
+ * back the awarded owls, and lifts a reputation-imposed suspension when the restored
  * score clears the threshold (same rule as an appeal overturn). Idempotent:
  * once no live review remains there is nothing to neutralize.
  */
@@ -750,33 +756,13 @@ export async function neutralizeReviewOutcome(input: {
     );
   }
 
-  // Claw back kudos this contribution earned (acceptance and any
-  // survived-appeal bonus) with a compensating negative event, so a
-  // re-accepted contribution earns kudos once, not twice. awardKudos rejects
-  // non-positive amounts by design, so the compensation writes the ledger
-  // directly.
-  const [kudosRow] = await rawQuery<{ total: number }>(
-    `SELECT COALESCE(SUM(amount), 0)::int AS total
-     FROM kudos_events WHERE contribution_id = $1`,
-    [input.contributionId]
-  );
-  const kudosReversed = kudosRow?.total ?? 0;
-  if (kudosReversed > 0) {
-    await rawQuery(
-      `INSERT INTO kudos_events (contributor_id, contribution_id, amount, reason, awarded_by)
-       VALUES ($1, $2, $3, $4, 'system')`,
-      [
-        contribution.contributor_id,
-        input.contributionId,
-        -kudosReversed,
-        REPUTATION_REASONS.superseded,
-      ]
-    );
-    await rawQuery(
-      `UPDATE contributors SET kudos = kudos - $1 WHERE id = $2`,
-      [kudosReversed, contribution.contributor_id]
-    );
-  }
+  // Claw back the owls this contribution earned (acceptance and any
+  // survived-appeal bonus) with a compensating negative award, so a
+  // re-accepted contribution earns once, not twice.
+  const owlsReversed = await clawbackContributionOwls({
+    contributorId: contribution.contributor_id,
+    contributionId: input.contributionId,
+  });
 
   return {
     contributorId: contribution.contributor_id,
@@ -784,7 +770,7 @@ export async function neutralizeReviewOutcome(input: {
     previousScore,
     newScore,
     badFaithFlagCleared: clearFlag,
-    kudosReversed,
+    owlsReversed,
     unsuspended: unsuspend,
   };
 }

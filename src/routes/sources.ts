@@ -4,6 +4,8 @@ import { submitSource } from "../services/source-service.js";
 import { createSourceProposal } from "../services/intake-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
+import { chargeAgenticOp } from "../server/plugins/quota.js";
+import { attachChargeContribution } from "../services/owl-ledger-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -52,8 +54,8 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     // Source ingestion drives the extractor + matcher (LLM work), so it is a
-    // metered agentic surface (#70).
-    preHandler: [app.authenticate, app.requireAgenticQuota],
+    // flat-priced agentic surface (source_ingest owls — src/services/owl.ts).
+    preHandler: [app.authenticate, app.requireAgenticQuota("source_ingest")],
     handler: async (request, reply) => {
       const body = sourceSubmitBody.parse(request.body);
       const auth = request.auth;
@@ -81,12 +83,21 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       const contributor = await gateContributor(request, reply);
       if (!contributor) return;
 
+      // Charge at start: the price buys the extraction work that follows
+      // acceptance. The charge is linked to the contribution so an intake
+      // rejection refunds it automatically (good-faith submission is free).
+      const charge = await chargeAgenticOp(auth, "source_ingest");
+      if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
+
       const { contribution, sourceId } = await createSourceProposal({
         url: body.url,
         title: body.title,
         content: body.content,
         contributorId: contributor.id,
       });
+      if (charge.entryId) {
+        await attachChargeContribution(charge.entryId, contribution.id);
+      }
 
       return reply.code(202).send({
         source_id: sourceId,

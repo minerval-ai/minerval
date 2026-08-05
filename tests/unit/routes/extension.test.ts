@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   getAnalysisByHash: vi.fn(),
   chatAboutPage: vi.fn(),
   usageContexts: [] as unknown[],
+  charges: [] as string[],
+  refunds: [] as string[],
 }));
 
 vi.mock("../../../src/services/extension-service.js", () => ({
@@ -20,6 +22,22 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
   runWithUsageContext: (ctx: unknown, fn: () => unknown) => {
     mocks.usageContexts.push(ctx);
     return fn();
+  },
+}));
+
+// Charge-at-start helpers (owl economy): record the ops charged/refunded.
+vi.mock("../../../src/server/plugins/quota.js", () => ({
+  withAgenticCharge: async (
+    _auth: unknown,
+    op: string,
+    _refs: unknown,
+    fn: () => Promise<unknown>
+  ) => {
+    mocks.charges.push(op);
+    return { ok: true, value: await fn() };
+  },
+  refundAgenticOp: async (_auth: unknown, op: string) => {
+    mocks.refunds.push(op);
   },
 }));
 
@@ -41,9 +59,12 @@ async function buildTestApp() {
     gates.authenticate++;
     request.auth = userAuth;
   });
-  app.decorate("requireAgenticQuota", async () => {
+  app.decorate("requireAgenticQuota", () => async () => {
     gates.quota++;
   });
+  app.decorate("sendQuotaDenial", (reply: any, decision: any) =>
+    reply.code(decision.statusCode).send({ code: decision.code })
+  );
   await app.register(extensionRoutes, { prefix: "/extension" });
   return { app, gates };
 }
@@ -64,6 +85,8 @@ describe("extension routes", () => {
     mocks.getAnalysisByHash.mockReset();
     mocks.chatAboutPage.mockReset();
     mocks.usageContexts.length = 0;
+    mocks.charges.length = 0;
+    mocks.refunds.length = 0;
   });
 
   it("POST /extension/analyze returns 200 with the result when ready in time", async () => {
@@ -88,10 +111,31 @@ describe("extension routes", () => {
     expect(res.json()).toMatchObject({ ...ANALYSIS, cached: false });
     expect(gates.authenticate).toBe(1);
     expect(gates.quota).toBe(1);
+    expect(mocks.charges).toEqual(["extension_analysis"]);
+    expect(mocks.refunds).toEqual([]);
     expect(mocks.usageContexts[0]).toMatchObject({
       userId: "user-1",
       apiKeyId: "key-1",
     });
+  });
+
+  it("POST /extension/analyze refunds the charge on a cache hit", async () => {
+    mocks.startAnalysis.mockResolvedValue({
+      state: "ready",
+      analysis: ANALYSIS,
+      cached: true,
+    });
+    const { app } = await buildTestApp();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/extension/analyze",
+      payload: { url: "https://example.com/a", content: "x".repeat(200) },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mocks.charges).toEqual(["extension_analysis"]);
+    expect(mocks.refunds).toEqual(["extension_analysis"]);
   });
 
   it("POST /extension/analyze returns 202 + content_hash when the run outlasts the grace window (#93)", async () => {

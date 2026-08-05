@@ -23,6 +23,8 @@ import { assembleClaimCitation } from "../services/citation-service.js";
 import { assembleClaimNanopub } from "../services/nanopub-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
+import { chargeAgenticOp } from "../server/plugins/quota.js";
+import { attachChargeContribution } from "../services/owl-ledger-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -787,9 +789,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         429: errorEnvelopeSchema,
       },
     },
-    // Proposing a claim triggers LLM work (review or matching + stewarding),
-    // so it is a metered agentic surface (#70).
-    preHandler: [app.authenticate, app.requireAgenticQuota],
+    // Proposing a claim commands a full Steward pass on it — the flat
+    // claim_proposal price (1 owl; this is what the signup grant's "5 free
+    // claims" buys). See src/services/owl.ts.
+    preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
     handler: async (request, reply) => {
       const body = claimProposeBody.parse(request.body);
       const auth = request.auth;
@@ -832,11 +835,21 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       const contributor = await gateContributor(request, reply);
       if (!contributor) return;
 
+      // Charge at start: the owl buys the review-and-assess work the
+      // proposal commands. Linked to the contribution so an intake rejection
+      // refunds it automatically — a good-faith proposal that doesn't pass
+      // costs nothing (#71).
+      const charge = await chargeAgenticOp(auth, "claim_proposal");
+      if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
+
       const contribution = await createClaimProposal({
         claimText: body.claim,
         argumentText: body.argument,
         contributorId: contributor.id,
       });
+      if (charge.entryId) {
+        await attachChargeContribution(charge.entryId, contribution.id);
+      }
 
       return reply.code(202).send({
         contribution: {

@@ -167,7 +167,7 @@ describe("record_arbitration_decision reputation wiring", () => {
       newScore: 52,
       standing: "good",
       suspended: false,
-      kudosAwarded: 3,
+      owlsAwarded: 0.75,
     });
 
     const result = JSON.parse(
@@ -185,7 +185,7 @@ describe("record_arbitration_decision reputation wiring", () => {
     });
     expect(result.contributor_outcome_applied).toMatchObject({
       reputation: 52,
-      kudos_awarded: 3,
+      owls_awarded: 0.75,
     });
   });
 
@@ -196,7 +196,7 @@ describe("record_arbitration_decision reputation wiring", () => {
       newScore: 52,
       standingRestored: true,
       unsuspended: false,
-      kudosAwarded: 5,
+      owlsAwarded: 1.25,
     });
 
     await executeArbitratorTool("record_arbitration_decision", {
@@ -232,7 +232,7 @@ describe("record_arbitration_decision reputation wiring", () => {
       newScore: 34,
       standing: "must_pay",
       suspended: false,
-      kudosAwarded: 0,
+      owlsAwarded: 0,
     });
 
     const result = JSON.parse(
