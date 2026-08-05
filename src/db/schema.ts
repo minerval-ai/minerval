@@ -75,11 +75,17 @@ export const claims = pgTable(
     // importance (#172 phase 1). Today importance fuses consequence-if-wrong
     // with contestability; splitting the contestability half out is the first
     // step toward scheduling on stakes × expected-yield instead of one fused
-    // score. Recorded by the Extractor (prior) and the Steward (authoritative)
-    // but NOT yet read by the queue, the deferral brake, or effort selection —
-    // phase 2/3 of #172. NULL = not yet judged, deliberately distinct from 0
-    // ("judged settled").
+    // score. Recorded by the Extractor (prior) and the Steward (authoritative),
+    // and read by the composite queue priority below.
     contestation: real("contestation"),
+    // Composite BACKGROUND-QUEUE priority (the allocation core): the drain's
+    // ordering key, computed from importance + expected yield (marginal_yield,
+    // contestation) + user/grant stakes + staleness + provenance with legible
+    // config weights (src/services/priority-service.ts). Deliberately a
+    // SEPARATE column from importance: money and demand may buy queue
+    // position, never epistemic standing (§19 as amended). Refreshed at
+    // enqueue and by the allocation scheduler's sweep.
+    queuePriority: real("queue_priority").notNull().default(0.5),
     // --- Steward work-queue state: the claim row IS the queue ---
     // A claim with steward_state='pending' is awaiting (re)processing by its
     // Steward; the drain always picks the highest-`importance` pending claim, so
@@ -142,10 +148,11 @@ export const claims = pgTable(
   (table) => [
     index("idx_claims_state").on(table.state),
     index("idx_claims_updated").on(table.updatedAt),
-    // Drain ordering: among pending claims, highest importance first. The partial
-    // index keeps it small (only the live work queue) and fast as the graph grows.
+    // Drain ordering: among pending claims, highest composite priority first.
+    // The partial index keeps it small (only the live work queue) and fast as
+    // the graph grows.
     index("idx_claims_steward_queue")
-      .on(table.importance.desc(), table.updatedAt)
+      .on(table.queuePriority.desc(), table.updatedAt)
       .where(sql`steward_state = 'pending'`),
     // Keyword search (`text_search @@ websearch_to_tsquery(...)`) scans this,
     // not the heap, as the graph grows.
@@ -545,6 +552,11 @@ export const llmUsage = pgTable(
       .notNull()
       .default(0),
     jobId: uuid("job_id"),
+    // The claim whose stewardship this call served (#217): makes per-claim
+    // cost a query instead of unrecoverable — the marginal-cost half of the
+    // allocation estimate. Plain uuid (like jobId): metering must stay a
+    // cheap, unconditional insert.
+    claimId: uuid("claim_id"),
     requestId: text("request_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -554,6 +566,7 @@ export const llmUsage = pgTable(
     index("idx_llm_usage_user_time").on(table.userId, table.createdAt),
     index("idx_llm_usage_key_time").on(table.apiKeyId, table.createdAt),
     index("idx_llm_usage_time").on(table.createdAt),
+    index("idx_llm_usage_claim").on(table.claimId),
   ]
 );
 

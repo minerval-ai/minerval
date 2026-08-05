@@ -211,6 +211,13 @@
       "when": 1785963358877,
       "tag": "0029_demand_side",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785964575944,
+      "tag": "0030_allocation_core",
+      "breakpoints": true
     }
   ]
 }

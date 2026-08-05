@@ -8,6 +8,7 @@ import { getDb, closeDb } from "./db/client.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
+import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
@@ -106,6 +107,12 @@ async function main() {
   // decision sweeps and stale-suspension re-reviews. Its dedupe keys live in
   // the DB, so running it in every task is safe — exactly one request wins.
   pollers.push(startAuditScheduler({ logger }));
+
+  // The allocation scheduler refreshes composite queue priorities and feeds
+  // the cadence-based staleness_check re-enqueues (#283), with a bounded
+  // per-sweep inflow (#295). Both jobs are idempotent, so running it in
+  // every task is safe.
+  pollers.push(startAllocationScheduler({ logger }));
 
   // The recovery sweep (#218) re-enqueues review/arbitration work whose
   // in-memory message was lost (restart, dropped on error). The pipeline

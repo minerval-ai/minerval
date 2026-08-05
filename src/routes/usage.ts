@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import {
   getUsageSummary,
   getSystemUsageSummary,
+  getAllocationStats,
   type UsageTotals,
 } from "../services/usage-service.js";
 import {
@@ -70,6 +71,31 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
         })),
         entitlement: serializeEntitlement(entitlement),
       });
+    },
+  });
+
+  // GET /usage/allocation — the marginal-COST half of the allocation
+  // estimate (service keys only): average steward-run cost per model and
+  // per trigger, and the most expensive claims. Kept as INPUTS to judgment
+  // about thresholds and tiering, not a formula that decides.
+  app.get("/allocation", {
+    schema: {
+      tags: ["usage"],
+      summary:
+        "Allocation cost stats: per-model/per-trigger steward run costs " +
+        "and the most expensive claims (service keys only)",
+      querystring: {
+        type: "object",
+        properties: {
+          days: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+        },
+      },
+    },
+    preHandler: [app.authenticate, app.requireService],
+    handler: async (request, reply) => {
+      const days = parseDays((request.query as { days?: number }).days);
+      const stats = await getAllocationStats(days);
+      return reply.send({ days, ...stats });
     },
   });
 

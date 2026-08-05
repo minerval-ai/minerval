@@ -21,6 +21,8 @@ export interface UsageContext {
   userId?: string | null;
   apiKeyId?: string | null;
   jobId?: string | null;
+  /** The claim this work serves (#217) — makes per-claim cost a query. */
+  claimId?: string | null;
   requestId?: string | null;
   /** Agent making the calls: extractor | matcher | steward | curator | ... */
   agent?: string;

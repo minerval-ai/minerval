@@ -35,6 +35,7 @@ interface StewardTaskRow {
   steward_trigger: string | null;
   steward_context: string | null;
   steward_attempts: number | null;
+  queue_priority: number;
 }
 
 // After this many *genuine* (non-transient) failures a claim parks as 'error'
@@ -63,14 +64,18 @@ export interface StewardProcessResult {
 }
 
 /**
- * Atomically claim the single highest-importance pending claim and steward it.
- * Returns 'empty' when nothing is pending and 'budget' when the LLM budget is
- * spent (the claim is left pending for the next window — not this claim's fault).
+ * Atomically claim the single highest-PRIORITY pending claim and steward it.
+ * Ordering is the composite queue_priority (importance + yield +
+ * contestation + stakes + staleness + provenance — priority-service.ts),
+ * not raw importance: the background lane spends its budget where the
+ * marginal value estimate is highest (§19 as amended). Returns 'empty' when
+ * nothing is pending and 'budget' when the LLM budget is spent (the claim
+ * is left pending for the next window — not this claim's fault).
  */
 export async function processNextStewardTask(
   opts: { model?: string } = {}
 ): Promise<StewardProcessResult> {
-  const model = opts.model ?? loadConfig().stewardModel;
+  const config = loadConfig();
 
   // Don't even claim a task if we're already over budget this window.
   try {
@@ -88,17 +93,27 @@ export async function processNextStewardTask(
            AND (steward_state = 'pending'
                 OR (steward_state = 'running'
                     AND stewarded_at < now() - interval '15 minutes'))
-         ORDER BY importance DESC, updated_at ASC
+         ORDER BY queue_priority DESC, updated_at ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, steward_trigger, steward_context, steward_attempts`
+      RETURNING id, steward_trigger, steward_context, steward_attempts,
+                queue_priority`
   );
   if (rows.length === 0) return { status: "empty" };
 
   const task = rows[0]!;
   const trigger = task.steward_trigger ?? "structure_and_assess";
   const attempts = task.steward_attempts ?? 0;
+
+  // Model tiering: high-priority claims get the strong model (when one is
+  // configured); the caller's explicit override (corpus harness) wins.
+  const model =
+    opts.model ??
+    (config.stewardStrongModel &&
+    task.queue_priority >= config.stewardStrongMinPriority
+      ? config.stewardStrongModel
+      : config.stewardModel);
   try {
     await runClaimSteward({
       trigger,

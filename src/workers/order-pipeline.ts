@@ -26,6 +26,7 @@ import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { chargeOwls, recordOwlEntry, OWL_REASONS } from "../services/owl-ledger-service.js";
 import { microUsdToOwls } from "../services/owl.js";
+import { refreshQueuePriority } from "../services/priority-service.js";
 
 interface OrderRow {
   id: string;
@@ -88,7 +89,11 @@ async function releaseClaim(claimId: string, state: string): Promise<void> {
 export async function processNextOrderTask(
   opts: { model?: string } = {}
 ): Promise<OrderProcessResult> {
-  const model = opts.model ?? loadConfig().stewardModel;
+  const config = loadConfig();
+  // A paid order always gets the strong model when one is configured — the
+  // buyer is paying for the real thing. Caller override (harness) wins.
+  const model =
+    opts.model ?? (config.stewardStrongModel || config.stewardModel);
 
   try {
     checkBudget();
@@ -176,14 +181,17 @@ export async function processNextOrderTask(
     order.charge_entry_id = entryId;
   }
 
-  // The stake: the demand signal background priority reads (Stage 3).
-  // Idempotent per order so a transient retry doesn't double-stake.
+  // The stake: the demand signal background priority reads. Idempotent per
+  // order so a transient retry doesn't double-stake, and the composite
+  // priority refreshes so the signal lands immediately (best-effort — the
+  // scheduler's sweep catches any miss).
   await rawQuery(
     `INSERT INTO claim_stakes (claim_id, user_id, amount_micro_usd, source, order_id)
      SELECT $1, $2, $3, 'order', $4
       WHERE NOT EXISTS (SELECT 1 FROM claim_stakes WHERE order_id = $4)`,
     [order.claim_id, order.user_id, order.price_micro_usd, order.id]
   );
+  await refreshQueuePriority(order.claim_id).catch(() => {});
 
   // A claim that was never stewarded needs its first full pass, not a
   // re-assessment — the order may arrive before the background lane ever

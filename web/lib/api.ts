@@ -155,3 +155,45 @@ export async function fetchContributorProfile(
     return null;
   }
 }
+
+// --- queue transparency (owl economy, §15) -----------------------------------
+
+export interface QueueSnapshot {
+  depth: {
+    pending: number;
+    running: number;
+    done: number;
+    error: number;
+    deferred: number;
+  };
+  weights: {
+    yield: number;
+    contestation: number;
+    stake: number;
+    stake_saturation_owls: number;
+    staleness: number;
+    staleness_saturation_days: number;
+    user_provenance_boost: number;
+  };
+  pending: Array<{
+    claim_id: string;
+    text: string;
+    queue_priority: number;
+    inputs: {
+      importance: number;
+      marginal_yield: number | null;
+      contestation: number | null;
+      stake_owls: number;
+      days_since_assessed: number | null;
+      user_proposed: boolean;
+    };
+  }>;
+}
+
+export async function fetchQueue(limit = 50): Promise<QueueSnapshot | null> {
+  try {
+    return await apiGet<QueueSnapshot>(`/queue?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}

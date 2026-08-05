@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async () => []),
 }));
+// The post-enqueue priority stamp is priority-service's concern; mocking it
+// keeps these tests about the enqueue statement's own semantics.
+vi.mock("../../../src/services/priority-service.js", () => ({
+  refreshQueuePriority: vi.fn(async () => 0.5),
+}));
 
 import {
   enqueueSteward,

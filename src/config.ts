@@ -191,9 +191,10 @@ const configSchema = z.object({
   // behavior) — that makes "which claims predate fix X" a query instead of
   // archaeology, and lets scripts/archive-legacy-claims.ts retire a cohort
   // wholesale. NULL pipeline_epoch = legacy claims from before stamping existed.
-  // Current epoch: the #97/#98/#68 fixes (contestedness stop rule, importance =
-  // consequence-if-wrong × contestability, deferred-stub brake).
-  pipelineEpoch: z.string().default("2026-07-contestedness"),
+  // Current epoch: the owl-economy allocation core (§19 amendment — composite
+  // queue priority with stakes/yield/staleness as ordering inputs distinct
+  // from importance, express lane for paid orders, cadence reassessment).
+  pipelineEpoch: z.string().default("2026-08-owl-economy"),
   matchingTopK: z.coerce.number().default(20),
   // Quantity caps to bound graph fan-out (0 = unlimited). The dominant cost
   // driver is extraction count, since each extracted claim seeds a tree.
@@ -214,6 +215,36 @@ const configSchema = z.object({
   // debate subtree by default. The Steward revises it with a considered
   // judgment like any other prior.
   proposedClaimImportancePrior: z.coerce.number().default(0.3),
+
+  // --- Allocation core: composite queue priority (the background lane) ---
+  // Legible weights for the drain's ordering key (priority-service.ts):
+  // priority = importance + wYield×yield + wContest×contestation
+  //          + wStake×sat(stakes) + wStale×sat(staleness) + provenance boost.
+  // Inputs to judgment about ORDERING — stakes/money never touch importance.
+  priorityYieldWeight: z.coerce.number().default(0.3),
+  priorityContestationWeight: z.coerce.number().default(0.2),
+  priorityStakeWeight: z.coerce.number().default(0.5),
+  // Stakes saturate at this many owls: the 6th owl on one claim buys less
+  // queue position than the 1st, so wealth can't monopolize the lane.
+  priorityStakeSaturationOwls: z.coerce.number().default(5),
+  priorityStalenessWeight: z.coerce.number().default(0.2),
+  priorityStalenessSaturationDays: z.coerce.number().default(90),
+  // User-proposed claims outrank equal-priority corpus work (#284): a human
+  // cared enough to type it in.
+  priorityUserProvenanceBoost: z.coerce.number().default(0.15),
+  // Model tiering: background claims at/above this composite priority run on
+  // the strong model (empty = tiering off, everything uses stewardModel).
+  // Paid express orders always use the strong model when set — the buyer is
+  // paying for the real thing.
+  stewardStrongModel: z.string().default(""),
+  stewardStrongMinPriority: z.coerce.number().default(1.2),
+  // The allocation scheduler (workers/allocation-scheduler.ts): how often to
+  // refresh pending priorities and check assessed claims for staleness
+  // (0 disables), and the reassessment-inflow cap per sweep — a bounded
+  // producer so cadence can never cascade the queue (#295's R<1).
+  allocationSweepIntervalHours: z.coerce.number().default(6),
+  stalenessBaseDays: z.coerce.number().default(60),
+  stalenessMaxPerSweep: z.coerce.number().default(5),
 
   // The Steward owns decomposition + assessment in one tool-use loop, so its
   // iteration cap is a pure runaway backstop, NOT a work budget — set it high.
@@ -388,6 +419,19 @@ export function loadConfig(): Config {
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
+    priorityYieldWeight: process.env.PRIORITY_YIELD_WEIGHT,
+    priorityContestationWeight: process.env.PRIORITY_CONTESTATION_WEIGHT,
+    priorityStakeWeight: process.env.PRIORITY_STAKE_WEIGHT,
+    priorityStakeSaturationOwls: process.env.PRIORITY_STAKE_SATURATION_OWLS,
+    priorityStalenessWeight: process.env.PRIORITY_STALENESS_WEIGHT,
+    priorityStalenessSaturationDays:
+      process.env.PRIORITY_STALENESS_SATURATION_DAYS,
+    priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
+    stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
+    stewardStrongMinPriority: process.env.STEWARD_STRONG_MIN_PRIORITY,
+    allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
+    stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
+    stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
     stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,

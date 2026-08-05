@@ -1,6 +1,7 @@
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { refreshQueuePriority } from "./priority-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -229,6 +230,19 @@ export async function enqueueSteward(
         AND state = 'active'`,
     [message.claimId, message.trigger, chunk]
   );
+
+  // Stamp the composite queue priority as the claim enters the lane, so the
+  // drain's ordering is current the moment the slot exists. (Refreshed again
+  // by the allocation scheduler's sweep while it waits.) Best-effort: a
+  // priority hiccup must not lose the enqueue itself.
+  try {
+    await refreshQueuePriority(message.claimId);
+  } catch (err) {
+    console.warn(
+      `[queue] priority refresh failed for ${message.claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 export async function enqueueCurator(
