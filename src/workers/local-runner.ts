@@ -23,6 +23,8 @@ import { handleContributionMessage } from "./contribution-pipeline.js";
 import { handleArbitrationMessage } from "./arbitration-pipeline.js";
 import { handleAuditMessage } from "./audit-pipeline.js";
 import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.js";
+import { processNextOrderTask } from "./order-pipeline.js";
+import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
@@ -49,7 +51,7 @@ const HANDLERS: Array<[LocalQueueName, (m: never) => Promise<void>]> = [
 /** One processed message — the unit of the observability trace. */
 export interface RunnerEvent {
   seq: number;
-  queue: LocalQueueName | "steward";
+  queue: LocalQueueName | "steward" | "order" | "budgetJob";
   message: unknown;
   ok: boolean;
   error?: string;
@@ -142,11 +144,77 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       continue;
     }
 
-    // 2. No in-memory work — try one Steward task (highest importance pending),
-    //    unless the per-drain Steward budget is spent (leave the rest as stubs).
+    // 2. Express lane: paid assessment orders dispatch ahead of ALL
+    //    background stewarding — a purchase doesn't queue. Order and
+    //    budget-job runs are Steward runs, so they count toward the same
+    //    per-drain cap as the batch drain.
     if (stewardProcessed >= stewardCap) {
       return { processed, errors, capped: (await pendingStewardCount()) > 0 };
     }
+    {
+      const startedAt = now();
+      const o = await processNextOrderTask({ model: opts.stewardModel });
+      if (o.status === "budget") {
+        checkBudget();
+        return { processed, errors, capped: false };
+      }
+      if (o.status === "transient") {
+        return { processed, errors, capped: true };
+      }
+      if (o.status === "processed") {
+        seq++;
+        stewardProcessed++;
+        if (o.ok) processed.order = (processed.order ?? 0) + 1;
+        else errors.order = (errors.order ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "order",
+          message: { orderId: o.orderId, claimId: o.claimId },
+          ok: !!o.ok,
+          error: o.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
+      // 'empty' or 'busy' — fall through to the funded and background lanes.
+    }
+
+    // 3. Funded budget jobs (deep decomposition): one target per pass, so
+    //    orders and background work stay interleaved with long-running jobs.
+    {
+      const startedAt = now();
+      const b = await processNextBudgetJobTask({ model: opts.stewardModel });
+      if (b.status === "budget") {
+        checkBudget();
+        return { processed, errors, capped: false };
+      }
+      if (b.status === "transient") {
+        return { processed, errors, capped: true };
+      }
+      if (b.status === "processed") {
+        seq++;
+        stewardProcessed++;
+        if (b.ok) processed.budgetJob = (processed.budgetJob ?? 0) + 1;
+        else errors.budgetJob = (errors.budgetJob ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "budgetJob",
+          message: { jobId: b.jobId, claimId: b.claimId },
+          ok: !!b.ok,
+          error: b.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
+      if (b.status === "paused" || b.status === "completed") {
+        // A settlement, not a model run — loop for the next unit of work.
+        continue;
+      }
+      // 'empty' — fall through to the background drain.
+    }
+
+    // 4. No in-memory, order, or funded work — one background Steward task
+    //    (highest importance pending), leaving the rest as stubs when capped.
     const startedAt = now();
     const r = await processNextStewardTask({ model: opts.stewardModel });
     if (r.status === "empty") {

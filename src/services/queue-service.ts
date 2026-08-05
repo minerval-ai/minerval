@@ -47,6 +47,8 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A user paid for a (re)assessment (assessment_orders, express lane).
+    | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"

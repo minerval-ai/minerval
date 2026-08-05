@@ -614,6 +614,149 @@ export const owlLedger = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// assessment_orders
+//
+// A user's purchase of one Steward assessment of one claim — the demand side
+// of the owl economy. Orders run on the EXPRESS lane: dispatched ahead of the
+// background importance-ordered drain (a purchase doesn't queue), with the
+// run's spend attributed to the ordering user via the usage context.
+//
+// Charge-at-start: the order is created UNCHARGED (chargeEntryId null) and
+// the owl is debited by the dispatcher at the moment the Steward run begins —
+// so a pending order cancels free, and a user is never charged for work that
+// hasn't started. A proposal-funded order (contributionId set) was already
+// paid by the claim_proposal charge and is never charged again.
+//
+// Lifecycle: pending → running → done | failed (refunded if charged);
+// pending → cancelled (free). A transient failure returns the order to
+// pending WITH its charge intact, so the retry doesn't double-charge.
+// ---------------------------------------------------------------------------
+export const assessmentOrders = pgTable(
+  "assessment_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // Set when this order was funded by an accepted claim proposal's charge.
+    contributionId: uuid("contribution_id").references(() => contributions.id, {
+      onDelete: "set null",
+    }),
+    priceMicroUsd: bigint("price_micro_usd", { mode: "number" }).notNull(),
+    // The owl_ledger debit that paid for this order; null until charged.
+    chargeEntryId: uuid("charge_entry_id").references(() => owlLedger.id, {
+      onDelete: "set null",
+    }),
+    // pending | running | done | cancelled | failed
+    status: text("status").notNull().default("pending"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    // The express drain: oldest pending first. Partial index = just the lane.
+    index("idx_orders_pending")
+      .on(table.createdAt)
+      .where(sql`status = 'pending'`),
+    index("idx_orders_user_time").on(table.userId, table.createdAt),
+    index("idx_orders_claim").on(table.claimId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_stakes
+//
+// The demand signal: owls put behind a claim (an assessment order today, a
+// grantmaker subsidy later). Stakes are an input to background QUEUE PRIORITY
+// — never to claims.importance, which money must not touch. Append-only.
+// ---------------------------------------------------------------------------
+export const claimStakes = pgTable(
+  "claim_stakes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // order | grant
+    source: text("source").notNull().default("order"),
+    orderId: uuid("order_id").references(() => assessmentOrders.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_claim_stakes_claim").on(table.claimId),
+    index("idx_claim_stakes_user").on(table.userId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// budget_jobs
+//
+// An escrowed owl budget funding open-ended work — the entity behind every
+// operation whose cost can't be a flat price: deep decomposition today,
+// grantor agents later. Funding writes an owl_ledger escrow_hold (the owls
+// leave the spendable balance immediately); real spend accrues against the
+// budget via llm_usage rows attributed with job_id = this row's id; and on
+// completion/cancellation the unspent remainder returns via escrow_refund.
+//
+// At the budget floor the job PAUSES (status 'paused_budget') with a
+// checkpoint describing progress — it never silently dies mid-run — and a
+// top-up (another escrow_hold) resumes it.
+//
+// Named budget_jobs because `jobs` is the ingestion-pipeline table.
+// ---------------------------------------------------------------------------
+export const budgetJobs = pgTable(
+  "budget_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // deep_decomposition | (grantor_agent, …)
+    kind: text("kind").notNull(),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    // Total escrowed (sum of holds), face-value micro-USD.
+    budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    // running | paused_budget | completed | cancelled | failed
+    status: text("status").notNull().default("running"),
+    // Progress the job reports as it works and when it pauses — what the job
+    // page renders ("assessed 7 of ~12, budget exhausted at claim X").
+    checkpoint: jsonb("checkpoint"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_budget_jobs_user_time").on(table.userId, table.createdAt),
+    index("idx_budget_jobs_running")
+      .on(table.updatedAt)
+      .where(sql`status = 'running'`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // oauth_clients
 //
 // OAuth 2.1 clients for the remote MCP server (#73 follow-up): hosted MCP
@@ -1103,4 +1246,10 @@ export type NewAuditLogEntry = typeof auditLog.$inferInsert;
 export type AuditRun = typeof auditRuns.$inferSelect;
 export type NewAuditRun = typeof auditRuns.$inferInsert;
 export type AuditFinding = typeof auditFindings.$inferSelect;
+export type AssessmentOrder = typeof assessmentOrders.$inferSelect;
+export type NewAssessmentOrder = typeof assessmentOrders.$inferInsert;
+export type ClaimStake = typeof claimStakes.$inferSelect;
+export type NewClaimStake = typeof claimStakes.$inferInsert;
+export type BudgetJob = typeof budgetJobs.$inferSelect;
+export type NewBudgetJob = typeof budgetJobs.$inferInsert;
 export type NewAuditFinding = typeof auditFindings.$inferInsert;

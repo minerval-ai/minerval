@@ -33,6 +33,12 @@ vi.mock("../../../src/workers/arbitration-pipeline.js", () => ({
 vi.mock("../../../src/workers/audit-pipeline.js", () => ({
   handleAuditMessage: vi.fn(),
 }));
+vi.mock("../../../src/workers/order-pipeline.js", () => ({
+  processNextOrderTask: vi.fn(async () => ({ status: "empty" })),
+}));
+vi.mock("../../../src/workers/budget-job-pipeline.js", () => ({
+  processNextBudgetJobTask: vi.fn(async () => ({ status: "empty" })),
+}));
 vi.mock("../../../src/workers/steward-pipeline.js", () => ({
   processNextStewardTask: vi.fn(async () => ({ status: "empty" as const })),
   pendingStewardCount: vi.fn(async () => 0),

@@ -70,6 +70,14 @@ vi.mock("../../../src/server/plugins/quota.js", () => ({
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   attachChargeContribution: mocks.attachChargeContribution,
 }));
+vi.mock("../../../src/services/order-service.js", () => ({
+  createOrder: vi.fn(),
+  serializeOrder: vi.fn(),
+}));
+vi.mock("../../../src/services/budget-job-service.js", () => ({
+  createDeepDecompositionJob: vi.fn(),
+  serializeBudgetJob: vi.fn(),
+}));
 vi.mock("../../../src/db/client.js", () => ({ getDb: vi.fn() }));
 
 const serviceAuth: RequestAuth = {
@@ -118,6 +126,7 @@ async function buildTestApp(auth: RequestAuth) {
     request.contributorExternalId = auth.contributorExternalId;
   });
   app.decorate("requireAgenticQuota", () => async () => {});
+  app.decorate("requireUser", async () => {});
   app.decorate("sendQuotaDenial", (reply: any, decision: any) =>
     reply.code(decision.statusCode).send({ code: decision.code })
   );

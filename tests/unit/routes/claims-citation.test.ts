@@ -61,6 +61,7 @@ async function buildApp() {
   app.decorateRequest("auth", null);
   app.decorate("authenticate", async () => {});
   app.decorate("requireAgenticQuota", () => async () => {});
+  app.decorate("requireUser", async () => {});
   await app.register(claimRoutes, { prefix: "/claims" });
   return app;
 }

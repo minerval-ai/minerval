@@ -25,6 +25,11 @@ import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
+import { createOrder, serializeOrder } from "../services/order-service.js";
+import {
+  createDeepDecompositionJob,
+  serializeBudgetJob,
+} from "../services/budget-job-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -866,6 +871,93 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       });
     },
   });
+
+  // POST /claims/:claim_id/order — buy an assessment of this claim (1 owl).
+  // The order runs on the EXPRESS lane, ahead of the background queue: a
+  // purchase doesn't wait. Charge-at-start: nothing is debited here — the
+  // owl is charged when the Steward run begins, and a pending order cancels
+  // free (DELETE /orders/:id).
+  app.post<{ Params: { claim_id: string } }>("/:claim_id/order", {
+    schema: {
+      tags: ["orders"],
+      summary:
+        "Order a (re)assessment of this claim — runs immediately, charged " +
+        "when the run starts",
+      params: {
+        type: "object",
+        properties: { claim_id: { type: "string", format: "uuid" } },
+      },
+    },
+    preHandler: [
+      app.authenticate,
+      app.requireUser,
+      app.requireAgenticQuota("assessment"),
+    ],
+    handler: async (request, reply) => {
+      const result = await createOrder({
+        userId: request.auth!.userId!,
+        claimId: request.params.claim_id,
+      });
+      if (!result.ok) {
+        const status =
+          result.code === "CLAIM_NOT_FOUND"
+            ? 404
+            : result.code === "ORDER_ALREADY_OPEN"
+              ? 409
+              : 400;
+        return reply.code(status).send({
+          error: result.message,
+          code: result.code,
+          ...(result.existingOrderId
+            ? { order_id: result.existingOrderId }
+            : {}),
+        });
+      }
+      return reply.code(201).send({ order: serializeOrder(result.order) });
+    },
+  });
+
+  // POST /claims/:claim_id/decompose — fund a deep-decomposition budget job.
+  // Open-ended work gets a BUDGET, not a price: the owls escrow now (that is
+  // the act of funding), the job meters real model spend against them, pauses
+  // for top-up at the floor, and refunds whatever it doesn't use.
+  app.post<{ Params: { claim_id: string }; Body: { budget_owls: number } }>(
+    "/:claim_id/decompose",
+    {
+      schema: {
+        tags: ["budget-jobs"],
+        summary:
+          "Fund deep decomposition of this claim's subtree with an owl budget",
+        params: {
+          type: "object",
+          properties: { claim_id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["budget_owls"],
+          properties: {
+            budget_owls: { type: "number", exclusiveMinimum: 0 },
+          },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const result = await createDeepDecompositionJob({
+          userId: request.auth!.userId!,
+          claimId: request.params.claim_id,
+          budgetOwls: request.body.budget_owls,
+        });
+        if (!result.ok) {
+          return reply
+            .code(result.code === "CLAIM_NOT_FOUND" ? 404 : 402)
+            .send({ error: result.message, code: result.code });
+        }
+        return reply
+          .code(201)
+          .send({ job: await serializeBudgetJob(result.job) });
+      },
+    }
+  );
 
   // GET /claims/:claim_id/assessments
   app.get<{ Params: { claim_id: string }; Querystring: Record<string, string> }>(
