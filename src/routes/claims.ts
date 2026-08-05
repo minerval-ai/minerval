@@ -81,6 +81,16 @@ export const assessmentSchema = {
     // Raw API id of the model that produced the assessment (#294); null for
     // rows written before the column existed.
     model: { type: "string", nullable: true },
+    // Funding disclosure (§19): present when the assessing run was paid work
+    // (an assessment order or a named grant); absent for system work.
+    funding: {
+      type: "object",
+      nullable: true,
+      properties: {
+        type: { type: "string" },
+        label: { type: "string" },
+      },
+    },
   },
 } as const;
 
