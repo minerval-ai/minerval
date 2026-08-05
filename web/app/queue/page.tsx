@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { apiConfigured, fetchQueue } from "../../lib/api";
+import { OwlMark } from "../../components/OwlMark";
 
 export const metadata: Metadata = {
   title: "Assessment queue — Minerval",
@@ -101,7 +102,14 @@ export default async function QueuePage() {
                 <td>{num(p.inputs.marginal_yield)}</td>
                 <td>{num(p.inputs.contestation)}</td>
                 <td>
-                  {p.inputs.stake_owls > 0 ? `${p.inputs.stake_owls} owls` : "—"}
+                  {p.inputs.stake_owls > 0 ? (
+                    <>
+                      <OwlMark size={14} className="owl-mark" />
+                      {p.inputs.stake_owls} owls
+                    </>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td>
                   {p.inputs.days_since_assessed != null

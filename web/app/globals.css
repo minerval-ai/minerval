@@ -931,6 +931,9 @@ html { scroll-behavior: smooth; }
 .owl-pack-count { font-size: 0.86rem; font-weight: 600; }
 .owl-pack-price { font-size: 0.82rem; }
 .owl-pack-discount { font-size: 0.72rem; color: var(--muted); }
+/* the tetradrachm owl mark (components/OwlMark.tsx), sitting just before an
+   owl amount: icon, small gap, number */
+.owl-mark { margin-right: 0.3em; flex-shrink: 0; }
 
 /* claim-page order surface + decomposition funding */
 .order-line { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin: 0.5rem 0; }

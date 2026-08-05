@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { apiConfigured, fetchLeaderboard } from "../../lib/api";
+import { OwlMark } from "../../components/OwlMark";
 
 export const metadata: Metadata = {
   title: "Contributors — Minerval",
@@ -63,7 +64,10 @@ export default async function ContributorsPage() {
                 <td>
                   <Link href={`/contributors/${c.id}`}>{c.display_name}</Link>
                 </td>
-                <td>{c.owls_earned}</td>
+                <td>
+                  <OwlMark size={14} className="owl-mark" />
+                  {c.owls_earned}
+                </td>
                 <td>{c.contributions_accepted}</td>
                 <td>{c.trust_level}</td>
               </tr>

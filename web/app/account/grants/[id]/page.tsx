@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/account-api";
 import { approveGrantAction, cancelGrantAction } from "../../actions";
 import { TopUpGrant } from "./TopUpGrant";
+import { OwlMark } from "../../../../components/OwlMark";
 
 export const metadata: Metadata = { title: "Grant — Minerval" };
 export const dynamic = "force-dynamic";
@@ -87,6 +88,7 @@ export default async function GrantPage({
           <div className="meter-fill" style={{ width: `${spentShare * 100}%` }} />
         </div>
         <p className="meter-caption">
+          <OwlMark size={13} className="owl-mark" />
           {owls(grant.spent_owls)} of {owls(grant.budget_owls)} owls spent
         </p>
       </section>

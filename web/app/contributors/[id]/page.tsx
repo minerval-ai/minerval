@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchContributorProfile } from "../../../lib/api";
+import { OwlMark } from "../../../components/OwlMark";
 
 export const revalidate = 60;
 
@@ -66,7 +67,10 @@ export default async function ContributorPage({
       <section>
         <h2>Standing</h2>
         <div className="usage-chips">
-          <span className="summary-chip">{c.owls_earned} owls earned</span>
+          <span className="summary-chip">
+            <OwlMark size={14} className="owl-mark" />
+            {c.owls_earned} owls earned
+          </span>
           <span className="summary-chip">
             reputation {c.reputation_score.toFixed(0)}
           </span>
@@ -135,7 +139,10 @@ export default async function ContributorPage({
             <tbody>
               {profile.recent_awards.map((a) => (
                 <tr key={a.id}>
-                  <td>+{a.owls}</td>
+                  <td>
+                    <OwlMark size={14} className="owl-mark" />
+                    +{a.owls}
+                  </td>
                   <td>
                     {a.contribution_id ? (
                       <Link href={`/contributions/${a.contribution_id}`}>

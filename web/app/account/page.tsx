@@ -21,6 +21,7 @@ import {
 } from "../../lib/account-api";
 import { BuyOwls } from "./BuyOwls";
 import { KeyCreator } from "./KeyCreator";
+import { OwlMark } from "../../components/OwlMark";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
 import type { ContributorProfile } from "../../lib/types";
@@ -163,6 +164,7 @@ export default async function AccountPage({
           <p role="status">Purchase cancelled — nothing was charged.</p>
         )}
         <p className="owl-balance">
+          <OwlMark size={20} className="owl-mark" />
           <strong>{owls(entitlement.owl_balance)}</strong>{" "}
           owl{entitlement.owl_balance === 1 ? "" : "s"}
         </p>
@@ -202,6 +204,7 @@ export default async function AccountPage({
                 <tr key={String(label)}>
                   <td>{label}</td>
                   <td>
+                    <OwlMark size={14} className="owl-mark" />
                     {owls(Number(price))} owl{Number(price) === 1 ? "" : "s"}
                   </td>
                 </tr>
@@ -230,6 +233,7 @@ export default async function AccountPage({
                   <tr key={e.id}>
                     <td>{dateish(e.created_at)}</td>
                     <td>
+                      <OwlMark size={14} className="owl-mark" />
                       {owls(e.amount_micro_usd / entitlement.owl_price_micro_usd)}
                     </td>
                     <td>

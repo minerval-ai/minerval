@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { OwlMark } from "../OwlMark";
 
 // "Build your part of the graph": fund deeper decomposition of this claim's
 // subtree with an owl budget. Open-ended work gets a budget, not a price —
@@ -79,7 +80,14 @@ export function FundDecomposition({ claimId }: { claimId: string }) {
           aria-label="budget in owls"
         />
         <button onClick={fund} disabled={busy || budget <= 0}>
-          {busy ? "funding…" : `Fund ${budget} owl${budget === 1 ? "" : "s"}`}
+          {busy ? (
+            "funding…"
+          ) : (
+            <>
+              Fund <OwlMark size={14} className="owl-mark" />
+              {budget} owl{budget === 1 ? "" : "s"}
+            </>
+          )}
         </button>
         <button className="linklike" onClick={() => setOpen(false)}>
           cancel

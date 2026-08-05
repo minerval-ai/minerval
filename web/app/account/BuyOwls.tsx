@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { OwlPack } from "../../lib/account-api";
 import { buyOwlsAction, type BuyOwlsState } from "./actions";
+import { OwlMark } from "../../components/OwlMark";
 
 function packPrice(cents: number): string {
   return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
@@ -29,7 +30,10 @@ export function BuyOwls({ packs }: { packs: OwlPack[] }) {
             disabled={pending}
             className="owl-pack"
           >
-            <span className="owl-pack-count">{pack.owls} owls</span>
+            <span className="owl-pack-count">
+              <OwlMark size={14} className="owl-mark" />
+              {pack.owls} owls
+            </span>
             <span className="owl-pack-price">{packPrice(pack.price_cents)}</span>
             {pack.discount_percent > 0 && (
               <span className="owl-pack-discount">

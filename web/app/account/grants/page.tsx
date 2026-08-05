@@ -7,6 +7,7 @@ import {
   listGrants,
   type GrantView,
 } from "../../../lib/account-api";
+import { OwlMark } from "../../../components/OwlMark";
 
 export const metadata: Metadata = { title: "Grants — Minerval" };
 export const dynamic = "force-dynamic";
@@ -79,6 +80,7 @@ export default async function GrantsPage() {
                   )}
                 </td>
                 <td>
+                  <OwlMark size={14} className="owl-mark" />
                   {owls(g.spent_owls)} / {owls(g.budget_owls)} owls
                 </td>
                 <td>{g.created_at.slice(0, 10)}</td>

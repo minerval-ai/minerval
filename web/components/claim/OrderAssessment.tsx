@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { OwlMark } from "../OwlMark";
 
 interface OrderView {
   id: string;
@@ -149,7 +150,14 @@ export function OrderAssessment({
     <div className="order-line">
       {variant === "unassessed" ? (
         <button className="order-button" onClick={place} disabled={busy}>
-          {busy ? "placing order…" : "Assess this claim — 1 owl"}
+          {busy ? (
+            "placing order…"
+          ) : (
+            <>
+              Assess this claim — <OwlMark size={14} className="owl-mark" />1
+              owl
+            </>
+          )}
         </button>
       ) : (
         <button className="linklike" onClick={place} disabled={busy}>
