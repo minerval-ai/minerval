@@ -240,6 +240,12 @@ export const assessments = pgTable(
     // the assessor is recorded on the verdict, not just in llm_usage. Nullable:
     // legacy rows predate the column and degrade gracefully (date only in UI).
     model: text("model"),
+    // Funding disclosure (§19 "Queue Priority and Paid Attention"): when the
+    // run that wrote this assessment was paid for — an assessment order or a
+    // grant's budget job — the payer's job id is stamped here MECHANICALLY
+    // from the usage context (never by the agent), so "who funded this
+    // verdict" is always answerable. NULL = ordinary system work.
+    fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -770,6 +776,72 @@ export const budgetJobs = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// grants
+//
+// A grantmaker's mandate: an escrowed owl budget (the budget_jobs row, kind
+// 'grant') + a SCOPE (a claim's subtree and/or a topic query) + a POLICY for
+// how to spend attention there + public attribution. Scales from a person
+// with 20 owls ("keep my subdomain's cruxes fresh") to an institution
+// funding a whole area through a grantor agent.
+//
+// Policies:
+//   deepen   — steward the scope's pending/deferred claims, buying the depth
+//              the background economics wouldn't (like deep_decomposition).
+//   cover    — get every in-scope claim at least one assessment, breadth
+//              first.
+//   maintain — reassess in-scope claims whose assessment has gone stale.
+//   agent    — a grantor agent surveys the scope and proposes an allocation
+//              plan (stored on `plan`); the funder approves it before an owl
+//              is spent, then execution is mechanical.
+//
+// Grant work runs on the grant's own budget (steward runs metered to the
+// budget job) and records claim_stakes (source 'grant') for attribution and
+// background-priority subsidy. Assessments produced under a grant carry
+// funded_by_job_id — the §19 disclosure that funding is visible, while the
+// verdict's standards never change.
+// ---------------------------------------------------------------------------
+export const grants = pgTable(
+  "grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    funderUserId: uuid("funder_user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    budgetJobId: uuid("budget_job_id")
+      .notNull()
+      .references(() => budgetJobs.id, { onDelete: "cascade" }),
+    // Public mandate name, shown on funded assessments ("funded by X").
+    name: text("name").notNull(),
+    // Scope: a subtree root and/or a keyword query — at least one.
+    scopeClaimId: uuid("scope_claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    scopeQuery: text("scope_query"),
+    // deepen | cover | maintain | agent
+    policy: text("policy").notNull(),
+    // planning | pending_approval | active | completed | cancelled
+    // (budget pauses live on the budget job; the grant status is the
+    // mandate's lifecycle).
+    status: text("status").notNull().default("active"),
+    // The grantor agent's proposed allocation (policy 'agent'):
+    // [{claim_id, action: 'assess'|'deepen', rationale}], plus the agent's
+    // overall strategy note. Executed in order once approved.
+    plan: jsonb("plan"),
+    planCursor: integer("plan_cursor").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grants_funder").on(table.funderUserId, table.createdAt),
+    index("idx_grants_status").on(table.status),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // oauth_clients
 //
 // OAuth 2.1 clients for the remote MCP server (#73 follow-up): hosted MCP
@@ -1265,4 +1337,6 @@ export type ClaimStake = typeof claimStakes.$inferSelect;
 export type NewClaimStake = typeof claimStakes.$inferInsert;
 export type BudgetJob = typeof budgetJobs.$inferSelect;
 export type NewBudgetJob = typeof budgetJobs.$inferInsert;
+export type Grant = typeof grants.$inferSelect;
+export type NewGrant = typeof grants.$inferInsert;
 export type NewAuditFinding = typeof auditFindings.$inferInsert;

@@ -161,7 +161,32 @@ claim's subtree. Open-ended work gets a budget, not a price:
 - `GET /budget-jobs`, `GET /budget-jobs/:id` (live spend + checkpoint — the
   job page polls this).
 
-This budget entity is the substrate grantor agents build on.
+This budget entity is the substrate grants build on.
+
+## Grants — grantmaker mandates
+
+`POST /grants` creates and funds a mandate: an escrowed owl budget + a scope
+(a claim's subtree and/or a topic query) + a policy + a public name. The
+grant worker (`src/workers/grant-pipeline.ts`) executes one Steward run per
+tick, metered to the grant's budget:
+
+- **cover** — every in-scope claim gets at least one assessment, breadth
+  first; **deepen** — the scope's pending/deferred claims, buying the depth
+  the economic brake held out; **maintain** — refresh in-scope assessments
+  older than `GRANT_MAINTAIN_CADENCE_DAYS`.
+- **agent** — the Grantor agent (`src/llm/agents/grantor.ts`) surveys the
+  scope (importance, contestation, assessment age, marginal yield, deferred
+  subclaims) and proposes an allocation plan; NOTHING beyond the planning
+  run is spent until the funder approves it (`POST /grants/:id/approve`).
+  Execution of the approved plan is mechanical.
+
+Every funded run records a `claim_stakes` row (source 'grant' — a
+background-priority subsidy) and every assessment it produces is stamped
+with `funded_by_job_id` — surfaced on the claim page as "assessment funded
+by the grant …" (§19: funding is always disclosed; the verdict's standards
+never change). Pause/top-up/refund semantics are the budget job's:
+`POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
+`GET /grants/:id` (spend, plan, the assessments the grant bought).
 
 **Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
 a claim you care about, get it assessed" ×5 — plus a 1 owl/month trickle

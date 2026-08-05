@@ -35,6 +35,7 @@ import {
   enqueueClaimPipeline,
   enqueueCurator,
 } from "../../services/queue-service.js";
+import { getUsageContext } from "../usage-context.js";
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -709,6 +710,10 @@ export async function executeStewardTool(
           // Which model produced this verdict (#294). Null only when the run
           // context doesn't carry it (e.g. legacy call sites).
           model: run.model ?? null,
+          // Funding disclosure (§19): if this run is paid work (an assessment
+          // order or a grant's budget job), the usage context carries the
+          // payer's job id — stamped mechanically, never by the agent.
+          fundedByJobId: getUsageContext().jobId ?? null,
         });
 
         // Argument evaluations are derived within the assessment (issue #173),

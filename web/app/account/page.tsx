@@ -251,6 +251,16 @@ export default async function AccountPage({
         )}
       </section>
 
+      {/* ------------------------------------------------ grants */}
+      <section>
+        <h2>Grants</h2>
+        <p>
+          Fund attention on a part of the graph you care about — from a few
+          core claims to a whole subdomain with a grantor agent.{" "}
+          <a href="/account/grants">your grants →</a>
+        </p>
+      </section>
+
       {/* ------------------------------------------------ orders & jobs */}
       {(orders.length > 0 || jobs.length > 0) && (
         <section>

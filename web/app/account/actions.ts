@@ -9,6 +9,10 @@ import {
   revokeApiKey,
   topUpBudgetJob,
   cancelBudgetJob,
+  createGrant,
+  approveGrant,
+  topUpGrant,
+  cancelGrant,
   AccountApiError,
 } from "../../lib/account-api";
 
@@ -122,6 +126,97 @@ export async function cancelJobAction(formData: FormData): Promise<void> {
     console.error("[account] job cancel failed:", err);
   }
   revalidatePath(`/account/jobs/${jobId}`);
+}
+
+export interface CreateGrantState {
+  error?: string;
+}
+
+// Create + fund a grant; the owls escrow on success. Redirects to the new
+// grant's dashboard. The acting identity comes from the server session.
+export async function createGrantAction(
+  _prev: CreateGrantState,
+  formData: FormData
+): Promise<CreateGrantState> {
+  const session = await auth();
+  if (!session?.externalId) return { error: "Not signed in." };
+  const name = String(formData.get("name") ?? "").trim();
+  const policy = String(formData.get("policy") ?? "");
+  const budget = Number(formData.get("budget_owls"));
+  const scopeClaimId = String(formData.get("scope_claim_id") ?? "").trim();
+  const scopeQuery = String(formData.get("scope_query") ?? "").trim();
+  if (!name) return { error: "Name the mandate — it appears on funded assessments." };
+  if (!Number.isFinite(budget) || budget <= 0) {
+    return { error: "Choose an owl budget." };
+  }
+  if (!scopeClaimId && !scopeQuery) {
+    return { error: "Give the grant a scope: a claim id and/or a topic query." };
+  }
+  let grantId: string;
+  try {
+    const grant = await createGrant(session.externalId, {
+      name,
+      policy,
+      budgetOwls: budget,
+      scopeClaimId: scopeClaimId || null,
+      scopeQuery: scopeQuery || null,
+    });
+    grantId = grant.id;
+  } catch (err) {
+    return {
+      error:
+        err instanceof AccountApiError ? err.message : "Grant creation failed.",
+    };
+  }
+  redirect(`/account/grants/${grantId}`);
+}
+
+export async function approveGrantAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const grantId = String(formData.get("grant_id") ?? "");
+  if (!grantId) return;
+  try {
+    await approveGrant(session.externalId, grantId);
+  } catch (err) {
+    console.error("[account] grant approval failed:", err);
+  }
+  revalidatePath(`/account/grants/${grantId}`);
+}
+
+export async function topUpGrantAction(
+  _prev: JobActionState,
+  formData: FormData
+): Promise<JobActionState> {
+  const session = await auth();
+  if (!session?.externalId) return { error: "Not signed in." };
+  const grantId = String(formData.get("grant_id") ?? "");
+  const owls = Number(formData.get("owls"));
+  if (!grantId || !Number.isFinite(owls) || owls <= 0) {
+    return { error: "Enter how many owls to add." };
+  }
+  try {
+    await topUpGrant(session.externalId, grantId, owls);
+  } catch (err) {
+    return {
+      error: err instanceof AccountApiError ? err.message : "Top-up failed.",
+    };
+  }
+  revalidatePath(`/account/grants/${grantId}`);
+  return { ok: true };
+}
+
+export async function cancelGrantAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const grantId = String(formData.get("grant_id") ?? "");
+  if (!grantId) return;
+  try {
+    await cancelGrant(session.externalId, grantId);
+  } catch (err) {
+    console.error("[account] grant cancel failed:", err);
+  }
+  revalidatePath(`/account/grants/${grantId}`);
 }
 
 export async function signOutAction(): Promise<void> {

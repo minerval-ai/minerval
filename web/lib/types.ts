@@ -100,6 +100,10 @@ export interface Assessment {
   // was recorded — render the date alone, no dangling separator. Optional
   // while API deploys race the frontend.
   model?: string | null;
+  // Funding disclosure (§19): present when this assessment was paid work —
+  // a user's assessment order or a named grant. Stamped mechanically by the
+  // API; absent for ordinary system work.
+  funding?: { type: "grant" | "user_order" | "job"; label: string } | null;
 }
 
 export interface ClaimCore {

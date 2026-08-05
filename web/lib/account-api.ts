@@ -375,6 +375,108 @@ export async function cancelBudgetJob(
   });
 }
 
+// --- Grants (grantmakers) ----------------------------------------------------
+
+export interface GrantView {
+  id: string;
+  name: string;
+  policy: string;
+  status: string;
+  scope_claim_id: string | null;
+  scope_query: string | null;
+  budget_owls: number;
+  spent_owls: number;
+  budget_status: string | null;
+  budget_job_id: string;
+  plan: {
+    strategy?: string;
+    items?: Array<{ claim_id: string; action: string; rationale: string }>;
+  } | null;
+  plan_cursor: number;
+  funded_assessments: Array<{
+    claim_id: string;
+    text: string;
+    status: string;
+    assessed_at: string;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createGrant(
+  externalId: string,
+  input: {
+    name: string;
+    policy: string;
+    budgetOwls: number;
+    scopeClaimId?: string | null;
+    scopeQuery?: string | null;
+  }
+): Promise<GrantView> {
+  const r = await accountFetch<{ grant: GrantView }>("/grants", {
+    method: "POST",
+    actingUser: externalId,
+    body: {
+      name: input.name,
+      policy: input.policy,
+      budget_owls: input.budgetOwls,
+      ...(input.scopeClaimId ? { scope_claim_id: input.scopeClaimId } : {}),
+      ...(input.scopeQuery ? { scope_query: input.scopeQuery } : {}),
+    },
+  });
+  return r.grant;
+}
+
+export async function listGrants(externalId: string): Promise<GrantView[]> {
+  const r = await accountFetch<{ grants: GrantView[] }>("/grants", {
+    actingUser: externalId,
+  });
+  return r.grants;
+}
+
+export async function getGrant(
+  externalId: string,
+  grantId: string
+): Promise<GrantView> {
+  const r = await accountFetch<{ grant: GrantView }>(`/grants/${grantId}`, {
+    actingUser: externalId,
+  });
+  return r.grant;
+}
+
+export async function approveGrant(
+  externalId: string,
+  grantId: string
+): Promise<GrantView> {
+  const r = await accountFetch<{ grant: GrantView }>(
+    `/grants/${grantId}/approve`,
+    { method: "POST", actingUser: externalId }
+  );
+  return r.grant;
+}
+
+export async function topUpGrant(
+  externalId: string,
+  grantId: string,
+  owls: number
+): Promise<GrantView> {
+  const r = await accountFetch<{ grant: GrantView }>(
+    `/grants/${grantId}/topup`,
+    { method: "POST", body: { owls }, actingUser: externalId }
+  );
+  return r.grant;
+}
+
+export async function cancelGrant(
+  externalId: string,
+  grantId: string
+): Promise<{ cancelled: boolean; refunded_owls: number }> {
+  return accountFetch(`/grants/${grantId}/cancel`, {
+    method: "POST",
+    actingUser: externalId,
+  });
+}
+
 // --- Contributions (#174) ----------------------------------------------------
 
 export interface SubmittedContribution {

@@ -946,6 +946,17 @@ html { scroll-behavior: smooth; }
 .fund-decomp { margin: 0.6rem 0; }
 .fund-decomp .order-caption { margin-bottom: 0.5rem; }
 
+/* grant creation form */
+.grant-form { display: flex; flex-direction: column; gap: 1rem; max-width: 34rem; font-family: var(--sans); }
+.grant-form label { display: flex; flex-direction: column; gap: 0.3rem; }
+.grant-form input[type="text"], .grant-form input[type="number"] {
+  font-size: 0.86rem; padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card); color: var(--ink);
+}
+.grant-policies { border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.grant-policy { display: flex; flex-direction: row !important; gap: 0.5rem; font-size: 0.82rem; align-items: baseline; }
+
 /* the one-time key reveal — deliberately loud relative to the quiet page */
 .key-reveal {
   border: 1px solid var(--st-contested); background: var(--st-contested-tint);

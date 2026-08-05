@@ -125,6 +125,16 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             last assessed {fmtDate(assessment.assessed_at)}
             {assessment.model ? ` · ${modelDisplayName(assessment.model)}` : ""}
           </span>
+          {/* Funding disclosure (§19): who paid for this attention. The
+              verdict's standards never change with funding — but the funding
+              is always visible. */}
+          {assessment.funding && (
+            <span className="assess-when">
+              {assessment.funding.type === "grant"
+                ? `assessment funded by the grant "${assessment.funding.label}"`
+                : `assessment funded by ${assessment.funding.label}`}
+            </span>
+          )}
           {/* No subclaim-status chips here: subclaim_summary is never computed
               by the pipeline (always {}), so the chips only ever rendered for
               fixtures — a feature that looked implemented but wasn't (#160).
@@ -187,6 +197,11 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         {/* Build your part of the graph: an owl budget takes this subtree
             deeper than the background pipeline's economics ever would. */}
         <FundDecomposition claimId={claim.id} />
+        <p className="order-line">
+          <Link href={`/account/grants/new?claim_id=${claim.id}`}>
+            or create a grant for this whole area →
+          </Link>
+        </p>
       </section>
 
       {/* provenance */}

@@ -30,6 +30,7 @@ import {
   createDeepDecompositionJob,
   serializeBudgetJob,
 } from "../services/budget-job-service.js";
+import { getFundingLabelForJob } from "../services/grant-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -301,6 +302,19 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
         };
+
+        // Funding disclosure (§19): when the current assessment was paid
+        // work — an assessment order or a grant — say so, by name. The
+        // stamp is mechanical (usage context), never agent-written.
+        if (assessment?.fundedByJobId) {
+          const funding = await getFundingLabelForJob(assessment.fundedByJobId);
+          if (funding) {
+            (response.assessment as Record<string, unknown>).funding = {
+              type: funding.type,
+              label: funding.label,
+            };
+          }
+        }
 
         // Steward-seeded prior (#285): surfaced only while the claim has no
         // current assessment. Once its own Steward has judged, the seed is

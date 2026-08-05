@@ -245,6 +245,9 @@ const configSchema = z.object({
   allocationSweepIntervalHours: z.coerce.number().default(6),
   stalenessBaseDays: z.coerce.number().default(60),
   stalenessMaxPerSweep: z.coerce.number().default(5),
+  // Grant policy 'maintain': in-scope assessments older than this many days
+  // are due for a funded refresh.
+  grantMaintainCadenceDays: z.coerce.number().default(30),
 
   // The Steward owns decomposition + assessment in one tool-use loop, so its
   // iteration cap is a pure runaway backstop, NOT a work budget — set it high.
@@ -432,6 +435,7 @@ export function loadConfig(): Config {
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
+    grantMaintainCadenceDays: process.env.GRANT_MAINTAIN_CADENCE_DAYS,
     stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,

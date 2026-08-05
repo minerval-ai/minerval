@@ -25,6 +25,7 @@ import { handleAuditMessage } from "./audit-pipeline.js";
 import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.js";
 import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
+import { processNextGrantTask } from "./grant-pipeline.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
@@ -51,7 +52,7 @@ const HANDLERS: Array<[LocalQueueName, (m: never) => Promise<void>]> = [
 /** One processed message — the unit of the observability trace. */
 export interface RunnerEvent {
   seq: number;
-  queue: LocalQueueName | "steward" | "order" | "budgetJob";
+  queue: LocalQueueName | "steward" | "order" | "budgetJob" | "grant";
   message: unknown;
   ok: boolean;
   error?: string;
@@ -210,11 +211,44 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         // A settlement, not a model run — loop for the next unit of work.
         continue;
       }
+      // 'empty' — fall through to the grant lane.
+    }
+
+    // 4. Grantmaker mandates: planning runs and funded steward passes, one
+    //    unit per pass so they interleave with everything else.
+    {
+      const startedAt = now();
+      const g = await processNextGrantTask({ model: opts.stewardModel });
+      if (g.status === "budget") {
+        checkBudget();
+        return { processed, errors, capped: false };
+      }
+      if (g.status === "transient") {
+        return { processed, errors, capped: true };
+      }
+      if (g.status === "processed" || g.status === "planned") {
+        seq++;
+        stewardProcessed++;
+        if (g.ok) processed.grant = (processed.grant ?? 0) + 1;
+        else errors.grant = (errors.grant ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "grant",
+          message: { grantId: g.grantId, claimId: g.claimId },
+          ok: !!g.ok,
+          error: g.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
+      if (g.status === "paused" || g.status === "completed") {
+        continue;
+      }
       // 'empty' — fall through to the background drain.
     }
 
-    // 4. No in-memory, order, or funded work — one background Steward task
-    //    (highest importance pending), leaving the rest as stubs when capped.
+    // 5. No in-memory, order, or funded work — one background Steward task
+    //    (highest priority pending), leaving the rest as stubs when capped.
     const startedAt = now();
     const r = await processNextStewardTask({ model: opts.stewardModel });
     if (r.status === "empty") {
