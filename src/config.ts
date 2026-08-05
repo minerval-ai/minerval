@@ -98,14 +98,35 @@ const configSchema = z.object({
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / metering (#70)
-  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in USD of
-  // derived cost. Non-agentic reads are never metered. 0 disables the trial
+  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in billed
+  // USD (derived cost × usageMarkupMultiplier below). Non-agentic reads are
+  // never metered. 0 disables the trial
   // (all agentic use requires credits, which aren't purchasable yet → 402).
   freeTierMonthlyUsd: z.coerce.number().default(5),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
   // A blunt in-memory backstop against runaway clients; the real spend
   // guardrail is the metered monthly grant above.
   agenticRateLimitPerHour: z.coerce.number().default(30),
+
+  // Stripe (#309). Empty/placeholder secret key = payments off: the free-tier
+  // provider stays active and /billing/checkout returns 503. The provider
+  // swap keys off the secret LOOKING like a Stripe key ("sk_…") because infra
+  // provisions placeholder secrets before they're populated — see
+  // stripeConfigured() in src/services/billing-service.ts.
+  stripeSecretKey: z.string().default(""),
+  // Signing secret for the /billing/webhook endpoint ("whsec_…"), from the
+  // Stripe dashboard's webhook-endpoint config. Required for credits to be
+  // granted — without it every webhook delivery is rejected.
+  stripeWebhookSecret: z.string().default(""),
+  // Bounds on a single credit purchase, in whole USD.
+  creditPurchaseMinUsd: z.coerce.number().default(5),
+  creditPurchaseMaxUsd: z.coerce.number().default(500),
+  // Multiplier applied to derived model cost at the metering insert
+  // (usage-service). Everything downstream — free-tier grant, credit burn,
+  // dashboard usage — is denominated in these marked-up dollars. Raw provider
+  // cost is recoverable by dividing usage rows by the multiplier in effect
+  // when they were written; changing it only affects new rows.
+  usageMarkupMultiplier: z.coerce.number().positive().default(4),
 
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
@@ -308,6 +329,11 @@ export function loadConfig(): Config {
     freeTierMonthlyUsd: process.env.FREE_TIER_MONTHLY_USD,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    creditPurchaseMinUsd: process.env.CREDIT_PURCHASE_MIN_USD,
+    creditPurchaseMaxUsd: process.env.CREDIT_PURCHASE_MAX_USD,
+    usageMarkupMultiplier: process.env.USAGE_MARKUP_MULTIPLIER,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,

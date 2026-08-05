@@ -8,7 +8,10 @@ import {
   getSystemUsageSummary,
   type UsageTotals,
 } from "../services/usage-service.js";
-import { getBillingProvider } from "../services/billing-service.js";
+import {
+  getBillingProvider,
+  serializeEntitlement,
+} from "../services/billing-service.js";
 
 function serializeTotals(t: UsageTotals) {
   return {
@@ -65,12 +68,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
           agent: a.agent,
           ...serializeTotals(a),
         })),
-        entitlement: {
-          plan: entitlement.plan,
-          monthly_grant_micro_usd: entitlement.monthlyGrantMicroUsd,
-          used_micro_usd: entitlement.usedMicroUsd,
-          remaining_micro_usd: entitlement.remainingMicroUsd,
-        },
+        entitlement: serializeEntitlement(entitlement),
       });
     },
   });

@@ -7,6 +7,8 @@ export class SecretsStack extends cdk.Stack {
   public readonly anthropicApiKeySecret: secretsmanager.Secret;
   public readonly apiKeysSecret: secretsmanager.Secret;
   public readonly elicitApiKeySecret: secretsmanager.Secret;
+  public readonly stripeSecretKeySecret: secretsmanager.Secret;
+  public readonly stripeWebhookSecretSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -47,6 +49,36 @@ export class SecretsStack extends cdk.Stack {
         secretName: "episteme/elicit-api-key",
         description:
           "Elicit API key for Steward scholarly search (#299). Must be manually populated after deploy.",
+      }
+    );
+
+    // Stripe (#309). Like the Elicit key, these hold CDK-generated
+    // placeholders until populated — and a placeholder deliberately keeps
+    // payments OFF: the billing provider only activates when the secret key
+    // looks like a real "sk_…" value (see stripeConfigured() in
+    // src/services/billing-service.ts). Populate with the live secret key and
+    // the webhook-endpoint signing secret ("whsec_…") from the Stripe
+    // dashboard, then force a new service deployment.
+    this.stripeSecretKeySecret = new secretsmanager.Secret(
+      this,
+      "StripeSecretKeySecret",
+      {
+        secretName: "episteme/stripe-secret-key",
+        description:
+          "Stripe API secret key (sk_…) for credit purchases (#309). " +
+          "Placeholder = payments disabled. Must be manually populated.",
+      }
+    );
+
+    this.stripeWebhookSecretSecret = new secretsmanager.Secret(
+      this,
+      "StripeWebhookSecretSecret",
+      {
+        secretName: "episteme/stripe-webhook-secret",
+        description:
+          "Stripe webhook signing secret (whsec_…) for POST /billing/webhook " +
+          "(#309). Must be manually populated after creating the webhook " +
+          "endpoint in the Stripe dashboard.",
       }
     );
 

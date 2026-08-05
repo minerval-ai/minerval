@@ -2,9 +2,11 @@
 
 Implementation of [issue #70](https://github.com/minerval-ai/minerval/issues/70):
 one identity for users and contributors, dashboard-managed API keys, and a
-per-token meter under every LLM call. It deliberately stops short of payments —
-but the meter is shaped so Stripe usage-based credits drop in as configuration,
-not re-architecture (see [The billing seam](#the-billing-seam)).
+per-token meter under every LLM call. #70 deliberately stopped short of
+payments; [issue #309](https://github.com/minerval-ai/minerval/issues/309)
+attached Stripe at the seam #70 left — purchased usage credits via Stripe
+Checkout, enabled purely by configuration (see
+[Billing & credits](#billing--credits-stripe)).
 
 ## One identity
 
@@ -101,25 +103,74 @@ ops (`GET /usage/system`, service-only).
 - Agentic endpoints carry the `requireAgenticQuota` guard:
   - a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
     in-memory) as a runaway backstop, and
-  - a monthly free-tier grant (`FREE_TIER_MONTHLY_USD`, default $5 of derived
-    model cost). Exhausted → `402 QUOTA_EXCEEDED` with the entitlement in the
-    body; purchasing credits is "not yet available" until billing lands.
+  - a monthly free-tier grant (`FREE_TIER_MONTHLY_USD`, default $5 of metered
+    usage), then purchased credits (when billing is enabled). Both
+    exhausted → `402 QUOTA_EXCEEDED` with the entitlement in the body and a
+    pointer to the account page's buy-credits flow.
 
-## The billing seam
+## Billing & credits (Stripe)
 
-`src/services/billing-service.ts` defines the `BillingProvider` interface and
-ships a `FreeTierBillingProvider`. When Stripe lands (post-incorporation):
+`src/services/billing-service.ts` defines the `BillingProvider` interface with
+two implementations, selected by configuration exactly as #70 planned — no
+call-site changes:
 
-1. add a `credits_ledger` table (grants + decrements in micro-USD) — usage
-   rows map 1:1 to decrement events since `cost_micro_usd` already exists;
-2. implement `StripeBillingProvider` and swap it in via
-   `setBillingProvider()`.
+- **`FreeTierBillingProvider`** — active while `STRIPE_SECRET_KEY` is unset or
+  a placeholder: monthly free grant only, purchases unavailable.
+- **`StripeBillingProvider`** (#309) — active when the key looks real
+  (`sk_…`): the same free grant first, then purchased credits.
 
-No call site changes. **No Stripe code exists in the repo today.**
+**Credits are prepaid dollars, spent at metered usage rates** — derived model
+cost times `USAGE_MARKUP_MULTIPLIER` (default 4), applied once at the metering
+insert so the grant, credit burn, and dashboard all see the same billed
+dollars. Raw provider cost is recoverable by dividing a usage row by the
+multiplier in effect when it was written; changing the multiplier only affects
+new rows. User-facing copy says "in proportion to the model work involved" and
+deliberately does not name the rate. Grants live in
+`credits_ledger` (micro-USD; positive = purchase/promo, negative = refund/
+adjustment). Spend is *not* double-booked: `llm_usage.cost_micro_usd` already
+prices every call, so `src/services/credit-service.ts` derives
+
+```
+balance = SUM(credits_ledger) − Σ_months max(0, month_usage − free_grant)
+```
+
+— the "credit accounting is a SUM" shape the seam was built for. The same
+one-operation overshoot slack as the free tier applies at the credit floor.
+
+**Purchase flow** (`src/routes/billing.ts`):
+
+1. `POST /billing/checkout` (dashboard-session trust, like key minting)
+   creates a Stripe Checkout Session for $5–$500 (configurable) and returns
+   the Stripe-hosted payment URL; the buyer pays on Stripe's page.
+2. Stripe calls `POST /billing/webhook` (signature-verified against
+   `STRIPE_WEBHOOK_SECRET` over the raw body; no API key — Stripe is
+   authenticated by the signature). A paid `checkout.session.completed` /
+   `async_payment_succeeded` inserts a ledger grant, idempotently — the
+   checkout-session id is unique, so Stripe's retries and duplicate success
+   events credit exactly once.
+3. `GET /billing/ledger` powers the dashboard's credit history; the balance
+   rides on the entitlement in `/users/me` and `/usage`
+   (`credit_balance_micro_usd`, `credits_enabled`).
+
+Invoices/receipts stay on Stripe-hosted surfaces (enable receipt emails in the
+Stripe dashboard). Refunds issued in the Stripe dashboard are *not* yet synced
+automatically — record a negative `credits_ledger` row by hand (reason
+`refund`) until a `charge.refunded` handler lands.
+
+**Turning payments on** (per deployment):
+
+1. Populate `episteme/stripe-secret-key` with the live (or test) secret key.
+2. In the Stripe dashboard, add a webhook endpoint for
+   `https://<api-host>/billing/webhook` subscribed to
+   `checkout.session.completed` and `checkout.session.async_payment_succeeded`;
+   populate `episteme/stripe-webhook-secret` with its signing secret.
+3. Force a new ECS deployment. A placeholder/missing key keeps everything in
+   free-tier mode — the swap is pure configuration.
 
 ## Dashboard
 
-`/account` on the web app: profile, free-tier meter, key management
+`/account` on the web app: profile, free-tier meter, credit balance +
+buy-credits flow and credit history (when billing is enabled), key management
 (create/name/revoke — plaintext shown exactly once), usage by day / agent /
 key, and contributor standing. `/signin` lists whichever providers are
 configured.

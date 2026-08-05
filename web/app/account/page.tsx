@@ -4,14 +4,17 @@ import { auth } from "../../auth";
 import {
   accountApiConfigured,
   fetchAccount,
+  fetchCreditLedger,
   fetchUsage,
   listApiKeys,
   AccountApiError,
   type AccountUser,
   type ApiKeyMeta,
+  type CreditLedgerEntry,
   type Entitlement,
   type UsageSummary,
 } from "../../lib/account-api";
+import { BuyCredits } from "./BuyCredits";
 import { KeyCreator } from "./KeyCreator";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
@@ -36,7 +39,12 @@ function dateish(iso: string | null): string {
   return iso.slice(0, 10);
 }
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ purchase?: string }>;
+}) {
+  const { purchase } = await searchParams;
   const session = await auth();
   if (!session?.externalId) redirect("/signin");
   const externalId = session.externalId;
@@ -86,6 +94,18 @@ export default async function AccountPage() {
     user.id
   );
 
+  // Credits (#309) — only when the API deployment has Stripe switched on.
+  const creditsEnabled = entitlement.credits_enabled === true;
+  const creditBalance = entitlement.credit_balance_micro_usd ?? 0;
+  let ledger: CreditLedgerEntry[] = [];
+  if (creditsEnabled) {
+    try {
+      ledger = await fetchCreditLedger(externalId);
+    } catch {
+      // A ledger hiccup shouldn't take down the whole account page.
+    }
+  }
+
   const activeKeys = keys.filter((k) => !k.revoked_at);
   const revokedKeys = keys.filter((k) => k.revoked_at);
   const grant = entitlement.monthly_grant_micro_usd;
@@ -111,21 +131,68 @@ export default async function AccountPage() {
       {/* ------------------------------------------------ plan / allowance */}
       <section>
         <h2>Plan</h2>
+        {purchase === "success" && (
+          <p className="key-reveal" role="status">
+            Payment received — credits are applied as soon as Stripe confirms
+            the purchase (usually seconds; refresh if the balance hasn&rsquo;t
+            moved yet).
+          </p>
+        )}
+        {purchase === "cancelled" && (
+          <p role="status">Purchase cancelled — nothing was charged.</p>
+        )}
         <p>
-          <strong>Free tier.</strong> Reading, search, and browsing the graph
-          are free and unmetered. LLM-backed requests — submitting sources for
-          extraction, proposing claims, and the coming browser-extension and
-          query features — draw on a monthly allowance of{" "}
-          <strong>{usd(grant)}</strong> in model cost. Paid credits are not
-          available yet; the allowance resets monthly.
+          Reading, search, and browsing the graph are free and unmetered.
+          LLM-backed requests — submitting sources for extraction, proposing
+          claims, and the coming browser-extension and query features — draw on
+          a monthly free allowance of <strong>{usd(grant)}</strong> of metered
+          usage{creditsEnabled ? (
+            <>
+              , then on purchased credits; each request draws in proportion to
+              the model work it involves
+            </>
+          ) : (
+            <>. Paid credits are not available yet; the allowance resets
+            monthly</>
+          )}
+          .
         </p>
         <div className="meter" aria-hidden>
           <div className="meter-fill" style={{ width: `${usedShare * 100}%` }} />
         </div>
         <p className="meter-caption">
-          {usd(entitlement.used_micro_usd)} of {usd(grant)} used this month ·{" "}
-          {usd(entitlement.remaining_micro_usd)} remaining
+          {usd(entitlement.used_micro_usd)} of {usd(grant)} free allowance used
+          this month · {usd(entitlement.remaining_micro_usd)} remaining
+          {creditsEnabled && <> · credit balance {usd(creditBalance)}</>}
         </p>
+        {creditsEnabled && (
+          <>
+            <BuyCredits />
+            {ledger.length > 0 && (
+              <>
+                <h3>Credit history</h3>
+                <table className="account-table">
+                  <thead>
+                    <tr>
+                      <th>date</th>
+                      <th>amount</th>
+                      <th>reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledger.map((e) => (
+                      <tr key={e.id}>
+                        <td>{dateish(e.created_at)}</td>
+                        <td>{usd(e.amount_micro_usd)}</td>
+                        <td>{e.reason.replace(/_/g, " ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )}
       </section>
 
       {/* ------------------------------------------------ api keys */}

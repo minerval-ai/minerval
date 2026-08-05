@@ -103,7 +103,10 @@ vi.mock("../../../src/services/oauth-service.js", async (importOriginal) => ({
   >()),
   resolveAccessToken: mocks.resolveAccessToken,
 }));
-vi.mock("../../../src/services/billing-service.js", () => ({
+vi.mock("../../../src/services/billing-service.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../src/services/billing-service.js")
+  >()),
   getBillingProvider: () => ({ checkSpend: mocks.checkSpend }),
 }));
 

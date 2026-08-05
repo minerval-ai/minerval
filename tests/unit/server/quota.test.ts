@@ -10,16 +10,23 @@ const mocks = vi.hoisted(() => ({
       monthlyGrantMicroUsd: 5_000_000,
       usedMicroUsd: 0,
       remainingMicroUsd: 5_000_000,
+      creditBalanceMicroUsd: 0,
+      creditsEnabled: false,
     },
   })),
 }));
 
-vi.mock("../../../src/services/billing-service.js", () => ({
-  getBillingProvider: () => ({
-    checkSpend: mocks.checkSpend,
-    getEntitlement: vi.fn(),
-  }),
-}));
+vi.mock("../../../src/services/billing-service.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../src/services/billing-service.js")>();
+  return {
+    serializeEntitlement: actual.serializeEntitlement,
+    getBillingProvider: () => ({
+      checkSpend: mocks.checkSpend,
+      getEntitlement: vi.fn(),
+    }),
+  };
+});
 
 async function buildTestApp(auth: RequestAuth | null, rateLimit?: number) {
   if (rateLimit === undefined) delete process.env.AGENTIC_RATE_LIMIT_PER_HOUR;
@@ -65,6 +72,8 @@ describe("agentic quota guard", () => {
         monthlyGrantMicroUsd: 5_000_000,
         usedMicroUsd: 0,
         remainingMicroUsd: 5_000_000,
+        creditBalanceMicroUsd: 0,
+        creditsEnabled: false,
       },
     });
   });
@@ -88,6 +97,8 @@ describe("agentic quota guard", () => {
         monthlyGrantMicroUsd: 5_000_000,
         usedMicroUsd: 5_100_000,
         remainingMicroUsd: 0,
+        creditBalanceMicroUsd: 0,
+        creditsEnabled: false,
       },
     });
     const app = await buildTestApp(userAuth);
@@ -95,6 +106,26 @@ describe("agentic quota guard", () => {
     expect(res.statusCode).toBe(402);
     expect(res.json().code).toBe("QUOTA_EXCEEDED");
     expect(res.json().entitlement.remaining_micro_usd).toBe(0);
+    expect(res.json().error).toContain("not yet available");
+  });
+
+  it("points the 402 at buying credits when billing is enabled (#309)", async () => {
+    mocks.checkSpend.mockResolvedValue({
+      allowed: false,
+      entitlement: {
+        plan: "free",
+        monthlyGrantMicroUsd: 5_000_000,
+        usedMicroUsd: 5_100_000,
+        remainingMicroUsd: 0,
+        creditBalanceMicroUsd: 0,
+        creditsEnabled: true,
+      },
+    });
+    const app = await buildTestApp(userAuth);
+    const res = await app.inject({ method: "POST", url: "/agentic" });
+    expect(res.statusCode).toBe(402);
+    expect(res.json().error).toContain("/account");
+    expect(res.json().entitlement.credits_enabled).toBe(true);
   });
 
   it("exempts service traffic with no acting user from the grant", async () => {

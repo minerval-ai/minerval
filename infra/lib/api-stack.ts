@@ -20,6 +20,8 @@ export interface ApiStackProps extends cdk.StackProps {
   anthropicApiKeySecret: secretsmanager.Secret;
   apiKeysSecret: secretsmanager.Secret;
   elicitApiKeySecret: secretsmanager.Secret;
+  stripeSecretKeySecret: secretsmanager.Secret;
+  stripeWebhookSecretSecret: secretsmanager.Secret;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -49,6 +51,8 @@ export class ApiStack extends cdk.Stack {
     props.anthropicApiKeySecret.grantRead(taskDef.taskRole);
     props.apiKeysSecret.grantRead(taskDef.taskRole);
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
+    props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
+    props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
     const container = taskDef.addContainer("api", {
       image: ecs.ContainerImage.fromAsset("..", {
@@ -138,6 +142,14 @@ export class ApiStack extends cdk.Stack {
         // degrades to the tools being omitted from Steward runs.
         ELICIT_API_KEY: ecs.Secret.fromSecretsManager(
           props.elicitApiKeySecret
+        ),
+        // Stripe (#309): placeholder values keep payments disabled (the
+        // provider only activates on a real "sk_…" key).
+        STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(
+          props.stripeSecretKeySecret
+        ),
+        STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
+          props.stripeWebhookSecretSecret
         ),
       },
     });

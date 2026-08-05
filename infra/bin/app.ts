@@ -39,4 +39,6 @@ new ApiStack(app, "EpistemeApi", {
   anthropicApiKeySecret: secrets.anthropicApiKeySecret,
   apiKeysSecret: secrets.apiKeysSecret,
   elicitApiKeySecret: secrets.elicitApiKeySecret,
+  stripeSecretKeySecret: secrets.stripeSecretKeySecret,
+  stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
 });
