@@ -238,6 +238,143 @@ export async function revokeApiKey(
   });
 }
 
+// --- Assessment orders & budget jobs (owl economy, demand side) --------------
+
+export interface AssessmentOrderView {
+  id: string;
+  claim_id: string;
+  contribution_id: string | null;
+  status: string;
+  price_owls: number;
+  charged: boolean;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/** Order a (re)assessment of a claim. Charged when the run starts. */
+export async function createAssessmentOrder(
+  externalId: string,
+  claimId: string
+): Promise<AssessmentOrderView> {
+  const r = await accountFetch<{ order: AssessmentOrderView }>(
+    `/claims/${claimId}/order`,
+    { method: "POST", actingUser: externalId }
+  );
+  return r.order;
+}
+
+/** The user's open order for one claim (the claim-page poll), or null. */
+export async function getOpenOrderForClaim(
+  externalId: string,
+  claimId: string
+): Promise<AssessmentOrderView | null> {
+  const r = await accountFetch<{ orders: AssessmentOrderView[] }>(
+    `/orders?claim_id=${claimId}`,
+    { actingUser: externalId }
+  );
+  return r.orders[0] ?? null;
+}
+
+export async function listAssessmentOrders(
+  externalId: string
+): Promise<AssessmentOrderView[]> {
+  const r = await accountFetch<{ orders: AssessmentOrderView[] }>("/orders", {
+    actingUser: externalId,
+  });
+  return r.orders;
+}
+
+/** Cancel a pending order (free — pending orders are uncharged). */
+export async function cancelAssessmentOrder(
+  externalId: string,
+  orderId: string
+): Promise<{ cancelled: boolean; refunded: boolean }> {
+  return accountFetch(`/orders/${orderId}`, {
+    method: "DELETE",
+    actingUser: externalId,
+  });
+}
+
+export interface BudgetJobView {
+  id: string;
+  kind: string;
+  claim_id: string | null;
+  status: string;
+  budget_owls: number;
+  spent_owls: number;
+  checkpoint: {
+    assessed?: number;
+    subtree?: { pending: number; deferred: number; done: number };
+    note?: string;
+    last_claim_id?: string;
+  } | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+/** Fund deep decomposition of a claim's subtree with an owl budget. */
+export async function createDecompositionJob(
+  externalId: string,
+  claimId: string,
+  budgetOwls: number
+): Promise<BudgetJobView> {
+  const r = await accountFetch<{ job: BudgetJobView }>(
+    `/claims/${claimId}/decompose`,
+    {
+      method: "POST",
+      body: { budget_owls: budgetOwls },
+      actingUser: externalId,
+    }
+  );
+  return r.job;
+}
+
+export async function listBudgetJobs(
+  externalId: string
+): Promise<BudgetJobView[]> {
+  const r = await accountFetch<{ jobs: BudgetJobView[] }>("/budget-jobs", {
+    actingUser: externalId,
+  });
+  return r.jobs;
+}
+
+export async function getBudgetJob(
+  externalId: string,
+  jobId: string
+): Promise<BudgetJobView> {
+  const r = await accountFetch<{ job: BudgetJobView }>(
+    `/budget-jobs/${jobId}`,
+    { actingUser: externalId }
+  );
+  return r.job;
+}
+
+export async function topUpBudgetJob(
+  externalId: string,
+  jobId: string,
+  owls: number
+): Promise<BudgetJobView> {
+  const r = await accountFetch<{ job: BudgetJobView }>(
+    `/budget-jobs/${jobId}/topup`,
+    { method: "POST", body: { owls }, actingUser: externalId }
+  );
+  return r.job;
+}
+
+export async function cancelBudgetJob(
+  externalId: string,
+  jobId: string
+): Promise<{ cancelled: boolean; refunded_owls: number }> {
+  return accountFetch(`/budget-jobs/${jobId}/cancel`, {
+    method: "POST",
+    actingUser: externalId,
+  });
+}
+
 // --- Contributions (#174) ----------------------------------------------------
 
 export interface SubmittedContribution {

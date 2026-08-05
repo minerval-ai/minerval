@@ -13,6 +13,8 @@ import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
+import { OrderAssessment } from "./claim/OrderAssessment";
+import { FundDecomposition } from "./claim/FundDecomposition";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -65,10 +67,15 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <h1 className="claim-hero">{claim.text}</h1>
 
       {!assessment && (
-        <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-          Not yet assessed — this claim has been extracted but has not completed the
-          assessment pipeline.
-        </p>
+        <>
+          <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
+            Not yet assessed — this claim is waiting its turn in the
+            assessment queue.
+          </p>
+          {/* The demand side: don't wait — order the assessment. Runs on the
+              express lane, ahead of the background queue. */}
+          <OrderAssessment claimId={claim.id} variant="unassessed" />
+        </>
       )}
 
       {/* Steward-seeded prior (#285): the hint left by the Steward of the
@@ -151,6 +158,8 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                 </div>
               </details>
             )}
+          {/* Reassessment on demand: quiet, but always available. */}
+          <OrderAssessment claimId={claim.id} variant="reassess" />
         </section>
       )}
 
@@ -175,6 +184,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             })}
           </p>
         )}
+        {/* Build your part of the graph: an owl budget takes this subtree
+            deeper than the background pipeline's economics ever would. */}
+        <FundDecomposition claimId={claim.id} />
       </section>
 
       {/* provenance */}

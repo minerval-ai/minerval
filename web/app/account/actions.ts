@@ -7,6 +7,8 @@ import {
   createApiKey,
   createOwlPackCheckout,
   revokeApiKey,
+  topUpBudgetJob,
+  cancelBudgetJob,
   AccountApiError,
 } from "../../lib/account-api";
 
@@ -77,6 +79,49 @@ export async function buyOwlsAction(
     return { error: message };
   }
   redirect(checkoutUrl);
+}
+
+export interface JobActionState {
+  error?: string;
+  ok?: boolean;
+}
+
+// Top up a budget job (a paused job resumes). The acting identity comes from
+// the server session; the API re-validates ownership and balance.
+export async function topUpJobAction(
+  _prev: JobActionState,
+  formData: FormData
+): Promise<JobActionState> {
+  const session = await auth();
+  if (!session?.externalId) return { error: "Not signed in." };
+  const jobId = String(formData.get("job_id") ?? "");
+  const owls = Number(formData.get("owls"));
+  if (!jobId || !Number.isFinite(owls) || owls <= 0) {
+    return { error: "Enter how many owls to add." };
+  }
+  try {
+    await topUpBudgetJob(session.externalId, jobId, owls);
+  } catch (err) {
+    return {
+      error:
+        err instanceof AccountApiError ? err.message : "Top-up failed.",
+    };
+  }
+  revalidatePath(`/account/jobs/${jobId}`);
+  return { ok: true };
+}
+
+export async function cancelJobAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const jobId = String(formData.get("job_id") ?? "");
+  if (!jobId) return;
+  try {
+    await cancelBudgetJob(session.externalId, jobId);
+  } catch (err) {
+    console.error("[account] job cancel failed:", err);
+  }
+  revalidatePath(`/account/jobs/${jobId}`);
 }
 
 export async function signOutAction(): Promise<void> {

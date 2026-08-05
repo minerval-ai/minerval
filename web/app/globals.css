@@ -932,6 +932,20 @@ html { scroll-behavior: smooth; }
 .owl-pack-price { font-size: 0.82rem; }
 .owl-pack-discount { font-size: 0.72rem; color: var(--muted); }
 
+/* claim-page order surface + decomposition funding */
+.order-line { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin: 0.5rem 0; }
+.order-line .linklike { font-size: inherit; }
+.order-button {
+  font-family: var(--sans); font-size: 0.84rem; font-weight: 600;
+  padding: 0.5rem 1rem; border: 1px solid var(--rule); border-radius: 5px;
+  background: var(--paper-card); color: var(--ink); cursor: pointer;
+}
+.order-button:hover:not(:disabled) { background: var(--paper-sunk); }
+.order-button:disabled { color: var(--faint); cursor: default; }
+.order-caption { display: block; margin-top: 0.4rem; font-size: 0.76rem; color: var(--faint); }
+.fund-decomp { margin: 0.6rem 0; }
+.fund-decomp .order-caption { margin-bottom: 0.5rem; }
+
 /* the one-time key reveal — deliberately loud relative to the quiet page */
 .key-reveal {
   border: 1px solid var(--st-contested); background: var(--st-contested-tint);

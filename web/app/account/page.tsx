@@ -7,9 +7,13 @@ import {
   fetchOwlLedger,
   fetchUsage,
   listApiKeys,
+  listAssessmentOrders,
+  listBudgetJobs,
   AccountApiError,
   type AccountUser,
   type ApiKeyMeta,
+  type AssessmentOrderView,
+  type BudgetJobView,
   type OwlLedgerEntry,
   type OwlPack,
   type Entitlement,
@@ -113,8 +117,14 @@ export default async function AccountPage({
   // ledger (grants, charges, awards) exists either way.
   const creditsEnabled = entitlement.credits_enabled === true;
   let ledger: OwlLedgerEntry[] = [];
+  let orders: AssessmentOrderView[] = [];
+  let jobs: BudgetJobView[] = [];
   try {
-    ledger = await fetchOwlLedger(externalId);
+    [ledger, orders, jobs] = await Promise.all([
+      fetchOwlLedger(externalId),
+      listAssessmentOrders(externalId),
+      listBudgetJobs(externalId),
+    ]);
   } catch {
     // A ledger hiccup shouldn't take down the whole account page.
   }
@@ -240,6 +250,68 @@ export default async function AccountPage({
           </>
         )}
       </section>
+
+      {/* ------------------------------------------------ orders & jobs */}
+      {(orders.length > 0 || jobs.length > 0) && (
+        <section>
+          <h2>Assessments you&rsquo;ve ordered</h2>
+          {orders.length > 0 && (
+            <table className="account-table">
+              <thead>
+                <tr>
+                  <th>claim</th>
+                  <th>status</th>
+                  <th>owls</th>
+                  <th>ordered</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id}>
+                    <td>
+                      <a href={`/claims/${o.claim_id}`}>view claim</a>
+                    </td>
+                    <td>{o.status.replace(/_/g, " ")}</td>
+                    <td>{o.charged ? owls(o.price_owls) : "not charged"}</td>
+                    <td>{dateish(o.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {jobs.length > 0 && (
+            <>
+              <h3>Funded jobs</h3>
+              <table className="account-table">
+                <thead>
+                  <tr>
+                    <th>job</th>
+                    <th>status</th>
+                    <th>budget</th>
+                    <th>funded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map((j) => (
+                    <tr key={j.id}>
+                      <td>
+                        <a href={`/account/jobs/${j.id}`}>
+                          {j.kind.replace(/_/g, " ")}
+                        </a>
+                      </td>
+                      <td>{j.status.replace(/_/g, " ")}</td>
+                      <td>
+                        {owls(j.spent_owls)} / {owls(j.budget_owls)}
+                      </td>
+                      <td>{dateish(j.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
+      )}
 
       {/* ------------------------------------------------ api keys */}
       <section>

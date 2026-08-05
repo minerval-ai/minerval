@@ -114,7 +114,54 @@ and 402 body, so what things cost is legible before anything is spent (§15):
 | MCP text tools (match/extract/assess) | 0.1 owl | `PRICE_TEXT_ANALYSIS_OWLS` |
 
 Open-ended operations (deep decomposition, grantor agents) are deliberately
-NOT priced flat — they are funded with escrowed owl budgets (Stage 2+).
+NOT priced flat — they are funded with escrowed owl budgets (see below).
+
+## Assessment orders — the express lane
+
+`POST /claims/:id/order` (1 owl) buys a Steward (re)assessment of a claim. A
+paid order is a purchase, not a request: the dispatcher
+(`src/workers/order-pipeline.ts`) runs it AHEAD of the background
+importance-ordered drain — checked first on every runner tick — so dispatch
+latency is a tick, not a queue position. Semantics:
+
+- **Charge-at-start.** The order is created uncharged; the owl is debited
+  the moment the Steward run begins. While `pending` the order cancels free
+  (`DELETE /orders/:id`). A genuine run failure refunds automatically; a
+  transient failure requeues the order with its charge intact (the retry
+  never double-charges).
+- **Stakes.** Every charged order records a `claim_stakes` row — the demand
+  signal the background lane's composite priority reads. Stakes are queue
+  input, never `claims.importance` input: money buys position, not epistemic
+  standing.
+- **Accepted claim proposals** create a proposal-funded order automatically
+  (the claim_proposal charge rides along), so a paid proposal's claim runs
+  on the express lane instead of waiting behind corpus work (#284).
+- The run is attributed to the ordering user (usage context userId +
+  jobId=order id), so per-order cost is queryable from `llm_usage`.
+- `GET /orders` (optionally `?claim_id=` for the claim page's poll),
+  `GET /orders/:id`.
+
+## Budget jobs — funded open-ended work
+
+`POST /claims/:id/decompose` `{budget_owls}` funds DEEP DECOMPOSITION of a
+claim's subtree. Open-ended work gets a budget, not a price:
+
+- Funding escrows the owls immediately (`escrow_hold` behind the same
+  balance guard as a charge) — that's the act of committing them.
+- The worker (`src/workers/budget-job-pipeline.ts`) stewards the subtree one
+  claim per tick: pending claims ahead of their queue turn, and 'deferred'
+  stubs the economic brake (#98) held out — the funder is buying exactly
+  that depth. New subclaims minted along the way become new targets.
+- Spend is metered against real model work (`llm_usage` rows attributed
+  with job_id). At the floor the job PAUSES (`paused_budget`) with a
+  progress checkpoint and waits for a top-up
+  (`POST /budget-jobs/:id/topup`); it never silently dies mid-run.
+- Completion and cancellation (`POST /budget-jobs/:id/cancel`) refund the
+  unspent remainder (`escrow_refund`).
+- `GET /budget-jobs`, `GET /budget-jobs/:id` (live spend + checkpoint — the
+  job page polls this).
+
+This budget entity is the substrate grantor agents build on.
 
 **Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
 a claim you care about, get it assessed" ×5 — plus a 1 owl/month trickle

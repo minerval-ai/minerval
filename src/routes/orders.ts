@@ -12,6 +12,7 @@ import type { FastifyInstance } from "fastify";
 import {
   listOrders,
   cancelOrder,
+  getOpenOrderForClaim,
   serializeOrder,
 } from "../services/order-service.js";
 import { getDb } from "../db/client.js";
@@ -19,14 +20,25 @@ import { assessmentOrders } from "../db/schema.js";
 import { and, eq } from "drizzle-orm";
 
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/", {
+  app.get<{ Querystring: { claim_id?: string } }>("/", {
     schema: {
       tags: ["orders"],
-      summary: "List the authenticated user's assessment orders",
+      summary:
+        "List the authenticated user's assessment orders (claim_id filters " +
+        "to the open order for that claim, for the claim-page poll)",
+      querystring: {
+        type: "object",
+        properties: { claim_id: { type: "string", format: "uuid" } },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const orders = await listOrders(request.auth!.userId!);
+      const userId = request.auth!.userId!;
+      if (request.query.claim_id) {
+        const order = await getOpenOrderForClaim(userId, request.query.claim_id);
+        return reply.send({ orders: order ? [serializeOrder(order)] : [] });
+      }
+      const orders = await listOrders(userId);
       return reply.send({ orders: orders.map(serializeOrder) });
     },
   });
