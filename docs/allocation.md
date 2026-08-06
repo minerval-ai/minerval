@@ -32,27 +32,73 @@ counts toward every sibling and is consumed by whichever wins.
 **The judgment is each mandate's own** (`mandate_valuations`): every
 mandate values only the actions it knows and cares about — sparse by
 design; the Mathematics mandate holds no opinion on a politics claim —
-by its own definition of importance, its own formulas
-(mandate-valuer-service.ts), written as its own rows. Its allocator
-(allocation-service.ts) then ranks MARGINAL INCREMENTS by value per
-dollar — cover the cheap variant; upgrade to the dear one only when
-Δvalue/Δcost also clears — and funds them best-first until its daily rate
-is committed. The bar is emergent from the budget: most actions whose
-value merely exceeds their cost still fall below the day's threshold and
-wait for co-funding or a cheaper day.
+by its own definition of importance. A mandate's SCOPE IS ITS WORDS:
+which actions fall under it is a judgment call made by its Grantmaker
+agent, never by a keyword filter. (The one exception is the General
+assessment mandate, whose scope genuinely is "everything" and whose
+valuations are its published formula — itself agent-amendable policy.)
+Each mandate's allocator (allocation-service.ts) then ranks MARGINAL
+INCREMENTS by value per dollar — cover the cheap variant; upgrade to the
+dear one only when Δvalue/Δcost also clears — and funds them best-first
+until its daily rate is committed. The bar is emergent from the budget:
+most actions whose value merely exceeds their cost still fall below the
+day's threshold and wait for co-funding or a cheaper day.
 
-The graph's own work is not a special case: Minerval runs a standing
-General assessment mandate whose budget is the dollars the platform
-allocates to expanding and maintaining the graph, and whose valuations
-happen to span the whole graph. It is merely the first valuer; scoped
-mandates (Mathematics, AI Economics, anyone's) run the identical
-machinery over their scopes.
+Value and cost are estimates; cost priors and formula knobs are each
+mandate's ALLOCATION POLICY, revised by asking its Grantmaker, not by
+editing code. Neither side is ever a verdict input: the estimates order
+work and select effort, and appear nowhere in an assessment.
 
-Value and cost are estimates, produced by legible heuristics that start
-as guesses; they are each mandate's ALLOCATION POLICY, revised by asking
-its Grantmaker (below), not by editing code. Neither side is ever a
-verdict input: the estimates order work and select effort, and appear
-nowhere in an assessment.
+## Mandates steward themselves: the review pass
+
+There can be no human bottleneck between a funded mission and the work.
+On a cadence (and on demand — see continue_review), the ledger opens a
+`mandate_review` action for every active mandate, self-funded from its
+escrow, and the engine executor runs the mandate's Grantmaker in review
+mode (llm/agents/mandate-review.ts) with the affordances anyone entrusted
+with a budget and a mission would need:
+
+- **survey the territory**: the graph (search_claims, survey_scope,
+  list_open_actions) AND the open web (web_search) — finding where the
+  good physics papers are is the agent's job;
+- **a workspace** (`grants.workspace`): the agent's own durable working
+  document, read back in full every pass — its map of the territory,
+  source backlog, strategy. Mandate-scale missions are impossible
+  without working memory;
+- **write valuations** (set_valuations): value 0–10 with rationale, over
+  exactly the actions it judges relevant — this is its spending judgment;
+- **grow its own plan** (extend_plan): append the ingest/assess items it
+  discovered; each is priced, escrow-bounded, and executes through the
+  ledger;
+- **pace itself** (set_daily_rate) and **chain passes**
+  (continue_review): a pass that has more to do runs another immediately,
+  bounded by MANDATE_REVIEW_MAX_PASSES_PER_DAY on the funding side — cost
+  discipline lives in the mechanism, never in narrowed affordances;
+- **move money** (regrant, spawn_mandate — below) and **close the
+  mission** (complete_mandate): an exhausted plan is a waypoint, not an
+  end; only the agent's judgment (or the funder) completes an
+  agent-stewarded mandate.
+
+Every pass is metered under a cap; the refusal duties that govern mandate
+design govern review passes equally; the pass ends with a note recorded
+on the mandate's public page. Known gap, deliberately next: a bulk
+ingestion primitive ("ingest what this listing/feed points to") so a
+discovered index becomes a program of work in one plan item instead of an
+enumeration.
+
+## Regrants: mandates fund mandates, as peers
+
+All grants live on the same level: any mandate can be funded separately
+(user contributions) AND put its own budget behind other mandates
+(`regrants`). That is how a mandate carves its ingestion out to another
+Grantmaker (spawn_mandate: a NEW peer mandate in planning, with its own
+budget, its own agent, separately fundable by anyone), or backs a
+sibling already covering part of its mission (regrant). A regrant moves
+escrowed budget job-to-job: it counts against the source's committed
+money (headroom, floor checks), joins the target's refund basis (the
+source's share of the target's unspent budget flows back to its escrow,
+pro rata with user contributors), and buys the source NO say over the
+target's judgment — money moves between mandates; command never does.
 
 ## The unit: the owl
 
@@ -104,11 +150,13 @@ distort the very agents that must reason in value over cost.
    co-funds partially backed actions (allocating cost minus existing
    backing) rather than duplicating other funders' money, and pins its
    upgrade increments to the strong variant, where they are refunded if a
-   cheaper sibling wins after all. Grant-plan execution (agent plans,
-   cover/deepen/maintain selectors) still funds its actions fully and
-   runs them directly, metered to the escrow, with the ledger rows closed
-   as the public record. Candidates no one funds remain embedded stubs;
-   that is the intended steady state.
+   cheaper sibling wins after all. Grants fund their OWN work the same
+   way: planning runs, mandate reviews, and plan ingest items are ledger
+   actions fully allocated from the grant's escrow and executed by the
+   engine executor (workers/engine-executor.ts) — an ingest action's cost
+   is consumed when the extraction's metered cost lands, so shares follow
+   real spend. Candidates no one funds remain embedded stubs; that is the
+   intended steady state.
 
 ## The expected-value estimate (per assessment)
 

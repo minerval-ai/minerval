@@ -23,6 +23,7 @@ const KIND_LABEL: Record<string, string> = {
   reassess: "reassessments",
   ingest: "ingestions",
   grant_planning: "mandate planning",
+  mandate_review: "mandate reviews",
 };
 
 function KindTiles({ view }: { view: MandateAllocationView }) {
@@ -37,7 +38,8 @@ function KindTiles({ view }: { view: MandateAllocationView }) {
             covered
           </span>
           <span className="alloc-tile-sub">
-            {owls(k.allocated_owls)} owls allocated ·{" "}
+            {owls(k.allocated_owls)}{" "}
+            {k.allocated_owls === 1 ? "owl" : "owls"} allocated ·{" "}
             {owls(k.est_total_cost_owls)} to do it all
           </span>
         </div>

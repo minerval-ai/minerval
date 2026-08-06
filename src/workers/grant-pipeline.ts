@@ -1,45 +1,38 @@
 /**
- * Grant worker — executes grantmaker mandates one unit per tick.
+ * Grant worker — executes the steward-run half of grantmaker mandates,
+ * one unit per tick.
  *
- * Two phases:
+ * Everything else a grant does now flows through the action ledger:
+ * planning runs and mandate reviews are `grant_planning`/`mandate_review`
+ * actions (self-funded from escrow, run by the engine executor), ingest
+ * plan items are `ingest` actions completed by the extraction worker, and
+ * cover/maintain policies spend through their own valuations + daily
+ * allocator like every other funder. What remains HERE is the direct
+ * steward execution of plan claim items:
  *
- *  PLANNING (policy 'agent'): run the Grantor agent over the scope, store
- *  its proposed allocation plan on the grant, and move to pending_approval.
- *  The planning run itself is metered to the grant's budget; nothing else
- *  is spent until the funder approves.
- *
- *  EXECUTION (status 'active'): pick the next target under the mandate's
- *  policy and steward it, metered to the grant's budget job — so funded
- *  assessments carry the grant's funding disclosure (funded_by_job_id).
- *  The grant run IS the funded action; no side records feed the general
- *  lane. Targets per policy:
- *
+ *    agent    — the approved plan's assess/reassess/deepen items, in
+ *               order ('deepen' items also promote the claim's own
+ *               pending/deferred subclaims while budget allows); ingest
+ *               items are skipped in place — their ledger actions run
+ *               asynchronously and the reconcile sweep advances the
+ *               cursor once they finish.
  *    deepen   — pending/deferred claims in scope, highest priority first
- *               (the funder is buying the depth the brake held out);
- *    cover    — claims in scope with no current assessment, breadth first;
- *    maintain — claims in scope whose assessment is older than the grant
- *               cadence, stalest first;
- *    agent    — the approved plan's items, in order ('deepen' items also
- *               promote the claim's own pending/deferred subclaims while
- *               budget allows, via the deepen selector rooted there).
+ *               (the funder is buying the depth the brake held out).
  *
- *  At the budget floor the underlying job pauses (top-up resumes, same as
- *  any budget job); when no targets remain the grant completes and the
- *  unspent budget refunds.
+ *  Runs are metered to the grant's budget job — funded assessments carry
+ *  the grant's funding disclosure (funded_by_job_id). At the budget floor
+ *  the job pauses (top-up resumes); when no targets remain and no ledger
+ *  work is pending, the grant completes and unspent budget refunds (to
+ *  user contributors AND regranting mandates, pro rata).
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runGrantor } from "../llm/agents/grantor.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import {
-  getJobSpentMicroUsd,
-  refundUnspentBudget,
-} from "../services/budget-job-service.js";
-import { submitSource } from "../services/source-service.js";
-import { markActionGroupDone } from "../services/action-service.js";
+import { refundUnspentBudget } from "../services/budget-job-service.js";
+import { grantCommittedMicroUsd } from "../services/regrant-service.js";
 import type { PlanItem } from "../services/grant-service.js";
 
 export type GrantDrainStatus =
@@ -98,39 +91,29 @@ interface TargetRow {
   steward_context: string | null;
 }
 
-/** Atomically claim the next target for a policy, or null when exhausted. */
+/**
+ * Atomically claim the next steward target for a policy. Returns
+ * `waitingOnLedger` when the plan's remaining work is ingest actions that
+ * the ledger is still executing — the grant is not exhausted, just not
+ * this worker's turn.
+ */
 async function claimNextGrantTarget(
   grant: GrantRow
-): Promise<{ target: TargetRow | null; ingestedUrl?: string }> {
-  const config = loadConfig();
-
+): Promise<{ target: TargetRow | null; waitingOnLedger?: boolean }> {
   if (grant.policy === "agent") {
     const items = grant.plan?.items ?? [];
+    let waitingOnLedger = false;
     // Walk the plan from the cursor; skip items whose claim is gone/busy.
     for (let i = grant.plan_cursor; i < items.length; i++) {
       const item = items[i]!;
-      // An 'ingest' item is the ingestion-pipeline primitive: enqueue the
-      // source for extraction + matching, metered to the grant's escrow.
-      // One enqueue is the item's whole unit of work; the extraction runs
-      // asynchronously and any claims it mints join the graph normally.
+      // An 'ingest' item executes through the action ledger (an `ingest`
+      // action self-funded from this grant's escrow, run by the engine
+      // executor, completed by the extraction worker). Skip it IN PLACE:
+      // the cursor only advances past it once its action is done (the
+      // reconcile sweep does that), so plan progress stays honest.
       if (item.action === "ingest") {
-        await setPlanCursor(grant.id, i + 1);
-        if (!item.url) continue;
-        const { sourceId, jobId } = await submitSource(
-          { url: item.url },
-          {
-            userId: grant.funder_user_id,
-            meterJobId: grant.budget_job_id,
-          }
-        );
-        // The pipeline record the public dashboard and the Grantmaker's
-        // analytics dig into: which sources this mandate brought in.
-        await rawQuery(
-          `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
-           VALUES ($1, $2, $3, $4)`,
-          [grant.id, sourceId, item.url, jobId]
-        );
-        return { target: null, ingestedUrl: item.url };
+        waitingOnLedger = true;
+        continue;
       }
       if (!item.claim_id) {
         await setPlanCursor(grant.id, i + 1);
@@ -156,58 +139,14 @@ async function claimNextGrantTarget(
       // missing): move on.
       await setPlanCursor(grant.id, i + 1);
     }
-    return { target: null };
+    return { target: null, waitingOnLedger };
   }
 
-  if (grant.policy === "deepen") {
-    return {
-      target: await claimDeepenTarget(grant.scope_claim_id, grant.scope_query),
-    };
-  }
-
-  if (grant.policy === "cover") {
-    const rows = await rawQuery<TargetRow>(
-      `${SCOPE_SQL},
-       target AS (
-         SELECT c.id, c.steward_state AS prior_state
-           FROM claims c JOIN scope ON scope.id = c.id
-          WHERE c.steward_state IN ('pending', 'deferred')
-            AND NOT EXISTS (SELECT 1 FROM assessments a
-                             WHERE a.claim_id = c.id AND a.is_current = true)
-          ORDER BY c.queue_priority DESC
-          LIMIT 1
-          FOR UPDATE OF c SKIP LOCKED
-       )
-       UPDATE claims c SET steward_state = 'running', stewarded_at = now()
-         FROM target WHERE c.id = target.id
-       RETURNING c.id, target.prior_state, c.decomposition_status,
-                 c.steward_trigger, c.steward_context`,
-      [grant.scope_claim_id, grant.scope_query]
-    );
-    return { target: rows[0] ?? null };
-  }
-
-  // maintain: stalest current assessment past the cadence.
-  const rows = await rawQuery<TargetRow>(
-    `${SCOPE_SQL},
-     target AS (
-       SELECT c.id, c.steward_state AS prior_state
-         FROM claims c
-         JOIN scope ON scope.id = c.id
-         JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-        WHERE c.steward_state = 'done'
-          AND a.assessed_at < now() - make_interval(days => $3::int)
-        ORDER BY a.assessed_at ASC
-        LIMIT 1
-        FOR UPDATE OF c SKIP LOCKED
-     )
-     UPDATE claims c SET steward_state = 'running', stewarded_at = now()
-       FROM target WHERE c.id = target.id
-     RETURNING c.id, target.prior_state, c.decomposition_status,
-               c.steward_trigger, c.steward_context`,
-    [grant.scope_claim_id, grant.scope_query, config.grantMaintainCadenceDays]
-  );
-  return { target: rows[0] ?? null };
+  // deepen: the only other direct-execution policy. cover/maintain spend
+  // through their valuations + daily allocator (the ledger), not here.
+  return {
+    target: await claimDeepenTarget(grant.scope_claim_id, grant.scope_query),
+  };
 }
 
 /** Deepen selector: pending/deferred within a subtree (and/or query scope). */
@@ -295,8 +234,8 @@ export async function processNextGrantTask(
             g.scope_query, g.policy, g.status, g.plan, g.plan_cursor,
             j.budget_micro_usd, j.status AS job_status
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
-      WHERE (g.status = 'planning' OR g.status = 'active')
-        AND g.policy <> 'general'
+      WHERE g.status = 'active'
+        AND g.policy IN ('agent', 'deepen')
         AND j.status = 'running'
       ORDER BY g.updated_at ASC
       LIMIT 1
@@ -305,8 +244,13 @@ export async function processNextGrantTask(
   if (grantRows.length === 0) return { status: "empty" };
   const grant = grantRows[0]!;
 
-  const spent = await getJobSpentMicroUsd(grant.budget_job_id);
-  if (spent >= Number(grant.budget_micro_usd)) {
+  // The floor check counts EVERYTHING the escrow is committed to: metered
+  // spend, allocation shares (spent and outstanding), regrants out.
+  const committed = await grantCommittedMicroUsd({
+    id: grant.id,
+    budgetJobId: grant.budget_job_id,
+  });
+  if (committed >= Number(grant.budget_micro_usd)) {
     await rawQuery(
       `UPDATE budget_jobs SET status = 'paused_budget', updated_at = now()
         WHERE id = $1`,
@@ -318,69 +262,21 @@ export async function processNextGrantTask(
     return { status: "paused", grantId: grant.id };
   }
 
-  // PLANNING: run the Grantor agent, store the plan, wait for approval.
-  if (grant.status === "planning") {
-    try {
-      const plan = await runWithUsageContext(
-        { userId: grant.funder_user_id, jobId: grant.budget_job_id },
-        () =>
-          runGrantor({
-            grantName: grant.name,
-            scopeClaimId: grant.scope_claim_id,
-            scopeQuery: grant.scope_query,
-            budgetOwls: Math.floor(
-              Number(grant.budget_micro_usd) / config.owlCostMicroUsd
-            ),
-            model: opts.model,
-          })
-      );
-      await rawQuery(
-        `UPDATE grants
-            SET plan = $2::jsonb, status = 'pending_approval',
-                plan_cursor = 0, updated_at = now()
-          WHERE id = $1`,
-        [grant.id, JSON.stringify(plan)]
-      );
-      await markActionGroupDone(`plan:${grant.id}`).catch(() => {});
-      return { status: "planned", grantId: grant.id, ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (err instanceof LlmBudgetExceededError || isTransientApiError(err)) {
-        await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
-          grant.id,
-        ]);
-        return {
-          status: err instanceof LlmBudgetExceededError ? "budget" : "transient",
-          grantId: grant.id,
-          error: msg,
-        };
-      }
-      // A genuine planning failure surfaces on the grant for the funder.
-      await rawQuery(
-        `UPDATE grants SET updated_at = now() WHERE id = $1`,
-        [grant.id]
-      );
-      await rawQuery(
-        `UPDATE budget_jobs SET error = $2, updated_at = now() WHERE id = $1`,
-        [grant.budget_job_id, msg]
-      );
-      return { status: "processed", grantId: grant.id, ok: false, error: msg };
-    }
-  }
-
-  // EXECUTION: one target under the policy.
-  const { target, ingestedUrl } = await claimNextGrantTarget(grant);
-  if (ingestedUrl) {
-    // The unit of work was enqueuing a funded ingestion; the extraction
-    // meters to the grant's escrow as it runs. Close the ledger's record
-    // of the potential action.
-    await markActionGroupDone(`ingest:${ingestedUrl}`).catch(() => {});
-    await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
-      grant.id,
-    ]);
-    return { status: "processed", grantId: grant.id, ok: true };
-  }
+  // EXECUTION: one steward target under the policy.
+  const { target, waitingOnLedger } = await claimNextGrantTarget(grant);
   if (!target) {
+    if (waitingOnLedger || grant.policy === "agent") {
+      // Ledger actions in flight, or an agent-stewarded mandate whose
+      // plan is (for now) exhausted: NOT finished. The mandate's review
+      // pass decides whether to extend the plan or close the mandate
+      // (complete_mandate) — exhausting the initial plan is a waypoint
+      // of a live mission, not its end.
+      await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
+        grant.id,
+      ]);
+      return { status: "empty" };
+    }
+    // deepen: the scope is mechanically exhausted — settle and refund.
     await refundUnspentBudget({
       id: grant.budget_job_id,
       userId: grant.funder_user_id,

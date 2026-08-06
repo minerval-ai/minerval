@@ -26,6 +26,7 @@ import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.
 import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
 import { processNextGrantTask } from "./grant-pipeline.js";
+import { processNextEngineAction } from "./engine-executor.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
@@ -52,7 +53,7 @@ const HANDLERS: Array<[LocalQueueName, (m: never) => Promise<void>]> = [
 /** One processed message — the unit of the observability trace. */
 export interface RunnerEvent {
   seq: number;
-  queue: LocalQueueName | "steward" | "order" | "budgetJob" | "grant";
+  queue: LocalQueueName | "steward" | "order" | "budgetJob" | "grant" | "engine";
   message: unknown;
   ok: boolean;
   error?: string;
@@ -214,8 +215,38 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       // 'empty' — fall through to the grant lane.
     }
 
-    // 4. Grantmaker mandates: planning runs and funded steward passes, one
-    //    unit per pass so they interleave with everything else.
+    // 4. The engine executor: covered planning / mandate-review / ingest
+    //    actions from the ledger, one unit per pass.
+    {
+      const startedAt = now();
+      const e = await processNextEngineAction({ model: opts.stewardModel });
+      if (e.status === "budget") {
+        checkBudget();
+        return { processed, errors, capped: false };
+      }
+      if (e.status === "transient") {
+        return { processed, errors, capped: true };
+      }
+      if (e.status === "processed") {
+        seq++;
+        stewardProcessed++;
+        if (e.ok) processed.engine = (processed.engine ?? 0) + 1;
+        else errors.engine = (errors.engine ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "engine",
+          message: { actionId: e.actionId, kind: e.kind, grantId: e.grantId },
+          ok: !!e.ok,
+          error: e.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
+      // 'empty' — fall through to the grant lane.
+    }
+
+    // 5. Grantmaker mandates: funded steward passes over plan claim items,
+    //    one unit per pass so they interleave with everything else.
     {
       const startedAt = now();
       const g = await processNextGrantTask({ model: opts.stewardModel });
@@ -247,7 +278,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       // 'empty' — fall through to the background drain.
     }
 
-    // 5. No in-memory, order, or funded work — one background Steward task
+    // 6. No in-memory, order, or funded work — one background Steward task
     //    (highest priority pending), leaving the rest as stubs when capped.
     const startedAt = now();
     const r = await processNextStewardTask({ model: opts.stewardModel });

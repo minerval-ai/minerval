@@ -267,6 +267,13 @@ const configSchema = z.object({
   // (0 = uncapped). This replaces "drain the queue": the highest value/cost
   // actions run until the day's budget is gone, and the rest wait.
   backgroundDailyBudgetOwls: z.coerce.number().default(50),
+  // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
+  // can chain passes within a day (continue_review) when the mission needs
+  // the bandwidth — enumerating a big source backlog, a territory survey.
+  // This caps how many passes a day the ledger will FUND per mandate: a
+  // cost bound on the mechanism, deliberately not a narrowing of the
+  // agent's affordances. Each pass is also individually capped and metered.
+  mandateReviewMaxPassesPerDay: z.coerce.number().default(12),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -467,6 +474,7 @@ export function loadConfig(): Config {
     costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
     costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
+    mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,

@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Grant worker control flow: planning → pending_approval, the
-// approval-gated agent policy, per-policy target execution with funding
-// attribution, pause at the floor, complete + refund. DB/agents mocked.
+// Grant worker control flow: the steward-run half of mandates only —
+// approved agent-plan claim items and the deepen selector, with funding
+// attribution, pause at the committed floor, and deepen completion +
+// refund. Planning, mandate reviews, and ingests belong to the engine
+// executor over the action ledger, NOT to this worker. DB/agents mocked.
 
 const { state, stewardRuns, grantorRuns } = vi.hoisted(() => ({
   stewardRuns: [] as Array<{ claimId: string; trigger: string }>,
@@ -85,11 +87,14 @@ vi.mock("../../../src/llm/agents/grantor.js", () => ({
 }));
 
 vi.mock("../../../src/services/budget-job-service.js", () => ({
-  getJobSpentMicroUsd: vi.fn(async () => state.spent),
   refundUnspentBudget: vi.fn(async (job: unknown) => {
     state.refunds.push(job);
     return 1;
   }),
+}));
+
+vi.mock("../../../src/services/regrant-service.js", () => ({
+  grantCommittedMicroUsd: vi.fn(async () => state.spent),
 }));
 
 vi.mock("../../../src/services/priority-service.js", () => ({
@@ -124,7 +129,7 @@ function grant(overrides: Record<string, unknown> = {}) {
     name: "Nutrition science cruxes",
     scope_claim_id: "root-1",
     scope_query: null,
-    policy: "cover",
+    policy: "deepen",
     status: "active",
     plan: null,
     plan_cursor: 0,
@@ -157,24 +162,15 @@ describe("processNextGrantTask", () => {
     expect((await processNextGrantTask()).status).toBe("empty");
   });
 
-  it("plans an agent grant and parks it pending approval — no steward spend", async () => {
+  it("never plans here: planning runs belong to the engine executor", async () => {
     state.grant = grant({ policy: "agent", status: "planning" });
     const r = await processNextGrantTask();
-    expect(r).toMatchObject({ status: "planned", ok: true });
-    expect(grantorRuns).toHaveLength(1);
+    expect(r.status).toBe("empty");
+    expect(grantorRuns).toHaveLength(0);
     expect(stewardRuns).toHaveLength(0);
-    const planned = state.grantUpdates.find((u) =>
-      u.sql.includes("'pending_approval'")
-    );
-    expect(planned).toBeDefined();
-    // The planning run is metered to the grant's budget job.
-    expect(state.usageContexts[0]).toMatchObject({
-      userId: "funder-1",
-      jobId: "gjob-1",
-    });
   });
 
-  it("executes a cover target with grant attribution", async () => {
+  it("executes a deepen target with grant attribution", async () => {
     state.grant = grant();
     state.targets = [
       {
@@ -222,7 +218,7 @@ describe("processNextGrantTask", () => {
     expect(stewardRuns).toHaveLength(0);
   });
 
-  it("completes and refunds when the scope is exhausted", async () => {
+  it("completes and refunds a deepen grant when the scope is exhausted", async () => {
     state.grant = grant();
     state.targets = [];
     const r = await processNextGrantTask();
@@ -231,5 +227,36 @@ describe("processNextGrantTask", () => {
     expect(
       state.grantUpdates.some((u) => u.sql.includes("'completed'"))
     ).toBe(true);
+  });
+
+  it("keeps an exhausted agent mandate alive: closing it is its review agent's call", async () => {
+    state.grant = grant({ policy: "agent", status: "active", plan: state.plan });
+    // The plan's one claim item is already handled; nothing to steward.
+    const r = await processNextGrantTask();
+    expect(r.status).toBe("empty");
+    expect(state.refunds).toHaveLength(0);
+    expect(
+      state.grantUpdates.some((u) => u.sql.includes("'completed'"))
+    ).toBe(false);
+  });
+
+  it("waits on ledger ingests without advancing the cursor or completing", async () => {
+    state.grant = grant({
+      policy: "agent",
+      status: "active",
+      plan: {
+        strategy: "s",
+        items: [
+          { action: "ingest", url: "https://example.org/x", rationale: "r" },
+        ],
+      },
+    });
+    const r = await processNextGrantTask();
+    expect(r.status).toBe("empty");
+    expect(stewardRuns).toHaveLength(0);
+    expect(
+      state.grantUpdates.some((u) => u.sql.includes("plan_cursor"))
+    ).toBe(false);
+    expect(state.refunds).toHaveLength(0);
   });
 });

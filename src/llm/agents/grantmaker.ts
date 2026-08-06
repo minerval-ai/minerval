@@ -346,6 +346,52 @@ async function runGrantmakerTurnImpl(input: {
       required: ["updates", "note"],
     },
   };
+  const regrantTool: Tool = {
+    name: "regrant",
+    description:
+      "Put part of this mandate's uncommitted budget behind another live " +
+      "mandate (all mandates are peers; money, never command). The " +
+      "target's unspent budget refunds back here pro rata if it settles.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        to_mandate_id: { type: "string" },
+        owls: { type: "number" },
+        note: { type: "string" },
+      },
+      required: ["to_mandate_id", "owls", "note"],
+    },
+  };
+  const spawnTool: Tool = {
+    name: "spawn_mandate",
+    description:
+      "Carve part of the mission into a NEW mandate with its own budget " +
+      "and its own Grantmaker (a peer, separately fundable — not a " +
+      "sub-unit). It starts in planning: its agent surveys and drafts its " +
+      "own plan. Use when a slice of the work deserves dedicated " +
+      "stewardship, e.g. a whole ingestion program.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string" },
+        objective: { type: "string" },
+        owls: { type: "number" },
+        note: { type: "string" },
+      },
+      required: ["title", "objective", "owls", "note"],
+    },
+  };
+  const rateTool: Tool = {
+    name: "set_daily_rate",
+    description:
+      "Set this mandate's daily allocation rate, in owls per day — the " +
+      "pacing knob. The escrow is the hard bound either way.",
+    input_schema: {
+      type: "object" as const,
+      properties: { owls_per_day: { type: "number" } },
+      required: ["owls_per_day"],
+    },
+  };
   const allocationReportTool: Tool = {
     name: "allocation_report",
     description:
@@ -412,6 +458,9 @@ async function runGrantmakerTurnImpl(input: {
           allocationReportTool,
           adjustTool,
           policyTool,
+          regrantTool,
+          spawnTool,
+          rateTool,
         ]
       : [proposeTool, declineTool]),
   ];
@@ -678,6 +727,47 @@ async function executeManagementTool(
       [grantId]
     );
     return JSON.stringify(row ?? { claims: 0 });
+  }
+  if (name === "regrant") {
+    const { createRegrant } = await import(
+      "../../services/regrant-service.js"
+    );
+    const res = await createRegrant({
+      fromGrantId: grantId,
+      toGrantId: String(toolInput.to_mandate_id ?? ""),
+      owls: Number(toolInput.owls ?? 0),
+      note: String(toolInput.note ?? ""),
+    });
+    return JSON.stringify(res);
+  }
+  if (name === "spawn_mandate") {
+    const { spawnFundedMandate } = await import(
+      "../../services/regrant-service.js"
+    );
+    const res = await spawnFundedMandate({
+      fromGrantId: grantId,
+      title: String(toolInput.title ?? ""),
+      objective: String(toolInput.objective ?? ""),
+      owls: Number(toolInput.owls ?? 0),
+      note: String(toolInput.note ?? ""),
+    });
+    return JSON.stringify(res);
+  }
+  if (name === "set_daily_rate") {
+    const owlsPerDay = Number(toolInput.owls_per_day);
+    if (!Number.isFinite(owlsPerDay) || owlsPerDay < 0) {
+      return JSON.stringify({
+        success: false,
+        problem: "owls_per_day must be a non-negative number",
+      });
+    }
+    const { owlsToMicroUsd } = await import("../../services/owl.js");
+    await rawQuery(
+      `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now()
+        WHERE id = $1 AND status = 'active'`,
+      [grantId, owlsToMicroUsd(owlsPerDay)]
+    );
+    return JSON.stringify({ success: true, owls_per_day: owlsPerDay });
   }
   if (name === "allocation_report") {
     const { getMandateAllocationView } = await import(

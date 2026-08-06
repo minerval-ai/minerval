@@ -961,6 +961,12 @@ export const grants = pgTable(
     // policy governs the platform's own lane — when we learn something
     // about allocation, we ask its Grantmaker to change the formula.
     allocationPolicy: jsonb("allocation_policy"),
+    // The Grantmaker's own working memory: a document it reads in full at
+    // the start of every review pass and rewrites as it works — its map
+    // of the territory, source backlog, strategy, open questions. Owned
+    // entirely by the agent; a mandate-scale mission is impossible
+    // without durable working state between passes.
+    workspace: text("workspace"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -971,6 +977,46 @@ export const grants = pgTable(
   (table) => [
     index("idx_grants_funder").on(table.funderUserId, table.createdAt),
     index("idx_grants_status").on(table.status),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// regrants
+//
+// A grant funding another grant. All grants live on the same level: any
+// mandate can be funded separately (user contributions) AND fund other
+// mandates — carving budget out for ingestion run by another Grantmaker,
+// splitting basic research from applications, and so on. A regrant moves
+// escrowed budget from the source grant's budget job to the target's:
+// the amount counts against the source's committed money (headroom and
+// pause checks include it) and joins the target's refund basis, so when
+// the target settles with unspent budget the source's share flows back
+// into its escrow, pro rata with the target's user contributors.
+// ---------------------------------------------------------------------------
+export const regrants = pgTable(
+  "regrants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromGrantId: uuid("from_grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    toGrantId: uuid("to_grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // The Grantmaker's one-line why, recorded with the transfer.
+    note: text("note"),
+    // Unspent share returned to the source when the target settled.
+    refundedMicroUsd: bigint("refunded_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_regrants_from").on(table.fromGrantId),
+    index("idx_regrants_to").on(table.toGrantId),
   ]
 );
 

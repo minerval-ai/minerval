@@ -1157,3 +1157,8 @@ textarea.contribute-field { resize: vertical; line-height: 1.45; }
   color: var(--muted); font-family: var(--sans); font-size: 0.78rem;
   max-width: 40rem;
 }
+.mandate-review-note {
+  border-left: 3px solid var(--rule); margin: 0.5rem 0 0; padding: 0.2rem 0 0.2rem 1rem;
+  color: var(--ink-soft); font-size: 0.9rem; max-width: 42rem;
+  white-space: pre-wrap;
+}

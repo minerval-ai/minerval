@@ -198,14 +198,50 @@ export default async function MandatePage({
         />
       )}
 
-      {mandate.contributors.length > 0 && (
+      {(mandate.contributors.length > 0 ||
+        mandate.funded_by_mandates.length > 0) && (
         <p className="order-line">
           Backed by{" "}
-          {mandate.contributors
-            .map((c) => `${c.name} (${owls(c.owls)} owls)`)
-            .join(", ")}
+          {[
+            ...mandate.contributors.map(
+              (c) => `${c.name} (${owls(c.owls)} owls)`
+            ),
+            ...mandate.funded_by_mandates.map(
+              (m) => `the ${m.title} mandate (${owls(m.owls)} owls)`
+            ),
+          ].join(", ")}
           .
         </p>
+      )}
+
+      {mandate.regrants_out.length > 0 && (
+        <p className="order-line">
+          This mandate funds{" "}
+          {mandate.regrants_out.map((m, i) => (
+            <span key={m.grant_id}>
+              {i > 0 && ", "}
+              <Link href={`/mandates/${m.grant_id}`}>{m.title}</Link> (
+              {owls(m.owls)} owls)
+            </span>
+          ))}
+          {" — "}mandates are peers: money moves between them, judgment
+          never does.
+        </p>
+      )}
+
+      {mandate.last_review && (
+        <section>
+          <h2>The Grantmaker&rsquo;s latest review</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
+            This mandate stewards itself: its Grantmaker takes autonomous
+            review passes — surveying its territory, revising its
+            valuations, growing its plan — and leaves a note each time.
+            Last pass: {dateish(mandate.last_review.at)}.
+          </p>
+          <blockquote className="mandate-review-note">
+            {mandate.last_review.note}
+          </blockquote>
+        </section>
       )}
 
       {open && <AllocationSection mandateId={mandate.id} />}

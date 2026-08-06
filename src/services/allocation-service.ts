@@ -33,6 +33,7 @@
  * estimate; money is cost-side only, always.
  */
 import { rawQuery } from "../db/client.js";
+import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
@@ -379,6 +380,82 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
   const mandate = await getGeneralMandate();
   if (!mandate) return null;
   return runMandateAllocator(mandate.grantId);
+}
+
+/**
+ * Grants fund their OWN work through the same ledger as everything else:
+ * a planning grant covers its grant_planning action, an active mandate
+ * covers its periodic valuation pass, and an agent-policy mandate covers
+ * its plan's unexecuted ingest items — all from its escrow, all fully
+ * (the money is the grant's own; there is nothing to co-fund). The engine
+ * executor then runs whatever is covered. Bounded by escrow headroom
+ * (committed money includes these allocations and any regrants out).
+ */
+export async function fundGrantSelfActions(): Promise<number> {
+  const rows = await rawQuery<{
+    exclusion_group: string;
+    action_id: string;
+    claim_id: string | null;
+    grant_id: string;
+    needed: number;
+    headroom: number;
+  }>(
+    `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id,
+            GREATEST(0, a.cost_est_micro_usd -
+              COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
+                          FROM action_allocations al
+                         WHERE al.exclusion_group = a.exclusion_group
+                           AND al.released_at IS NULL), 0))::bigint AS needed,
+            (j.budget_micro_usd
+              - COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
+                           WHERE u.job_id = g.budget_job_id), 0)
+              - COALESCE((SELECT SUM(al.amount_micro_usd)
+                            FROM action_allocations al
+                           WHERE al.grant_id = g.id
+                             AND al.released_at IS NULL), 0)
+              - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
+                            FROM regrants r
+                           WHERE r.from_grant_id = g.id), 0))::bigint
+              AS headroom
+       FROM actions a
+       JOIN grants g
+         ON (a.kind IN ('grant_planning', 'mandate_review') AND a.target_ref = g.id::text)
+         OR (a.kind = 'ingest' AND EXISTS (
+              SELECT 1
+                FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb))
+                     WITH ORDINALITY t(item, i)
+               WHERE t.i > g.plan_cursor
+                 AND t.item->>'action' = 'ingest'
+                 AND t.item->>'url' = a.target_ref))
+       JOIN budget_jobs j ON j.id = g.budget_job_id
+      WHERE a.status = 'open'
+        AND a.kind IN ('grant_planning', 'mandate_review', 'ingest')
+        AND g.status IN ('planning', 'active')
+        AND j.status = 'running'
+        -- Review passes are chainable but not unbounded: fund at most the
+        -- configured passes per mandate per UTC day (each pass consumes
+        -- one allocation on its review group, so counting today's
+        -- allocations counts today's funded passes).
+        AND (a.kind <> 'mandate_review'
+             OR (SELECT COUNT(*) FROM action_allocations al
+                  WHERE al.exclusion_group = a.exclusion_group
+                    AND al.created_at >= date_trunc('day', now())) < $1)
+      LIMIT 100`,
+    [loadConfig().mandateReviewMaxPassesPerDay ?? 12]
+  );
+  let placed = 0;
+  for (const row of rows) {
+    const needed = Number(row.needed);
+    if (needed <= 0 || needed > Number(row.headroom)) continue;
+    await rawQuery(
+      `INSERT INTO action_allocations
+         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, needed]
+    );
+    placed++;
+  }
+  return placed;
 }
 
 /**

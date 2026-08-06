@@ -97,7 +97,13 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         properties: {
           kind: {
             type: "string",
-            enum: ["assess", "reassess", "ingest", "grant_planning"],
+            enum: [
+              "assess",
+              "reassess",
+              "ingest",
+              "grant_planning",
+              "mandate_review",
+            ],
           },
           offset: { type: "integer", minimum: 0, default: 0 },
           limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },

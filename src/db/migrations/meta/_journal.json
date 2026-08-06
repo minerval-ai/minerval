@@ -253,6 +253,20 @@
       "when": 1786038093474,
       "tag": "0035_action_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786041605999,
+      "tag": "0036_regrants",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786042146931,
+      "tag": "0037_mandate_workspace",
+      "breakpoints": true
     }
   ]
 }

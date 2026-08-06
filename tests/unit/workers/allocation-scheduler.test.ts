@@ -39,13 +39,14 @@ vi.mock("../../../src/services/action-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
-  refreshAllValuations: vi.fn(async () => {
+  refreshGeneralValuations: vi.fn(async () => {
     state.valuationRuns++;
-    return { mandates: 1, valuations: 3 };
+    return 3;
   }),
 }));
 
 vi.mock("../../../src/services/allocation-service.js", () => ({
+  fundGrantSelfActions: vi.fn(async () => 0),
   runDailyAllocators: vi.fn(async () => {
     state.allocatorRuns++;
     return { mandates: 0, allocated: 0, allocatedMicroUsd: 0 };

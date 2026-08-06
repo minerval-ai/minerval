@@ -33,8 +33,11 @@ import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
 import { reconcileActions } from "../services/action-service.js";
-import { refreshAllValuations } from "../services/mandate-valuer-service.js";
-import { runDailyAllocators } from "../services/allocation-service.js";
+import { refreshGeneralValuations } from "../services/mandate-valuer-service.js";
+import {
+  fundGrantSelfActions,
+  runDailyAllocators,
+} from "../services/allocation-service.js";
 
 export interface AllocationTickResult {
   actionsReconciled: number;
@@ -70,13 +73,16 @@ export async function allocationSchedulerTick(
   const reconciled = await reconcileActions().catch(() => null);
   if (reconciled) result.actionsReconciled = reconciled.assessEnsured;
 
-  // 2. Every mandate re-judges its open actions.
-  const valued = await refreshAllValuations().catch(() => null);
-  if (valued) result.valuationsRefreshed = valued.valuations;
+  // 2. The General mandate's formula valuations refresh (other mandates
+  // judge for themselves in their own review passes, which the reconcile
+  // above keeps opening on cadence).
+  const valued = await refreshGeneralValuations().catch(() => 0);
+  result.valuationsRefreshed = valued;
 
-  // 3. Every mandate with a daily rate places its next allocations on the
-  // fresh values (the drain also invites the General mandate's allocator
-  // opportunistically between sweeps).
+  // 3. Grants cover their own planning/review/ingest actions, then every
+  // mandate with a daily rate places its next allocations on the fresh
+  // values (the drains also do both opportunistically between sweeps).
+  await fundGrantSelfActions().catch(() => 0);
   const placed = await runDailyAllocators().catch(() => null);
   if (placed) result.allocationsPlaced = placed.allocated;
 

@@ -43,6 +43,34 @@ export async function handleUrlExtraction(
   if (!message.meterJobId) {
     await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
   }
+  // If this extraction executes a ledger ingest action (the engine
+  // executor left it 'running'), close it now with the real metered cost:
+  // funders' pro-rata shares follow actual spend, never the estimate.
+  await completeIngestAction(message.url, billedMicroUsd);
+}
+
+async function completeIngestAction(
+  url: string,
+  billedMicroUsd: number
+): Promise<void> {
+  try {
+    const [running] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions
+        WHERE exclusion_group = $1 AND status = 'running'
+        LIMIT 1`,
+      [`ingest:${url}`]
+    );
+    if (!running) return;
+    const { completeAction } = await import(
+      "../services/action-service.js"
+    );
+    await completeAction(running.id, billedMicroUsd);
+  } catch (err) {
+    console.error(
+      "[url-extraction] ingest action completion failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 /**

@@ -210,6 +210,21 @@ export interface MandateDetail extends MandateSummary {
   scope_claim_id: string | null;
   scope_query: string | null;
   budget_status: string;
+  /** Peer mandates whose regrants fund this one, and the ones it funds. */
+  funded_by_mandates: Array<{
+    grant_id: string;
+    title: string;
+    owls: number;
+    note: string | null;
+  }>;
+  regrants_out: Array<{
+    grant_id: string;
+    title: string;
+    owls: number;
+    note: string | null;
+  }>;
+  /** The Grantmaker's latest autonomous review of this mandate. */
+  last_review: { at: string; note: string } | null;
   plan_items: Array<PlanItem & { state: "done" | "current" | "queued" }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
   funded_assessments: Array<{
@@ -283,6 +298,14 @@ export async function getPublicMandate(
     conversationId = convo?.id;
   }
 
+  const { regrantEdges } = await import("./regrant-service.js");
+  const edges = await regrantEdges(row.id);
+  const lastReview = (
+    row.mandate as (GrantMandate & {
+      last_review?: { at: string; note: string };
+    }) | null
+  )?.last_review;
+
   return {
     ...summary,
     strategy: row.plan?.strategy ?? row.mandate?.plan?.strategy ?? null,
@@ -290,6 +313,9 @@ export async function getPublicMandate(
     scope_claim_id: row.scope_claim_id,
     scope_query: row.scope_query,
     budget_status: row.job_status,
+    funded_by_mandates: edges.fundedBy,
+    regrants_out: edges.fundsOut,
+    last_review: lastReview ?? null,
     plan_items: items,
     contributors: contributions.map((c) => ({
       name:

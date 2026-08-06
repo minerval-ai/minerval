@@ -227,9 +227,14 @@ export async function jobSpentTodayMicroUsd(jobId: string): Promise<number> {
 
 /**
  * Refund a settled job's unspent budget, exactly once per contributor.
- * A job can carry several people's escrow (public mandates), so the
- * unspent remainder is split pro rata by what each contributed; rounding
- * dust goes to the job's owner. Idempotent per job × contributor.
+ * A job can carry several funders' escrow — people (owl_ledger holds) and
+ * other MANDATES (regrants, when the job backs a grant) — so the unspent
+ * remainder is split pro rata by what each put in. A person's share
+ * returns to their owl balance; a mandate's share returns to its own
+ * escrow (its budget job grows back), or to its funder's balance when the
+ * source mandate is no longer live. Rounding dust goes to the job's
+ * owner. Idempotent per job × contributor (regrant rows carry their own
+ * refunded stamp).
  */
 export async function refundUnspentBudget(job: {
   id: string;
@@ -241,7 +246,23 @@ export async function refundUnspentBudget(job: {
   if (unspent <= 0) return 0;
 
   const contributions = await getJobContributions(job.id);
-  const totalHeld = contributions.reduce((s, c) => s + c.heldMicroUsd, 0);
+  // Mandate funders: regrants into the grant this job backs (if any).
+  const regrantsIn = await rawQuery<{
+    id: string;
+    from_grant_id: string;
+    amount: number;
+  }>(
+    `SELECT r.id, r.from_grant_id,
+            (r.amount_micro_usd - r.refunded_micro_usd)::bigint AS amount
+       FROM regrants r
+       JOIN grants g ON g.id = r.to_grant_id
+      WHERE g.budget_job_id = $1
+        AND r.amount_micro_usd > r.refunded_micro_usd`,
+    [job.id]
+  );
+  const totalHeld =
+    contributions.reduce((s, c) => s + c.heldMicroUsd, 0) +
+    regrantsIn.reduce((s, r) => s + Number(r.amount), 0);
   // No escrow rows (shouldn't happen) → refund the owner in full, as before.
   const shares =
     totalHeld > 0
@@ -250,7 +271,17 @@ export async function refundUnspentBudget(job: {
           amount: Math.floor((unspent * c.heldMicroUsd) / totalHeld),
         }))
       : [{ userId: job.userId, amount: unspent }];
-  const distributed = shares.reduce((s, c) => s + c.amount, 0);
+  const grantShares =
+    totalHeld > 0
+      ? regrantsIn.map((r) => ({
+          regrantId: r.id,
+          fromGrantId: r.from_grant_id,
+          amount: Math.floor((unspent * Number(r.amount)) / totalHeld),
+        }))
+      : [];
+  const distributed =
+    shares.reduce((s, c) => s + c.amount, 0) +
+    grantShares.reduce((s, c) => s + c.amount, 0);
   const dust = unspent - distributed;
   if (dust > 0) {
     const owner = shares.find((s) => s.userId === job.userId);
@@ -269,6 +300,45 @@ export async function refundUnspentBudget(job: {
       idempotencyKey: `escrow_refund:${job.id}:${share.userId}`,
     });
     if (inserted) refunded += share.amount;
+  }
+  for (const share of grantShares) {
+    if (share.amount <= 0) continue;
+    // Stamp the regrant first (the idempotency guard), then return the
+    // share to the source mandate's escrow if it is still live, else to
+    // its funder's balance.
+    const stamped = await rawQuery<{ id: string }>(
+      `UPDATE regrants
+          SET refunded_micro_usd = refunded_micro_usd + $2
+        WHERE id = $1 AND refunded_micro_usd + $2 <= amount_micro_usd
+        RETURNING id`,
+      [share.regrantId, share.amount]
+    );
+    if (stamped.length === 0) continue;
+    const credited = await rawQuery<{ id: string }>(
+      `UPDATE budget_jobs j
+          SET budget_micro_usd = j.budget_micro_usd + $2, updated_at = now()
+         FROM grants g
+        WHERE g.id = $1 AND j.id = g.budget_job_id
+          AND g.status = 'active' AND j.status IN ('running', 'paused_budget')
+        RETURNING j.id`,
+      [share.fromGrantId, share.amount]
+    );
+    if (credited.length === 0) {
+      const [source] = await rawQuery<{ funder_user_id: string }>(
+        `SELECT funder_user_id FROM grants WHERE id = $1`,
+        [share.fromGrantId]
+      );
+      if (source) {
+        await recordOwlEntry({
+          userId: source.funder_user_id,
+          amountMicroUsd: share.amount,
+          reason: OWL_REASONS.escrowRefund,
+          jobId: job.id,
+          idempotencyKey: `escrow_refund:${job.id}:regrant:${share.regrantId}`,
+        });
+      }
+    }
+    refunded += share.amount;
   }
   return refunded;
 }

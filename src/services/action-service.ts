@@ -24,9 +24,25 @@ import { loadConfig } from "../config.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { capMicroUsd } from "./owl.js";
 
-export type ActionKind = "assess" | "reassess" | "ingest" | "grant_planning";
+export type ActionKind =
+  | "assess"
+  | "reassess"
+  | "ingest"
+  | "grant_planning"
+  // A mandate's periodic review pass: its Grantmaker acting with the
+  // discretion of anyone entrusted with a mandate — surveying its
+  // territory (the graph and the open web), valuing the open ledger,
+  // growing its own plan, and moving money (regrants). Bounded by its
+  // metered cap and the mandate's escrow, never by narrowed affordances.
+  | "mandate_review";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
+export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
+export const INGEST_GROUP = (url: string) => `ingest:${url}`;
+export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
+
+/** How often a mandate's Grantmaker takes a review pass. */
+const REVIEW_CADENCE_HOURS = 24;
 
 /** Coverage subquery for one actions row `a` (SQL fragment). */
 export const COVERAGE_SQL = `
@@ -92,9 +108,13 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
 /**
  * Sweep the whole ledger into sync:
  *  - open assess/reassess groups for every pending claim;
- *  - open ingest actions for unexecuted grant-plan ingest items;
+ *  - open ingest actions for unexecuted grant-plan ingest items, and
+ *    advance plan cursors past ingest items whose action is done;
  *  - open grant_planning actions for grants awaiting their planning run;
- *  - cancel assess groups whose claim is no longer pending/active.
+ *  - open valuation actions for mandates whose Grantmaker is due to
+ *    re-judge the open ledger (VALUATION_CADENCE_HOURS);
+ *  - cancel assess groups whose claim is no longer pending/active;
+ *  - release actions stuck 'running' by a crashed worker.
  * Bounded work per sweep; returns counts for the scheduler's log line.
  */
 export async function reconcileActions(): Promise<{
@@ -113,15 +133,16 @@ export async function reconcileActions(): Promise<{
     await ensureAssessActions(row.id);
   }
 
-  // Ingest + planning actions from live grants.
+  // Ingest + planning + valuation actions from live grants.
   const grants = await rawQuery<{
     id: string;
     name: string;
     status: string;
+    policy: string;
     plan: { items?: Array<{ action: string; url?: string }> } | null;
     plan_cursor: number;
   }>(
-    `SELECT id, name, status, plan, plan_cursor FROM grants
+    `SELECT id, name, status, policy, plan, plan_cursor FROM grants
       WHERE status IN ('active', 'planning')`
   );
   const ingestCost = capMicroUsd("source_ingest");
@@ -131,17 +152,66 @@ export async function reconcileActions(): Promise<{
         `INSERT INTO actions
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
          VALUES ('grant_planning', $1, 'standard', $2, $3, $4)
-         ON CONFLICT (exclusion_group, variant) DO NOTHING`,
+         ON CONFLICT (exclusion_group, variant) DO UPDATE
+           SET status = 'open', updated_at = now()
+           -- A grant still in 'planning' with a closed planning action
+           -- wants a fresh run (a failed write, a pushed-back plan).
+           WHERE actions.status NOT IN ('open', 'running')`,
         [
-          `plan:${g.id}`,
+          PLANNING_GROUP(g.id),
           g.id,
           `Planning run for the mandate "${g.name}"`,
           capMicroUsd("assessment"),
         ]
       );
     }
+
+    // The mandate's periodic review pass — its Grantmaker stewarding the
+    // mandate with discretion. The General mandate is exempt (its
+    // valuations are its published formula, refreshed mechanically).
+    if (g.status === "active" && g.policy !== "general") {
+      await rawQuery(
+        `INSERT INTO actions
+           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+         VALUES ('mandate_review', $1, 'standard', $2, $3, $4)
+         ON CONFLICT (exclusion_group, variant) DO UPDATE
+           SET status = 'open', updated_at = now()
+           WHERE actions.status IN ('done', 'superseded', 'cancelled')
+             AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
+        [
+          REVIEW_GROUP(g.id),
+          g.id,
+          `Mandate review for "${g.name}"`,
+          capMicroUsd("assessment"),
+        ]
+      );
+    }
+
+    // Plan cursor bookkeeping + ingest rows. An ingest item whose ledger
+    // action is DONE is finished work: the cursor moves past it. An
+    // unexecuted one gets (or keeps) its open row, funded by the grant's
+    // own escrow (fundGrantSelfActions).
     const items = g.plan?.items ?? [];
-    for (let i = g.plan_cursor; i < items.length; i++) {
+    let cursor = g.plan_cursor;
+    while (cursor < items.length) {
+      const item = items[cursor]!;
+      if (item.action !== "ingest" || !item.url) break;
+      const [done] = await rawQuery<{ id: string }>(
+        `SELECT id FROM actions
+          WHERE exclusion_group = $1 AND status = 'done' LIMIT 1`,
+        [INGEST_GROUP(item.url)]
+      );
+      if (!done) break;
+      cursor++;
+    }
+    if (cursor !== g.plan_cursor) {
+      await rawQuery(
+        `UPDATE grants SET plan_cursor = $2, updated_at = now()
+          WHERE id = $1 AND plan_cursor = $3`,
+        [g.id, cursor, g.plan_cursor]
+      );
+    }
+    for (let i = cursor; i < items.length; i++) {
       const item = items[i]!;
       if (item.action !== "ingest" || !item.url) continue;
       await rawQuery(
@@ -149,7 +219,7 @@ export async function reconcileActions(): Promise<{
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
          VALUES ('ingest', $1, 'standard', $2, $3, $4)
          ON CONFLICT (exclusion_group, variant) DO NOTHING`,
-        [`ingest:${item.url}`, item.url, `Ingest ${item.url}`, ingestCost]
+        [INGEST_GROUP(item.url), item.url, `Ingest ${item.url}`, ingestCost]
       );
     }
   }
@@ -164,6 +234,16 @@ export async function reconcileActions(): Promise<{
                            AND c.steward_state IN ('pending', 'running'))
       RETURNING a.id`
   );
+
+  // A worker that died mid-run leaves its action 'running' forever;
+  // return it to open so coverage can send it again. Generous window —
+  // real runs (a deep steward pass, a slow extraction) can be long.
+  await rawQuery(
+    `UPDATE actions SET status = 'open', updated_at = now()
+      WHERE status = 'running'
+        AND updated_at < now() - interval '60 minutes'`
+  );
+
   return { assessEnsured: pending.length, cancelled: cancelled.length };
 }
 
@@ -339,33 +419,13 @@ export async function completeAction(
 }
 
 /**
- * Mark a whole exclusion group done without allocation bookkeeping — for
- * actions the grant pipeline executes directly against its escrow (ingest
- * enqueues, planning runs), where the ledger row is the public record of
- * the potential action rather than the funding mechanism.
- */
-export async function markActionGroupDone(
-  exclusionGroup: string,
-  meteredMicroUsd?: number
-): Promise<void> {
-  await rawQuery(
-    `UPDATE actions
-        SET status = 'done',
-            metered_cost_micro_usd = COALESCE($2, metered_cost_micro_usd),
-            updated_at = now()
-      WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-    [exclusionGroup, meteredMicroUsd != null ? Math.round(meteredMicroUsd) : null]
-  );
-}
-
-/**
  * Metering attribution for a covered run: the largest covering allocator.
  * A mandate yields its budget-job id (which also stamps the funding
  * disclosure); a person yields their user id.
  */
 export async function largestActionFunder(
   actionId: string
-): Promise<{ jobId?: string; userId?: string }> {
+): Promise<{ jobId?: string; userId?: string; grantId?: string }> {
   const [row] = await rawQuery<{
     grant_id: string | null;
     user_id: string | null;
@@ -384,7 +444,9 @@ export async function largestActionFunder(
     [actionId]
   );
   if (!row) return {};
-  if (row.budget_job_id) return { jobId: row.budget_job_id };
+  if (row.budget_job_id) {
+    return { jobId: row.budget_job_id, grantId: row.grant_id ?? undefined };
+  }
   if (row.user_id) return { userId: row.user_id };
   return {};
 }

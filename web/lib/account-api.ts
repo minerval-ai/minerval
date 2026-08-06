@@ -701,12 +701,22 @@ export interface MandatePipelineRow {
   importance_histogram: number[];
 }
 
+export interface MandateRegrantEdge {
+  grant_id: string;
+  title: string;
+  owls: number;
+  note: string | null;
+}
+
 export interface MandateDetailView extends MandateSummaryView {
   strategy: string | null;
   notes: string | null;
   scope_claim_id: string | null;
   scope_query: string | null;
   budget_status: string;
+  funded_by_mandates: MandateRegrantEdge[];
+  regrants_out: MandateRegrantEdge[];
+  last_review: { at: string; note: string } | null;
   plan_items: Array<{
     action: "assess" | "reassess" | "deepen" | "ingest";
     claim_id?: string;
