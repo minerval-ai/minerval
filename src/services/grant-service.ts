@@ -233,20 +233,26 @@ export async function getGrant(grantId: string): Promise<Grant | null> {
   return grant ?? null;
 }
 
-/** The mandate name behind a funded assessment, for the §19 disclosure. */
+/**
+ * The kind of funding behind a funded assessment, for the §19 disclosure.
+ * Deliberately nameless: funder-chosen wording never appears on claim
+ * surfaces (a mandate's name is the funder's label for their own dashboard,
+ * not a message to readers), so the disclosure describes the arrangement,
+ * not the party.
+ */
 export async function getFundingLabelForJob(
   jobId: string
 ): Promise<{ type: "grant" | "user_order" | "job"; label: string } | null> {
-  const [grant] = await rawQuery<{ name: string }>(
-    `SELECT name FROM grants WHERE budget_job_id = $1`,
+  const [grant] = await rawQuery<{ id: string }>(
+    `SELECT id FROM grants WHERE budget_job_id = $1`,
     [jobId]
   );
-  if (grant) return { type: "grant", label: grant.name };
+  if (grant) return { type: "grant", label: "a funded mandate" };
   const [order] = await rawQuery<{ id: string }>(
     `SELECT id FROM assessment_orders WHERE id = $1`,
     [jobId]
   );
-  if (order) return { type: "user_order", label: "a user's assessment order" };
+  if (order) return { type: "user_order", label: "a reader's assessment order" };
   const [job] = await rawQuery<{ kind: string }>(
     `SELECT kind FROM budget_jobs WHERE id = $1`,
     [jobId]

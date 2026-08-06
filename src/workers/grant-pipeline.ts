@@ -373,9 +373,12 @@ export async function processNextGrantTask(
   const trigger = virgin
     ? "structure_and_assess"
     : (target.steward_trigger ?? "user_order");
+  // The funder's chosen name stays out of the run context on purpose: the
+  // Steward must never see funder wording that could color its work, and
+  // nothing funder-authored may reach reader surfaces (§12).
   const context =
     (target.steward_context ? `${target.steward_context}\n\n` : "") +
-    `This run is funded by the grant "${grant.name}" (policy: ${grant.policy}). ` +
+    `This run is scheduled under a funded mandate (policy: ${grant.policy}). ` +
     `Steward this claim now under the ordinary standards — funding buys ` +
     `attention, never conclusions.`;
   const model =
