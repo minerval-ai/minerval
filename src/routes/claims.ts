@@ -898,8 +898,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /claims/:claim_id/order — buy an assessment of this claim (1 owl).
-  // The order runs on the EXPRESS lane, ahead of the background queue: a
-  // purchase doesn't wait. Charge-at-start: nothing is debited here — the
+  // A purchase fully funds the action, and a fully funded action has
+  // nothing to wait for: it runs now. Charge-at-start: nothing is debited here — the
   // owl is charged when the Steward run begins, and a pending order cancels
   // free (DELETE /orders/:id).
   app.post<{ Params: { claim_id: string } }>("/:claim_id/order", {

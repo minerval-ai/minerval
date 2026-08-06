@@ -14,7 +14,7 @@
  * Money buys position and coverage, never epistemic standing: grant runs
  * are ordinary Steward runs under the same constitution, their funding is
  * disclosed on the assessments they produce, and grant stakes feed queue
- * priority only (§19, "Queue Priority and Paid Attention").
+ * priority only (§19, "Allocating Attention and Paid Attention").
  */
 import { desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";

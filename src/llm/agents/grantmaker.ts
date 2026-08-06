@@ -89,7 +89,9 @@ const MANDATE_SCHEMA = {
     },
     scope_query: {
       type: "string",
-      description: "Optional keyword scope for coverage selectors.",
+      description:
+        "Optional keyword search hint for graph tooling. NOT the scope: " +
+        "the mandate's scope is its words, judged by you.",
     },
     plan: {
       type: "object",
@@ -323,8 +325,8 @@ async function runGrantmakerTurnImpl(input: {
     name: "update_allocation_policy",
     description:
       "Amend this mandate's allocation policy: the formula knobs its " +
-      "spending runs on (value heuristic, cost priors, tier threshold, " +
-      "reassessment cadence). This is how the formulas evolve: they are " +
+      "spending runs on (value heuristic, cost priors, strong-pass gain " +
+      "multiplier, reassessment cadence). This is how the formulas evolve: they are " +
       "asked of you in conversation, never edited in code. Every key is " +
       "bounded by the framework; out-of-range values are clamped. Known " +
       "keys: contestation_floor, staleness_saturation_days, " +

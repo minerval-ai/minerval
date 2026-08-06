@@ -79,7 +79,7 @@ export default async function Home() {
       <section className={styles.section}>
         <h2>How Minerval works</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".92rem", maxWidth: "40rem", marginTop: ".4rem" }}>
-          The graph is maintained by seven LLM administrators. Every decision carries a
+          The graph is maintained by eight LLM administrators. Every decision carries a
           reasoning trace, and every trace is open to challenge.
         </p>
         <div className={styles.triptych} data-tour="docs">

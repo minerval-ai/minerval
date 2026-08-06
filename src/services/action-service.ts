@@ -260,6 +260,7 @@ export interface RunnableAction {
   target_ref: string | null;
   cost_est_micro_usd: number;
   coverage_micro_usd: number;
+  updated_at: Date;
 }
 
 /**
@@ -273,12 +274,12 @@ export async function nextRunnableAction(
 ): Promise<RunnableAction | null> {
   const rows = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
-            a.target_ref, a.cost_est_micro_usd,
+            a.target_ref, a.cost_est_micro_usd, a.updated_at,
             ${COVERAGE_SQL} AS coverage_micro_usd
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
         AND ${COVERAGE_SQL} >= a.cost_est_micro_usd
-      ORDER BY coverage_micro_usd DESC, a.created_at ASC
+      ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
     [kinds]
   );
@@ -299,8 +300,13 @@ export async function nextRunnableAction(
     );
     winners.push(siblings[0]!);
   }
+  // Most backing first; coverage ties go to the STALEST action, so a
+  // freshly reopened row (a chaining review pass) queues behind work that
+  // hasn't had a turn — no starvation by enthusiasm.
   winners.sort(
-    (x, y) => Number(y.coverage_micro_usd) - Number(x.coverage_micro_usd)
+    (x, y) =>
+      Number(y.coverage_micro_usd) - Number(x.coverage_micro_usd) ||
+      new Date(x.updated_at).getTime() - new Date(y.updated_at).getTime()
   );
   return winners[0]!;
 }

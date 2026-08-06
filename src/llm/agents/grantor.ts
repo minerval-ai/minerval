@@ -166,10 +166,11 @@ async function runGrantorImpl(input: {
   const surveyTool: Tool = {
     name: "survey_scope",
     description:
-      "List the claims in the mandate's scope with their allocation signals " +
-      "(importance, contestation, assessment state and age, marginal yield, " +
-      "deferred subclaims), ordered by current queue priority. Paginate with " +
-      "offset; optionally narrow with a keyword query.",
+      "List claims in the surveyed slice of the graph with their allocation " +
+      "signals (importance, contestation, assessment state and age, marginal " +
+      "yield, deferred subclaims), most valuable first. A search aid, not " +
+      "the scope: the mandate's scope is its words. Paginate with offset; " +
+      "optionally narrow with a keyword query.",
     input_schema: {
       type: "object" as const,
       properties: {

@@ -30,6 +30,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
+import { resolveProvider } from "../providers/routing.js";
 import { withAgent } from "../usage-context.js";
 import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
 import { surveyScope } from "./grantor.js";
@@ -99,6 +100,10 @@ async function runMandateReviewImpl(input: {
     budgetJobId: grant.budget_job_id,
   });
 
+  // Web search is an Anthropic server tool; on other providers the pass
+  // degrades gracefully to graph-only surveying rather than failing.
+  const model = input.model ?? config.grantmakerModel;
+  const webSearchAvailable = resolveProvider(model) === "anthropic";
   const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
     type: "web_search_20260209",
     name: "web_search",
@@ -386,9 +391,9 @@ async function runMandateReviewImpl(input: {
 
   const result = await toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
-    tools: [webSearchTool, ...tools],
+    tools: webSearchAvailable ? [webSearchTool, ...tools] : tools,
     system: getGrantmakerSystemPrompt(),
-    model: input.model ?? config.grantmakerModel,
+    model,
     maxTokens: 4096,
     maxIterations: 24,
     executeTool: async (name, toolInput) => {

@@ -255,8 +255,8 @@ Design principles, in force in the implementation:
   assessments disclose only that "a funded mandate" scheduled them, at the
   bottom of the claim page, with the explanation that funding buys
   scheduling and nothing else.
-- **Subsidy, not command.** Grant stakes raise the expected-value estimate;
-  they never replace the editorial base or touch importance.
+- **Subsidy, not command.** A mandate's money covers costs on the ledger;
+  it never enters the value estimates and never touches importance.
 
 Direct `POST /grants` creation remains for service/operator tooling only.
 
@@ -286,8 +286,8 @@ the same refusal duties it had at mandate design time.
 ## Cold-start policy
 
 Until purchase volume exists, the platform subsidizes: signup grants
-(5 owls), the monthly trickle, contribution awards, and the background
-lane's own daily budget are all deliberate traction costs. They are bounded
+(5 owls), the monthly trickle, contribution awards, and the General
+assessment mandate's own daily rate are all deliberate traction costs. They are bounded
 and legitimate — but the unit economics must stay visible
 (`GET /usage/allocation`), so subsidy is a chosen number, not an accident.
 

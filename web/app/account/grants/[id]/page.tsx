@@ -23,7 +23,9 @@ const STATUS_LINES: Record<string, string> = {
     "The Grantmaker is surveying your scope and drafting an allocation plan. Nothing beyond the planning run is spent until you approve it.",
   pending_approval:
     "The Grantmaker has proposed a plan; review it below. Nothing more is spent until you approve.",
-  active: "Active. Stewards are working through the mandate.",
+  active:
+    "Active. The mandate's work runs through the action ledger, and its " +
+    "Grantmaker stewards it with periodic review passes.",
   completed:
     "Completed. The mandate is fulfilled, and any unspent budget has returned to your balance.",
   cancelled: "Cancelled. The unspent budget has returned to your balance.",
@@ -77,8 +79,6 @@ export default async function GrantPage({
             &rsquo;s subtree
           </>
         )}
-        {grant.scope_claim_id && grant.scope_query && " + "}
-        {grant.scope_query && <>&ldquo;{grant.scope_query}&rdquo;</>}
         {" · funded "}
         {grant.created_at.slice(0, 10)}
       </p>
@@ -103,8 +103,8 @@ export default async function GrantPage({
         <section>
           <h2>
             {grant.status === "pending_approval"
-              ? "Proposed allocation plan"
-              : "Allocation plan"}
+              ? "The proposed plan"
+              : "The plan"}
           </h2>
           {grant.plan.strategy && <p>{grant.plan.strategy}</p>}
           <table className="account-table">

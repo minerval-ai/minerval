@@ -77,7 +77,7 @@ export const UNASSESSED_META = {
   label: "Unassessed",
   glyph: "◌",
   cls: "st-unassessed",
-  def: "No current assessment. The graph gives its attention first to the claims where an assessment matters most, so this one has not come up yet.",
+  def: "No current assessment. Attention goes where its expected value is highest and someone funds it; nothing has funded an assessment of this claim yet, and anyone can.",
 } as const;
 
 export function nodeStatusMeta(s: unknown) {
@@ -257,7 +257,7 @@ export function decompositionNote(opts: {
       ? "This claim is atomic: it bottoms out in a bedrock fact, a contested empirical question, or a value premise, and does not decompose further."
       : "This claim has been assessed but its decomposition is not yet recorded.";
   }
-  return "This claim has not been assessed yet. The graph gives its attention first to the claims where an assessment matters most; once this one is examined, it may well decompose into subclaims.";
+  return "This claim has not been assessed yet. Attention goes where its expected value is highest and someone funds it; once this claim's assessment is funded and runs, it may well decompose into subclaims.";
 }
 
 // Claim importance — how much it is worth spending scarce intelligence to get the

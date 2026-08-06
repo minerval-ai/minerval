@@ -99,10 +99,12 @@ export default async function MandatesPage() {
       <p style={{ maxWidth: "44rem" }}>
         A mandate is a funded program of work on the graph: claims to assess,
         subtrees to deepen, sources to bring in, areas to keep fresh. Each is
-        managed by one person in conversation with the Grantmaker, and each
-        is public: anyone can put owls behind a mandate they want to see go
-        further. Unspent budgets return to their contributors, and funding
-        buys scheduling only, never conclusions.
+        stewarded by its own Grantmaker agent, which reviews its territory,
+        grows its plan, and can put budget behind peer mandates; its funder
+        steers it in conversation. And each is public: anyone can put owls
+        behind a mandate they want to see go further. Unspent budgets return
+        to everyone who funded them, and funding buys scheduling only, never
+        conclusions.
       </p>
       <p className="order-line">
         <Link href="/account/grants/new">start your own mandate →</Link>

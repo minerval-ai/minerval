@@ -26,7 +26,7 @@ compiler fix — nothing of record is lost, provided we snapshot first.
   prompt/constitution change, so "claims from before fix X" is always a `WHERE`
   clause.
 - **`state='archived'`** — a retired cohort leaves search, matching, browse,
-  trees, dependents, and the steward queue (every read path filters
+  trees, dependents, and the candidate set (every read path filters
   `state = 'active'`, as an allowlist), but keeps its rows, provenance,
   assessments, and embeddings, and stays readable by direct id. Critically,
   archived claims leave the **matcher candidate pool**, so new ingestion cannot

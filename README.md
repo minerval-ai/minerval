@@ -58,9 +58,11 @@ shape everything downstream:
 
 - **Effort proportional to importance.** Not every claim deserves the full
   treatment. Each claim carries an importance score — roughly
-  consequence-if-wrong × contestability — and stewardship drains in importance
-  order, so the most consequential claims are structured and assessed first
-  while minor ones wait as searchable stubs.
+  consequence-if-wrong × contestability — that anchors the expected-value
+  estimates the allocation engine funds work by, so the most consequential
+  claims draw assessment first while minor ones remain searchable stubs
+  until someone's allocation covers them (see docs/allocation.md: the owl
+  economy, mandates, and the action ledger).
 
 - **Openness.** Anyone can contribute — challenges, evidence, merge and split
   proposals, new arguments — and contributions flow through reviewed,
@@ -106,24 +108,35 @@ each bound by the constitution, each with a bounded domain:
   governance: policy review of incoming contributions, adjudication of
   escalations and appeals, and sampled quality control over the system's own
   decisions.
+- **Grantmaker** designs and stewards funded mandates: it surveys the
+  territory (graph and web), writes its mandate's valuations over the shared
+  action ledger, grows its own plan, moves budget between peer mandates, and
+  may refuse money that would warp the graph.
 - **Extension Agent** lives outside governance, behind the browser extension:
   it judges on-page phrasings against graph state and powers the in-page chat.
   It never writes to the graph.
 
-Model choice follows the stakes of the judgment: matching is a saturating task
+Model choice follows the value of the judgment: matching is a saturating task
 and runs on Claude Haiku; the load-bearing epistemic work — stewardship,
-structural adjudication, arbitration, audit — runs on the strongest available
-Claude models. Model ids are centralized in [`src/llm/models.ts`](src/llm/models.ts).
+structural adjudication, arbitration, audit, grantmaking — runs on the
+strongest available Claude models, and background assessments choose between
+a standard and a strong pass by marginal return on compute. Model ids are
+centralized in [`src/llm/models.ts`](src/llm/models.ts).
 
-The full picture — domain model, assessment semantics, queues and failure
+The full picture — domain model, assessment semantics, workers and failure
 handling, persistence, serving surfaces — is in
-[docs/architecture.md](docs/architecture.md).
+[docs/architecture.md](docs/architecture.md); the resource-allocation stack
+(owls, mandates, the action ledger) is in
+[docs/allocation.md](docs/allocation.md).
 
 ## Surfaces
 
 - **Web app** — [minerval.ai](https://minerval.ai), a Next.js app for
   browsing claims, decomposition trees, arguments, assessments, and
   contribution history.
+- **Mandates** — [minerval.ai/mandates](https://minerval.ai/mandates):
+  public funded programs of work on the graph, each stewarded by its own
+  Grantmaker agent and open to anyone's contribution.
 - **API** — Fastify at `api.claimgraph.io`. Reads are public; anything that
   writes or spends model tokens requires a key. Interactive OpenAPI docs at
   `/docs` on the API host.

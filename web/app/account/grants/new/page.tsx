@@ -28,7 +28,7 @@ export default async function NewGrantPage({
       <p>
         Tell the Grantmaker what you want the graph to pay attention to. It
         will survey what exists, ask what it needs to, and propose a concrete
-        mandate with an honest price in owls. Talking costs nothing; your
+        mandate with an honest cost estimate in owls. Talking costs nothing; your
         budget escrows only when you fund the proposal, and whatever the work
         doesn&rsquo;t spend comes back. One thing to know going in: the
         Grantmaker works for the integrity of the graph, so it will decline

@@ -202,7 +202,21 @@ This proportionality reflects a real asymmetry between tasks. Recognizing whethe
 
 Importance is judged against **all of claimspace, not the local neighborhood.** Counting how many claims depend on this one is only a *local* signal, and on its own it over-rates niche claims: a claim central to a small subfield can look foundational within that subfield while the whole subfield is peripheral to the graph, and while the claim itself is uncontested. A precise, well-established measurement can anchor a niche literature yet still be minor. The admin therefore calibrates against cross-domain anchors ("this is about as important as X, and clearly below Y") rather than treating local dependency count as the measure. Global usage data (how often a claim is consulted, how live the debate around it is) sharpens this as it accrues.
 
-Importance is recorded as a per-claim value (0..1) that the steward sets and revises, and it is a *mechanism* as well as a guideline: the steward's work queue is ordered by it, so the claims most worth getting right are structured and assessed first when compute is bounded, and a subclaim scored below a threshold is left an embedded stub rather than recursively decomposed. This is the economic brake that keeps a settled claim from spawning a whole textbook of uncontested sub-derivations. A claim judged peripheral may go unprocessed and persist as an embedded stub, still matchable, so the graph stays de-duplicated and can converge; that is an acceptable steady state, not a failure. The score remains a judgment, revisable as the graph reveals what is actually contested and consulted; it is not a fixed rule, and it must never be inflated to jump the queue.
+Importance is recorded as a per-claim value (0..1) that the steward sets and revises, and it is a *mechanism* as well as a guideline: it is the epistemic base of the expected-value estimates the allocation engine funds work by (below), so the claims most worth getting right draw attention first when compute is bounded, and a subclaim scored below a threshold is left an embedded stub rather than recursively decomposed. This is the economic brake that keeps a settled claim from spawning a whole textbook of uncontested sub-derivations. A claim judged peripheral may go unprocessed and persist as an embedded stub, still matchable, so the graph stays de-duplicated and can converge; that is an acceptable steady state, not a failure. The score remains a judgment, revisable as the graph reveals what is actually contested and consulted; it is not a fixed rule, and it must never be inflated — by anyone, for any reason, including payment — to draw attention it has not earned.
+
+#### Allocating Attention and Paid Attention
+
+Importance says how much a claim is worth getting right; it does not by itself say when the system should spend its next unit of attention. Attention is allocated through one engine, uniform for every funder, built on a deliberate split between mechanism and judgment. The **mechanism** is a ledger of potential actions: one row for every action the system could take (assess this claim, ingest that source, plan that mandate), with money placed as **allocations** on those rows by any mix of mandates and individual funders. An action runs exactly when the allocations on it cover its expected cost, and the metered cost of the run is split among its funders in proportion to what each put in — nothing else anywhere decides what runs. Cost is measured in dollars; one owl of spend covers one dollar of cost, whatever an owl sold for.
+
+Some actions are alternative ways of doing the same thing — assess a claim with the standard model or the strong one, with or without scholarly search tools — and these share an **exclusive set**: at most one of them happens, resolved by a simple rule over the allocations alone (the most-backed alternative wins; an allocation pinned to a losing alternative is returned to its funder, not spent). The choice between alternatives is therefore made where it belongs, in the funders' judgment of **marginal return on compute**: an upgrade to a dearer way of doing the thing is worth backing only when the additional value per additional dollar clears the same bar the money's next-best use would.
+
+The **judgment** side is each mandate's own, and it is an agent's judgment, not a filter's. A mandate's scope is defined in words — its mission — and which actions fall under it is a call its grantmaker agent makes with the discretion of any person entrusted with a budget and a mission. Every mandate keeps its own valuations of the actions it knows and cares about — sparse by design: the mathematics mandate holds no opinion on a politics claim and does not need one — written by its agent with rationale, and spent by its own allocator on the best marginal increments first. The bar this implies is emergent from the budget: most actions whose value merely exceeds their cost still fall below the day's threshold, and wait for co-funding or a cheaper day. The graph's own work runs through the same machinery, not a privileged lane: Minerval maintains a standing General assessment mandate whose budget is simply the dollars the platform allocates to expanding and maintaining the graph, whose scope genuinely is everything, and whose valuations are its published formula — itself agent-amendable policy. Candidates never funded by anyone simply remain stubs, and that is an acceptable steady state — there is no queue in the waiting-your-turn sense.
+
+Mandates steward themselves. There is no human bottleneck between a funded mission and the work: on a cadence, and more often when the mission demands it, a mandate's grantmaker agent takes an autonomous review pass with real affordances — searching the graph and the open web for what its mission needs, keeping its own durable working notes, valuing the open ledger, growing its own plan with the sources and passes it discovered, setting its own pace, and moving money. Cost discipline lives in the mechanism — every pass is metered under a cap, everything queued is priced against the escrow, daily rates and pass caps bound the spend — never in narrowing what the agent is allowed to see or do: an agent cannot be given responsibility for a thing without the affordances to do the job. And mandates fund each other as peers (**regrants**): a mandate may put part of its budget behind a sibling, or spawn a new mandate with its own budget and its own agent to steward a slice of the mission. Money moves between mandates; command never does — a regrant buys the target more reach and the source no say, and closing an agent-stewarded mandate is its agent's (or its funder's) judgment, with unspent budget refunding to everyone who funded it, mandates included, pro rata.
+
+Both sides of every ratio are estimated by legible heuristics that begin as guesses. For assessing a claim, expected marginal value is estimated as importance × contestedness × the expected quality improvement from marginal compute (a steward's recorded marginal-yield judgment, revived by staleness), plus a boost for human proposal; expected marginal cost is the metered price of the pass at the model tier it would get. Money appears nowhere in the value estimate — funding reduces what remains to be covered, never how valuable the action is. These formulas are each mandate's **allocation policy**: owned and revised by that mandate's grantmaker agent within mechanically bounded ranges, on request and in conversation, never by silent code edits — and rendered in full on the mandate's public page, aggregated for navigability with every number inspectable underneath, so "why is this ahead of that" is always answerable. The estimates order work and select effort (model tier, reassessment cadence), never truth: they appear nowhere in an assessment.
+
+Paid attention is legitimate and bounded. A user who pays for an assessment funds the whole action, so it runs *now* — a purchase is not a request, and this queue-jumping is fine and good. A partial allocation waits until co-funders (the General mandate included) complete it. In every case the money buys **scheduling and coverage, never epistemic standing**: no payment may move a claim's importance, its assessment, or the standards applied to it. Quoted owl figures are ceilings near the expected cost, with actual spend metered underneath and the unused fraction returned — a fixed price anywhere would distort agents that must themselves reason in value over cost. The same evidential rigor governs a funded assessment and an unfunded one; funding is disclosed on the claim's page, away from the verdict and with the explanation that funders cannot influence conclusions or membership in the graph. Assessment content is not for sale; scheduling, within these rules, is.
 
 A rough scale, with anchors on the recorded 0..1 value (calibrated across fields, not within one):
 
@@ -434,10 +448,10 @@ record, not here.
 
 ## Importance
 
-Importance (§19) is a mechanism here, not only a guideline: the steward queue
-drains in importance order, and a new subclaim scored below the deferral
-threshold (0.25 by default) is left a deferred, embedded stub, matchable but
-not recursively processed. The brake only works if you score honestly, so
+Importance (§19) is a mechanism here, not only a guideline: it is the core of
+the value estimates the allocation engine's mandates fund assessments by, and
+a new subclaim scored below the deferral threshold (0.25 by default) is left
+a deferred, embedded stub, matchable but not recursively processed. The brake only works if you score honestly, so
 always pass importance to add_decomposition_edge (omitted, it defaults to 0.5,
 which means full processing) and score settled bedrock near §19's 0.15
 anchor. That is what keeps one physics claim from spawning a textbook of
@@ -455,9 +469,10 @@ cross-domain anchors.
 When you set importance, also record contestation on its own: how live the
 dispute is (0 settled, 1 actively argued crux), stated unfused from the
 consequence half. You have already weighed it inside importance; recording it
-separately keeps the two ingredients of §19's formula individually visible
-for effort allocation. It changes nothing about how the claim is processed
-today. Pass it on set_claim_importance and, for new subclaims, on
+separately keeps the two ingredients of §19's formula individually visible:
+contestation multiplies importance in the expected-value estimate the
+allocation engine funds work by, so a live dispute genuinely draws attention
+sooner. Pass it on set_claim_importance and, for new subclaims, on
 add_decomposition_edge.
 
 Effort follows importance. On a consequential, contested claim, search deeply
@@ -470,6 +485,21 @@ carefully.
 Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. web_search (up
 to five searches per run) is for evidence that would change the verdict.
+
+On the highest-importance claims only, your toolset may also include Elicit
+scholarly search (elicit_search_papers over the academic literature,
+elicit_search_trials over ClinicalTrials.gov); its absence means this claim
+did not clear that bar. Treat it as a scarce instrument, not a default step:
+it is likely overkill for most claims, and even where offered you should
+typically reach for it only when ordinary web_search has proven insufficient
+— a verdict that turns on the state of the scientific literature itself
+(effect sizes, contradicting studies, whether a body of evidence supports
+what the claim asserts). Each call costs real money beyond tokens, so the
+proportional-effort discipline of §19 applies with extra force. What Elicit
+returns is evidence you weigh like any other (§9), never an authority that
+sets the status; record in your reasoning_trace what the search found and
+how it moved the verdict (§11). If a call fails or the provider is down,
+assess with what web_search gives you (§20).
 
 The verdict is a holistic judgment over the subclaims across all arguments,
 the source instances, and the direct evidence, never a mechanical roll-up:
@@ -511,8 +541,38 @@ the claim: near 0 once an uncontested fact is assessed, or once a values
 dispute is mapped down to its terminal disagreement, however contested it
 remains; high when this pass hit evidence it could not fully digest. It is
 not confidence — a CONTESTED verdict can be high-confidence and zero-yield.
-Nothing reads it yet; it is recorded so future scheduling can tell saturated
-claims from ones still worth deeper work.
+The allocation engine reads it as the expected-quality-gain term of the value
+estimate: a low yield tells every funder another pass buys little, so score
+it honestly to keep saturated claims from re-drawing attention.
+
+## Recording Instances
+
+Your web searches read a lot of the discourse, and every time a source you
+read states your claim — or its negation — in its own voice, that is a real
+in-the-wild instance with provenance the graph should keep. Record it with
+record_claim_instance as you go. This is a side effect of evidence reading
+you are already doing, never a goal: do not spend searches hunting instances,
+and do not let recording crowd out the assessment the run exists for.
+
+What counts is an assertion, not an appearance of the words. A source that
+asserts the claim (stance affirms) or its negation (stance denies) is an
+instance. A source that merely mentions the claim, asks whether it is true,
+or reports neutrally that others assert it is not. Quotes attribute to the
+voice that asserts: for "X said [the claim]", the instance's speaker is X,
+not the outlet quoting them — and if the article endorses it in its own
+voice too, that is the publication's own instance. Prefer originators over
+aggregators: when a piece is plainly repeating someone else's assertion and
+you have the original, record the original; when the original is out of
+reach, record what you read and name the original speaker where identifiable.
+
+Capture the passage verbatim in original_text, and fill the metadata you
+actually saw — speaker, publication, source_date (ISO-8601, to the precision
+known), and a deep link where the statement sits somewhere more specific
+than the source URL. Omit what you would have to guess; importance ranking
+sorts instances later, so a long-tail sighting is still worth keeping.
+Recording is deduplicated per (claim, source), so re-reading a source on a
+later pass costs nothing; recorded instances then count among the claim's
+source instances, and their stances feed your assessment like any other.
 
 ## Writing the Assessment: Two Audiences
 

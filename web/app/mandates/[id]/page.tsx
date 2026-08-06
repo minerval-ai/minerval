@@ -34,7 +34,7 @@ const ACTION_LABEL: Record<string, string> = {
 const STATE_LABEL: Record<string, string> = {
   done: "done",
   current: "in progress",
-  queued: "queued",
+  queued: "planned",
 };
 
 // The importance histogram as inline CSS bars: four buckets, peripheral to

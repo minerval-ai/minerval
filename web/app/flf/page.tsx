@@ -82,7 +82,7 @@ export default function FlfPage() {
             </span>
           </div>
           <div className={s.linkRow}>
-            <span className={s.what}>The architecture, the constitution, the seven agents</span>
+            <span className={s.what}>The architecture, the constitution, the eight agents</span>
             <span className={s.where}>
               <Link href="/docs/architecture">architecture</Link>
               {" · "}

@@ -43,17 +43,20 @@ metered per account.
 The work is done once, at ingestion, and reused everywhere a claim recurs: the
 same claim appears across thousands of documents but is decomposed and assessed
 a single time. Nor does every claim get the full treatment immediately. Each
-claim carries an importance score, and stewardship drains in importance order,
-so the most consequential claims are structured and assessed first while minor
-ones wait as searchable stubs.
+claim carries an importance score that anchors the expected-value estimates
+the allocation engine funds work by (docs/allocation.md), so the most
+consequential claims draw assessment first while minor ones remain
+searchable stubs until an allocation covers them.
 
 The stack is TypeScript end to end: a Fastify API, background workers driven by
 a job queue (AWS SQS in production, an in-memory runner locally), and
 PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
-models sit behind every agent; the client calls the Anthropic Messages API
-directly, model ids are centralized in `src/llm/models.ts`, and in production
-the load-bearing agents run on Claude Fable 5.
+models sit behind every agent by default; the client calls the Anthropic
+Messages API directly, model ids are centralized in `src/llm/models.ts`, and in
+production the load-bearing agents run on Claude Fable 5. Any agent can be
+pointed at OpenAI or OpenRouter instead with a single env var — see
+[Providers](#providers).
 
 ---
 
@@ -101,14 +104,13 @@ a prior at ingestion; the claim's Steward sets the authoritative value once it
 has decomposed the claim and seen its neighborhood. Importance decides both how
 soon a claim is stewarded and how much effort its Steward spends.
 
-Two further signals are recorded but not yet acted on (issue #172, phase 1 of
-splitting stakes from expected yield): `contestation` on the claim, how live
-the dispute is stated unfused from the consequence half, and `marginal_yield`
-on each assessment, the Steward's exit judgment of how much another, stronger
-pass would improve it. Queue order, the decomposition brake, and effort
-selection still read only the fused importance score; the follow-up phases in
-#172 will move scheduling to a function of both dimensions once these fields
-have accrued data.
+Two further signals complete the picture (issue #172): `contestation` on the
+claim, how live the dispute is stated unfused from the consequence half, and
+`marginal_yield` on each assessment, the Steward's exit judgment of how much
+another, stronger pass would improve it. Both are live inputs to the
+expected-value estimate the allocation engine funds work by
+(docs/allocation.md): value = importance × contested-factor × expected
+quality gain, with cost on the other side of the ratio.
 
 ### Arguments
 
@@ -251,10 +253,9 @@ writes without review.
 
 **Contributors** are the account layer as well as the reputation layer; there
 is one account table, and everyone on it is a potential contributor. Reputation
-and owl awards are kept as append-only event ledgers (`reputation_events`,
-`owl_ledger`) with denormalized totals on the contributor row, so every score
-change traces back to the decision that caused it. Accepted contributions earn
-spendable owls — the same unit that buys assessments. Reviews can flag suspected
+and kudos are kept as append-only event ledgers (`reputation_events`,
+`kudos_events`) with denormalized totals on the contributor row, so every score
+change traces back to the decision that caused it. Reviews can flag suspected
 bad faith, and a contributor's standing feeds back into how much their
 contributions are trusted. This is the machinery the governance agents operate;
 the rules they apply live in the operational policies below.
@@ -397,7 +398,7 @@ These act through tools over the life of a claim and the graph:
   `audit_runs` row), and every consequence — a re-review, a reputation
   adjustment through the ledger, a suspension — requires the finding that
   justifies it. A re-review first neutralizes the superseded decision's
-  consequences (reputation, counters, owl awards, a still-active bad-faith flag)
+  consequences (reputation, counters, kudos, a still-active bad-faith flag)
   so the fresh review's effects don't stack on the old ones. Audit
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
@@ -411,31 +412,100 @@ writes to the graph.
 
 ### Models
 
-Model choice follows the stakes of the judgment, not a single default:
+Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
 | Matcher | Claude Haiku 4.5 |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
-| Claim Steward · Curator · Dispute Arbitrator · Audit Agent | Claude Fable 5 |
+| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5 |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
-gracefully instead of failing the job. Because stewardship drains in importance
-order, the most capable model is always spent on the most load-bearing claims;
-when a budget caps a run, what goes unassessed is the tail.
+gracefully instead of failing the job. Background assessments carry a
+standard-model and a strong-model variant on the action ledger, and the
+upgrade is bought exactly when its marginal gain justifies its marginal cost
+(docs/allocation.md) — so the most capable model is spent where it buys the
+most; what goes unfunded is the tail.
 
-### Queues and failure handling
+### Providers
+
+Every agent talks to a model through five functions in `src/llm/client.ts` —
+`complete`, `completeWithTools`, `completeStructured`, `completeStructuredList`,
+`toolUseLoop`. Those signatures speak the Anthropic dialect and never change,
+so switching an agent to another vendor is one env var and no code change:
+`MATCHER_MODEL=gpt-5-nano`, `CURATOR_MODEL=qwen/qwen3-235b-a22b`.
+
+Which backend serves a call is decided by the **shape of the model id**
+(`src/llm/providers/routing.ts`, the single source of truth):
+
+| ID shape | Provider | Example |
+|----------|----------|---------|
+| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-fable-5` |
+| `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
+| contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
+| anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
+
+Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
+message — they 404 against the Anthropic API (issue #11).
+
+Each adapter in `src/llm/providers/` speaks its own platform's native dialect
+rather than a lowest-common-denominator abstraction. Structured output, for
+instance, is native `output_config.format` on Anthropic, a strict `json_schema`
+`text.format` on OpenAI, and a forced `respond` function call on OpenRouter
+(the most portable mechanism across its model zoo). Each provider also carries
+its own temperature allowlist, since reasoning models reject sampling params.
+
+**OpenAI direct speaks the Responses API**, not Chat Completions. Chat
+Completions was the earlier choice because it maps 1:1 onto the seam's
+Anthropic-shaped assistant turn; Responses wins anyway, because it is where
+OpenAI's hosted server-side tools (web search, code interpreter) live and where
+a reasoning model's chain of thought can be carried across turns of a tool
+loop. Every GPT-5 model is a reasoning model, so that second point is not
+optional. The adapter is stateless — `store: false`, full history resent every
+call, `previous_response_id` never used — which means reasoning only survives a
+tool loop if it is round-tripped explicitly: requests ask for
+`include: ["reasoning.encrypted_content"]`, and the turn's whole `output` array
+(reasoning items with their `encrypted_content`, message items, `function_call`
+items) rides back through the seam's provider-opaque `rawContent` and is
+replayed verbatim into the next request's `input`, in position, with tool
+results appended as `function_call_output` items keyed by `call_id`. OpenRouter
+has no equivalent surface for our purposes and keeps the Chat Completions
+translation in `providers/openai-dialect.ts`; the dialect-independent helpers
+stay shared between the two.
+
+**Anthropic-only, by design:** server tools (`web_search`), container-backed
+execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
+fallback. Routing an agent that uses a server tool — the Claim Steward does — to
+a non-Anthropic model fails immediately with a message naming the capability,
+rather than silently dropping it. OpenAI's own hosted tools are not wired up
+yet, but they are ordinary entries in the Responses `tools` array, so the slot
+for them is the one `toResponsesTools` already builds. OpenAI gets automatic
+prefix caching with a stable `prompt_cache_key` per agent instead of explicit
+breakpoints.
+
+**Metering** stays at one chokepoint regardless of provider. Anthropic and
+OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
+reports its own computed cost per call, which overrides the table (no rate table
+can cover its zoo). Unknown model ids fall back to the top-tier rate so nothing
+ever meters as free. Every usage row records which provider served it.
+
+Missing credentials fail as a clear configuration error at call time, not as an
+opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
+`OPENROUTER_API_KEY`.
+
+### Workers and failure handling
 
 Ingestion and the governance pipelines ride SQS queues in production and an
 in-memory runner locally, with identical handlers. Stewardship is the
-exception: it has no message queue at all. The claim row *is* the queue; a
-steward-state column plus a partial index makes enqueueing idempotent (a claim
-re-triggered while already pending coalesces into one run), and workers drain
-it in importance order with `FOR UPDATE SKIP LOCKED`, so concurrent workers
-never collide.
+exception: it has no message queue at all. A claim's steward-state column
+marks it a CANDIDATE (idempotently — a claim re-triggered while already
+pending coalesces into one run), the action ledger holds its priced
+assess/reassess actions, and the executor runs whatever the allocations on
+that ledger cover (docs/allocation.md), claiming work with
+`FOR UPDATE SKIP LOCKED` so concurrent workers never collide.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
@@ -486,8 +556,8 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
 
 Around that core sit the account and operations tables: `contributors` doubles
 as the account table, `api_keys` holds hashed keys, `llm_usage` meters every
-model call, `reputation_events` and `owl_ledger` are the append-only score
-and currency ledgers, `reconciliation_events` is the Curator's reversible audit log,
+model call, `reputation_events` and `kudos_events` are the append-only score
+ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
 run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
@@ -567,11 +637,12 @@ which the account is provisioned on first sign-in.
 API keys are prefixed `epk_`, stored only as hashes, shown once at creation,
 and scoped `user` or `service`. Every model call in the system is metered at
 the LLM client chokepoint: tokens are priced into micro-USD and recorded per
-agent, user, and key. Quota enforcement is two gates at the API boundary, a
-sliding-hour rate limit and a monthly grant; exceeding the grant returns a
-payment-required error. Billing behind the grant is a deliberate seam: the free
-tier is the only provider wired in today, and a paid provider can be swapped in
-without touching the metering.
+agent, user, and key. Spending runs on the owl economy (docs/accounts.md,
+docs/allocation.md): one owl of spend covers a dollar of metered cost,
+agentic operations charge a cap that settles to the metered actual, free
+signup and monthly grants keep the entry free, and Stripe Checkout sells owl
+packs. Rate limits at the API boundary are a runaway backstop; the real
+spend guardrail is the owl balance and the escrowed budgets behind mandates.
 
 ---
 

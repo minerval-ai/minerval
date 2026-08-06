@@ -447,9 +447,10 @@ export function getStewardToolDefinitions(): Tool[] {
               "(the parent is false without it) yet LOW importance because nobody " +
               "disputes it: getting an uncontested fact right is free. Reserve " +
               "high values for contested, consequential dependencies. " +
-              "This orders the work queue AND (below a threshold) leaves the " +
-              "subclaim an un-decomposed embedded stub, so score uncontested " +
-              "bedrock low. Defaults to 0.5 if omitted.",
+              "This feeds the value estimates that decide what gets funded " +
+              "AND (below a threshold) leaves the subclaim an un-decomposed " +
+              "embedded stub, so score uncontested bedrock low. Defaults to " +
+              "0.5 if omitted.",
           },
           contestation: {
             type: "number",
@@ -458,8 +459,9 @@ export function getStewardToolDefinitions(): Tool[] {
               "separately from importance: ~0 for settled bedrock nobody " +
               "disputes, ~1 for an actively argued crux. This is the " +
               "contestability half of the importance formula stated on its own; " +
-              "it is recorded for effort allocation and does not affect " +
-              "processing yet.",
+              "it multiplies importance in the expected-value estimate the " +
+              "allocation engine funds work by, so a live dispute genuinely " +
+              "draws attention sooner.",
           },
           seed_credence: {
             type: "number",
@@ -493,7 +495,8 @@ export function getStewardToolDefinitions(): Tool[] {
         "Set a claim's importance (0..1): how much it is worth spending scarce " +
         "intelligence to get it right (roughly consequence-if-wrong × " +
         "contestability), NOT mere logical load-bearing-ness. A revisable judgment " +
-        "that scales effort and orders the work queue. Local dependents are only a " +
+        "that scales effort and feeds the value estimates funding decisions read. " +
+        "Local dependents are only a " +
         "local signal: a claim central to a niche subfield is still low-importance " +
         "if the subfield is peripheral and the claim uncontested. An uncontested " +
         "fact is low importance even if much depends on it, because getting it " +
@@ -516,8 +519,9 @@ export function getStewardToolDefinitions(): Tool[] {
               "person disputes (even a foundational one), ~1 for an actively " +
               "argued crux with credible parties on both sides. This is the " +
               "contestability half of the importance formula stated on its own; " +
-              "it is recorded for effort allocation and does not affect " +
-              "processing yet.",
+              "it multiplies importance in the expected-value estimate the " +
+              "allocation engine funds work by, so a live dispute genuinely " +
+              "draws attention sooner.",
           },
           reasoning: {
             type: "string",

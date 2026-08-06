@@ -2,11 +2,13 @@
 
 One identity for users and contributors (#70), dashboard-managed API keys, a
 per-token meter under every LLM call — and the **owl**, the platform's unit
-of account. One owl has a fixed $4 face value and buys one claim assessment
-(~$1 of frontier-model work at the same 4× margin the metered era charged).
-Every price on the platform is quoted in owls, purchases go through Stripe
-Checkout in fixed packs with bulk discounts, and accepted contributions EARN
-owls — one currency for spending and recognition alike.
+of account. One owl of spend covers one dollar of metered cost, one for
+one; an owl SELLS for $4, and the platform's whole margin lives openly in
+that purchase price (docs/allocation.md). Nothing has a fixed price:
+quoted figures are caps and estimates that settle to metered cost.
+Purchases go through Stripe Checkout in fixed packs with bulk discounts,
+and accepted contributions EARN owls — one currency for spending and
+recognition alike.
 
 ## One identity
 
@@ -127,10 +129,10 @@ them (see below).
 ## Assessment orders — immediate paid work
 
 `POST /claims/:id/order` (up to 1 owl) buys a Steward (re)assessment of a
-claim. A paid order is a purchase, not a request: the dispatcher
-(`src/workers/order-pipeline.ts`) runs it AHEAD of the background lane —
-checked first on every runner tick — so dispatch latency is a tick, not a
-queue position. Semantics:
+claim. A paid order is a purchase, not a request: it fully funds the
+action, and a fully funded action has nothing to wait for — the dispatcher
+(`src/workers/order-pipeline.ts`) is checked first on every runner tick.
+Semantics:
 
 - **Cap-at-start, settle-at-finish.** The order is created uncharged; the
   cap is debited the moment the Steward run begins, and the metered cost
@@ -138,13 +140,12 @@ queue position. Semantics:
   `pending` the order cancels free (`DELETE /orders/:id`). A genuine run
   failure refunds automatically; a transient failure requeues the order
   with its charge intact (the retry never double-charges).
-- **Stakes.** Every charged order records a `claim_stakes` row — the demand
-  signal the background lane's expected-value estimate reads. Stakes are
-  scheduling input, never `claims.importance` input: money buys
-  scheduling, not epistemic standing.
+- **Money is cost-side only.** A purchase covers an action's cost on the
+  ledger; it never enters any value estimate and never touches
+  `claims.importance`: money buys scheduling, not epistemic standing.
 - **Accepted claim proposals** create a proposal-funded order automatically
   (the claim_proposal charge rides along), so a paid proposal's claim runs
-  on the express lane instead of waiting behind corpus work (#284).
+  as soon as its funded action dispatches (#284).
 - The run is attributed to the ordering user (usage context userId +
   jobId=order id), so per-order cost is queryable from `llm_usage`.
 - `GET /orders` (optionally `?claim_id=` for the claim page's poll),
@@ -158,9 +159,9 @@ claim's subtree. Open-ended work gets a budget, not a price:
 - Funding escrows the owls immediately (`escrow_hold` behind the same
   balance guard as a charge) — that's the act of committing them.
 - The worker (`src/workers/budget-job-pipeline.ts`) stewards the subtree one
-  claim per tick: pending claims ahead of their queue turn, and 'deferred'
-  stubs the economic brake (#98) held out — the funder is buying exactly
-  that depth. New subclaims minted along the way become new targets.
+  claim per tick: pending claims, and the 'deferred' stubs the economic
+  brake (#98) held out — the funder is buying exactly that depth. New
+  subclaims minted along the way become new targets.
 - Spend is metered against real model work (`llm_usage` rows attributed
   with job_id). At the floor the job PAUSES (`paused_budget`) with a
   progress checkpoint and waits for a top-up
@@ -183,16 +184,18 @@ the budget and starts the grant with the mandate as its plan; nothing runs
 or is charged before that. The Grantmaker works for the integrity of the
 graph and declines mandates that attempt to steer conclusions, at any
 budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
-items (funded ingestion: source URLs extracted and matched, metered to the
-escrow). Direct `POST /grants` (scope + policy + budget) remains for
-service/operator tooling; its selector policies (**cover**, **deepen**,
-**maintain**, **agent**) are documented in the worker
-(`src/workers/grant-pipeline.ts`), which executes one unit per tick metered
-to the grant's budget.
+items. A live mandate executes through the action ledger
+(docs/allocation.md): planning runs, its Grantmaker's periodic review
+passes, and ingest items are self-funded ledger actions run by the engine
+executor (`src/workers/engine-executor.ts`); plan claim items and the
+'deepen' policy run direct steward passes (`src/workers/grant-pipeline.ts`);
+'cover'/'maintain' mandates spend through their own valuations and daily
+allocator. Mandates also fund each other as peers (regrants) and can spawn
+new mandates with their own Grantmakers. Direct `POST /grants` (scope +
+policy + budget) remains for service/operator tooling.
 
-Every funded run records a `claim_stakes` row (source 'grant' — raising
-the claim's expected-value estimate in the background lane) and every
-assessment it produces is stamped with `funded_by_job_id` — disclosed at
+Every
+assessment a mandate produces is stamped with `funded_by_job_id` — disclosed at
 the bottom of the claim page as scheduled by "a funded mandate", together
 with the explanation that funding buys scheduling, never conclusions or
 graph membership. Funder-chosen names never appear on claim surfaces.
@@ -211,9 +214,9 @@ whichever entitlement read sees the user first.
 
 - a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
   in-memory) as a runaway backstop;
-- an affordability **check** (balance ≥ price) before any work — otherwise
-  `402 INSUFFICIENT_OWLS` with the price, balance, price list, and packs in
-  the body;
+- an affordability **check** (balance ≥ the operation's cap) before any
+  work — otherwise `402 INSUFFICIENT_OWLS` with the cap, balance, cap
+  list, and packs in the body;
 - the **charge**, taken only when the operation actually starts (after
   validation, right before the LLM work — `chargeAgenticOp` /
   `withAgenticCharge`), never at request arrival. A failure after the charge
@@ -263,11 +266,11 @@ up to 20% off at 125 owls):
 3. Stripe calls `POST /billing/webhook` (signature-verified against
    `STRIPE_WEBHOOK_SECRET` over the raw body). A paid
    `checkout.session.completed` / `async_payment_succeeded` credits the
-   pack's **face value** (owls × $4) — the discount is cheaper cash for the
-   same owls, not fewer owls — idempotently via the `stripe:<session_id>`
-   idempotency key.
+   pack's owls at their $1-of-spend value — a bulk discount is cheaper cash
+   for the same owls, not fewer owls — idempotently via the
+   `stripe:<session_id>` idempotency key.
 4. `GET /billing/ledger` powers the dashboard's owl history; the balance and
-   price list ride on the entitlement in `/users/me` and `/usage`.
+   cap list ride on the entitlement in `/users/me` and `/usage`.
 
 Owls are strictly one-way: bought or earned, then spent — never redeemable
 for cash. Invoices/receipts stay on Stripe-hosted surfaces. Refunds issued in
@@ -287,7 +290,7 @@ handler lands.
 
 ## Dashboard
 
-`/account` on the web app: profile, owl balance with the price list, pack
+`/account` on the web app: profile, owl balance with the caps list, pack
 purchase flow (when billing is enabled) and the itemized owl history, key
 management (create/name/revoke — plaintext shown exactly once), usage by
 day / agent / key (cost observability), and contributor standing including

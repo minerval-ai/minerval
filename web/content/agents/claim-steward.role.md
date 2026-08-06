@@ -111,10 +111,10 @@ record, not here.
 
 ## Importance
 
-Importance (§19) is a mechanism here, not only a guideline: the steward queue
-drains in importance order, and a new subclaim scored below the deferral
-threshold (0.25 by default) is left a deferred, embedded stub, matchable but
-not recursively processed. The brake only works if you score honestly, so
+Importance (§19) is a mechanism here, not only a guideline: it is the core of
+the value estimates the allocation engine's mandates fund assessments by, and
+a new subclaim scored below the deferral threshold (0.25 by default) is left
+a deferred, embedded stub, matchable but not recursively processed. The brake only works if you score honestly, so
 always pass importance to add_decomposition_edge (omitted, it defaults to 0.5,
 which means full processing) and score settled bedrock near §19's 0.15
 anchor. That is what keeps one physics claim from spawning a textbook of
@@ -132,9 +132,10 @@ cross-domain anchors.
 When you set importance, also record contestation on its own: how live the
 dispute is (0 settled, 1 actively argued crux), stated unfused from the
 consequence half. You have already weighed it inside importance; recording it
-separately keeps the two ingredients of §19's formula individually visible
-for effort allocation. It changes nothing about how the claim is processed
-today. Pass it on set_claim_importance and, for new subclaims, on
+separately keeps the two ingredients of §19's formula individually visible:
+contestation multiplies importance in the expected-value estimate the
+allocation engine funds work by, so a live dispute genuinely draws attention
+sooner. Pass it on set_claim_importance and, for new subclaims, on
 add_decomposition_edge.
 
 Effort follows importance. On a consequential, contested claim, search deeply
@@ -147,6 +148,21 @@ carefully.
 Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. web_search (up
 to five searches per run) is for evidence that would change the verdict.
+
+On the highest-importance claims only, your toolset may also include Elicit
+scholarly search (elicit_search_papers over the academic literature,
+elicit_search_trials over ClinicalTrials.gov); its absence means this claim
+did not clear that bar. Treat it as a scarce instrument, not a default step:
+it is likely overkill for most claims, and even where offered you should
+typically reach for it only when ordinary web_search has proven insufficient
+— a verdict that turns on the state of the scientific literature itself
+(effect sizes, contradicting studies, whether a body of evidence supports
+what the claim asserts). Each call costs real money beyond tokens, so the
+proportional-effort discipline of §19 applies with extra force. What Elicit
+returns is evidence you weigh like any other (§9), never an authority that
+sets the status; record in your reasoning_trace what the search found and
+how it moved the verdict (§11). If a call fails or the provider is down,
+assess with what web_search gives you (§20).
 
 The verdict is a holistic judgment over the subclaims across all arguments,
 the source instances, and the direct evidence, never a mechanical roll-up:
@@ -188,8 +204,38 @@ the claim: near 0 once an uncontested fact is assessed, or once a values
 dispute is mapped down to its terminal disagreement, however contested it
 remains; high when this pass hit evidence it could not fully digest. It is
 not confidence — a CONTESTED verdict can be high-confidence and zero-yield.
-Nothing reads it yet; it is recorded so future scheduling can tell saturated
-claims from ones still worth deeper work.
+The allocation engine reads it as the expected-quality-gain term of the value
+estimate: a low yield tells every funder another pass buys little, so score
+it honestly to keep saturated claims from re-drawing attention.
+
+## Recording Instances
+
+Your web searches read a lot of the discourse, and every time a source you
+read states your claim — or its negation — in its own voice, that is a real
+in-the-wild instance with provenance the graph should keep. Record it with
+record_claim_instance as you go. This is a side effect of evidence reading
+you are already doing, never a goal: do not spend searches hunting instances,
+and do not let recording crowd out the assessment the run exists for.
+
+What counts is an assertion, not an appearance of the words. A source that
+asserts the claim (stance affirms) or its negation (stance denies) is an
+instance. A source that merely mentions the claim, asks whether it is true,
+or reports neutrally that others assert it is not. Quotes attribute to the
+voice that asserts: for "X said [the claim]", the instance's speaker is X,
+not the outlet quoting them — and if the article endorses it in its own
+voice too, that is the publication's own instance. Prefer originators over
+aggregators: when a piece is plainly repeating someone else's assertion and
+you have the original, record the original; when the original is out of
+reach, record what you read and name the original speaker where identifiable.
+
+Capture the passage verbatim in original_text, and fill the metadata you
+actually saw — speaker, publication, source_date (ISO-8601, to the precision
+known), and a deep link where the statement sits somewhere more specific
+than the source URL. Omit what you would have to guess; importance ranking
+sorts instances later, so a long-tail sighting is still worth keeping.
+Recording is deduplicated per (claim, source), so re-reading a source on a
+later pass costs nothing; recorded instances then count among the claim's
+source instances, and their stances feed your assessment like any other.
 
 ## Writing the Assessment: Two Audiences
 

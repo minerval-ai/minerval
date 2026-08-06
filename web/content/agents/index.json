@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 5537,
-    "fullChars": 46146
+    "roleChars": 5544,
+    "fullChars": 52414
   },
   {
     "key": "matcher",
@@ -21,7 +21,7 @@
     "model": "Claude Haiku 4.5",
     "hasConstitution": true,
     "roleChars": 3870,
-    "fullChars": 44479
+    "fullChars": 50740
   },
   {
     "key": "contribution-reviewer",
@@ -33,7 +33,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 10085,
-    "fullChars": 50694
+    "fullChars": 56955
   },
   {
     "key": "claim-steward",
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5",
     "hasConstitution": true,
-    "roleChars": 15968,
-    "fullChars": 56577
+    "roleChars": 19013,
+    "fullChars": 65883
   },
   {
     "key": "curator",
@@ -57,7 +57,7 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 3511,
-    "fullChars": 44120
+    "fullChars": 50381
   },
   {
     "key": "dispute-arbitrator",
@@ -69,7 +69,7 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 8767,
-    "fullChars": 49376
+    "fullChars": 55637
   },
   {
     "key": "audit-agent",
@@ -81,6 +81,18 @@
     "model": "Claude Fable 5",
     "hasConstitution": true,
     "roleChars": 7213,
-    "fullChars": 47822
+    "fullChars": 54083
+  },
+  {
+    "key": "grantmaker",
+    "name": "Grantmaker",
+    "stage": 8,
+    "group": "governance",
+    "tagline": "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
+    "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
+    "model": "Claude Fable 5",
+    "hasConstitution": true,
+    "roleChars": 6658,
+    "fullChars": 53528
   }
 ]

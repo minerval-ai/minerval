@@ -69,12 +69,12 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {!assessment && (
         <>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-            Not yet assessed. The graph gives its attention first to the
-            claims where an assessment matters most, and this one has not
-            come up yet.
+            Not yet assessed. Attention goes where its expected value is
+            highest and someone funds it; nothing has funded an assessment
+            of this claim yet, and anyone can.
           </p>
-          {/* The demand side: don't wait — order the assessment. Runs on the
-              express lane, ahead of the background queue. */}
+          {/* The demand side: a purchase fully funds the action, and a
+              fully funded action runs now. */}
           <OrderAssessment claimId={claim.id} variant="unassessed" />
         </>
       )}

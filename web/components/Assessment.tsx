@@ -23,8 +23,9 @@ export function Swatch({ status }: { status: AssessmentStatus | string | null })
 }
 
 // Shown in place of a StatusBadge when a claim has no current assessment. The
-// dashed, muted treatment signals "still queued" rather than a verdict — many
-// low-importance claims sit unassessed under the Steward's budget by design.
+// dashed, muted treatment signals "not yet funded" rather than a verdict —
+// many low-value candidates sit unassessed by design until a mandate or a
+// reader covers the cost.
 export function Unassessed({ linkTo }: { linkTo?: string } = {}) {
   return (
     <Term gloss={UNASSESSED_META.def} href={DEFINED_IN.importance} linkTo={linkTo} className="badge unassessed">
@@ -33,8 +34,8 @@ export function Unassessed({ linkTo }: { linkTo?: string } = {}) {
   );
 }
 
-// Importance is administrative — what the Steward assesses and decomposes
-// first — not a degree of belief, so it is carried by its band word, never a
+// Importance is administrative — the core of the value estimates that decide
+// what gets assessed — not a degree of belief, so it is carried by its band word, never a
 // meter. The old five-pip meter, unlabelled on cards and the map, read as
 // P(claim true): every other meter here measures belief. The numeric value
 // and band definition live in the popover.
@@ -43,7 +44,7 @@ export function Importance({
 }: { value: number | null | undefined; linkTo?: string }) {
   if (typeof value !== "number") return null;
   const meta = IMPORTANCE[importanceLevel(value)];
-  const gloss = `Importance ${value.toFixed(2)}, from 0 to 1 · ${meta.label}: ${meta.gloss}. The Steward assesses and decomposes higher-importance claims first.`;
+  const gloss = `Importance ${value.toFixed(2)}, from 0 to 1 · ${meta.label}: ${meta.gloss}. Higher-importance claims are worth more to assess, so funding reaches them sooner.`;
   return (
     <Term gloss={gloss} href={DEFINED_IN.importance} linkTo={linkTo} className="imp-label" ariaLabel={`importance: ${meta.label}`}>
       importance · {meta.label}
