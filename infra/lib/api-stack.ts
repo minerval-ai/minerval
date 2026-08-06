@@ -17,6 +17,7 @@ export interface ApiStackProps extends cdk.StackProps {
   urlExtractionQueue: sqs.Queue;
   claimPipelineQueue: sqs.Queue;
   openaiApiKeySecret: secretsmanager.Secret;
+  openrouterApiKeySecret: secretsmanager.Secret;
   anthropicApiKeySecret: secretsmanager.Secret;
   apiKeysSecret: secretsmanager.Secret;
   elicitApiKeySecret: secretsmanager.Secret;
@@ -48,6 +49,7 @@ export class ApiStack extends cdk.Stack {
     props.claimPipelineQueue.grantConsumeMessages(taskDef.taskRole);
     props.dbSecret.grantRead(taskDef.taskRole);
     props.openaiApiKeySecret.grantRead(taskDef.taskRole);
+    props.openrouterApiKeySecret.grantRead(taskDef.taskRole);
     props.anthropicApiKeySecret.grantRead(taskDef.taskRole);
     props.apiKeysSecret.grantRead(taskDef.taskRole);
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
@@ -130,6 +132,11 @@ export class ApiStack extends cdk.Stack {
         DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbSecret, "password"),
         OPENAI_API_KEY: ecs.Secret.fromSecretsManager(
           props.openaiApiKeySecret
+        ),
+        // OpenRouter (#257): holds a placeholder until manually populated;
+        // inert unless an agent's *_MODEL is pointed at a vendor/model ID.
+        OPENROUTER_API_KEY: ecs.Secret.fromSecretsManager(
+          props.openrouterApiKeySecret
         ),
         // Operator/service keys (#70) — the API fails closed in production
         // without them. The web frontend's EPISTEME_API_KEY must be one of
