@@ -34,7 +34,7 @@ export async function POST(
   const budget = Number(body.budget_owls);
   if (!Number.isFinite(budget) || budget <= 0 || budget > 1000) {
     return NextResponse.json(
-      { error: "Choose a budget between 0 and 1,000 owls." },
+      { error: "Choose a positive budget of up to 1,000 owls." },
       { status: 400 }
     );
   }
@@ -45,7 +45,7 @@ export async function POST(
     if (err instanceof AccountApiError) {
       const error =
         err.code === "INSUFFICIENT_OWLS"
-          ? "Your owl balance can't cover that budget. Buy owls from your account page."
+          ? "Your owl balance cannot cover that budget. You can buy owls from your account page."
           : err.message;
       return NextResponse.json(
         { error, code: err.code },

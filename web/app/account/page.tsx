@@ -26,7 +26,7 @@ import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
 import type { ContributorProfile } from "../../lib/types";
 
-export const metadata: Metadata = { title: "Account — Minerval" };
+export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
 
 function usd(micro: number): string {
@@ -41,12 +41,34 @@ function owls(n: number): string {
 }
 
 /** A ledger row's human line: what the entry was for. */
+const LEDGER_REASONS: Record<string, string> = {
+  purchase: "owls purchased",
+  signup_grant: "signup grant",
+  monthly_grant: "monthly grant",
+  contribution_award: "earned by contribution",
+  refund: "refunded",
+  escrow_hold: "escrowed for funded work",
+  escrow_refund: "unspent escrow returned",
+  admin_adjust: "adjustment",
+};
+
+const LEDGER_OPS: Record<string, string> = {
+  assessment: "an assessment",
+  claim_proposal: "a claim proposal",
+  source_ingest: "a source submission",
+  extension_analysis: "a page analysis",
+  extension_chat: "an extension chat",
+  text_analysis: "a text analysis",
+};
+
 function ledgerLabel(e: OwlLedgerEntry): string {
-  const reason =
-    e.reason === "meter_settlement"
-      ? "unused part returned"
-      : e.reason.replace(/_/g, " ");
-  return e.op ? `${reason} · ${e.op.replace(/_/g, " ")}` : reason;
+  const op = e.op ? (LEDGER_OPS[e.op] ?? e.op.replace(/_/g, " ")) : null;
+  if (e.reason === "charge") return op ? `held for ${op}` : "held";
+  if (e.reason === "meter_settlement") {
+    return op ? `unused part returned from ${op}` : "unused part returned";
+  }
+  const reason = LEDGER_REASONS[e.reason] ?? e.reason.replace(/_/g, " ");
+  return op ? `${reason} · ${op}` : reason;
 }
 
 function tokens(n: number): string {
@@ -55,8 +77,8 @@ function tokens(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-function dateish(iso: string | null): string {
-  if (!iso) return "—";
+function dateish(iso: string | null, whenAbsent = ""): string {
+  if (!iso) return whenAbsent;
   return iso.slice(0, 10);
 }
 
@@ -158,13 +180,13 @@ export default async function AccountPage({
         <h2>Owls</h2>
         {purchase === "success" && (
           <p className="key-reveal" role="status">
-            Payment received — owls land as soon as Stripe confirms the
-            purchase (usually seconds; refresh if the balance hasn&rsquo;t
-            moved yet).
+            Payment received. Your owls arrive as soon as Stripe confirms the
+            purchase, usually within seconds; refresh if the balance
+            hasn&rsquo;t moved yet.
           </p>
         )}
         {purchase === "cancelled" && (
-          <p role="status">Purchase cancelled — nothing was charged.</p>
+          <p role="status">Purchase cancelled. Nothing was charged.</p>
         )}
         <p className="owl-balance">
           <OwlMark size={20} className="owl-mark" />
@@ -172,14 +194,16 @@ export default async function AccountPage({
           owl{entitlement.owl_balance === 1 ? "" : "s"}
         </p>
         <p>
-          The owl is Minerval&rsquo;s unit of account: one owl (
-          {usd(entitlement.owl_price_micro_usd)}) covers one claim assessment
-          by the best available model, with plenty of room to spare. Every
-          action is metered at its real cost, and the figures below are
-          ceilings: you are charged the ceiling when the work starts, and
-          whatever the work didn&rsquo;t use comes straight back. Reading,
-          search, and browsing the graph are always free, and accepted
-          contributions <em>earn</em> owls. New accounts start with{" "}
+          The owl is Minerval&rsquo;s unit of account: one owl is{" "}
+          {usd(entitlement.owl_price_micro_usd)}, buys{" "}
+          {usd(entitlement.owl_price_micro_usd)} of metered work on the
+          platform, and covers a full claim assessment by the best available
+          model. Nothing has a fixed price. Each figure below is a ceiling,
+          set near what the work usually costs: the ceiling is held when the
+          work starts, the actual cost is metered as it runs, and the unused
+          part returns to your balance when it finishes. Reading, searching,
+          and browsing the graph are always free, and accepted contributions{" "}
+          <em>earn</em> owls. New accounts start with{" "}
           {entitlement.signup_grant_owls} free owls
           {entitlement.monthly_grant_owls > 0 && (
             <>
@@ -264,8 +288,10 @@ export default async function AccountPage({
       <section>
         <h2>Grants</h2>
         <p>
-          Fund attention on a part of the graph you care about — from a few
-          core claims to a whole subdomain with a grantor agent.{" "}
+          A grant funds sustained attention on the part of the graph you care
+          about, from a handful of claims to a whole literature. You describe
+          the work to the Grantmaker, it drafts a mandate and quotes the cost
+          in owls, and nothing is spent until you fund the plan.{" "}
           <a href="/account/grants">your grants →</a>
         </p>
       </section>
@@ -341,8 +367,8 @@ export default async function AccountPage({
         <h2>API keys</h2>
         <p>
           Keys authenticate requests to the Minerval API as you (header{" "}
-          <code>x-api-key</code>). Create one per surface — a CLI, the browser
-          extension — so each can be revoked independently.
+          <code>x-api-key</code>). Create one for each surface, a CLI or the
+          browser extension, so that each can be revoked on its own.
         </p>
         <KeyCreator />
         {activeKeys.length > 0 && (
@@ -364,7 +390,7 @@ export default async function AccountPage({
                     <code>{k.key_prefix}…</code>
                   </td>
                   <td>{dateish(k.created_at)}</td>
-                  <td>{dateish(k.last_used_at)}</td>
+                  <td>{dateish(k.last_used_at, "never")}</td>
                   <td>
                     <form action={revokeKeyAction}>
                       <input type="hidden" name="key_id" value={k.id} />
@@ -487,7 +513,7 @@ export default async function AccountPage({
       <section>
         <h2>Contributor standing</h2>
         <p>
-          The same account is your contributor identity —{" "}
+          The same account is your contributor identity:{" "}
           <a href={`/contributors/${user.id}`}>public profile</a>.
         </p>
         <div className="usage-chips">
@@ -504,12 +530,12 @@ export default async function AccountPage({
           </span>
         </div>
         <p>
-          Good-faith contribution is always free — a rejected-but-sincere
-          contribution costs nothing (any proposal charge is refunded).
+          Good-faith contribution is always free: a sincere contribution that
+          is rejected costs nothing, and any proposal charge is refunded.
           Accepted contributions raise reputation and earn spendable owls in
-          proportion to the importance of the claim they improve — the
-          contributors who build the graph get real say over what it assesses
-          next.
+          proportion to the importance of the claim they improve, so the
+          contributors who build the graph gain real say over what it
+          assesses next.
         </p>
         {profile && profile.recent_contributions.length > 0 && (
           <>
@@ -547,9 +573,9 @@ export default async function AccountPage({
             <strong>Contribution paused:</strong> a contribution from this
             account was flagged as suspected bad faith, which moves the
             account to pay-to-contribute standing. Deposits are not yet
-            available, so contributing is paused — but the flag is appealable
-            (<code>POST /appeals</code>), and a successful appeal restores
-            your standing, reputation, and owls in full.
+            available, so contributing is paused for now. The flag is
+            appealable (<code>POST /appeals</code>), and a successful appeal
+            restores your standing, reputation, and owls in full.
           </p>
         )}
       </section>

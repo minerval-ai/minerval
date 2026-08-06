@@ -200,8 +200,8 @@ export function Contribute({ claimId }: { claimId: string }) {
       {open && session.kind === "signed-in" && status.kind === "sent" && (
         <div className="contribute-box">
           <p style={{ margin: 0 }}>
-            <strong>Received.</strong> The contribution is queued for review on
-            the merits.{" "}
+            <strong>Received.</strong> The contribution is awaiting review on
+            its merits.{" "}
             {status.contributionId ? (
               <>
                 The decision and its reasoning will appear on{" "}

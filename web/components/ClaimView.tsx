@@ -19,7 +19,7 @@ import { FundDecomposition } from "./claim/FundDecomposition";
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
-    ? "—"
+    ? "–"
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -69,8 +69,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {!assessment && (
         <>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-            Not yet assessed — this claim is waiting its turn in the
-            assessment queue.
+            Not yet assessed. The graph gives its attention first to the
+            claims where an assessment matters most, and this one has not
+            come up yet.
           </p>
           {/* The demand side: don't wait — order the assessment. Runs on the
               express lane, ahead of the background queue. */}
@@ -87,7 +88,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         <aside className="seed-prelim" aria-label="Preliminary note">
           <p className="seed-prelim-label">
             <span className="sc">Preliminary</span>
-            {" — from the Steward of "}
+            {" · from the Steward of "}
             {seed.seeded_by ? (
               <Link href={`/claims/${seed.seeded_by.id}`}>{seed.seeded_by.text}</Link>
             ) : (
@@ -155,7 +156,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           {assessment.reasoning_trace &&
             assessment.reasoning_trace !== assessment.summary && (
               <details className="reasoning-detail">
-                <summary>Full reasoning — evidence and decisions behind this verdict</summary>
+                <summary>Full reasoning: the evidence and decisions behind this verdict</summary>
                 <div className="reasoning">
                   <AssessmentText content={assessment.reasoning_trace} texts={linkTexts} />
                 </div>
@@ -254,7 +255,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                   {typeof p.confidence === "number" && (
                     <span title={VERDICT_CONFIDENCE_GLOSS}> · {p.confidence.toFixed(2)}</span>
                   )}
-                  {p.trigger && <em style={{ color: "var(--faint)" }}> — {p.trigger.replace(/_/g, " ")}</em>}
+                  {p.trigger && <em style={{ color: "var(--faint)" }}> · {p.trigger.replace(/_/g, " ")}</em>}
                 </span>
               </div>
             ))}

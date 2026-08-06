@@ -123,7 +123,7 @@ export function DependentsRail({ dependents }: { dependents: DependentClaim[] })
             return (
               <li key={d.id} className={styles.depItem}>
                 <div className={styles.depEdge}>
-                  <span className={`swatch ${st.cls}`} title={`${st.label} — ${st.def}`} aria-hidden />
+                  <span className={`swatch ${st.cls}`} title={`${st.label}: ${st.def}`} aria-hidden />
                   {rel && (
                     <Term
                       gloss={rel.gloss}

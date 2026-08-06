@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../../auth";
 import { GrantConversation } from "./GrantConversation";
 
-export const metadata: Metadata = { title: "New grant — Minerval" };
+export const metadata: Metadata = { title: "New grant · Minerval" };
 
 // Grants are made by talking, not by form: the Grantmaker agent designs the
 // mandate in conversation, quotes its cost in owls, and can refuse mandates

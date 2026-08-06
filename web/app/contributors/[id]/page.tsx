@@ -27,8 +27,8 @@ export async function generateMetadata({
   const profile = apiConfigured() ? await fetchContributorProfile(id) : null;
   return {
     title: profile
-      ? `${profile.contributor.display_name} — Minerval`
-      : "Contributor — Minerval",
+      ? `${profile.contributor.display_name} · Minerval`
+      : "Contributor · Minerval",
   };
 }
 

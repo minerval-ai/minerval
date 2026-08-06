@@ -171,7 +171,7 @@ export function DecompositionTree({ tree }: { tree: TreeNode }) {
     return (
       <div className="tree">
         <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
-          This claim is atomic — it bottoms out in a bedrock fact, a contested empirical
+          This claim is atomic: it bottoms out in a bedrock fact, a contested empirical
           question, or a value premise, and does not decompose further.
         </p>
       </div>

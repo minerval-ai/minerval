@@ -57,6 +57,7 @@ const TRIGGER_PHRASES: Record<string, string> = {
   steward_reassessment: "steward review",
   subclaim_change: "a subclaim changed",
   contribution_accepted: "an accepted contribution",
+  user_order: "a reader's order",
   steward_escalation: "an escalated review",
   escalated_review: "an escalated review",
   appeal: "an appeal",
@@ -67,7 +68,7 @@ const TRIGGER_PHRASES: Record<string, string> = {
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
-    ? "—"
+    ? "–"
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 

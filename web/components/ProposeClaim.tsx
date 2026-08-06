@@ -123,7 +123,7 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
       {open && session.kind === "signed-in" && status.kind === "sent" && (
         <div className="contribute-box">
           <p style={{ margin: 0 }}>
-            <strong>Received.</strong> The proposal is queued for review. If it
+            <strong>Received.</strong> The proposal is awaiting review. If it
             is accepted, it is matched against existing claims and enters the
             graph.{" "}
             {status.contributionId ? (

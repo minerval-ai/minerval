@@ -112,8 +112,7 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
           </span>
         </div>
         <p className={styles.emptyNote}>
-          Atomic — this claim bottoms out in a bedrock fact, a contested question,
-          or a value premise, and does not decompose further.
+          No subclaims are recorded beneath this claim.
         </p>
       </aside>
     );

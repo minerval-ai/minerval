@@ -37,7 +37,7 @@ export function TopUpJob({
       </form>
       {state.ok && (
         <p className="meter-caption" role="status">
-          Budget added{paused ? " — the job resumes on the next pass" : ""}.
+          Budget added{paused ? "; the job picks up where it left off" : ""}.
         </p>
       )}
       {state.error && <p className="form-error">{state.error}</p>}

@@ -77,7 +77,7 @@ export const UNASSESSED_META = {
   label: "Unassessed",
   glyph: "◌",
   cls: "st-unassessed",
-  def: "No current assessment — the Steward prioritises higher-importance claims, so this one is likely still queued.",
+  def: "No current assessment. The graph gives its attention first to the claims where an assessment matters most, so this one has not come up yet.",
 } as const;
 
 export function nodeStatusMeta(s: unknown) {
@@ -250,14 +250,14 @@ export function decompositionNote(opts: {
   stewardState?: string;
 }): string {
   if (opts.stewardState === "running") {
-    return "This claim is being decomposed — its subclaims are still being worked out.";
+    return "This claim is being decomposed; its subclaims are still being worked out.";
   }
   if (isProcessed(opts)) {
     return isAtomic(opts.decompositionStatus)
-      ? "This claim is atomic — it bottoms out in a bedrock fact, a contested empirical question, or a value premise, and does not decompose further."
+      ? "This claim is atomic: it bottoms out in a bedrock fact, a contested empirical question, or a value premise, and does not decompose further."
       : "This claim has been assessed but its decomposition is not yet recorded.";
   }
-  return "This claim has not been assessed yet — the Steward works through claims in order of importance, so lower-importance claims wait their turn. It may well decompose into subclaims once it is processed.";
+  return "This claim has not been assessed yet. The graph gives its attention first to the claims where an assessment matters most; once this one is examined, it may well decompose into subclaims.";
 }
 
 // Claim importance — how much it is worth spending scarce intelligence to get the
@@ -284,11 +284,11 @@ export function importanceLevel(v: number): ImportanceLevel {
 }
 
 export const IMPORTANCE: Record<ImportanceLevel, { label: string; gloss: string }> = {
-  foundational: { label: "central",  gloss: "consequential and genuinely contested — a live crux" },
+  foundational: { label: "central",  gloss: "consequential and genuinely contested: a live crux" },
   high:         { label: "major",    gloss: "real consequence within a domain, actively argued" },
   medium:       { label: "notable",  gloss: "a contested point in a live debate (also the default before judging)" },
-  low:          { label: "minor",    gloss: "narrow or largely settled — cheap to get right" },
-  peripheral:   { label: "settled",  gloss: "uncontested — low even if much depends on it" },
+  low:          { label: "minor",    gloss: "narrow or largely settled, cheap to get right" },
+  peripheral:   { label: "settled",  gloss: "uncontested, so low even when much depends on it" },
 };
 
 // Minimum-importance bands for the browse/search filter. Each `min` is the lower
@@ -341,7 +341,7 @@ export const EFFECT: Record<Effect, { label: string; cls: string; gloss: string 
   against:    { label: "against",    cls: "st-contradicted", gloss: "established evidence that weighs against this claim" },
   uncertain:  { label: "contested",  cls: "st-contested",    gloss: "credible argument exists on more than one side" },
   weak:       { label: "unsettled",  cls: "st-unknown",      gloss: "assessed, but too unsupported or unknown to move the needle either way" },
-  unassessed: { label: "unassessed", cls: "st-unassessed",   gloss: "no assessment yet, so nothing bears on this claim from here — likely still queued" },
+  unassessed: { label: "unassessed", cls: "st-unassessed",   gloss: "no assessment yet, so nothing here bears on this claim either way" },
 };
 
 // Reading order for the bar/legend: favour, contested, against, unsettled,
@@ -364,11 +364,11 @@ export const EFFECT_LEAN_ORDER: EffectLean[] = ["for", "against"];
 export const EFFECT_LEAN: Record<EffectLean, { label: string; cls: string; gloss: string }> = {
   for: {
     label: "unassessed · edge for", cls: "st-supported",
-    gloss: "Not yet assessed. Its edge points in favour of this claim — a direction, not a verdict.",
+    gloss: "Not yet assessed. Its edge points in favour of this claim: a direction, not a verdict.",
   },
   against: {
     label: "unassessed · edge against", cls: "st-contradicted",
-    gloss: "Not yet assessed. Its edge points against this claim — a direction, not a verdict.",
+    gloss: "Not yet assessed. Its edge points against this claim: a direction, not a verdict.",
   },
 };
 
@@ -398,7 +398,7 @@ export function seedVerity(credence: number | null | undefined): -1 | 0 | 1 {
 // The mechanical "preliminary" label (#285): every surface that shows a seed
 // says what it is, so it can never read as an assessment.
 export const SEED_PRELIM_GLOSS =
-  "Preliminary credence: the prior probability the parent claim's Steward gave this claim when creating it, pending this claim's own assessment. A seed, not a verdict — the claim is still unassessed.";
+  "Preliminary credence: the prior probability the parent claim's Steward gave this claim when creating it, pending this claim's own assessment. A seed, not a verdict; the claim is still unassessed.";
 
 // Only `contradicts` reverses polarity. requires / supports / specifies /
 // defines / assumes are all structurally affirmative edges (a failed
@@ -466,12 +466,12 @@ export const UNASSESSED_TINT: Record<
   "seed-for": {
     label: "unassessed · leans in favour", cls: "st-supported", seeded: true,
     gloss:
-      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would bear in favour of this claim — a hint pending its own assessment, not a verdict.",
+      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would bear in favour of this claim: a hint pending its own assessment, not a verdict.",
   },
   "seed-against": {
     label: "unassessed · leans against", cls: "st-contradicted", seeded: true,
     gloss:
-      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would weigh against this claim — a hint pending its own assessment, not a verdict.",
+      "Not yet assessed, but the parent claim's Steward seeded it with a preliminary credence that would weigh against this claim: a hint pending its own assessment, not a verdict.",
   },
   "lean-for": { ...EFFECT_LEAN.for, seeded: false },
   "lean-against": { ...EFFECT_LEAN.against, seeded: false },

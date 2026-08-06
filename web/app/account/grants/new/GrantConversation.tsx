@@ -150,11 +150,11 @@ export function GrantConversation({
     <div className="grant-convo">
       {!convo && (
         <p className="order-line">
-          Describe what you want in your own words: a topic you want covered,
-          a claim whose subtree deserves depth, an article or series to bring
-          into the graph, a standing interest to keep fresh. The Grantmaker
-          will look at what exists, ask what it needs to, and come back with
-          a concrete plan and an honest price before anything is spent.
+          Describe what you want in your own words: a topic that deserves
+          coverage, a claim whose subtree deserves depth, an article or
+          series to bring into the graph, a standing interest to keep fresh.
+          Detail helps, but it is not required; the Grantmaker will ask about
+          anything it needs.
         </p>
       )}
 
@@ -204,7 +204,7 @@ export function GrantConversation({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {item.claim_id}
+                    view claim
                   </a>
                 )}
                 <span className="mandate-rationale"> {item.rationale}</span>
@@ -238,9 +238,12 @@ export function GrantConversation({
                 : `Fund this mandate (${budget ?? mandate.expected_cost_owls} owls)`}
             </button>
             <span className="order-caption">
-              Quoted at {mandate.expected_cost_owls} owls. Work is metered as
-              it runs; whatever isn&rsquo;t spent comes back when the mandate
-              completes or you cancel it.
+              The quote of {mandate.expected_cost_owls} owls is the expected
+              cost, taken from live estimates. Funding escrows the full
+              budget from your balance; the work is metered against it as it
+              runs, and whatever is not spent returns when the mandate
+              completes or you cancel it. If the budget runs out, the work
+              pauses and waits for a top-up rather than overspending.
             </span>
           </div>
         </aside>

@@ -14,7 +14,7 @@ const DEFAULT_IMP: ImportanceFloor = "any";
 
 const ASSESSED_SEGMENTS: { value: AssessedFilter; label: string; title: string }[] = [
   { value: "assessed", label: "Assessed", title: "Claims that carry a current verdict" },
-  { value: "unassessed", label: "Unassessed", title: "Claims still queued for the Steward — no verdict yet" },
+  { value: "unassessed", label: "Unassessed", title: "Claims that do not yet carry a verdict" },
   { value: "all", label: "All", title: "Every claim, assessed or not" },
 ];
 

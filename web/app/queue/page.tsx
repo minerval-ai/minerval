@@ -4,7 +4,7 @@ import { apiConfigured, fetchQueue } from "../../lib/api";
 import { OwlMark } from "../../components/OwlMark";
 
 export const metadata: Metadata = {
-  title: "The background lane — Minerval",
+  title: "The background lane · Minerval",
   description:
     "What the background assessment lane will work on next, and exactly why.",
 };

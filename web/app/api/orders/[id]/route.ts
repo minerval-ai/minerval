@@ -17,7 +17,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
   if (!accountApiConfigured()) {
-    return NextResponse.json({ error: "API not configured." }, { status: 503 });
+    return NextResponse.json(
+      { error: "This deployment is not connected to a Minerval API." },
+      { status: 503 }
+    );
   }
   try {
     const result = await cancelAssessmentOrder(session.externalId, id);

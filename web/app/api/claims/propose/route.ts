@@ -35,7 +35,7 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
       return {
         status: 402,
         error:
-          "Proposing a claim costs 1 owl and your balance can't cover it. Buy owls from your account page — a free owl also lands at the start of each month.",
+          "Proposing a claim holds up to 1 owl, and your balance cannot cover it. You can buy owls from your account page, and a free owl arrives at the start of each month.",
       };
     default:
       return {

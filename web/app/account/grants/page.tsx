@@ -9,7 +9,7 @@ import {
 } from "../../../lib/account-api";
 import { OwlMark } from "../../../components/OwlMark";
 
-export const metadata: Metadata = { title: "Grants — Minerval" };
+export const metadata: Metadata = { title: "Grants · Minerval" };
 export const dynamic = "force-dynamic";
 
 function owls(n: number): string {
@@ -17,7 +17,7 @@ function owls(n: number): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  planning: "agent planning…",
+  planning: "plan being drafted",
   pending_approval: "plan awaiting your approval",
   active: "active",
   completed: "completed",
@@ -44,10 +44,13 @@ export default async function GrantsPage() {
       </p>
       <h1>Grants</h1>
       <p>
-        A grant funds attention on a part of the graph you care about: pick a
-        scope, a policy, and an owl budget, and Stewards work through it —
-        with your mandate&rsquo;s name disclosed on every assessment it pays
-        for. Money buys attention, never conclusions.
+        A grant funds sustained attention on the part of the graph you care
+        about, from a handful of claims to a whole literature. You describe
+        the work in conversation with the Grantmaker, it drafts a mandate and
+        quotes the cost in owls, and funding the mandate escrows the budget
+        and starts the work. Money buys scheduling, never conclusions: funded
+        assessments meet the same standards as every other, and whatever a
+        mandate does not spend returns to your balance.
       </p>
       <p>
         <Link href="/account/grants/new">→ create a grant</Link>

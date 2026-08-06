@@ -19,7 +19,7 @@ export function StatusBadge({
 
 export function Swatch({ status }: { status: AssessmentStatus | string | null }) {
   const s = statusMeta(status);
-  return <span className={`swatch ${s.cls}`} title={`${s.label} — ${s.def}`} aria-label={s.label} />;
+  return <span className={`swatch ${s.cls}`} title={`${s.label}: ${s.def}`} aria-label={s.label} />;
 }
 
 // Shown in place of a StatusBadge when a claim has no current assessment. The

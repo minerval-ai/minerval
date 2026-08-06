@@ -557,9 +557,9 @@ export function GraphView({
                 align="start"
                 className="sc"
               >
-                claim · {d.claim.claim_type ? CLAIM_TYPE_LABEL[d.claim.claim_type as ClaimType] : "—"}
+                claim{d.claim.claim_type ? ` · ${CLAIM_TYPE_LABEL[d.claim.claim_type as ClaimType]}` : ""}
               </Term>
-              <Link className={styles.pageLink} href={`/claims/${d.claim.id}`} title="Open the claim page — provenance, discourse, assessment">
+              <Link className={styles.pageLink} href={`/claims/${d.claim.id}`} title="Open the claim page: provenance, discourse, assessment">
                 claim page ↗&#xFE0E;
               </Link>
             </div>
@@ -1080,7 +1080,7 @@ export function GraphView({
             ? "Hover a claim to preview it; click one to open the full-screen map."
             : embed
               ? "Hover a claim to preview it; click one to focus the map on it."
-              : "Fig. — detail falls off with distance; every claim is an address."}
+              : "Fig. Detail falls off with distance; every claim is an address."}
         </span>
       </div>
     </div>

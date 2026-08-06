@@ -11,7 +11,7 @@ import { cancelJobAction } from "../../actions";
 import { TopUpJob } from "./TopUpJob";
 import { OwlMark } from "../../../../components/OwlMark";
 
-export const metadata: Metadata = { title: "Funded job — Minerval" };
+export const metadata: Metadata = { title: "Funded job · Minerval" };
 export const dynamic = "force-dynamic";
 
 const KIND_LABELS: Record<string, string> = {
@@ -20,14 +20,14 @@ const KIND_LABELS: Record<string, string> = {
 
 const STATUS_LINES: Record<string, string> = {
   running:
-    "Running — a Steward is working through the subtree, one claim at a time.",
+    "Running. A Steward is working through the subtree, one claim at a time.",
   paused_budget:
-    "Paused — the budget is spent. Top up below to continue exactly where it left off; nothing is lost.",
+    "Paused at the budget floor. Top up below and the work continues exactly where it left off; nothing is lost.",
   completed:
-    "Completed — the subtree is fully stewarded. Any unspent budget has been returned to your balance.",
-  cancelled:
-    "Cancelled — the unspent budget has been returned to your balance.",
-  failed: "Failed — see the error below. Unspent budget was returned.",
+    "Completed. The subtree is fully stewarded, and any unspent budget has returned to your balance.",
+  cancelled: "Cancelled. The unspent budget has returned to your balance.",
+  failed:
+    "Failed; see the error below. The unspent budget has returned to your balance.",
 };
 
 function owls(n: number): string {
@@ -113,7 +113,7 @@ export default async function JobPage({
           </>
         ) : (
           <p className="account-empty">
-            No progress recorded yet — the job starts on the next worker pass.
+            No progress recorded yet; the work begins shortly.
           </p>
         )}
       </section>

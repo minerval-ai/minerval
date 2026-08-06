@@ -43,7 +43,7 @@ export function FundDecomposition({ claimId }: { claimId: string }) {
   if (jobId) {
     return (
       <p className="order-line" role="status">
-        Decomposition funded — the job is running.{" "}
+        Decomposition funded; the job is running.{" "}
         <a href={`/account/jobs/${jobId}`}>watch its progress →</a>
       </p>
     );
@@ -63,11 +63,11 @@ export function FundDecomposition({ claimId }: { claimId: string }) {
     <div className="fund-decomp">
       <p className="order-caption">
         Give this claim&rsquo;s subtree an owl budget and a Steward works
-        through it — including the low-importance branches the background
-        pipeline leaves as stubs — until the subtree is done or the budget
-        runs out. The budget escrows now; spend is metered against real model
-        work; if it runs out the job pauses and asks to top up; whatever
-        isn&rsquo;t used comes back.
+        through it, including the low-importance branches the graph&rsquo;s
+        own budget leaves as stubs, until the subtree is done or the budget
+        runs out. The budget is held in escrow now; spend is metered against
+        real model work; if the budget runs out the job pauses and asks to
+        top up; whatever isn&rsquo;t used comes back.
       </p>
       <div className="key-create">
         <input

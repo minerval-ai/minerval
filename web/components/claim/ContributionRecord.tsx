@@ -11,7 +11,7 @@ import type { ContributionExchange } from "@/lib/types";
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
-    ? "—"
+    ? "–"
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 

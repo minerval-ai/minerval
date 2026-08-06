@@ -11,7 +11,7 @@ import { approveGrantAction, cancelGrantAction } from "../../actions";
 import { TopUpGrant } from "./TopUpGrant";
 import { OwlMark } from "../../../../components/OwlMark";
 
-export const metadata: Metadata = { title: "Grant — Minerval" };
+export const metadata: Metadata = { title: "Grant · Minerval" };
 export const dynamic = "force-dynamic";
 
 function owls(n: number): string {
@@ -20,13 +20,13 @@ function owls(n: number): string {
 
 const STATUS_LINES: Record<string, string> = {
   planning:
-    "The grantor agent is surveying your scope and drafting an allocation plan. Nothing beyond the planning run is spent until you approve it.",
+    "The Grantmaker is surveying your scope and drafting an allocation plan. Nothing beyond the planning run is spent until you approve it.",
   pending_approval:
-    "The grantor agent has proposed a plan — review it below. Nothing more is spent until you approve.",
-  active: "Active — Stewards are working through the mandate.",
+    "The Grantmaker has proposed a plan; review it below. Nothing more is spent until you approve.",
+  active: "Active. Stewards are working through the mandate.",
   completed:
-    "Completed — the mandate is fulfilled. Any unspent budget has been returned to your balance.",
-  cancelled: "Cancelled — the unspent budget has been returned to your balance.",
+    "Completed. The mandate is fulfilled, and any unspent budget has returned to your balance.",
+  cancelled: "Cancelled. The unspent budget has returned to your balance.",
 };
 
 export default async function GrantPage({
@@ -63,6 +63,12 @@ export default async function GrantPage({
         <Link href="/account/grants">← grants</Link>
       </p>
       <h1>{grant.name}</h1>
+      <p className="order-line">
+        <Link href={`/mandates/${grant.id}`}>
+          public mandate page: live dashboard, contributors, and your line to
+          the Grantmaker →
+        </Link>
+      </p>
       <p className="account-meta">
         {grant.policy} ·{" "}
         {grant.scope_claim_id && (
@@ -82,7 +88,7 @@ export default async function GrantPage({
         <p>
           {STATUS_LINES[grant.status] ?? grant.status}
           {paused &&
-            " The budget is spent — top up below to continue where it left off."}
+            " The budget is spent; top up below and the work continues where it left off."}
         </p>
         <div className="meter" aria-hidden>
           <div className="meter-fill" style={{ width: `${spentShare * 100}%` }} />
@@ -134,7 +140,7 @@ export default async function GrantPage({
             <form action={approveGrantAction}>
               <input type="hidden" name="grant_id" value={grant.id} />
               <button type="submit" className="order-button">
-                Approve plan — start spending the budget
+                Approve the plan and start the work
               </button>
             </form>
           )}
@@ -166,8 +172,10 @@ export default async function GrantPage({
           </table>
         ) : (
           <p className="account-empty">
-            No funded assessments yet — they appear here as they land, each
-            carrying this mandate&rsquo;s name as its funding disclosure.
+            No funded assessments yet; they appear here as each one lands. On
+            its claim page, a funded assessment discloses only that a funded
+            mandate scheduled it; the mandate&rsquo;s name stays on this
+            dashboard.
           </p>
         )}
       </section>
