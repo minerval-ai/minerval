@@ -77,7 +77,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string } }>("/:id", {
     schema: {
       tags: ["orders"],
-      summary: "Cancel a pending order (free — pending orders are uncharged)",
+      summary: "Cancel a pending order (free: pending orders are uncharged)",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },

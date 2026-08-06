@@ -905,7 +905,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["orders"],
       summary:
-        "Order a (re)assessment of this claim — runs immediately, charged " +
+        "Order a (re)assessment of this claim: runs immediately, charged " +
         "when the run starts",
       params: {
         type: "object",

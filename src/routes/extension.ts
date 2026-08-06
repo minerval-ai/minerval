@@ -51,7 +51,7 @@ function sendAnalysisState(reply: FastifyReply, state: AnalysisState) {
     case "unknown":
       return reply.code(404).send({
         error:
-          "No analysis known for this content hash (expired, or never started) — POST /extension/analyze again",
+          "No analysis known for this content hash (expired, or never started); POST /extension/analyze again",
         code: "UNKNOWN_ANALYSIS",
       });
   }
