@@ -17,30 +17,24 @@ interface MockAction {
   coverage_micro_usd: number;
 }
 
-const { state } = vi.hoisted(() => ({
-  state: {
+const { state, handleQuery } = vi.hoisted(() => {
+  const state = {
     runnable: [] as MockAction[],
-    released: [] as Array<{
+    // Every live (unreleased, not fully spent) allocation on the group,
+    // as the locked SELECT inside completeAction's transaction sees it.
+    allocations: [] as Array<{
       id: string;
       user_id: string | null;
       claim_id: string | null;
-      remainder: number;
-    }>,
-    covering: [] as Array<{ id: string; unspent: number }>,
-    settled: [] as Array<{
-      id: string;
-      user_id: string | null;
-      claim_id: string | null;
-      remainder: number;
+      action_id: string | null;
+      unspent: number;
     }>,
     refunds: [] as Array<{ userId: string; amount: number; key: string }>,
     consumed: [] as Array<{ id: string; take: number }>,
+    releasedIds: [] as string[],
     superseded: [] as string[],
-  },
-}));
-
-vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
+  };
+  const handleQuery = async (q: string, params: unknown[] = []) => {
     if (q.includes("coverage_micro_usd") && q.includes("FROM actions a")) {
       return state.runnable;
     }
@@ -51,13 +45,12 @@ vi.mock("../../../src/db/client.js", () => ({
       state.superseded.push(params[0] as string);
       return [];
     }
+    if (q.includes("FOR UPDATE") && q.includes("action_allocations")) {
+      return state.allocations;
+    }
     if (q.includes("SET released_at = now()")) {
-      // Two distinct releases: losing pinned siblings vs. the winner's
-      // covering allocations settling their remainders.
-      if (q.includes("al.action_id IS NOT NULL AND al.action_id <> $2")) {
-        return state.released;
-      }
-      return state.settled;
+      state.releasedIds.push(params[0] as string);
+      return [];
     }
     if (q.includes("INSERT INTO owl_ledger")) {
       state.refunds.push({
@@ -67,15 +60,20 @@ vi.mock("../../../src/db/client.js", () => ({
       });
       return [{ id: "led-1" }];
     }
-    if (q.includes("FOR UPDATE SKIP LOCKED") && q.includes("action_allocations")) {
-      return state.covering;
-    }
     if (q.includes("SET spent_micro_usd = spent_micro_usd + $2")) {
       state.consumed.push({ id: params[0] as string, take: params[1] as number });
       return [];
     }
     return [];
-  }),
+  };
+  return { state, handleQuery };
+});
+
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: vi.fn(handleQuery),
+  withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ query: handleQuery })
+  ),
 }));
 
 vi.mock("../../../src/config.js", () => ({
@@ -101,11 +99,10 @@ const act = (over: Partial<MockAction>): MockAction => ({
 
 beforeEach(() => {
   state.runnable = [];
-  state.released = [];
-  state.covering = [];
-  state.settled = [];
+  state.allocations = [];
   state.refunds = [];
   state.consumed = [];
+  state.releasedIds = [];
   state.superseded = [];
 });
 
@@ -159,12 +156,26 @@ describe("nextRunnableAction (exclusion-group resolution)", () => {
 
 describe("completeAction", () => {
   it("supersedes siblings and refunds released user allocations", async () => {
-    state.released = [
-      { id: "al-user", user_id: "u1", claim_id: "c1", remainder: 120_000 },
-      { id: "al-grant", user_id: null, claim_id: "c1", remainder: 300_000 },
+    state.allocations = [
+      // Pinned to a losing sibling: released, the person refunded.
+      {
+        id: "al-user",
+        user_id: "u1",
+        claim_id: "c1",
+        action_id: "loser",
+        unspent: 120_000,
+      },
+      {
+        id: "al-grant",
+        user_id: null,
+        claim_id: "c1",
+        action_id: "loser2",
+        unspent: 300_000,
+      },
     ];
     await completeAction("winner", 0);
     expect(state.superseded).toEqual(["assess:c1"]);
+    expect(state.releasedIds).toEqual(["al-user", "al-grant"]);
     // The person's losing pinned allocation returns to their ledger,
     // idempotently; the mandate's simply drops from its exposure.
     expect(state.refunds).toEqual([
@@ -173,9 +184,9 @@ describe("completeAction", () => {
   });
 
   it("consumes the metered cost pro rata across covering allocations", async () => {
-    state.covering = [
-      { id: "al-1", unspent: 100_000 },
-      { id: "al-2", unspent: 300_000 },
+    state.allocations = [
+      { id: "al-1", user_id: null, claim_id: "c1", action_id: null, unspent: 100_000 },
+      { id: "al-2", user_id: null, claim_id: "c1", action_id: null, unspent: 300_000 },
     ];
     const consumed = await completeAction("winner", 200_000);
     expect(consumed).toBe(200_000);
@@ -187,19 +198,30 @@ describe("completeAction", () => {
   });
 
   it("caps consumption at the pot; overage is absorbed by the platform", async () => {
-    state.covering = [{ id: "al-1", unspent: 100_000 }];
+    state.allocations = [
+      { id: "al-1", user_id: null, claim_id: "c1", action_id: null, unspent: 100_000 },
+    ];
     const consumed = await completeAction("winner", 500_000);
     expect(consumed).toBe(100_000);
+    // Fully spent: nothing to settle, the row stays as consumed history.
+    expect(state.releasedIds).toEqual([]);
   });
 
   it("settles the covering remainders: a reader's overage refunds to their balance", async () => {
     // Estimates run high on purpose; without settlement the difference
     // would strand as outstanding exposure forever.
-    state.covering = [{ id: "al-user", unspent: 150_000 }];
-    state.settled = [
-      { id: "al-user", user_id: "u1", claim_id: "c1", remainder: 60_000 },
+    state.allocations = [
+      {
+        id: "al-user",
+        user_id: "u1",
+        claim_id: "c1",
+        action_id: null,
+        unspent: 150_000,
+      },
     ];
     await completeAction("winner", 90_000);
+    expect(state.consumed).toEqual([{ id: "al-user", take: 90_000 }]);
+    expect(state.releasedIds).toEqual(["al-user"]);
     expect(state.refunds).toEqual([
       { userId: "u1", amount: 60_000, key: "settle:al-user" },
     ]);

@@ -18,16 +18,27 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
+const { handleQuery } = vi.hoisted(() => ({
+  handleQuery: async (q: string, params: unknown[] = []) => {
+    if (q.includes("pg_advisory_xact_lock")) {
+      return [];
+    }
+    // grantCommittedMicroUsd's one-statement committed snapshot.
+    if (q.includes("AS nonledger")) {
+      return [
+        {
+          shares: state.exposure.spentMicroUsd,
+          outstanding: state.exposure.outstandingMicroUsd,
+          nonledger: state.jobSpent,
+          regrants: state.regrantsOut,
+        },
+      ];
+    }
     if (q.includes("FROM regrants WHERE from_grant_id")) {
       return [{ total: state.regrantsOut }];
     }
     if (q.includes("g.status = 'active'") && q.includes("j.budget_micro_usd")) {
       return state.source ? [state.source] : [];
-    }
-    if (q.includes("status IN ('planning', 'pending_approval', 'active')")) {
-      return state.target ? [state.target] : [];
     }
     if (q.includes("WHERE id = $1 AND status = 'active'") && q.includes("funder_user_id")) {
       return state.source ? [state.source] : [];
@@ -45,23 +56,23 @@ vi.mock("../../../src/db/client.js", () => ({
       return [{ id: "grant-new" }];
     }
     if (q.includes("UPDATE budget_jobs")) {
+      // The guarded target credit: rows only when the target is live.
       state.jobUpdates.push(params);
-      return [];
+      return state.target ? [{ grant_id: state.target.id }] : [];
     }
     if (q.startsWith("DELETE FROM")) {
       state.deleted.push(q);
       return [];
     }
     return [];
-  }),
+  },
 }));
 
-vi.mock("../../../src/services/budget-job-service.js", () => ({
-  getJobSpentMicroUsd: vi.fn(async () => state.jobSpent),
-}));
-
-vi.mock("../../../src/services/allocation-service.js", () => ({
-  grantAllocationExposureMicroUsd: vi.fn(async () => state.exposure),
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: vi.fn(handleQuery),
+  withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ query: handleQuery })
+  ),
 }));
 
 import {
@@ -96,8 +107,9 @@ describe("createRegrant", () => {
     expect(r).toMatchObject({ ok: true, toGrantId: "g-dst", amountOwls: 3 });
     const row = state.inserted.find((i) => i.table === "regrants");
     expect(row!.params).toEqual(["g-src", "g-dst", 3_000_000, "the ingestion slice"]);
-    // Target job credited (and would resume from paused_budget).
-    expect(state.jobUpdates[0]).toEqual(["job-dst", 3_000_000]);
+    // Target job credited (and would resume from paused_budget). The
+    // guarded credit addresses the target GRANT; the join finds its job.
+    expect(state.jobUpdates[0]).toEqual(["g-dst", 3_000_000]);
   });
 
   it("refuses past the source's committed headroom", async () => {

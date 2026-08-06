@@ -27,8 +27,8 @@ const { runCalls, state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
+const { handleQuery } = vi.hoisted(() => ({
+  handleQuery: async (q: string, params: unknown[] = []) => {
     const serve = (id: string | undefined) =>
       id
         ? [
@@ -60,14 +60,16 @@ vi.mock("../../../src/db/client.js", () => ({
         : [];
     }
     // claimAction / completeAction / releaseAction / supersede / cancel.
+    // The done-transition (metered) check comes first: its guard clause
+    // also mentions 'running', so the claimAction match must not eat it.
     if (q.includes("UPDATE actions")) {
-      if (q.includes("'running'")) return [{ id: params[0] }];
       if (q.includes("metered_cost_micro_usd = $2")) {
         state.completedActions.push(params[0] as string);
         return [
           { id: params[0], exclusion_group: `assess:${state.fundedPending[0] ?? "?"}` },
         ];
       }
+      if (q.includes("'running'")) return [{ id: params[0] }];
       return [];
     }
     // Allocation reads/writes inside completeAction/largestActionFunder:
@@ -98,7 +100,14 @@ vi.mock("../../../src/db/client.js", () => ({
       }
     }
     return [];
-  }),
+  },
+}));
+
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: vi.fn(handleQuery),
+  withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ query: handleQuery })
+  ),
 }));
 
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({

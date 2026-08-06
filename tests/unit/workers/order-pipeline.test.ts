@@ -150,6 +150,9 @@ describe("processNextOrderTask", () => {
         priceOwls: 1,
         op: "assessment",
         claimId: "claim-1",
+        // Idempotent per order: a crash-retry finds the charge, not a
+        // second debit.
+        idempotencyKey: "charge:order:order-1",
       },
     ]);
     // An assessed claim gets the re-assessment trigger.

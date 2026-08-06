@@ -44,21 +44,43 @@ describe("owlsForImportance", () => {
 
 describe("awardContributionOwls", () => {
   it("appends a ledger award and keeps lifetime-earned in sync", async () => {
+    mocks.rawQuery.mockResolvedValueOnce([{ id: "led-1" }]);
     const awarded = await awardContributionOwls({
       contributorId: "c-1",
       contributionId: "k-1",
       owls: 0.75,
+      awardKey: "award:accept:k-1",
     });
     expect(awarded).toBe(0.75);
 
     const [insert, update] = mocks.rawQuery.mock.calls;
     expect(insert[0]).toContain("INSERT INTO owl_ledger");
     // 0.75 owls at the $4 face = 3,000,000 micro-USD.
-    expect(insert[1]).toEqual(["c-1", 750_000, "contribution_award", "k-1"]);
+    expect(insert[1]).toEqual([
+      "c-1",
+      750_000,
+      "contribution_award",
+      "k-1",
+      "award:accept:k-1",
+    ]);
     expect(update[0]).toContain(
       "owls_earned_micro_usd = owls_earned_micro_usd + $1"
     );
     expect(update[1]).toEqual([750_000, "c-1"]);
+  });
+
+  it("awards exactly once per key: a retried decision path is a no-op", async () => {
+    // Duplicate idempotency key → ON CONFLICT DO NOTHING → no row back.
+    mocks.rawQuery.mockResolvedValueOnce([]);
+    const awarded = await awardContributionOwls({
+      contributorId: "c-1",
+      contributionId: "k-1",
+      owls: 0.75,
+      awardKey: "award:accept:k-1",
+    });
+    expect(awarded).toBe(0);
+    // The lifetime-earned total must not drift either.
+    expect(mocks.rawQuery).toHaveBeenCalledTimes(1);
   });
 
   it("ignores non-positive awards", async () => {
