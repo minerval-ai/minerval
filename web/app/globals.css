@@ -928,6 +928,13 @@ html { scroll-behavior: smooth; }
 }
 .owl-pack:hover:not(:disabled) { background: var(--paper-sunk); }
 .owl-pack:disabled { color: var(--faint); cursor: default; }
+.owl-pack-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .owl-pack-count { font-size: 0.86rem; font-weight: 600; }
 .owl-pack-price { font-size: 0.82rem; }
 .owl-pack-discount { font-size: 0.72rem; color: var(--muted); }

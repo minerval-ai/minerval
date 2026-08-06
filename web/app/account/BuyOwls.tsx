@@ -30,6 +30,7 @@ export function BuyOwls({ packs }: { packs: OwlPack[] }) {
             disabled={pending}
             className="owl-pack"
           >
+            {pack.name && <span className="owl-pack-name">{pack.name}</span>}
             <span className="owl-pack-count">
               <OwlMark size={14} className="owl-mark" />
               {pack.owls} owls

@@ -152,22 +152,43 @@ const configSchema = z.object({
   // Stripe dashboard's webhook-endpoint config. Required for purchases to be
   // credited — without it every webhook delivery is rejected.
   stripeWebhookSecret: z.string().default(""),
-  // Purchase packs: "owls:cents" pairs, comma-separated. Larger packs price
-  // owls below the $4 face value — the bulk discount.
+  // Purchase packs: "owls:cents[:name]" entries, comma-separated. Larger
+  // packs price owls below the $4 face value — the bulk discount. The
+  // ladder: Clutch (entry, face value), Perch (10% off), Wisdom (25% off),
+  // Parliament (50% off — mandate-scale funding; a parliament of owls).
+  // A malformed entry FAILS startup rather than silently dropping packs —
+  // a typo'd OWL_PACKS must never quietly turn purchases off. An empty
+  // string is the explicit way to sell no packs.
   owlPacks: z
     .string()
-    .transform((s) =>
-      s
+    .transform((s, ctx) => {
+      const entries = s
         .split(",")
-        .map((entry) => entry.trim().split(":"))
-        .filter((parts) => parts.length === 2)
-        .map(([owls, cents]) => ({
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      const packs = entries.map((entry) => {
+        const [owls, cents, name] = entry.split(":");
+        const pack = {
           owls: Number(owls),
           priceCents: Number(cents),
-        }))
-        .filter((p) => p.owls > 0 && p.priceCents > 0)
-    )
-    .default("5:2000,15:5500,40:14000,125:40000"),
+          name: name?.trim() || null,
+        };
+        if (
+          !Number.isFinite(pack.owls) ||
+          !Number.isFinite(pack.priceCents) ||
+          pack.owls <= 0 ||
+          pack.priceCents <= 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `OWL_PACKS entry "${entry}" is not owls:cents[:name] with positive numbers`,
+          });
+        }
+        return pack;
+      });
+      return packs;
+    })
+    .default("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
   contributionRateLimitPerHour: z.coerce.number().default(10),

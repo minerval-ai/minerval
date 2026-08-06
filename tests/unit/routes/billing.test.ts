@@ -115,16 +115,27 @@ describe("GET /billing/packs", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.credits_enabled).toBe(true);
-    // Defaults: 5/$20 (face value), then increasing discounts.
+    // Defaults: Clutch 5/$20 (face value), then increasing discounts up
+    // to Parliament (mandate-scale funding at half face).
     expect(body.packs[0]).toEqual({
       id: "owls_5",
       owls: 5,
+      name: "Clutch",
       price_cents: 2000,
       discount_percent: 0,
     });
+    expect(body.packs.map((p: { name: string }) => p.name)).toEqual([
+      "Clutch",
+      "Perch",
+      "Wisdom",
+      "Parliament",
+    ]);
+    expect(
+      body.packs.map((p: { discount_percent: number }) => p.discount_percent)
+    ).toEqual([0, 10, 25, 50]);
     const largest = body.packs[body.packs.length - 1];
-    expect(largest.owls).toBe(125);
-    expect(largest.discount_percent).toBe(20); // $400 for $500 face
+    expect(largest.owls).toBe(500);
+    expect(largest.price_cents).toBe(100_000); // $1,000 for $2,000 face
   });
 });
 
