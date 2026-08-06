@@ -220,28 +220,48 @@ const configSchema = z.object({
   // judgment like any other prior.
   proposedClaimImportancePrior: z.coerce.number().default(0.3),
 
-  // --- Allocation core: composite queue priority (the background lane) ---
-  // Legible weights for the drain's ordering key (priority-service.ts):
-  // priority = importance + wYield×yield + wContest×contestation
-  //          + wStake×sat(stakes) + wStale×sat(staleness) + provenance boost.
-  // Inputs to judgment about ORDERING — stakes/money never touch importance.
-  priorityYieldWeight: z.coerce.number().default(0.3),
-  priorityContestationWeight: z.coerce.number().default(0.2),
+  // --- Allocation core: expected value / expected cost (background lane) ---
+  // The background lane's standard is the ratio of expected marginal VALUE
+  // to expected marginal COST across the candidate actions, taken highest
+  // ratio first until the day's budget is spent. For assessing a claim the
+  // value heuristic (priority-service.ts) is the multiplicative core the
+  // essay argues for:
+  //   value = importance × contested-factor × expected-quality-gain
+  //         + stake boost + provenance boost
+  // where contested-factor = floor + (1−floor)×contestation and the gain
+  // term is the last pass's marginal_yield (1.0 when unassessed), revived
+  // by staleness as evidence drifts. All knobs are legible and printable —
+  // heuristics start as guesses and get revised as the eval engine grows.
+  // The contested-factor floor: how fundable an uncontested claim stays.
+  valueContestationFloor: z.coerce.number().default(0.25),
+  // Paid demand adds value (someone cares enough to spend); it saturates at
+  // this many owls so the 6th owl on one claim buys less position than the
+  // 1st, and wealth can't monopolize the lane.
   priorityStakeWeight: z.coerce.number().default(0.5),
-  // Stakes saturate at this many owls: the 6th owl on one claim buys less
-  // queue position than the 1st, so wealth can't monopolize the lane.
   priorityStakeSaturationOwls: z.coerce.number().default(5),
-  priorityStalenessWeight: z.coerce.number().default(0.2),
+  // Days until staleness alone fully revives a claim's expected gain.
   priorityStalenessSaturationDays: z.coerce.number().default(90),
-  // User-proposed claims outrank equal-priority corpus work (#284): a human
+  // User-proposed claims outrank equal-value corpus work (#284): a human
   // cared enough to type it in.
   priorityUserProvenanceBoost: z.coerce.number().default(0.15),
-  // Model tiering: background claims at/above this composite priority run on
+  // Model tiering: background claims at/above this expected value run on
   // the strong model (empty = tiering off, everything uses stewardModel).
   // Paid express orders always use the strong model when set — the buyer is
   // paying for the real thing.
   stewardStrongModel: z.string().default(""),
-  stewardStrongMinPriority: z.coerce.number().default(1.2),
+  stewardStrongMinPriority: z.coerce.number().default(0.5),
+  // Expected-cost priors for one Steward pass, in owls, by tier — the EC
+  // denominators of the drain's value/cost ordering. Priors are starting
+  // guesses; when enough recent metered runs exist the live rolling average
+  // replaces them (cost-estimate-service.ts).
+  estStewardRunCostOwls: z.coerce.number().default(0.25),
+  estStewardRunCostStrongOwls: z.coerce.number().default(1),
+  costEstimateWindowDays: z.coerce.number().default(14),
+  costEstimateMinRuns: z.coerce.number().default(5),
+  // The background lane's total metered spend per UTC day, in owls
+  // (0 = uncapped). This replaces "drain the queue": the highest value/cost
+  // actions run until the day's budget is gone, and the rest wait.
+  backgroundDailyBudgetOwls: z.coerce.number().default(50),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -426,16 +446,19 @@ export function loadConfig(): Config {
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
-    priorityYieldWeight: process.env.PRIORITY_YIELD_WEIGHT,
-    priorityContestationWeight: process.env.PRIORITY_CONTESTATION_WEIGHT,
+    valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
     priorityStakeWeight: process.env.PRIORITY_STAKE_WEIGHT,
     priorityStakeSaturationOwls: process.env.PRIORITY_STAKE_SATURATION_OWLS,
-    priorityStalenessWeight: process.env.PRIORITY_STALENESS_WEIGHT,
     priorityStalenessSaturationDays:
       process.env.PRIORITY_STALENESS_SATURATION_DAYS,
     priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
     stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
     stewardStrongMinPriority: process.env.STEWARD_STRONG_MIN_PRIORITY,
+    estStewardRunCostOwls: process.env.EST_STEWARD_RUN_COST_OWLS,
+    estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
+    costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
+    costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
+    backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,

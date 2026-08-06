@@ -1,18 +1,26 @@
 /**
- * Steward work queue — DB-backed, importance-prioritized drain.
+ * Steward work lane — DB-backed, drained by expected value over expected
+ * cost, up to a daily budget.
  *
- * The Steward is NOT an SQS/in-memory message queue. A claim's `steward_state`
- * column IS its queue: `enqueueSteward` (queue-service) marks a claim 'pending',
- * and this drain repeatedly claims the highest-`importance` pending claim, runs
- * its Steward, and marks it 'done' (or 'error'). One mechanism in dev and prod.
+ * The Steward is NOT an SQS/in-memory message queue, and the pending set is
+ * not a queue in the FIFO sense either: a claim's `steward_state` column
+ * marks it a CANDIDATE (`enqueueSteward` sets 'pending'), and each drain
+ * pass picks the candidate whose expected marginal value
+ * (claims.queue_priority — priority-service.ts) per unit of expected
+ * marginal cost (cost-estimate-service.ts, tier-dependent) is highest, runs
+ * its Steward, and marks it 'done' (or 'error'). The lane spends until the
+ * day's background budget (backgroundDailyBudgetOwls) is gone; everything
+ * else simply waits as an embedded stub. One mechanism in dev and prod.
  *
  * Why this shape:
- *  - Importance priority is native (`ORDER BY importance DESC`), so under a budget
- *    the most load-bearing claims are assessed and the rest stay embedded stubs —
- *    the expected steady state, since each assessed claim tends to mint >1 novel
- *    subclaim until claimspace densifies, so the queue is perpetually non-empty.
- *  - Spend is bounded by the LLM budget tracker (token/call limits), not by a
- *    per-process run counter that would permanently wedge a long-lived worker.
+ *  - Value/cost ordering is native SQL, so under a budget the spend lands
+ *    where the marginal-value estimate per owl is highest and the rest stay
+ *    embedded stubs — the expected steady state, since each assessed claim
+ *    tends to mint >1 novel subclaim until claimspace densifies, so the
+ *    candidate set is perpetually non-empty.
+ *  - Spend is bounded by the daily budget + the LLM budget tracker
+ *    (token/call limits), not by a per-process run counter that would
+ *    permanently wedge a long-lived worker.
  *  - `FOR UPDATE SKIP LOCKED` makes it safe for several prod tasks to drain
  *    concurrently; a 'running' row stuck >15m (crashed worker) is reclaimable.
  *
@@ -29,6 +37,7 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
+import { stewardTierCostEstimates } from "../services/cost-estimate-service.js";
 
 interface StewardTaskRow {
   id: string;
@@ -64,13 +73,29 @@ export interface StewardProcessResult {
 }
 
 /**
- * Atomically claim the single highest-PRIORITY pending claim and steward it.
- * Ordering is the composite queue_priority (importance + yield +
- * contestation + stakes + staleness + provenance — priority-service.ts),
- * not raw importance: the background lane spends its budget where the
- * marginal value estimate is highest (§19 as amended). Returns 'empty' when
- * nothing is pending and 'budget' when the LLM budget is spent (the claim
- * is left pending for the next window — not this claim's fault).
+ * Today's metered background spend (billed micro-USD): system work with no
+ * paying user and no funded job — what the daily budget governs. Paid
+ * orders and grant runs carry their own funding and are never counted here.
+ */
+async function backgroundSpentTodayMicroUsd(): Promise<number> {
+  const [row] = await rawQuery<{ spent: number }>(
+    `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS spent
+       FROM llm_usage
+      WHERE user_id IS NULL AND job_id IS NULL
+        AND created_at >= date_trunc('day', now())`
+  );
+  return Number(row?.spent ?? 0);
+}
+
+/**
+ * Atomically claim the single best candidate and steward it. "Best" is the
+ * allocation core's standard: expected marginal value (queue_priority —
+ * priority-service.ts) divided by the expected marginal cost of the pass at
+ * the tier it would run on (cost-estimate-service.ts). Not a queue: the
+ * highest value-per-owl actions run, up to the day's background budget, and
+ * the rest wait. Returns 'empty' when nothing is pending and 'budget' when
+ * the daily budget or the LLM budget tracker is spent (the claim is left
+ * pending for the next window — not this claim's fault).
  */
 export async function processNextStewardTask(
   opts: { model?: string } = {}
@@ -84,6 +109,24 @@ export async function processNextStewardTask(
     return { status: "budget" };
   }
 
+  // The day's background budget: when it's spent, the lane rests. Metered
+  // against actual billed cost, so a cheap day funds more passes than an
+  // expensive one.
+  const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
+  if (dailyBudgetOwls > 0) {
+    const spent = await backgroundSpentTodayMicroUsd();
+    const budgetMicro = dailyBudgetOwls * (config.owlPriceMicroUsd ?? 4_000_000);
+    if (spent >= budgetMicro) return { status: "budget" };
+  }
+
+  // The EC denominators for the value/cost ordering. With tiering off both
+  // tiers cost the same and the ordering reduces to value alone.
+  const tierCosts =
+    config.stewardStrongModel && !opts.model
+      ? await stewardTierCostEstimates()
+      : null;
+  const strongMin = config.stewardStrongMinPriority ?? 0.5;
+
   const rows = await rawQuery<StewardTaskRow>(
     `UPDATE claims
         SET steward_state = 'running', stewarded_at = now()
@@ -93,12 +136,20 @@ export async function processNextStewardTask(
            AND (steward_state = 'pending'
                 OR (steward_state = 'running'
                     AND stewarded_at < now() - interval '15 minutes'))
-         ORDER BY queue_priority DESC, updated_at ASC
+         ORDER BY queue_priority / CASE
+                    WHEN $1::real > 0 AND queue_priority >= $2::real
+                    THEN $1::real ELSE $3::real END DESC,
+                  updated_at ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
       RETURNING id, steward_trigger, steward_context, steward_attempts,
-                queue_priority`
+                queue_priority`,
+    [
+      tierCosts ? tierCosts.strongMicroUsd : 0,
+      strongMin,
+      tierCosts ? tierCosts.standardMicroUsd : 1,
+    ]
   );
   if (rows.length === 0) return { status: "empty" };
 

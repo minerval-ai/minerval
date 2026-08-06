@@ -156,7 +156,7 @@ export async function fetchContributorProfile(
   }
 }
 
-// --- queue transparency (owl economy, §15) -----------------------------------
+// --- allocation transparency (owl economy, §15) ------------------------------
 
 export interface QueueSnapshot {
   depth: {
@@ -166,19 +166,28 @@ export interface QueueSnapshot {
     error: number;
     deferred: number;
   };
-  weights: {
-    yield: number;
-    contestation: number;
-    stake: number;
+  formula: {
+    contestation_floor: number;
+    stake_weight: number;
     stake_saturation_owls: number;
-    staleness: number;
     staleness_saturation_days: number;
     user_provenance_boost: number;
+  };
+  cost_estimates: {
+    standard_owls: number;
+    strong_owls: number;
+    strong_min_value: number | null;
+  };
+  daily_budget: {
+    budget_owls: number;
+    spent_today_owls: number;
   };
   pending: Array<{
     claim_id: string;
     text: string;
-    queue_priority: number;
+    expected_value: number;
+    expected_cost_owls: number;
+    value_per_owl: number | null;
     inputs: {
       importance: number;
       marginal_yield: number | null;

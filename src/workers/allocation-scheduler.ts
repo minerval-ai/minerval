@@ -5,9 +5,9 @@
  * signals it reads — Steward-set importance/contestation/marginal_yield,
  * user stakes):
  *
- *  1. Refresh the composite queue_priority of every PENDING claim, so
- *     staleness drift and newly placed stakes reorder the background queue
- *     without per-event bookkeeping.
+ *  1. Refresh the expected-value estimate (queue_priority) of every PENDING
+ *     claim, so staleness drift and newly placed stakes reorder the
+ *     background lane's candidate set without per-event bookkeeping.
  *
  *  2. CADENCE (#283): give the long-orphaned 'staleness_check' trigger its
  *     producer. An assessed claim is due for a fresh look after an interval
