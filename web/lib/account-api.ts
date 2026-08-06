@@ -668,3 +668,86 @@ export async function getGrantConversation(
   );
   return r.conversation;
 }
+
+// --- public mandates ---------------------------------------------------------
+
+export interface MandateSummaryView {
+  id: string;
+  title: string;
+  objective: string | null;
+  is_platform: boolean;
+  status: string;
+  manager: string;
+  budget_owls: number;
+  spent_owls: number;
+  contributor_count: number;
+  action_mix: Record<string, number>;
+  created_at: string | null;
+}
+
+export interface MandatePipelineRow {
+  source_id: string;
+  url: string;
+  title: string | null;
+  ingested_at: string | null;
+  extraction_status: string | null;
+  claims_linked: number;
+  claims_assessed: number;
+  avg_importance: number | null;
+  max_importance: number | null;
+  contested_claims: number;
+  importance_histogram: number[];
+}
+
+export interface MandateDetailView extends MandateSummaryView {
+  strategy: string | null;
+  notes: string | null;
+  scope_claim_id: string | null;
+  scope_query: string | null;
+  budget_status: string;
+  plan_items: Array<{
+    action: "assess" | "reassess" | "deepen" | "ingest";
+    claim_id?: string;
+    url?: string;
+    rationale: string;
+    state: "done" | "current" | "queued";
+  }>;
+  contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
+  funded_assessments: Array<{
+    claim_id: string;
+    text: string;
+    status: string;
+    assessed_at: string | null;
+  }>;
+  pipeline: MandatePipelineRow[];
+  conversation_id?: string;
+  is_manager?: boolean;
+}
+
+export async function listMandates(): Promise<MandateSummaryView[]> {
+  const r = await accountFetch<{ mandates: MandateSummaryView[] }>("/mandates");
+  return r.mandates;
+}
+
+export async function fetchMandateView(
+  mandateId: string,
+  externalId?: string | null
+): Promise<MandateDetailView> {
+  const r = await accountFetch<{ mandate: MandateDetailView }>(
+    `/mandates/${mandateId}`,
+    externalId ? { actingUser: externalId } : {}
+  );
+  return r.mandate;
+}
+
+export async function contributeToMandateApi(
+  externalId: string,
+  mandateId: string,
+  owls: number
+): Promise<MandateDetailView> {
+  const r = await accountFetch<{ mandate: MandateDetailView }>(
+    `/mandates/${mandateId}/contribute`,
+    { method: "POST", body: { owls }, actingUser: externalId }
+  );
+  return r.mandate;
+}

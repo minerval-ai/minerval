@@ -101,21 +101,20 @@ export type TopUpResult =
       message: string;
     };
 
-/** Add owls to a job's budget; a paused job resumes. */
-export async function topUpBudgetJob(input: {
-  jobId: string;
+/**
+ * Add owls to a job's budget; a paused job resumes. The owner path
+ * (topUpBudgetJob) requires the job to be the caller's; the contribution
+ * path (contributeToBudgetJob) lets ANY signed-in user add owls — mandates
+ * are public things people can put their owls behind. Every hold is a
+ * per-user escrow row, so settlement can refund contributors pro rata.
+ */
+async function addBudget(input: {
+  job: BudgetJob;
   userId: string;
   owls: number;
 }): Promise<TopUpResult> {
   const db = getDb();
-  const [job] = await db
-    .select()
-    .from(budgetJobs)
-    .where(eq(budgetJobs.id, input.jobId))
-    .limit(1);
-  if (!job || job.userId !== input.userId) {
-    return { ok: false, code: "NOT_FOUND", message: "Job not found" };
-  }
+  const { job } = input;
   if (job.status !== "running" && job.status !== "paused_budget") {
     return {
       ok: false,
@@ -133,7 +132,7 @@ export async function topUpBudgetJob(input: {
     return {
       ok: false,
       code: "INSUFFICIENT_OWLS",
-      message: `Topping up ${input.owls} owls exceeds your balance`,
+      message: `Adding ${input.owls} owls exceeds your balance`,
     };
   }
   const [updated] = await db
@@ -148,6 +147,59 @@ export async function topUpBudgetJob(input: {
   return { ok: true, job: updated! };
 }
 
+export async function topUpBudgetJob(input: {
+  jobId: string;
+  userId: string;
+  owls: number;
+}): Promise<TopUpResult> {
+  const db = getDb();
+  const [job] = await db
+    .select()
+    .from(budgetJobs)
+    .where(eq(budgetJobs.id, input.jobId))
+    .limit(1);
+  if (!job || job.userId !== input.userId) {
+    return { ok: false, code: "NOT_FOUND", message: "Job not found" };
+  }
+  return addBudget({ job, userId: input.userId, owls: input.owls });
+}
+
+/** A public contribution: anyone's owls, into any running/paused job. */
+export async function contributeToBudgetJob(input: {
+  jobId: string;
+  userId: string;
+  owls: number;
+}): Promise<TopUpResult> {
+  const db = getDb();
+  const [job] = await db
+    .select()
+    .from(budgetJobs)
+    .where(eq(budgetJobs.id, input.jobId))
+    .limit(1);
+  if (!job) {
+    return { ok: false, code: "NOT_FOUND", message: "Job not found" };
+  }
+  return addBudget({ job, userId: input.userId, owls: input.owls });
+}
+
+/** Per-contributor escrowed totals for a job (positive micro-USD). */
+export async function getJobContributions(
+  jobId: string
+): Promise<Array<{ userId: string; heldMicroUsd: number }>> {
+  const rows = await rawQuery<{ user_id: string; held: number }>(
+    `SELECT user_id, -SUM(amount_micro_usd)::bigint AS held
+       FROM owl_ledger
+      WHERE job_id = $1 AND reason = 'escrow_hold'
+      GROUP BY user_id
+      ORDER BY held DESC`,
+    [jobId]
+  );
+  return rows.map((r) => ({
+    userId: r.user_id,
+    heldMicroUsd: Number(r.held),
+  }));
+}
+
 /** Marked-up model spend attributed to this job so far, in micro-USD. */
 export async function getJobSpentMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
@@ -159,8 +211,10 @@ export async function getJobSpentMicroUsd(jobId: string): Promise<number> {
 }
 
 /**
- * Refund a settled job's unspent budget, exactly once (idempotency key per
- * job). Called on completion and cancellation.
+ * Refund a settled job's unspent budget, exactly once per contributor.
+ * A job can carry several people's escrow (public mandates), so the
+ * unspent remainder is split pro rata by what each contributed; rounding
+ * dust goes to the job's owner. Idempotent per job × contributor.
  */
 export async function refundUnspentBudget(job: {
   id: string;
@@ -170,14 +224,38 @@ export async function refundUnspentBudget(job: {
   const spent = await getJobSpentMicroUsd(job.id);
   const unspent = Math.max(0, Number(job.budgetMicroUsd) - spent);
   if (unspent <= 0) return 0;
-  const inserted = await recordOwlEntry({
-    userId: job.userId,
-    amountMicroUsd: unspent,
-    reason: OWL_REASONS.escrowRefund,
-    jobId: job.id,
-    idempotencyKey: `escrow_refund:${job.id}`,
-  });
-  return inserted ? unspent : 0;
+
+  const contributions = await getJobContributions(job.id);
+  const totalHeld = contributions.reduce((s, c) => s + c.heldMicroUsd, 0);
+  // No escrow rows (shouldn't happen) → refund the owner in full, as before.
+  const shares =
+    totalHeld > 0
+      ? contributions.map((c) => ({
+          userId: c.userId,
+          amount: Math.floor((unspent * c.heldMicroUsd) / totalHeld),
+        }))
+      : [{ userId: job.userId, amount: unspent }];
+  const distributed = shares.reduce((s, c) => s + c.amount, 0);
+  const dust = unspent - distributed;
+  if (dust > 0) {
+    const owner = shares.find((s) => s.userId === job.userId);
+    if (owner) owner.amount += dust;
+    else shares.push({ userId: job.userId, amount: dust });
+  }
+
+  let refunded = 0;
+  for (const share of shares) {
+    if (share.amount <= 0) continue;
+    const inserted = await recordOwlEntry({
+      userId: share.userId,
+      amountMicroUsd: share.amount,
+      reason: OWL_REASONS.escrowRefund,
+      jobId: job.id,
+      idempotencyKey: `escrow_refund:${job.id}:${share.userId}`,
+    });
+    if (inserted) refunded += share.amount;
+  }
+  return refunded;
 }
 
 export type CancelJobResult =

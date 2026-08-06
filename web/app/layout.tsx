@@ -20,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav>
               <Link href="/claims">claims</Link>
+              <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
               {/* reopens the home walkthrough (#251) */}
               <Link href="/?tour=1">tour</Link>
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </p>
             <nav style={{ display: "flex", gap: "1.1rem", flexWrap: "wrap" }}>
               <Link href="/claims">claims</Link>
+              <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
               <Link href="/about">about</Link>
               {/* /contributors stays reachable by URL but is not linked until

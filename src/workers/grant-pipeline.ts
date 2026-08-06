@@ -117,12 +117,19 @@ async function claimNextGrantTarget(
       if (item.action === "ingest") {
         await setPlanCursor(grant.id, i + 1);
         if (!item.url) continue;
-        await submitSource(
+        const { sourceId, jobId } = await submitSource(
           { url: item.url },
           {
             userId: grant.funder_user_id,
             meterJobId: grant.budget_job_id,
           }
+        );
+        // The pipeline record the public dashboard and the Grantmaker's
+        // analytics dig into: which sources this mandate brought in.
+        await rawQuery(
+          `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
+           VALUES ($1, $2, $3, $4)`,
+          [grant.id, sourceId, item.url, jobId]
         );
         return { target: null, ingestedUrl: item.url };
       }

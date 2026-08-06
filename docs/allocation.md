@@ -150,6 +150,29 @@ Design principles, in force in the implementation:
 
 Direct `POST /grants` creation remains for service/operator tooling only.
 
+## Mandates are public
+
+A mandate is managed by one person but is a public thing (`/mandates`,
+API `GET /mandates`): anyone can read its dashboard and put their own owls
+behind it (`POST /mandates/:id/contribute`), with every contribution
+escrowed per user and unspent budget refunded to contributors pro rata.
+The discovery page gives pride of place to the largest mandates and above
+all to the platform's own standing mandates (Mathematics and AI Economics
+to start — `scripts/seed-platform-mandates.ts`).
+
+The public dashboard scales with the mandate's action mix. Every mandate
+shows budget, metered spend, contributors, plan progress, and the
+assessments it funded; mandates that ingest also show their pipeline: each
+source brought in, extraction status, where its claims went, and
+importance and contestation statistics per source (`grant_sources` +
+`claim_instances`). The manager can keep talking to the Grantmaker on the
+same page at any time: after funding, the conversation runs in management
+mode, where the agent has analytics tools over exactly the data the
+dashboard shows (overview, funded assessments, ingestion report,
+per-source claims, importance distributions) and the one write the
+framework allows — amending the unexecuted remainder of the plan — with
+the same refusal duties it had at mandate design time.
+
 ## Cold-start policy
 
 Until purchase volume exists, the platform subsidizes: signup grants

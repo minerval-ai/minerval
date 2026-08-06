@@ -830,6 +830,13 @@ export const grants = pgTable(
     // overall strategy note. Executed in order once approved.
     plan: jsonb("plan"),
     planCursor: integer("plan_cursor").notNull().default(0),
+    // The full Grantmaker-drafted mandate (title, objective, plan, quote,
+    // notes) copied here at funding time — the public dashboard's text.
+    // Agent-authored, never funder-authored.
+    mandate: jsonb("mandate"),
+    // Platform-run mandates (Minerval's own: Mathematics, AI Economics, …)
+    // get pride of place on the public /mandates page.
+    isPlatform: boolean("is_platform").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -842,6 +849,41 @@ export const grants = pgTable(
     index("idx_grants_status").on(table.status),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// grant_sources
+//
+// The ingestion-pipeline record: one row per source a grant ingested (an
+// 'ingest' plan item executed). What the public mandate dashboard's
+// pipeline view digs into: joined through claim_instances it answers
+// "where are the claims coming from" and "what do they look like"
+// (importance and contestation distributions per source, match vs create
+// rates), and the Grantmaker's analytics tools read the same rows.
+// ---------------------------------------------------------------------------
+
+export const grantSources = pgTable(
+  "grant_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    // The extraction job, for status ("queued/processing/completed/failed").
+    jobId: uuid("job_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grant_sources_grant").on(table.grantId, table.createdAt),
+  ]
+);
+
+export type GrantSource = typeof grantSources.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // grant_conversations

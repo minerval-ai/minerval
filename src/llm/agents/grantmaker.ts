@@ -27,6 +27,11 @@ import { surveyScope } from "./grantor.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
 import type { PlanItem } from "../../services/grant-service.js";
+import { getMandatePipeline } from "../../services/mandate-service.js";
+import {
+  getJobContributions,
+  getJobSpentMicroUsd,
+} from "../../services/budget-job-service.js";
 
 export interface GrantMandate {
   /** Agent-written working title, shown only on the funder's dashboard. */
@@ -157,6 +162,12 @@ export function runGrantmakerTurn(
 async function runGrantmakerTurnImpl(input: {
   transcript: TranscriptMessage[];
   model?: string;
+  /**
+   * Set once the conversation's mandate is funded: the live grant this
+   * conversation now manages. Unlocks the analytics and plan-adjustment
+   * tools, scoped to this grant.
+   */
+  grantId?: string;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -245,16 +256,135 @@ async function runGrantmakerTurnImpl(input: {
     },
   };
 
+  // Management tools, available once the mandate is funded: full
+  // visibility into the live grant and near-total control of its remaining
+  // plan, within the framework (never past the escrowed budget, never
+  // into verdicts or importance).
+  const overviewTool: Tool = {
+    name: "grant_overview",
+    description:
+      "The live state of this conversation's funded grant: budget, metered " +
+      "spend, status, contributors, and the plan with each item's " +
+      "execution state.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  };
+  const fundedTool: Tool = {
+    name: "list_funded_assessments",
+    description:
+      "The assessments this grant has paid for so far, newest first, with " +
+      "status, credence, importance, and cost attribution.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        status: {
+          type: "string",
+          description: "Optional status filter (supported, contradicted, …).",
+        },
+        limit: { type: "number", description: "Max rows, default 30." },
+      },
+      required: [],
+    },
+  };
+  const pipelineTool: Tool = {
+    name: "ingestion_report",
+    description:
+      "The grant's ingestion pipeline: each source brought in, extraction " +
+      "status, how many claims it linked or minted, how many are assessed, " +
+      "average and max importance, contested counts, and an importance " +
+      "histogram per source. Use this for 'where are the claims coming " +
+      "from' and source-quality questions.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  };
+  const sourceClaimsTool: Tool = {
+    name: "claims_from_source",
+    description:
+      "The claims linked to one ingested source (by source_id from " +
+      "ingestion_report), with importance, contestation, assessment state, " +
+      "and stance. For digging into a specific source.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        source_id: { type: "string" },
+        limit: { type: "number", description: "Max rows, default 40." },
+      },
+      required: ["source_id"],
+    },
+  };
+  const distributionTool: Tool = {
+    name: "importance_distribution",
+    description:
+      "Importance and contestation distribution over the claims this " +
+      "grant's work has touched (funded assessments plus ingested-source " +
+      "claims): decile histogram, mean, and counts by assessment status. " +
+      "For data-analytics questions about the mandate's yield.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  };
+  const adjustTool: Tool = {
+    name: "adjust_plan",
+    description:
+      "Replace the NOT-YET-EXECUTED remainder of the grant's plan with new " +
+      "items (already-executed items are immutable history). Use this when " +
+      "the funder and you agree the mandate's remaining budget should be " +
+      "spent differently. Same item rules as propose_mandate; the same " +
+      "refusal duties apply. Does not change the budget.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        items: {
+          type: "array",
+          description: "The new remaining plan, in execution order.",
+          items: PLAN_ITEM_SCHEMA,
+        },
+        note: {
+          type: "string",
+          description: "One sentence recorded with the amendment: why.",
+        },
+      },
+      required: ["items", "note"],
+    },
+  };
+
   let mandate: GrantMandate | undefined;
   let declined: { reason: string } | undefined;
+
+  const managed = !!input.grantId;
+  const tools: Tool[] = [
+    searchTool,
+    surveyTool,
+    costTool,
+    ...(managed
+      ? [
+          overviewTool,
+          fundedTool,
+          pipelineTool,
+          sourceClaimsTool,
+          distributionTool,
+          adjustTool,
+        ]
+      : [proposeTool, declineTool]),
+  ];
+
+  const system = managed
+    ? getGrantmakerSystemPrompt() +
+      `\n\n## Management mode\n\n` +
+      `This conversation's mandate is funded and live. You have full ` +
+      `visibility into its execution through your grant tools and ` +
+      `near-total control of the remaining plan through adjust_plan, ` +
+      `within the framework: you cannot spend past the escrowed budget, ` +
+      `cannot touch verdicts or importance, and the refusal duties that ` +
+      `govern new mandates govern adjustments equally. Answer data ` +
+      `questions from tool results, never from memory; give real numbers. ` +
+      `Discuss the technical setup as deeply as the funder wants: you can ` +
+      `see the pipeline, the sources, the claims, and the spend.`
+    : getGrantmakerSystemPrompt();
 
   const result = await toolUseLoop({
     initialMessages: input.transcript.map((m) => ({
       role: m.role,
       content: m.content,
     })),
-    tools: [searchTool, surveyTool, costTool, proposeTool, declineTool],
-    system: getGrantmakerSystemPrompt(),
+    tools,
+    system,
     model: input.model ?? config.grantmakerModel,
     maxTokens: 4096,
     maxIterations: 16,
@@ -347,6 +477,10 @@ async function runGrantmakerTurnImpl(input: {
         declined = { reason: String(toolInput.reason ?? "") };
         return JSON.stringify({ success: true });
       }
+      if (managed && input.grantId) {
+        const out = await executeManagementTool(input.grantId, name, toolInput);
+        if (out != null) return out;
+      }
       return `Unknown tool: ${name}`;
     },
   });
@@ -359,4 +493,177 @@ async function runGrantmakerTurnImpl(input: {
     ...(mandate ? { mandate } : {}),
     ...(declined ? { declined } : {}),
   };
+}
+
+/**
+ * The funded-grant tool surface: live analytics over exactly the data the
+ * public dashboard shows, plus the one write the framework allows
+ * (amending the unexecuted remainder of the plan). Returns null for tool
+ * names it doesn't own.
+ */
+async function executeManagementTool(
+  grantId: string,
+  name: string,
+  toolInput: Record<string, unknown>
+): Promise<string | null> {
+  if (name === "grant_overview") {
+    const [grant] = await rawQuery<{
+      status: string;
+      plan: { strategy?: string; items?: PlanItem[] } | null;
+      plan_cursor: number;
+      budget_job_id: string;
+      budget_micro_usd: number;
+      job_status: string;
+    }>(
+      `SELECT g.status, g.plan, g.plan_cursor, g.budget_job_id,
+              j.budget_micro_usd, j.status AS job_status
+         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+        WHERE g.id = $1`,
+      [grantId]
+    );
+    if (!grant) return JSON.stringify({ error: "grant not found" });
+    const spent = await getJobSpentMicroUsd(grant.budget_job_id);
+    const contributions = await getJobContributions(grant.budget_job_id);
+    return JSON.stringify({
+      status: grant.status,
+      budget_status: grant.job_status,
+      budget_owls: microUsdToOwls(Number(grant.budget_micro_usd)),
+      spent_owls: microUsdToOwls(spent),
+      remaining_owls: microUsdToOwls(
+        Math.max(0, Number(grant.budget_micro_usd) - spent)
+      ),
+      contributors: contributions.length,
+      strategy: grant.plan?.strategy ?? null,
+      plan: (grant.plan?.items ?? []).map((item, i) => ({
+        ...item,
+        state:
+          i < grant.plan_cursor
+            ? "done"
+            : i === grant.plan_cursor
+              ? "current"
+              : "queued",
+      })),
+    });
+  }
+  if (name === "list_funded_assessments") {
+    const limit = Math.min(100, Math.max(1, Number(toolInput.limit ?? 30)));
+    const status =
+      typeof toolInput.status === "string" && toolInput.status
+        ? toolInput.status
+        : null;
+    const rows = await rawQuery(
+      `SELECT a.claim_id, c.text, a.status, a.claim_credence, c.importance,
+              c.contestation, a.assessed_at
+         FROM assessments a
+         JOIN grants g ON g.id = $1
+         JOIN claims c ON c.id = a.claim_id
+        WHERE a.funded_by_job_id = g.budget_job_id
+          AND ($2::text IS NULL OR a.status = $2)
+        ORDER BY a.assessed_at DESC
+        LIMIT $3`,
+      [grantId, status, limit]
+    );
+    return JSON.stringify({ count: rows.length, assessments: rows });
+  }
+  if (name === "ingestion_report") {
+    const pipeline = await getMandatePipeline(grantId);
+    return JSON.stringify({ sources: pipeline.length, pipeline });
+  }
+  if (name === "claims_from_source") {
+    const limit = Math.min(100, Math.max(1, Number(toolInput.limit ?? 40)));
+    const rows = await rawQuery(
+      `SELECT ci.claim_id, cl.text, cl.importance, cl.contestation,
+              cl.steward_state, ci.stance,
+              a.status AS assessment_status
+         FROM claim_instances ci
+         JOIN grant_sources gs
+           ON gs.source_id = ci.source_id AND gs.grant_id = $1
+         JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
+         LEFT JOIN assessments a
+           ON a.claim_id = ci.claim_id AND a.is_current = true
+        WHERE ci.source_id = $2
+        ORDER BY cl.importance DESC
+        LIMIT $3`,
+      [grantId, String(toolInput.source_id ?? ""), limit]
+    );
+    return JSON.stringify({ count: rows.length, claims: rows });
+  }
+  if (name === "importance_distribution") {
+    const [row] = await rawQuery<Record<string, unknown>>(
+      `WITH touched AS (
+         SELECT DISTINCT cl.id, cl.importance, cl.contestation,
+                a.status AS assessment_status
+           FROM grants g
+           LEFT JOIN assessments fa ON fa.funded_by_job_id = g.budget_job_id
+           LEFT JOIN grant_sources gs ON gs.grant_id = g.id
+           LEFT JOIN claim_instances ci ON ci.source_id = gs.source_id
+           JOIN claims cl
+             ON cl.id = COALESCE(fa.claim_id, ci.claim_id)
+            AND cl.state = 'active'
+           LEFT JOIN assessments a
+             ON a.claim_id = cl.id AND a.is_current = true
+          WHERE g.id = $1
+       )
+       SELECT COUNT(*)::int AS claims,
+              ROUND(AVG(importance)::numeric, 3) AS mean_importance,
+              ROUND(AVG(contestation)::numeric, 3) AS mean_contestation,
+              array_agg_hist AS importance_deciles,
+              statuses
+         FROM touched,
+       LATERAL (
+         SELECT array_agg(n ORDER BY bucket) AS array_agg_hist FROM (
+           SELECT width_bucket(importance, 0, 1.0001, 10) AS bucket,
+                  COUNT(*)::int AS n
+             FROM touched GROUP BY 1) h
+       ) hist,
+       LATERAL (
+         SELECT jsonb_object_agg(COALESCE(assessment_status, 'unassessed'), n)
+                AS statuses
+           FROM (SELECT assessment_status, COUNT(*)::int AS n
+                   FROM touched GROUP BY 1) s
+       ) st
+       GROUP BY array_agg_hist, statuses`,
+      [grantId]
+    );
+    return JSON.stringify(row ?? { claims: 0 });
+  }
+  if (name === "adjust_plan") {
+    const items = (toolInput.items ?? []) as PlanItem[];
+    const note = String(toolInput.note ?? "").trim();
+    if (!note) return JSON.stringify({ success: false, problem: "note required" });
+    const probe: GrantMandate = {
+      title: "x",
+      objective: "x",
+      plan: { strategy: "x", items },
+      expected_cost_owls: 1,
+    };
+    const problem = validateMandate(probe);
+    if (problem) return JSON.stringify({ success: false, problem });
+    const rows = await rawQuery<{ plan_cursor: number }>(
+      `UPDATE grants g
+          SET plan = jsonb_set(
+                COALESCE(g.plan, '{}'::jsonb), '{items}',
+                (SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+                   FROM jsonb_array_elements(
+                     COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY t(e, i)
+                  WHERE t.i <= g.plan_cursor) || $2::jsonb),
+              updated_at = now()
+        WHERE g.id = $1 AND g.status = 'active'
+        RETURNING g.plan_cursor`,
+      [grantId, JSON.stringify(items)]
+    );
+    if (rows.length === 0) {
+      return JSON.stringify({
+        success: false,
+        problem: "grant is not active; the plan can no longer be amended",
+      });
+    }
+    return JSON.stringify({
+      success: true,
+      executed_items_kept: rows[0]!.plan_cursor,
+      new_remaining_items: items.length,
+      note_recorded: note,
+    });
+  }
+  return null;
 }

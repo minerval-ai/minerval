@@ -29,8 +29,11 @@ import {
 } from "../llm/agents/grantmaker.js";
 import { owlsToMicroUsd } from "./owl.js";
 
-/** Hard ceiling on turns per conversation — a runaway/abuse backstop. */
+/** Hard ceilings on turns per conversation — a runaway/abuse backstop.
+ * Funded conversations get more room: they manage a live mandate and stay
+ * open for its whole life. */
 const MAX_MESSAGES = 60;
+const MAX_MESSAGES_FUNDED = 400;
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -62,13 +65,30 @@ async function runTurn(
     { role: "user" as const, content: userMessage, at: now },
   ];
 
-  const turn = await runWithUsageContext({ userId: convo.userId }, () =>
-    runGrantmakerTurn({
-      transcript: [
-        ...transcriptOf(convo),
-        { role: "user", content: userMessage },
-      ],
-    })
+  // A funded conversation manages its live grant: the turn runs in
+  // management mode, with the analytics and plan-adjustment tools scoped
+  // to that grant, and the usage meters to the grant's escrow (management
+  // is part of what the mandate's overhead pays for).
+  const funded = convo.status === "funded" && !!convo.grantId;
+  const jobId = funded
+    ? (
+        await rawQuery<{ budget_job_id: string }>(
+          `SELECT budget_job_id FROM grants WHERE id = $1`,
+          [convo.grantId]
+        )
+      )[0]?.budget_job_id
+    : undefined;
+
+  const turn = await runWithUsageContext(
+    { userId: convo.userId, ...(jobId ? { jobId } : {}) },
+    () =>
+      runGrantmakerTurn({
+        transcript: [
+          ...transcriptOf(convo),
+          { role: "user", content: userMessage },
+        ],
+        ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
+      })
   );
 
   messages.push({
@@ -77,13 +97,15 @@ async function runTurn(
     at: new Date().toISOString(),
   });
 
-  const status = turn.mandate
-    ? "proposed"
-    : turn.declined
-      ? "declined"
-      : convo.status === "proposed"
-        ? "proposed" // an unchanged draft stays fundable while they talk
-        : "active";
+  const status = funded
+    ? "funded" // management mode never changes the conversation's state
+    : turn.mandate
+      ? "proposed"
+      : turn.declined
+        ? "declined"
+        : convo.status === "proposed"
+          ? "proposed" // an unchanged draft stays fundable while they talk
+          : "active";
 
   const [updated] = await db
     .update(grantConversations)
@@ -136,16 +158,8 @@ export async function addMessage(input: {
   if (!convo) {
     return { ok: false, code: "NOT_FOUND", message: "Conversation not found" };
   }
-  if (convo.status === "funded") {
-    return {
-      ok: false,
-      code: "CLOSED",
-      message:
-        "This mandate is funded; follow it on its grant page. Start a new " +
-        "conversation for new work.",
-    };
-  }
-  if (((convo.messages ?? []) as unknown[]).length >= MAX_MESSAGES) {
+  const cap = convo.status === "funded" ? MAX_MESSAGES_FUNDED : MAX_MESSAGES;
+  if (((convo.messages ?? []) as unknown[]).length >= cap) {
     return {
       ok: false,
       code: "TOO_LONG",
@@ -243,6 +257,8 @@ export async function fundConversationMandate(input: {
       status: "active",
       plan: mandate.plan,
       planCursor: 0,
+      // The public dashboard's text: the agent-authored mandate, verbatim.
+      mandate,
     })
     .returning();
 
