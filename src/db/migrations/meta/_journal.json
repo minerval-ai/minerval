@@ -267,6 +267,20 @@
       "when": 1786042146931,
       "tag": "0037_mandate_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786048302151,
+      "tag": "0038_optimal_doomsday",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786048328045,
+      "tag": "0039_money_reconciliation",
+      "breakpoints": true
     }
   ]
 }

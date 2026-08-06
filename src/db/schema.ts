@@ -574,6 +574,9 @@ export const llmUsage = pgTable(
     index("idx_llm_usage_key_time").on(table.apiKeyId, table.createdAt),
     index("idx_llm_usage_time").on(table.createdAt),
     index("idx_llm_usage_claim").on(table.claimId),
+    // Budget pacing sums a job's metered cost on every check — the hottest
+    // read of the highest-volume table; it must not seq-scan.
+    index("idx_llm_usage_job").on(table.jobId),
   ]
 );
 
@@ -686,6 +689,11 @@ export const assessmentOrders = pgTable(
       .where(sql`status = 'pending'`),
     index("idx_orders_user_time").on(table.userId, table.createdAt),
     index("idx_orders_claim").on(table.claimId),
+    // One OPEN order per user per claim, enforced: two racing clicks (or a
+    // network retry) must join one order, not charge twice.
+    uniqueIndex("uq_orders_open_per_claim")
+      .on(table.userId, table.claimId)
+      .where(sql`status IN ('pending', 'running')`),
   ]
 );
 
@@ -727,6 +735,11 @@ export const actions = pgTable(
     // open | running | done | superseded | cancelled
     status: text("status").notNull().default("open"),
     meteredCostMicroUsd: bigint("metered_cost_micro_usd", { mode: "number" }),
+    // The budget job the run's llm_usage metering was attributed to (the
+    // largest funder's job), stamped at completion. Lets escrow accounting
+    // subtract ledger-consumed metering from a job's llm_usage total so a
+    // self-funded run is never counted twice.
+    meteredJobId: uuid("metered_job_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -741,6 +754,7 @@ export const actions = pgTable(
     ),
     index("idx_actions_status_kind").on(table.status, table.kind),
     index("idx_actions_claim").on(table.claimId),
+    index("idx_actions_metered_job").on(table.meteredJobId),
   ]
 );
 
@@ -827,6 +841,29 @@ export const actionAllocations = pgTable(
     index("idx_action_allocations_claim").on(table.claimId),
     index("idx_action_allocations_grant").on(table.grantId),
     index("idx_action_allocations_user").on(table.userId),
+    // Exactly one funder, positive money, spend never past the amount —
+    // the invariants the comments promise, enforced.
+    check(
+      "ck_action_allocations_one_funder",
+      sql`(grant_id IS NULL) <> (user_id IS NULL)`
+    ),
+    check("ck_action_allocations_amount", sql`amount_micro_usd > 0`),
+    check(
+      "ck_action_allocations_spent",
+      sql`spent_micro_usd >= 0 AND spent_micro_usd <= amount_micro_usd`
+    ),
+    // A mandate holds at most one LIVE placement per (group, pin): the
+    // backstop under the allocators' advisory locks. Fully spent or
+    // released rows are history and don't block re-funding a later pass.
+    uniqueIndex("uq_action_allocations_live_placement")
+      .on(
+        table.grantId,
+        table.exclusionGroup,
+        sql`(COALESCE(${table.actionId}::text, ''))`
+      )
+      .where(
+        sql`released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd`
+      ),
   ]
 );
 
@@ -1017,6 +1054,11 @@ export const regrants = pgTable(
   (table) => [
     index("idx_regrants_from").on(table.fromGrantId),
     index("idx_regrants_to").on(table.toGrantId),
+    check("ck_regrants_amount", sql`amount_micro_usd > 0`),
+    check(
+      "ck_regrants_refunded",
+      sql`refunded_micro_usd >= 0 AND refunded_micro_usd <= amount_micro_usd`
+    ),
   ]
 );
 
