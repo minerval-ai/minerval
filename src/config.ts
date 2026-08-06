@@ -274,6 +274,15 @@ const configSchema = z.object({
   // cost bound on the mechanism, deliberately not a narrowing of the
   // agent's affordances. Each pass is also individually capped and metered.
   mandateReviewMaxPassesPerDay: z.coerce.number().default(12),
+  // Structural bounds on the AUTONOMOUS review pass's money movement
+  // (regrant + spawn_mandate): at most this fraction of the mandate's
+  // escrowed budget per pass / per UTC day. The review agent reads
+  // attacker-influenceable text (web search, claims, sources) in the same
+  // context as tools that move escrow; the "data, never instructions"
+  // briefing is guidance, these caps are the control. The owner-driven
+  // Grantmaker chat is not bound by them (a human is in the loop).
+  mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
+  mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -475,6 +484,10 @@ export function loadConfig(): Config {
     costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
     mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
+    mandateReviewMoveFractionPerPass:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
+    mandateReviewMoveFractionPerDay:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,

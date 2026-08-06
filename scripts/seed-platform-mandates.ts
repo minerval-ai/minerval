@@ -15,7 +15,7 @@
  *
  * Usage: DATABASE_URL=… npx tsx scripts/seed-platform-mandates.ts
  */
-import { rawQuery } from "../src/db/client.js";
+import { rawQuery, withTransaction } from "../src/db/client.js";
 import { owlsToMicroUsd } from "../src/services/owl.js";
 
 interface PlatformMandate {
@@ -116,27 +116,6 @@ async function main() {
 
     const budgetMicro = owlsToMicroUsd(m.budgetOwls);
 
-    // Mint the platform's owls (idempotent), then escrow them.
-    await rawQuery(
-      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
-       VALUES ($1, $2, 'admin_adjust', $3)
-       ON CONFLICT (idempotency_key) DO NOTHING`,
-      [platformId, budgetMicro, `platform_mandate_mint:${m.key}`]
-    );
-
-    const [job] = await rawQuery<{ id: string }>(
-      `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status)
-       VALUES ($1, 'grant', $2, 'running')
-       RETURNING id`,
-      [platformId, budgetMicro]
-    );
-    await rawQuery(
-      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id, idempotency_key)
-       VALUES ($1, $2, 'escrow_hold', $3, $4)
-       ON CONFLICT (idempotency_key) DO NOTHING`,
-      [platformId, -budgetMicro, job!.id, `platform_mandate_hold:${m.key}`]
-    );
-
     const mandate = {
       title: m.title,
       objective: m.objective,
@@ -149,26 +128,52 @@ async function main() {
         "surveys the scope; contributions extend how far it reaches.",
     };
 
-    // 'general' = the allocation engine's platform lane; 'cover' = the
-    // coverage selector over a topical scope. Both standing mandates.
-    const [grant] = await rawQuery<{ id: string }>(
-      `INSERT INTO grants
-         (funder_user_id, budget_job_id, name, scope_query, policy, status,
-          plan, mandate, is_platform, daily_budget_micro_usd)
-       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8)
-       RETURNING id`,
-      [
-        platformId,
-        job!.id,
-        m.title,
-        m.scopeQuery,
-        JSON.stringify({ strategy: m.strategy, items: [] }),
-        JSON.stringify(mandate),
-        m.policy,
-        owlsToMicroUsd(m.dailyBudgetOwls),
-      ]
-    );
-    console.log(`+ ${m.title} created (${grant!.id}), ${m.budgetOwls} owls`);
+    // One transaction per mandate: mint, job, hold, and grant land (or
+    // roll back) together — a crash mid-way can never leave an orphaned
+    // running job whose hold's idempotency key pins the escrow to it.
+    const grantId = await withTransaction(async (tx) => {
+      // Mint the platform's owls (idempotent), then escrow them.
+      await tx.query(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
+         VALUES ($1, $2, 'admin_adjust', $3)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [platformId, budgetMicro, `platform_mandate_mint:${m.key}`]
+      );
+      const [job] = await tx.query<{ id: string }>(
+        `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status)
+         VALUES ($1, 'grant', $2, 'running')
+         RETURNING id`,
+        [platformId, budgetMicro]
+      );
+      await tx.query(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id, idempotency_key)
+         VALUES ($1, $2, 'escrow_hold', $3, $4)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [platformId, -budgetMicro, job!.id, `platform_mandate_hold:${m.key}`]
+      );
+
+      // 'general' = the allocation engine's platform lane; 'cover' = the
+      // coverage selector over a topical scope. Both standing mandates.
+      const [grant] = await tx.query<{ id: string }>(
+        `INSERT INTO grants
+           (funder_user_id, budget_job_id, name, scope_query, policy, status,
+            plan, mandate, is_platform, daily_budget_micro_usd)
+         VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8)
+         RETURNING id`,
+        [
+          platformId,
+          job!.id,
+          m.title,
+          m.scopeQuery,
+          JSON.stringify({ strategy: m.strategy, items: [] }),
+          JSON.stringify(mandate),
+          m.policy,
+          owlsToMicroUsd(m.dailyBudgetOwls),
+        ]
+      );
+      return grant!.id;
+    });
+    console.log(`+ ${m.title} created (${grantId}), ${m.budgetOwls} owls`);
   }
   process.exit(0);
 }
