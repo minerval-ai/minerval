@@ -12,6 +12,7 @@ import {
   index,
   check,
   customType,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 
@@ -689,32 +690,120 @@ export const assessmentOrders = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// action_allocations
+// actions — the action ledger, the mechanical contract of the allocation
+// engine.
 //
-// THE allocation mechanism, one for everyone. An allocation is money a
-// funder — a mandate (grant_id) or a person directly (user_id) — has put
-// toward one specific action (assessing one claim, today's only action
-// type). An action RUNS exactly when the total unspent allocations on it
-// cover its expected cost; until then it waits, however many funders have
-// partially backed it. When it runs, the metered cost is split across the
-// allocations pro rata and recorded in spent_micro_usd — each funder pays
-// their proportional share, no one pays for what another funder covered.
+// One row per potential action the graph could take. Rows that are
+// ALTERNATIVE ways of doing the same thing (assess this claim with the
+// standard model vs. the strong model vs., later, with more effort or
+// research tools) share an exclusion_group: at most one sibling ever
+// runs. This table directly and mechanically governs execution — the
+// executors are dumb loops over covered rows, and every judgment (what
+// is valuable, which variant, how much to back) lives upstream in
+// mandate_valuations and action_allocations.
+// ---------------------------------------------------------------------------
+
+export const actions = pgTable(
+  "actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // assess | reassess | ingest | grant_planning (a registry, extensible)
+    kind: text("kind").notNull(),
+    // Siblings sharing this key are mutually exclusive alternatives,
+    // e.g. 'assess:<claim_id>' or 'ingest:<url>'.
+    exclusionGroup: text("exclusion_group").notNull(),
+    // The way of doing it: standard | strong (| strong+elicit, ...).
+    variant: text("variant").notNull().default("standard"),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    // Non-claim targets: a source URL, a grant id.
+    targetRef: text("target_ref"),
+    // Human description for surfaces (never a bare id).
+    label: text("label").notNull(),
+    // Shared, objective expected cost (refreshed from cost estimates).
+    costEstMicroUsd: bigint("cost_est_micro_usd", { mode: "number" })
+      .notNull(),
+    // open | running | done | superseded | cancelled
+    status: text("status").notNull().default("open"),
+    meteredCostMicroUsd: bigint("metered_cost_micro_usd", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_actions_group_variant").on(
+      table.exclusionGroup,
+      table.variant
+    ),
+    index("idx_actions_status_kind").on(table.status, table.kind),
+    index("idx_actions_claim").on(table.claimId),
+  ]
+);
+
+export type Action = typeof actions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// mandate_valuations — each mandate's own opinions, sparse.
 //
-// Minerval's own General assessment mandate spends through this same
-// table: its allocator backs the highest value-per-dollar candidates up
-// to its daily rate, and its runs happen only because its allocations
-// covered them — dogfooding, not a privileged lane. Allocations never
-// touch claims.importance and never enter the value estimate.
+// A mandate values only the actions it knows and cares about, by its own
+// definition of importance (the AI Math mandate holds no opinion on a
+// politics claim). Values are written by the mandate's valuer: a formula
+// (the General mandate's allocation policy, run in bulk), a scoped
+// formula, or its Grantmaker's judgment. Value is perspectival and lives
+// here; cost is shared and lives on the action row.
+// ---------------------------------------------------------------------------
+
+export const mandateValuations = pgTable(
+  "mandate_valuations",
+  {
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    actionId: uuid("action_id")
+      .notNull()
+      .references(() => actions.id, { onDelete: "cascade" }),
+    valueEst: real("value_est").notNull(),
+    rationale: text("rationale"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grantId, table.actionId] }),
+    index("idx_mandate_valuations_action").on(table.actionId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// action_allocations — money placed on actions; the engine's only input.
+//
+// An allocation targets an exclusion GROUP ("get this claim assessed"),
+// optionally pinned to one variant row ("...with the strong model"). An
+// unpinned allocation counts toward every sibling's coverage and is
+// consumed by whichever wins; a pinned allocation counts only toward its
+// variant and is RELEASED back to its funder if a sibling wins instead
+// (a vote for a losing way of doing it is returned, not spent). An
+// action runs exactly when its coverage (pinned + unpinned unspent
+// allocations) meets its expected cost; the metered cost of the run is
+// split across the covering allocations pro rata.
 // ---------------------------------------------------------------------------
 export const actionAllocations = pgTable(
   "action_allocations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // The action, as (kind, target). 'assess' is today's only kind.
-    action: text("action").notNull().default("assess"),
-    claimId: uuid("claim_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
+    exclusionGroup: text("exclusion_group").notNull(),
+    // Pinned variant; NULL = any variant in the group.
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "cascade",
+    }),
+    // Denormalized convenience for claim-scoped queries.
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
     // The funder: exactly one of a mandate or a person directly.
     grantId: uuid("grant_id").references(() => grants.id, {
       onDelete: "cascade",
@@ -727,16 +816,20 @@ export const actionAllocations = pgTable(
     spentMicroUsd: bigint("spent_micro_usd", { mode: "number" })
       .notNull()
       .default(0),
+    // Set when a losing sibling's pinned allocation was returned.
+    releasedAt: timestamp("released_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
+    index("idx_action_allocations_group").on(table.exclusionGroup),
     index("idx_action_allocations_claim").on(table.claimId),
     index("idx_action_allocations_grant").on(table.grantId),
     index("idx_action_allocations_user").on(table.userId),
   ]
 );
+
 
 // ---------------------------------------------------------------------------
 // budget_jobs

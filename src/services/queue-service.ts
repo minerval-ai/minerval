@@ -2,6 +2,7 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { refreshQueuePriority } from "./priority-service.js";
+import { ensureAssessActions } from "./action-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -246,6 +247,19 @@ export async function enqueueSteward(
   } catch (err) {
     console.warn(
       `[queue] priority refresh failed for ${message.claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  // Materialize the claim's assess/reassess action rows the moment it
+  // becomes a candidate — the ledger is what mandates value and fund, so
+  // it should never lag the candidate set behind the reconcile sweep.
+  // Best-effort for the same reason as above.
+  try {
+    await ensureAssessActions(message.claimId);
+  } catch (err) {
+    console.warn(
+      `[queue] action-ledger refresh failed for ${message.claimId}:`,
       err instanceof Error ? err.message : err
     );
   }

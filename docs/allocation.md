@@ -9,26 +9,50 @@ section.
 
 ## The standard
 
-One engine allocates all attention, uniformly for every funder:
+One engine allocates all attention, uniformly for every funder, and it is
+built as a hard split between MECHANISM and JUDGMENT.
 
-    money is placed as ALLOCATIONS on specific actions;
+**The mechanism is the action ledger** (`actions` +
+`action_allocations`): one row per potential action — assess this claim,
+ingest that source, plan that mandate — with money placed as ALLOCATIONS
+on those rows by any mix of mandates and people:
+
     an action RUNS exactly when its allocations cover its expected cost;
-    the metered cost splits among its funders pro rata.
+    the metered cost splits among its funders pro rata;
+    nothing else anywhere decides what runs.
+
+Alternative ways of doing the same thing (a standard-model pass vs. a
+strong-model pass; later: effort levels, tools) are sibling rows in an
+EXCLUSIVE SET (`exclusion_group`): at most one runs, resolved by a pure
+function of the allocations — most backing wins, ties go to the cheapest,
+and an allocation pinned to a losing sibling is RELEASED back to its
+funder, not spent. An unpinned allocation ("assess this claim, however")
+counts toward every sibling and is consumed by whichever wins.
+
+**The judgment is each mandate's own** (`mandate_valuations`): every
+mandate values only the actions it knows and cares about — sparse by
+design; the Mathematics mandate holds no opinion on a politics claim —
+by its own definition of importance, its own formulas
+(mandate-valuer-service.ts), written as its own rows. Its allocator
+(allocation-service.ts) then ranks MARGINAL INCREMENTS by value per
+dollar — cover the cheap variant; upgrade to the dear one only when
+Δvalue/Δcost also clears — and funds them best-first until its daily rate
+is committed. The bar is emergent from the budget: most actions whose
+value merely exceeds their cost still fall below the day's threshold and
+wait for co-funding or a cheaper day.
 
 The graph's own work is not a special case: Minerval runs a standing
 General assessment mandate whose budget is the dollars the platform
-allocates to expanding and maintaining the graph. Each day its allocator
-backs the candidates with the highest expected marginal value per dollar
-of remaining cost, best first, until its daily rate is committed. The bar
-is emergent from the budget: most actions whose value merely exceeds
-their cost still fall below the day's threshold and wait for co-funding
-or a cheaper day.
+allocates to expanding and maintaining the graph, and whose valuations
+happen to span the whole graph. It is merely the first valuer; scoped
+mandates (Mathematics, AI Economics, anyone's) run the identical
+machinery over their scopes.
 
 Value and cost are estimates, produced by legible heuristics that start
-as guesses; they are the governing mandate's ALLOCATION POLICY, revised
-by asking its Grantmaker (below), not by editing code. Neither side is
-ever a verdict input: the estimates order work and select effort, and
-appear nowhere in an assessment.
+as guesses; they are each mandate's ALLOCATION POLICY, revised by asking
+its Grantmaker (below), not by editing code. Neither side is ever a
+verdict input: the estimates order work and select effort, and appear
+nowhere in an assessment.
 
 ## The unit: the owl
 
@@ -68,18 +92,23 @@ distort the very agents that must reason in value over cost.
    fraction at completion, automatic refund on failure.
 2. **Partial funding (allocations).** Anyone can put owls toward a
    specific claim's assessment (`POST /claims/:id/contribute`, capped
-   near the expected cost of the pass). Allocations accumulate across
-   funders; the action runs the moment they cover the cost, and each
-   funder pays their pro-rata share of the metered actual
+   near the expected cost of the pass). A reader's chip-in is UNPINNED —
+   it funds "assess this claim", not a model choice, so it counts toward
+   whichever variant wins. Allocations accumulate across funders; the
+   action runs the moment they cover the cheapest variant's cost, and
+   each funder pays their pro-rata share of the metered actual
    (`action_allocations.spent_micro_usd`).
 3. **Mandates.** Standing programs of work on escrowed budgets, optionally
    paced by a daily rate (`grants.daily_budget_micro_usd`) — including
-   Minerval's own General assessment mandate, whose allocator co-funds
-   partially backed claims rather than duplicating other funders' money.
-   Grant-plan execution (agent plans, cover/deepen/maintain selectors)
-   funds its actions fully and runs them directly, metered to the escrow.
-   Candidates no one funds remain embedded stubs; that is the intended
-   steady state.
+   Minerval's own General assessment mandate. A mandate's allocator
+   co-funds partially backed actions (allocating cost minus existing
+   backing) rather than duplicating other funders' money, and pins its
+   upgrade increments to the strong variant, where they are refunded if a
+   cheaper sibling wins after all. Grant-plan execution (agent plans,
+   cover/deepen/maintain selectors) still funds its actions fully and
+   runs them directly, metered to the escrow, with the ledger rows closed
+   as the public record. Candidates no one funds remain embedded stubs;
+   that is the intended steady state.
 
 ## The expected-value estimate (per assessment)
 
@@ -92,12 +121,18 @@ distort the very agents that must reason in value over cost.
 
 The multiplicative core is the essay's heuristic for the marginal value of
 assessing a claim at a given model and effort level: importance ×
-contestedness × quality-improvement-from-marginal-compute. Money appears
-NOWHERE in this estimate: funding reduces what remains to be covered on
-the cost side, never how valuable the action is. Every knob is the
-governing mandate's allocation policy, printed on `GET /queue`, and every
-pending claim's inputs are public — "why is this ahead of that" is always
-answerable (§15).
+contestedness × quality-improvement-from-marginal-compute. The strong
+variant's value is the standard's × `strong_gain_multiplier` (a policy
+knob; the marginal-return rule decides whether the upgrade is bought).
+Money appears NOWHERE in this estimate: funding reduces what remains to
+be covered on the cost side, never how valuable the action is. Every knob
+is the mandate's allocation policy, rendered with its allocation view on
+its page (`GET /mandates/:id/allocation`) — aggregate tiles and a
+value-per-owl histogram first, drill-down on demand, the tail summarized:
+at graph scale a flat table of every potential action would hide more
+than it shows, and navigability is what makes the transparency real. The
+`claims.queue_priority` column survives only as a display cache of the
+General mandate's standard-variant valuation.
 
 Two hard lines, by construction:
 - **Money never touches `claims.importance`** (or the value estimate at
@@ -129,11 +164,14 @@ same framework it offers.
 ## Effort selection
 
 Outputs of the same estimates, not separate features:
-- **Model tiering**: background claims whose expected value clears
-  `STEWARD_STRONG_MIN_PRIORITY` run on `STEWARD_STRONG_MODEL`, and the
-  value/cost ratio is computed against that tier's cost; paid orders and
-  grant runs always get the strong model — the buyer pays for the real
-  thing.
+- **Model tiering by marginal return**: when `STEWARD_STRONG_MODEL` is
+  set, every assess/reassess exclusive set carries a strong-variant
+  sibling, and the decision between them is the funders': an allocator
+  backs the upgrade only when Δvalue/Δcost clears the same bar as the
+  money's next-best use. There is no value threshold that flips the tier
+  — "how to do the thing" is decided by the same economics as "whether
+  to do the thing at all". Paid orders always get the strong model — the
+  buyer pays for the real thing.
 - **Cadence** (#283): reassess after `stalenessBaseDays / clamp(value,
   0.25, 2)` days, with at most `STALENESS_MAX_PER_SWEEP` re-enqueued per
   sweep: a bounded producer, so reassessment inflow can never cascade the

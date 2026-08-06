@@ -9,6 +9,7 @@ import {
   type MandatePipelineRow,
 } from "../../../lib/account-api";
 import { OwlMark } from "../../../components/OwlMark";
+import { AllocationSection } from "./AllocationView";
 import { ContributeBox } from "./ContributeBox";
 import { MandateChat } from "./MandateChat";
 
@@ -206,6 +207,8 @@ export default async function MandatePage({
           .
         </p>
       )}
+
+      {open && <AllocationSection mandateId={mandate.id} />}
 
       {hasPipeline && <PipelineSection pipeline={mandate.pipeline} />}
 

@@ -1109,3 +1109,51 @@ textarea.contribute-field { resize: vertical; line-height: 1.45; }
   display: inline-block;
 }
 .pipeline-hist-bar[data-empty] { background: var(--rule-soft); }
+
+/* The mandate allocation section: kind tiles, the value-per-owl histogram
+   with the day's bar, and the drill-down list. */
+.alloc-lede {
+  color: var(--muted); font-family: var(--sans); font-size: 0.8rem;
+  margin-top: -0.3rem; max-width: 44rem;
+}
+.alloc-tiles {
+  display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.7rem 0;
+}
+.alloc-tile {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: 0.6rem 0.85rem; background: var(--paper-card);
+  min-width: 11rem;
+}
+.alloc-tile-kind { color: var(--muted); font-size: 0.66rem; }
+.alloc-tile-big { font-size: 1.3rem; line-height: 1.2; }
+.alloc-tile-sub {
+  color: var(--muted); font-family: var(--sans); font-size: 0.72rem;
+}
+.alloc-hist-wrap { margin: 0.6rem 0 1rem; }
+.alloc-hist {
+  position: relative; display: flex; align-items: flex-end; gap: 3px;
+  height: 52px; max-width: 24rem; padding-top: 4px;
+}
+.alloc-hist-col {
+  flex: 1; border-radius: 2px 2px 0 0; background: var(--ink-soft);
+}
+.alloc-hist-col[data-empty] { background: var(--rule-soft); }
+.alloc-hist-bar-marker {
+  position: absolute; top: 0; bottom: -3px; width: 2px;
+  background: var(--accent, #b3502c); border-radius: 1px;
+}
+.alloc-hist-caption {
+  color: var(--muted); font-family: var(--sans); font-size: 0.74rem;
+  max-width: 34rem; margin-top: 0.35rem;
+}
+.alloc-top > summary {
+  cursor: pointer; font-family: var(--sans); font-size: 0.84rem;
+  color: var(--ink-soft); margin-bottom: 0.3rem;
+}
+.alloc-label { max-width: 22rem; overflow-wrap: anywhere; }
+.alloc-marginal { color: var(--faint); font-size: 0.72rem; }
+.alloc-tail {
+  color: var(--muted); font-family: var(--sans); font-size: 0.78rem;
+  max-width: 40rem;
+}

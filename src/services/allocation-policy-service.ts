@@ -29,8 +29,11 @@ export interface AllocationPolicy {
   staleness_saturation_days: number;
   /** Value boost for human-proposed claims. */
   user_provenance_boost: number;
-  /** Expected value at/above which a pass runs on the strong model. */
-  strong_min_value: number;
+  /** Expected gain of a strong-model pass over a standard one:
+   *  value(strong) = value(standard) × this. The marginal-return rule
+   *  (Δvalue/Δcost vs. the day's bar) decides whether the upgrade is
+   *  actually bought. */
+  strong_gain_multiplier: number;
   /** Cost priors per Steward pass, in owls, until live averages exist. */
   est_steward_run_cost_owls: number;
   est_steward_run_cost_strong_owls: number;
@@ -48,7 +51,7 @@ export const POLICY_BOUNDS: Record<
   contestation_floor: { min: 0, max: 1 },
   staleness_saturation_days: { min: 1, max: 3650 },
   user_provenance_boost: { min: 0, max: 2 },
-  strong_min_value: { min: 0, max: 10 },
+  strong_gain_multiplier: { min: 1, max: 5 },
   est_steward_run_cost_owls: { min: 0.001, max: 100 },
   est_steward_run_cost_strong_owls: { min: 0.001, max: 100 },
   staleness_base_days: { min: 1, max: 3650 },
@@ -128,7 +131,7 @@ function defaultsFromConfig(): AllocationPolicy {
     contestation_floor: c.valueContestationFloor ?? 0.25,
     staleness_saturation_days: c.priorityStalenessSaturationDays ?? 90,
     user_provenance_boost: c.priorityUserProvenanceBoost ?? 0.15,
-    strong_min_value: c.stewardStrongMinPriority ?? 0.5,
+    strong_gain_multiplier: c.strongGainMultiplier ?? 1.3,
     est_steward_run_cost_owls: c.estStewardRunCostOwls ?? 0.25,
     est_steward_run_cost_strong_owls: c.estStewardRunCostStrongOwls ?? 1,
     staleness_base_days: c.stalenessBaseDays ?? 60,
@@ -169,6 +172,21 @@ export function overlayPolicy(
 export async function getEffectiveAllocationPolicy(): Promise<AllocationPolicy> {
   const mandate = await getGeneralMandate();
   return overlayPolicy(defaultsFromConfig(), mandate?.allocationPolicy);
+}
+
+/**
+ * The policy in force for ONE mandate: the shared defaults overlaid with
+ * that grant's own allocation_policy. This is what makes the machinery
+ * replicable — any mandate can carry its own formulas, and absent one it
+ * inherits exactly what the platform ships.
+ */
+export async function getMandateAllocationPolicy(
+  grantId: string
+): Promise<AllocationPolicy> {
+  const [row] = await rawQuery<{
+    allocation_policy: Partial<AllocationPolicy> | null;
+  }>(`SELECT allocation_policy FROM grants WHERE id = $1`, [grantId]);
+  return overlayPolicy(defaultsFromConfig(), row?.allocation_policy);
 }
 
 export type PolicyUpdateResult =

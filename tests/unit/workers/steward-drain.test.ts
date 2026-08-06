@@ -11,10 +11,10 @@ const { runCalls, state } = vi.hoisted(() => ({
   runCalls: [] as string[],
   state: {
     pending: [] as string[],
-    // Claims whose contribution pot covers the pass: served by the funded
-    // lane ahead of everything, outside the daily budget.
+    // Claims whose assess action is covered on the ledger: the executor
+    // runs these ahead of everything, outside the fallback daily budget.
     fundedPending: [] as string[],
-    consumed: [] as Array<{ id: string; take: number }>,
+    completedActions: [] as string[],
     budgetThrows: false,
     // Per-claim attempt counter, keyed by id (defaults 0), so a requeued claim
     // is re-served with its incremented count like the real DB column.
@@ -40,25 +40,51 @@ vi.mock("../../../src/db/client.js", () => ({
             },
           ]
         : [];
-    // The two claim-selection queries both carry SKIP LOCKED + UPDATE
-    // claims: the covered lane filters on allocations covering the tier
-    // cost (action_allocations + ">="), the fallback lane divides by tier
-    // cost ("queue_priority /").
-    if (q.includes("SKIP LOCKED") && q.includes("UPDATE claims")) {
-      if (q.includes("queue_priority /")) return serve(state.pending.shift());
-      return serve(state.fundedPending.shift());
+    // nextRunnableAction: the ledger's covered open actions. Serve a
+    // covered standard assess action for the head of fundedPending.
+    if (q.includes("FROM actions a") && q.includes("coverage_micro_usd")) {
+      const id = state.fundedPending[0];
+      return id
+        ? [
+            {
+              id: `act:${id}`,
+              kind: "assess",
+              exclusion_group: `assess:${id}`,
+              variant: "standard",
+              claim_id: id,
+              target_ref: null,
+              cost_est_micro_usd: 150_000,
+              coverage_micro_usd: 150_000,
+            },
+          ]
+        : [];
     }
-    // consumeAllocations' row scan and the pro-rata consumption write.
-    if (q.includes("FROM action_allocations") && q.trimStart().startsWith("SELECT id")) {
-      return [{ id: "pot-1", unspent: 1_000_000 }];
-    }
-    if (q.includes("UPDATE action_allocations")) {
-      state.consumed.push({ id: params[0] as string, take: params[1] as number });
+    // claimAction / completeAction / releaseAction / supersede / cancel.
+    if (q.includes("UPDATE actions")) {
+      if (q.includes("'running'")) return [{ id: params[0] }];
+      if (q.includes("metered_cost_micro_usd = $2")) {
+        state.completedActions.push(params[0] as string);
+        return [
+          { id: params[0], exclusion_group: `assess:${state.fundedPending[0] ?? "?"}` },
+        ];
+      }
       return [];
     }
+    // Allocation reads/writes inside completeAction/largestActionFunder:
+    // no allocations in the mock; the SQL is covered live.
+    if (q.includes("action_allocations")) return [];
     // The General mandate lookup: none seeded in these tests.
     if (q.includes("is_platform")) return [];
+    if (q.includes("llm_usage")) return [];
     if (q.includes("count(")) return [{ n: state.pending.length }];
+    // The fallback lane's claim-select (SKIP LOCKED) vs the covered lane's
+    // claim-claim by id (WHERE id = $1).
+    if (q.includes("UPDATE claims") && q.includes("stewarded_at = now()")) {
+      if (q.includes("SKIP LOCKED")) return serve(state.pending.shift());
+      const id = params[0] as string;
+      if (state.fundedPending[0] === id) state.fundedPending.shift();
+      return serve(id);
+    }
     if (q.startsWith("UPDATE")) {
       const id = params[0] as string;
       if (q.includes("'error'")) {
@@ -102,7 +128,7 @@ describe("Steward DB-backed drain", () => {
     runCalls.length = 0;
     state.pending = [];
     state.fundedPending = [];
-    state.consumed = [];
+    state.completedActions = [];
     state.budgetThrows = false;
     state.attempts = {};
     state.throwFor = null;
@@ -117,14 +143,15 @@ describe("Steward DB-backed drain", () => {
     expect(res).toEqual({ processed: 3, budgetHit: false });
   });
 
-  it("serves contribution-funded claims first and consumes their pot", async () => {
+  it("serves covered ledger actions first and closes them on success", async () => {
     state.pending = ["a"];
     state.fundedPending = ["funded-1"];
     const res = await drainStewardQueue();
-    // The funded claim runs before the mandate lane's pick. (Pot
-    // consumption follows the METERED cost, which the mocked agent leaves
-    // at zero, so it isn't asserted here; the SQL is covered live.)
+    // The covered action runs before the fallback lane's pick, and its
+    // ledger row is completed (siblings superseded, cost consumed — the
+    // allocation SQL itself is covered live).
     expect(runCalls).toEqual(["funded-1", "a"]);
+    expect(state.completedActions).toEqual(["act:funded-1"]);
     expect(res.processed).toBe(2);
   });
 

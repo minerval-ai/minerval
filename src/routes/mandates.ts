@@ -17,6 +17,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   listPublicMandates,
   getPublicMandate,
+  getMandateAllocationView,
   contributeToMandate,
 } from "../services/mandate-service.js";
 
@@ -74,6 +75,47 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: "Mandate not found", code: "NOT_FOUND" });
       }
       return reply.send({ mandate });
+    },
+  });
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { kind?: string; offset?: number; limit?: number };
+  }>("/:id/allocation", {
+    schema: {
+      tags: ["mandates"],
+      summary:
+        "The mandate's allocation view: its policy, budget and daily rate, " +
+        "per-kind action tiles, a value-per-owl histogram with the day's " +
+        "bar, and its best-ranked actions (paged; the tail is summarized)",
+      params: {
+        type: "object",
+        properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["assess", "reassess", "ingest", "grant_planning"],
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const view = await getMandateAllocationView(request.params.id, {
+        kind: request.query.kind,
+        offset: request.query.offset,
+        limit: request.query.limit,
+      });
+      if (!view) {
+        return reply
+          .code(404)
+          .send({ error: "Mandate not found", code: "NOT_FOUND" });
+      }
+      return reply.send({ allocation: view });
     },
   });
 

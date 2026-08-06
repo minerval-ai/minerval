@@ -39,6 +39,7 @@ import {
   refundUnspentBudget,
 } from "../services/budget-job-service.js";
 import { submitSource } from "../services/source-service.js";
+import { markActionGroupDone } from "../services/action-service.js";
 import type { PlanItem } from "../services/grant-service.js";
 
 export type GrantDrainStatus =
@@ -340,6 +341,7 @@ export async function processNextGrantTask(
           WHERE id = $1`,
         [grant.id, JSON.stringify(plan)]
       );
+      await markActionGroupDone(`plan:${grant.id}`).catch(() => {});
       return { status: "planned", grantId: grant.id, ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -370,7 +372,9 @@ export async function processNextGrantTask(
   const { target, ingestedUrl } = await claimNextGrantTarget(grant);
   if (ingestedUrl) {
     // The unit of work was enqueuing a funded ingestion; the extraction
-    // meters to the grant's escrow as it runs.
+    // meters to the grant's escrow as it runs. Close the ledger's record
+    // of the potential action.
+    await markActionGroupDone(`ingest:${ingestedUrl}`).catch(() => {});
     await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
       grant.id,
     ]);

@@ -60,14 +60,16 @@ const MANDATES: PlatformMandate[] = [
       "the contested applications of mathematical results elsewhere in the " +
       "graph. Settled bedrock is recorded cheaply; attention concentrates " +
       "where working mathematicians actually disagree.",
-    scopeQuery: "mathematics theorem conjecture proof",
+    // websearch OR-form: a topical scope wants anything matching ANY of
+    // its terms, not the conjunction of all of them.
+    scopeQuery: "mathematics OR theorem OR conjecture OR proof",
     strategy:
       "Cover unassessed mathematical claims in scope first, then keep " +
       "assessments fresh as new results land. Depth goes to claims whose " +
       "subtrees carry contested lemmas or disputed applicability.",
     budgetOwls: 250,
     policy: "cover",
-    dailyBudgetOwls: 0,
+    dailyBudgetOwls: 10,
   },
   {
     key: "ai-economics",
@@ -78,14 +80,15 @@ const MANDATES: PlatformMandate[] = [
       "compute and capability economics, market structure, and the policy " +
       "claims that depend on them. This is a fast-moving, contested area; " +
       "reassessment cadence matters as much as coverage.",
-    scopeQuery: "artificial intelligence economics labor productivity automation",
+    scopeQuery:
+      "economics OR labor OR productivity OR automation OR wage OR employment",
     strategy:
       "Cover the unassessed cruxes first, reassess anything stale in a " +
       "field that moves monthly, and deepen the claims whose subtrees " +
       "carry the contested elasticity and adoption estimates.",
     budgetOwls: 250,
     policy: "cover",
-    dailyBudgetOwls: 0,
+    dailyBudgetOwls: 10,
   },
 ];
 

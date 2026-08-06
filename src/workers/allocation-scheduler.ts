@@ -1,39 +1,44 @@
 /**
- * Allocation scheduler — the time-based half of the allocation core.
+ * Allocation scheduler — the time-based half of the allocation engine.
  *
- * Two jobs per tick, both mechanical (the judgments live in the recorded
- * signals it reads — Steward-set importance/contestation/marginal_yield,
- * user stakes):
+ * Each tick walks the engine's three layers in order, all idempotent:
  *
- *  1. Refresh the expected-value estimate (queue_priority) of every PENDING
- *     claim, so staleness drift and newly placed stakes reorder the
- *     background lane's candidate set without per-event bookkeeping.
+ *  1. RECONCILE the action ledger (action-service.ts): every pending claim
+ *     has its assess/reassess exclusion group open, grant plans have their
+ *     ingest/planning actions, stale groups are cancelled. The mechanical
+ *     table never lags the graph by more than a sweep.
  *
- *  2. CADENCE (#283): give the long-orphaned 'staleness_check' trigger its
- *     producer. An assessed claim is due for a fresh look after an interval
- *     that shrinks as its priority grows:
+ *  2. REFRESH VALUATIONS (mandate-valuer-service.ts): every mandate
+ *     re-judges the open actions it cares about — the General mandate over
+ *     the whole graph (also refreshing the queue_priority display cache),
+ *     scoped mandates over their scopes — so staleness drift reorders
+ *     everyone's ranking without per-event bookkeeping.
  *
- *         due after stalenessBaseDays / clamp(queue_priority, 0.25, 2) days
+ *  3. ALLOCATE (allocation-service.ts): every mandate with a daily rate
+ *     takes its allocation pass, backing its best marginal increments up
+ *     to the day's room. The executor then runs whatever became covered.
  *
- *     — a priority-2 claim every base/2 days, a peripheral one at 4× base.
- *     At most stalenessMaxPerSweep claims are re-enqueued per tick: a
- *     bounded reassessment inflow, so cadence can never cascade the queue
- *     (#295's R<1 constraint holds by construction). The sweep marks each
- *     due claim 'pending' via the normal enqueue path; which of them
- *     actually run, and with how much effort, stays the drain's decision.
+ *  4. CADENCE (#283): an assessed claim is due a fresh look after an
+ *     interval that shrinks as its value grows —
+ *     stalenessBaseDays / clamp(value, 0.25, 2) days — re-enqueued at most
+ *     stalenessMaxPerSweep per tick: a bounded reassessment inflow, so
+ *     cadence can never cascade the candidate set (#295's R<1 holds by
+ *     construction). Which of them actually run stays the ledger's call.
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
- * is harmless (both jobs are idempotent).
+ * is harmless (every job is idempotent).
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
-import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
-import { runGeneralAllocator } from "../services/allocation-service.js";
+import { reconcileActions } from "../services/action-service.js";
+import { refreshAllValuations } from "../services/mandate-valuer-service.js";
+import { runDailyAllocators } from "../services/allocation-service.js";
 
 export interface AllocationTickResult {
-  prioritiesRefreshed: number;
+  actionsReconciled: number;
+  valuationsRefreshed: number;
   stalenessEnqueued: number;
   allocationsPlaced: number;
 }
@@ -51,7 +56,8 @@ export async function allocationSchedulerTick(
 ): Promise<AllocationTickResult> {
   const config = loadConfig();
   const result: AllocationTickResult = {
-    prioritiesRefreshed: 0,
+    actionsReconciled: 0,
+    valuationsRefreshed: 0,
     stalenessEnqueued: 0,
     allocationsPlaced: 0,
   };
@@ -60,11 +66,18 @@ export async function allocationSchedulerTick(
   if (now - lastSweepAt < intervalMs) return result;
   lastSweepAt = now;
 
-  result.prioritiesRefreshed = await refreshPendingQueuePriorities();
+  // 1. The ledger catches up with the graph.
+  const reconciled = await reconcileActions().catch(() => null);
+  if (reconciled) result.actionsReconciled = reconciled.assessEnsured;
 
-  // The General mandate places its next allocations on the fresh values
-  // (the drain also invites it opportunistically between sweeps).
-  const placed = await runGeneralAllocator().catch(() => null);
+  // 2. Every mandate re-judges its open actions.
+  const valued = await refreshAllValuations().catch(() => null);
+  if (valued) result.valuationsRefreshed = valued.valuations;
+
+  // 3. Every mandate with a daily rate places its next allocations on the
+  // fresh values (the drain also invites the General mandate's allocator
+  // opportunistically between sweeps).
+  const placed = await runDailyAllocators().catch(() => null);
   if (placed) result.allocationsPlaced = placed.allocated;
 
   // Cadence knobs come from the governing mandate's allocation policy.
@@ -114,9 +127,15 @@ export function startAllocationScheduler(options: {
     busy = true;
     try {
       const result = await allocationSchedulerTick();
-      if (result.prioritiesRefreshed > 0 || result.stalenessEnqueued > 0) {
+      if (
+        result.valuationsRefreshed > 0 ||
+        result.stalenessEnqueued > 0 ||
+        result.allocationsPlaced > 0
+      ) {
         options.logger.info(
-          `Allocation scheduler: priorities refreshed=${result.prioritiesRefreshed}, ` +
+          `Allocation scheduler: actions reconciled=${result.actionsReconciled}, ` +
+            `valuations refreshed=${result.valuationsRefreshed}, ` +
+            `allocations placed=${result.allocationsPlaced}, ` +
             `staleness re-enqueued=${result.stalenessEnqueued}`
         );
       }

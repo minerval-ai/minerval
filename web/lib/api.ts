@@ -157,52 +157,64 @@ export async function fetchContributorProfile(
 }
 
 // --- allocation transparency (owl economy, §15) ------------------------------
+// The EV/EC computation belongs to the mandates, so the public surface is
+// per-mandate: GET /mandates/:id/allocation, rendered on the mandate page.
 
-export interface QueueSnapshot {
-  depth: {
-    pending: number;
-    running: number;
-    done: number;
-    error: number;
-    deferred: number;
-  };
-  formula: {
-    contestation_floor: number;
-    staleness_saturation_days: number;
-    user_provenance_boost: number;
-  };
-  cost_estimates: {
-    standard_owls: number;
-    strong_owls: number;
-    strong_min_value: number | null;
-  };
-  general_mandate: {
-    grant_id: string;
-    daily_rate_owls: number;
-    allocated_today_owls: number;
-  } | null;
-  pending: Array<{
-    claim_id: string;
-    text: string;
-    expected_value: number;
-    expected_cost_owls: number;
-    allocated_owls: number;
-    remaining_owls: number;
-    covered: boolean;
-    value_per_owl: number | null;
-    inputs: {
-      importance: number;
-      marginal_yield: number | null;
-      contestation: number | null;
-      days_since_assessed: number | null;
-      user_proposed: boolean;
-    };
-  }>;
+export interface AllocationKindTile {
+  kind: string;
+  candidates: number;
+  valued: number;
+  covered: number;
+  allocated_owls: number;
+  est_total_cost_owls: number;
 }
 
-export async function fetchQueue(limit = 50): Promise<QueueSnapshot | null> {
+export interface AllocationActionRow {
+  action_id: string;
+  kind: string;
+  variant: string;
+  claim_id: string | null;
+  label: string;
+  value_est: number;
+  cost_owls: number;
+  value_per_owl: number;
+  backing_owls: number;
+  covered: boolean;
+  my_allocation_owls: number;
+  marginal_ratio: number | null;
+}
+
+export interface MandateAllocationView {
+  grant_id: string;
+  title: string;
+  policy: Record<string, number>;
+  budget: {
+    escrow_owls: number;
+    spent_owls: number;
+    daily_rate_owls: number;
+    allocated_today_owls: number;
+    today_bar: number | null;
+  };
+  kinds: AllocationKindTile[];
+  histogram: Array<{ min: number; max: number; count: number }>;
+  top: AllocationActionRow[];
+  more: number;
+}
+
+export async function fetchMandateAllocation(
+  mandateId: string,
+  opts: { kind?: string; offset?: number; limit?: number } = {},
+): Promise<MandateAllocationView | null> {
+  const params = new URLSearchParams();
+  if (opts.kind) params.set("kind", opts.kind);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.size > 0 ? `?${params}` : "";
   try {
-    return await apiGet<QueueSnapshot>(`/queue?limit=${limit}`);
+    const r = await apiGet<{ allocation: MandateAllocationView }>(
+      `/mandates/${mandateId}/allocation${qs}`,
+    );
+    return r.allocation;
   } catch {
     return null;
   }

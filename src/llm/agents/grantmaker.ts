@@ -328,9 +328,9 @@ async function runGrantmakerTurnImpl(input: {
       "asked of you in conversation, never edited in code. Every key is " +
       "bounded by the framework; out-of-range values are clamped. Known " +
       "keys: contestation_floor, staleness_saturation_days, " +
-      "user_provenance_boost, strong_min_value, est_steward_run_cost_owls, " +
-      "est_steward_run_cost_strong_owls, staleness_base_days, " +
-      "staleness_max_per_sweep.",
+      "user_provenance_boost, strong_gain_multiplier, " +
+      "est_steward_run_cost_owls, est_steward_run_cost_strong_owls, " +
+      "staleness_base_days, staleness_max_per_sweep.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -344,6 +344,29 @@ async function runGrantmakerTurnImpl(input: {
         },
       },
       required: ["updates", "note"],
+    },
+  };
+  const allocationReportTool: Tool = {
+    name: "allocation_report",
+    description:
+      "This mandate's live allocation view — the same data its public " +
+      "page renders: the policy in force, budget and daily rate, today's " +
+      "placements and the day's emergent value-per-owl bar, per-kind " +
+      "action tiles (candidates / valued / covered), and the mandate's " +
+      "best-ranked open actions with backing and marginal upgrade ratios. " +
+      "Use this for 'where is the money going and why' questions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        kind: {
+          type: "string",
+          description:
+            "Optional drill-down filter: assess, reassess, ingest, or " +
+            "grant_planning.",
+        },
+        limit: { type: "number", description: "Max ranked rows, default 10." },
+      },
+      required: [],
     },
   };
   const adjustTool: Tool = {
@@ -386,6 +409,7 @@ async function runGrantmakerTurnImpl(input: {
           pipelineTool,
           sourceClaimsTool,
           distributionTool,
+          allocationReportTool,
           adjustTool,
           policyTool,
         ]
@@ -654,6 +678,16 @@ async function executeManagementTool(
       [grantId]
     );
     return JSON.stringify(row ?? { claims: 0 });
+  }
+  if (name === "allocation_report") {
+    const { getMandateAllocationView } = await import(
+      "../../services/mandate-service.js"
+    );
+    const view = await getMandateAllocationView(grantId, {
+      kind: toolInput.kind ? String(toolInput.kind) : undefined,
+      limit: toolInput.limit ? Number(toolInput.limit) : undefined,
+    });
+    return JSON.stringify(view ?? { error: "mandate not active" });
   }
   if (name === "update_allocation_policy") {
     const note = String(toolInput.note ?? "").trim();

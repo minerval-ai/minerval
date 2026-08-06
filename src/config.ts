@@ -241,18 +241,26 @@ const configSchema = z.object({
   // User-proposed claims outrank equal-value corpus work (#284): a human
   // cared enough to type it in.
   priorityUserProvenanceBoost: z.coerce.number().default(0.15),
-  // Model tiering: background claims at/above this expected value run on
-  // the strong model (empty = tiering off, everything uses stewardModel).
-  // Paid express orders always use the strong model when set — the buyer is
-  // paying for the real thing.
+  // Model tiering (empty = tiering off, everything uses stewardModel).
+  // When set, every assess/reassess exclusion group gets a 'strong' variant
+  // row beside the standard one, and each mandate's allocator decides by
+  // MARGINAL return whether the upgrade is worth funding: back the strong
+  // sibling only when Δvalue/Δcost clears the day's bar. Paid express
+  // orders always use the strong model — the buyer pays for the real thing.
   stewardStrongModel: z.string().default(""),
-  stewardStrongMinPriority: z.coerce.number().default(0.5),
+  // How much more a strong-model pass is expected to be worth than a
+  // standard pass of the same claim: value(strong) = value(standard) × this.
+  // A guess to be revised by the governing mandate's Grantmaker (it is a
+  // policy knob, strong_gain_multiplier); the marginal-return rule does the
+  // real work of deciding when the upgrade is bought.
+  strongGainMultiplier: z.coerce.number().default(1.3),
   // Expected-cost priors for one Steward pass, in owls, by tier — the EC
-  // denominators of the drain's value/cost ordering. Priors are starting
-  // guesses; when enough recent metered runs exist the live rolling average
-  // replaces them (cost-estimate-service.ts).
-  estStewardRunCostOwls: z.coerce.number().default(0.25),
-  estStewardRunCostStrongOwls: z.coerce.number().default(1),
+  // denominators of the allocators' value/cost ordering. Deliberately not
+  // round numbers: they are guesses at the metered average (a sonnet pass
+  // vs. a fable pass), and the live rolling average replaces them once
+  // enough recent runs exist (cost-estimate-service.ts).
+  estStewardRunCostOwls: z.coerce.number().default(0.15),
+  estStewardRunCostStrongOwls: z.coerce.number().default(0.9),
   costEstimateWindowDays: z.coerce.number().default(14),
   costEstimateMinRuns: z.coerce.number().default(5),
   // The background lane's total metered spend per UTC day, in owls
@@ -453,7 +461,7 @@ export function loadConfig(): Config {
       process.env.PRIORITY_STALENESS_SATURATION_DAYS,
     priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
     stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
-    stewardStrongMinPriority: process.env.STEWARD_STRONG_MIN_PRIORITY,
+    strongGainMultiplier: process.env.STRONG_GAIN_MULTIPLIER,
     estStewardRunCostOwls: process.env.EST_STEWARD_RUN_COST_OWLS,
     estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
     costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,

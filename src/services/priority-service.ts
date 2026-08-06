@@ -22,8 +22,11 @@
  * platform's effective COST for the claim (and once they cover it, the
  * pass simply runs, funded — steward-pipeline.ts). Value stays epistemics.
  *
- * The result is stored on claims.queue_priority. Cost lives elsewhere
- * (cost-estimate-service.ts); the drain divides the two at selection time.
+ * The result is stored on claims.queue_priority — a DISPLAY CACHE for
+ * claim pages and the fallback drain. The authoritative store is
+ * mandate_valuations, written per mandate by mandate-valuer-service.ts
+ * (the same formula, bulk SQL over open actions); cost lives elsewhere
+ * (cost-estimate-service.ts) and each mandate's allocator divides the two.
  * Every knob is config — legible, tunable, printable. The formula is an
  * INPUT TO JUDGMENT about ordering, not a black box that decides what is
  * true (Part VIII): heuristics start as guesses and get revised as the
@@ -133,7 +136,8 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
             COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
                         FROM action_allocations a
-                       WHERE a.claim_id = c.id AND a.action = 'assess'), 0)
+                       WHERE a.exclusion_group = 'assess:' || c.id::text
+                         AND a.released_at IS NULL), 0)
               AS backing_micro
        FROM claims c WHERE c.id = $1`,
     [claimId]
