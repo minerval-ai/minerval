@@ -99,40 +99,49 @@ what the user owes is the owl ledger, below.
 Usage is queryable per user/key/day/agent (`GET /usage`) and in aggregate for
 ops (`GET /usage/system`, service-only).
 
-## The owl: prices, free tier & quotas
+## The owl: caps, free tier & quotas
 
-The price list lives in `src/services/owl.ts` and rides on every entitlement
-and 402 body, so what things cost is legible before anything is spent (§15):
+Nothing has a fixed price: every operation is metered at cost-plus, and the
+quoted figure is a **cap** — the most the run may cost, set near the
+average so a button can carry one honest number. The cap is charged when
+the work starts, and the unused fraction settles back to the balance when
+the meter has the real cost (`meter_settlement` ledger rows); a run that
+exceeds its cap is absorbed by the platform. The cap list lives in
+`src/services/owl.ts` and rides on every entitlement and 402 body
+(`caps_owls`), so the ceiling on everything is legible before anything is
+spent (§15):
 
-| operation | price (default) | config |
+| operation | cap (default) | config |
 |---|---|---|
-| propose a claim (`POST /claims/propose`) | **1 owl** | `PRICE_CLAIM_PROPOSAL_OWLS` |
-| order a claim assessment (Stage 2) | **1 owl** | `PRICE_ASSESSMENT_OWLS` |
-| submit a source (`POST /sources`) | 0.1 owl | `PRICE_SOURCE_INGEST_OWLS` |
-| extension page analysis | 0.1 owl | `PRICE_EXTENSION_ANALYSIS_OWLS` |
-| extension chat exchange | 0.1 owl | `PRICE_EXTENSION_CHAT_OWLS` |
-| MCP text tools (match/extract/assess) | 0.1 owl | `PRICE_TEXT_ANALYSIS_OWLS` |
+| propose a claim (`POST /claims/propose`) | **up to 1 owl** | `CAP_CLAIM_PROPOSAL_OWLS` |
+| order a claim assessment | **up to 1 owl** | `CAP_ASSESSMENT_OWLS` |
+| submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
+| extension page analysis | up to 0.1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
+| extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
+| MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
 
-Open-ended operations (deep decomposition, grantor agents) are deliberately
-NOT priced flat — they are funded with escrowed owl budgets (see below).
+Open-ended operations (deep decomposition, grant mandates) are not capped
+per run — they are funded with escrowed owl budgets and metered against
+them (see below).
 
-## Assessment orders — the express lane
+## Assessment orders — immediate paid work
 
-`POST /claims/:id/order` (1 owl) buys a Steward (re)assessment of a claim. A
-paid order is a purchase, not a request: the dispatcher
-(`src/workers/order-pipeline.ts`) runs it AHEAD of the background
-importance-ordered drain — checked first on every runner tick — so dispatch
-latency is a tick, not a queue position. Semantics:
+`POST /claims/:id/order` (up to 1 owl) buys a Steward (re)assessment of a
+claim. A paid order is a purchase, not a request: the dispatcher
+(`src/workers/order-pipeline.ts`) runs it AHEAD of the background lane —
+checked first on every runner tick — so dispatch latency is a tick, not a
+queue position. Semantics:
 
-- **Charge-at-start.** The order is created uncharged; the owl is debited
-  the moment the Steward run begins. While `pending` the order cancels free
-  (`DELETE /orders/:id`). A genuine run failure refunds automatically; a
-  transient failure requeues the order with its charge intact (the retry
-  never double-charges).
+- **Cap-at-start, settle-at-finish.** The order is created uncharged; the
+  cap is debited the moment the Steward run begins, and the metered cost
+  settles against it at completion — the unused fraction returns. While
+  `pending` the order cancels free (`DELETE /orders/:id`). A genuine run
+  failure refunds automatically; a transient failure requeues the order
+  with its charge intact (the retry never double-charges).
 - **Stakes.** Every charged order records a `claim_stakes` row — the demand
-  signal the background lane's composite priority reads. Stakes are queue
-  input, never `claims.importance` input: money buys position, not epistemic
-  standing.
+  signal the background lane's expected-value estimate reads. Stakes are
+  scheduling input, never `claims.importance` input: money buys
+  scheduling, not epistemic standing.
 - **Accepted claim proposals** create a proposal-funded order automatically
   (the claim_proposal charge rides along), so a paid proposal's claim runs
   on the express lane instead of waiting behind corpus work (#284).
@@ -163,28 +172,31 @@ claim's subtree. Open-ended work gets a budget, not a price:
 
 This budget entity is the substrate grants build on.
 
-## Grants — grantmaker mandates
+## Grants — the granting conversation
 
-`POST /grants` creates and funds a mandate: an escrowed owl budget + a scope
-(a claim's subtree and/or a topic query) + a policy + a public name. The
-grant worker (`src/workers/grant-pipeline.ts`) executes one Steward run per
-tick, metered to the grant's budget:
+People create grants by talking to the **Grantmaker agent**
+(`/grant-conversations`, UI at `/account/grants/new`): the best available
+model, running with the full constitution, surveys the scope, quotes
+expected costs in owls, pushes back where judgment differs, and drafts a
+mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
+the budget and starts the grant with the mandate as its plan; nothing runs
+or is charged before that. The Grantmaker works for the integrity of the
+graph and declines mandates that attempt to steer conclusions, at any
+budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
+items (funded ingestion: source URLs extracted and matched, metered to the
+escrow). Direct `POST /grants` (scope + policy + budget) remains for
+service/operator tooling; its selector policies (**cover**, **deepen**,
+**maintain**, **agent**) are documented in the worker
+(`src/workers/grant-pipeline.ts`), which executes one unit per tick metered
+to the grant's budget.
 
-- **cover** — every in-scope claim gets at least one assessment, breadth
-  first; **deepen** — the scope's pending/deferred claims, buying the depth
-  the economic brake held out; **maintain** — refresh in-scope assessments
-  older than `GRANT_MAINTAIN_CADENCE_DAYS`.
-- **agent** — the Grantor agent (`src/llm/agents/grantor.ts`) surveys the
-  scope (importance, contestation, assessment age, marginal yield, deferred
-  subclaims) and proposes an allocation plan; NOTHING beyond the planning
-  run is spent until the funder approves it (`POST /grants/:id/approve`).
-  Execution of the approved plan is mechanical.
-
-Every funded run records a `claim_stakes` row (source 'grant' — a
-background-priority subsidy) and every assessment it produces is stamped
-with `funded_by_job_id` — surfaced on the claim page as "assessment funded
-by the grant …" (§19: funding is always disclosed; the verdict's standards
-never change). Pause/top-up/refund semantics are the budget job's:
+Every funded run records a `claim_stakes` row (source 'grant' — raising
+the claim's expected-value estimate in the background lane) and every
+assessment it produces is stamped with `funded_by_job_id` — disclosed at
+the bottom of the claim page as scheduled by "a funded mandate", together
+with the explanation that funding buys scheduling, never conclusions or
+graph membership. Funder-chosen names never appear on claim surfaces.
+Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
 `GET /grants/:id` (spend, plan, the assessments the grant bought).
 
@@ -221,12 +233,14 @@ balance = SUM(owl_ledger.amount_micro_usd)
 ```
 
 Reasons: `purchase`, `signup_grant`, `monthly_grant`, `contribution_award`,
-`charge`, `refund`, `escrow_hold`/`escrow_refund` (budgeted jobs, Stage 2),
-`admin_adjust`. Charges carry the operation (`op`) and link to the claim or
-contribution they paid for, so the account history reads as "1 owl —
-assessment of claim X". Charges are balance-guarded single-statement inserts;
-two racing requests can overshoot by at most one operation each (the same
-slack the metered era accepted).
+`charge`, `meter_settlement` (the unused fraction of a charged cap,
+returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
+(budgeted jobs), `admin_adjust`. Charges carry the operation (`op`) and
+link to the claim or contribution they paid for, so the account history
+reads as "up to 1 owl held for the assessment of claim X, 0.6 returned".
+Charges are balance-guarded single-statement inserts; two racing requests
+can overshoot by at most one operation each (the same slack the metered
+era accepted). Settlements are idempotent per settle key.
 
 **Earning owls (#71):** an accepted contribution awards importance-scaled
 points (1–5, the old kudos rule) × `CONTRIBUTION_AWARD_OWL_PER_POINT`
