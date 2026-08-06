@@ -4,7 +4,7 @@ import { submitSource } from "../services/source-service.js";
 import { createSourceProposal } from "../services/intake-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
-import { chargeAgenticOp } from "../server/plugins/quota.js";
+import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
@@ -89,14 +89,21 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       const charge = await chargeAgenticOp(auth, "source_ingest");
       if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
 
-      const { contribution, sourceId } = await createSourceProposal({
-        url: body.url,
-        title: body.title,
-        content: body.content,
-        contributorId: contributor.id,
-      });
-      if (charge.entryId) {
-        await attachChargeContribution(charge.entryId, contribution.id);
+      let contribution, sourceId;
+      try {
+        ({ contribution, sourceId } = await createSourceProposal({
+          url: body.url,
+          title: body.title,
+          content: body.content,
+          contributorId: contributor.id,
+        }));
+        if (charge.entryId) {
+          await attachChargeContribution(charge.entryId, contribution.id);
+        }
+      } catch (err) {
+        // The proposal never materialized: the user must not pay for a 500.
+        await refundAgenticOp(auth, "source_ingest").catch(() => {});
+        throw err;
       }
 
       return reply.code(202).send({

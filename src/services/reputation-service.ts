@@ -266,6 +266,7 @@ export async function applyReviewOutcome(
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
       owls: owlsForImportance(contribution.importance),
+      awardKey: `award:accept:${input.contributionId}`,
     });
   } else if (input.decision === "reject") {
     await refundChargeForContribution(input.contributionId);
@@ -440,6 +441,7 @@ export async function applyArbitrationOutcome(input: {
       contributorId: contribution.contributor_id,
       contributionId: input.contributionId,
       owls: owlsForImportance(contribution.importance),
+      awardKey: `award:arbitration:${input.contributionId}`,
     });
   } else {
     await refundChargeForContribution(input.contributionId);
@@ -592,6 +594,7 @@ export async function reverseReviewOutcome(input: {
       (awardPointsForImportance(contribution.importance) +
         SURVIVED_APPEAL_BONUS_POINTS) *
       config.contributionAwardOwlPerPoint,
+    awardKey: `award:overturned:${input.contributionId}`,
   });
 
   return {

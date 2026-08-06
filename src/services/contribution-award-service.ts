@@ -47,27 +47,36 @@ export interface ContributionAward {
   contributorId: string;
   contributionId?: string | null;
   owls: number;
+  /** Unique key making the award idempotent (a retried decision path — an
+   * LLM re-issuing the review tool call — must award exactly once). */
+  awardKey?: string | null;
 }
 
 /**
  * Append an award to the owl ledger and keep the denormalized lifetime-earned
- * total in sync. Returns the owls actually awarded.
+ * total in sync. Returns the owls actually awarded (0 when the awardKey
+ * already landed).
  */
 export async function awardContributionOwls(
   input: ContributionAward
 ): Promise<number> {
   if (input.owls <= 0) return 0;
   const amountMicro = owlsToMicroUsd(input.owls);
-  await rawQuery(
-    `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, contribution_id)
-     VALUES ($1, $2, $3, $4)`,
+  const inserted = await rawQuery<{ id: string }>(
+    `INSERT INTO owl_ledger
+       (user_id, amount_micro_usd, reason, contribution_id, idempotency_key)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING id`,
     [
       input.contributorId,
       amountMicro,
       OWL_REASONS.contributionAward,
       input.contributionId ?? null,
+      input.awardKey ?? null,
     ]
   );
+  if (inserted.length === 0) return 0;
   await rawQuery(
     `UPDATE contributors
         SET owls_earned_micro_usd = owls_earned_micro_usd + $1

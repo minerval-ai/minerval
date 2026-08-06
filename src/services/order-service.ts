@@ -77,6 +77,9 @@ export async function createOrder(input: {
     };
   }
 
+  // The partial unique index (uq_orders_open_per_claim) is the real guard:
+  // two racing creates cannot both insert an open order. The select above
+  // is just the friendly-message fast path.
   const [order] = await db
     .insert(assessmentOrders)
     .values({
@@ -89,8 +92,18 @@ export async function createOrder(input: {
       // settles the unused fraction back once the meter has the real cost.
       priceMicroUsd: capMicroUsd("assessment"),
     })
+    .onConflictDoNothing()
     .returning();
-  return { ok: true, order: order! };
+  if (!order) {
+    const existing = await getOpenOrderForClaim(input.userId, input.claimId);
+    return {
+      ok: false,
+      code: "ORDER_ALREADY_OPEN",
+      message: "You already have an open order for this claim",
+      existingOrderId: existing?.id,
+    };
+  }
+  return { ok: true, order };
 }
 
 export type OrderCancelResult =
