@@ -71,7 +71,7 @@ describe("allocationSchedulerTick", () => {
       { id: "c-2", days_old: 70 },
     ];
     const result = await allocationSchedulerTick(1_000_000);
-    expect(result).toEqual({ prioritiesRefreshed: 3, stalenessEnqueued: 2 });
+    expect(result).toEqual({ prioritiesRefreshed: 3, stalenessEnqueued: 2, allocationsPlaced: 0 });
     expect(state.enqueued).toEqual([
       { claimId: "c-1", trigger: "staleness_check" },
       { claimId: "c-2", trigger: "staleness_check" },
@@ -92,7 +92,7 @@ describe("allocationSchedulerTick", () => {
   it("runs at most once per interval", async () => {
     await allocationSchedulerTick(1_000_000);
     const second = await allocationSchedulerTick(1_000_000 + 60_000);
-    expect(second).toEqual({ prioritiesRefreshed: 0, stalenessEnqueued: 0 });
+    expect(second).toEqual({ prioritiesRefreshed: 0, stalenessEnqueued: 0, allocationsPlaced: 0 });
     expect(state.refreshed).toBe(1);
 
     const later = await allocationSchedulerTick(1_000_000 + 7 * 3_600_000);
@@ -102,7 +102,7 @@ describe("allocationSchedulerTick", () => {
   it("is disabled entirely by allocationSweepIntervalHours = 0", async () => {
     state.config.allocationSweepIntervalHours = 0;
     const result = await allocationSchedulerTick(1_000_000);
-    expect(result).toEqual({ prioritiesRefreshed: 0, stalenessEnqueued: 0 });
+    expect(result).toEqual({ prioritiesRefreshed: 0, stalenessEnqueued: 0, allocationsPlaced: 0 });
     expect(state.refreshed).toBe(0);
   });
 });

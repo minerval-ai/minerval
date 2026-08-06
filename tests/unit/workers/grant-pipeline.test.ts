@@ -174,7 +174,7 @@ describe("processNextGrantTask", () => {
     });
   });
 
-  it("executes a cover target with grant attribution and a stake", async () => {
+  it("executes a cover target with grant attribution", async () => {
     state.grant = grant();
     state.targets = [
       {
@@ -190,7 +190,6 @@ describe("processNextGrantTask", () => {
     expect(stewardRuns).toEqual([
       { claimId: "c-1", trigger: "structure_and_assess" },
     ]);
-    expect(state.stakes).toHaveLength(1);
     expect(state.usageContexts[0]).toMatchObject({
       userId: "funder-1",
       jobId: "gjob-1",

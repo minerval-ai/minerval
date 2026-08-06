@@ -98,10 +98,17 @@ const configSchema = z.object({
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
-  // Face value of one owl — the platform's unit of account — in micro-USD.
-  // $4 ≈ one claim assessment (~$1 of frontier-model work at the same 4×
-  // margin usageMarkupMultiplier applied in the metered era).
+  // The two sides of the owl, kept deliberately distinct:
+  //
+  //   owlPriceMicroUsd — what one owl costs to BUY ($4). Used only for
+  //     purchase-pack discount math and price display. The platform's whole
+  //     margin lives here, and it is public.
+  //   owlCostMicroUsd — what one owl of SPEND covers: one dollar of metered
+  //     cost, one for one. Cost is measured in dollars, not owls: an action
+  //     that costs a dollar costs a whole owl, regardless of what the owl
+  //     sold for. Every ledger/charge/estimate conversion uses this.
   owlPriceMicroUsd: z.coerce.number().positive().default(4_000_000),
+  owlCostMicroUsd: z.coerce.number().positive().default(1_000_000),
   // Per-run CAPS for bounded agentic operations, in owls (fractions
   // allowed) — the most a run may cost, not a fixed price. Everything is
   // metered at cost-plus; the cap is charged up front, the unused fraction
@@ -155,14 +162,6 @@ const configSchema = z.object({
         .filter((p) => p.owls > 0 && p.priceCents > 0)
     )
     .default("5:2000,15:5500,40:14000,125:40000"),
-  // Multiplier applied to derived model cost at the metering insert
-  // (usage-service). Usage rows stay internal cost observability (the bill
-  // is the owl ledger), but the marked-up denomination is kept so historic
-  // rows and margin math stay comparable. Raw provider cost is recoverable
-  // by dividing usage rows by the multiplier in effect when they were
-  // written; changing it only affects new rows.
-  usageMarkupMultiplier: z.coerce.number().positive().default(4),
-
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
   contributionRateLimitPerHour: z.coerce.number().default(10),
@@ -234,11 +233,9 @@ const configSchema = z.object({
   // heuristics start as guesses and get revised as the eval engine grows.
   // The contested-factor floor: how fundable an uncontested claim stays.
   valueContestationFloor: z.coerce.number().default(0.25),
-  // Paid demand adds value (someone cares enough to spend); it saturates at
-  // this many owls so the 6th owl on one claim buys less position than the
-  // 1st, and wealth can't monopolize the lane.
-  priorityStakeWeight: z.coerce.number().default(0.5),
-  priorityStakeSaturationOwls: z.coerce.number().default(5),
+  // Money never enters the VALUE estimate. Reader contributions toward a
+  // claim reduce its effective COST in the selection ratio, and once they
+  // cover the expected cost the pass simply runs, funded (steward-pipeline).
   // Days until staleness alone fully revives a claim's expected gain.
   priorityStalenessSaturationDays: z.coerce.number().default(90),
   // User-proposed claims outrank equal-value corpus work (#284): a human
@@ -435,7 +432,6 @@ export function loadConfig(): Config {
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     owlPacks: process.env.OWL_PACKS,
-    usageMarkupMultiplier: process.env.USAGE_MARKUP_MULTIPLIER,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
@@ -452,8 +448,7 @@ export function loadConfig(): Config {
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
     valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
-    priorityStakeWeight: process.env.PRIORITY_STAKE_WEIGHT,
-    priorityStakeSaturationOwls: process.env.PRIORITY_STAKE_SATURATION_OWLS,
+    owlCostMicroUsd: process.env.OWL_COST_MICRO_USD,
     priorityStalenessSaturationDays:
       process.env.PRIORITY_STALENESS_SATURATION_DAYS,
     priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,

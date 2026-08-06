@@ -29,10 +29,13 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { enqueueSteward } from "../services/queue-service.js";
+import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
+import { runGeneralAllocator } from "../services/allocation-service.js";
 
 export interface AllocationTickResult {
   prioritiesRefreshed: number;
   stalenessEnqueued: number;
+  allocationsPlaced: number;
 }
 
 let lastSweepAt = Number.NEGATIVE_INFINITY;
@@ -50,6 +53,7 @@ export async function allocationSchedulerTick(
   const result: AllocationTickResult = {
     prioritiesRefreshed: 0,
     stalenessEnqueued: 0,
+    allocationsPlaced: 0,
   };
   if (config.allocationSweepIntervalHours <= 0) return result;
   const intervalMs = config.allocationSweepIntervalHours * 3_600_000;
@@ -58,7 +62,14 @@ export async function allocationSchedulerTick(
 
   result.prioritiesRefreshed = await refreshPendingQueuePriorities();
 
-  if (config.stalenessBaseDays > 0 && config.stalenessMaxPerSweep > 0) {
+  // The General mandate places its next allocations on the fresh values
+  // (the drain also invites it opportunistically between sweeps).
+  const placed = await runGeneralAllocator().catch(() => null);
+  if (placed) result.allocationsPlaced = placed.allocated;
+
+  // Cadence knobs come from the governing mandate's allocation policy.
+  const policy = await getEffectiveAllocationPolicy();
+  if (policy.staleness_base_days > 0 && policy.staleness_max_per_sweep > 0) {
     // Most-overdue first, judged against each claim's own cadence.
     const due = await rawQuery<{ id: string; days_old: number }>(
       `SELECT c.id,
@@ -72,7 +83,7 @@ export async function allocationSchedulerTick(
                 ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
         ORDER BY a.assessed_at ASC
         LIMIT $2`,
-      [config.stalenessBaseDays, config.stalenessMaxPerSweep]
+      [policy.staleness_base_days, policy.staleness_max_per_sweep]
     );
     for (const claim of due) {
       await enqueueSteward({

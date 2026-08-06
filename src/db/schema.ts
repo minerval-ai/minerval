@@ -689,35 +689,52 @@ export const assessmentOrders = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// claim_stakes
+// action_allocations
 //
-// The demand signal: owls put behind a claim (an assessment order today, a
-// grantmaker subsidy later). Stakes are an input to background QUEUE PRIORITY
-// — never to claims.importance, which money must not touch. Append-only.
+// THE allocation mechanism, one for everyone. An allocation is money a
+// funder — a mandate (grant_id) or a person directly (user_id) — has put
+// toward one specific action (assessing one claim, today's only action
+// type). An action RUNS exactly when the total unspent allocations on it
+// cover its expected cost; until then it waits, however many funders have
+// partially backed it. When it runs, the metered cost is split across the
+// allocations pro rata and recorded in spent_micro_usd — each funder pays
+// their proportional share, no one pays for what another funder covered.
+//
+// Minerval's own General assessment mandate spends through this same
+// table: its allocator backs the highest value-per-dollar candidates up
+// to its daily rate, and its runs happen only because its allocations
+// covered them — dogfooding, not a privileged lane. Allocations never
+// touch claims.importance and never enter the value estimate.
 // ---------------------------------------------------------------------------
-export const claimStakes = pgTable(
-  "claim_stakes",
+export const actionAllocations = pgTable(
+  "action_allocations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // The action, as (kind, target). 'assess' is today's only kind.
+    action: text("action").notNull().default("assess"),
     claimId: uuid("claim_id")
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => contributors.id, { onDelete: "cascade" }),
-    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
-    // order | grant
-    source: text("source").notNull().default("order"),
-    orderId: uuid("order_id").references(() => assessmentOrders.id, {
-      onDelete: "set null",
+    // The funder: exactly one of a mandate or a person directly.
+    grantId: uuid("grant_id").references(() => grants.id, {
+      onDelete: "cascade",
     }),
+    userId: uuid("user_id").references(() => contributors.id, {
+      onDelete: "cascade",
+    }),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // The funder's consumed share of runs this allocation helped cover.
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    index("idx_claim_stakes_claim").on(table.claimId),
-    index("idx_claim_stakes_user").on(table.userId),
+    index("idx_action_allocations_claim").on(table.claimId),
+    index("idx_action_allocations_grant").on(table.grantId),
+    index("idx_action_allocations_user").on(table.userId),
   ]
 );
 
@@ -837,6 +854,20 @@ export const grants = pgTable(
     // Platform-run mandates (Minerval's own: Mathematics, AI Economics, …)
     // get pride of place on the public /mandates page.
     isPlatform: boolean("is_platform").notNull().default(false),
+    // Optional spend rate: at most this much metered cost per UTC day
+    // (0 = no rate cap, pace bounded by escrow alone). Shared mandate
+    // infrastructure — Minerval's General assessment mandate paces itself
+    // with this, and any funder can set one on their own mandate.
+    dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    // The mandate's own allocation rules, owned and amended by ITS
+    // Grantmaker (update_allocation_policy), never edited directly in
+    // code: value-formula knobs, cost priors, tier threshold, cadence.
+    // Null = inherit the shared defaults (config). The General mandate's
+    // policy governs the platform's own lane — when we learn something
+    // about allocation, we ask its Grantmaker to change the formula.
+    allocationPolicy: jsonb("allocation_policy"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1422,8 +1453,8 @@ export type NewAuditRun = typeof auditRuns.$inferInsert;
 export type AuditFinding = typeof auditFindings.$inferSelect;
 export type AssessmentOrder = typeof assessmentOrders.$inferSelect;
 export type NewAssessmentOrder = typeof assessmentOrders.$inferInsert;
-export type ClaimStake = typeof claimStakes.$inferSelect;
-export type NewClaimStake = typeof claimStakes.$inferInsert;
+export type ActionAllocation = typeof actionAllocations.$inferSelect;
+export type NewActionAllocation = typeof actionAllocations.$inferInsert;
 export type BudgetJob = typeof budgetJobs.$inferSelect;
 export type NewBudgetJob = typeof budgetJobs.$inferInsert;
 export type Grant = typeof grants.$inferSelect;

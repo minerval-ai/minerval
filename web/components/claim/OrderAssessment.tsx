@@ -170,10 +170,71 @@ export function OrderAssessment({
         <span className="order-caption">
           A Steward agent examines the evidence and records a verdict,
           usually within minutes. The owl is held only when the run starts,
-          and the unused part is returned when it finishes.
+          and the unused part is returned when it finishes.{" "}
+          <ChipIn claimId={claimId} />
         </span>
       )}
       {error && <p className="form-error">{error}</p>}
     </div>
+  );
+}
+
+// The partial path: put less than the full cost toward the assessment.
+// Allocations accumulate across funders (people and mandates alike), and
+// the assessment runs the moment they cover its expected cost.
+function ChipIn({ claimId }: { claimId: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "done" | "covered">(
+    "idle"
+  );
+  const [note, setNote] = useState<string | null>(null);
+
+  if (state === "done" || state === "covered") {
+    return (
+      <span role="status">
+        {note ?? "Your owls are in; they count toward this assessment."}
+      </span>
+    );
+  }
+  return (
+    <>
+      Or{" "}
+      <button
+        className="linklike"
+        disabled={state === "busy"}
+        onClick={async () => {
+          setState("busy");
+          try {
+            const res = await fetch(`/api/claims/${claimId}/contribute`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ owls: 0.25 }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              setNote(data.error ?? "That did not go through; try again.");
+              setState("idle");
+            } else if (data.covered) {
+              setNote(
+                "That completed the funding; the assessment will run shortly."
+              );
+              setState("covered");
+            } else {
+              setNote(
+                `Thank you: ${data.unspent_owls} owls are now backing this ` +
+                  `assessment. It runs the moment the pot covers the cost.`
+              );
+              setState("done");
+            }
+          } catch {
+            setNote("That did not go through; try again.");
+            setState("idle");
+          }
+        }}
+      >
+        {state === "busy" ? "chipping in…" : "chip in a quarter owl"}
+      </button>{" "}
+      toward it; the assessment runs once contributions cover its cost.
+      {note && state === "idle" && <span> {note}</span>}
+    </>
   );
 }

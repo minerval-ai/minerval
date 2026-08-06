@@ -48,6 +48,7 @@ const LEDGER_REASONS: Record<string, string> = {
   contribution_award: "earned by contribution",
   refund: "refunded",
   escrow_hold: "escrowed for funded work",
+  claim_contribution: "put toward a claim's assessment",
   escrow_refund: "unspent escrow returned",
   admin_adjust: "adjustment",
 };
@@ -194,11 +195,14 @@ export default async function AccountPage({
           owl{entitlement.owl_balance === 1 ? "" : "s"}
         </p>
         <p>
-          The owl is Minerval&rsquo;s unit of account: one owl is{" "}
-          {usd(entitlement.owl_price_micro_usd)}, buys{" "}
-          {usd(entitlement.owl_price_micro_usd)} of metered work on the
-          platform, and covers a full claim assessment by the best available
-          model. Nothing has a fixed price. Each figure below is a ceiling,
+          The owl is Minerval&rsquo;s unit of account. Cost is measured in
+          dollars, and one owl covers{" "}
+          {usd(entitlement.owl_cost_micro_usd)} of metered work: enough for
+          a full claim assessment by the best available model. Buying an owl
+          costs {usd(entitlement.owl_price_micro_usd)}; the difference is
+          the platform&rsquo;s whole margin, stated plainly, and it funds
+          the graph&rsquo;s own standing mandates. Nothing has a fixed
+          price. Each figure below is a ceiling,
           set near what the work usually costs: the ceiling is held when the
           work starts, the actual cost is metered as it runs, and the unused
           part returns to your balance when it finishes. Reading, searching,
@@ -263,7 +267,7 @@ export default async function AccountPage({
                     <td>{dateish(e.created_at)}</td>
                     <td>
                       <OwlMark size={14} className="owl-mark" />
-                      {owls(e.amount_micro_usd / entitlement.owl_price_micro_usd)}
+                      {owls(e.amount_micro_usd / entitlement.owl_cost_micro_usd)}
                     </td>
                     <td>
                       {e.claim_id ? (

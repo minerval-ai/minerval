@@ -54,11 +54,11 @@ describe("awardContributionOwls", () => {
     const [insert, update] = mocks.rawQuery.mock.calls;
     expect(insert[0]).toContain("INSERT INTO owl_ledger");
     // 0.75 owls at the $4 face = 3,000,000 micro-USD.
-    expect(insert[1]).toEqual(["c-1", 3_000_000, "contribution_award", "k-1"]);
+    expect(insert[1]).toEqual(["c-1", 750_000, "contribution_award", "k-1"]);
     expect(update[0]).toContain(
       "owls_earned_micro_usd = owls_earned_micro_usd + $1"
     );
-    expect(update[1]).toEqual([3_000_000, "c-1"]);
+    expect(update[1]).toEqual([750_000, "c-1"]);
   });
 
   it("ignores non-positive awards", async () => {
@@ -74,7 +74,7 @@ describe("clawbackContributionOwls", () => {
       contributorId: "c-1",
       contributionId: "k-1",
     });
-    expect(reversed).toBe(1.25);
+    expect(reversed).toBe(5);
 
     const [, insert, update] = mocks.rawQuery.mock.calls;
     expect(insert[0]).toContain("INSERT INTO owl_ledger");

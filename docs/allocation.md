@@ -9,29 +9,38 @@ section.
 
 ## The standard
 
-One decision rule governs every action the system can take on its own
-initiative — ingesting a source, assessing a claim, reassessing a stale one,
-deepening a subtree, curating, escalating to a stronger model or a research
-tool:
+One engine allocates all attention, uniformly for every funder:
 
-    take the actions with the highest
-    expected marginal value / expected marginal cost,
-    best first, up to a bounded total spend per day.
+    money is placed as ALLOCATIONS on specific actions;
+    an action RUNS exactly when its allocations cover its expected cost;
+    the metered cost splits among its funders pro rata.
 
-Both sides are estimates, produced by legible heuristics that start as
-guesses and get revised as Minerval's evaluation machinery matures. Neither
-side is ever a verdict input: the estimates order work and select effort,
-and appear nowhere in an assessment.
+The graph's own work is not a special case: Minerval runs a standing
+General assessment mandate whose budget is the dollars the platform
+allocates to expanding and maintaining the graph. Each day its allocator
+backs the candidates with the highest expected marginal value per dollar
+of remaining cost, best first, until its daily rate is committed. The bar
+is emergent from the budget: most actions whose value merely exceeds
+their cost still fall below the day's threshold and wait for co-funding
+or a cheaper day.
+
+Value and cost are estimates, produced by legible heuristics that start
+as guesses; they are the governing mandate's ALLOCATION POLICY, revised
+by asking its Grantmaker (below), not by editing code. Neither side is
+ever a verdict input: the estimates order work and select effort, and
+appear nowhere in an assessment.
 
 ## The unit: the owl
 
-One **owl** = $4 face value, matching platform dollar spend one for one at
-the metered cost-plus rate (~$1 of frontier-model work at the 4× margin);
-that mapping is public, never a secret. Everything user-facing is
-denominated in owls; internal accounting stays micro-USD (`owl_ledger`,
-`llm_usage`). Owls are strictly one-way — bought or earned, then spent,
-never redeemed for cash — which keeps the regulatory surface at "prepaid
-credits".
+Cost is measured in dollars, not owls. One owl of SPEND covers exactly one
+dollar of metered cost (`OWL_COST_MICRO_USD`); an action that costs a
+dollar costs a whole owl. One owl SELLS for $4 (`OWL_PRICE_MICRO_USD`):
+the platform's entire margin lives in that purchase price, openly, and
+funds the platform's own mandates — Minerval buys its own owls at $1, at
+cost. Everything user-facing is denominated in owls; internal accounting
+stays micro-USD of cost (`owl_ledger`, `llm_usage`, `action_allocations`).
+Owls are strictly one-way — bought or earned, then spent, never redeemed
+for cash — which keeps the regulatory surface at "prepaid credits".
 
 One currency, deliberately: accepted contributions EARN spendable owls
 (importance-scaled, docs/accounts.md), so the people who improve the graph
@@ -40,33 +49,37 @@ ungameable by purchase: the leaderboard ranks lifetime owls *earned*.
 
 ## Caps, not prices
 
-Nothing has a fixed price; everything is metered at cost-plus. A quoted owl
-figure ("assess this claim: up to 1 owl") is a **cap** — the most the
+Nothing has a fixed price; everything is metered at real cost. A quoted
+owl figure ("assess this claim: up to 1 owl") is a **cap** — the most the
 operation may cost, set near its average cost so a button can carry one
 honest number. The cap is charged when the work starts, the meter records
 the real cost, and the unused fraction settles back to the balance
-(`meter_settlement` ledger rows). A run that exceeds its cap is absorbed by
-the platform: the ceiling is the user's to rely on, and at a 4× margin
-losing on the occasional expensive run of a public good is fine. Fixed
-prices anywhere would distort the very agents that must reason in value
-over cost.
+(`meter_settlement` ledger rows). A run that exceeds its cap is absorbed
+by the platform: the ceiling is the user's to rely on, and with the whole
+margin sitting in the owl's purchase price, losing on the occasional
+expensive run of a public good is fine. Fixed prices anywhere would
+distort the very agents that must reason in value over cost.
 
-## Three lanes of attention
+## How money reaches actions
 
-1. **Immediate (paid orders).** A user buys an assessment; it runs now,
-   outside the background lane entirely. Queue-jumping by payment is fine
-   and good — the buyer funds their own marginal cost, under a cap.
-   Cap-charge at start, free cancellation while pending, settlement of the
-   unused fraction at completion, automatic refund on failure.
-2. **Funded (budgets & grants).** Open-ended work — deep decomposition,
-   grant mandates, funded ingestion — runs on escrowed owl budgets, metered
-   honestly against real model spend, pausing (never dying) at the budget
-   floor. Unspent escrow returns.
-3. **Background (the platform's own spend).** Not a queue: a candidate set.
-   Each drain pass takes the pending claim whose expected value per owl of
-   expected cost is highest, until the day's background budget
-   (`BACKGROUND_DAILY_BUDGET_OWLS`) is spent. Candidates that never clear
-   the bar remain embedded stubs; that is the intended steady state.
+1. **Full funding (paid orders).** A user buys an assessment outright; it
+   runs now — a fully covered action has nothing to wait for. Cap-charge
+   at start, free cancellation while pending, settlement of the unused
+   fraction at completion, automatic refund on failure.
+2. **Partial funding (allocations).** Anyone can put owls toward a
+   specific claim's assessment (`POST /claims/:id/contribute`, capped
+   near the expected cost of the pass). Allocations accumulate across
+   funders; the action runs the moment they cover the cost, and each
+   funder pays their pro-rata share of the metered actual
+   (`action_allocations.spent_micro_usd`).
+3. **Mandates.** Standing programs of work on escrowed budgets, optionally
+   paced by a daily rate (`grants.daily_budget_micro_usd`) — including
+   Minerval's own General assessment mandate, whose allocator co-funds
+   partially backed claims rather than duplicating other funders' money.
+   Grant-plan execution (agent plans, cover/deepen/maintain selectors)
+   funds its actions fully and runs them directly, metered to the escrow.
+   Candidates no one funds remain embedded stubs; that is the intended
+   steady state.
 
 ## The expected-value estimate (per assessment)
 
@@ -75,32 +88,43 @@ over cost.
           × expected quality gain            (marginal_yield; 1.0 when
                                               unassessed; revived by
                                               staleness over 90 days)
-          + 0.5 × saturating(stake owls / 5) (paid demand)
           + 0.15 if user-proposed            (provenance, #284)
 
 The multiplicative core is the essay's heuristic for the marginal value of
 assessing a claim at a given model and effort level: importance ×
-contestedness × quality-improvement-from-marginal-compute. Every knob is
-config, printed on `GET /queue`, and every pending claim's inputs are
-public — "why is this ahead of that" is always answerable (§15). Stake
-saturation is an anti-plutocracy device: the sixth owl on one claim buys
-less standing than the first.
+contestedness × quality-improvement-from-marginal-compute. Money appears
+NOWHERE in this estimate: funding reduces what remains to be covered on
+the cost side, never how valuable the action is. Every knob is the
+governing mandate's allocation policy, printed on `GET /queue`, and every
+pending claim's inputs are public — "why is this ahead of that" is always
+answerable (§15).
 
 Two hard lines, by construction:
-- **Stakes never touch `claims.importance`.** Importance is a steward's
-  epistemic judgment; the value estimate is an allocation judgment.
-  Separate columns, separate writers.
+- **Money never touches `claims.importance`** (or the value estimate at
+  all). Importance is a steward's epistemic judgment; allocation is a
+  separate ledger.
 - **The numbers are inputs to ordering, never to truth** (Part VIII).
 
 ## The expected-cost estimate
 
 Every action type needs a denominator before it runs
-(`cost-estimate-service.ts`): config priors (`EST_*`) that yield to live
-rolling averages of recent metered runs once enough exist. Estimating a
-cost must never rival the cost of doing the thing, so estimates are one
-cached aggregate query. `GET /usage/allocation` still serves the raw
-aggregates for human calibration of the priors, tiering thresholds, and
-cadence.
+(`cost-estimate-service.ts`): policy priors that yield to live rolling
+averages of recent metered runs once enough exist. Estimating a cost must
+never rival the cost of doing the thing, so estimates are one cached
+aggregate query. `GET /usage/allocation` still serves the raw aggregates
+for calibrating the priors, tiering thresholds, and cadence — calibration
+lands by asking the Grantmaker to update the policy.
+
+## The allocation policy is agent-owned
+
+The formulas above live on the governing mandate
+(`grants.allocation_policy`), not in code: the General mandate's
+Grantmaker amends them in conversation (`update_allocation_policy`,
+bounded by `POLICY_BOUNDS`) as we learn what allocation should look like.
+Env config supplies the shared defaults every mandate inherits, so the
+machinery is replicable: anyone's mandate can carry its own policy and
+daily rate, our learnings ship as defaults, and the platform dogfoods the
+same framework it offers.
 
 ## Effort selection
 

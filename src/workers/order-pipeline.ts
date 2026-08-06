@@ -9,8 +9,9 @@
  * Charge-at-start, settle-at-finish: the order's CAP is debited HERE,
  * immediately before the Steward run begins — a pending order was never
  * charged and cancels free — and after the run the metered cost settles
- * against the cap, crediting back the unused fraction. The stake (the
- * demand signal the allocation core reads) is recorded with the charge.
+ * against the cap, crediting back the unused fraction. The order IS the
+ * funded action: no side records are needed for the allocation core (an
+ * order buys this run, nothing about future scheduling).
  * A transient failure requeues the order WITH its charge intact (the retry
  * must not double-charge); a genuine failure refunds and fails the order.
  *
@@ -33,7 +34,6 @@ import {
   OWL_REASONS,
 } from "../services/owl-ledger-service.js";
 import { microUsdToOwls } from "../services/owl.js";
-import { refreshQueuePriority } from "../services/priority-service.js";
 
 interface OrderRow {
   id: string;
@@ -187,18 +187,6 @@ export async function processNextOrderTask(
     );
     order.charge_entry_id = entryId;
   }
-
-  // The stake: the demand signal background priority reads. Idempotent per
-  // order so a transient retry doesn't double-stake, and the composite
-  // priority refreshes so the signal lands immediately (best-effort — the
-  // scheduler's sweep catches any miss).
-  await rawQuery(
-    `INSERT INTO claim_stakes (claim_id, user_id, amount_micro_usd, source, order_id)
-     SELECT $1, $2, $3, 'order', $4
-      WHERE NOT EXISTS (SELECT 1 FROM claim_stakes WHERE order_id = $4)`,
-    [order.claim_id, order.user_id, order.price_micro_usd, order.id]
-  );
-  await refreshQueuePriority(order.claim_id).catch(() => {});
 
   // A claim that was never stewarded needs its first full pass, not a
   // re-assessment — the order may arrive before the background lane ever

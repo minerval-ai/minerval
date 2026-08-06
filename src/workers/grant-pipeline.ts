@@ -10,9 +10,9 @@
  *
  *  EXECUTION (status 'active'): pick the next target under the mandate's
  *  policy and steward it, metered to the grant's budget job — so funded
- *  assessments carry the grant's funding disclosure (funded_by_job_id) —
- *  and record a claim_stakes row (source 'grant') for attribution and
- *  background-priority subsidy. Targets per policy:
+ *  assessments carry the grant's funding disclosure (funded_by_job_id).
+ *  The grant run IS the funded action; no side records feed the general
+ *  lane. Targets per policy:
  *
  *    deepen   — pending/deferred claims in scope, highest priority first
  *               (the funder is buying the depth the brake held out);
@@ -39,8 +39,6 @@ import {
   refundUnspentBudget,
 } from "../services/budget-job-service.js";
 import { submitSource } from "../services/source-service.js";
-import { capMicroUsd } from "../services/owl.js";
-import { refreshQueuePriority } from "../services/priority-service.js";
 import type { PlanItem } from "../services/grant-service.js";
 
 export type GrantDrainStatus =
@@ -297,6 +295,7 @@ export async function processNextGrantTask(
             j.budget_micro_usd, j.status AS job_status
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE (g.status = 'planning' OR g.status = 'active')
+        AND g.policy <> 'general'
         AND j.status = 'running'
       ORDER BY g.updated_at ASC
       LIMIT 1
@@ -329,7 +328,7 @@ export async function processNextGrantTask(
             scopeClaimId: grant.scope_claim_id,
             scopeQuery: grant.scope_query,
             budgetOwls: Math.floor(
-              Number(grant.budget_micro_usd) / config.owlPriceMicroUsd
+              Number(grant.budget_micro_usd) / config.owlCostMicroUsd
             ),
             model: opts.model,
           })
@@ -394,17 +393,6 @@ export async function processNextGrantTask(
     );
     return { status: "completed", grantId: grant.id };
   }
-
-  // The grant's stake on this claim: attribution + background-priority
-  // subsidy (once per grant × claim).
-  await rawQuery(
-    `INSERT INTO claim_stakes (claim_id, user_id, amount_micro_usd, source)
-     SELECT $1, $2, $3, 'grant'
-      WHERE NOT EXISTS (SELECT 1 FROM claim_stakes
-                         WHERE claim_id = $1 AND user_id = $2 AND source = 'grant')`,
-    [target.id, grant.funder_user_id, capMicroUsd("assessment")]
-  );
-  await refreshQueuePriority(target.id).catch(() => {});
 
   const virgin = target.decomposition_status === "pending";
   const trigger = virgin

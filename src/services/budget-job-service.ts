@@ -200,11 +200,26 @@ export async function getJobContributions(
   }));
 }
 
-/** Marked-up model spend attributed to this job so far, in micro-USD. */
+/** Metered cost attributed to this job so far, in micro-USD. */
 export async function getJobSpentMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
     `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS total
        FROM llm_usage WHERE job_id = $1`,
+    [jobId]
+  );
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * This job's metered cost today (UTC), in micro-USD — the shared
+ * daily-rate accounting every paced mandate uses (grants.
+ * daily_budget_micro_usd), Minerval's General assessment mandate included.
+ */
+export async function jobSpentTodayMicroUsd(jobId: string): Promise<number> {
+  const [row] = await rawQuery<{ total: number }>(
+    `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS total
+       FROM llm_usage
+      WHERE job_id = $1 AND created_at >= date_trunc('day', now())`,
     [jobId]
   );
   return Number(row?.total ?? 0);

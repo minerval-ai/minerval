@@ -239,6 +239,13 @@
       "when": 1785982127015,
       "tag": "0033_public_mandates",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785984644953,
+      "tag": "0034_allocation_engine",
+      "breakpoints": true
     }
   ]
 }

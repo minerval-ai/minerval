@@ -38,6 +38,16 @@ import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { stewardTierCostEstimates } from "../services/cost-estimate-service.js";
+import {
+  getEffectiveAllocationPolicy,
+  getGeneralMandate,
+} from "../services/allocation-policy-service.js";
+import {
+  consumeAllocations,
+  largestAllocator,
+  runGeneralAllocator,
+} from "../services/allocation-service.js";
+import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 
 interface StewardTaskRow {
   id: string;
@@ -73,11 +83,10 @@ export interface StewardProcessResult {
 }
 
 /**
- * Today's metered background spend (billed micro-USD): system work with no
- * paying user and no funded job — what the daily budget governs. Paid
- * orders and grant runs carry their own funding and are never counted here.
+ * Legacy fallback budget accounting for deployments with no General
+ * mandate seeded: system work with no paying user and no funded job.
  */
-async function backgroundSpentTodayMicroUsd(): Promise<number> {
+async function unattributedSpentTodayMicroUsd(): Promise<number> {
   const [row] = await rawQuery<{ spent: number }>(
     `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS spent
        FROM llm_usage
@@ -87,15 +96,49 @@ async function backgroundSpentTodayMicroUsd(): Promise<number> {
   return Number(row?.spent ?? 0);
 }
 
+// A covered candidate: a pending claim whose unspent allocations cover the
+// expected cost of its pass at its tier. Parameters: $1 strong tier cost
+// (0 = tiering off), $2 strong-min value, $3 standard tier cost.
+const CLAIM_COVERED_SQL = `
+  UPDATE claims
+      SET steward_state = 'running', stewarded_at = now()
+    WHERE id = (
+      SELECT id FROM claims
+       WHERE state = 'active'
+         AND (steward_state = 'pending'
+              OR (steward_state = 'running'
+                  AND stewarded_at < now() - interval '15 minutes'))
+         AND COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
+                         FROM action_allocations a
+                        WHERE a.claim_id = claims.id AND a.action = 'assess'), 0)
+             >= (CASE WHEN $1::real > 0 AND queue_priority >= $2::real
+                      THEN $1::real ELSE $3::real END)
+       ORDER BY queue_priority DESC, updated_at ASC
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, steward_trigger, steward_context, steward_attempts,
+              queue_priority`;
+
 /**
- * Atomically claim the single best candidate and steward it. "Best" is the
- * allocation core's standard: expected marginal value (queue_priority —
- * priority-service.ts) divided by the expected marginal cost of the pass at
- * the tier it would run on (cost-estimate-service.ts). Not a queue: the
- * highest value-per-owl actions run, up to the day's background budget, and
- * the rest wait. Returns 'empty' when nothing is pending and 'budget' when
- * the daily budget or the LLM budget tracker is spent (the claim is left
- * pending for the next window — not this claim's fault).
+ * Atomically claim the single best candidate and steward it.
+ *
+ * The rule is the allocation engine's, uniform for every funder: an
+ * action runs exactly when the allocations on it cover its expected
+ * cost. The drain therefore only ever executes COVERED candidates; when
+ * none is covered, it invites the General mandate's allocator to place
+ * the day's next allocations (value per dollar, best first, within its
+ * daily rate and escrow) and tries again. The run's metered cost is then
+ * split across the action's allocations pro rata, so co-funders each pay
+ * their share, and the run is attributed to the largest allocator (which
+ * is what stamps the funding disclosure).
+ *
+ * Deployments without a General mandate seeded (dev, tests) fall back to
+ * direct budgeted execution under the config daily budget: same
+ * value-per-cost ordering, no allocation bookkeeping.
+ *
+ * Returns 'empty' when nothing is pending and 'budget' when a budget or
+ * the LLM tracker is spent (claims stay pending — not their fault).
  */
 export async function processNextStewardTask(
   opts: { model?: string } = {}
@@ -109,69 +152,102 @@ export async function processNextStewardTask(
     return { status: "budget" };
   }
 
-  // The day's background budget: when it's spent, the lane rests. Metered
-  // against actual billed cost, so a cheap day funds more passes than an
-  // expensive one.
-  const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
-  if (dailyBudgetOwls > 0) {
-    const spent = await backgroundSpentTodayMicroUsd();
-    const budgetMicro = dailyBudgetOwls * (config.owlPriceMicroUsd ?? 4_000_000);
-    if (spent >= budgetMicro) return { status: "budget" };
+  const policy = await getEffectiveAllocationPolicy();
+  const strongMin = policy.strong_min_value;
+  const tierCosts = await stewardTierCostEstimates();
+  const strongConfigured = !!config.stewardStrongModel && !opts.model;
+  const tierParams = [
+    strongConfigured ? tierCosts.strongMicroUsd : 0,
+    strongMin,
+    tierCosts.standardMicroUsd,
+  ];
+
+  const mandate = await getGeneralMandate();
+
+  // Covered candidates first — the engine's only execution rule.
+  let rows = await rawQuery<StewardTaskRow>(CLAIM_COVERED_SQL, tierParams);
+  let covered = rows.length > 0;
+
+  if (!covered && mandate) {
+    // Nothing covered: let the General mandate place today's next
+    // allocations, then look again. Rate- or escrow-exhausted allocators
+    // place nothing, and the lane rests until tomorrow or a top-up.
+    const placed = await runGeneralAllocator();
+    if (placed && placed.allocated > 0) {
+      rows = await rawQuery<StewardTaskRow>(CLAIM_COVERED_SQL, tierParams);
+      covered = rows.length > 0;
+    }
+    if (!covered) {
+      const pending = await pendingStewardCount();
+      return { status: pending > 0 ? "budget" : "empty" };
+    }
   }
 
-  // The EC denominators for the value/cost ordering. With tiering off both
-  // tiers cost the same and the ordering reduces to value alone.
-  const tierCosts =
-    config.stewardStrongModel && !opts.model
-      ? await stewardTierCostEstimates()
-      : null;
-  const strongMin = config.stewardStrongMinPriority ?? 0.5;
-
-  const rows = await rawQuery<StewardTaskRow>(
-    `UPDATE claims
-        SET steward_state = 'running', stewarded_at = now()
-      WHERE id = (
-        SELECT id FROM claims
-         WHERE state = 'active'
-           AND (steward_state = 'pending'
-                OR (steward_state = 'running'
-                    AND stewarded_at < now() - interval '15 minutes'))
-         ORDER BY queue_priority / CASE
-                    WHEN $1::real > 0 AND queue_priority >= $2::real
-                    THEN $1::real ELSE $3::real END DESC,
-                  updated_at ASC
-         LIMIT 1
-         FOR UPDATE SKIP LOCKED
-      )
-      RETURNING id, steward_trigger, steward_context, steward_attempts,
-                queue_priority`,
-    [
-      tierCosts ? tierCosts.strongMicroUsd : 0,
-      strongMin,
-      tierCosts ? tierCosts.standardMicroUsd : 1,
-    ]
-  );
+  if (!covered && !mandate) {
+    // Fallback mode (no General mandate seeded): direct budgeted runs.
+    const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
+    if (dailyBudgetOwls > 0) {
+      const spent = await unattributedSpentTodayMicroUsd();
+      const budgetMicro =
+        dailyBudgetOwls * (config.owlCostMicroUsd ?? 1_000_000);
+      if (spent >= budgetMicro) return { status: "budget" };
+    }
+    rows = await rawQuery<StewardTaskRow>(
+      `UPDATE claims
+          SET steward_state = 'running', stewarded_at = now()
+        WHERE id = (
+          SELECT id FROM claims
+           WHERE state = 'active'
+             AND (steward_state = 'pending'
+                  OR (steward_state = 'running'
+                      AND stewarded_at < now() - interval '15 minutes'))
+           ORDER BY queue_priority / CASE
+                      WHEN $1::real > 0 AND queue_priority >= $2::real
+                      THEN $1::real ELSE $3::real END DESC,
+                    updated_at ASC
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, steward_trigger, steward_context, steward_attempts,
+                  queue_priority`,
+      tierParams
+    );
+  }
   if (rows.length === 0) return { status: "empty" };
 
   const task = rows[0]!;
   const trigger = task.steward_trigger ?? "structure_and_assess";
   const attempts = task.steward_attempts ?? 0;
 
-  // Model tiering: high-priority claims get the strong model (when one is
-  // configured); the caller's explicit override (corpus harness) wins.
+  // Model tiering by the policy's threshold; the caller's explicit
+  // override (corpus harness) wins.
   const model =
     opts.model ??
-    (config.stewardStrongModel &&
-    task.queue_priority >= config.stewardStrongMinPriority
+    (config.stewardStrongModel && task.queue_priority >= strongMin
       ? config.stewardStrongModel
       : config.stewardModel);
+
+  // Attribution: the largest allocator — a mandate's budget job (which
+  // also stamps the funding disclosure) or a person. Fallback mode runs
+  // unattributed, as before.
+  const usageCtx = covered ? await largestAllocator(task.id) : {};
+
   try {
-    await runClaimSteward({
-      trigger,
-      claimId: task.id,
-      context: task.steward_context ?? "",
-      model,
-    });
+    const { billedMicroUsd } = await runWithUsageContext(usageCtx, () =>
+      withCostMeter(() =>
+        runClaimSteward({
+          trigger,
+          claimId: task.id,
+          context: task.steward_context ?? "",
+          model,
+        })
+      )
+    );
+    // Split the metered cost across the action's allocations pro rata:
+    // each funder pays their share, never another's.
+    if (covered) {
+      await consumeAllocations(task.id, billedMicroUsd).catch(() => {});
+    }
     // Success clears the error state AND the attempt counter, so a claim that
     // failed transiently before is treated fresh next time. The state write is
     // guarded on the row still being 'running': if a new message re-pended the

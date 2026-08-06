@@ -201,7 +201,7 @@ describe("POST /billing/webhook", () => {
     expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 
-  it("credits a paid checkout session at the pack's FACE value, idempotently", async () => {
+  it("credits a paid checkout session with the pack's owls, idempotently", async () => {
     const app = await buildApp();
     const { payload, signature } = signedWebhook(checkoutCompletedEvent());
     const res = await app.inject({
@@ -214,11 +214,12 @@ describe("POST /billing/webhook", () => {
       payload,
     });
     expect(res.statusCode).toBe(200);
-    // 5 owls × $4 face = 20,000,000 micro-USD, regardless of the
-    // (possibly discounted) cash amount Stripe collected.
+    // 5 owls × $1 of spend each = 5,000,000 micro-USD of cost coverage,
+    // regardless of the (possibly discounted) cash amount Stripe collected
+    // — the margin lives in the purchase price, not in the balance.
     expect(mocks.recordOwlEntry).toHaveBeenCalledWith({
       userId: "u-1",
-      amountMicroUsd: 20_000_000,
+      amountMicroUsd: 5_000_000,
       reason: "purchase",
       idempotencyKey: "stripe:cs_test_1",
       stripeEventId: "evt_1",

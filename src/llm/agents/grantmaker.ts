@@ -319,6 +319,33 @@ async function runGrantmakerTurnImpl(input: {
       "For data-analytics questions about the mandate's yield.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   };
+  const policyTool: Tool = {
+    name: "update_allocation_policy",
+    description:
+      "Amend this mandate's allocation policy: the formula knobs its " +
+      "spending runs on (value heuristic, cost priors, tier threshold, " +
+      "reassessment cadence). This is how the formulas evolve: they are " +
+      "asked of you in conversation, never edited in code. Every key is " +
+      "bounded by the framework; out-of-range values are clamped. Known " +
+      "keys: contestation_floor, staleness_saturation_days, " +
+      "user_provenance_boost, strong_min_value, est_steward_run_cost_owls, " +
+      "est_steward_run_cost_strong_owls, staleness_base_days, " +
+      "staleness_max_per_sweep.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        updates: {
+          type: "object",
+          description: "Key → number map of policy values to set.",
+        },
+        note: {
+          type: "string",
+          description: "One sentence recorded with the change: why.",
+        },
+      },
+      required: ["updates", "note"],
+    },
+  };
   const adjustTool: Tool = {
     name: "adjust_plan",
     description:
@@ -360,6 +387,7 @@ async function runGrantmakerTurnImpl(input: {
           sourceClaimsTool,
           distributionTool,
           adjustTool,
+          policyTool,
         ]
       : [proposeTool, declineTool]),
   ];
@@ -626,6 +654,26 @@ async function executeManagementTool(
       [grantId]
     );
     return JSON.stringify(row ?? { claims: 0 });
+  }
+  if (name === "update_allocation_policy") {
+    const note = String(toolInput.note ?? "").trim();
+    if (!note) return JSON.stringify({ success: false, problem: "note required" });
+    const { updateAllocationPolicy } = await import(
+      "../../services/allocation-policy-service.js"
+    );
+    const result = await updateAllocationPolicy(
+      grantId,
+      (toolInput.updates ?? {}) as Record<string, unknown>
+    );
+    if (!result.ok) {
+      return JSON.stringify({ success: false, problem: result.problem });
+    }
+    return JSON.stringify({
+      success: true,
+      changed: result.changed,
+      policy_in_force: result.policy,
+      note_recorded: note,
+    });
   }
   if (name === "adjust_plan") {
     const items = (toolInput.items ?? []) as PlanItem[];

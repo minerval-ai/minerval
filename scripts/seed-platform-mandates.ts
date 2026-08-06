@@ -1,12 +1,17 @@
 /**
  * Seed the platform's own mandates — the ones Minerval sets up and runs,
- * which take pride of place on the public /mandates page. To start:
- * Mathematics and AI Economics.
+ * which take pride of place on the public /mandates page.
  *
- * Idempotent: re-running tops nothing up and never duplicates. The platform
- * account is a system contributor ("platform:minerval"); its owls are
- * minted as an admin adjustment (the platform funding its own graph is a
- * traction cost, not revenue) and escrowed into each mandate's budget job.
+ * The load-bearing one is GENERAL ASSESSMENT: the mandate whose escrow is
+ * however many dollars Minerval allocates to expanding and maintaining the
+ * graph (Minerval buys owls at $1 per owl — at cost; the $4 price is what
+ * users pay, and the margin funds this escrow). Its allocator backs the
+ * highest value-per-dollar assessments up to its daily rate through the
+ * same allocation engine every funder uses, and its ALLOCATION POLICY is
+ * the platform's formulas, amendable by its Grantmaker in conversation.
+ * Beside it: Mathematics and AI Economics, topical standing mandates.
+ *
+ * Idempotent: re-running tops nothing up and never duplicates.
  *
  * Usage: DATABASE_URL=… npx tsx scripts/seed-platform-mandates.ts
  */
@@ -17,12 +22,35 @@ interface PlatformMandate {
   key: string;
   title: string;
   objective: string;
-  scopeQuery: string;
+  scopeQuery: string | null;
   strategy: string;
   budgetOwls: number;
+  policy: "general" | "cover";
+  dailyBudgetOwls: number;
 }
 
 const MANDATES: PlatformMandate[] = [
+  {
+    key: "general-assessment",
+    title: "General assessment",
+    objective:
+      "Assess the most important claims across the whole graph, wherever " +
+      "they are. This is Minerval's own standing mandate: its budget is " +
+      "the money the platform allocates to expanding and maintaining the " +
+      "graph, its allocator backs the highest expected value per dollar " +
+      "of cost each day, and its allocation policy is the platform's " +
+      "public formula, revised by this mandate's Grantmaker as the " +
+      "evidence about allocation itself accumulates.",
+    scopeQuery: null,
+    strategy:
+      "Back the candidates with the best expected value per dollar of " +
+      "remaining cost, across the whole graph, until the day's rate is " +
+      "committed. Co-fund partially backed claims rather than duplicate " +
+      "other funders' allocations.",
+    budgetOwls: 2000,
+    policy: "general",
+    dailyBudgetOwls: 50,
+  },
   {
     key: "mathematics",
     title: "Mathematics",
@@ -38,6 +66,8 @@ const MANDATES: PlatformMandate[] = [
       "assessments fresh as new results land. Depth goes to claims whose " +
       "subtrees carry contested lemmas or disputed applicability.",
     budgetOwls: 250,
+    policy: "cover",
+    dailyBudgetOwls: 0,
   },
   {
     key: "ai-economics",
@@ -54,6 +84,8 @@ const MANDATES: PlatformMandate[] = [
       "field that moves monthly, and deepen the claims whose subtrees " +
       "carry the contested elasticity and adoption estimates.",
     budgetOwls: 250,
+    policy: "cover",
+    dailyBudgetOwls: 0,
   },
 ];
 
@@ -114,13 +146,13 @@ async function main() {
         "surveys the scope; contributions extend how far it reaches.",
     };
 
-    // Platform mandates run the coverage selector over their scope (policy
-    // 'cover'): standing breadth mandates, not one-shot plans.
+    // 'general' = the allocation engine's platform lane; 'cover' = the
+    // coverage selector over a topical scope. Both standing mandates.
     const [grant] = await rawQuery<{ id: string }>(
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_query, policy, status,
-          plan, mandate, is_platform)
-       VALUES ($1, $2, $3, $4, 'cover', 'active', $5::jsonb, $6::jsonb, true)
+          plan, mandate, is_platform, daily_budget_micro_usd)
+       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8)
        RETURNING id`,
       [
         platformId,
@@ -129,6 +161,8 @@ async function main() {
         m.scopeQuery,
         JSON.stringify({ strategy: m.strategy, items: [] }),
         JSON.stringify(mandate),
+        m.policy,
+        owlsToMicroUsd(m.dailyBudgetOwls),
       ]
     );
     console.log(`+ ${m.title} created (${grant!.id}), ${m.budgetOwls} owls`);

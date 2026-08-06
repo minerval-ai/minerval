@@ -59,11 +59,11 @@ describe("chargeOwls", () => {
     expect(sql).toContain(">= $6"); // the balance guard
     expect(params).toEqual([
       "u-1",
-      -4_000_000,
+      -1_000_000,
       "claim_proposal",
       null,
       null,
-      4_000_000,
+      1_000_000,
     ]);
   });
 
@@ -157,10 +157,10 @@ describe("ensureFreeGrants", () => {
       idempotencyKey: string;
     }>;
     expect(signup.reason).toBe("signup_grant");
-    expect(signup.amountMicroUsd).toBe(20_000_000); // 5 owls
+    expect(signup.amountMicroUsd).toBe(5_000_000); // 5 owls
     expect(signup.idempotencyKey).toBe("signup:u-1");
     expect(monthly.reason).toBe("monthly_grant");
-    expect(monthly.amountMicroUsd).toBe(4_000_000); // 1 owl
+    expect(monthly.amountMicroUsd).toBe(1_000_000); // 1 owl
     expect(monthly.idempotencyKey).toMatch(/^monthly:u-1:\d{4}-\d{2}$/);
   });
 });
@@ -184,7 +184,7 @@ describe("refundChargeForContribution", () => {
       idempotencyKey: string;
       contributionId: string;
     };
-    expect(refund.amountMicroUsd).toBe(4_000_000); // compensates the -4M charge
+    expect(refund.amountMicroUsd).toBe(4_000_000); // compensates the recorded charge
     expect(refund.reason).toBe("refund");
     expect(refund.idempotencyKey).toBe("refund:contribution:contrib-1:0");
     expect(refund.contributionId).toBe("contrib-1");

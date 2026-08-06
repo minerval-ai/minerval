@@ -98,7 +98,7 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardModel: "claude-sonnet-5", owlPriceMicroUsd: 4_000_000 }),
+  loadConfig: () => ({ stewardModel: "claude-sonnet-5", owlCostMicroUsd: 1_000_000 }),
 }));
 
 import { processNextOrderTask } from "../../../src/workers/order-pipeline.js";
@@ -110,7 +110,7 @@ function order(overrides: Partial<(typeof state.orders)[number]> = {}) {
     user_id: "user-1",
     claim_id: "claim-1",
     contribution_id: null,
-    price_micro_usd: 4_000_000,
+    price_micro_usd: 1_000_000,
     charge_entry_id: null,
     ...overrides,
   };
@@ -138,7 +138,7 @@ describe("processNextOrderTask", () => {
     expect(runCalls).toHaveLength(0);
   });
 
-  it("charges at start, stakes, runs the Steward, and settles done", async () => {
+  it("charges at start, runs the Steward, and settles done", async () => {
     state.orders = [order()];
     const r = await processNextOrderTask();
 
@@ -152,8 +152,6 @@ describe("processNextOrderTask", () => {
         claimId: "claim-1",
       },
     ]);
-    // The stake rides with the charge.
-    expect(state.stakes).toHaveLength(1);
     // An assessed claim gets the re-assessment trigger.
     expect(runCalls).toEqual([{ claimId: "claim-1", trigger: "user_order" }]);
     // Claim slot settled 'done', order settled 'done'.
@@ -165,7 +163,7 @@ describe("processNextOrderTask", () => {
     expect(state.settlements).toHaveLength(1);
     expect(state.settlements[0]).toMatchObject({
       userId: "user-1",
-      capMicroUsd: 4_000_000,
+      capMicroUsd: 1_000_000,
       settleKey: "order:order-1",
       op: "assessment",
       claimId: "claim-1",
@@ -244,7 +242,7 @@ describe("processNextOrderTask", () => {
     expect(state.refunds).toHaveLength(1);
     expect(state.refunds[0]).toMatchObject({
       userId: "user-1",
-      amountMicroUsd: 4_000_000,
+      amountMicroUsd: 1_000_000,
       reason: "refund",
       idempotencyKey: "refund:order:order-1",
     });

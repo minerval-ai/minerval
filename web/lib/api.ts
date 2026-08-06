@@ -168,8 +168,6 @@ export interface QueueSnapshot {
   };
   formula: {
     contestation_floor: number;
-    stake_weight: number;
-    stake_saturation_owls: number;
     staleness_saturation_days: number;
     user_provenance_boost: number;
   };
@@ -178,21 +176,24 @@ export interface QueueSnapshot {
     strong_owls: number;
     strong_min_value: number | null;
   };
-  daily_budget: {
-    budget_owls: number;
-    spent_today_owls: number;
-  };
+  general_mandate: {
+    grant_id: string;
+    daily_rate_owls: number;
+    allocated_today_owls: number;
+  } | null;
   pending: Array<{
     claim_id: string;
     text: string;
     expected_value: number;
     expected_cost_owls: number;
+    allocated_owls: number;
+    remaining_owls: number;
+    covered: boolean;
     value_per_owl: number | null;
     inputs: {
       importance: number;
       marginal_yield: number | null;
       contestation: number | null;
-      stake_owls: number;
       days_since_assessed: number | null;
       user_proposed: boolean;
     };

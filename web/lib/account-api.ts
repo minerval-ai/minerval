@@ -98,6 +98,8 @@ export interface Entitlement {
   owl_balance: number;
   owl_balance_micro_usd: number;
   owl_price_micro_usd: number;
+  /** What one owl of spend covers, in micro-USD of metered cost ($1). */
+  owl_cost_micro_usd: number;
   /** Per-operation ceilings in owls. The charge is metered cost, never more. */
   caps_owls: Record<string, number>;
   credits_enabled: boolean;
@@ -750,4 +752,24 @@ export async function contributeToMandateApi(
     { method: "POST", body: { owls }, actingUser: externalId }
   );
   return r.mandate;
+}
+
+// --- claim allocations (chip in toward one assessment) -----------------------
+
+export interface ClaimAllocationResult {
+  allocated_owls: number;
+  unspent_owls: number;
+  covered: boolean;
+}
+
+export async function allocateToClaim(
+  externalId: string,
+  claimId: string,
+  owls: number
+): Promise<ClaimAllocationResult> {
+  return accountFetch(`/claims/${claimId}/contribute`, {
+    method: "POST",
+    body: { owls },
+    actingUser: externalId,
+  });
 }

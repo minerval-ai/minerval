@@ -4,7 +4,7 @@ import { apiConfigured, fetchQueue } from "../../lib/api";
 import { OwlMark } from "../../components/OwlMark";
 
 export const metadata: Metadata = {
-  title: "The background lane · Minerval",
+  title: "The allocation engine · Minerval",
   description:
     "What the background assessment lane will work on next, and exactly why.",
 };
@@ -23,7 +23,7 @@ export default async function QueuePage() {
   if (!apiConfigured()) {
     return (
       <div className="col">
-        <h1>The background lane</h1>
+        <h1>The allocation engine</h1>
         <p>The frontend is not connected to a Minerval API.</p>
       </div>
     );
@@ -32,33 +32,31 @@ export default async function QueuePage() {
   if (!queue) {
     return (
       <div className="col">
-        <h1>The background lane</h1>
-        <p>The lane&rsquo;s state is unavailable right now.</p>
+        <h1>The allocation engine</h1>
+        <p>The engine&rsquo;s state is unavailable right now.</p>
       </div>
     );
   }
 
   const f = queue.formula;
   const costs = queue.cost_estimates;
-  const budget = queue.daily_budget;
+  const general = queue.general_mandate;
 
   return (
     <div className="col-wide account">
       <p className="claim-eyebrow">the graph at work</p>
-      <h1>The background lane</h1>
+      <h1>The allocation engine</h1>
       <p>
-        Minerval&rsquo;s own spending follows one standard: the{" "}
-        <strong>expected value of an action divided by its expected
-        cost</strong>, taken best first until the day&rsquo;s budget is gone.
-        There is no queue to wait through. For assessing a claim, expected
-        value is estimated as importance times how contested the claim is
-        times how much a fresh pass is expected to improve the assessment,
-        raised a little by owls users have staked and by human proposal.
-        Expected cost is the metered price of the pass at the model tier the
-        claim would get. Money can fund an assessment directly (it runs
-        immediately, outside this lane) or raise a claim&rsquo;s standing
-        here through stakes, but it never touches what the assessment
-        concludes.
+        One rule decides what runs, for every funder alike: an assessment
+        happens exactly when the owls allocated to it cover its expected
+        cost, and the funders split the metered cost in proportion to what
+        each put in. Minerval&rsquo;s own General assessment mandate is
+        simply the largest funder: each day it backs the candidates with
+        the best <strong>expected value per dollar of remaining cost</strong>,
+        until its daily rate is committed, so most claims whose value merely
+        exceeds their cost still wait their turn behind better ones. Anyone
+        can complete a partially backed claim from its page. Money decides
+        only when a claim is assessed, never what the assessment concludes.
       </p>
 
       <div className="usage-chips">
@@ -68,21 +66,20 @@ export default async function QueuePage() {
         <span className="summary-chip">
           {queue.depth.deferred} deferred (peripheral stubs)
         </span>
-        {budget.budget_owls > 0 && (
+        {general && general.daily_rate_owls > 0 && (
           <span className="summary-chip">
-            today: {num(budget.spent_today_owls, 1)} of {budget.budget_owls}{" "}
-            owls spent
+            Minerval today: {num(general.allocated_today_owls, 1)} of{" "}
+            {num(general.daily_rate_owls, 0)} owls allocated
           </span>
         )}
       </div>
 
       <p className="meter-caption">
         value = importance × ({f.contestation_floor} + {1 - f.contestation_floor}
-        ×contestation) × expected gain, plus {f.stake_weight}×stakes
-        (saturating at {f.stake_saturation_owls} owls) and{" "}
-        {f.user_provenance_boost} if a person proposed it; staleness revives
-        expected gain over {f.staleness_saturation_days} days. Estimated cost
-        per pass: {num(costs.standard_owls, 2)} owls
+        ×contestation) × expected gain, plus {f.user_provenance_boost} if a
+        person proposed it; staleness revives expected gain over{" "}
+        {f.staleness_saturation_days} days. Estimated cost per pass:{" "}
+        {num(costs.standard_owls, 2)} owls
         {costs.strong_min_value != null && (
           <>
             {" "}
@@ -90,7 +87,8 @@ export default async function QueuePage() {
             {costs.strong_min_value})
           </>
         )}
-        . The lane runs the best value-per-owl first.
+        . These knobs are the General mandate&rsquo;s allocation policy, set
+        and revised by its Grantmaker.
       </p>
 
       {queue.pending.length === 0 ? (
@@ -104,10 +102,11 @@ export default async function QueuePage() {
               <th>value / owl</th>
               <th>value</th>
               <th>est. cost</th>
+              <th>allocated</th>
+              <th>to go</th>
               <th>importance</th>
               <th>gain</th>
               <th>contested</th>
-              <th>stakes</th>
               <th>stale</th>
               <th>proposed</th>
             </tr>
@@ -127,19 +126,20 @@ export default async function QueuePage() {
                   <OwlMark size={13} className="owl-mark" />
                   {num(p.expected_cost_owls)}
                 </td>
-                <td>{num(p.inputs.importance)}</td>
-                <td>{num(p.inputs.marginal_yield)}</td>
-                <td>{num(p.inputs.contestation)}</td>
                 <td>
-                  {p.inputs.stake_owls > 0 ? (
+                  {p.allocated_owls > 0 ? (
                     <>
                       <OwlMark size={13} className="owl-mark" />
-                      {p.inputs.stake_owls}
+                      {num(p.allocated_owls)}
                     </>
                   ) : (
                     "·"
                   )}
                 </td>
+                <td>{p.covered ? "funded" : num(p.remaining_owls)}</td>
+                <td>{num(p.inputs.importance)}</td>
+                <td>{num(p.inputs.marginal_yield)}</td>
+                <td>{num(p.inputs.contestation)}</td>
                 <td>
                   {p.inputs.days_since_assessed != null
                     ? `${p.inputs.days_since_assessed}d`

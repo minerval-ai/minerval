@@ -20,6 +20,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
 
 interface CacheEntry {
   value: number;
@@ -80,12 +81,15 @@ export async function estimateStewardRunCostMicroUsd(
     () => null
   );
   if (live != null && live > 0) return live;
+  // Priors come from the governing mandate's allocation policy (config is
+  // the fallback default inside it).
+  const policy = await getEffectiveAllocationPolicy();
   const strong =
     !!config.stewardStrongModel && model === config.stewardStrongModel;
   const priorOwls = strong
-    ? (config.estStewardRunCostStrongOwls ?? 1)
-    : (config.estStewardRunCostOwls ?? 0.25);
-  return Math.round(priorOwls * (config.owlPriceMicroUsd ?? 4_000_000));
+    ? policy.est_steward_run_cost_strong_owls
+    : policy.est_steward_run_cost_owls;
+  return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
 }
 
 /**

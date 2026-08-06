@@ -20,6 +20,7 @@ import {
   getJobContributions,
   getJobSpentMicroUsd,
 } from "./budget-job-service.js";
+import { grantAllocationExposureMicroUsd } from "./allocation-service.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import type { PlanItem } from "./grant-service.js";
 
@@ -74,8 +75,14 @@ function actionMix(plan: GrantRow["plan"]): Record<string, number> {
 }
 
 async function summarize(row: GrantRow): Promise<MandateSummary> {
-  const spent = await getJobSpentMicroUsd(row.budget_job_id);
-  const contributions = await getJobContributions(row.budget_job_id);
+  // A mandate's spend is what its runs metered directly to its job PLUS
+  // its consumed shares of co-funded actions (the allocation engine).
+  const [jobSpent, exposure, contributions] = await Promise.all([
+    getJobSpentMicroUsd(row.budget_job_id),
+    grantAllocationExposureMicroUsd(row.id),
+    getJobContributions(row.budget_job_id),
+  ]);
+  const spent = jobSpent + exposure.spentMicroUsd;
   return {
     id: row.id,
     title: row.mandate?.title ?? row.name,

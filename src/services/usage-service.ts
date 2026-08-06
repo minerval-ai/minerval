@@ -8,7 +8,6 @@
  * this service is the durable, per-user record.
  */
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
-import { loadConfig } from "../config.js";
 import { getDb, rawQuery } from "../db/client.js";
 import { apiKeys, llmUsage } from "../db/schema.js";
 import { costMicroUsd } from "../llm/pricing.js";
@@ -41,9 +40,11 @@ export interface LlmCallUsage {
  */
 export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   const ctx = getUsageContext();
-  const billedMicroUsd = Math.round(
-    costMicroUsd(call.model, call) * loadConfig().usageMarkupMultiplier
-  );
+  // Cost is measured in dollars: the meter records the REAL cost of the
+  // call, never a marked-up figure. The platform's margin lives entirely
+  // in the owl's purchase price ($4 buys an owl; an owl covers $1 of this
+  // cost), so cost rows, charges, and estimates all speak the same unit.
+  const billedMicroUsd = Math.round(costMicroUsd(call.model, call));
   // Feed the enclosing operation's live cost meter FIRST and synchronously:
   // cap-and-settle charging depends on this number being complete the moment
   // the operation's work finishes, even if the durable insert below lags or

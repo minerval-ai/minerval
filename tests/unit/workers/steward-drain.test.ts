@@ -11,6 +11,10 @@ const { runCalls, state } = vi.hoisted(() => ({
   runCalls: [] as string[],
   state: {
     pending: [] as string[],
+    // Claims whose contribution pot covers the pass: served by the funded
+    // lane ahead of everything, outside the daily budget.
+    fundedPending: [] as string[],
+    consumed: [] as Array<{ id: string; take: number }>,
     budgetThrows: false,
     // Per-claim attempt counter, keyed by id (defaults 0), so a requeued claim
     // is re-served with its incremented count like the real DB column.
@@ -25,14 +29,8 @@ const { runCalls, state } = vi.hoisted(() => ({
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
-    // Dispatch keys: SKIP LOCKED is unique to the task-claim query (the
-    // terminal writes also mention 'running' in their mid-run guards, so the
-    // state literal alone no longer identifies a claim). The quoted 'error' /
-    // 'pending' literals identify the park and requeue writes; the guarded
-    // success write ('done') is a no-op here.
-    if (q.includes("SKIP LOCKED")) {
-      const id = state.pending.shift();
-      return id
+    const serve = (id: string | undefined) =>
+      id
         ? [
             {
               id,
@@ -42,7 +40,24 @@ vi.mock("../../../src/db/client.js", () => ({
             },
           ]
         : [];
+    // The two claim-selection queries both carry SKIP LOCKED + UPDATE
+    // claims: the covered lane filters on allocations covering the tier
+    // cost (action_allocations + ">="), the fallback lane divides by tier
+    // cost ("queue_priority /").
+    if (q.includes("SKIP LOCKED") && q.includes("UPDATE claims")) {
+      if (q.includes("queue_priority /")) return serve(state.pending.shift());
+      return serve(state.fundedPending.shift());
     }
+    // consumeAllocations' row scan and the pro-rata consumption write.
+    if (q.includes("FROM action_allocations") && q.trimStart().startsWith("SELECT id")) {
+      return [{ id: "pot-1", unspent: 1_000_000 }];
+    }
+    if (q.includes("UPDATE action_allocations")) {
+      state.consumed.push({ id: params[0] as string, take: params[1] as number });
+      return [];
+    }
+    // The General mandate lookup: none seeded in these tests.
+    if (q.includes("is_platform")) return [];
     if (q.includes("count(")) return [{ n: state.pending.length }];
     if (q.startsWith("UPDATE")) {
       const id = params[0] as string;
@@ -86,6 +101,8 @@ describe("Steward DB-backed drain", () => {
   beforeEach(() => {
     runCalls.length = 0;
     state.pending = [];
+    state.fundedPending = [];
+    state.consumed = [];
     state.budgetThrows = false;
     state.attempts = {};
     state.throwFor = null;
@@ -98,6 +115,17 @@ describe("Steward DB-backed drain", () => {
     const res = await drainStewardQueue();
     expect(runCalls).toEqual(["a", "b", "c"]);
     expect(res).toEqual({ processed: 3, budgetHit: false });
+  });
+
+  it("serves contribution-funded claims first and consumes their pot", async () => {
+    state.pending = ["a"];
+    state.fundedPending = ["funded-1"];
+    const res = await drainStewardQueue();
+    // The funded claim runs before the mandate lane's pick. (Pot
+    // consumption follows the METERED cost, which the mocked agent leaves
+    // at zero, so it isn't asserted here; the SQL is covered live.)
+    expect(runCalls).toEqual(["funded-1", "a"]);
+    expect(res.processed).toBe(2);
   });
 
   it("stops at maxTasks, leaving the rest pending (stubs)", async () => {

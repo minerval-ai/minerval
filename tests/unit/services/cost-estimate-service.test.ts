@@ -7,7 +7,7 @@ const { state } = vi.hoisted(() => ({
   state: {
     usageRow: null as null | { runs: number; avg_cost: number | null },
     config: {
-      owlPriceMicroUsd: 4_000_000,
+      owlCostMicroUsd: 1_000_000,
       stewardModel: "claude-sonnet-5",
       stewardStrongModel: "claude-fable-5",
       estStewardRunCostOwls: 0.25,
@@ -40,10 +40,10 @@ describe("estimateStewardRunCostMicroUsd", () => {
   it("falls back to the config prior when there are too few metered runs", async () => {
     state.usageRow = { runs: 2, avg_cost: 900_000 };
     expect(await estimateStewardRunCostMicroUsd("claude-sonnet-5")).toBe(
-      1_000_000 // 0.25 owl prior
+      250_000 // 0.25 owl prior at $1/owl of spend
     );
     expect(await estimateStewardRunCostMicroUsd("claude-fable-5")).toBe(
-      4_000_000 // 1 owl strong prior
+      1_000_000 // 1 owl strong prior
     );
   });
 
@@ -56,7 +56,7 @@ describe("estimateStewardRunCostMicroUsd", () => {
 
   it("returns both tier estimates for the drain's ordering", async () => {
     const tiers = await stewardTierCostEstimates();
-    expect(tiers.standardMicroUsd).toBe(1_000_000);
-    expect(tiers.strongMicroUsd).toBe(4_000_000);
+    expect(tiers.standardMicroUsd).toBe(250_000);
+    expect(tiers.strongMicroUsd).toBe(1_000_000);
   });
 });

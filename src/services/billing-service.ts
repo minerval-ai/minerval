@@ -47,8 +47,10 @@ export interface Entitlement {
   /** Spendable balance in owls (fractional) and its exact micro-USD value. */
   owlBalance: number;
   owlBalanceMicroUsd: number;
-  /** Face value of one owl in micro-USD (the price-list denominator). */
+  /** What one owl costs to buy, in micro-USD ($4). Display only. */
   owlPriceMicroUsd: number;
+  /** What one owl of spend covers, in micro-USD of metered cost ($1). */
+  owlCostMicroUsd: number;
   /** Per-run caps, in owls: the MOST each operation can cost. The actual
    * charge is metered cost-plus, settled after the run — legible before
    * anything is spent (§15). */
@@ -65,6 +67,7 @@ export function serializeEntitlement(e: Entitlement) {
     owl_balance: e.owlBalance,
     owl_balance_micro_usd: e.owlBalanceMicroUsd,
     owl_price_micro_usd: e.owlPriceMicroUsd,
+    owl_cost_micro_usd: e.owlCostMicroUsd,
     caps_owls: e.capsOwls,
     credits_enabled: e.creditsEnabled,
     signup_grant_owls: e.signupGrantOwls,
@@ -85,6 +88,7 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
     owlBalance: microUsdToOwls(balanceMicro),
     owlBalanceMicroUsd: balanceMicro,
     owlPriceMicroUsd: config.owlPriceMicroUsd,
+    owlCostMicroUsd: config.owlCostMicroUsd,
     capsOwls: capListOwls(),
     creditsEnabled: stripeConfigured(),
     signupGrantOwls: config.signupGrantOwls,

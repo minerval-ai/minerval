@@ -1,21 +1,26 @@
 /**
- * Allocation transparency (§15): why the background lane is doing what it's
- * doing. Public and read-only, like claim reads — the allocation mechanism
- * is only trustworthy if anyone can inspect it.
+ * Allocation transparency (§15): why the graph's attention is going where
+ * it is going. Public and read-only, like claim reads — the allocation
+ * engine is only trustworthy if anyone can inspect it.
  *
- *   GET /queue — candidate-set depth by state and the top pending claims,
- *     each with its expected-value inputs (importance, contestation,
- *     expected gain, stakes, staleness, provenance), the expected cost of
- *     the pass it would get, and the value-per-owl ratio the lane actually
- *     orders by — so "why is this claim ahead of that one" is always
- *     answerable. The day's budget and spend are included: the lane takes
- *     the best ratios until the budget is gone, and the rest wait.
+ *   GET /queue — the candidate set with the engine's actual bookkeeping:
+ *     each claim's expected-value inputs, the expected cost of its pass,
+ *     the allocations already backing it, and what remains before it is
+ *     covered and runs. The rule is uniform for every funder: an action
+ *     runs exactly when allocations cover its cost, and costs split pro
+ *     rata among its funders. Minerval's own General assessment mandate
+ *     allocates through this same engine, paced by its daily rate; its
+ *     budget and today's placements are shown alongside.
  */
 import type { FastifyInstance } from "fastify";
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { stewardQueueHealth } from "../workers/steward-pipeline.js";
 import { stewardTierCostEstimates } from "../services/cost-estimate-service.js";
+import {
+  getEffectiveAllocationPolicy,
+  getGeneralMandate,
+} from "../services/allocation-policy-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 
 export async function queueRoutes(app: FastifyInstance): Promise<void> {
@@ -23,9 +28,8 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["queue"],
       summary:
-        "The background lane's candidate set: depth by state and the top " +
-        "pending claims with their value inputs, cost estimates, and " +
-        "value-per-owl ratios",
+        "The allocation engine's candidate set: value inputs, cost " +
+        "estimates, allocations, and coverage per claim",
       querystring: {
         type: "object",
         properties: {
@@ -36,15 +40,11 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const config = loadConfig();
       const limit = request.query.limit ?? 25;
-      const [health, tierCosts, spentRow, rows] = await Promise.all([
+      const [health, tierCosts, policy, mandate, rows] = await Promise.all([
         stewardQueueHealth(),
         stewardTierCostEstimates(),
-        rawQuery<{ spent: number }>(
-          `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS spent
-             FROM llm_usage
-            WHERE user_id IS NULL AND job_id IS NULL
-              AND created_at >= date_trunc('day', now())`
-        ),
+        getEffectiveAllocationPolicy(),
+        getGeneralMandate(),
         rawQuery<{
           id: string;
           text: string;
@@ -54,14 +54,15 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
           created_by: string;
           marginal_yield: number | null;
           assessed_at: Date | null;
-          stake_micro: number;
+          backing_micro: number;
         }>(
           `SELECT c.id, c.text, c.queue_priority, c.importance,
                   c.contestation, c.created_by,
                   a.marginal_yield, a.assessed_at,
-                  COALESCE((SELECT SUM(s.amount_micro_usd)
-                              FROM claim_stakes s WHERE s.claim_id = c.id), 0)
-                    AS stake_micro
+                  COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
+                              FROM action_allocations al
+                             WHERE al.claim_id = c.id AND al.action = 'assess'),
+                           0) AS backing_micro
              FROM claims c
              LEFT JOIN assessments a
                ON a.claim_id = c.id AND a.is_current = true
@@ -73,22 +74,38 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
       ]);
 
       const strongConfigured = !!config.stewardStrongModel;
-      const strongMin = config.stewardStrongMinPriority;
-      const costOwlsFor = (value: number): number =>
-        microUsdToOwls(
-          strongConfigured && value >= strongMin
-            ? tierCosts.strongMicroUsd
-            : tierCosts.standardMicroUsd
+      const strongMin = policy.strong_min_value;
+      const costMicroFor = (value: number): number =>
+        strongConfigured && value >= strongMin
+          ? tierCosts.strongMicroUsd
+          : tierCosts.standardMicroUsd;
+
+      let placedTodayMicro = 0;
+      if (mandate) {
+        const [today] = await rawQuery<{ placed: number }>(
+          `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
+             FROM action_allocations
+            WHERE grant_id = $1 AND created_at >= date_trunc('day', now())`,
+          [mandate.grantId]
         );
+        placedTodayMicro = Number(today?.placed ?? 0);
+      }
 
       const pending = rows
         .map((r) => {
-          const costOwls = costOwlsFor(r.queue_priority);
+          const costMicro = costMicroFor(r.queue_priority);
+          const backingMicro = Number(r.backing_micro);
+          const costOwls = microUsdToOwls(costMicro);
           return {
             claim_id: r.id,
             text: r.text,
             expected_value: r.queue_priority,
             expected_cost_owls: costOwls,
+            allocated_owls: microUsdToOwls(backingMicro),
+            remaining_owls: microUsdToOwls(
+              Math.max(0, costMicro - backingMicro)
+            ),
+            covered: backingMicro >= costMicro,
             value_per_owl:
               costOwls > 0
                 ? Math.round((r.queue_priority / costOwls) * 100) / 100
@@ -98,10 +115,6 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
               // Unassessed claims carry maximal expected gain by convention.
               marginal_yield: r.marginal_yield ?? (r.assessed_at ? null : 1),
               contestation: r.contestation,
-              stake_owls:
-                Math.round(
-                  (Number(r.stake_micro) / config.owlPriceMicroUsd) * 1000
-                ) / 1000,
               days_since_assessed: r.assessed_at
                 ? Math.floor(
                     (Date.now() - new Date(r.assessed_at).getTime()) /
@@ -112,28 +125,34 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
             },
           };
         })
-        // The lane's real ordering: value per owl of expected cost.
-        .sort((a, b) => (b.value_per_owl ?? 0) - (a.value_per_owl ?? 0));
+        // Covered actions run next; then the engine's value-per-dollar view.
+        .sort(
+          (a, b) =>
+            Number(b.covered) - Number(a.covered) ||
+            (b.value_per_owl ?? 0) - (a.value_per_owl ?? 0)
+        );
 
       return reply.send({
         depth: health,
-        // The knobs in effect, so the numbers below are reproducible.
+        // The knobs in effect — the governing mandate's allocation policy
+        // (config defaults underneath), so the numbers are reproducible.
         formula: {
-          contestation_floor: config.valueContestationFloor,
-          stake_weight: config.priorityStakeWeight,
-          stake_saturation_owls: config.priorityStakeSaturationOwls,
-          staleness_saturation_days: config.priorityStalenessSaturationDays,
-          user_provenance_boost: config.priorityUserProvenanceBoost,
+          contestation_floor: policy.contestation_floor,
+          staleness_saturation_days: policy.staleness_saturation_days,
+          user_provenance_boost: policy.user_provenance_boost,
         },
         cost_estimates: {
           standard_owls: microUsdToOwls(tierCosts.standardMicroUsd),
           strong_owls: microUsdToOwls(tierCosts.strongMicroUsd),
           strong_min_value: strongConfigured ? strongMin : null,
         },
-        daily_budget: {
-          budget_owls: config.backgroundDailyBudgetOwls,
-          spent_today_owls: microUsdToOwls(Number(spentRow[0]?.spent ?? 0)),
-        },
+        general_mandate: mandate
+          ? {
+              grant_id: mandate.grantId,
+              daily_rate_owls: microUsdToOwls(mandate.dailyBudgetMicroUsd),
+              allocated_today_owls: microUsdToOwls(placedTodayMicro),
+            }
+          : null,
         pending,
       });
     },

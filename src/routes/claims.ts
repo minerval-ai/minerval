@@ -25,6 +25,7 @@ import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
+import { allocateToClaimAssessment } from "../services/allocation-service.js";
 import { createOrder, serializeOrder } from "../services/order-service.js";
 import {
   createDeepDecompositionJob,
@@ -940,6 +941,60 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({ order: serializeOrder(result.order) });
     },
   });
+
+  // POST /claims/:claim_id/contribute — put owls toward this claim's next
+  // assessment without buying the whole thing. Allocations accumulate
+  // across funders (people and mandates alike); the moment they cover the
+  // expected cost, the assessment runs, and the metered cost is split pro
+  // rata among the funders.
+  app.post<{ Params: { claim_id: string }; Body: { owls: number } }>(
+    "/:claim_id/contribute",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Allocate owls toward this claim's next assessment (runs when " +
+          "allocations cover the cost; funders split the cost pro rata)",
+        params: {
+          type: "object",
+          properties: { claim_id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["owls"],
+          properties: {
+            owls: { type: "number", exclusiveMinimum: 0, maximum: 100 },
+          },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const result = await allocateToClaimAssessment({
+          userId: request.auth!.userId!,
+          claimId: request.params.claim_id,
+          owls: request.body.owls,
+        });
+        if (!result.ok) {
+          const status =
+            result.code === "CLAIM_NOT_FOUND"
+              ? 404
+              : result.code === "INSUFFICIENT_OWLS"
+                ? 402
+                : result.code === "COVERED"
+                  ? 409
+                  : 400;
+          return reply
+            .code(status)
+            .send({ error: result.message, code: result.code });
+        }
+        return reply.send({
+          allocated_owls: result.allocatedOwls,
+          unspent_owls: result.unspentOwls,
+          covered: result.covered,
+        });
+      },
+    }
+  );
 
   // POST /claims/:claim_id/decompose — fund a deep-decomposition budget job.
   // Open-ended work gets a BUDGET, not a price: the owls escrow now (that is

@@ -27,6 +27,8 @@ export const OWL_REASONS = {
   refund: "refund",
   /** The unused fraction of a charged cap, returned after the meter ran. */
   meterSettlement: "meter_settlement",
+  /** Owls put toward one claim's assessment (claim_contributions). */
+  claimContribution: "claim_contribution",
   escrowHold: "escrow_hold",
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",

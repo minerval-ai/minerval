@@ -2,11 +2,10 @@
  * Expected marginal value of assessing a claim — the EV in the allocation
  * core's value/cost standard.
  *
- * The background lane's decision rule is the essay's: take the actions with
- * the highest expected marginal value per unit of expected marginal cost,
- * up to the day's budget. This module estimates the VALUE side for one
- * action type — a Steward assessment pass — with the multiplicative
- * heuristic:
+ * Every mandate's decision rule is the essay's: take the actions with the
+ * highest expected marginal value per unit of expected marginal cost, up
+ * to the budget. This module estimates the VALUE side for one action type
+ * — a Steward assessment pass — with the multiplicative heuristic:
  *
  *   value = importance                         (consequence-if-wrong, §19)
  *         × (floor + (1 − floor)×contestation) (live disagreement sharpens
@@ -16,31 +15,36 @@
  *                                               unassessed, revived by
  *                                               staleness as evidence
  *                                               drifts)
- *         + stake boost                        (paid demand, saturating)
  *         + provenance boost                   (a human proposed it, #284)
+ *
+ * Money appears NOWHERE in this estimate. Reader contributions toward a
+ * claim's assessment are allocated funds, not signals: they reduce the
+ * platform's effective COST for the claim (and once they cover it, the
+ * pass simply runs, funded — steward-pipeline.ts). Value stays epistemics.
  *
  * The result is stored on claims.queue_priority. Cost lives elsewhere
  * (cost-estimate-service.ts); the drain divides the two at selection time.
  * Every knob is config — legible, tunable, printable. The formula is an
  * INPUT TO JUDGMENT about ordering, not a black box that decides what is
  * true (Part VIII): heuristics start as guesses and get revised as the
- * eval engine grows. Two invariants hold by construction: stakes and money
- * touch only this column, never `claims.importance` (§19 as amended); and
- * the paid express lane doesn't read it at all.
+ * eval engine grows. By construction, neither contributions nor any other
+ * money ever touches `claims.importance` (§19 as amended).
  *
  * Computed in one SQL statement so refreshes are cheap enough to run at
  * enqueue and in the allocation scheduler's periodic sweep.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
 
-/** The SQL expression computing the expected value for one claims row `c`. */
-function valueSql(): { sql: string; params: number[] } {
-  const c = loadConfig();
-  const owl = c.owlPriceMicroUsd;
-  // Parameters: $2 contestation floor, $3 wStake, $4 stakeSaturationOwls,
-  // $5 staleSaturationDays, $6 provenanceBoost ($1 is the claim id or
-  // reserved by the caller's WHERE clause).
+/** The SQL expression computing the expected value for one claims row `c`.
+ * The knobs come from the governing mandate's allocation policy (config
+ * defaults overlaid with what its Grantmaker has set). */
+async function valueSql(): Promise<{ sql: string; params: number[] }> {
+  const c = await getEffectiveAllocationPolicy();
+  // Parameters: $2 contestation floor, $3 staleSaturationDays,
+  // $4 provenanceBoost ($1 is the claim id or reserved by the caller's
+  // WHERE clause).
   return {
     sql: `
       LEAST(10.0,
@@ -57,26 +61,20 @@ function valueSql(): { sql: string; params: number[] } {
                 (SELECT a.assessed_at FROM assessments a
                   WHERE a.claim_id = c.id AND a.is_current = true
                   ORDER BY a.assessed_at DESC LIMIT 1))) / 86400.0
-                / NULLIF($5::real, 0), 0)))
-        + $3::real * LEAST(1.0,
-            COALESCE((SELECT SUM(s.amount_micro_usd) FROM claim_stakes s
-                       WHERE s.claim_id = c.id), 0)::real
-            / (${owl}::real * NULLIF($4::real, 0)))
-        + CASE WHEN c.created_by = 'user' THEN $6::real ELSE 0 END
+                / NULLIF($3::real, 0), 0)))
+        + CASE WHEN c.created_by = 'user' THEN $4::real ELSE 0 END
       )`,
     params: [
-      c.valueContestationFloor,
-      c.priorityStakeWeight,
-      c.priorityStakeSaturationOwls,
-      c.priorityStalenessSaturationDays,
-      c.priorityUserProvenanceBoost,
+      c.contestation_floor,
+      c.staleness_saturation_days,
+      c.user_provenance_boost,
     ],
   };
 }
 
 /** Recompute one claim's expected value. Returns the new value. */
 export async function refreshQueuePriority(claimId: string): Promise<number> {
-  const { sql, params } = valueSql();
+  const { sql, params } = await valueSql();
   const rows = await rawQuery<{ queue_priority: number }>(
     `UPDATE claims c SET queue_priority = ${sql}
       WHERE c.id = $1
@@ -88,11 +86,11 @@ export async function refreshQueuePriority(claimId: string): Promise<number> {
 
 /**
  * Refresh every PENDING claim's expected value (the live candidate set) —
- * the allocation scheduler's sweep, so staleness and new stakes reorder the
- * lane without per-event bookkeeping. Returns how many rows were touched.
+ * the allocation scheduler's sweep, so staleness drift reorders the lane
+ * without per-event bookkeeping. Returns how many rows were touched.
  */
 export async function refreshPendingQueuePriorities(): Promise<number> {
-  const { sql, params } = valueSql();
+  const { sql, params } = await valueSql();
   const rows = await rawQuery<{ id: string }>(
     `UPDATE claims c SET queue_priority = ${sql}
       WHERE c.state = 'active' AND c.steward_state = 'pending' AND $1::int = 1
@@ -104,14 +102,15 @@ export async function refreshPendingQueuePriorities(): Promise<number> {
 
 /**
  * The value inputs for one claim, serialized for the transparency surfaces
- * (§15): the claim page's scheduling disclosure and GET /queue.
+ * (§15): the claim page's scheduling disclosure and GET /queue. Includes
+ * the claim's unspent reader contributions (the cost-side input).
  */
 export async function getPriorityBreakdown(claimId: string): Promise<{
   queue_priority: number;
   importance: number;
   contestation: number | null;
   marginal_yield: number | null;
-  stake_owls: number;
+  backing_owls: number;
   days_since_assessed: number | null;
   user_proposed: boolean;
 } | null> {
@@ -121,7 +120,7 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
     importance: number;
     contestation: number | null;
     marginal_yield: number | null;
-    stake_micro: number;
+    backing_micro: number;
     assessed_at: Date | null;
     created_by: string;
   }>(
@@ -132,8 +131,10 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
             (SELECT a.assessed_at FROM assessments a
               WHERE a.claim_id = c.id AND a.is_current = true
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
-            COALESCE((SELECT SUM(s.amount_micro_usd) FROM claim_stakes s
-                       WHERE s.claim_id = c.id), 0) AS stake_micro
+            COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
+                        FROM action_allocations a
+                       WHERE a.claim_id = c.id AND a.action = 'assess'), 0)
+              AS backing_micro
        FROM claims c WHERE c.id = $1`,
     [claimId]
   );
@@ -144,8 +145,9 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
     importance: row.importance,
     contestation: row.contestation,
     marginal_yield: row.marginal_yield,
-    stake_owls:
-      Math.round((Number(row.stake_micro) / c.owlPriceMicroUsd) * 1000) / 1000,
+    backing_owls:
+      Math.round((Number(row.backing_micro) / c.owlCostMicroUsd) * 1000) /
+      1000,
     days_since_assessed: row.assessed_at
       ? Math.floor((Date.now() - new Date(row.assessed_at).getTime()) / 86_400_000)
       : null,
