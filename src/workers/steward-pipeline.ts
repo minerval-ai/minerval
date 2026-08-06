@@ -283,7 +283,16 @@ async function runStewardOnClaim(
     // pinned allocations released, metered cost consumed pro rata — each
     // funder pays their share, never another's.
     if (action) {
-      await completeAction(action.id, billedMicroUsd).catch(() => {});
+      await completeAction(action.id, billedMicroUsd, {
+        meteredJobId: input.usageCtx?.jobId ?? null,
+      }).catch((err) =>
+        console.error(
+          `[steward] completeAction failed for ${action.id} (allocation ` +
+            `consumption missed; reconciliation needed): ${
+              err instanceof Error ? err.message : err
+            }`
+        )
+      );
     }
     // Success clears the error state AND the attempt counter, so a claim that
     // failed transiently before is treated fresh next time. The state write is

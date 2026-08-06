@@ -19,7 +19,7 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
-import { rawQuery } from "../db/client.js";
+import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { capMicroUsd } from "./owl.js";
@@ -196,12 +196,19 @@ export async function reconcileActions(): Promise<{
     while (cursor < items.length) {
       const item = items[cursor]!;
       if (item.action !== "ingest" || !item.url) break;
-      const [done] = await rawQuery<{ id: string }>(
+      // Done AND cancelled both move the cursor: a cancelled ingest (a
+      // poison URL the executor retired) must not wedge the plan forever
+      // behind it. A group with only open/running rows still blocks.
+      const [closed] = await rawQuery<{ id: string }>(
         `SELECT id FROM actions
-          WHERE exclusion_group = $1 AND status = 'done' LIMIT 1`,
+          WHERE exclusion_group = $1 AND status IN ('done', 'cancelled')
+            AND NOT EXISTS (SELECT 1 FROM actions o
+                             WHERE o.exclusion_group = $1
+                               AND o.status IN ('open', 'running'))
+          LIMIT 1`,
         [INGEST_GROUP(item.url)]
       );
-      if (!done) break;
+      if (!closed) break;
       cursor++;
     }
     if (cursor !== g.plan_cursor) {
@@ -237,11 +244,16 @@ export async function reconcileActions(): Promise<{
 
   // A worker that died mid-run leaves its action 'running' forever;
   // return it to open so coverage can send it again. Generous window —
-  // real runs (a deep steward pass, a slow extraction) can be long.
+  // real runs (a deep steward pass) can be long. Ingest actions get a much
+  // longer window: they legitimately stay 'running' while the async
+  // extraction worker holds them (which completes or cancels them itself),
+  // and reopening one early re-submits the source — a second metered
+  // extraction charged to the same funders.
   await rawQuery(
     `UPDATE actions SET status = 'open', updated_at = now()
       WHERE status = 'running'
-        AND updated_at < now() - interval '60 minutes'`
+        AND ((kind <> 'ingest' AND updated_at < now() - interval '60 minutes')
+             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours'))`
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length };
@@ -342,122 +354,134 @@ export async function releaseAction(actionId: string): Promise<void> {
  * settlement every completed action would strand (estimate − actual) as
  * outstanding exposure forever, silently eating its funders' headroom.
  * Returns the consumed total.
+ *
+ * The whole close runs in ONE transaction: the done-transition is guarded
+ * (a second completer for the same action is a no-op, so two settlements
+ * can never both consume the same unspent coverage), and the covering
+ * allocations are locked with a held `FOR UPDATE` until commit.
+ * `meteredJobId` records which budget job the run's llm_usage metering was
+ * attributed to, so escrow accounting can de-duplicate the pro-rata shares
+ * against that job's metered total (regrant-service.grantEscrowSpend).
  */
 export async function completeAction(
   actionId: string,
-  meteredMicroUsd: number
+  meteredMicroUsd: number,
+  opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  const [action] = await rawQuery<{
-    id: string;
-    exclusion_group: string;
-  }>(
-    `UPDATE actions SET status = 'done', metered_cost_micro_usd = $2,
-            updated_at = now()
-      WHERE id = $1
-      RETURNING id, exclusion_group`,
-    [actionId, Math.round(meteredMicroUsd)]
-  );
-  if (!action) return 0;
+  return withTransaction(async (tx) => {
+    // Guarded transition: only a live (running, or reconcile-reopened)
+    // action completes; a done/superseded/cancelled row is already closed
+    // and its coverage already consumed — return 0 and touch nothing.
+    const [action] = await tx.query<{
+      id: string;
+      exclusion_group: string;
+    }>(
+      `UPDATE actions SET status = 'done', metered_cost_micro_usd = $2,
+              metered_job_id = $3, updated_at = now()
+        WHERE id = $1 AND status IN ('running', 'open')
+        RETURNING id, exclusion_group`,
+      [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
+    );
+    if (!action) return 0;
 
-  await rawQuery(
-    `UPDATE actions SET status = 'superseded', updated_at = now()
-      WHERE exclusion_group = $1 AND id <> $2 AND status IN ('open', 'running')`,
-    [action.exclusion_group, actionId]
-  );
-
-  // Release losing pinned allocations: returned, not spent. User-funded
-  // ones get their unspent remainder back on the owl ledger.
-  const released = await rawQuery<{
-    id: string;
-    user_id: string | null;
-    claim_id: string | null;
-    remainder: number;
-  }>(
-    `UPDATE action_allocations al
-        SET released_at = now()
-      WHERE al.exclusion_group = $1 AND al.released_at IS NULL
-        AND al.action_id IS NOT NULL AND al.action_id <> $2
-        AND al.spent_micro_usd < al.amount_micro_usd
-      RETURNING al.id, al.user_id, al.claim_id,
-                (al.amount_micro_usd - al.spent_micro_usd)::bigint AS remainder`,
-    [action.exclusion_group, actionId]
-  );
-  for (const r of released) {
-    if (r.user_id && Number(r.remainder) > 0) {
-      await rawQuery(
-        `INSERT INTO owl_ledger
-           (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
-         VALUES ($1, $2, 'refund', $3, $4)
-         ON CONFLICT (idempotency_key) DO NOTHING`,
-        [r.user_id, Number(r.remainder), r.claim_id, `release:${r.id}`]
-      );
-    }
-  }
-
-  // Consume the metered cost pro rata from the winner's covering
-  // allocations (pinned to it, or unpinned on the group).
-  let consumed = 0;
-  if (meteredMicroUsd > 0) {
-    const covering = await rawQuery<{ id: string; unspent: number }>(
-      `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM action_allocations
-        WHERE exclusion_group = $1 AND released_at IS NULL
-          AND (action_id IS NULL OR action_id = $2)
-          AND spent_micro_usd < amount_micro_usd
-        ORDER BY created_at ASC
-        FOR UPDATE SKIP LOCKED`,
+    await tx.query(
+      `UPDATE actions SET status = 'superseded', updated_at = now()
+        WHERE exclusion_group = $1 AND id <> $2 AND status IN ('open', 'running')`,
       [action.exclusion_group, actionId]
     );
-    const totalUnspent = covering.reduce((s, r) => s + Number(r.unspent), 0);
-    const toConsume = Math.min(Math.round(meteredMicroUsd), totalUnspent);
-    for (const [i, row] of covering.entries()) {
-      const share =
-        i === covering.length - 1
-          ? toConsume - consumed
-          : Math.floor((toConsume * Number(row.unspent)) / totalUnspent);
-      const take = Math.min(Number(row.unspent), Math.max(0, share));
-      if (take <= 0) continue;
-      await rawQuery(
-        `UPDATE action_allocations
-            SET spent_micro_usd = spent_micro_usd + $2
-          WHERE id = $1`,
-        [row.id, take]
-      );
-      consumed += take;
-    }
-  }
 
-  // SETTLEMENT: whatever the covering allocations still hold beyond the
-  // metered cost releases back to its funders — a mandate's headroom
-  // returns, a person's owls return to their balance. The ceiling was
-  // theirs to rely on; the meter is what they pay.
-  const settled = await rawQuery<{
-    id: string;
-    user_id: string | null;
-    claim_id: string | null;
-    remainder: number;
-  }>(
-    `UPDATE action_allocations al
-        SET released_at = now()
-      WHERE al.exclusion_group = $1 AND al.released_at IS NULL
-        AND (al.action_id IS NULL OR al.action_id = $2)
-        AND al.spent_micro_usd < al.amount_micro_usd
-      RETURNING al.id, al.user_id, al.claim_id,
-                (al.amount_micro_usd - al.spent_micro_usd)::bigint AS remainder`,
-    [action.exclusion_group, actionId]
-  );
-  for (const r of settled) {
-    if (r.user_id && Number(r.remainder) > 0) {
-      await rawQuery(
-        `INSERT INTO owl_ledger
-           (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
-         VALUES ($1, $2, 'refund', $3, $4)
-         ON CONFLICT (idempotency_key) DO NOTHING`,
-        [r.user_id, Number(r.remainder), r.claim_id, `settle:${r.id}`]
+    // Lock every live allocation on the group for the duration of the
+    // close (plain FOR UPDATE: wait, don't skip — a skipped row would be
+    // silently exempted from consumption).
+    const allocations = await tx.query<{
+      id: string;
+      user_id: string | null;
+      claim_id: string | null;
+      action_id: string | null;
+      unspent: number;
+    }>(
+      `SELECT id, user_id, claim_id, action_id,
+              (amount_micro_usd - spent_micro_usd)::bigint AS unspent
+         FROM action_allocations
+        WHERE exclusion_group = $1 AND released_at IS NULL
+          AND spent_micro_usd < amount_micro_usd
+        ORDER BY created_at ASC
+        FOR UPDATE`,
+      [action.exclusion_group]
+    );
+
+    const refundUser = async (r: {
+      id: string;
+      user_id: string | null;
+      claim_id: string | null;
+      unspent: number;
+      key: string;
+    }) => {
+      if (r.user_id && Number(r.unspent) > 0) {
+        await tx.query(
+          `INSERT INTO owl_ledger
+             (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
+           VALUES ($1, $2, 'refund', $3, $4)
+           ON CONFLICT (idempotency_key) DO NOTHING`,
+          [r.user_id, Number(r.unspent), r.claim_id, r.key]
+        );
+      }
+    };
+
+    // Release losing pinned allocations: returned, not spent. User-funded
+    // ones get their unspent remainder back on the owl ledger.
+    const losers = allocations.filter(
+      (a) => a.action_id !== null && a.action_id !== actionId
+    );
+    for (const r of losers) {
+      await tx.query(
+        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        [r.id]
       );
+      await refundUser({ ...r, key: `release:${r.id}` });
     }
-  }
-  return consumed;
+
+    // Consume the metered cost pro rata from the winner's covering
+    // allocations (pinned to it, or unpinned on the group).
+    const covering = allocations.filter(
+      (a) => a.action_id === null || a.action_id === actionId
+    );
+    let consumed = 0;
+    if (meteredMicroUsd > 0) {
+      const totalUnspent = covering.reduce((s, r) => s + Number(r.unspent), 0);
+      const toConsume = Math.min(Math.round(meteredMicroUsd), totalUnspent);
+      for (const [i, row] of covering.entries()) {
+        const share =
+          i === covering.length - 1
+            ? toConsume - consumed
+            : Math.floor((toConsume * Number(row.unspent)) / totalUnspent);
+        const take = Math.min(Number(row.unspent), Math.max(0, share));
+        if (take <= 0) continue;
+        await tx.query(
+          `UPDATE action_allocations
+              SET spent_micro_usd = spent_micro_usd + $2
+            WHERE id = $1`,
+          [row.id, take]
+        );
+        consumed += take;
+        row.unspent = Number(row.unspent) - take;
+      }
+    }
+
+    // SETTLEMENT: whatever the covering allocations still hold beyond the
+    // metered cost releases back to its funders — a mandate's headroom
+    // returns, a person's owls return to their balance. The ceiling was
+    // theirs to rely on; the meter is what they pay.
+    for (const r of covering) {
+      if (Number(r.unspent) <= 0) continue;
+      await tx.query(
+        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        [r.id]
+      );
+      await refundUser({ ...r, key: `settle:${r.id}` });
+    }
+    return consumed;
+  });
 }
 
 /**
