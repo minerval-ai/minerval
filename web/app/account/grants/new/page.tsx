@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "../../../../auth";
-import { CreateGrantForm } from "./CreateGrantForm";
+import { GrantConversation } from "./GrantConversation";
 
 export const metadata: Metadata = { title: "New grant — Minerval" };
 
-// The create-mandate wizard: scope, policy, budget — three decisions.
-// ?claim_id= pre-fills the scope when arriving from a claim page.
+// Grants are made by talking, not by form: the Grantmaker agent designs the
+// mandate in conversation, quotes its cost in owls, and can refuse mandates
+// that would compromise the graph. ?claim_id= seeds the opening message
+// when arriving from a claim page.
 export default async function NewGrantPage({
   searchParams,
 }: {
@@ -24,12 +26,15 @@ export default async function NewGrantPage({
       </p>
       <h1>Create a grant</h1>
       <p>
-        Your budget escrows when the grant is created, real model spend is
-        metered against it as the work runs, a grant that runs dry pauses and
-        asks to top up, and whatever isn&rsquo;t spent comes back when the
-        mandate completes or you cancel it.
+        Tell the Grantmaker what you want the graph to pay attention to. It
+        will survey what exists, ask what it needs to, and propose a concrete
+        mandate with an honest price in owls. Talking costs nothing; your
+        budget escrows only when you fund the proposal, and whatever the work
+        doesn&rsquo;t spend comes back. One thing to know going in: the
+        Grantmaker works for the integrity of the graph, so it will decline
+        any mandate designed to steer conclusions rather than fund attention.
       </p>
-      <CreateGrantForm initialClaimId={claim_id ?? ""} />
+      <GrantConversation initialClaimId={claim_id ?? ""} />
     </div>
   );
 }

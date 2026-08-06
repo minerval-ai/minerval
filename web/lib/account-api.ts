@@ -585,3 +585,86 @@ export async function denyOAuthRequest(requestId: string): Promise<string> {
   );
   return r.redirect_to;
 }
+
+// --- granting conversations (the way grants are created) ---------------------
+
+export interface GrantConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+  at: string;
+}
+
+export interface GrantMandateView {
+  title: string;
+  objective: string;
+  scope_claim_id: string | null;
+  scope_query: string | null;
+  plan: {
+    strategy: string;
+    items: Array<{
+      action: "assess" | "reassess" | "deepen" | "ingest";
+      claim_id?: string;
+      url?: string;
+      rationale: string;
+    }>;
+  };
+  expected_cost_owls: number;
+  expected_cost_usd: number;
+  notes: string | null;
+}
+
+export interface GrantConversationView {
+  id: string;
+  status: "active" | "proposed" | "funded" | "declined" | "abandoned";
+  messages: GrantConversationMessage[];
+  mandate: GrantMandateView | null;
+  grant_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function startGrantConversation(
+  externalId: string,
+  message: string
+): Promise<GrantConversationView> {
+  const r = await accountFetch<{ conversation: GrantConversationView }>(
+    "/grant-conversations",
+    { method: "POST", body: { message }, actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export async function continueGrantConversation(
+  externalId: string,
+  conversationId: string,
+  message: string
+): Promise<GrantConversationView> {
+  const r = await accountFetch<{ conversation: GrantConversationView }>(
+    `/grant-conversations/${conversationId}/messages`,
+    { method: "POST", body: { message }, actingUser: externalId }
+  );
+  return r.conversation;
+}
+
+export async function fundGrantConversation(
+  externalId: string,
+  conversationId: string,
+  budgetOwls: number
+): Promise<{ conversation: GrantConversationView; grant_id: string }> {
+  return accountFetch(`/grant-conversations/${conversationId}/fund`, {
+    method: "POST",
+    body: { budget_owls: budgetOwls },
+    actingUser: externalId,
+  });
+}
+
+export async function getGrantConversation(
+  externalId: string,
+  conversationId: string
+): Promise<GrantConversationView> {
+  const r = await accountFetch<{ conversation: GrantConversationView }>(
+    `/grant-conversations/${conversationId}`,
+    { actingUser: externalId }
+  );
+  return r.conversation;
+}

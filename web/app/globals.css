@@ -949,16 +949,45 @@ html { scroll-behavior: smooth; }
 .fund-decomp { margin: 0.6rem 0; }
 .fund-decomp .order-caption { margin-bottom: 0.5rem; }
 
-/* grant creation form */
-.grant-form { display: flex; flex-direction: column; gap: 1rem; max-width: 34rem; font-family: var(--sans); }
-.grant-form label { display: flex; flex-direction: column; gap: 0.3rem; }
-.grant-form input[type="text"], .grant-form input[type="number"] {
-  font-size: 0.86rem; padding: 0.45rem 0.6rem;
+/* the granting conversation (grants are made by talking, not by form) */
+.grant-convo { display: flex; flex-direction: column; gap: 1rem; max-width: 40rem; font-family: var(--sans); }
+.grant-convo-transcript {
+  display: flex; flex-direction: column; gap: 0.9rem;
+  border: 1px solid var(--rule-soft); border-radius: 6px;
+  padding: 1rem 1.1rem; background: var(--paper-card);
+  max-height: 30rem; overflow-y: auto;
+}
+.convo-msg { display: flex; flex-direction: column; gap: 0.2rem; }
+.convo-who { font-size: 0.68rem; color: var(--faint); }
+.convo-user .convo-who { color: var(--muted); }
+.convo-body { font-size: 0.86rem; line-height: 1.5; white-space: pre-wrap; }
+.convo-user .convo-body { color: var(--ink-soft); }
+.convo-thinking { color: var(--faint); font-style: italic; }
+.grant-convo-input { display: flex; flex-direction: column; gap: 0.5rem; }
+.grant-convo-input textarea {
+  font-family: var(--sans); font-size: 0.86rem; line-height: 1.5;
+  padding: 0.55rem 0.7rem; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card); color: var(--ink); resize: vertical;
+}
+.grant-convo-input .order-button { align-self: flex-start; }
+.mandate-card {
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: 1rem 1.2rem; background: var(--paper-sunk);
+}
+.mandate-card h3 { margin: 0.2rem 0 0.4rem; }
+.mandate-card > p { font-size: 0.86rem; }
+.mandate-strategy { color: var(--muted); }
+.mandate-items { list-style: none; padding: 0; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.82rem; }
+.mandate-target { font-family: var(--mono); font-size: 0.74rem; word-break: break-all; }
+.mandate-rationale { color: var(--muted); }
+.mandate-fund { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; }
+.mandate-budget { display: inline-flex; align-items: center; gap: 0.3rem; }
+.mandate-fund input[type="number"] {
+  width: 6rem; font-size: 0.86rem; padding: 0.4rem 0.55rem;
   border: 1px solid var(--rule); border-radius: 4px;
   background: var(--paper-card); color: var(--ink);
 }
-.grant-policies { border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.55rem; }
-.grant-policy { display: flex; flex-direction: row !important; gap: 0.5rem; font-size: 0.82rem; align-items: baseline; }
+.mandate-fund .order-button { align-self: flex-start; }
 
 /* the one-time key reveal — deliberately loud relative to the quiet page */
 .key-reveal {
