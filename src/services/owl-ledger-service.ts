@@ -25,6 +25,8 @@ export const OWL_REASONS = {
   contributionAward: "contribution_award",
   charge: "charge",
   refund: "refund",
+  /** The unused fraction of a charged cap, returned after the meter ran. */
+  meterSettlement: "meter_settlement",
   escrowHold: "escrow_hold",
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",
@@ -82,11 +84,16 @@ export async function recordOwlEntry(input: OwlEntryInput): Promise<boolean> {
 }
 
 /**
- * Charge a flat price: insert the debit only if the balance covers it.
+ * Charge an operation's cap: insert the debit only if the balance covers it.
  * Returns the ledger entry id when charged, null when the balance was
  * insufficient. The guard and insert are one statement, so concurrent
  * charges can overshoot by at most one operation each — never re-spend a
- * drained balance systematically. A zero price returns "free" (no row).
+ * drained balance systematically. A zero cap returns "free" (no row).
+ *
+ * The cap is not the price: after the run, settleMeteredCharge returns
+ * whatever the meter didn't use. Charging the full cap up front is what
+ * makes the ceiling trustworthy — the balance can never go negative
+ * mid-run, and the figure on the button is the worst case.
  */
 export async function chargeOwls(input: {
   userId: string;
@@ -168,6 +175,45 @@ export async function refundChargeForContribution(
     refunded = refunded || inserted;
   }
   return refunded;
+}
+
+/**
+ * Settle a cap charge against what the meter says the run really cost.
+ * Credits back max(0, cap − metered): the user pays metered cost-plus, up
+ * to the cap; overage past the cap is absorbed by the platform, never
+ * charged. Idempotent per settleKey, so retried completion paths cannot
+ * double-credit. A no-op when nothing is owed back (metered ≥ cap) or when
+ * the meter saw no work at all (that is a refund case, not a settlement).
+ */
+export async function settleMeteredCharge(input: {
+  userId: string;
+  capMicroUsd: number;
+  meteredMicroUsd: number;
+  /** Unique key for this settlement, e.g. `settle:order:<id>` or the charge entry id. */
+  settleKey: string;
+  op: PricedOp;
+  claimId?: string | null;
+  contributionId?: string | null;
+  jobId?: string | null;
+}): Promise<{ settledMicroUsd: number }> {
+  const unused = Math.max(
+    0,
+    Math.round(input.capMicroUsd) - Math.max(0, Math.round(input.meteredMicroUsd))
+  );
+  if (unused <= 0 || input.meteredMicroUsd <= 0) {
+    return { settledMicroUsd: 0 };
+  }
+  const inserted = await recordOwlEntry({
+    userId: input.userId,
+    amountMicroUsd: unused,
+    reason: OWL_REASONS.meterSettlement,
+    op: input.op,
+    claimId: input.claimId ?? null,
+    contributionId: input.contributionId ?? null,
+    jobId: input.jobId ?? null,
+    idempotencyKey: `settle:${input.settleKey}`,
+  });
+  return { settledMicroUsd: inserted ? unused : 0 };
 }
 
 /** Compensate a charge whose operation failed after the debit was taken. */

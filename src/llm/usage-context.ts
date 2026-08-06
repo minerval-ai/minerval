@@ -26,6 +26,14 @@ export interface UsageContext {
   requestId?: string | null;
   /** Agent making the calls: extractor | matcher | steward | curator | ... */
   agent?: string;
+  /**
+   * Live cost accumulator for the enclosing metered operation. The metering
+   * chokepoint adds each call's BILLED (marked-up) cost here synchronously,
+   * so cap-and-settle charging (owl-ledger-service.settleMeteredCharge) can
+   * read the operation's real cost the moment the work finishes, without
+   * waiting on the async llm_usage insert.
+   */
+  meter?: { billedMicroUsd: number };
 }
 
 const storage = new AsyncLocalStorage<UsageContext>();
@@ -46,4 +54,17 @@ export function runWithUsageContext<T>(
 /** Tag all LLM calls inside `fn` as made by `agent`. */
 export function withAgent<T>(agent: string, fn: () => T): T {
   return runWithUsageContext({ agent }, fn);
+}
+
+/**
+ * Run `fn` with a fresh cost meter and return what its LLM calls actually
+ * cost at the billed (cost-plus) rate. The meter is scoped: nested meters
+ * shadow outer ones, so an operation measures only its own work.
+ */
+export async function withCostMeter<T>(
+  fn: () => Promise<T>
+): Promise<{ value: T; billedMicroUsd: number }> {
+  const meter = { billedMicroUsd: 0 };
+  const value = await runWithUsageContext({ meter }, fn);
+  return { value, billedMicroUsd: meter.billedMicroUsd };
 }

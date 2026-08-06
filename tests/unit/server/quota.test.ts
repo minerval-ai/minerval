@@ -7,7 +7,7 @@ function entitlement(owlBalance: number, creditsEnabled = false) {
     owlBalance,
     owlBalanceMicroUsd: owlBalance * 4_000_000,
     owlPriceMicroUsd: 4_000_000,
-    pricesOwls: {
+    capsOwls: {
       claim_proposal: 1,
       assessment: 1,
       source_ingest: 0.1,
@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   getEntitlement: vi.fn(),
   chargeOwls: vi.fn(async () => ({ charged: true, entryId: "entry-1" })),
   refundOwls: vi.fn(async () => {}),
+  settleMeteredCharge: vi.fn(async () => ({ settledMicroUsd: 0 })),
 }));
 
 vi.mock("../../../src/services/billing-service.js", async (importOriginal) => {
@@ -41,6 +42,7 @@ vi.mock("../../../src/services/billing-service.js", async (importOriginal) => {
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   chargeOwls: mocks.chargeOwls,
   refundOwls: mocks.refundOwls,
+  settleMeteredCharge: mocks.settleMeteredCharge,
 }));
 
 async function buildTestApp(auth: RequestAuth | null, rateLimit?: number) {
@@ -82,7 +84,7 @@ describe("agentic quota guard (owl economy)", () => {
     savedLimit = process.env.AGENTIC_RATE_LIMIT_PER_HOUR;
     mocks.checkSpend.mockReset().mockResolvedValue({
       allowed: true,
-      priceOwls: 1,
+      capOwls: 1,
       entitlement: entitlement(5),
     });
     mocks.getEntitlement.mockReset().mockResolvedValue(entitlement(0));
@@ -96,24 +98,24 @@ describe("agentic quota guard (owl economy)", () => {
     else process.env.AGENTIC_RATE_LIMIT_PER_HOUR = savedLimit;
   });
 
-  it("allows a user whose balance covers the price", async () => {
+  it("allows a user whose balance covers the cap", async () => {
     const app = await buildTestApp(userAuth);
     const res = await app.inject({ method: "POST", url: "/agentic" });
     expect(res.statusCode).toBe(200);
     expect(mocks.checkSpend).toHaveBeenCalledWith("user-1", "claim_proposal");
   });
 
-  it("returns 402 INSUFFICIENT_OWLS when the balance can't cover the price", async () => {
+  it("returns 402 INSUFFICIENT_OWLS when the balance can't cover the cap", async () => {
     mocks.checkSpend.mockResolvedValue({
       allowed: false,
-      priceOwls: 1,
+      capOwls: 1,
       entitlement: entitlement(0),
     });
     const app = await buildTestApp(userAuth);
     const res = await app.inject({ method: "POST", url: "/agentic" });
     expect(res.statusCode).toBe(402);
     expect(res.json().code).toBe("INSUFFICIENT_OWLS");
-    expect(res.json().price_owls).toBe(1);
+    expect(res.json().cap_owls).toBe(1);
     expect(res.json().entitlement.owl_balance).toBe(0);
     expect(res.json().error).toContain("not enabled");
   });
@@ -121,7 +123,7 @@ describe("agentic quota guard (owl economy)", () => {
   it("points the 402 at buying owls when billing is enabled", async () => {
     mocks.checkSpend.mockResolvedValue({
       allowed: false,
-      priceOwls: 1,
+      capOwls: 1,
       entitlement: entitlement(0, true),
     });
     const app = await buildTestApp(userAuth);
@@ -166,6 +168,9 @@ describe("charge-at-start helpers", () => {
       .mockReset()
       .mockResolvedValue({ charged: true, entryId: "entry-1" });
     mocks.refundOwls.mockReset().mockResolvedValue(undefined);
+    mocks.settleMeteredCharge
+      .mockReset()
+      .mockResolvedValue({ settledMicroUsd: 0 });
   });
 
   async function loadQuota() {
@@ -244,5 +249,38 @@ describe("charge-at-start helpers", () => {
     );
     expect(run).toEqual({ ok: true, value: "result" });
     expect(mocks.refundOwls).not.toHaveBeenCalled();
+  });
+
+  it("withAgenticCharge settles the cap against the metered cost on success", async () => {
+    const { withAgenticCharge } = await loadQuota();
+    await withAgenticCharge(
+      { userId: "user-1", apiKeyId: null, method: "api_key" },
+      "extension_chat",
+      { claimId: "claim-3" },
+      async () => "done"
+    );
+    expect(mocks.settleMeteredCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        settleKey: "entry-1",
+        op: "extension_chat",
+        claimId: "claim-3",
+      })
+    );
+  });
+
+  it("withAgenticCharge does not settle when the work throws (it refunds)", async () => {
+    const { withAgenticCharge } = await loadQuota();
+    await expect(
+      withAgenticCharge(
+        { userId: "user-1", apiKeyId: null, method: "api_key" },
+        "extension_chat",
+        {},
+        async () => {
+          throw new Error("boom");
+        }
+      )
+    ).rejects.toThrow("boom");
+    expect(mocks.settleMeteredCharge).not.toHaveBeenCalled();
   });
 });

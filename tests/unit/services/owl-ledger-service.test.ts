@@ -33,6 +33,7 @@ import {
   chargeOwls,
   refundChargeForContribution,
   ensureFreeGrants,
+  settleMeteredCharge,
 } from "../../../src/services/owl-ledger-service.js";
 
 beforeEach(() => {
@@ -84,6 +85,65 @@ describe("chargeOwls", () => {
     });
     expect(result.charged).toBe(true);
     expect(mocks.rawQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe("settleMeteredCharge", () => {
+  it("credits back the unused fraction of the cap, idempotently keyed", async () => {
+    const { settledMicroUsd } = await settleMeteredCharge({
+      userId: "u-1",
+      capMicroUsd: 4_000_000,
+      meteredMicroUsd: 1_500_000,
+      settleKey: "order:o-1",
+      op: "assessment",
+      claimId: "c-1",
+    });
+    expect(settledMicroUsd).toBe(2_500_000);
+    expect(mocks.inserted).toHaveLength(1);
+    const entry = mocks.inserted[0] as {
+      amountMicroUsd: number;
+      reason: string;
+      idempotencyKey: string;
+    };
+    expect(entry.amountMicroUsd).toBe(2_500_000);
+    expect(entry.reason).toBe("meter_settlement");
+    expect(entry.idempotencyKey).toBe("settle:order:o-1");
+  });
+
+  it("absorbs cost past the cap instead of charging more", async () => {
+    const { settledMicroUsd } = await settleMeteredCharge({
+      userId: "u-1",
+      capMicroUsd: 4_000_000,
+      meteredMicroUsd: 9_000_000,
+      settleKey: "order:o-2",
+      op: "assessment",
+    });
+    expect(settledMicroUsd).toBe(0);
+    expect(mocks.inserted).toHaveLength(0);
+  });
+
+  it("does not settle when the meter saw no work (refund territory)", async () => {
+    const { settledMicroUsd } = await settleMeteredCharge({
+      userId: "u-1",
+      capMicroUsd: 4_000_000,
+      meteredMicroUsd: 0,
+      settleKey: "order:o-3",
+      op: "assessment",
+    });
+    expect(settledMicroUsd).toBe(0);
+    expect(mocks.inserted).toHaveLength(0);
+  });
+
+  it("reports zero when the settlement was already applied", async () => {
+    mocks.insertReturns.push([]); // duplicate idempotency key → no row
+    const { settledMicroUsd } = await settleMeteredCharge({
+      userId: "u-1",
+      capMicroUsd: 4_000_000,
+      meteredMicroUsd: 1_000_000,
+      settleKey: "order:o-4",
+      op: "assessment",
+    });
+    expect(settledMicroUsd).toBe(0);
   });
 });
 

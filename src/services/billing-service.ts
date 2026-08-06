@@ -2,16 +2,17 @@
  * Billing service — the owl economy's entitlement surface.
  *
  * The bill is the owl ledger (src/services/owl-ledger-service.ts): every
- * agentic operation has a flat owl price (src/services/owl.ts) charged as an
- * explicit debit at the quota gate, and balance = SUM(ledger). llm_usage
- * metering continues underneath as internal cost observability — it is no
- * longer what the user owes.
+ * agentic operation carries a per-run owl cap (src/services/owl.ts) charged
+ * as an explicit debit at the quota gate, with the unused fraction settled
+ * back after the meter runs. Balance = SUM(ledger). llm_usage metering
+ * underneath is what the settlement reads — the user pays metered cost-plus,
+ * never more than the cap.
  *
  * Free-vs-priced boundary (also documented in docs/accounts.md):
  *   - Non-agentic reads (claim lookup, search, trees) are free and generous —
  *     they never touch this service.
  *   - Agentic surfaces (claim proposal, source ingestion, extension, MCP
- *     text tools) charge their flat price from the owl balance.
+ *     text tools) charge up to their cap from the owl balance.
  *   - Contribution review costs are system overhead, not user spend: good-
  *     faith contribution stays free (#71) — and accepted contributions EARN
  *     owls (contribution-award-service).
@@ -27,8 +28,8 @@ import {
 import {
   microUsdToOwls,
   owlPacks,
-  priceListOwls,
-  priceOwls,
+  capListOwls,
+  capOwls,
   type PricedOp,
 } from "./owl.js";
 
@@ -48,8 +49,10 @@ export interface Entitlement {
   owlBalanceMicroUsd: number;
   /** Face value of one owl in micro-USD (the price-list denominator). */
   owlPriceMicroUsd: number;
-  /** The flat price list, in owls — legible before anything is spent (§15). */
-  pricesOwls: Record<PricedOp, number>;
+  /** Per-run caps, in owls: the MOST each operation can cost. The actual
+   * charge is metered cost-plus, settled after the run — legible before
+   * anything is spent (§15). */
+  capsOwls: Record<PricedOp, number>;
   /** Whether this deployment can sell owls (drives the 402 message + UI). */
   creditsEnabled: boolean;
   signupGrantOwls: number;
@@ -62,7 +65,7 @@ export function serializeEntitlement(e: Entitlement) {
     owl_balance: e.owlBalance,
     owl_balance_micro_usd: e.owlBalanceMicroUsd,
     owl_price_micro_usd: e.owlPriceMicroUsd,
-    prices_owls: e.pricesOwls,
+    caps_owls: e.capsOwls,
     credits_enabled: e.creditsEnabled,
     signup_grant_owls: e.signupGrantOwls,
     monthly_grant_owls: e.monthlyGrantOwls,
@@ -82,7 +85,7 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
     owlBalance: microUsdToOwls(balanceMicro),
     owlBalanceMicroUsd: balanceMicro,
     owlPriceMicroUsd: config.owlPriceMicroUsd,
-    pricesOwls: priceListOwls(),
+    capsOwls: capListOwls(),
     creditsEnabled: stripeConfigured(),
     signupGrantOwls: config.signupGrantOwls,
     monthlyGrantOwls: config.monthlyGrantOwls,
@@ -91,20 +94,21 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
 
 export interface SpendCheck {
   allowed: boolean;
-  priceOwls: number;
+  /** The operation's cap in owls — what affordability is checked against. */
+  capOwls: number;
   entitlement: Entitlement;
 }
 
-/** Can the user afford this operation right now? Read-only — no charge. */
+/** Can the user afford this operation's cap right now? Read-only — no charge. */
 export async function checkSpend(
   userId: string,
   op: PricedOp
 ): Promise<SpendCheck> {
   const entitlement = await getEntitlement(userId);
-  const price = priceOwls(op);
+  const cap = capOwls(op);
   return {
-    allowed: entitlement.owlBalance >= price,
-    priceOwls: price,
+    allowed: entitlement.owlBalance >= cap,
+    capOwls: cap,
     entitlement,
   };
 }

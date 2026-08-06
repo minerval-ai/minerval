@@ -1,21 +1,32 @@
 /**
  * The owl — Minerval's unit of account.
  *
- * One owl is a fixed face value (OWL_PRICE default $4, the "tetradrachm") that
- * buys one claim assessment: roughly $1 of frontier-model work at the same 4×
- * margin the metered era charged (usageMarkupMultiplier). Users, agents, and
- * price lists reason in owls; ledgers and cost accounting stay in micro-USD.
- * Owls are strictly one-way — bought or earned, then spent; never redeemable
- * for cash.
+ * One owl has a fixed face value (OWL_PRICE default $4, the "tetradrachm")
+ * and matches dollar spend one for one: buying an owl funds ~$1 of
+ * frontier-model work at the same cost-plus margin the meter charges
+ * everywhere (usageMarkupMultiplier). Owls are strictly one-way: bought or
+ * earned, then spent, never redeemable for cash.
  *
- * This module is the single home of the conversion math, the canonical price
- * list for flat-priced operations, and the purchase-pack definitions (bulk
- * discounts). Open-ended operations (deep decomposition, grantor agents) are
- * not priced here — they are funded with escrowed owl budgets instead.
+ * Nothing here is a fixed price. Every operation is metered at cost-plus;
+ * the numbers in this module are CAPS — the most an operation may cost —
+ * so a button can carry one legible figure ("up to 1 owl") before the work
+ * runs. The cap is charged when the operation starts, the meter records
+ * what the work really cost, and the unused fraction settles back to the
+ * balance (owl-ledger-service.settleMeteredCharge). When a run costs more
+ * than its cap, the platform absorbs the overage: the cap is a ceiling the
+ * user can rely on, priced near the average so the margin covers the tail.
+ * Agents deciding where effort goes reason in expected marginal value over
+ * expected marginal cost, and a fixed price anywhere would distort that —
+ * caps keep the display honest without un-metering anything.
+ *
+ * This module is the single home of the conversion math, the canonical cap
+ * list for bounded operations, and the purchase-pack definitions (bulk
+ * discounts). Open-ended work (deep decomposition, grants) carries an
+ * escrowed owl budget instead of a per-operation cap.
  */
 import { loadConfig } from "../config.js";
 
-/** Operations with a flat owl price, charged at the quota gate. */
+/** Operations with a per-run owl cap, charged cap-then-settle at the quota gate. */
 export type PricedOp =
   | "claim_proposal"
   | "assessment"
@@ -39,34 +50,38 @@ export function microUsdToOwls(microUsd: number): number {
 }
 
 /**
- * The canonical price list, in owls. Serialized into entitlements and 402
- * bodies so the cost of everything is legible before it is incurred (§15).
+ * The canonical cap list, in owls: the MOST each operation can cost.
+ * Serialized into entitlements and 402 bodies so the ceiling on everything
+ * is legible before it is incurred (§15); the actual charge is the metered
+ * cost, settled after the run.
  */
-export function priceListOwls(): Record<PricedOp, number> {
+export function capListOwls(): Record<PricedOp, number> {
   const c = loadConfig();
   return {
     // Proposing a claim commands a full Steward pass on it — the same work
-    // as an assessment order, so the same price. This is what the signup
+    // as an assessment order, so the same cap. This is what the signup
     // grant's "5 free claims" buys.
-    claim_proposal: c.priceClaimProposalOwls,
-    // A user-ordered (re)assessment of an existing claim.
-    assessment: c.priceAssessmentOwls,
+    claim_proposal: c.capClaimProposalOwls,
+    // A user-ordered (re)assessment of an existing claim, best model.
+    assessment: c.capAssessmentOwls,
     // Ingest a URL: extraction + matching over one source.
-    source_ingest: c.priceSourceIngestOwls,
+    source_ingest: c.capSourceIngestOwls,
     // Browser-extension page analysis / chat exchange.
-    extension_analysis: c.priceExtensionAnalysisOwls,
-    extension_chat: c.priceExtensionChatOwls,
+    extension_analysis: c.capExtensionAnalysisOwls,
+    extension_chat: c.capExtensionChatOwls,
     // MCP text tools (match_claim, extract_claims, assess_text).
-    text_analysis: c.priceTextAnalysisOwls,
+    text_analysis: c.capTextAnalysisOwls,
   };
 }
 
-export function priceOwls(op: PricedOp): number {
-  return priceListOwls()[op];
+/** The cap for one operation, in owls. */
+export function capOwls(op: PricedOp): number {
+  return capListOwls()[op];
 }
 
-export function priceMicroUsd(op: PricedOp): number {
-  return owlsToMicroUsd(priceOwls(op));
+/** The cap for one operation, in face-value micro-USD. */
+export function capMicroUsd(op: PricedOp): number {
+  return owlsToMicroUsd(capOwls(op));
 }
 
 export interface OwlPack {

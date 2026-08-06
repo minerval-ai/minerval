@@ -16,7 +16,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { assessmentOrders, claims, type AssessmentOrder } from "../db/schema.js";
-import { priceMicroUsd, microUsdToOwls } from "./owl.js";
+import { capMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
 
 export type OrderCreateResult =
@@ -84,7 +84,10 @@ export async function createOrder(input: {
       claimId: input.claimId,
       contributionId: input.contributionId ?? null,
       chargeEntryId: input.chargeEntryId ?? null,
-      priceMicroUsd: priceMicroUsd("assessment"),
+      // The row's price_micro_usd is the CAP quoted at order time: the most
+      // this assessment can cost. The dispatcher charges it at run start and
+      // settles the unused fraction back once the meter has the real cost.
+      priceMicroUsd: capMicroUsd("assessment"),
     })
     .returning();
   return { ok: true, order: order! };
@@ -183,7 +186,8 @@ export function serializeOrder(o: AssessmentOrder) {
     claim_id: o.claimId,
     contribution_id: o.contributionId,
     status: o.status,
-    price_owls: microUsdToOwls(Number(o.priceMicroUsd)),
+    // The quoted cap, not a fixed price — the settled charge can be less.
+    price_cap_owls: microUsdToOwls(Number(o.priceMicroUsd)),
     charged: o.chargeEntryId !== null,
     error: o.error,
     created_at: o.createdAt?.toISOString(),

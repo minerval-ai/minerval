@@ -98,7 +98,8 @@ export interface Entitlement {
   owl_balance: number;
   owl_balance_micro_usd: number;
   owl_price_micro_usd: number;
-  prices_owls: Record<string, number>;
+  /** Per-operation ceilings in owls. The charge is metered cost, never more. */
+  caps_owls: Record<string, number>;
   credits_enabled: boolean;
   signup_grant_owls: number;
   monthly_grant_owls: number;
@@ -245,7 +246,8 @@ export interface AssessmentOrderView {
   claim_id: string;
   contribution_id: string | null;
   status: string;
-  price_owls: number;
+  /** The quoted ceiling for this order; the settled charge can be less. */
+  price_cap_owls: number;
   charged: boolean;
   error: string | null;
   created_at: string;

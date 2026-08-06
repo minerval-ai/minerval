@@ -6,9 +6,11 @@
  * every tick (local-runner.ts), so an order's dispatch latency is one tick,
  * not a queue position. Background work uses whatever capacity is left.
  *
- * Charge-at-start: the owl is debited HERE, immediately before the Steward
- * run begins — a pending order was never charged and cancels free. The stake
- * (the demand signal Stage 3's priority reads) is recorded with the charge.
+ * Charge-at-start, settle-at-finish: the order's CAP is debited HERE,
+ * immediately before the Steward run begins — a pending order was never
+ * charged and cancels free — and after the run the metered cost settles
+ * against the cap, crediting back the unused fraction. The stake (the
+ * demand signal the allocation core reads) is recorded with the charge.
  * A transient failure requeues the order WITH its charge intact (the retry
  * must not double-charge); a genuine failure refunds and fails the order.
  *
@@ -20,11 +22,16 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { chargeOwls, recordOwlEntry, OWL_REASONS } from "../services/owl-ledger-service.js";
+import {
+  chargeOwls,
+  recordOwlEntry,
+  settleMeteredCharge,
+  OWL_REASONS,
+} from "../services/owl-ledger-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { refreshQueuePriority } from "../services/priority-service.js";
 
@@ -205,10 +212,28 @@ export async function processNextOrderTask(
       "evidence with fresh eyes and record a current assessment.";
 
   try {
-    await runWithUsageContext(
+    const { billedMicroUsd } = await runWithUsageContext(
       { userId: order.user_id, jobId: order.id },
-      () => runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+      () =>
+        withCostMeter(() =>
+          runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+        )
     );
+
+    // The quoted figure was a cap, not a price: return whatever the metered
+    // cost-plus run didn't use. Ran over the cap? The overage is ours — the
+    // buyer's ceiling holds. Idempotent per order, so a crash between here
+    // and the status write can't double-credit on retry.
+    await settleMeteredCharge({
+      userId: order.user_id,
+      capMicroUsd: Number(order.price_micro_usd),
+      meteredMicroUsd: billedMicroUsd,
+      settleKey: `order:${order.id}`,
+      op: "assessment",
+      claimId: order.claim_id,
+    }).catch(() => {
+      // A missed settlement favours the platform and must not fail the run.
+    });
 
     await releaseClaim(order.claim_id, "done");
     await rawQuery(

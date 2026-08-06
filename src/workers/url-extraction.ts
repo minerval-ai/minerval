@@ -7,8 +7,10 @@ import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline, enqueueCurator } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
+import { rawQuery } from "../db/client.js";
+import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -27,14 +29,59 @@ export async function handleUrlExtraction(
   message: UrlExtractionMessage
 ): Promise<void> {
   const job = await getJobById(message.jobId);
-  return runWithUsageContext(
+  const { billedMicroUsd } = await runWithUsageContext(
     {
       userId: job?.userId ?? null,
       apiKeyId: job?.apiKeyId ?? null,
       jobId: message.jobId,
     },
-    () => processUrlExtraction(message)
+    () => withCostMeter(() => processUrlExtraction(message))
   );
+  await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
+}
+
+/**
+ * Settle the source_ingest cap charge behind this extraction, if there is
+ * one (governed intake links the charge to the contribution; direct service
+ * submissions were never charged). The submitter pays the metered cost of
+ * extraction + matching, never more than the cap.
+ */
+async function settleSourceIngestCharge(
+  sourceId: string,
+  billedMicroUsd: number
+): Promise<void> {
+  try {
+    const [charge] = await rawQuery<{
+      id: string;
+      user_id: string;
+      amount_micro_usd: number;
+      contribution_id: string;
+    }>(
+      `SELECT ol.id, ol.user_id, ol.amount_micro_usd, ol.contribution_id
+         FROM owl_ledger ol
+         JOIN contributions ct ON ct.id = ol.contribution_id
+        WHERE ol.reason = 'charge' AND ol.op = 'source_ingest'
+          AND ct.source_id = $1
+        ORDER BY ol.created_at ASC
+        LIMIT 1`,
+      [sourceId]
+    );
+    if (!charge) return;
+    await settleMeteredCharge({
+      userId: charge.user_id,
+      capMicroUsd: -Number(charge.amount_micro_usd),
+      meteredMicroUsd: billedMicroUsd,
+      settleKey: charge.id,
+      op: "source_ingest",
+      contributionId: charge.contribution_id,
+    });
+  } catch (err) {
+    // A missed settlement favours the platform; never fail the extraction.
+    console.error(
+      "[url-extraction] source_ingest settlement failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 async function processUrlExtraction(

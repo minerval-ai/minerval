@@ -42,7 +42,10 @@ function owls(n: number): string {
 
 /** A ledger row's human line: what the entry was for. */
 function ledgerLabel(e: OwlLedgerEntry): string {
-  const reason = e.reason.replace(/_/g, " ");
+  const reason =
+    e.reason === "meter_settlement"
+      ? "unused part returned"
+      : e.reason.replace(/_/g, " ");
   return e.op ? `${reason} · ${e.op.replace(/_/g, " ")}` : reason;
 }
 
@@ -132,7 +135,7 @@ export default async function AccountPage({
 
   const activeKeys = keys.filter((k) => !k.revoked_at);
   const revokedKeys = keys.filter((k) => k.revoked_at);
-  const prices = entitlement.prices_owls ?? {};
+  const caps = entitlement.caps_owls ?? {};
 
   return (
     <div className="col-wide account">
@@ -169,10 +172,12 @@ export default async function AccountPage({
           owl{entitlement.owl_balance === 1 ? "" : "s"}
         </p>
         <p>
-          The owl is Minerval&rsquo;s unit of account: one owl (~
-          {usd(entitlement.owl_price_micro_usd)}) buys one claim assessment —
-          a Steward agent examining evidence and reasoning about a claim you
-          care about. Smaller actions cost fractions of an owl. Reading,
+          The owl is Minerval&rsquo;s unit of account: one owl (
+          {usd(entitlement.owl_price_micro_usd)}) covers one claim assessment
+          by the best available model, with plenty of room to spare. Every
+          action is metered at its real cost, and the figures below are
+          ceilings: you are charged the ceiling when the work starts, and
+          whatever the work didn&rsquo;t use comes straight back. Reading,
           search, and browsing the graph are always free, and accepted
           contributions <em>earn</em> owls. New accounts start with{" "}
           {entitlement.signup_grant_owls} free owls
@@ -187,25 +192,25 @@ export default async function AccountPage({
           <thead>
             <tr>
               <th>action</th>
-              <th>price</th>
+              <th>at most</th>
             </tr>
           </thead>
           <tbody>
             {[
-              ["propose a claim (reviewed, then assessed)", prices.claim_proposal],
-              ["order a claim assessment", prices.assessment],
-              ["submit a source for extraction", prices.source_ingest],
-              ["extension page analysis", prices.extension_analysis],
-              ["extension chat exchange", prices.extension_chat],
-              ["API text analysis (match / extract / assess)", prices.text_analysis],
+              ["propose a claim (reviewed, then assessed)", caps.claim_proposal],
+              ["order a claim assessment", caps.assessment],
+              ["submit a source for extraction", caps.source_ingest],
+              ["extension page analysis", caps.extension_analysis],
+              ["extension chat exchange", caps.extension_chat],
+              ["API text analysis (match / extract / assess)", caps.text_analysis],
             ]
-              .filter(([, price]) => typeof price === "number")
-              .map(([label, price]) => (
+              .filter(([, cap]) => typeof cap === "number")
+              .map(([label, cap]) => (
                 <tr key={String(label)}>
                   <td>{label}</td>
                   <td>
                     <OwlMark size={14} className="owl-mark" />
-                    {owls(Number(price))} owl{Number(price) === 1 ? "" : "s"}
+                    {owls(Number(cap))} owl{Number(cap) === 1 ? "" : "s"}
                   </td>
                 </tr>
               ))}
@@ -286,7 +291,11 @@ export default async function AccountPage({
                       <a href={`/claims/${o.claim_id}`}>view claim</a>
                     </td>
                     <td>{o.status.replace(/_/g, " ")}</td>
-                    <td>{o.charged ? owls(o.price_owls) : "not charged"}</td>
+                    <td>
+                      {o.charged
+                        ? `up to ${owls(o.price_cap_owls)}`
+                        : "not charged"}
+                    </td>
                     <td>{dateish(o.created_at)}</td>
                   </tr>
                 ))}

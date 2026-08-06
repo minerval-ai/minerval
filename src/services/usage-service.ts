@@ -41,6 +41,14 @@ export interface LlmCallUsage {
  */
 export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   const ctx = getUsageContext();
+  const billedMicroUsd = Math.round(
+    costMicroUsd(call.model, call) * loadConfig().usageMarkupMultiplier
+  );
+  // Feed the enclosing operation's live cost meter FIRST and synchronously:
+  // cap-and-settle charging depends on this number being complete the moment
+  // the operation's work finishes, even if the durable insert below lags or
+  // fails.
+  if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
   try {
     const db = getDb();
     await db.insert(llmUsage).values({
@@ -60,9 +68,7 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       // reported one, and falls back to the rate table otherwise. The markup
       // multiplier turns raw provider cost into the billed rate every
       // downstream consumer (free grant, credit burn, dashboard) sees.
-      costMicroUsd: Math.round(
-        costMicroUsd(call.model, call) * loadConfig().usageMarkupMultiplier
-      ),
+      costMicroUsd: billedMicroUsd,
     });
   } catch (err) {
     // Metering must never break the calling agent. Surface loudly in logs.

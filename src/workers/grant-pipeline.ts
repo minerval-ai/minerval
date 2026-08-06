@@ -38,7 +38,7 @@ import {
   getJobSpentMicroUsd,
   refundUnspentBudget,
 } from "../services/budget-job-service.js";
-import { priceMicroUsd } from "../services/owl.js";
+import { capMicroUsd } from "../services/owl.js";
 import { refreshQueuePriority } from "../services/priority-service.js";
 import type { PlanItem } from "../services/grant-service.js";
 
@@ -365,7 +365,7 @@ export async function processNextGrantTask(
      SELECT $1, $2, $3, 'grant'
       WHERE NOT EXISTS (SELECT 1 FROM claim_stakes
                          WHERE claim_id = $1 AND user_id = $2 AND source = 'grant')`,
-    [target.id, grant.funder_user_id, priceMicroUsd("assessment")]
+    [target.id, grant.funder_user_id, capMicroUsd("assessment")]
   );
   await refreshQueuePriority(target.id).catch(() => {});
 

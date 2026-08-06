@@ -25,6 +25,7 @@ const { state, runCalls } = vi.hoisted(() => ({
     },
     charges: [] as unknown[],
     refunds: [] as unknown[],
+    settlements: [] as unknown[],
     stakes: [] as unknown[],
     orderUpdates: [] as Array<{ sql: string; params: unknown[] }>,
     claimReleases: [] as Array<{ id: string; to: string }>,
@@ -89,6 +90,10 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
     state.refunds.push(input);
     return true;
   }),
+  settleMeteredCharge: vi.fn(async (input: unknown) => {
+    state.settlements.push(input);
+    return { settledMicroUsd: 0 };
+  }),
 }));
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
@@ -120,6 +125,7 @@ beforeEach(() => {
   state.chargeResult = { charged: true, entryId: "charge-1" };
   state.charges = [];
   state.refunds = [];
+  state.settlements = [];
   state.stakes = [];
   state.orderUpdates = [];
   state.claimReleases = [];
@@ -155,6 +161,15 @@ describe("processNextOrderTask", () => {
     expect(
       state.orderUpdates.some((u) => u.sql.includes("'done'"))
     ).toBe(true);
+    // The cap settles against the metered cost after the run.
+    expect(state.settlements).toHaveLength(1);
+    expect(state.settlements[0]).toMatchObject({
+      userId: "user-1",
+      capMicroUsd: 4_000_000,
+      settleKey: "order:order-1",
+      op: "assessment",
+      claimId: "claim-1",
+    });
   });
 
   it("runs structure_and_assess for a never-stewarded claim", async () => {

@@ -102,15 +102,19 @@ const configSchema = z.object({
   // $4 ≈ one claim assessment (~$1 of frontier-model work at the same 4×
   // margin usageMarkupMultiplier applied in the metered era).
   owlPriceMicroUsd: z.coerce.number().positive().default(4_000_000),
-  // Flat prices for bounded agentic operations, in owls (fractions allowed).
-  // These are the whole price list — see src/services/owl.ts. Open-ended
-  // work (deep decomposition, grantor agents) is budgeted, not priced.
-  priceClaimProposalOwls: z.coerce.number().default(1),
-  priceAssessmentOwls: z.coerce.number().default(1),
-  priceSourceIngestOwls: z.coerce.number().default(0.1),
-  priceExtensionAnalysisOwls: z.coerce.number().default(0.1),
-  priceExtensionChatOwls: z.coerce.number().default(0.1),
-  priceTextAnalysisOwls: z.coerce.number().default(0.1),
+  // Per-run CAPS for bounded agentic operations, in owls (fractions
+  // allowed) — the most a run may cost, not a fixed price. Everything is
+  // metered at cost-plus; the cap is charged up front, the unused fraction
+  // settles back after the run, and overage past the cap is absorbed. Set
+  // each cap near the operation's average cost so the figure on the button
+  // is honest. See src/services/owl.ts. Open-ended work (deep
+  // decomposition, grants) is budgeted, not capped per run.
+  capClaimProposalOwls: z.coerce.number().default(1),
+  capAssessmentOwls: z.coerce.number().default(1),
+  capSourceIngestOwls: z.coerce.number().default(0.1),
+  capExtensionAnalysisOwls: z.coerce.number().default(0.1),
+  capExtensionChatOwls: z.coerce.number().default(0.1),
+  capTextAnalysisOwls: z.coerce.number().default(0.1),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
@@ -392,12 +396,12 @@ export function loadConfig(): Config {
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
     awsRegion: process.env.AWS_REGION,
     owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
-    priceClaimProposalOwls: process.env.PRICE_CLAIM_PROPOSAL_OWLS,
-    priceAssessmentOwls: process.env.PRICE_ASSESSMENT_OWLS,
-    priceSourceIngestOwls: process.env.PRICE_SOURCE_INGEST_OWLS,
-    priceExtensionAnalysisOwls: process.env.PRICE_EXTENSION_ANALYSIS_OWLS,
-    priceExtensionChatOwls: process.env.PRICE_EXTENSION_CHAT_OWLS,
-    priceTextAnalysisOwls: process.env.PRICE_TEXT_ANALYSIS_OWLS,
+    capClaimProposalOwls: process.env.CAP_CLAIM_PROPOSAL_OWLS,
+    capAssessmentOwls: process.env.CAP_ASSESSMENT_OWLS,
+    capSourceIngestOwls: process.env.CAP_SOURCE_INGEST_OWLS,
+    capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
+    capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
+    capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,

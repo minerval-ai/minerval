@@ -67,8 +67,8 @@ describe("entitlement & spend checks", () => {
     expect(mocks.ensureFreeGrants).toHaveBeenCalledWith("u-1");
     expect(e.owlBalance).toBe(5);
     expect(e.owlBalanceMicroUsd).toBe(20_000_000);
-    expect(e.pricesOwls.claim_proposal).toBe(1);
-    expect(e.pricesOwls.source_ingest).toBe(0.1);
+    expect(e.capsOwls.claim_proposal).toBe(1);
+    expect(e.capsOwls.source_ingest).toBe(0.1);
   });
 
   it("serializes the wire shape in owls", async () => {
@@ -77,21 +77,21 @@ describe("entitlement & spend checks", () => {
     const wire = svc.serializeEntitlement(await svc.getEntitlement("u-1"));
     expect(wire.owl_balance).toBe(1.5);
     expect(wire.owl_price_micro_usd).toBe(4_000_000);
-    expect(wire.prices_owls.assessment).toBe(1);
+    expect(wire.caps_owls.assessment).toBe(1);
     expect(wire.credits_enabled).toBe(false);
     expect(wire.signup_grant_owls).toBe(5);
     expect(wire.monthly_grant_owls).toBe(1);
   });
 
-  it("allows spend when the balance covers the op's price", async () => {
+  it("allows spend when the balance covers the op's cap", async () => {
     mocks.getOwlBalanceMicroUsd.mockResolvedValue(4_000_000);
     const svc = await loadBillingService(undefined);
-    const { allowed, priceOwls } = await svc.checkSpend("u-1", "assessment");
+    const { allowed, capOwls } = await svc.checkSpend("u-1", "assessment");
     expect(allowed).toBe(true);
-    expect(priceOwls).toBe(1);
+    expect(capOwls).toBe(1);
   });
 
-  it("denies spend when the balance is below the price", async () => {
+  it("denies spend when the balance is below the cap", async () => {
     mocks.getOwlBalanceMicroUsd.mockResolvedValue(200_000); // 0.05 owl
     const svc = await loadBillingService(undefined);
     expect((await svc.checkSpend("u-1", "assessment")).allowed).toBe(false);

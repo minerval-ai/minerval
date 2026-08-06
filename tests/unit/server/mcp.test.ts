@@ -253,12 +253,12 @@ beforeEach(async () => {
   mocks.resolveApiKey.mockReset().mockResolvedValue(null);
   mocks.checkSpend.mockReset().mockResolvedValue({
     allowed: true,
-    priceOwls: 0.1,
+    capOwls: 0.1,
     entitlement: {
       owlBalance: 5,
       owlBalanceMicroUsd: 20_000_000,
       owlPriceMicroUsd: 4_000_000,
-      pricesOwls: { text_analysis: 0.1 },
+      capsOwls: { text_analysis: 0.1 },
       creditsEnabled: false,
       signupGrantOwls: 5,
       monthlyGrantOwls: 1,
@@ -654,12 +654,12 @@ describe("MCP identity & metering", () => {
     });
     mocks.checkSpend.mockResolvedValue({
       allowed: false,
-      priceOwls: 0.1,
+      capOwls: 0.1,
       entitlement: {
         owlBalance: 0,
         owlBalanceMicroUsd: 0,
         owlPriceMicroUsd: 4_000_000,
-        pricesOwls: { text_analysis: 0.1 },
+        capsOwls: { text_analysis: 0.1 },
         creditsEnabled: false,
         signupGrantOwls: 5,
         monthlyGrantOwls: 1,
