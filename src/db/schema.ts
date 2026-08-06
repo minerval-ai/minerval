@@ -810,7 +810,9 @@ export const grants = pgTable(
     budgetJobId: uuid("budget_job_id")
       .notNull()
       .references(() => budgetJobs.id, { onDelete: "cascade" }),
-    // Public mandate name, shown on funded assessments ("funded by X").
+    // The mandate's working title, shown ONLY on the funder's own dashboard.
+    // Never rendered on claim surfaces: funding disclosures there describe
+    // the arrangement ("a funded mandate"), not the party (§12/§19).
     name: text("name").notNull(),
     // Scope: a subtree root and/or a keyword query — at least one.
     scopeClaimId: uuid("scope_claim_id").references(() => claims.id, {
@@ -840,6 +842,51 @@ export const grants = pgTable(
     index("idx_grants_status").on(table.status),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// grant_conversations
+//
+// Grantmaking is a conversation, not a form: a funder talks a mandate
+// through with the grantmaker agent (best model, constitution loaded), the
+// agent surveys the graph, quotes expected costs in owls, and drafts a
+// mandate; nothing is escrowed until the funder explicitly funds the draft.
+// The transcript is the record of that negotiation; the drafted mandate and
+// the eventual grant link ride alongside.
+// ---------------------------------------------------------------------------
+
+export const grantConversations = pgTable(
+  "grant_conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // active | proposed | funded | declined | abandoned
+    status: text("status").notNull().default("active"),
+    // [{role: 'user'|'assistant', content, at}] — the visible transcript.
+    // Tool traffic stays internal.
+    messages: jsonb("messages").notNull().default([]),
+    // The agent's drafted mandate once the conversation converges:
+    // {title, objective, scope_claim_id?, scope_query?, plan: {strategy,
+    //  items: [...]}, expected_cost_owls, notes}. Null until proposed.
+    mandate: jsonb("mandate"),
+    // Set when the mandate was funded and became a grant.
+    grantId: uuid("grant_id").references(() => grants.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grant_convos_user").on(table.userId, table.createdAt),
+  ]
+);
+
+export type GrantConversation = typeof grantConversations.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // oauth_clients

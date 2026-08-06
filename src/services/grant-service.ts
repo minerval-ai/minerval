@@ -29,8 +29,16 @@ export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 export type GrantPolicy = (typeof GRANT_POLICIES)[number];
 
 export interface PlanItem {
-  claim_id: string;
-  action: "assess" | "deepen";
+  /**
+   * assess    — one Steward pass on a claim (first assessment).
+   * reassess  — a fresh pass on an already-assessed claim.
+   * deepen    — the claim plus its pending/deferred subtree.
+   * ingest    — extract + match one source URL into the graph, metered to
+   *             the grant's escrow (the ingestion-pipeline primitive).
+   */
+  action: "assess" | "reassess" | "deepen" | "ingest";
+  claim_id?: string;
+  url?: string;
   rationale: string;
 }
 

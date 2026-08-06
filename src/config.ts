@@ -359,6 +359,11 @@ const configSchema = z.object({
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
   extensionModel: modelId(MODELS.sonnet),
+  // The Grantmaker runs the granting conversation: mandate design, cost
+  // quoting, and the authority to refuse mandates that would warp the
+  // graph. Always the best available model — this is judgment-heavy,
+  // user-facing work where a weak model would be a false economy.
+  grantmakerModel: modelId(MODELS.fable),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -482,6 +487,7 @@ export function loadConfig(): Config {
     auditModel: process.env.AUDIT_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
     extensionModel: process.env.EXTENSION_MODEL,
+    grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,

@@ -25,6 +25,7 @@ import { orderRoutes } from "../routes/orders.js";
 import { budgetJobRoutes } from "../routes/budget-jobs.js";
 import { queueRoutes } from "../routes/queue.js";
 import { grantRoutes } from "../routes/grants.js";
+import { grantConversationRoutes } from "../routes/grant-conversations.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -69,6 +70,9 @@ export async function buildApp() {
   await app.register(budgetJobRoutes, { prefix: "/budget-jobs" });
   await app.register(queueRoutes, { prefix: "/queue" });
   await app.register(grantRoutes, { prefix: "/grants" });
+  await app.register(grantConversationRoutes, {
+    prefix: "/grant-conversations",
+  });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);

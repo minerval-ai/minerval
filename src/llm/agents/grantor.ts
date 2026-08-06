@@ -105,7 +105,7 @@ interface SurveyRow {
   deferred_subclaims: number;
 }
 
-async function surveyScope(input: {
+export async function surveyScope(input: {
   scopeClaimId: string | null;
   scopeQuery: string | null;
   filterQuery?: string;

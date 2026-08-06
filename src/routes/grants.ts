@@ -1,7 +1,11 @@
 /**
  * Grant routes — the grantmaker console's API.
  *
- *   POST /grants             — create + fund a mandate (escrow happens here).
+ *   POST /grants             — service-only direct mandate creation. People
+ *     create grants through the granting CONVERSATION
+ *     (/grant-conversations): the Grantmaker agent designs the mandate,
+ *     quotes its cost, and holds the authority to refuse it. This endpoint
+ *     remains for operator tooling and seeding.
  *   GET  /grants             — the acting user's grants.
  *   GET  /grants/:id         — dashboard payload: spend, plan, progress, the
  *     assessments the grant funded.
@@ -21,6 +25,7 @@ import {
 } from "../services/grant-service.js";
 import { topUpBudgetJob } from "../services/budget-job-service.js";
 import { microUsdToOwls } from "../services/owl.js";
+import { isDirectService } from "../server/plugins/auth.js";
 
 export async function grantRoutes(app: FastifyInstance): Promise<void> {
   app.post<{
@@ -35,7 +40,8 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["grants"],
       summary:
-        "Create and fund a grantmaker mandate (the owl budget escrows now)",
+        "Create and fund a mandate directly (service callers only; people " +
+        "use the granting conversation)",
       body: {
         type: "object",
         required: ["name", "policy", "budget_owls"],
@@ -50,6 +56,14 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
+      if (!isDirectService(request.auth)) {
+        return reply.code(403).send({
+          error:
+            "Grants are created in a granting conversation " +
+            "(POST /grant-conversations), not by direct form submission",
+          code: "USE_CONVERSATION",
+        });
+      }
       const result = await createGrant({
         funderUserId: request.auth!.userId!,
         name: request.body.name,

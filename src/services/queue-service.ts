@@ -21,6 +21,12 @@ export interface UrlExtractionMessage {
   sourceId: string;
   jobId: string;
   url: string;
+  /**
+   * When set, the extraction's LLM calls are metered against this budget
+   * job instead of the extraction job — how a grant-funded ingestion spends
+   * the grant's escrow rather than the submitter's balance.
+   */
+  meterJobId?: string;
 }
 
 export interface ContributionMessage {

@@ -41,7 +41,7 @@ export async function submitSource(
     title?: string;
     content?: string;
   },
-  attribution?: JobAttribution
+  attribution?: JobAttribution & { meterJobId?: string }
 ) {
   const source = await getOrCreateSource(input);
 
@@ -58,6 +58,7 @@ export async function submitSource(
     sourceId: source.id,
     jobId: job.id,
     url: input.url,
+    ...(attribution?.meterJobId ? { meterJobId: attribution.meterJobId } : {}),
   });
 
   return { sourceId: source.id, jobId: job.id };

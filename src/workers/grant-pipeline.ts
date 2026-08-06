@@ -38,6 +38,7 @@ import {
   getJobSpentMicroUsd,
   refundUnspentBudget,
 } from "../services/budget-job-service.js";
+import { submitSource } from "../services/source-service.js";
 import { capMicroUsd } from "../services/owl.js";
 import { refreshQueuePriority } from "../services/priority-service.js";
 import type { PlanItem } from "../services/grant-service.js";
@@ -101,7 +102,7 @@ interface TargetRow {
 /** Atomically claim the next target for a policy, or null when exhausted. */
 async function claimNextGrantTarget(
   grant: GrantRow
-): Promise<{ target: TargetRow | null; planAdvanced?: boolean }> {
+): Promise<{ target: TargetRow | null; ingestedUrl?: string }> {
   const config = loadConfig();
 
   if (grant.policy === "agent") {
@@ -109,8 +110,29 @@ async function claimNextGrantTarget(
     // Walk the plan from the cursor; skip items whose claim is gone/busy.
     for (let i = grant.plan_cursor; i < items.length; i++) {
       const item = items[i]!;
+      // An 'ingest' item is the ingestion-pipeline primitive: enqueue the
+      // source for extraction + matching, metered to the grant's escrow.
+      // One enqueue is the item's whole unit of work; the extraction runs
+      // asynchronously and any claims it mints join the graph normally.
+      if (item.action === "ingest") {
+        await setPlanCursor(grant.id, i + 1);
+        if (!item.url) continue;
+        await submitSource(
+          { url: item.url },
+          {
+            userId: grant.funder_user_id,
+            meterJobId: grant.budget_job_id,
+          }
+        );
+        return { target: null, ingestedUrl: item.url };
+      }
+      if (!item.claim_id) {
+        await setPlanCursor(grant.id, i + 1);
+        continue;
+      }
       // A 'deepen' item first drains its claim's own pending/deferred
-      // subtree; when that is exhausted (or for 'assess'), the claim itself.
+      // subtree; when that is exhausted (or for 'assess'/'reassess'), the
+      // claim itself.
       if (item.action === "deepen") {
         const sub = await claimDeepenTarget(item.claim_id, null);
         if (sub) {
@@ -339,7 +361,15 @@ export async function processNextGrantTask(
   }
 
   // EXECUTION: one target under the policy.
-  const { target } = await claimNextGrantTarget(grant);
+  const { target, ingestedUrl } = await claimNextGrantTarget(grant);
+  if (ingestedUrl) {
+    // The unit of work was enqueuing a funded ingestion; the extraction
+    // meters to the grant's escrow as it runs.
+    await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
+      grant.id,
+    ]);
+    return { status: "processed", grantId: grant.id, ok: true };
+  }
   if (!target) {
     await refundUnspentBudget({
       id: grant.budget_job_id,

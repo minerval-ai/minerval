@@ -33,11 +33,16 @@ export async function handleUrlExtraction(
     {
       userId: job?.userId ?? null,
       apiKeyId: job?.apiKeyId ?? null,
-      jobId: message.jobId,
+      // A grant-funded ingestion meters against the grant's budget job so
+      // the spend draws down the escrow, not the submitter's balance.
+      jobId: message.meterJobId ?? message.jobId,
     },
     () => withCostMeter(() => processUrlExtraction(message))
   );
-  await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
+  // Escrow-funded ingestions were never cap-charged; nothing to settle.
+  if (!message.meterJobId) {
+    await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
+  }
 }
 
 /**
