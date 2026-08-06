@@ -19,13 +19,14 @@ import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
 /**
  * Escrow owls into a job behind the balance guard: the hold is written only
  * if the spendable balance covers it (same single-statement race posture as
- * chargeOwls). Returns false when the balance was insufficient.
+ * chargeOwls). Returns the hold's ledger entry id, or null when the balance
+ * was insufficient.
  */
 async function holdOwls(input: {
   userId: string;
   amountMicroUsd: number;
   jobId: string;
-}): Promise<boolean> {
+}): Promise<string | null> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
      SELECT $1, $2, 'escrow_hold', $3
@@ -34,7 +35,23 @@ async function holdOwls(input: {
      RETURNING id`,
     [input.userId, -input.amountMicroUsd, input.jobId, input.amountMicroUsd]
   );
-  return rows.length > 0;
+  return rows[0]?.id ?? null;
+}
+
+/** Reverse one hold (a follow-up write failed), exactly once. */
+async function releaseHold(input: {
+  userId: string;
+  amountMicroUsd: number;
+  jobId: string;
+  holdEntryId: string;
+}): Promise<void> {
+  await recordOwlEntry({
+    userId: input.userId,
+    amountMicroUsd: input.amountMicroUsd,
+    reason: OWL_REASONS.escrowRefund,
+    jobId: input.jobId,
+    idempotencyKey: `hold_reversal:${input.holdEntryId}`,
+  });
 }
 
 export type FundJobResult =
@@ -113,7 +130,6 @@ async function addBudget(input: {
   userId: string;
   owls: number;
 }): Promise<TopUpResult> {
-  const db = getDb();
   const { job } = input;
   if (job.status !== "running" && job.status !== "paused_budget") {
     return {
@@ -135,16 +151,33 @@ async function addBudget(input: {
       message: `Adding ${input.owls} owls exceeds your balance`,
     };
   }
-  const [updated] = await db
-    .update(budgetJobs)
-    .set({
-      budgetMicroUsd: Number(job.budgetMicroUsd) + amountMicro,
-      status: "running",
-      updatedAt: new Date(),
-    })
-    .where(eq(budgetJobs.id, job.id))
-    .returning();
-  return { ok: true, job: updated! };
+  // Atomic increment with a live-status guard: two concurrent top-ups both
+  // land (no lost update from a stale read), and a contribution racing a
+  // cancellation cannot resurrect a job whose refunds already went out —
+  // in that case the hold is reversed instead.
+  const updated = await rawQuery<{ id: string }>(
+    `UPDATE budget_jobs
+        SET budget_micro_usd = budget_micro_usd + $2,
+            status = 'running', updated_at = now()
+      WHERE id = $1 AND status IN ('running', 'paused_budget')
+      RETURNING id`,
+    [job.id, amountMicro]
+  );
+  if (updated.length === 0) {
+    await releaseHold({
+      userId: input.userId,
+      amountMicroUsd: amountMicro,
+      jobId: job.id,
+      holdEntryId: held,
+    });
+    return {
+      ok: false,
+      code: "NOT_TOPPABLE",
+      message: "Job is no longer running; your owls were not taken",
+    };
+  }
+  const fresh = await getBudgetJob(job.id);
+  return { ok: true, job: fresh! };
 }
 
 export async function topUpBudgetJob(input: {
@@ -241,8 +274,58 @@ export async function refundUnspentBudget(job: {
   userId: string;
   budgetMicroUsd: number;
 }): Promise<number> {
-  const spent = await getJobSpentMicroUsd(job.id);
-  const unspent = Math.max(0, Number(job.budgetMicroUsd) - spent);
+  // A job backing a GRANT accounts its escrow through the action ledger:
+  // spend = consumed pro-rata shares + non-ledger metering (management
+  // conversations etc. — llm_usage minus what ledger runs already consumed
+  // as shares, so a self-funded run isn't double-counted). Regrants still
+  // out live in their targets' budgets and are NOT refundable here; if a
+  // target later settles, the source is closed by then and its share
+  // returns via the dead-source path below. A plain job (deep
+  // decomposition) is just its metered llm_usage, as before.
+  const [grant] = await rawQuery<{ id: string }>(
+    `SELECT id FROM grants WHERE budget_job_id = $1`,
+    [job.id]
+  );
+  let spent: number;
+  let regrantsOut = 0;
+  if (grant) {
+    // The mandate is closing: money still riding on open actions returns
+    // to the escrow first, so it can neither fund runs after the refund
+    // nor be refunded twice. (Only unspent remainders release; consumed
+    // shares stay counted as spend.)
+    await rawQuery(
+      `UPDATE action_allocations SET released_at = now()
+        WHERE grant_id = $1 AND released_at IS NULL
+          AND spent_micro_usd < amount_micro_usd`,
+      [grant.id]
+    );
+    const [row] = await rawQuery<{
+      shares: number;
+      nonledger: number;
+      regrants: number;
+    }>(
+      `SELECT
+         COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+                    WHERE grant_id = $1), 0)::bigint AS shares,
+         GREATEST(0,
+           COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
+                      WHERE job_id = $2), 0)
+           - COALESCE((SELECT SUM(metered_cost_micro_usd) FROM actions
+                        WHERE metered_job_id = $2), 0))::bigint AS nonledger,
+         COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
+                     FROM regrants WHERE from_grant_id = $1), 0)::bigint
+           AS regrants`,
+      [grant.id, job.id]
+    );
+    spent = Number(row?.shares ?? 0) + Number(row?.nonledger ?? 0);
+    regrantsOut = Number(row?.regrants ?? 0);
+  } else {
+    spent = await getJobSpentMicroUsd(job.id);
+  }
+  const unspent = Math.max(
+    0,
+    Number(job.budgetMicroUsd) - spent - regrantsOut
+  );
   if (unspent <= 0) return 0;
 
   const contributions = await getJobContributions(job.id);
@@ -303,9 +386,11 @@ export async function refundUnspentBudget(job: {
   }
   for (const share of grantShares) {
     if (share.amount <= 0) continue;
-    // Stamp the regrant first (the idempotency guard), then return the
-    // share to the source mandate's escrow if it is still live, else to
-    // its funder's balance.
+    // Stamp the regrant (the idempotency guard). The source's budget was
+    // never debited when the regrant was made — the amount only counted as
+    // COMMITTED — so the stamp alone is the return for a live source: its
+    // net regrants-out drop and the headroom comes back. Crediting its
+    // budget on top would mint the share a second time.
     const stamped = await rawQuery<{ id: string }>(
       `UPDATE regrants
           SET refunded_micro_usd = refunded_micro_usd + $2
@@ -314,16 +399,16 @@ export async function refundUnspentBudget(job: {
       [share.regrantId, share.amount]
     );
     if (stamped.length === 0) continue;
-    const credited = await rawQuery<{ id: string }>(
-      `UPDATE budget_jobs j
-          SET budget_micro_usd = j.budget_micro_usd + $2, updated_at = now()
-         FROM grants g
-        WHERE g.id = $1 AND j.id = g.budget_job_id
-          AND g.status = 'active' AND j.status IN ('running', 'paused_budget')
-        RETURNING j.id`,
-      [share.fromGrantId, share.amount]
+    const [live] = await rawQuery<{ id: string }>(
+      `SELECT g.id FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+        WHERE g.id = $1
+          AND g.status IN ('planning', 'pending_approval', 'active')
+          AND j.status IN ('running', 'paused_budget')`,
+      [share.fromGrantId]
     );
-    if (credited.length === 0) {
+    if (!live) {
+      // The source already settled (its refund excluded outstanding
+      // regrants), so this returning share goes to its funder's balance.
       const [source] = await rawQuery<{ funder_user_id: string }>(
         `SELECT funder_user_id FROM grants WHERE id = $1`,
         [share.fromGrantId]

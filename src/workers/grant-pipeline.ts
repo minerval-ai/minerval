@@ -229,17 +229,26 @@ export async function processNextGrantTask(
     return { status: "budget" };
   }
 
+  // One statement: pick AND claim (bump updated_at, the round-robin sort
+  // key) atomically. A bare SELECT ... FOR UPDATE releases its lock the
+  // moment the autocommit statement returns, so two workers would both
+  // pick the same grant and both launch runs against its floor.
   const grantRows = await rawQuery<GrantRow>(
-    `SELECT g.id, g.funder_user_id, g.budget_job_id, g.name, g.scope_claim_id,
-            g.scope_query, g.policy, g.status, g.plan, g.plan_cursor,
-            j.budget_micro_usd, j.status AS job_status
-       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
-      WHERE g.status = 'active'
-        AND g.policy IN ('agent', 'deepen')
-        AND j.status = 'running'
-      ORDER BY g.updated_at ASC
-      LIMIT 1
-      FOR UPDATE OF g SKIP LOCKED`
+    `UPDATE grants g
+        SET updated_at = now()
+       FROM (SELECT g2.id FROM grants g2
+               JOIN budget_jobs j2 ON j2.id = g2.budget_job_id
+              WHERE g2.status = 'active'
+                AND g2.policy IN ('agent', 'deepen')
+                AND j2.status = 'running'
+              ORDER BY g2.updated_at ASC
+              LIMIT 1
+              FOR UPDATE OF g2 SKIP LOCKED) pick,
+            budget_jobs j
+      WHERE g.id = pick.id AND j.id = g.budget_job_id
+      RETURNING g.id, g.funder_user_id, g.budget_job_id, g.name,
+                g.scope_claim_id, g.scope_query, g.policy, g.status, g.plan,
+                g.plan_cursor, j.budget_micro_usd, j.status AS job_status`
   );
   if (grantRows.length === 0) return { status: "empty" };
   const grant = grantRows[0]!;

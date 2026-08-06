@@ -144,13 +144,19 @@ export async function processNextBudgetJobTask(
   }
 
   // Oldest-updated running job first, so concurrent jobs round-robin.
+  // Pick AND claim in one statement (bump updated_at, the sort key): a
+  // bare autocommit SELECT ... FOR UPDATE holds nothing once it returns,
+  // so two workers would both take the same job past its floor.
   const jobs = await rawQuery<JobRow>(
-    `SELECT id, user_id, claim_id, budget_micro_usd, checkpoint
-       FROM budget_jobs
-      WHERE status = 'running' AND kind = 'deep_decomposition'
-      ORDER BY updated_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED`
+    `UPDATE budget_jobs b
+        SET updated_at = now()
+       FROM (SELECT id FROM budget_jobs
+              WHERE status = 'running' AND kind = 'deep_decomposition'
+              ORDER BY updated_at ASC
+              LIMIT 1
+              FOR UPDATE SKIP LOCKED) pick
+      WHERE b.id = pick.id
+      RETURNING b.id, b.user_id, b.claim_id, b.budget_micro_usd, b.checkpoint`
   );
   if (jobs.length === 0 || !jobs[0]!.claim_id) return { status: "empty" };
   const job = jobs[0]!;
