@@ -13,6 +13,19 @@ vi.mock("../../../src/db/client.js", () => ({
   },
 }));
 
+// The award faucet is OFF by default at launch (rate 0); these tests pin
+// the rate math at the reference rate the config documents for enabling.
+vi.mock("../../../src/config.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/config.js")>();
+  return {
+    ...original,
+    loadConfig: () => ({
+      ...original.loadConfig(),
+      contributionAwardOwlPerPoint: 0.25,
+    }),
+  };
+});
+
 import {
   awardPointsForImportance,
   owlsForImportance,
@@ -36,7 +49,7 @@ describe("awardPointsForImportance", () => {
 });
 
 describe("owlsForImportance", () => {
-  it("pays points × the configured owl rate (default 0.25/point)", () => {
+  it("pays points × the configured owl rate (0.25/point here; 0 = off, the launch default)", () => {
     expect(owlsForImportance(0)).toBe(0.25);
     expect(owlsForImportance(1)).toBe(1.25);
   });

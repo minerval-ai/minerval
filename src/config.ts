@@ -128,9 +128,15 @@ const configSchema = z.object({
   signupGrantOwls: z.coerce.number().default(5),
   monthlyGrantOwls: z.coerce.number().default(1),
   // Owls earned per kudos point of an accepted contribution (the old 1–5
-  // scale from claim importance, now paid in the spendable currency at a
-  // deliberately retuned rate: 0.25 owl/point → $1–$5 face per acceptance).
-  contributionAwardOwlPerPoint: z.coerce.number().default(0.25),
+  // scale from claim importance, paid in the spendable currency). OFF at
+  // launch (0 = no awards minted): accepted contributions minting
+  // spendable owls is a faucet whose gaming surface (sybil contributions
+  // past the reviewer) we want to observe before it pays real money. Turn
+  // it on deliberately via CONTRIBUTION_AWARD_OWL_PER_POINT (e.g. 0.25
+  // owl/point → $1–$5 face per acceptance); the award machinery,
+  // idempotency keys, and leaderboard accounting are all live and tested,
+  // so enabling is a config change, not a deploy.
+  contributionAwardOwlPerPoint: z.coerce.number().default(0),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
   // A blunt in-memory backstop against runaway clients; the real spend
   // guardrail is the owl balance.
