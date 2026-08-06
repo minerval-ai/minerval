@@ -329,8 +329,13 @@ export async function releaseAction(actionId: string): Promise<void> {
  * Complete a run: the winner is done with its metered cost recorded, its
  * siblings are superseded, losing pinned allocations are released back to
  * their funders (users get a ledger credit; mandate exposure simply
- * drops), and the metered cost is consumed pro rata from the winner's
- * covering allocations. Returns the consumed total.
+ * drops), the metered cost is consumed pro rata from the winner's
+ * covering allocations — and the covering allocations then SETTLE: their
+ * unspent remainders release too, exactly like a cap-charge settling to
+ * the metered actual. Cost estimates deliberately run high, so without
+ * settlement every completed action would strand (estimate − actual) as
+ * outstanding exposure forever, silently eating its funders' headroom.
+ * Returns the consumed total.
  */
 export async function completeAction(
   actionId: string,
@@ -385,35 +390,66 @@ export async function completeAction(
 
   // Consume the metered cost pro rata from the winner's covering
   // allocations (pinned to it, or unpinned on the group).
-  if (meteredMicroUsd <= 0) return 0;
-  const covering = await rawQuery<{ id: string; unspent: number }>(
-    `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-       FROM action_allocations
-      WHERE exclusion_group = $1 AND released_at IS NULL
-        AND (action_id IS NULL OR action_id = $2)
-        AND spent_micro_usd < amount_micro_usd
-      ORDER BY created_at ASC
-      FOR UPDATE SKIP LOCKED`,
+  let consumed = 0;
+  if (meteredMicroUsd > 0) {
+    const covering = await rawQuery<{ id: string; unspent: number }>(
+      `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
+         FROM action_allocations
+        WHERE exclusion_group = $1 AND released_at IS NULL
+          AND (action_id IS NULL OR action_id = $2)
+          AND spent_micro_usd < amount_micro_usd
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED`,
+      [action.exclusion_group, actionId]
+    );
+    const totalUnspent = covering.reduce((s, r) => s + Number(r.unspent), 0);
+    const toConsume = Math.min(Math.round(meteredMicroUsd), totalUnspent);
+    for (const [i, row] of covering.entries()) {
+      const share =
+        i === covering.length - 1
+          ? toConsume - consumed
+          : Math.floor((toConsume * Number(row.unspent)) / totalUnspent);
+      const take = Math.min(Number(row.unspent), Math.max(0, share));
+      if (take <= 0) continue;
+      await rawQuery(
+        `UPDATE action_allocations
+            SET spent_micro_usd = spent_micro_usd + $2
+          WHERE id = $1`,
+        [row.id, take]
+      );
+      consumed += take;
+    }
+  }
+
+  // SETTLEMENT: whatever the covering allocations still hold beyond the
+  // metered cost releases back to its funders — a mandate's headroom
+  // returns, a person's owls return to their balance. The ceiling was
+  // theirs to rely on; the meter is what they pay.
+  const settled = await rawQuery<{
+    id: string;
+    user_id: string | null;
+    claim_id: string | null;
+    remainder: number;
+  }>(
+    `UPDATE action_allocations al
+        SET released_at = now()
+      WHERE al.exclusion_group = $1 AND al.released_at IS NULL
+        AND (al.action_id IS NULL OR al.action_id = $2)
+        AND al.spent_micro_usd < al.amount_micro_usd
+      RETURNING al.id, al.user_id, al.claim_id,
+                (al.amount_micro_usd - al.spent_micro_usd)::bigint AS remainder`,
     [action.exclusion_group, actionId]
   );
-  const totalUnspent = covering.reduce((s, r) => s + Number(r.unspent), 0);
-  if (totalUnspent <= 0) return 0;
-  const toConsume = Math.min(Math.round(meteredMicroUsd), totalUnspent);
-  let consumed = 0;
-  for (const [i, row] of covering.entries()) {
-    const share =
-      i === covering.length - 1
-        ? toConsume - consumed
-        : Math.floor((toConsume * Number(row.unspent)) / totalUnspent);
-    const take = Math.min(Number(row.unspent), Math.max(0, share));
-    if (take <= 0) continue;
-    await rawQuery(
-      `UPDATE action_allocations
-          SET spent_micro_usd = spent_micro_usd + $2
-        WHERE id = $1`,
-      [row.id, take]
-    );
-    consumed += take;
+  for (const r of settled) {
+    if (r.user_id && Number(r.remainder) > 0) {
+      await rawQuery(
+        `INSERT INTO owl_ledger
+           (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
+         VALUES ($1, $2, 'refund', $3, $4)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [r.user_id, Number(r.remainder), r.claim_id, `settle:${r.id}`]
+      );
+    }
   }
   return consumed;
 }

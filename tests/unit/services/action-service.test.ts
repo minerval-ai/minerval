@@ -27,6 +27,12 @@ const { state } = vi.hoisted(() => ({
       remainder: number;
     }>,
     covering: [] as Array<{ id: string; unspent: number }>,
+    settled: [] as Array<{
+      id: string;
+      user_id: string | null;
+      claim_id: string | null;
+      remainder: number;
+    }>,
     refunds: [] as Array<{ userId: string; amount: number; key: string }>,
     consumed: [] as Array<{ id: string; take: number }>,
     superseded: [] as string[],
@@ -46,7 +52,12 @@ vi.mock("../../../src/db/client.js", () => ({
       return [];
     }
     if (q.includes("SET released_at = now()")) {
-      return state.released;
+      // Two distinct releases: losing pinned siblings vs. the winner's
+      // covering allocations settling their remainders.
+      if (q.includes("al.action_id IS NOT NULL AND al.action_id <> $2")) {
+        return state.released;
+      }
+      return state.settled;
     }
     if (q.includes("INSERT INTO owl_ledger")) {
       state.refunds.push({
@@ -92,6 +103,7 @@ beforeEach(() => {
   state.runnable = [];
   state.released = [];
   state.covering = [];
+  state.settled = [];
   state.refunds = [];
   state.consumed = [];
   state.superseded = [];
@@ -178,5 +190,18 @@ describe("completeAction", () => {
     state.covering = [{ id: "al-1", unspent: 100_000 }];
     const consumed = await completeAction("winner", 500_000);
     expect(consumed).toBe(100_000);
+  });
+
+  it("settles the covering remainders: a reader's overage refunds to their balance", async () => {
+    // Estimates run high on purpose; without settlement the difference
+    // would strand as outstanding exposure forever.
+    state.covering = [{ id: "al-user", unspent: 150_000 }];
+    state.settled = [
+      { id: "al-user", user_id: "u1", claim_id: "c1", remainder: 60_000 },
+    ];
+    await completeAction("winner", 90_000);
+    expect(state.refunds).toEqual([
+      { userId: "u1", amount: 60_000, key: "settle:al-user" },
+    ]);
   });
 });
