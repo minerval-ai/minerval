@@ -16,6 +16,11 @@
  * governance sweeps), which is exactly the semantics we want by default.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  finishAgentRun,
+  startAgentRun,
+  type AgentTrace,
+} from "../services/trace-service.js";
 
 export interface UsageContext {
   userId?: string | null;
@@ -26,6 +31,12 @@ export interface UsageContext {
   requestId?: string | null;
   /** Agent making the calls: extractor | matcher | steward | curator | ... */
   agent?: string;
+  /** The agent_runs row this work belongs to (#334 L0) — stamped onto every
+   *  llm_usage row so per-run cost is a join. Set by withAgent. */
+  runId?: string | null;
+  /** Live trace handle for step recording (toolUseLoop). Set by withAgent
+   *  when tracing is enabled; absent = don't record steps. */
+  trace?: AgentTrace;
   /**
    * Live cost accumulator for the enclosing metered operation. The metering
    * chokepoint adds each call's BILLED (marked-up) cost here synchronously,
@@ -51,9 +62,41 @@ export function runWithUsageContext<T>(
   return storage.run({ ...getUsageContext(), ...context }, fn);
 }
 
-/** Tag all LLM calls inside `fn` as made by `agent`. */
+/**
+ * Tag all LLM calls inside `fn` as made by `agent`, and — when tracing is
+ * enabled — open an agent_runs row for the invocation, closed when the
+ * wrapped work settles. This is the one seam every agent entry point already
+ * passes through, which is what makes it the right place to mint run
+ * identity (#334 L0). Nested withAgent calls open nested runs; the inner one
+ * shadows the outer for the duration, which is the honest reading of "an
+ * agent invoked another agent".
+ */
 export function withAgent<T>(agent: string, fn: () => T): T {
-  return runWithUsageContext({ agent }, fn);
+  const trace = startAgentRun(agent, getUsageContext());
+  if (!trace) return runWithUsageContext({ agent }, fn);
+  return runWithUsageContext({ agent, runId: trace.runId, trace }, () => {
+    let result: T;
+    try {
+      result = fn();
+    } catch (err) {
+      finishAgentRun(trace, "error", err);
+      throw err;
+    }
+    if (result instanceof Promise) {
+      return result.then(
+        (value) => {
+          finishAgentRun(trace, "ok");
+          return value;
+        },
+        (err) => {
+          finishAgentRun(trace, "error", err);
+          throw err;
+        }
+      ) as unknown as T;
+    }
+    finishAgentRun(trace, "ok");
+    return result;
+  });
 }
 
 /**

@@ -57,6 +57,7 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       apiKeyId: ctx.apiKeyId ?? null,
       jobId: ctx.jobId ?? null,
       claimId: ctx.claimId ?? null,
+      runId: ctx.runId ?? null,
       requestId: ctx.requestId ?? null,
       agent: ctx.agent ?? "unknown",
       model: call.model,
