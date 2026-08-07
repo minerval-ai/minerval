@@ -1,8 +1,10 @@
 name: CI
 
+# Every PR, whatever its base: feature-branch PRs carry the same money-path
+# code as main-bound ones, and the main-only filter meant nothing here (unit
+# suite and db-tests alike) actually ran on them.
 on:
   pull_request:
-    branches: [main]
 
 jobs:
   check:
