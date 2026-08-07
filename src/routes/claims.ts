@@ -23,7 +23,7 @@ import { assembleClaimCitation } from "../services/citation-service.js";
 import { assembleClaimNanopub } from "../services/nanopub-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
-import { chargeAgenticOp } from "../server/plugins/quota.js";
+import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { allocateToClaimAssessment } from "../services/allocation-service.js";
 import { createOrder, serializeOrder } from "../services/order-service.js";
@@ -872,13 +872,20 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       const charge = await chargeAgenticOp(auth, "claim_proposal");
       if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
 
-      const contribution = await createClaimProposal({
-        claimText: body.claim,
-        argumentText: body.argument,
-        contributorId: contributor.id,
-      });
-      if (charge.entryId) {
-        await attachChargeContribution(charge.entryId, contribution.id);
+      let contribution;
+      try {
+        contribution = await createClaimProposal({
+          claimText: body.claim,
+          argumentText: body.argument,
+          contributorId: contributor.id,
+        });
+        if (charge.entryId) {
+          await attachChargeContribution(charge.entryId, contribution.id);
+        }
+      } catch (err) {
+        // The proposal never materialized: the user must not pay for a 500.
+        await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        throw err;
       }
 
       return reply.code(202).send({

@@ -56,7 +56,9 @@ export async function createOwlPackCheckoutSession(input: {
           currency: "usd",
           unit_amount: input.pack.priceCents,
           product_data: {
-            name: `Minerval owls — pack of ${input.pack.owls}`,
+            name: input.pack.name
+              ? `Minerval owls — ${input.pack.name} (${input.pack.owls} owls)`
+              : `Minerval owls — pack of ${input.pack.owls}`,
             description:
               `${input.pack.owls} owls. One owl buys one claim assessment; ` +
               "smaller actions (source ingestion, page analysis) cost " +

@@ -95,25 +95,27 @@ export interface OwlPack {
   id: string;
   owls: number;
   priceCents: number;
+  /** The pack's display name (Clutch, Perch, Wisdom, Parliament), if set. */
+  name: string | null;
   /** Percent saved vs. buying the same owls at face value, 0 for none. */
   discountPercent: number;
 }
 
 /**
- * Purchase packs, parsed from config ("owls:cents,owls:cents,…"). Larger
+ * Purchase packs, parsed from config ("owls:cents[:name],…"). Larger
  * packs price owls below face value — the bulk discount is visible as
  * discountPercent so the UI never has to re-derive it.
  */
 export function owlPacks(): OwlPack[] {
   const c = loadConfig();
   const faceCentsPerOwl = c.owlPriceMicroUsd / 10_000;
-  return c.owlPacks.map(({ owls, priceCents }) => {
+  return c.owlPacks.map(({ owls, priceCents, name }) => {
     const faceCents = owls * faceCentsPerOwl;
     const discountPercent =
       faceCents > 0
         ? Math.max(0, Math.round((1 - priceCents / faceCents) * 100))
         : 0;
-    return { id: `owls_${owls}`, owls, priceCents, discountPercent };
+    return { id: `owls_${owls}`, owls, priceCents, name: name ?? null, discountPercent };
   });
 }
 

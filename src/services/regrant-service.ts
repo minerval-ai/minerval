@@ -15,10 +15,8 @@
  * A regrant is money, not command: it buys the target mandate more reach
  * and gives the source no say over the target's judgment.
  */
-import { rawQuery } from "../db/client.js";
+import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
-import { getJobSpentMicroUsd } from "./budget-job-service.js";
-import { grantAllocationExposureMicroUsd } from "./allocation-service.js";
 
 /** Total this grant has regranted to others (net of returned shares). */
 export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
@@ -32,24 +30,50 @@ export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
 }
 
 /**
- * Everything this grant's escrow is already good for: metered spend on its
- * own job, consumed + outstanding allocation shares, and regrants out.
- * Headroom for any new commitment is budget minus this.
+ * Everything this grant's escrow is already good for: consumed + outstanding
+ * allocation shares, NON-LEDGER metered spend on its job (management
+ * conversations etc. — llm_usage minus what ledger runs already consumed as
+ * shares, so a self-funded run isn't counted twice), and regrants out.
+ * Headroom for any new commitment is budget minus this. One statement, so
+ * the snapshot is consistent.
  */
-export async function grantCommittedMicroUsd(grant: {
-  id: string;
-  budgetJobId: string;
-}): Promise<number> {
-  const [jobSpent, exposure, regranted] = await Promise.all([
-    getJobSpentMicroUsd(grant.budgetJobId),
-    grantAllocationExposureMicroUsd(grant.id),
-    regrantsOutMicroUsd(grant.id),
-  ]);
+export async function grantCommittedMicroUsd(
+  grant: {
+    id: string;
+    budgetJobId: string;
+  },
+  tx?: TxQuery
+): Promise<number> {
+  const query = <T,>(text: string, params?: unknown[]) =>
+    tx ? tx.query<T>(text, params) : rawQuery<T>(text, params);
+  const [row] = await query<{
+    shares: number;
+    outstanding: number;
+    nonledger: number;
+    regrants: number;
+  }>(
+    `SELECT
+       COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+                  WHERE grant_id = $1), 0)::bigint AS shares,
+       COALESCE((SELECT SUM(amount_micro_usd - spent_micro_usd)
+                   FROM action_allocations
+                  WHERE grant_id = $1 AND released_at IS NULL), 0)::bigint
+         AS outstanding,
+       GREATEST(0,
+         COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
+                    WHERE job_id = $2), 0)
+         - COALESCE((SELECT SUM(metered_cost_micro_usd) FROM actions
+                      WHERE metered_job_id = $2), 0))::bigint AS nonledger,
+       COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
+                   FROM regrants WHERE from_grant_id = $1), 0)::bigint
+         AS regrants`,
+    [grant.id, grant.budgetJobId]
+  );
   return (
-    jobSpent +
-    exposure.spentMicroUsd +
-    exposure.outstandingMicroUsd +
-    regranted
+    Number(row?.shares ?? 0) +
+    Number(row?.outstanding ?? 0) +
+    Number(row?.nonledger ?? 0) +
+    Number(row?.regrants ?? 0)
   );
 }
 
@@ -139,73 +163,84 @@ export async function createRegrant(input: {
       message: "A mandate cannot regrant to itself",
     };
   }
-  const [source] = await rawQuery<{
-    id: string;
-    budget_job_id: string;
-    budget_micro_usd: number;
-  }>(
-    `SELECT g.id, g.budget_job_id, j.budget_micro_usd
-       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
-      WHERE g.id = $1 AND g.status = 'active'`,
-    [input.fromGrantId]
-  );
-  if (!source) {
-    return {
-      ok: false,
-      code: "SOURCE_NOT_FOUND",
-      message: "Source mandate not found or not active",
-    };
-  }
-  const [target] = await rawQuery<{ id: string; budget_job_id: string }>(
-    `SELECT id, budget_job_id FROM grants
-      WHERE id = $1 AND status IN ('planning', 'pending_approval', 'active')`,
-    [input.toGrantId]
-  );
-  if (!target) {
-    return {
-      ok: false,
-      code: "TARGET_NOT_FOUND",
-      message: "Target mandate not found or no longer live",
-    };
-  }
+  // One transaction under a per-source advisory lock: concurrent regrants
+  // from the same mandate serialize on the headroom check, and the regrant
+  // row and the target's budget credit land (or roll back) together.
+  return withTransaction(async (tx) => {
+    await tx.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended('regrant:' || $1, 0))`,
+      [input.fromGrantId]
+    );
+    const [source] = await tx.query<{
+      id: string;
+      budget_job_id: string;
+      budget_micro_usd: number;
+    }>(
+      `SELECT g.id, g.budget_job_id, j.budget_micro_usd
+         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+        WHERE g.id = $1 AND g.status = 'active'`,
+      [input.fromGrantId]
+    );
+    if (!source) {
+      return {
+        ok: false as const,
+        code: "SOURCE_NOT_FOUND" as const,
+        message: "Source mandate not found or not active",
+      };
+    }
 
-  const amountMicro = owlsToMicroUsd(input.owls);
-  const committed = await grantCommittedMicroUsd({
-    id: source.id,
-    budgetJobId: source.budget_job_id,
+    const amountMicro = owlsToMicroUsd(input.owls);
+    const committed = await grantCommittedMicroUsd(
+      { id: source.id, budgetJobId: source.budget_job_id },
+      tx
+    );
+    const headroom = Number(source.budget_micro_usd) - committed;
+    if (amountMicro > headroom) {
+      return {
+        ok: false as const,
+        code: "INSUFFICIENT_BUDGET" as const,
+        message:
+          `Regranting ${input.owls} owls exceeds the mandate's uncommitted ` +
+          `budget (${microUsdToOwls(Math.max(0, headroom))} owls free)`,
+      };
+    }
+
+    // Credit the target's job first, guarded on the grant still being live:
+    // zero rows means no regrant happens at all (no orphan row counting
+    // against the source for money that never reached anyone).
+    const credited = await tx.query<{ grant_id: string }>(
+      `UPDATE budget_jobs j
+          SET budget_micro_usd = j.budget_micro_usd + $2,
+              status = CASE WHEN j.status = 'paused_budget' THEN 'running'
+                            ELSE j.status END,
+              updated_at = now()
+         FROM grants g
+        WHERE g.id = $1 AND j.id = g.budget_job_id
+          AND g.status IN ('planning', 'pending_approval', 'active')
+          AND j.status IN ('running', 'paused_budget')
+        RETURNING g.id AS grant_id`,
+      [input.toGrantId, amountMicro]
+    );
+    if (credited.length === 0) {
+      return {
+        ok: false as const,
+        code: "TARGET_NOT_FOUND" as const,
+        message: "Target mandate not found or no longer live",
+      };
+    }
+    const [row] = await tx.query<{ id: string }>(
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [source.id, input.toGrantId, amountMicro, input.note ?? null]
+    );
+    return {
+      ok: true as const,
+      regrantId: row!.id,
+      amountOwls: input.owls,
+      toGrantId: input.toGrantId,
+    };
   });
-  const headroom = Number(source.budget_micro_usd) - committed;
-  if (amountMicro > headroom) {
-    return {
-      ok: false,
-      code: "INSUFFICIENT_BUDGET",
-      message:
-        `Regranting ${input.owls} owls exceeds the mandate's uncommitted ` +
-        `budget (${microUsdToOwls(Math.max(0, headroom))} owls free)`,
-    };
-  }
-
-  const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id`,
-    [source.id, target.id, amountMicro, input.note ?? null]
-  );
-  await rawQuery(
-    `UPDATE budget_jobs
-        SET budget_micro_usd = budget_micro_usd + $2,
-            status = CASE WHEN status = 'paused_budget' THEN 'running'
-                          ELSE status END,
-            updated_at = now()
-      WHERE id = $1`,
-    [target.budget_job_id, amountMicro]
-  );
-  return {
-    ok: true,
-    regrantId: row!.id,
-    amountOwls: input.owls,
-    toGrantId: target.id,
-  };
 }
 
 export type SpawnMandateResult =

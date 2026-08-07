@@ -35,8 +35,11 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
+const { handleQuery } = vi.hoisted(() => ({
+  handleQuery: async (q: string, params: unknown[] = []) => {
+    if (q.includes("pg_advisory_xact_lock")) {
+      return [];
+    }
     if (q.includes("FROM grants g JOIN budget_jobs")) {
       return state.grant ? [state.grant] : [];
     }
@@ -55,10 +58,17 @@ vi.mock("../../../src/db/client.js", () => ({
         actionId: params[1] as string | null,
         amount: params[4] as number,
       });
-      return [];
+      return [{ id: `al-${state.placed.length}` }];
     }
     return [];
-  }),
+  },
+}));
+
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: vi.fn(handleQuery),
+  withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ query: handleQuery })
+  ),
 }));
 
 import { runMandateAllocator } from "../../../src/services/allocation-service.js";

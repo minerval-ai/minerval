@@ -32,7 +32,7 @@
  * Allocations never touch claims.importance and never enter any value
  * estimate; money is cost-side only, always.
  */
-import { rawQuery } from "../db/client.js";
+import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
@@ -128,29 +128,33 @@ export async function allocateToClaimAssessment(input: {
   }
   const amountMicro = Math.min(owlsToMicroUsd(input.owls), room);
 
-  // Debit behind the balance guard (same single-statement posture as a
-  // charge), then record the allocation.
-  const debited = await rawQuery<{ id: string }>(
-    `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id)
-     SELECT $1, $2, 'claim_contribution', $3
-      WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-               FROM owl_ledger WHERE user_id = $1) >= $4
-     RETURNING id`,
-    [input.userId, -amountMicro, input.claimId, amountMicro]
-  );
-  if (debited.length === 0) {
+  // Debit behind the balance guard, and record the allocation in the SAME
+  // transaction — a failure after the debit must not eat the user's owls.
+  const debited = await withTransaction(async (tx) => {
+    const rows = await tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id)
+       SELECT $1, $2, 'claim_contribution', $3
+        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
+                 FROM owl_ledger WHERE user_id = $1) >= $4
+       RETURNING id`,
+      [input.userId, -amountMicro, input.claimId, amountMicro]
+    );
+    if (rows.length === 0) return false;
+    await tx.query(
+      `INSERT INTO action_allocations
+         (exclusion_group, claim_id, user_id, amount_micro_usd)
+       VALUES ($1, $2, $3, $4)`,
+      [group, input.claimId, input.userId, amountMicro]
+    );
+    return true;
+  });
+  if (!debited) {
     return {
       ok: false,
       code: "INSUFFICIENT_OWLS",
       message: `Allocating ${microUsdToOwls(amountMicro)} owls exceeds your balance`,
     };
   }
-  await rawQuery(
-    `INSERT INTO action_allocations
-       (exclusion_group, claim_id, user_id, amount_micro_usd)
-     VALUES ($1, $2, $3, $4)`,
-    [group, input.claimId, input.userId, amountMicro]
-  );
 
   const covered = unpinnedMicroUsd + amountMicro >= cheapestCost;
   if (
@@ -242,8 +246,18 @@ export async function runMandateAllocator(
   );
   if (!grant || grant.job_status !== "running") return result;
 
+  // The whole pass runs in one transaction under a per-mandate advisory
+  // lock: every drain worker and the scheduler invoke this concurrently,
+  // and without the lock each sees the full day room / escrow headroom and
+  // commits it again (N× the daily rate, duplicate placements).
+  return withTransaction(async (tx) => {
+  await tx.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`,
+    [grantId]
+  );
+
   // The day's remaining room under the mandate's rate.
-  const [today] = await rawQuery<{ placed: number }>(
+  const [today] = await tx.query<{ placed: number }>(
     `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
        FROM action_allocations
       WHERE grant_id = $1 AND created_at >= date_trunc('day', now())`,
@@ -267,7 +281,7 @@ export async function runMandateAllocator(
   if (escrowRoom <= 0) return result;
 
   // The mandate's valued open actions, with the live backing per action.
-  const valued = await rawQuery<{
+  const valued = await tx.query<{
     action_id: string;
     exclusion_group: string;
     variant: string;
@@ -356,12 +370,18 @@ export async function runMandateAllocator(
     if (inc.neededMicroUsd > dayRoom || inc.neededMicroUsd > escrowRoom) {
       continue;
     }
-    await rawQuery(
+    // ON CONFLICT backstop (uq_action_allocations_live_placement): even if
+    // the advisory lock is bypassed, one mandate never holds two live
+    // placements on the same (group, pin).
+    const placed = await tx.query<{ id: string }>(
       `INSERT INTO action_allocations
          (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)`,
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
       [inc.group, inc.actionId, inc.claimId, grantId, inc.neededMicroUsd]
     );
+    if (placed.length === 0) continue;
     dayRoom -= inc.neededMicroUsd;
     escrowRoom -= inc.neededMicroUsd;
     result.allocated++;
@@ -370,6 +390,7 @@ export async function runMandateAllocator(
     if (!inc.isUpgrade) baseCovered.add(inc.group);
   }
   return result;
+  });
 }
 
 /**
@@ -406,13 +427,24 @@ export async function fundGrantSelfActions(): Promise<number> {
                           FROM action_allocations al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL), 0))::bigint AS needed,
+            -- Same accounting as grantCommittedMicroUsd: consumed pro-rata
+            -- shares + outstanding allocations + NON-LEDGER metered spend
+            -- (llm_usage minus what ledger runs already consumed as
+            -- shares, so a self-funded run isn't counted twice) + regrants.
             (j.budget_micro_usd
-              - COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
-                           WHERE u.job_id = g.budget_job_id), 0)
-              - COALESCE((SELECT SUM(al.amount_micro_usd)
+              - COALESCE((SELECT SUM(al.spent_micro_usd)
+                            FROM action_allocations al
+                           WHERE al.grant_id = g.id), 0)
+              - COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                             FROM action_allocations al
                            WHERE al.grant_id = g.id
                              AND al.released_at IS NULL), 0)
+              - GREATEST(0,
+                  COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
+                             WHERE u.job_id = g.budget_job_id), 0)
+                  - COALESCE((SELECT SUM(x.metered_cost_micro_usd)
+                                FROM actions x
+                               WHERE x.metered_job_id = g.budget_job_id), 0))
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
                             FROM regrants r
                            WHERE r.from_grant_id = g.id), 0))::bigint
@@ -447,13 +479,15 @@ export async function fundGrantSelfActions(): Promise<number> {
   for (const row of rows) {
     const needed = Number(row.needed);
     if (needed <= 0 || needed > Number(row.headroom)) continue;
-    await rawQuery(
+    const inserted = await rawQuery<{ id: string }>(
       `INSERT INTO action_allocations
          (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
-       VALUES ($1, $2, $3, $4, $5)`,
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
       [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, needed]
     );
-    placed++;
+    if (inserted.length > 0) placed++;
   }
   return placed;
 }
@@ -468,9 +502,12 @@ export async function runDailyAllocators(): Promise<{
   allocated: number;
   allocatedMicroUsd: number;
 }> {
+  // Rate 0 means "no rate cap, escrow-bounded" (see grants schema), not
+  // "excluded from allocation" — a freshly funded mandate that never set a
+  // rate must still spend.
   const rows = await rawQuery<{ id: string }>(
     `SELECT id FROM grants
-      WHERE status = 'active' AND daily_budget_micro_usd > 0
+      WHERE status = 'active'
       ORDER BY created_at ASC`
   );
   const totals = { mandates: 0, allocated: 0, allocatedMicroUsd: 0 };

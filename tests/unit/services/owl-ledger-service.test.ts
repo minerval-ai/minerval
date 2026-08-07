@@ -64,6 +64,7 @@ describe("chargeOwls", () => {
       null,
       null,
       1_000_000,
+      null, // idempotency key: none for plain route charges
     ]);
   });
 
@@ -122,7 +123,10 @@ describe("settleMeteredCharge", () => {
     expect(mocks.inserted).toHaveLength(0);
   });
 
-  it("does not settle when the meter saw no work (refund territory)", async () => {
+  it("settles the whole cap back when the meter saw a free run", async () => {
+    // A SUCCESSFUL run the meter billed at zero: the user pays the meter,
+    // and the meter said nothing — the full cap returns. (Failed runs
+    // never reach settlement; they refund.)
     const { settledMicroUsd } = await settleMeteredCharge({
       userId: "u-1",
       capMicroUsd: 4_000_000,
@@ -130,8 +134,8 @@ describe("settleMeteredCharge", () => {
       settleKey: "order:o-3",
       op: "assessment",
     });
-    expect(settledMicroUsd).toBe(0);
-    expect(mocks.inserted).toHaveLength(0);
+    expect(settledMicroUsd).toBe(4_000_000);
+    expect(mocks.inserted).toHaveLength(1);
   });
 
   it("reports zero when the settlement was already applied", async () => {

@@ -156,11 +156,15 @@ export async function processNextOrderTask(
   // previous transiently-failed attempt.
   if (!order.charge_entry_id) {
     const priceOwls = microUsdToOwls(Number(order.price_micro_usd));
+    // Idempotent per order: a retry whose first attempt crashed after
+    // debiting but before persisting charge_entry_id finds the existing
+    // charge instead of debiting again.
     const { charged, entryId } = await chargeOwls({
       userId: order.user_id,
       priceOwls,
       op: "assessment",
       claimId: order.claim_id,
+      idempotencyKey: `charge:order:${order.id}`,
     });
     if (!charged) {
       // Balance drained between order creation and dispatch. Fail the order

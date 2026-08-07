@@ -212,6 +212,29 @@ export async function fundConversationMandate(input: {
 
   const db = getDb();
   const budgetMicro = owlsToMicroUsd(input.budgetOwls);
+
+  // Claim the conversation first, conditionally: two concurrent /fund
+  // calls must not both escrow and mint two grants from one conversation.
+  const claimed = await rawQuery<{ id: string }>(
+    `UPDATE grant_conversations SET status = 'funding', updated_at = now()
+      WHERE id = $1 AND user_id = $2 AND status = 'proposed'
+      RETURNING id`,
+    [convo.id, input.userId]
+  );
+  if (claimed.length === 0) {
+    return {
+      ok: false,
+      code: "NOT_PROPOSED",
+      message: "This mandate is already being funded",
+    };
+  }
+  const revertClaim = () =>
+    rawQuery(
+      `UPDATE grant_conversations SET status = 'proposed', updated_at = now()
+        WHERE id = $1 AND status = 'funding'`,
+      [convo.id]
+    );
+
   const [job] = await db
     .insert(budgetJobs)
     .values({
@@ -234,6 +257,7 @@ export async function fundConversationMandate(input: {
   );
   if (held.length === 0) {
     await db.delete(budgetJobs).where(eq(budgetJobs.id, job!.id));
+    await revertClaim();
     return {
       ok: false,
       code: "INSUFFICIENT_OWLS",

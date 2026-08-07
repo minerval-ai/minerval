@@ -154,7 +154,15 @@ async function runGrantAgentAction(
           }
         })
     );
-    await completeAction(action.id, billedMicroUsd).catch(() => {});
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId ?? null,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
     if (continueRequested) {
       // The agent judged one pass wasn't enough: reopen its review action
       // so the next drain iteration funds and runs another, bounded by
@@ -235,7 +243,11 @@ async function runIngestAction(
   try {
     const { sourceId, jobId } = await submitSource(
       { url },
-      owner ? { userId: owner.funder_user_id } : {}
+      // meterJobId: a grant-funded ingest meters its extraction to the
+      // grant's budget job, so the escrow's llm_usage accounting sees it.
+      owner
+        ? { userId: owner.funder_user_id, meterJobId: funder.jobId }
+        : {}
     );
     if (owner) {
       await rawQuery(

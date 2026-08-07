@@ -128,9 +128,15 @@ const configSchema = z.object({
   signupGrantOwls: z.coerce.number().default(5),
   monthlyGrantOwls: z.coerce.number().default(1),
   // Owls earned per kudos point of an accepted contribution (the old 1–5
-  // scale from claim importance, now paid in the spendable currency at a
-  // deliberately retuned rate: 0.25 owl/point → $1–$5 face per acceptance).
-  contributionAwardOwlPerPoint: z.coerce.number().default(0.25),
+  // scale from claim importance, paid in the spendable currency). OFF at
+  // launch (0 = no awards minted): accepted contributions minting
+  // spendable owls is a faucet whose gaming surface (sybil contributions
+  // past the reviewer) we want to observe before it pays real money. Turn
+  // it on deliberately via CONTRIBUTION_AWARD_OWL_PER_POINT (e.g. 0.25
+  // owl/point → $1–$5 face per acceptance); the award machinery,
+  // idempotency keys, and leaderboard accounting are all live and tested,
+  // so enabling is a config change, not a deploy.
+  contributionAwardOwlPerPoint: z.coerce.number().default(0),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
   // A blunt in-memory backstop against runaway clients; the real spend
   // guardrail is the owl balance.
@@ -146,22 +152,43 @@ const configSchema = z.object({
   // Stripe dashboard's webhook-endpoint config. Required for purchases to be
   // credited — without it every webhook delivery is rejected.
   stripeWebhookSecret: z.string().default(""),
-  // Purchase packs: "owls:cents" pairs, comma-separated. Larger packs price
-  // owls below the $4 face value — the bulk discount.
+  // Purchase packs: "owls:cents[:name]" entries, comma-separated. Larger
+  // packs price owls below the $4 face value — the bulk discount. The
+  // ladder: Clutch (entry, face value), Perch (10% off), Wisdom (25% off),
+  // Parliament (50% off — mandate-scale funding; a parliament of owls).
+  // A malformed entry FAILS startup rather than silently dropping packs —
+  // a typo'd OWL_PACKS must never quietly turn purchases off. An empty
+  // string is the explicit way to sell no packs.
   owlPacks: z
     .string()
-    .transform((s) =>
-      s
+    .transform((s, ctx) => {
+      const entries = s
         .split(",")
-        .map((entry) => entry.trim().split(":"))
-        .filter((parts) => parts.length === 2)
-        .map(([owls, cents]) => ({
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      const packs = entries.map((entry) => {
+        const [owls, cents, name] = entry.split(":");
+        const pack = {
           owls: Number(owls),
           priceCents: Number(cents),
-        }))
-        .filter((p) => p.owls > 0 && p.priceCents > 0)
-    )
-    .default("5:2000,15:5500,40:14000,125:40000"),
+          name: name?.trim() || null,
+        };
+        if (
+          !Number.isFinite(pack.owls) ||
+          !Number.isFinite(pack.priceCents) ||
+          pack.owls <= 0 ||
+          pack.priceCents <= 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `OWL_PACKS entry "${entry}" is not owls:cents[:name] with positive numbers`,
+          });
+        }
+        return pack;
+      });
+      return packs;
+    })
+    .default("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
   contributionRateLimitPerHour: z.coerce.number().default(10),
@@ -274,6 +301,15 @@ const configSchema = z.object({
   // cost bound on the mechanism, deliberately not a narrowing of the
   // agent's affordances. Each pass is also individually capped and metered.
   mandateReviewMaxPassesPerDay: z.coerce.number().default(12),
+  // Structural bounds on the AUTONOMOUS review pass's money movement
+  // (regrant + spawn_mandate): at most this fraction of the mandate's
+  // escrowed budget per pass / per UTC day. The review agent reads
+  // attacker-influenceable text (web search, claims, sources) in the same
+  // context as tools that move escrow; the "data, never instructions"
+  // briefing is guidance, these caps are the control. The owner-driven
+  // Grantmaker chat is not bound by them (a human is in the loop).
+  mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
+  mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -475,6 +511,10 @@ export function loadConfig(): Config {
     costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
     mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
+    mandateReviewMoveFractionPerPass:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
+    mandateReviewMoveFractionPerDay:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,

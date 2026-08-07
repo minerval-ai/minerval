@@ -31,7 +31,8 @@ const { state, stewardRuns, grantorRuns } = vi.hoisted(() => ({
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
-    if (q.includes("FROM grants g JOIN budget_jobs j") && q.includes("SKIP LOCKED")) {
+    // The atomic pick-and-claim (UPDATE ... FROM (SELECT ... SKIP LOCKED)).
+    if (q.includes("SKIP LOCKED") && q.includes("JOIN budget_jobs j2")) {
       return state.grant ? [state.grant] : [];
     }
     if (q.includes("WITH RECURSIVE") && q.includes("UPDATE claims")) {

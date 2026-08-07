@@ -110,6 +110,7 @@ export interface Entitlement {
 export interface OwlPack {
   id: string;
   owls: number;
+  name: string | null;
   price_cents: number;
   discount_percent: number;
 }

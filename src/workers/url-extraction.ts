@@ -29,16 +29,26 @@ export async function handleUrlExtraction(
   message: UrlExtractionMessage
 ): Promise<void> {
   const job = await getJobById(message.jobId);
-  const { billedMicroUsd } = await runWithUsageContext(
-    {
-      userId: job?.userId ?? null,
-      apiKeyId: job?.apiKeyId ?? null,
-      // A grant-funded ingestion meters against the grant's budget job so
-      // the spend draws down the escrow, not the submitter's balance.
-      jobId: message.meterJobId ?? message.jobId,
-    },
-    () => withCostMeter(() => processUrlExtraction(message))
-  );
+  let billedMicroUsd: number;
+  try {
+    ({ billedMicroUsd } = await runWithUsageContext(
+      {
+        userId: job?.userId ?? null,
+        apiKeyId: job?.apiKeyId ?? null,
+        // A grant-funded ingestion meters against the grant's budget job so
+        // the spend draws down the escrow, not the submitter's balance.
+        jobId: message.meterJobId ?? message.jobId,
+      },
+      () => withCostMeter(() => processUrlExtraction(message))
+    ));
+  } catch (err) {
+    // A failed extraction must still terminate the ledger ingest action —
+    // left 'running' it would strand its funders' allocations, and a
+    // reconcile reopen would re-submit (and re-charge) the same URL.
+    // Cancelling retires the group; the plan cursor skips cancelled items.
+    await cancelIngestAction(message.url);
+    throw err;
+  }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
   if (!message.meterJobId) {
     await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
@@ -46,28 +56,49 @@ export async function handleUrlExtraction(
   // If this extraction executes a ledger ingest action (the engine
   // executor left it 'running'), close it now with the real metered cost:
   // funders' pro-rata shares follow actual spend, never the estimate.
-  await completeIngestAction(message.url, billedMicroUsd);
+  await completeIngestAction(message.url, billedMicroUsd, message.meterJobId);
 }
 
 async function completeIngestAction(
   url: string,
-  billedMicroUsd: number
+  billedMicroUsd: number,
+  meterJobId?: string
 ): Promise<void> {
   try {
-    const [running] = await rawQuery<{ id: string }>(
+    // 'open' too: a reconcile sweep may have reopened a slow action while
+    // this extraction was still in flight — the guarded completeAction
+    // closes it exactly once either way.
+    const [live] = await rawQuery<{ id: string }>(
       `SELECT id FROM actions
-        WHERE exclusion_group = $1 AND status = 'running'
+        WHERE exclusion_group = $1 AND status IN ('running', 'open')
         LIMIT 1`,
       [`ingest:${url}`]
     );
-    if (!running) return;
+    if (!live) return;
     const { completeAction } = await import(
       "../services/action-service.js"
     );
-    await completeAction(running.id, billedMicroUsd);
+    await completeAction(live.id, billedMicroUsd, {
+      meteredJobId: meterJobId ?? null,
+    });
   } catch (err) {
     console.error(
       "[url-extraction] ingest action completion failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+async function cancelIngestAction(url: string): Promise<void> {
+  try {
+    await rawQuery(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
+      [`ingest:${url}`]
+    );
+  } catch (err) {
+    console.error(
+      "[url-extraction] ingest action cancellation failed:",
       err instanceof Error ? err.message : err
     );
   }
@@ -84,7 +115,10 @@ async function settleSourceIngestCharge(
   billedMicroUsd: number
 ): Promise<void> {
   try {
-    const [charge] = await rawQuery<{
+    // Every charge behind this source settles (two users can propose the
+    // same URL; only one extraction runs, but each paid a cap). The first
+    // charge pays the metered cost; later ones settle in full.
+    const charges = await rawQuery<{
       id: string;
       user_id: string;
       amount_micro_usd: number;
@@ -95,19 +129,19 @@ async function settleSourceIngestCharge(
          JOIN contributions ct ON ct.id = ol.contribution_id
         WHERE ol.reason = 'charge' AND ol.op = 'source_ingest'
           AND ct.source_id = $1
-        ORDER BY ol.created_at ASC
-        LIMIT 1`,
+        ORDER BY ol.created_at ASC`,
       [sourceId]
     );
-    if (!charge) return;
-    await settleMeteredCharge({
-      userId: charge.user_id,
-      capMicroUsd: -Number(charge.amount_micro_usd),
-      meteredMicroUsd: billedMicroUsd,
-      settleKey: charge.id,
-      op: "source_ingest",
-      contributionId: charge.contribution_id,
-    });
+    for (const [i, charge] of charges.entries()) {
+      await settleMeteredCharge({
+        userId: charge.user_id,
+        capMicroUsd: -Number(charge.amount_micro_usd),
+        meteredMicroUsd: i === 0 ? billedMicroUsd : 0,
+        settleKey: charge.id,
+        op: "source_ingest",
+        contributionId: charge.contribution_id,
+      });
+    }
   } catch (err) {
     // A missed settlement favours the platform; never fail the extraction.
     console.error(

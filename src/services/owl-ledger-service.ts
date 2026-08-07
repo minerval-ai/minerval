@@ -92,6 +92,10 @@ export async function recordOwlEntry(input: OwlEntryInput): Promise<boolean> {
  * charges can overshoot by at most one operation each — never re-spend a
  * drained balance systematically. A zero cap returns "free" (no row).
  *
+ * With an idempotencyKey, a retried charge (a requeued order whose first
+ * attempt crashed after debiting) returns the EXISTING entry instead of
+ * debiting again.
+ *
  * The cap is not the price: after the run, settleMeteredCharge returns
  * whatever the meter didn't use. Charging the full cap up front is what
  * makes the ceiling trustworthy — the balance can never go negative
@@ -103,15 +107,18 @@ export async function chargeOwls(input: {
   op: PricedOp;
   claimId?: string | null;
   contributionId?: string | null;
+  idempotencyKey?: string | null;
 }): Promise<{ charged: boolean; entryId: string | null }> {
   const priceMicro = owlsToMicroUsd(input.priceOwls);
   if (priceMicro <= 0) return { charged: true, entryId: null };
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO owl_ledger
-       (user_id, amount_micro_usd, reason, op, claim_id, contribution_id)
-     SELECT $1, $2, 'charge', $3, $4, $5
+       (user_id, amount_micro_usd, reason, op, claim_id, contribution_id,
+        idempotency_key)
+     SELECT $1, $2, 'charge', $3, $4, $5, $7
       WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
                FROM owl_ledger WHERE user_id = $1) >= $6
+     ON CONFLICT (idempotency_key) DO NOTHING
      RETURNING id`,
     [
       input.userId,
@@ -120,9 +127,18 @@ export async function chargeOwls(input: {
       input.claimId ?? null,
       input.contributionId ?? null,
       priceMicro,
+      input.idempotencyKey ?? null,
     ]
   );
-  return { charged: rows.length > 0, entryId: rows[0]?.id ?? null };
+  if (rows.length > 0) return { charged: true, entryId: rows[0]!.id };
+  if (input.idempotencyKey) {
+    const [existing] = await rawQuery<{ id: string }>(
+      `SELECT id FROM owl_ledger WHERE idempotency_key = $1`,
+      [input.idempotencyKey]
+    );
+    if (existing) return { charged: true, entryId: existing.id };
+  }
+  return { charged: false, entryId: null };
 }
 
 /**
@@ -163,11 +179,31 @@ export async function refundChargeForContribution(
     [contributionId]
   );
   if (rows.length === 0) return false;
+  // Never refund past what each user is still out on this contribution:
+  // credits already issued against it (meter settlements, refunds from
+  // other paths like a cancelled pre-paid order) reduce the refund, so the
+  // round trip can't net positive.
+  const credits = await rawQuery<{ user_id: string; total: number }>(
+    `SELECT user_id, COALESCE(SUM(amount_micro_usd), 0)::bigint AS total
+       FROM owl_ledger
+      WHERE contribution_id = $1
+        AND reason IN ('meter_settlement', 'refund')
+      GROUP BY user_id`,
+    [contributionId]
+  );
+  const creditLeft = new Map(
+    credits.map((c) => [c.user_id, Number(c.total)])
+  );
   let refunded = false;
   for (const [i, row] of rows.entries()) {
+    const charge = -Number(row.amount_micro_usd);
+    const credit = creditLeft.get(row.user_id) ?? 0;
+    const owed = Math.max(0, charge - credit);
+    creditLeft.set(row.user_id, Math.max(0, credit - charge));
+    if (owed <= 0) continue;
     const inserted = await recordOwlEntry({
       userId: row.user_id,
-      amountMicroUsd: -Number(row.amount_micro_usd),
+      amountMicroUsd: owed,
       reason: OWL_REASONS.refund,
       op: (row.op as PricedOp | null) ?? null,
       claimId: row.claim_id,
@@ -184,8 +220,9 @@ export async function refundChargeForContribution(
  * Credits back max(0, cap − metered): the user pays metered cost-plus, up
  * to the cap; overage past the cap is absorbed by the platform, never
  * charged. Idempotent per settleKey, so retried completion paths cannot
- * double-credit. A no-op when nothing is owed back (metered ≥ cap) or when
- * the meter saw no work at all (that is a refund case, not a settlement).
+ * double-credit. A no-op when nothing is owed back (metered ≥ cap). A
+ * successful run the meter saw as free settles the WHOLE cap back — the
+ * user pays the meter, and the meter said zero.
  */
 export async function settleMeteredCharge(input: {
   userId: string;
@@ -202,7 +239,7 @@ export async function settleMeteredCharge(input: {
     0,
     Math.round(input.capMicroUsd) - Math.max(0, Math.round(input.meteredMicroUsd))
   );
-  if (unused <= 0 || input.meteredMicroUsd <= 0) {
+  if (unused <= 0 || input.meteredMicroUsd < 0) {
     return { settledMicroUsd: 0 };
   }
   const inserted = await recordOwlEntry({

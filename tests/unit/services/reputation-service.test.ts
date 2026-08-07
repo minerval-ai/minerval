@@ -33,6 +33,20 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   refundChargeForContribution: mocks.refundChargeForContribution,
 }));
 
+// Awards are OFF by default at launch (contributionAwardOwlPerPoint 0);
+// these tests exercise the award-on-accept wiring, so pin the reference
+// rate the config documents for enabling.
+vi.mock("../../../src/config.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/config.js")>();
+  return {
+    ...original,
+    loadConfig: () => ({
+      ...original.loadConfig(),
+      contributionAwardOwlPerPoint: 0.25,
+    }),
+  };
+});
+
 import {
   applyReviewOutcome,
   applyArbitrationOutcome,

@@ -88,6 +88,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         packs: owlPacks().map((p) => ({
           id: p.id,
           owls: p.owls,
+          name: p.name,
           price_cents: p.priceCents,
           discount_percent: p.discountPercent,
         })),
