@@ -564,6 +564,12 @@ export const llmUsage = pgTable(
     // allocation estimate. Plain uuid (like jobId): metering must stay a
     // cheap, unconditional insert.
     claimId: uuid("claim_id"),
+    // The agent run this call belongs to (#334 L0): joins a usage row to its
+    // agent_runs row, making per-run cost exact instead of approximated by
+    // per-claim grouping (cost-estimate-service). Plain uuid, no FK, for the
+    // same reason as jobId/claimId: metering stays a cheap, unconditional
+    // insert, and a run row written fire-and-forget may not exist yet.
+    runId: uuid("run_id"),
     requestId: text("request_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -577,7 +583,83 @@ export const llmUsage = pgTable(
     // Budget pacing sums a job's metered cost on every check — the hottest
     // read of the highest-volume table; it must not seq-scan.
     index("idx_llm_usage_job").on(table.jobId),
+    index("idx_llm_usage_run").on(table.runId),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// agent_runs / agent_steps
+//
+// The trace substrate (#334 L0, from #274): one agent_runs row per agent
+// invocation (opened by withAgent in src/llm/usage-context.ts), and one
+// agent_steps row per turn of the tool-use loop — the full transcript that
+// previously died with the process. Domain artifacts (assessments.
+// reasoning_trace, audit_log) remain the summaries; these tables are the raw
+// material under them, for eval consumption, debugging, and — later — the
+// production monitors.
+//
+// Deliberately span-shaped (run → ordered steps with timestamps) so an
+// OTel/Langfuse exporter stays an adapter, never a migration (#334 §4).
+//
+// Writes are fire-and-forget from the hot path (like llm_usage): tracing must
+// never fail or slow an agent run, so there are no FKs to domain tables and
+// consumers must tolerate a run row without steps or an unfinished run
+// (finished_at NULL after a crash). Retention is the operator's policy knob:
+// traces are large, TRACE_LEVEL=off disables writes entirely (the production
+// default until a retention job exists), and rows are safe to prune by
+// started_at — nothing joins to them by FK except agent_steps, which cascades.
+// ---------------------------------------------------------------------------
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Which agent ran: steward | curator | matcher | extractor | judge | ...
+    // — same vocabulary as llm_usage.agent.
+    agent: text("agent").notNull(),
+    // Attribution snapshot of the usage context at open time (plain uuids, no
+    // FKs — same reasoning as llm_usage).
+    userId: uuid("user_id"),
+    jobId: uuid("job_id"),
+    claimId: uuid("claim_id"),
+    requestId: text("request_id"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // 'ok' | 'error'; NULL while running (or forever, if the process died).
+    outcome: text("outcome"),
+    error: text("error"),
+    // Step count at finish — a cheap completeness check against agent_steps
+    // (fire-and-forget step inserts can individually fail).
+    steps: integer("steps").notNull().default(0),
+  },
+  (table) => [
+    index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
+    index("idx_agent_runs_claim").on(table.claimId),
+    index("idx_agent_runs_job").on(table.jobId),
+  ]
+);
+
+export const agentSteps = pgTable(
+  "agent_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: "cascade" }),
+    // Client-side sequence within the run (0-based). Not unique-indexed:
+    // inserts are fire-and-forget and a duplicate seq from a lost race is a
+    // tolerable trace defect, not worth failing writes over.
+    seq: integer("seq").notNull(),
+    // 'assistant' (one model turn: stop reason + full content blocks) or
+    // 'tool_results' (the executed tools of that turn: name, input, output).
+    kind: text("kind").notNull(),
+    content: jsonb("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_agent_steps_run").on(table.runId, table.seq)]
 );
 
 // ---------------------------------------------------------------------------

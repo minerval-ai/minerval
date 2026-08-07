@@ -28,6 +28,8 @@ function adminUrlOf(url: string): string {
 }
 
 const DATA_TABLES = [
+  "agent_steps",
+  "agent_runs",
   "claim_instances",
   "claim_relationships",
   "assessments",

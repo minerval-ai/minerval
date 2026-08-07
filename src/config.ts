@@ -209,6 +209,13 @@ const configSchema = z.object({
   llmHourlyTokenLimit: z.coerce.number().default(0),
   llmDailyTokenLimit: z.coerce.number().default(0),
 
+  // Agent trace persistence (#334 L0): "full" records agent_runs +
+  // agent_steps, "off" records nothing. Unset defaults are resolved in
+  // trace-service.ts: off in production (until a retention job exists) and
+  // under vitest, full everywhere else — so dev and the corpus harness trace
+  // by default.
+  traceLevel: z.enum(["off", "full"]).optional(),
+
   // SQS queues
   sqsUrlExtractionQueue: z.string().default(""),
   sqsClaimPipelineQueue: z.string().default(""),
@@ -492,6 +499,7 @@ export function loadConfig(): Config {
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
     llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
     llmDailyCallLimit: process.env.LLM_DAILY_CALL_LIMIT,
+    traceLevel: process.env.TRACE_LEVEL,
     llmHourlyTokenLimit: process.env.LLM_HOURLY_TOKEN_LIMIT,
     llmDailyTokenLimit: process.env.LLM_DAILY_TOKEN_LIMIT,
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,

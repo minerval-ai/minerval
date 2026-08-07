@@ -20,6 +20,8 @@ type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 import { checkBudget } from "./budget-tracker.js";
 import { DEFAULT_MODEL } from "./models.js";
+import { getUsageContext } from "./usage-context.js";
+import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
 import type {
   CompletionResult,
@@ -179,6 +181,10 @@ export async function toolUseLoop(options: {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
   let lastResult: ToolCompletionResult | null = null;
+  // Trace handle from the enclosing withAgent, when tracing is enabled: the
+  // loop is where the transcript exists, so it's where steps are recorded
+  // (#334 L0). Absent handle = record nothing, zero overhead.
+  const trace = getUsageContext().trace;
   // Container-backed server tools (web_search_20260209 runs via code execution)
   // mint a container on first use that MUST be passed back on every later turn of
   // the loop, or the API rejects the request. Thread the latest id through.
@@ -198,6 +204,15 @@ export async function toolUseLoop(options: {
 
     lastResult = result;
     if (result.container) containerId = result.container;
+
+    // One step per model turn, whatever the loop decides to do with it —
+    // pause_turn continuations and max_tokens cutoffs are part of the record.
+    if (trace) {
+      recordAgentStep(trace, "assistant", {
+        stopReason: result.stopReason,
+        content: result.rawContent,
+      });
+    }
 
     // A long-running server tool (e.g. web_search) can pause the turn. The
     // documented continuation is to resubmit the assistant content UNCHANGED and
@@ -234,6 +249,7 @@ export async function toolUseLoop(options: {
 
     // Execute tools and build tool_result messages
     const toolResults: ToolResultBlockParam[] = [];
+    const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
       const output = await options.executeTool(tu.name, tu.input);
       toolResults.push({
@@ -241,6 +257,10 @@ export async function toolUseLoop(options: {
         tool_use_id: tu.id,
         content: output,
       });
+      executedTools.push({ name: tu.name, input: tu.input, output });
+    }
+    if (trace && executedTools.length > 0) {
+      recordAgentStep(trace, "tool_results", executedTools);
     }
 
     // If the iteration budget is nearly spent, tell the agent so it can wrap up
