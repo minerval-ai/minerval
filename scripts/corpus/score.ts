@@ -18,7 +18,8 @@ import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertCorpusDb, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
-import { closeDb, rawQuery } from "../../src/db/client.js";
+import { closeDb, getDb, rawQuery } from "../../src/db/client.js";
+import { evalRuns } from "../../src/db/schema.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
 import { withCostMeter } from "../../src/llm/usage-context.js";
 import { loadConfig } from "../../src/config.js";
@@ -289,11 +290,36 @@ export async function scoreRun(
   writeFileSync(join(dir, "scorecard.md"), renderMarkdown(scorecard));
 
   // Also file the scorecard into the committed history (corpus/scorecards/),
-  // since runs/ is gitignored — this is where baselines and regression history
-  // live until the eval-run registry (#334 L1) replaces files with a table.
+  // since runs/ is gitignored — the cross-machine record; commit the ones
+  // that matter as baselines.
   const historyDir = join(SCORECARDS_ROOT, cluster);
   mkdirSync(historyDir, { recursive: true });
   writeFileSync(join(historyDir, `${stamp}.json`), JSON.stringify(scorecard, null, 2));
+
+  // And register it in the eval-run registry (#334 L1) — the queryable local
+  // history (`corpus:runs`, `corpus:compare db:<id>`), which corpus:reset
+  // deliberately does not truncate. Best-effort: a registry hiccup must never
+  // fail the scoring that produced the scorecard.
+  let runId: string | null = null;
+  try {
+    const inserted = await getDb()
+      .insert(evalRuns)
+      .values({
+        cluster,
+        kind: "score",
+        config: scorecard.config,
+        scorecard,
+        runDir: dir,
+      })
+      .returning({ id: evalRuns.id });
+    runId = inserted[0]?.id ?? null;
+  } catch (err) {
+    console.warn(
+      "[score] eval-run registry write failed (scorecard files are intact):",
+      err instanceof Error ? err.message : err
+    );
+  }
+  if (runId) console.log(`  registered eval run ${runId.slice(0, 8)}`);
 
   return { scorecard, dir, judgeCostMicroUsd };
 }
