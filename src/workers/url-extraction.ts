@@ -11,6 +11,7 @@ import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
+import { fetchPublicUrl } from "../services/url-guard.js";
 
 /**
  * Handle a URL extraction message:
@@ -329,15 +330,9 @@ function clampUnit(value: unknown): number | undefined {
 }
 
 async function fetchUrlContent(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Minerval/1.0 (Knowledge Graph Indexer)",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
-  }
-
-  return response.text();
+  // SSRF-guarded: ingest URLs come from user proposals, grant plans, and
+  // the review agent's own web research — every hop must be public
+  // (src/services/url-guard.ts). A refused URL fails the job like any
+  // other unfetchable source.
+  return fetchPublicUrl(url);
 }
