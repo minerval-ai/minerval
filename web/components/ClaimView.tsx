@@ -13,11 +13,13 @@ import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
+import { OrderAssessment } from "./claim/OrderAssessment";
+import { FundDecomposition } from "./claim/FundDecomposition";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
-    ? "—"
+    ? "–"
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -65,10 +67,16 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <h1 className="claim-hero">{claim.text}</h1>
 
       {!assessment && (
-        <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-          Not yet assessed — this claim has been extracted but has not completed the
-          assessment pipeline.
-        </p>
+        <>
+          <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
+            Not yet assessed. Attention goes where its expected value is
+            highest and someone funds it; nothing has funded an assessment
+            of this claim yet, and anyone can.
+          </p>
+          {/* The demand side: a purchase fully funds the action, and a
+              fully funded action runs now. */}
+          <OrderAssessment claimId={claim.id} variant="unassessed" />
+        </>
       )}
 
       {/* Steward-seeded prior (#285): the hint left by the Steward of the
@@ -80,7 +88,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         <aside className="seed-prelim" aria-label="Preliminary note">
           <p className="seed-prelim-label">
             <span className="sc">Preliminary</span>
-            {" — from the Steward of "}
+            {" · from the Steward of "}
             {seed.seeded_by ? (
               <Link href={`/claims/${seed.seeded_by.id}`}>{seed.seeded_by.text}</Link>
             ) : (
@@ -118,6 +126,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             last assessed {fmtDate(assessment.assessed_at)}
             {assessment.model ? ` · ${modelDisplayName(assessment.model)}` : ""}
           </span>
+          {/* Funding is disclosed at the bottom of the page, with the
+              explanation it needs, never beside the verdict (§12: the
+              reading surface carries the reasoning, not the bookkeeping). */}
           {/* No subclaim-status chips here: subclaim_summary is never computed
               by the pipeline (always {}), so the chips only ever rendered for
               fixtures — a feature that looked implemented but wasn't (#160).
@@ -145,12 +156,14 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           {assessment.reasoning_trace &&
             assessment.reasoning_trace !== assessment.summary && (
               <details className="reasoning-detail">
-                <summary>Full reasoning — evidence and decisions behind this verdict</summary>
+                <summary>Full reasoning: the evidence and decisions behind this verdict</summary>
                 <div className="reasoning">
                   <AssessmentText content={assessment.reasoning_trace} texts={linkTexts} />
                 </div>
               </details>
             )}
+          {/* Reassessment on demand: quiet, but always available. */}
+          <OrderAssessment claimId={claim.id} variant="reassess" />
         </section>
       )}
 
@@ -175,6 +188,14 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             })}
           </p>
         )}
+        {/* Build your part of the graph: an owl budget takes this subtree
+            deeper than the background pipeline's economics ever would. */}
+        <FundDecomposition claimId={claim.id} />
+        <p className="order-line">
+          <Link href={`/account/grants/new?claim_id=${claim.id}`}>
+            or create a grant for this whole area →
+          </Link>
+        </p>
       </section>
 
       {/* provenance */}
@@ -234,7 +255,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                   {typeof p.confidence === "number" && (
                     <span title={VERDICT_CONFIDENCE_GLOSS}> · {p.confidence.toFixed(2)}</span>
                   )}
-                  {p.trigger && <em style={{ color: "var(--faint)" }}> — {p.trigger.replace(/_/g, " ")}</em>}
+                  {p.trigger && <em style={{ color: "var(--faint)" }}> · {p.trigger.replace(/_/g, " ")}</em>}
                 </span>
               </div>
             ))}
@@ -264,6 +285,21 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <Contribute claimId={claim.id} />
 
       <hr className="thin" />
+      {/* Funding disclosure (§19), placed here at the bottom deliberately:
+          disclosure belongs on the page, but not beside the verdict, and
+          never without the explanation that gives it its meaning. */}
+      {assessment?.funding && (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
+          The attention this claim received was paid for by{" "}
+          {assessment.funding.label}. Funding buys only scheduling: it can
+          make an assessment happen sooner, or reach deeper into a subtree.
+          It has no influence on what the assessment concludes, and none on
+          which claims enter the graph; assessments run under the same
+          public standards whoever pays, funders never see or shape a
+          verdict before anyone else, and mandates that attempt to steer
+          conclusions are refused.
+        </p>
+      )}
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
         Created by {claim.created_by} · {fmtDate(claim.created_at)}.
         {/* the last-assessed date moved into the assessment band (#196) */}

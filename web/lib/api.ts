@@ -155,3 +155,67 @@ export async function fetchContributorProfile(
     return null;
   }
 }
+
+// --- allocation transparency (owl economy, §15) ------------------------------
+// The EV/EC computation belongs to the mandates, so the public surface is
+// per-mandate: GET /mandates/:id/allocation, rendered on the mandate page.
+
+export interface AllocationKindTile {
+  kind: string;
+  candidates: number;
+  valued: number;
+  covered: number;
+  allocated_owls: number;
+  est_total_cost_owls: number;
+}
+
+export interface AllocationActionRow {
+  action_id: string;
+  kind: string;
+  variant: string;
+  claim_id: string | null;
+  label: string;
+  value_est: number;
+  cost_owls: number;
+  value_per_owl: number;
+  backing_owls: number;
+  covered: boolean;
+  my_allocation_owls: number;
+  marginal_ratio: number | null;
+}
+
+export interface MandateAllocationView {
+  grant_id: string;
+  title: string;
+  policy: Record<string, number>;
+  budget: {
+    escrow_owls: number;
+    spent_owls: number;
+    daily_rate_owls: number;
+    allocated_today_owls: number;
+    today_bar: number | null;
+  };
+  kinds: AllocationKindTile[];
+  histogram: Array<{ min: number; max: number; count: number }>;
+  top: AllocationActionRow[];
+  more: number;
+}
+
+export async function fetchMandateAllocation(
+  mandateId: string,
+  opts: { kind?: string; offset?: number; limit?: number } = {},
+): Promise<MandateAllocationView | null> {
+  const params = new URLSearchParams();
+  if (opts.kind) params.set("kind", opts.kind);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.size > 0 ? `?${params}` : "";
+  try {
+    const r = await apiGet<{ allocation: MandateAllocationView }>(
+      `/mandates/${mandateId}/allocation${qs}`,
+    );
+    return r.allocation;
+  } catch {
+    return null;
+  }
+}

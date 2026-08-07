@@ -32,6 +32,40 @@ import {
 } from "./queue-service.js";
 import { getOrCreateSource } from "./source-service.js";
 import { loadConfig } from "../config.js";
+import { createOrder } from "./order-service.js";
+import { rawQuery } from "../db/client.js";
+
+/**
+ * An accepted claim proposal was PAID for (the claim_proposal owl at
+ * submission), so its claim gets an express-lane assessment order funded by
+ * that same charge — a paid proposal never sits behind the background queue
+ * (#284). Best-effort: a failure here leaves the claim on the background
+ * queue rather than failing the acceptance.
+ */
+async function createProposalFundedOrder(
+  contribution: { id: string; contributorId: string },
+  claimId: string
+): Promise<void> {
+  try {
+    const [charge] = await rawQuery<{ id: string }>(
+      `SELECT id FROM owl_ledger
+        WHERE contribution_id = $1 AND reason = 'charge'
+        ORDER BY created_at ASC LIMIT 1`,
+      [contribution.id]
+    );
+    await createOrder({
+      userId: contribution.contributorId,
+      claimId,
+      contributionId: contribution.id,
+      chargeEntryId: charge?.id ?? null,
+    });
+  } catch (err) {
+    console.warn(
+      `[intake] could not create funded order for contribution ${contribution.id}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+}
 
 export type IntakeContributionType = "propose_claim" | "propose_source";
 
@@ -205,6 +239,9 @@ async function materializeProposedClaim(contribution: {
         `contributor: ${contribution.content}`,
     });
 
+    // The proposal was paid for: run that steward pass on the express lane.
+    await createProposalFundedOrder(contribution, match.matched_claim_id);
+
     return {
       action: "matched_existing_claim",
       claimId: match.matched_claim_id,
@@ -256,6 +293,10 @@ async function materializeProposedClaim(contribution: {
     { userId: contribution.contributorId, apiKeyId: null }
   );
   await enqueueClaimPipeline({ claimId: claim!.id, jobId: job.id });
+
+  // The proposal was paid for: the new claim's first Steward pass runs on
+  // the express lane instead of waiting its turn in the background queue.
+  await createProposalFundedOrder(contribution, claim!.id);
 
   return {
     action: "created_claim",

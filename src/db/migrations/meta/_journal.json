@@ -197,6 +197,90 @@
       "when": 1785870384047,
       "tag": "0027_credits_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785962155234,
+      "tag": "0028_owl_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785963358877,
+      "tag": "0029_demand_side",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785964575944,
+      "tag": "0030_allocation_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785965222240,
+      "tag": "0031_grantmakers",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785980816195,
+      "tag": "0032_grant_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785982127015,
+      "tag": "0033_public_mandates",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785984644953,
+      "tag": "0034_allocation_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786038093474,
+      "tag": "0035_action_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786041605999,
+      "tag": "0036_regrants",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786042146931,
+      "tag": "0037_mandate_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786048302151,
+      "tag": "0038_optimal_doomsday",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786048328045,
+      "tag": "0039_money_reconciliation",
+      "breakpoints": true
     }
   ]
 }

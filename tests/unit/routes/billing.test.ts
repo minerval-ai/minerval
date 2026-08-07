@@ -9,12 +9,12 @@ process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
 
 const mocks = vi.hoisted(() => ({
   stripeConfigured: vi.fn(() => true),
-  createCreditCheckoutSession: vi.fn(async () => ({
+  createOwlPackCheckoutSession: vi.fn(async () => ({
     url: "https://checkout.stripe.com/c/pay/cs_test_1",
     sessionId: "cs_test_1",
   })),
-  grantCredits: vi.fn(async () => true),
-  listCreditLedger: vi.fn(async () => []),
+  recordOwlEntry: vi.fn(async () => true),
+  listOwlLedger: vi.fn(async () => []),
   getContributorById: vi.fn(async () => ({
     id: "u-1",
     email: "buyer@example.com",
@@ -29,13 +29,19 @@ vi.mock("../../../src/services/stripe-service.js", async (importOriginal) => {
     await importOriginal<typeof import("../../../src/services/stripe-service.js")>();
   return {
     ...actual,
-    createCreditCheckoutSession: mocks.createCreditCheckoutSession,
+    createOwlPackCheckoutSession: mocks.createOwlPackCheckoutSession,
   };
 });
-vi.mock("../../../src/services/credit-service.js", () => ({
-  grantCredits: mocks.grantCredits,
-  listCreditLedger: mocks.listCreditLedger,
-}));
+vi.mock("../../../src/services/owl-ledger-service.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../../src/services/owl-ledger-service.js")
+  >();
+  return {
+    ...actual,
+    recordOwlEntry: mocks.recordOwlEntry,
+    listOwlLedger: mocks.listOwlLedger,
+  };
+});
 vi.mock("../../../src/services/contributor-service.js", () => ({
   getContributorById: mocks.getContributorById,
 }));
@@ -84,7 +90,7 @@ function checkoutCompletedEvent(overrides: Record<string, unknown> = {}) {
         id: "cs_test_1",
         payment_status: "paid",
         amount_total: 2000,
-        metadata: { user_id: "u-1" },
+        metadata: { user_id: "u-1", owls: "5" },
         client_reference_id: null,
         ...overrides,
       },
@@ -94,27 +100,58 @@ function checkoutCompletedEvent(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.stripeConfigured.mockReset().mockReturnValue(true);
-  mocks.createCreditCheckoutSession.mockClear();
-  mocks.grantCredits.mockReset().mockResolvedValue(true);
-  mocks.listCreditLedger.mockReset().mockResolvedValue([]);
+  mocks.createOwlPackCheckoutSession.mockClear();
+  mocks.recordOwlEntry.mockReset().mockResolvedValue(true);
+  mocks.listOwlLedger.mockReset().mockResolvedValue([]);
   mocks.getContributorById
     .mockReset()
     .mockResolvedValue({ id: "u-1", email: "buyer@example.com" });
 });
 
+describe("GET /billing/packs", () => {
+  it("lists the configured packs with bulk discounts", async () => {
+    const app = await buildApp(null);
+    const res = await app.inject({ method: "GET", url: "/billing/packs" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.credits_enabled).toBe(true);
+    // Defaults: Clutch 5/$20 (face value), then increasing discounts up
+    // to Parliament (mandate-scale funding at half face).
+    expect(body.packs[0]).toEqual({
+      id: "owls_5",
+      owls: 5,
+      name: "Clutch",
+      price_cents: 2000,
+      discount_percent: 0,
+    });
+    expect(body.packs.map((p: { name: string }) => p.name)).toEqual([
+      "Clutch",
+      "Perch",
+      "Wisdom",
+      "Parliament",
+    ]);
+    expect(
+      body.packs.map((p: { discount_percent: number }) => p.discount_percent)
+    ).toEqual([0, 10, 25, 50]);
+    const largest = body.packs[body.packs.length - 1];
+    expect(largest.owls).toBe(500);
+    expect(largest.price_cents).toBe(100_000); // $1,000 for $2,000 face
+  });
+});
+
 describe("POST /billing/checkout", () => {
-  it("returns the Stripe-hosted checkout URL", async () => {
+  it("returns the Stripe-hosted checkout URL for a pack", async () => {
     const app = await buildApp();
     const res = await app.inject({
       method: "POST",
       url: "/billing/checkout",
-      payload: { amount_usd: 20 },
+      payload: { pack_id: "owls_5" },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com/);
-    expect(mocks.createCreditCheckoutSession).toHaveBeenCalledWith({
+    expect(mocks.createOwlPackCheckoutSession).toHaveBeenCalledWith({
       userId: "u-1",
-      amountUsd: 20,
+      pack: expect.objectContaining({ id: "owls_5", owls: 5 }),
       email: "buyer@example.com",
     });
   });
@@ -125,24 +162,22 @@ describe("POST /billing/checkout", () => {
     const res = await app.inject({
       method: "POST",
       url: "/billing/checkout",
-      payload: { amount_usd: 20 },
+      payload: { pack_id: "owls_5" },
     });
     expect(res.statusCode).toBe(503);
     expect(res.json().code).toBe("BILLING_NOT_CONFIGURED");
   });
 
-  it("rejects amounts outside the configured bounds", async () => {
+  it("rejects an unknown pack", async () => {
     const app = await buildApp();
-    for (const amount of [1, 10_000]) {
-      const res = await app.inject({
-        method: "POST",
-        url: "/billing/checkout",
-        payload: { amount_usd: amount },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().code).toBe("AMOUNT_OUT_OF_RANGE");
-    }
-    expect(mocks.createCreditCheckoutSession).not.toHaveBeenCalled();
+    const res = await app.inject({
+      method: "POST",
+      url: "/billing/checkout",
+      payload: { pack_id: "owls_7" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("UNKNOWN_PACK");
+    expect(mocks.createOwlPackCheckoutSession).not.toHaveBeenCalled();
   });
 });
 
@@ -155,7 +190,7 @@ describe("POST /billing/webhook", () => {
       payload: checkoutCompletedEvent(),
     });
     expect(res.statusCode).toBe(400);
-    expect(mocks.grantCredits).not.toHaveBeenCalled();
+    expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 
   it("rejects a delivery signed with the wrong secret", async () => {
@@ -174,10 +209,10 @@ describe("POST /billing/webhook", () => {
       payload,
     });
     expect(res.statusCode).toBe(400);
-    expect(mocks.grantCredits).not.toHaveBeenCalled();
+    expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 
-  it("credits a paid checkout session (cents → micro-USD)", async () => {
+  it("credits a paid checkout session with the pack's owls, idempotently", async () => {
     const app = await buildApp();
     const { payload, signature } = signedWebhook(checkoutCompletedEvent());
     const res = await app.inject({
@@ -190,13 +225,34 @@ describe("POST /billing/webhook", () => {
       payload,
     });
     expect(res.statusCode).toBe(200);
-    expect(mocks.grantCredits).toHaveBeenCalledWith({
+    // 5 owls × $1 of spend each = 5,000,000 micro-USD of cost coverage,
+    // regardless of the (possibly discounted) cash amount Stripe collected
+    // — the margin lives in the purchase price, not in the balance.
+    expect(mocks.recordOwlEntry).toHaveBeenCalledWith({
       userId: "u-1",
-      amountMicroUsd: 20_000_000,
+      amountMicroUsd: 5_000_000,
       reason: "purchase",
+      idempotencyKey: "stripe:cs_test_1",
       stripeEventId: "evt_1",
-      stripeCheckoutSessionId: "cs_test_1",
     });
+  });
+
+  it("does not credit a session with no owl count in metadata", async () => {
+    const app = await buildApp();
+    const { payload, signature } = signedWebhook(
+      checkoutCompletedEvent({ metadata: { user_id: "u-1" } })
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/billing/webhook",
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": signature,
+      },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 
   it("does not credit an unpaid (delayed-payment) session", async () => {
@@ -214,7 +270,7 @@ describe("POST /billing/webhook", () => {
       payload,
     });
     expect(res.statusCode).toBe(200);
-    expect(mocks.grantCredits).not.toHaveBeenCalled();
+    expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 
   it("acknowledges event types it does not handle", async () => {
@@ -234,17 +290,21 @@ describe("POST /billing/webhook", () => {
       payload,
     });
     expect(res.statusCode).toBe(200);
-    expect(mocks.grantCredits).not.toHaveBeenCalled();
+    expect(mocks.recordOwlEntry).not.toHaveBeenCalled();
   });
 });
 
 describe("GET /billing/ledger", () => {
-  it("serializes the user's credit history", async () => {
-    mocks.listCreditLedger.mockResolvedValue([
+  it("serializes the user's owl history", async () => {
+    mocks.listOwlLedger.mockResolvedValue([
       {
-        id: "cl-1",
-        amountMicroUsd: 20_000_000,
-        reason: "purchase",
+        id: "ol-1",
+        amountMicroUsd: -4_000_000,
+        reason: "charge",
+        op: "claim_proposal",
+        claimId: null,
+        contributionId: "contrib-1",
+        jobId: null,
         createdAt: new Date("2026-08-01T00:00:00Z"),
       },
     ]);
@@ -253,12 +313,16 @@ describe("GET /billing/ledger", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().entries).toEqual([
       {
-        id: "cl-1",
-        amount_micro_usd: 20_000_000,
-        reason: "purchase",
+        id: "ol-1",
+        amount_micro_usd: -4_000_000,
+        reason: "charge",
+        op: "claim_proposal",
+        claim_id: null,
+        contribution_id: "contrib-1",
+        job_id: null,
         created_at: "2026-08-01T00:00:00.000Z",
       },
     ]);
-    expect(mocks.listCreditLedger).toHaveBeenCalledWith("u-1");
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1");
   });
 });

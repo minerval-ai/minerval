@@ -8,7 +8,7 @@ import {
   devLoginEnabled,
 } from "../../auth";
 
-export const metadata: Metadata = { title: "Sign in — Minerval" };
+export const metadata: Metadata = { title: "Sign in · Minerval" };
 
 // One account for everything: consuming the API and contributing to the
 // graph. Sessions are cookie-based; OAuth providers hold the credentials.
@@ -93,7 +93,7 @@ export default async function SignInPage({
               </button>
             </div>
             <p className="signin-note">
-              Local development only — never available in production.
+              Local development only; never available in production.
             </p>
           </form>
         )}

@@ -5,8 +5,13 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "../../auth";
 import {
   createApiKey,
-  createCreditCheckout,
+  createOwlPackCheckout,
   revokeApiKey,
+  topUpBudgetJob,
+  cancelBudgetJob,
+  approveGrant,
+  topUpGrant,
+  cancelGrant,
   AccountApiError,
 } from "../../lib/account-api";
 
@@ -50,27 +55,25 @@ export async function revokeKeyAction(formData: FormData): Promise<void> {
   revalidatePath("/account");
 }
 
-export interface BuyCreditsState {
+export interface BuyOwlsState {
   error?: string;
 }
 
 // Sends the buyer to Stripe-hosted Checkout; on success the webhook credits
-// the ledger and Stripe redirects back to /account. The acting identity comes
-// from the server session, so the only user-controlled input is the amount —
-// which the API re-validates against its configured bounds.
-export async function buyCreditsAction(
-  _prev: BuyCreditsState,
+// the owl ledger and Stripe redirects back to /account. The acting identity
+// comes from the server session, so the only user-controlled input is the
+// pack id — which the API validates against its configured pack list.
+export async function buyOwlsAction(
+  _prev: BuyOwlsState,
   formData: FormData
-): Promise<BuyCreditsState> {
+): Promise<BuyOwlsState> {
   const session = await auth();
   if (!session?.externalId) return { error: "Not signed in." };
-  const amount = Number(formData.get("amount_usd"));
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { error: "Enter a dollar amount." };
-  }
+  const packId = String(formData.get("pack_id") ?? "");
+  if (!packId) return { error: "Pick a pack." };
   let checkoutUrl: string;
   try {
-    checkoutUrl = await createCreditCheckout(session.externalId, amount);
+    checkoutUrl = await createOwlPackCheckout(session.externalId, packId);
   } catch (err) {
     const message =
       err instanceof AccountApiError
@@ -79,6 +82,97 @@ export async function buyCreditsAction(
     return { error: message };
   }
   redirect(checkoutUrl);
+}
+
+export interface JobActionState {
+  error?: string;
+  ok?: boolean;
+}
+
+// Top up a budget job (a paused job resumes). The acting identity comes from
+// the server session; the API re-validates ownership and balance.
+export async function topUpJobAction(
+  _prev: JobActionState,
+  formData: FormData
+): Promise<JobActionState> {
+  const session = await auth();
+  if (!session?.externalId) return { error: "Not signed in." };
+  const jobId = String(formData.get("job_id") ?? "");
+  const owls = Number(formData.get("owls"));
+  if (!jobId || !Number.isFinite(owls) || owls <= 0) {
+    return { error: "Enter how many owls to add." };
+  }
+  try {
+    await topUpBudgetJob(session.externalId, jobId, owls);
+  } catch (err) {
+    return {
+      error:
+        err instanceof AccountApiError ? err.message : "Top-up failed.",
+    };
+  }
+  revalidatePath(`/account/jobs/${jobId}`);
+  return { ok: true };
+}
+
+export async function cancelJobAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const jobId = String(formData.get("job_id") ?? "");
+  if (!jobId) return;
+  try {
+    await cancelBudgetJob(session.externalId, jobId);
+  } catch (err) {
+    console.error("[account] job cancel failed:", err);
+  }
+  revalidatePath(`/account/jobs/${jobId}`);
+}
+
+export async function approveGrantAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const grantId = String(formData.get("grant_id") ?? "");
+  if (!grantId) return;
+  try {
+    await approveGrant(session.externalId, grantId);
+  } catch (err) {
+    console.error("[account] grant approval failed:", err);
+  }
+  revalidatePath(`/account/grants/${grantId}`);
+}
+
+export async function topUpGrantAction(
+  _prev: JobActionState,
+  formData: FormData
+): Promise<JobActionState> {
+  const session = await auth();
+  if (!session?.externalId) return { error: "Not signed in." };
+  const grantId = String(formData.get("grant_id") ?? "");
+  const owls = Number(formData.get("owls"));
+  if (!grantId || !Number.isFinite(owls) || owls <= 0) {
+    return { error: "Enter how many owls to add." };
+  }
+  try {
+    await topUpGrant(session.externalId, grantId, owls);
+  } catch (err) {
+    return {
+      error: err instanceof AccountApiError ? err.message : "Top-up failed.",
+    };
+  }
+  revalidatePath(`/account/grants/${grantId}`);
+  return { ok: true };
+}
+
+export async function cancelGrantAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.externalId) return;
+  const grantId = String(formData.get("grant_id") ?? "");
+  if (!grantId) return;
+  try {
+    await cancelGrant(session.externalId, grantId);
+  } catch (err) {
+    console.error("[account] grant cancel failed:", err);
+  }
+  revalidatePath(`/account/grants/${grantId}`);
 }
 
 export async function signOutAction(): Promise<void> {

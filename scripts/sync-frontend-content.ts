@@ -17,6 +17,7 @@ import { getClaimStewardSystemPrompt } from "../src/llm/prompts/claim-steward.js
 import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
+import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -82,6 +83,10 @@ const AGENTS: AgentMeta[] = [
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
     invokedWhen: "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     model: "Claude Fable 5", fn: getAuditAgentSystemPrompt },
+  { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
+    tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
+    invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
+    model: "Claude Fable 5", fn: getGrantmakerSystemPrompt },
 ];
 
 const index = AGENTS.map((a) => {

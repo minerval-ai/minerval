@@ -29,7 +29,7 @@ export function KeyCreator() {
       {state.plaintext && (
         <div className="key-reveal" role="status">
           <p className="sc">
-            new key “{state.name}” — copy it now; it will not be shown again
+            new key “{state.name}”: copy it now; it will not be shown again
           </p>
           <code className="key-plaintext">{state.plaintext}</code>
         </div>

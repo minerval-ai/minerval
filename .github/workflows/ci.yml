@@ -1,8 +1,10 @@
 name: CI
 
+# Every PR, whatever its base: feature-branch PRs carry the same money-path
+# code as main-bound ones, and the main-only filter meant nothing here (unit
+# suite and db-tests alike) actually ran on them.
 on:
   pull_request:
-    branches: [main]
 
 jobs:
   check:
@@ -28,6 +30,40 @@ jobs:
         run: |
           npm ci
           npx cdk synth
+
+  db-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Postgres 16 with pgvector baked in — migration 0000 needs the
+        # vector extension before anything else can apply.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: episteme
+          POSTGRES_PASSWORD: episteme
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U episteme"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The suite's global setup creates the scratch DB, enables pgvector,
+      # and applies the full migration chain from zero — a broken migration
+      # fails this job before any test runs.
+      - name: DB-backed tests
+        run: npm run test:db
 
   plugin:
     runs-on: ubuntu-latest

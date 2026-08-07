@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   createClaimProposal: vi.fn(),
   createSourceProposal: vi.fn(),
   gateContributor: vi.fn(),
+  chargeAgenticOp: vi.fn(async () => ({
+    allowed: true,
+    entryId: "charge-1",
+  })),
+  attachChargeContribution: vi.fn(async () => {}),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
@@ -56,6 +61,22 @@ vi.mock("../../../src/services/nanopub-service.js", () => ({
 }));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: mocks.gateContributor,
+}));
+// The routes charge owls at operation start (quota module) and link the
+// charge to the created contribution (owl-ledger-service) — stub both.
+vi.mock("../../../src/server/plugins/quota.js", () => ({
+  chargeAgenticOp: mocks.chargeAgenticOp,
+}));
+vi.mock("../../../src/services/owl-ledger-service.js", () => ({
+  attachChargeContribution: mocks.attachChargeContribution,
+}));
+vi.mock("../../../src/services/order-service.js", () => ({
+  createOrder: vi.fn(),
+  serializeOrder: vi.fn(),
+}));
+vi.mock("../../../src/services/budget-job-service.js", () => ({
+  createDeepDecompositionJob: vi.fn(),
+  serializeBudgetJob: vi.fn(),
 }));
 vi.mock("../../../src/db/client.js", () => ({ getDb: vi.fn() }));
 
@@ -104,7 +125,11 @@ async function buildTestApp(auth: RequestAuth) {
     request.auth = auth;
     request.contributorExternalId = auth.contributorExternalId;
   });
-  app.decorate("requireAgenticQuota", async () => {});
+  app.decorate("requireAgenticQuota", () => async () => {});
+  app.decorate("requireUser", async () => {});
+  app.decorate("sendQuotaDenial", (reply: any, decision: any) =>
+    reply.code(decision.statusCode).send({ code: decision.code })
+  );
   await app.register(claimRoutes, { prefix: "/claims" });
   await app.register(sourceRoutes, { prefix: "/sources" });
   return app;

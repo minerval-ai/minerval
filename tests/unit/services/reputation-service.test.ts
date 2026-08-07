@@ -4,7 +4,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // emits without a Postgres instance (matching the reviewer-tools pattern).
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
-  awardKudos: vi.fn(async () => {}),
+  awardContributionOwls: vi.fn(async (input: { owls: number }) => input.owls),
+  clawbackContributionOwls: vi.fn(async () => 0),
+  refundChargeForContribution: vi.fn(async () => false),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -14,11 +16,35 @@ vi.mock("../../../src/db/client.js", () => ({
   },
 }));
 
-vi.mock("../../../src/services/kudos-service.js", async (importOriginal) => {
-  const original = await importOriginal<
-    typeof import("../../../src/services/kudos-service.js")
-  >();
-  return { ...original, awardKudos: mocks.awardKudos };
+vi.mock(
+  "../../../src/services/contribution-award-service.js",
+  async (importOriginal) => {
+    const original = await importOriginal<
+      typeof import("../../../src/services/contribution-award-service.js")
+    >();
+    return {
+      ...original,
+      awardContributionOwls: mocks.awardContributionOwls,
+      clawbackContributionOwls: mocks.clawbackContributionOwls,
+    };
+  }
+);
+vi.mock("../../../src/services/owl-ledger-service.js", () => ({
+  refundChargeForContribution: mocks.refundChargeForContribution,
+}));
+
+// Awards are OFF by default at launch (contributionAwardOwlPerPoint 0);
+// these tests exercise the award-on-accept wiring, so pin the reference
+// rate the config documents for enabling.
+vi.mock("../../../src/config.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/config.js")>();
+  return {
+    ...original,
+    loadConfig: () => ({
+      ...original.loadConfig(),
+      contributionAwardOwlPerPoint: 0.25,
+    }),
+  };
 });
 
 import {
@@ -105,7 +131,11 @@ function eventInserts(): unknown[][] {
 
 beforeEach(() => {
   mocks.rawQuery.mockReset();
-  mocks.awardKudos.mockReset();
+  mocks.awardContributionOwls
+    .mockReset()
+    .mockImplementation(async (input: { owls: number }) => input.owls);
+  mocks.clawbackContributionOwls.mockReset().mockResolvedValue(0);
+  mocks.refundChargeForContribution.mockReset().mockResolvedValue(false);
 });
 
 describe("reputation rules (pure)", () => {
@@ -131,7 +161,7 @@ describe("reputation rules (pure)", () => {
 });
 
 describe("applyReviewOutcome", () => {
-  it("accept: raises reputation, logs the event, awards importance-scaled kudos", async () => {
+  it("accept: raises reputation, logs the event, awards importance-scaled owls", async () => {
     routeQueries({ importance: 1 });
     const outcome = await applyReviewOutcome({
       contributionId: CONTRIBUTION_ID,
@@ -145,7 +175,7 @@ describe("applyReviewOutcome", () => {
       newScore: 50 + REPUTATION_RULES.accepted,
       standing: "good",
       suspended: false,
-      kudosAwarded: 5, // importance 1 → max kudos
+      owlsAwarded: 1.25, // importance 1 → 5 points × 0.25 owl
     });
 
     const { sql, params } = updateCall();
@@ -156,16 +186,15 @@ describe("applyReviewOutcome", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toContain(REPUTATION_REASONS.accepted);
 
-    expect(mocks.awardKudos).toHaveBeenCalledWith(
+    expect(mocks.awardContributionOwls).toHaveBeenCalledWith(
       expect.objectContaining({
         contributorId: CONTRIBUTOR_ID,
-        amount: 5,
-        reason: "accepted_contribution",
+        owls: 1.25,
       })
     );
   });
 
-  it("sincere reject: small penalty, no standing change, no kudos", async () => {
+  it("sincere reject: small penalty, no standing change, no award, charge refunded", async () => {
     routeQueries({});
     const outcome = await applyReviewOutcome({
       contributionId: CONTRIBUTION_ID,
@@ -174,7 +203,11 @@ describe("applyReviewOutcome", () => {
 
     expect(outcome!.newScore).toBe(50 + REPUTATION_RULES.rejected);
     expect(outcome!.standing).toBe("good");
-    expect(mocks.awardKudos).not.toHaveBeenCalled();
+    expect(mocks.awardContributionOwls).not.toHaveBeenCalled();
+    // Good-faith submission is free: a rejection returns any proposal charge.
+    expect(mocks.refundChargeForContribution).toHaveBeenCalledWith(
+      CONTRIBUTION_ID
+    );
     expect(eventInserts()).toHaveLength(1);
   });
 
@@ -232,7 +265,7 @@ describe("applyReviewOutcome", () => {
     expect(String(params[4])).toContain(AUTO_SUSPENSION_PREFIX);
   });
 
-  it("escalate: counter only, no reputation event, no kudos", async () => {
+  it("escalate: counter only, no reputation event, no award", async () => {
     routeQueries({});
     const outcome = await applyReviewOutcome({
       contributionId: CONTRIBUTION_ID,
@@ -240,7 +273,7 @@ describe("applyReviewOutcome", () => {
     });
     expect(outcome!.newScore).toBe(50);
     expect(eventInserts()).toHaveLength(0);
-    expect(mocks.awardKudos).not.toHaveBeenCalled();
+    expect(mocks.awardContributionOwls).not.toHaveBeenCalled();
     expect(updateCall().sql).toContain(
       "contributions_escalated = contributions_escalated + 1"
     );
@@ -276,19 +309,19 @@ describe("applyReviewOutcome", () => {
     expect(contributionQuery()).toContain("COALESCE(cl.importance, 0)");
   });
 
-  it("credits a claim-less acceptance with the minimum kudos", async () => {
+  it("credits a claim-less acceptance with the minimum award", async () => {
     routeQueries({ importance: 0 });
     const outcome = await applyReviewOutcome({
       contributionId: CONTRIBUTION_ID,
       decision: "accept",
     });
     expect(outcome!.newScore).toBe(50 + REPUTATION_RULES.accepted);
-    expect(outcome!.kudosAwarded).toBe(1);
+    expect(outcome!.owlsAwarded).toBe(0.25);
   });
 });
 
 describe("applyArbitrationOutcome (escalation resolution)", () => {
-  it("accept: credits the acceptance, resolves the escalated counter, awards kudos", async () => {
+  it("accept: credits the acceptance, resolves the escalated counter, awards owls", async () => {
     routeQueries({ importance: 0.5, escalationReview: true });
     const outcome = await applyArbitrationOutcome({
       contributionId: CONTRIBUTION_ID,
@@ -301,7 +334,7 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
       newScore: 50 + REPUTATION_RULES.accepted,
       standing: "good",
       suspended: false,
-      kudosAwarded: 3, // importance 0.5, no survived-appeal bonus
+      owlsAwarded: 0.75, // importance 0.5 → 3 points, no appeal bonus
     });
 
     const { sql } = updateCall();
@@ -313,8 +346,8 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
     const events = eventInserts();
     expect(events).toHaveLength(1);
     expect(events[0]).toContain(REPUTATION_REASONS.accepted);
-    expect(mocks.awardKudos).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 3, reason: "accepted_contribution" })
+    expect(mocks.awardContributionOwls).toHaveBeenCalledWith(
+      expect.objectContaining({ owls: 0.75 })
     );
   });
 
@@ -332,7 +365,7 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
     const events = eventInserts();
     expect(events).toHaveLength(1);
     expect(events[0]).toContain(REPUTATION_REASONS.rejected);
-    expect(mocks.awardKudos).not.toHaveBeenCalled();
+    expect(mocks.awardContributionOwls).not.toHaveBeenCalled();
   });
 
   it("reject with bad faith: two events, flag count, must-pay standing (#213)", async () => {
@@ -361,7 +394,7 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
     expect(events).toHaveLength(2);
     expect(events[0]).toContain(REPUTATION_REASONS.rejected);
     expect(events[1]).toContain(REPUTATION_REASONS.badFaith);
-    expect(mocks.awardKudos).not.toHaveBeenCalled();
+    expect(mocks.awardContributionOwls).not.toHaveBeenCalled();
   });
 
   it("bad faith drives the auto-suspension check off the flagged score", async () => {
@@ -411,7 +444,7 @@ describe("applyArbitrationOutcome (escalation resolution)", () => {
       })
     ).toBeNull();
     expect(eventInserts()).toHaveLength(0);
-    expect(mocks.awardKudos).not.toHaveBeenCalled();
+    expect(mocks.awardContributionOwls).not.toHaveBeenCalled();
   });
 
   it("is idempotent: a second resolution finds its own event and no-ops", async () => {
@@ -464,14 +497,14 @@ describe("reverseReviewOutcome (appeal overturn)", () => {
       standingRestored: true,
       unsuspended: true,
     });
-    expect(result!.kudosAwarded).toBe(3 + 2); // importance 0.5 → 3, +2 bonus
+    expect(result!.owlsAwarded).toBe(1.25); // (3 + 2 bonus) points × 0.25
 
     const events = eventInserts();
     expect(events).toHaveLength(1);
     expect(events[0]).toContain(REPUTATION_REASONS.overturned);
 
-    expect(mocks.awardKudos).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: "survived_appeal", amount: 5 })
+    expect(mocks.awardContributionOwls).toHaveBeenCalledWith(
+      expect.objectContaining({ owls: 1.25 })
     );
   });
 
@@ -521,7 +554,7 @@ describe("reverseReviewOutcome (appeal overturn)", () => {
     const result = await reverseReviewOutcome({ contributionId: CONTRIBUTION_ID });
     // 50 - (-1) + 2 = 53
     expect(result!.newScore).toBe(53);
-    expect(result!.kudosAwarded).toBe(1 + 2); // minimum kudos + appeal bonus
+    expect(result!.owlsAwarded).toBe(0.75); // (1 + 2 bonus) points × 0.25
     expect(contributionQuery()).toContain("LEFT JOIN claims");
   });
 
@@ -560,7 +593,6 @@ describe("neutralizeReviewOutcome (audit re-review, #180)", () => {
     } | null;
     contributor?: Record<string, unknown>;
     events?: Array<{ delta: number; reason: string }>;
-    kudosTotal?: number;
   }) {
     mocks.rawQuery.mockImplementation(async (sql: string) => {
       if (sql.includes("FROM contributions ")) {
@@ -579,9 +611,6 @@ describe("neutralizeReviewOutcome (audit re-review, #180)", () => {
       }
       if (sql.includes("FROM reputation_events")) {
         return opts.events ?? [];
-      }
-      if (sql.includes("FROM kudos_events")) {
-        return [{ total: opts.kudosTotal ?? 0 }];
       }
       return [];
     });
@@ -635,7 +664,7 @@ describe("neutralizeReviewOutcome (audit re-review, #180)", () => {
     expect(events[0]).toContain(16); // -netDelta
   });
 
-  it("accepted contribution: reverses the credit and claws back kudos", async () => {
+  it("accepted contribution: reverses the credit and claws back the owls", async () => {
     routeNeutralize({
       reviewStatus: "accepted",
       review: { id: REVIEW_ID, decision: "accept", suspected_bad_faith: false },
@@ -643,23 +672,22 @@ describe("neutralizeReviewOutcome (audit re-review, #180)", () => {
       events: [
         { delta: REPUTATION_RULES.accepted, reason: REPUTATION_REASONS.accepted },
       ],
-      kudosTotal: 5,
     });
+    mocks.clawbackContributionOwls.mockResolvedValue(1.25);
 
     const result = await neutralizeReviewOutcome({
       contributionId: CONTRIBUTION_ID,
     });
 
     expect(result!.newScore).toBe(50);
-    expect(result!.kudosReversed).toBe(5);
+    expect(result!.owlsReversed).toBe(1.25);
     expect(updateCall().sql).toContain(
       "contributions_accepted = GREATEST(0, contributions_accepted - 1)"
     );
-
-    const kudosInsert = mocks.rawQuery.mock.calls.find(([sql]) =>
-      (sql as string).includes("INSERT INTO kudos_events")
-    );
-    expect(kudosInsert?.[1]).toContain(-5);
+    expect(mocks.clawbackContributionOwls).toHaveBeenCalledWith({
+      contributorId: CONTRIBUTOR_ID,
+      contributionId: CONTRIBUTION_ID,
+    });
   });
 
   it("after an overturn, the accepted counter holds the contribution and the flag is already gone", async () => {
@@ -804,7 +832,6 @@ describe("ledger derivability (property, #180)", () => {
       suspected_bad_faith: boolean;
     } | null = null;
     let reviewStatus = "pending";
-    let kudosTotal = 0;
     const ledger: Array<{ delta: number; reason: string }> = [];
 
     mocks.rawQuery.mockImplementation(
@@ -828,9 +855,6 @@ describe("ledger derivability (property, #180)", () => {
         if (sql.includes("FROM contributors")) {
           return [primeContributor({ reputation_score: score })];
         }
-        if (sql.includes("kudos = kudos")) {
-          return []; // kudos cache update — not a score write
-        }
         if (sql.includes("UPDATE contributors")) {
           // Every score-bearing UPDATE contributors shape writes it as $1.
           score = params![0] as number;
@@ -851,9 +875,6 @@ describe("ledger derivability (property, #180)", () => {
         }
         if (sql.includes("FROM reputation_events")) {
           return [...ledger];
-        }
-        if (sql.includes("FROM kudos_events")) {
-          return [{ total: kudosTotal }];
         }
         return [];
       }
@@ -894,7 +915,6 @@ describe("ledger derivability (property, #180)", () => {
     //    reversed a second time.
     await reverseReviewOutcome({ contributionId: CONTRIBUTION_ID });
     reviewStatus = "accepted";
-    kudosTotal = 5;
     assertDerivable();
     expect(score).toBe(52); // 49 + 1 + accepted credit 2
 

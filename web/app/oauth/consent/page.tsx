@@ -8,7 +8,7 @@ import {
 } from "../../../lib/account-api";
 import { approveConsentAction, denyConsentAction } from "./actions";
 
-export const metadata: Metadata = { title: "Authorize access — Minerval" };
+export const metadata: Metadata = { title: "Authorize access · Minerval" };
 export const dynamic = "force-dynamic";
 
 // The consent half of the OAuth flow for remote MCP connectors (Claude.ai,
@@ -70,10 +70,10 @@ export default async function ConsentPage({
         <strong>{session!.user?.name ?? session!.externalId}</strong>.
       </p>
       <p>
-        It will be able to search and read claims, run fact-checks against
-        your monthly allowance, and submit contributions in your name. You can
-        revoke access at any time from your account page. After you approve,
-        you&apos;ll be sent back to{" "}
+        It will be able to search and read the claim graph, run analyses that
+        spend owls from your balance, and submit contributions in your name.
+        Its access lasts until you disconnect it in that application. After
+        you approve, you&apos;ll be sent back to{" "}
         <code>{request.client.redirect_host}</code>.
       </p>
       {error === "gone" && (

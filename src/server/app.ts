@@ -21,6 +21,12 @@ import { billingRoutes } from "../routes/billing.js";
 import { mcpRoutes } from "../routes/mcp.js";
 import { oauthRoutes } from "../routes/oauth.js";
 import { extensionRoutes } from "../routes/extension.js";
+import { orderRoutes } from "../routes/orders.js";
+import { budgetJobRoutes } from "../routes/budget-jobs.js";
+import { queueRoutes } from "../routes/queue.js";
+import { grantRoutes } from "../routes/grants.js";
+import { grantConversationRoutes } from "../routes/grant-conversations.js";
+import { mandateRoutes } from "../routes/mandates.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -61,6 +67,14 @@ export async function buildApp() {
   await app.register(apiKeyRoutes, { prefix: "/api-keys" });
   await app.register(usageRoutes, { prefix: "/usage" });
   await app.register(billingRoutes, { prefix: "/billing" });
+  await app.register(orderRoutes, { prefix: "/orders" });
+  await app.register(budgetJobRoutes, { prefix: "/budget-jobs" });
+  await app.register(queueRoutes, { prefix: "/queue" });
+  await app.register(grantRoutes, { prefix: "/grants" });
+  await app.register(grantConversationRoutes, {
+    prefix: "/grant-conversations",
+  });
+  await app.register(mandateRoutes, { prefix: "/mandates" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);

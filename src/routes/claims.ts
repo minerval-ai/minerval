@@ -23,6 +23,15 @@ import { assembleClaimCitation } from "../services/citation-service.js";
 import { assembleClaimNanopub } from "../services/nanopub-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
+import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
+import { attachChargeContribution } from "../services/owl-ledger-service.js";
+import { allocateToClaimAssessment } from "../services/allocation-service.js";
+import { createOrder, serializeOrder } from "../services/order-service.js";
+import {
+  createDeepDecompositionJob,
+  serializeBudgetJob,
+} from "../services/budget-job-service.js";
+import { getFundingLabelForJob } from "../services/grant-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -73,6 +82,16 @@ export const assessmentSchema = {
     // Raw API id of the model that produced the assessment (#294); null for
     // rows written before the column existed.
     model: { type: "string", nullable: true },
+    // Funding disclosure (§19): present when the assessing run was paid work
+    // (an assessment order or a named grant); absent for system work.
+    funding: {
+      type: "object",
+      nullable: true,
+      properties: {
+        type: { type: "string" },
+        label: { type: "string" },
+      },
+    },
   },
 } as const;
 
@@ -294,6 +313,19 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
         };
+
+        // Funding disclosure (§19): when the current assessment was paid
+        // work — an assessment order or a grant — say so, by name. The
+        // stamp is mechanical (usage context), never agent-written.
+        if (assessment?.fundedByJobId) {
+          const funding = await getFundingLabelForJob(assessment.fundedByJobId);
+          if (funding) {
+            (response.assessment as Record<string, unknown>).funding = {
+              type: funding.type,
+              label: funding.label,
+            };
+          }
+        }
 
         // Steward-seeded prior (#285): surfaced only while the claim has no
         // current assessment. Once its own Steward has judged, the seed is
@@ -787,9 +819,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         429: errorEnvelopeSchema,
       },
     },
-    // Proposing a claim triggers LLM work (review or matching + stewarding),
-    // so it is a metered agentic surface (#70).
-    preHandler: [app.authenticate, app.requireAgenticQuota],
+    // Proposing a claim commands a full Steward pass on it — the flat
+    // claim_proposal price (1 owl; this is what the signup grant's "5 free
+    // claims" buys). See src/services/owl.ts.
+    preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
     handler: async (request, reply) => {
       const body = claimProposeBody.parse(request.body);
       const auth = request.auth;
@@ -832,11 +865,28 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       const contributor = await gateContributor(request, reply);
       if (!contributor) return;
 
-      const contribution = await createClaimProposal({
-        claimText: body.claim,
-        argumentText: body.argument,
-        contributorId: contributor.id,
-      });
+      // Charge at start: the owl buys the review-and-assess work the
+      // proposal commands. Linked to the contribution so an intake rejection
+      // refunds it automatically — a good-faith proposal that doesn't pass
+      // costs nothing (#71).
+      const charge = await chargeAgenticOp(auth, "claim_proposal");
+      if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
+
+      let contribution;
+      try {
+        contribution = await createClaimProposal({
+          claimText: body.claim,
+          argumentText: body.argument,
+          contributorId: contributor.id,
+        });
+        if (charge.entryId) {
+          await attachChargeContribution(charge.entryId, contribution.id);
+        }
+      } catch (err) {
+        // The proposal never materialized: the user must not pay for a 500.
+        await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        throw err;
+      }
 
       return reply.code(202).send({
         contribution: {
@@ -853,6 +903,147 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       });
     },
   });
+
+  // POST /claims/:claim_id/order — buy an assessment of this claim (1 owl).
+  // A purchase fully funds the action, and a fully funded action has
+  // nothing to wait for: it runs now. Charge-at-start: nothing is debited here — the
+  // owl is charged when the Steward run begins, and a pending order cancels
+  // free (DELETE /orders/:id).
+  app.post<{ Params: { claim_id: string } }>("/:claim_id/order", {
+    schema: {
+      tags: ["orders"],
+      summary:
+        "Order a (re)assessment of this claim: runs immediately, charged " +
+        "when the run starts",
+      params: {
+        type: "object",
+        properties: { claim_id: { type: "string", format: "uuid" } },
+      },
+    },
+    preHandler: [
+      app.authenticate,
+      app.requireUser,
+      app.requireAgenticQuota("assessment"),
+    ],
+    handler: async (request, reply) => {
+      const result = await createOrder({
+        userId: request.auth!.userId!,
+        claimId: request.params.claim_id,
+      });
+      if (!result.ok) {
+        const status =
+          result.code === "CLAIM_NOT_FOUND"
+            ? 404
+            : result.code === "ORDER_ALREADY_OPEN"
+              ? 409
+              : 400;
+        return reply.code(status).send({
+          error: result.message,
+          code: result.code,
+          ...(result.existingOrderId
+            ? { order_id: result.existingOrderId }
+            : {}),
+        });
+      }
+      return reply.code(201).send({ order: serializeOrder(result.order) });
+    },
+  });
+
+  // POST /claims/:claim_id/contribute — put owls toward this claim's next
+  // assessment without buying the whole thing. Allocations accumulate
+  // across funders (people and mandates alike); the moment they cover the
+  // expected cost, the assessment runs, and the metered cost is split pro
+  // rata among the funders.
+  app.post<{ Params: { claim_id: string }; Body: { owls: number } }>(
+    "/:claim_id/contribute",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Allocate owls toward this claim's next assessment (runs when " +
+          "allocations cover the cost; funders split the cost pro rata)",
+        params: {
+          type: "object",
+          properties: { claim_id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["owls"],
+          properties: {
+            owls: { type: "number", exclusiveMinimum: 0, maximum: 100 },
+          },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const result = await allocateToClaimAssessment({
+          userId: request.auth!.userId!,
+          claimId: request.params.claim_id,
+          owls: request.body.owls,
+        });
+        if (!result.ok) {
+          const status =
+            result.code === "CLAIM_NOT_FOUND"
+              ? 404
+              : result.code === "INSUFFICIENT_OWLS"
+                ? 402
+                : result.code === "COVERED"
+                  ? 409
+                  : 400;
+          return reply
+            .code(status)
+            .send({ error: result.message, code: result.code });
+        }
+        return reply.send({
+          allocated_owls: result.allocatedOwls,
+          unspent_owls: result.unspentOwls,
+          covered: result.covered,
+        });
+      },
+    }
+  );
+
+  // POST /claims/:claim_id/decompose — fund a deep-decomposition budget job.
+  // Open-ended work gets a BUDGET, not a price: the owls escrow now (that is
+  // the act of funding), the job meters real model spend against them, pauses
+  // for top-up at the floor, and refunds whatever it doesn't use.
+  app.post<{ Params: { claim_id: string }; Body: { budget_owls: number } }>(
+    "/:claim_id/decompose",
+    {
+      schema: {
+        tags: ["budget-jobs"],
+        summary:
+          "Fund deep decomposition of this claim's subtree with an owl budget",
+        params: {
+          type: "object",
+          properties: { claim_id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["budget_owls"],
+          properties: {
+            budget_owls: { type: "number", exclusiveMinimum: 0 },
+          },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const result = await createDeepDecompositionJob({
+          userId: request.auth!.userId!,
+          claimId: request.params.claim_id,
+          budgetOwls: request.body.budget_owls,
+        });
+        if (!result.ok) {
+          return reply
+            .code(result.code === "CLAIM_NOT_FOUND" ? 404 : 402)
+            .send({ error: result.message, code: result.code });
+        }
+        return reply
+          .code(201)
+          .send({ job: await serializeBudgetJob(result.job) });
+      },
+    }
+  );
 
   // GET /claims/:claim_id/assessments
   app.get<{ Params: { claim_id: string }; Querystring: Record<string, string> }>(

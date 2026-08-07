@@ -1,6 +1,8 @@
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { refreshQueuePriority } from "./priority-service.js";
+import { ensureAssessActions } from "./action-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -20,6 +22,12 @@ export interface UrlExtractionMessage {
   sourceId: string;
   jobId: string;
   url: string;
+  /**
+   * When set, the extraction's LLM calls are metered against this budget
+   * job instead of the extraction job — how a grant-funded ingestion spends
+   * the grant's escrow rather than the submitter's balance.
+   */
+  meterJobId?: string;
 }
 
 export interface ContributionMessage {
@@ -47,6 +55,8 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A user paid for a (re)assessment (assessment_orders, express lane).
+    | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"
@@ -227,6 +237,32 @@ export async function enqueueSteward(
         AND state = 'active'`,
     [message.claimId, message.trigger, chunk]
   );
+
+  // Stamp the composite queue priority as the claim enters the lane, so the
+  // drain's ordering is current the moment the slot exists. (Refreshed again
+  // by the allocation scheduler's sweep while it waits.) Best-effort: a
+  // priority hiccup must not lose the enqueue itself.
+  try {
+    await refreshQueuePriority(message.claimId);
+  } catch (err) {
+    console.warn(
+      `[queue] priority refresh failed for ${message.claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  // Materialize the claim's assess/reassess action rows the moment it
+  // becomes a candidate — the ledger is what mandates value and fund, so
+  // it should never lag the candidate set behind the reconcile sweep.
+  // Best-effort for the same reason as above.
+  try {
+    await ensureAssessActions(message.claimId);
+  } catch (err) {
+    console.warn(
+      `[queue] action-ledger refresh failed for ${message.claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 export async function enqueueCurator(

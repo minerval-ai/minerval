@@ -8,8 +8,7 @@
  * this service is the durable, per-user record.
  */
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
-import { loadConfig } from "../config.js";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { apiKeys, llmUsage } from "../db/schema.js";
 import { costMicroUsd } from "../llm/pricing.js";
 import { getUsageContext } from "../llm/usage-context.js";
@@ -41,12 +40,23 @@ export interface LlmCallUsage {
  */
 export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   const ctx = getUsageContext();
+  // Cost is measured in dollars: the meter records the REAL cost of the
+  // call, never a marked-up figure. The platform's margin lives entirely
+  // in the owl's purchase price ($4 buys an owl; an owl covers $1 of this
+  // cost), so cost rows, charges, and estimates all speak the same unit.
+  const billedMicroUsd = Math.round(costMicroUsd(call.model, call));
+  // Feed the enclosing operation's live cost meter FIRST and synchronously:
+  // cap-and-settle charging depends on this number being complete the moment
+  // the operation's work finishes, even if the durable insert below lags or
+  // fails.
+  if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
   try {
     const db = getDb();
     await db.insert(llmUsage).values({
       userId: ctx.userId ?? null,
       apiKeyId: ctx.apiKeyId ?? null,
       jobId: ctx.jobId ?? null,
+      claimId: ctx.claimId ?? null,
       requestId: ctx.requestId ?? null,
       agent: ctx.agent ?? "unknown",
       model: call.model,
@@ -59,9 +69,7 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
       // reported one, and falls back to the rate table otherwise. The markup
       // multiplier turns raw provider cost into the billed rate every
       // downstream consumer (free grant, credit burn, dashboard) sees.
-      costMicroUsd: Math.round(
-        costMicroUsd(call.model, call) * loadConfig().usageMarkupMultiplier
-      ),
+      costMicroUsd: billedMicroUsd,
     });
   } catch (err) {
     // Metering must never break the calling agent. Surface loudly in logs.
@@ -221,5 +229,99 @@ export async function getSystemUsageSummary(days = 30) {
     system: coerceTotals(systemRow ?? {}),
     byAgent: byAgentRows.map((r) => ({ agent: r.agent, ...coerceTotals(r) })),
     topUsers: topUsers.map((r) => ({ userId: r.userId, ...coerceTotals(r) })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Allocation cost stats (#217) — the marginal-COST half of the estimate
+// ---------------------------------------------------------------------------
+
+export interface AllocationStats {
+  /** Steward spend per model: run counts and average cost per claim-run. */
+  byModel: Array<{
+    model: string;
+    claims: number;
+    calls: number;
+    costMicroUsd: number;
+    avgCostPerClaimMicroUsd: number;
+  }>;
+  /** Assessment counts per trigger — what drives the re-assessment load. */
+  byTrigger: Array<{ trigger: string; assessments: number }>;
+  /** The costliest claims in the window: where the budget actually went. */
+  topClaims: Array<{
+    claimId: string;
+    costMicroUsd: number;
+    calls: number;
+  }>;
+}
+
+/**
+ * Per-model average steward-run cost, per-trigger assessment counts, and the
+ * most expensive claims — computed from llm_usage.claim_id attribution.
+ * Deliberately raw aggregates: inputs to a human's judgment about pricing,
+ * tiering thresholds, and cadence, never a formula that decides.
+ */
+export async function getAllocationStats(days = 30): Promise<AllocationStats> {
+  const since = new Date(Date.now() - days * 86_400_000);
+
+  const byModel = await rawQuery<{
+    model: string;
+    claims: number;
+    calls: number;
+    cost: number;
+  }>(
+    `SELECT model,
+            COUNT(DISTINCT claim_id)::int AS claims,
+            COUNT(*)::int AS calls,
+            COALESCE(SUM(cost_micro_usd), 0)::bigint AS cost
+       FROM llm_usage
+      WHERE agent = 'steward' AND claim_id IS NOT NULL AND created_at >= $1
+      GROUP BY model
+      ORDER BY cost DESC`,
+    [since]
+  );
+
+  const byTrigger = await rawQuery<{ trigger: string; assessments: number }>(
+    `SELECT COALESCE(trigger, 'unknown') AS trigger, COUNT(*)::int AS assessments
+       FROM assessments
+      WHERE assessed_at >= $1
+      GROUP BY COALESCE(trigger, 'unknown')
+      ORDER BY assessments DESC`,
+    [since]
+  );
+
+  const topClaims = await rawQuery<{
+    claim_id: string;
+    cost: number;
+    calls: number;
+  }>(
+    `SELECT claim_id, COALESCE(SUM(cost_micro_usd), 0)::bigint AS cost,
+            COUNT(*)::int AS calls
+       FROM llm_usage
+      WHERE claim_id IS NOT NULL AND created_at >= $1
+      GROUP BY claim_id
+      ORDER BY cost DESC
+      LIMIT 20`,
+    [since]
+  );
+
+  return {
+    byModel: byModel.map((r) => ({
+      model: r.model,
+      claims: Number(r.claims),
+      calls: Number(r.calls),
+      costMicroUsd: Number(r.cost),
+      avgCostPerClaimMicroUsd:
+        Number(r.claims) > 0 ? Math.round(Number(r.cost) / Number(r.claims)) : 0,
+    })),
+    byTrigger: byTrigger.map((r) => ({
+      trigger: r.trigger,
+      assessments: Number(r.assessments),
+    })),
+    topClaims: topClaims.map((r) => ({
+      claimId: r.claim_id,
+      costMicroUsd: Number(r.cost),
+      calls: Number(r.calls),
+    })),
   };
 }

@@ -34,7 +34,7 @@ export default function About() {
         the model, the pipeline, the{" "}
         <Link href="/docs/constitution">Administrator Constitution</Link>, the{" "}
         <Link href="/docs/architecture">architecture and policies</Link>, and{" "}
-        <Link href="/docs/agents">the seven agents</Link> with their complete system
+        <Link href="/docs/agents">the eight agents</Link> with their complete system
         prompts.
       </p>
 

@@ -41,15 +41,15 @@ export function bedrockOf(
 export const BEDROCK: Record<BedrockKind, { tag: string; note: string }> = {
   fact: {
     tag: "bedrock · fact",
-    note: "Bedrock — a verified fact. It is checked directly against sources; nothing lies beneath it.",
+    note: "Bedrock: a verified fact. It is checked directly against sources; nothing lies beneath it.",
   },
   open: {
     tag: "bedrock · open question",
-    note: "Bedrock — a genuinely open empirical question. The graph records the disagreement rather than resolving it.",
+    note: "Bedrock: a genuinely open empirical question. The graph records the disagreement rather than resolving it.",
   },
   value: {
     tag: "bedrock · value premise",
-    note: "Bedrock — a fundamental value premise. Disagreement here is not empirical; the graph makes that visible.",
+    note: "Bedrock: a fundamental value premise. Disagreement here is not empirical; the graph makes that visible.",
   },
 };
 

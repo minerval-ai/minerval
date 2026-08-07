@@ -69,7 +69,7 @@ export function CiteClaim({ claimId }: { claimId: string }) {
     <details className="reasoning-detail" onToggle={(e) => {
       if ((e.target as HTMLDetailsElement).open) void load();
     }}>
-      <summary>Cite this claim — a formal citation with its evidence attached</summary>
+      <summary>Cite this claim: a formal citation with its evidence attached</summary>
       <div style={{ marginTop: ".7rem" }}>
         {state === "loading" && (
           <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--muted)" }}>
@@ -78,7 +78,7 @@ export function CiteClaim({ claimId }: { claimId: string }) {
         )}
         {state === "error" && (
           <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--muted)" }}>
-            The citation could not be assembled — this page may not be connected
+            The citation could not be assembled; this page may not be connected
             to the live graph.
           </p>
         )}

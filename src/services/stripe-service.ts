@@ -1,14 +1,15 @@
 /**
  * Stripe client wrapper (#309). The ONLY module that talks to Stripe.
  *
- * Scope is deliberately small: sell prepaid usage credits via Stripe Checkout
- * (dynamic amount, one-off payment) and verify webhook signatures. Invoices,
- * receipts, and payment-method management stay on Stripe-hosted surfaces;
- * subscriptions/metered-billing plans can layer on later without touching the
- * credit ledger this feeds.
+ * Scope is deliberately small: sell owl packs via Stripe Checkout (fixed
+ * one-off payments, bulk discounts baked into the pack prices) and verify
+ * webhook signatures. Invoices, receipts, and payment-method management stay
+ * on Stripe-hosted surfaces; subscriptions can layer on later without
+ * touching the owl ledger this feeds.
  */
 import Stripe from "stripe";
 import { loadConfig } from "../config.js";
+import type { OwlPack } from "./owl.js";
 
 let _stripe: Stripe | null = null;
 
@@ -33,13 +34,15 @@ export interface CheckoutSessionResult {
 }
 
 /**
- * Create a Checkout Session for a one-off credit purchase. The user identity
- * rides in metadata + client_reference_id so the webhook can credit the right
- * ledger without any state on our side.
+ * Create a Checkout Session for an owl-pack purchase. The user identity and
+ * the pack's owl count ride in metadata + client_reference_id so the webhook
+ * can credit the right ledger with the right face value (the discounted cash
+ * price is what Stripe charges; the OWLS are what the ledger receives)
+ * without any state on our side.
  */
-export async function createCreditCheckoutSession(input: {
+export async function createOwlPackCheckoutSession(input: {
   userId: string;
-  amountUsd: number;
+  pack: OwlPack;
   email?: string | null;
 }): Promise<CheckoutSessionResult> {
   const config = loadConfig();
@@ -51,18 +54,20 @@ export async function createCreditCheckoutSession(input: {
         quantity: 1,
         price_data: {
           currency: "usd",
-          unit_amount: Math.round(input.amountUsd * 100),
+          unit_amount: input.pack.priceCents,
           product_data: {
-            name: "Minerval API credits",
+            name: input.pack.name
+              ? `Minerval owls — ${input.pack.name} (${input.pack.owls} owls)`
+              : `Minerval owls — pack of ${input.pack.owls}`,
             description:
-              "Prepaid credits for LLM-backed Minerval API usage. " +
-              "Drawn down per request in proportion to the model work " +
-              "involved; no expiry.",
+              `${input.pack.owls} owls. One owl buys one claim assessment; ` +
+              "smaller actions (source ingestion, page analysis) cost " +
+              "fractions of an owl. No expiry.",
           },
         },
       },
     ],
-    metadata: { user_id: input.userId },
+    metadata: { user_id: input.userId, owls: String(input.pack.owls) },
     client_reference_id: input.userId,
     ...(input.email ? { customer_email: input.email } : {}),
     success_url: `${accountUrl}?purchase=success`,

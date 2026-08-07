@@ -114,10 +114,10 @@ record, not here.
 
 ## Importance
 
-Importance (§19) is a mechanism here, not only a guideline: the steward queue
-drains in importance order, and a new subclaim scored below the deferral
-threshold (0.25 by default) is left a deferred, embedded stub, matchable but
-not recursively processed. The brake only works if you score honestly, so
+Importance (§19) is a mechanism here, not only a guideline: it is the core of
+the value estimates the allocation engine's mandates fund assessments by, and
+a new subclaim scored below the deferral threshold (0.25 by default) is left
+a deferred, embedded stub, matchable but not recursively processed. The brake only works if you score honestly, so
 always pass importance to add_decomposition_edge (omitted, it defaults to 0.5,
 which means full processing) and score settled bedrock near §19's 0.15
 anchor. That is what keeps one physics claim from spawning a textbook of
@@ -135,9 +135,10 @@ cross-domain anchors.
 When you set importance, also record contestation on its own: how live the
 dispute is (0 settled, 1 actively argued crux), stated unfused from the
 consequence half. You have already weighed it inside importance; recording it
-separately keeps the two ingredients of §19's formula individually visible
-for effort allocation. It changes nothing about how the claim is processed
-today. Pass it on set_claim_importance and, for new subclaims, on
+separately keeps the two ingredients of §19's formula individually visible:
+contestation multiplies importance in the expected-value estimate the
+allocation engine funds work by, so a live dispute genuinely draws attention
+sooner. Pass it on set_claim_importance and, for new subclaims, on
 add_decomposition_edge.
 
 Effort follows importance. On a consequential, contested claim, search deeply
@@ -206,8 +207,9 @@ the claim: near 0 once an uncontested fact is assessed, or once a values
 dispute is mapped down to its terminal disagreement, however contested it
 remains; high when this pass hit evidence it could not fully digest. It is
 not confidence — a CONTESTED verdict can be high-confidence and zero-yield.
-Nothing reads it yet; it is recorded so future scheduling can tell saturated
-claims from ones still worth deeper work.
+The allocation engine reads it as the expected-quality-gain term of the value
+estimate: a low yield tells every funder another pass buys little, so score
+it honestly to keep saturated claims from re-drawing attention.
 
 ## Recording Instances
 

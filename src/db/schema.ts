@@ -12,6 +12,7 @@ import {
   index,
   check,
   customType,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 
@@ -75,11 +76,17 @@ export const claims = pgTable(
     // importance (#172 phase 1). Today importance fuses consequence-if-wrong
     // with contestability; splitting the contestability half out is the first
     // step toward scheduling on stakes × expected-yield instead of one fused
-    // score. Recorded by the Extractor (prior) and the Steward (authoritative)
-    // but NOT yet read by the queue, the deferral brake, or effort selection —
-    // phase 2/3 of #172. NULL = not yet judged, deliberately distinct from 0
-    // ("judged settled").
+    // score. Recorded by the Extractor (prior) and the Steward (authoritative),
+    // and read by the composite queue priority below.
     contestation: real("contestation"),
+    // Composite BACKGROUND-QUEUE priority (the allocation core): the drain's
+    // ordering key, computed from importance + expected yield (marginal_yield,
+    // contestation) + user/grant stakes + staleness + provenance with legible
+    // config weights (src/services/priority-service.ts). Deliberately a
+    // SEPARATE column from importance: money and demand may buy queue
+    // position, never epistemic standing (§19 as amended). Refreshed at
+    // enqueue and by the allocation scheduler's sweep.
+    queuePriority: real("queue_priority").notNull().default(0.5),
     // --- Steward work-queue state: the claim row IS the queue ---
     // A claim with steward_state='pending' is awaiting (re)processing by its
     // Steward; the drain always picks the highest-`importance` pending claim, so
@@ -142,10 +149,11 @@ export const claims = pgTable(
   (table) => [
     index("idx_claims_state").on(table.state),
     index("idx_claims_updated").on(table.updatedAt),
-    // Drain ordering: among pending claims, highest importance first. The partial
-    // index keeps it small (only the live work queue) and fast as the graph grows.
+    // Drain ordering: among pending claims, highest composite priority first.
+    // The partial index keeps it small (only the live work queue) and fast as
+    // the graph grows.
     index("idx_claims_steward_queue")
-      .on(table.importance.desc(), table.updatedAt)
+      .on(table.queuePriority.desc(), table.updatedAt)
       .where(sql`steward_state = 'pending'`),
     // Keyword search (`text_search @@ websearch_to_tsquery(...)`) scans this,
     // not the heap, as the graph grows.
@@ -233,6 +241,12 @@ export const assessments = pgTable(
     // the assessor is recorded on the verdict, not just in llm_usage. Nullable:
     // legacy rows predate the column and degrade gracefully (date only in UI).
     model: text("model"),
+    // Funding disclosure (§19 "Queue Priority and Paid Attention"): when the
+    // run that wrote this assessment was paid for — an assessment order or a
+    // grant's budget job — the payer's job id is stamped here MECHANICALLY
+    // from the usage context (never by the agent), so "who funded this
+    // verdict" is always answerable. NULL = ordinary system work.
+    fundedByJobId: uuid("funded_by_job_id"),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -419,7 +433,7 @@ export const jobs = pgTable(
 // `externalId` is the auth subject in the form "<provider>:<subject>"
 // (e.g. "github:12345"), minted by the web app's sign-in flow; the API never
 // talks to the auth provider itself. Consumer concerns (API keys, usage,
-// credits) and contributor concerns (reputation, kudos — #71) both hang off
+// credits) and contributor concerns (reputation, owl awards — #71) both hang off
 // this row.
 // ---------------------------------------------------------------------------
 export const contributors = pgTable("contributors", {
@@ -434,9 +448,14 @@ export const contributors = pgTable("contributors", {
   contributionsEscalated: integer("contributions_escalated")
     .notNull()
     .default(0),
-  // Kudos total (#71) — denormalized SUM of kudos_events for cheap profile and
-  // leaderboard reads; kudos_events is the source of truth.
-  kudos: integer("kudos").notNull().default(0),
+  // Lifetime owls EARNED from accepted contributions (#71 recognition, now
+  // paid in the spendable currency) — denormalized SUM of the owl_ledger's
+  // contribution_award rows, in face-value micro-USD, for cheap profile and
+  // leaderboard reads. Lifetime-earned (not balance) so spending owls never
+  // lowers a contributor's standing; owl_ledger is the source of truth.
+  owlsEarnedMicroUsd: bigint("owls_earned_micro_usd", { mode: "number" })
+    .notNull()
+    .default(0),
   // Good-faith-free / bad-faith-pay standing (#71):
   //   'good'     — contribution is free (always, even when rejected on merits).
   //   'must_pay' — a suspected-bad-faith flag was recorded; contributing now
@@ -540,6 +559,11 @@ export const llmUsage = pgTable(
       .notNull()
       .default(0),
     jobId: uuid("job_id"),
+    // The claim whose stewardship this call served (#217): makes per-claim
+    // cost a query instead of unrecoverable — the marginal-cost half of the
+    // allocation estimate. Plain uuid (like jobId): metering must stay a
+    // cheap, unconditional insert.
+    claimId: uuid("claim_id"),
     requestId: text("request_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -549,44 +573,574 @@ export const llmUsage = pgTable(
     index("idx_llm_usage_user_time").on(table.userId, table.createdAt),
     index("idx_llm_usage_key_time").on(table.apiKeyId, table.createdAt),
     index("idx_llm_usage_time").on(table.createdAt),
+    index("idx_llm_usage_claim").on(table.claimId),
+    // Budget pacing sums a job's metered cost on every check — the hottest
+    // read of the highest-volume table; it must not seq-scan.
+    index("idx_llm_usage_job").on(table.jobId),
   ]
 );
 
 // ---------------------------------------------------------------------------
-// credits_ledger
+// owl_ledger
 //
-// Purchased-credit grants (#309) — the table the billing seam predicted
-// (src/services/billing-service.ts). One row per credit event, in micro-USD:
-// positive = a grant (Stripe Checkout purchase, promo, manual adjustment),
-// negative = a clawback (refund, correction). Metered SPEND is deliberately
-// NOT duplicated here: llm_usage already stores cost_micro_usd per call, so a
-// user's paid consumption is derived as their monthly usage beyond the free
-// grant, and balance = SUM(ledger) − that overage (see credit-service.ts).
+// The one spendable balance: owls, the platform's unit of account (1 owl =
+// OWL_PRICE_MICRO_USD of face value, ~$4 ≈ one claim assessment). Every earn
+// and every spend is an explicit signed row in face-value micro-USD, and
+// balance = SUM(amount_micro_usd) — no derived drawdown against llm_usage
+// (which remains internal cost observability, not the bill). Positive rows:
+// purchases (Stripe packs), signup/monthly free grants, contribution awards,
+// escrow refunds. Negative rows: flat-price charges, escrow holds, clawbacks.
 //
-// stripeCheckoutSessionId is UNIQUE so webhook delivery is idempotent — Stripe
-// retries and can emit both checkout.session.completed and
-// async_payment_succeeded for one purchase; one session credits exactly once.
+// idempotencyKey is UNIQUE so every grant path is safely re-runnable: Stripe
+// webhook retries ("stripe:<session_id>"), the one-time signup grant
+// ("signup:<user_id>"), and the monthly trickle ("monthly:<user_id>:<YYYY-MM>")
+// each credit exactly once.
+//
+// claimId / contributionId / jobId attribute the row for the account-page
+// history ("1 owl — assessment of claim X"); they never affect the balance.
+// jobId points at the budgeted-jobs entity (escrow holds/refunds) and is a
+// plain uuid until that table lands.
 // ---------------------------------------------------------------------------
-export const creditsLedger = pgTable(
-  "credits_ledger",
+export const owlLedger = pgTable(
+  "owl_ledger",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id")
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),
-    // Positive = grant, negative = clawback. Micro-USD (1e-6 USD), matching
-    // llm_usage.cost_micro_usd so balance arithmetic never converts units.
+    // Signed face value in micro-USD (1e-6 USD), matching
+    // llm_usage.cost_micro_usd so cost/price arithmetic never converts units.
     amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
-    // purchase | refund | promo | adjustment
+    // purchase | signup_grant | monthly_grant | contribution_award | charge |
+    // refund | escrow_hold | escrow_refund | admin_adjust
     reason: text("reason").notNull().default("purchase"),
+    // For charges/refunds: the priced operation (claim_proposal,
+    // source_ingest, extension_analysis, …) — see src/services/owl.ts.
+    op: text("op"),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    contributionId: uuid("contribution_id").references(() => contributions.id, {
+      onDelete: "set null",
+    }),
+    jobId: uuid("job_id"),
+    idempotencyKey: text("idempotency_key").unique(),
     stripeEventId: text("stripe_event_id"),
-    stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("idx_credits_ledger_user").on(table.userId)]
+  (table) => [
+    index("idx_owl_ledger_user_time").on(table.userId, table.createdAt),
+    index("idx_owl_ledger_contribution").on(table.contributionId),
+  ]
 );
+
+// ---------------------------------------------------------------------------
+// assessment_orders
+//
+// A user's purchase of one Steward assessment of one claim — the demand side
+// of the owl economy. Orders run on the EXPRESS lane: dispatched ahead of the
+// background importance-ordered drain (a purchase doesn't queue), with the
+// run's spend attributed to the ordering user via the usage context.
+//
+// Charge-at-start: the order is created UNCHARGED (chargeEntryId null) and
+// the owl is debited by the dispatcher at the moment the Steward run begins —
+// so a pending order cancels free, and a user is never charged for work that
+// hasn't started. A proposal-funded order (contributionId set) was already
+// paid by the claim_proposal charge and is never charged again.
+//
+// Lifecycle: pending → running → done | failed (refunded if charged);
+// pending → cancelled (free). A transient failure returns the order to
+// pending WITH its charge intact, so the retry doesn't double-charge.
+// ---------------------------------------------------------------------------
+export const assessmentOrders = pgTable(
+  "assessment_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // Set when this order was funded by an accepted claim proposal's charge.
+    contributionId: uuid("contribution_id").references(() => contributions.id, {
+      onDelete: "set null",
+    }),
+    priceMicroUsd: bigint("price_micro_usd", { mode: "number" }).notNull(),
+    // The owl_ledger debit that paid for this order; null until charged.
+    chargeEntryId: uuid("charge_entry_id").references(() => owlLedger.id, {
+      onDelete: "set null",
+    }),
+    // pending | running | done | cancelled | failed
+    status: text("status").notNull().default("pending"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    // The express drain: oldest pending first. Partial index = just the lane.
+    index("idx_orders_pending")
+      .on(table.createdAt)
+      .where(sql`status = 'pending'`),
+    index("idx_orders_user_time").on(table.userId, table.createdAt),
+    index("idx_orders_claim").on(table.claimId),
+    // One OPEN order per user per claim, enforced: two racing clicks (or a
+    // network retry) must join one order, not charge twice.
+    uniqueIndex("uq_orders_open_per_claim")
+      .on(table.userId, table.claimId)
+      .where(sql`status IN ('pending', 'running')`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// actions — the action ledger, the mechanical contract of the allocation
+// engine.
+//
+// One row per potential action the graph could take. Rows that are
+// ALTERNATIVE ways of doing the same thing (assess this claim with the
+// standard model vs. the strong model vs., later, with more effort or
+// research tools) share an exclusion_group: at most one sibling ever
+// runs. This table directly and mechanically governs execution — the
+// executors are dumb loops over covered rows, and every judgment (what
+// is valuable, which variant, how much to back) lives upstream in
+// mandate_valuations and action_allocations.
+// ---------------------------------------------------------------------------
+
+export const actions = pgTable(
+  "actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // assess | reassess | ingest | grant_planning (a registry, extensible)
+    kind: text("kind").notNull(),
+    // Siblings sharing this key are mutually exclusive alternatives,
+    // e.g. 'assess:<claim_id>' or 'ingest:<url>'.
+    exclusionGroup: text("exclusion_group").notNull(),
+    // The way of doing it: standard | strong (| strong+elicit, ...).
+    variant: text("variant").notNull().default("standard"),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    // Non-claim targets: a source URL, a grant id.
+    targetRef: text("target_ref"),
+    // Human description for surfaces (never a bare id).
+    label: text("label").notNull(),
+    // Shared, objective expected cost (refreshed from cost estimates).
+    costEstMicroUsd: bigint("cost_est_micro_usd", { mode: "number" })
+      .notNull(),
+    // open | running | done | superseded | cancelled
+    status: text("status").notNull().default("open"),
+    meteredCostMicroUsd: bigint("metered_cost_micro_usd", { mode: "number" }),
+    // The budget job the run's llm_usage metering was attributed to (the
+    // largest funder's job), stamped at completion. Lets escrow accounting
+    // subtract ledger-consumed metering from a job's llm_usage total so a
+    // self-funded run is never counted twice.
+    meteredJobId: uuid("metered_job_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_actions_group_variant").on(
+      table.exclusionGroup,
+      table.variant
+    ),
+    index("idx_actions_status_kind").on(table.status, table.kind),
+    index("idx_actions_claim").on(table.claimId),
+    index("idx_actions_metered_job").on(table.meteredJobId),
+  ]
+);
+
+export type Action = typeof actions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// mandate_valuations — each mandate's own opinions, sparse.
+//
+// A mandate values only the actions it knows and cares about, by its own
+// definition of importance (the AI Math mandate holds no opinion on a
+// politics claim). Values are written by the mandate's valuer: a formula
+// (the General mandate's allocation policy, run in bulk), a scoped
+// formula, or its Grantmaker's judgment. Value is perspectival and lives
+// here; cost is shared and lives on the action row.
+// ---------------------------------------------------------------------------
+
+export const mandateValuations = pgTable(
+  "mandate_valuations",
+  {
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    actionId: uuid("action_id")
+      .notNull()
+      .references(() => actions.id, { onDelete: "cascade" }),
+    valueEst: real("value_est").notNull(),
+    rationale: text("rationale"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grantId, table.actionId] }),
+    index("idx_mandate_valuations_action").on(table.actionId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// action_allocations — money placed on actions; the engine's only input.
+//
+// An allocation targets an exclusion GROUP ("get this claim assessed"),
+// optionally pinned to one variant row ("...with the strong model"). An
+// unpinned allocation counts toward every sibling's coverage and is
+// consumed by whichever wins; a pinned allocation counts only toward its
+// variant and is RELEASED back to its funder if a sibling wins instead
+// (a vote for a losing way of doing it is returned, not spent). An
+// action runs exactly when its coverage (pinned + unpinned unspent
+// allocations) meets its expected cost; the metered cost of the run is
+// split across the covering allocations pro rata.
+// ---------------------------------------------------------------------------
+export const actionAllocations = pgTable(
+  "action_allocations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exclusionGroup: text("exclusion_group").notNull(),
+    // Pinned variant; NULL = any variant in the group.
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "cascade",
+    }),
+    // Denormalized convenience for claim-scoped queries.
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    // The funder: exactly one of a mandate or a person directly.
+    grantId: uuid("grant_id").references(() => grants.id, {
+      onDelete: "cascade",
+    }),
+    userId: uuid("user_id").references(() => contributors.id, {
+      onDelete: "cascade",
+    }),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // The funder's consumed share of runs this allocation helped cover.
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    // Set when a losing sibling's pinned allocation was returned.
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_action_allocations_group").on(table.exclusionGroup),
+    index("idx_action_allocations_claim").on(table.claimId),
+    index("idx_action_allocations_grant").on(table.grantId),
+    index("idx_action_allocations_user").on(table.userId),
+    // Exactly one funder, positive money, spend never past the amount —
+    // the invariants the comments promise, enforced.
+    check(
+      "ck_action_allocations_one_funder",
+      sql`(grant_id IS NULL) <> (user_id IS NULL)`
+    ),
+    check("ck_action_allocations_amount", sql`amount_micro_usd > 0`),
+    check(
+      "ck_action_allocations_spent",
+      sql`spent_micro_usd >= 0 AND spent_micro_usd <= amount_micro_usd`
+    ),
+    // A mandate holds at most one LIVE placement per (group, pin): the
+    // backstop under the allocators' advisory locks. Fully spent or
+    // released rows are history and don't block re-funding a later pass.
+    uniqueIndex("uq_action_allocations_live_placement")
+      .on(
+        table.grantId,
+        table.exclusionGroup,
+        sql`(COALESCE(${table.actionId}::text, ''))`
+      )
+      .where(
+        sql`released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd`
+      ),
+  ]
+);
+
+
+// ---------------------------------------------------------------------------
+// budget_jobs
+//
+// An escrowed owl budget funding open-ended work — the entity behind every
+// operation whose cost can't be a flat price: deep decomposition today,
+// grantor agents later. Funding writes an owl_ledger escrow_hold (the owls
+// leave the spendable balance immediately); real spend accrues against the
+// budget via llm_usage rows attributed with job_id = this row's id; and on
+// completion/cancellation the unspent remainder returns via escrow_refund.
+//
+// At the budget floor the job PAUSES (status 'paused_budget') with a
+// checkpoint describing progress — it never silently dies mid-run — and a
+// top-up (another escrow_hold) resumes it.
+//
+// Named budget_jobs because `jobs` is the ingestion-pipeline table.
+// ---------------------------------------------------------------------------
+export const budgetJobs = pgTable(
+  "budget_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // deep_decomposition | (grantor_agent, …)
+    kind: text("kind").notNull(),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    // Total escrowed (sum of holds), face-value micro-USD.
+    budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    // running | paused_budget | completed | cancelled | failed
+    status: text("status").notNull().default("running"),
+    // Progress the job reports as it works and when it pauses — what the job
+    // page renders ("assessed 7 of ~12, budget exhausted at claim X").
+    checkpoint: jsonb("checkpoint"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_budget_jobs_user_time").on(table.userId, table.createdAt),
+    index("idx_budget_jobs_running")
+      .on(table.updatedAt)
+      .where(sql`status = 'running'`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// grants
+//
+// A grantmaker's mandate: an escrowed owl budget (the budget_jobs row, kind
+// 'grant') + a SCOPE (a claim's subtree and/or a topic query) + a POLICY for
+// how to spend attention there + public attribution. Scales from a person
+// with 20 owls ("keep my subdomain's cruxes fresh") to an institution
+// funding a whole area through a grantor agent.
+//
+// Policies:
+//   deepen   — steward the scope's pending/deferred claims, buying the depth
+//              the background economics wouldn't (like deep_decomposition).
+//   cover    — get every in-scope claim at least one assessment, breadth
+//              first.
+//   maintain — reassess in-scope claims whose assessment has gone stale.
+//   agent    — a grantor agent surveys the scope and proposes an allocation
+//              plan (stored on `plan`); the funder approves it before an owl
+//              is spent, then execution is mechanical.
+//
+// Grant work runs on the grant's own budget (steward runs metered to the
+// budget job) and records claim_stakes (source 'grant') for attribution and
+// background-priority subsidy. Assessments produced under a grant carry
+// funded_by_job_id — the §19 disclosure that funding is visible, while the
+// verdict's standards never change.
+// ---------------------------------------------------------------------------
+export const grants = pgTable(
+  "grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    funderUserId: uuid("funder_user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    budgetJobId: uuid("budget_job_id")
+      .notNull()
+      .references(() => budgetJobs.id, { onDelete: "cascade" }),
+    // The mandate's working title, shown ONLY on the funder's own dashboard.
+    // Never rendered on claim surfaces: funding disclosures there describe
+    // the arrangement ("a funded mandate"), not the party (§12/§19).
+    name: text("name").notNull(),
+    // Scope: a subtree root and/or a keyword query — at least one.
+    scopeClaimId: uuid("scope_claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    scopeQuery: text("scope_query"),
+    // deepen | cover | maintain | agent
+    policy: text("policy").notNull(),
+    // planning | pending_approval | active | completed | cancelled
+    // (budget pauses live on the budget job; the grant status is the
+    // mandate's lifecycle).
+    status: text("status").notNull().default("active"),
+    // The grantor agent's proposed allocation (policy 'agent'):
+    // [{claim_id, action: 'assess'|'deepen', rationale}], plus the agent's
+    // overall strategy note. Executed in order once approved.
+    plan: jsonb("plan"),
+    planCursor: integer("plan_cursor").notNull().default(0),
+    // The full Grantmaker-drafted mandate (title, objective, plan, quote,
+    // notes) copied here at funding time — the public dashboard's text.
+    // Agent-authored, never funder-authored.
+    mandate: jsonb("mandate"),
+    // Platform-run mandates (Minerval's own: Mathematics, AI Economics, …)
+    // get pride of place on the public /mandates page.
+    isPlatform: boolean("is_platform").notNull().default(false),
+    // Optional spend rate: at most this much metered cost per UTC day
+    // (0 = no rate cap, pace bounded by escrow alone). Shared mandate
+    // infrastructure — Minerval's General assessment mandate paces itself
+    // with this, and any funder can set one on their own mandate.
+    dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    // The mandate's own allocation rules, owned and amended by ITS
+    // Grantmaker (update_allocation_policy), never edited directly in
+    // code: value-formula knobs, cost priors, tier threshold, cadence.
+    // Null = inherit the shared defaults (config). The General mandate's
+    // policy governs the platform's own lane — when we learn something
+    // about allocation, we ask its Grantmaker to change the formula.
+    allocationPolicy: jsonb("allocation_policy"),
+    // The Grantmaker's own working memory: a document it reads in full at
+    // the start of every review pass and rewrites as it works — its map
+    // of the territory, source backlog, strategy, open questions. Owned
+    // entirely by the agent; a mandate-scale mission is impossible
+    // without durable working state between passes.
+    workspace: text("workspace"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grants_funder").on(table.funderUserId, table.createdAt),
+    index("idx_grants_status").on(table.status),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// regrants
+//
+// A grant funding another grant. All grants live on the same level: any
+// mandate can be funded separately (user contributions) AND fund other
+// mandates — carving budget out for ingestion run by another Grantmaker,
+// splitting basic research from applications, and so on. A regrant moves
+// escrowed budget from the source grant's budget job to the target's:
+// the amount counts against the source's committed money (headroom and
+// pause checks include it) and joins the target's refund basis, so when
+// the target settles with unspent budget the source's share flows back
+// into its escrow, pro rata with the target's user contributors.
+// ---------------------------------------------------------------------------
+export const regrants = pgTable(
+  "regrants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromGrantId: uuid("from_grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    toGrantId: uuid("to_grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // The Grantmaker's one-line why, recorded with the transfer.
+    note: text("note"),
+    // Unspent share returned to the source when the target settled.
+    refundedMicroUsd: bigint("refunded_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_regrants_from").on(table.fromGrantId),
+    index("idx_regrants_to").on(table.toGrantId),
+    check("ck_regrants_amount", sql`amount_micro_usd > 0`),
+    check(
+      "ck_regrants_refunded",
+      sql`refunded_micro_usd >= 0 AND refunded_micro_usd <= amount_micro_usd`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// grant_sources
+//
+// The ingestion-pipeline record: one row per source a grant ingested (an
+// 'ingest' plan item executed). What the public mandate dashboard's
+// pipeline view digs into: joined through claim_instances it answers
+// "where are the claims coming from" and "what do they look like"
+// (importance and contestation distributions per source, match vs create
+// rates), and the Grantmaker's analytics tools read the same rows.
+// ---------------------------------------------------------------------------
+
+export const grantSources = pgTable(
+  "grant_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    // The extraction job, for status ("queued/processing/completed/failed").
+    jobId: uuid("job_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grant_sources_grant").on(table.grantId, table.createdAt),
+  ]
+);
+
+export type GrantSource = typeof grantSources.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// grant_conversations
+//
+// Grantmaking is a conversation, not a form: a funder talks a mandate
+// through with the grantmaker agent (best model, constitution loaded), the
+// agent surveys the graph, quotes expected costs in owls, and drafts a
+// mandate; nothing is escrowed until the funder explicitly funds the draft.
+// The transcript is the record of that negotiation; the drafted mandate and
+// the eventual grant link ride alongside.
+// ---------------------------------------------------------------------------
+
+export const grantConversations = pgTable(
+  "grant_conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // active | proposed | funded | declined | abandoned
+    status: text("status").notNull().default("active"),
+    // [{role: 'user'|'assistant', content, at}] — the visible transcript.
+    // Tool traffic stays internal.
+    messages: jsonb("messages").notNull().default([]),
+    // The agent's drafted mandate once the conversation converges:
+    // {title, objective, scope_claim_id?, scope_query?, plan: {strategy,
+    //  items: [...]}, expected_cost_owls, notes}. Null until proposed.
+    mandate: jsonb("mandate"),
+    // Set when the mandate was funded and became a grant.
+    grantId: uuid("grant_id").references(() => grants.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_grant_convos_user").on(table.userId, table.createdAt),
+  ]
+);
+
+export type GrantConversation = typeof grantConversations.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // oauth_clients
@@ -881,44 +1435,6 @@ export const reputationEvents = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// kudos_events
-//
-// Append-only ledger of kudos (#71) — recognition of *helpful* contributions,
-// deliberately separate from reputation (which gates privileges). Mirrors the
-// llm_usage meter's shape (per-event rows, time-bucketed indexes) so it can
-// later convert to payouts for top contributors the way llm_usage maps onto a
-// consumer credits ledger. `contributors.kudos` caches the SUM.
-// ---------------------------------------------------------------------------
-export const kudosEvents = pgTable(
-  "kudos_events",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    contributorId: uuid("contributor_id")
-      .notNull()
-      .references(() => contributors.id, { onDelete: "cascade" }),
-    contributionId: uuid("contribution_id").references(() => contributions.id, {
-      onDelete: "set null",
-    }),
-    amount: integer("amount").notNull(),
-    // 'accepted_contribution' | 'survived_appeal' — see kudos-service.ts
-    reason: text("reason").notNull(),
-    // Who assigned it: 'system' (deterministic rules) today; peer signal or
-    // review agents may join later without a schema change.
-    awardedBy: text("awarded_by").notNull().default("system"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("idx_kudos_events_contributor_time").on(
-      table.contributorId,
-      table.createdAt
-    ),
-    index("idx_kudos_events_time").on(table.createdAt),
-  ]
-);
-
-// ---------------------------------------------------------------------------
 // reconciliation_events
 //
 // An append-only audit log of the Curator's re-individuation surgery (§18):
@@ -1091,8 +1607,8 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 export type LlmUsage = typeof llmUsage.$inferSelect;
 export type NewLlmUsage = typeof llmUsage.$inferInsert;
-export type CreditsLedgerEntry = typeof creditsLedger.$inferSelect;
-export type NewCreditsLedgerEntry = typeof creditsLedger.$inferInsert;
+export type OwlLedgerEntry = typeof owlLedger.$inferSelect;
+export type NewOwlLedgerEntry = typeof owlLedger.$inferInsert;
 export type OAuthClient = typeof oauthClients.$inferSelect;
 export type NewOAuthClient = typeof oauthClients.$inferInsert;
 export type OAuthAuthorizationRequest =
@@ -1111,11 +1627,17 @@ export type ArbitrationResult = typeof arbitrationResults.$inferSelect;
 export type NewArbitrationResult = typeof arbitrationResults.$inferInsert;
 export type ReputationEvent = typeof reputationEvents.$inferSelect;
 export type NewReputationEvent = typeof reputationEvents.$inferInsert;
-export type KudosEvent = typeof kudosEvents.$inferSelect;
-export type NewKudosEvent = typeof kudosEvents.$inferInsert;
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;
 export type AuditRun = typeof auditRuns.$inferSelect;
 export type NewAuditRun = typeof auditRuns.$inferInsert;
 export type AuditFinding = typeof auditFindings.$inferSelect;
+export type AssessmentOrder = typeof assessmentOrders.$inferSelect;
+export type NewAssessmentOrder = typeof assessmentOrders.$inferInsert;
+export type ActionAllocation = typeof actionAllocations.$inferSelect;
+export type NewActionAllocation = typeof actionAllocations.$inferInsert;
+export type BudgetJob = typeof budgetJobs.$inferSelect;
+export type NewBudgetJob = typeof budgetJobs.$inferInsert;
+export type Grant = typeof grants.$inferSelect;
+export type NewGrant = typeof grants.$inferInsert;
 export type NewAuditFinding = typeof auditFindings.$inferInsert;

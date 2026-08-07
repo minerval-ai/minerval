@@ -7,8 +7,11 @@ import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline, enqueueCurator } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
+import { rawQuery } from "../db/client.js";
+import { settleMeteredCharge } from "../services/owl-ledger-service.js";
+import { fetchPublicUrl } from "../services/url-guard.js";
 
 /**
  * Handle a URL extraction message:
@@ -27,14 +30,126 @@ export async function handleUrlExtraction(
   message: UrlExtractionMessage
 ): Promise<void> {
   const job = await getJobById(message.jobId);
-  return runWithUsageContext(
-    {
-      userId: job?.userId ?? null,
-      apiKeyId: job?.apiKeyId ?? null,
-      jobId: message.jobId,
-    },
-    () => processUrlExtraction(message)
-  );
+  let billedMicroUsd: number;
+  try {
+    ({ billedMicroUsd } = await runWithUsageContext(
+      {
+        userId: job?.userId ?? null,
+        apiKeyId: job?.apiKeyId ?? null,
+        // A grant-funded ingestion meters against the grant's budget job so
+        // the spend draws down the escrow, not the submitter's balance.
+        jobId: message.meterJobId ?? message.jobId,
+      },
+      () => withCostMeter(() => processUrlExtraction(message))
+    ));
+  } catch (err) {
+    // A failed extraction must still terminate the ledger ingest action —
+    // left 'running' it would strand its funders' allocations, and a
+    // reconcile reopen would re-submit (and re-charge) the same URL.
+    // Cancelling retires the group; the plan cursor skips cancelled items.
+    await cancelIngestAction(message.url);
+    throw err;
+  }
+  // Escrow-funded ingestions were never cap-charged; nothing to settle.
+  if (!message.meterJobId) {
+    await settleSourceIngestCharge(message.sourceId, billedMicroUsd);
+  }
+  // If this extraction executes a ledger ingest action (the engine
+  // executor left it 'running'), close it now with the real metered cost:
+  // funders' pro-rata shares follow actual spend, never the estimate.
+  await completeIngestAction(message.url, billedMicroUsd, message.meterJobId);
+}
+
+async function completeIngestAction(
+  url: string,
+  billedMicroUsd: number,
+  meterJobId?: string
+): Promise<void> {
+  try {
+    // 'open' too: a reconcile sweep may have reopened a slow action while
+    // this extraction was still in flight — the guarded completeAction
+    // closes it exactly once either way.
+    const [live] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions
+        WHERE exclusion_group = $1 AND status IN ('running', 'open')
+        LIMIT 1`,
+      [`ingest:${url}`]
+    );
+    if (!live) return;
+    const { completeAction } = await import(
+      "../services/action-service.js"
+    );
+    await completeAction(live.id, billedMicroUsd, {
+      meteredJobId: meterJobId ?? null,
+    });
+  } catch (err) {
+    console.error(
+      "[url-extraction] ingest action completion failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+async function cancelIngestAction(url: string): Promise<void> {
+  try {
+    await rawQuery(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
+      [`ingest:${url}`]
+    );
+  } catch (err) {
+    console.error(
+      "[url-extraction] ingest action cancellation failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
+ * Settle the source_ingest cap charge behind this extraction, if there is
+ * one (governed intake links the charge to the contribution; direct service
+ * submissions were never charged). The submitter pays the metered cost of
+ * extraction + matching, never more than the cap.
+ */
+async function settleSourceIngestCharge(
+  sourceId: string,
+  billedMicroUsd: number
+): Promise<void> {
+  try {
+    // Every charge behind this source settles (two users can propose the
+    // same URL; only one extraction runs, but each paid a cap). The first
+    // charge pays the metered cost; later ones settle in full.
+    const charges = await rawQuery<{
+      id: string;
+      user_id: string;
+      amount_micro_usd: number;
+      contribution_id: string;
+    }>(
+      `SELECT ol.id, ol.user_id, ol.amount_micro_usd, ol.contribution_id
+         FROM owl_ledger ol
+         JOIN contributions ct ON ct.id = ol.contribution_id
+        WHERE ol.reason = 'charge' AND ol.op = 'source_ingest'
+          AND ct.source_id = $1
+        ORDER BY ol.created_at ASC`,
+      [sourceId]
+    );
+    for (const [i, charge] of charges.entries()) {
+      await settleMeteredCharge({
+        userId: charge.user_id,
+        capMicroUsd: -Number(charge.amount_micro_usd),
+        meteredMicroUsd: i === 0 ? billedMicroUsd : 0,
+        settleKey: charge.id,
+        op: "source_ingest",
+        contributionId: charge.contribution_id,
+      });
+    }
+  } catch (err) {
+    // A missed settlement favours the platform; never fail the extraction.
+    console.error(
+      "[url-extraction] source_ingest settlement failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 async function processUrlExtraction(
@@ -215,15 +330,9 @@ function clampUnit(value: unknown): number | undefined {
 }
 
 async function fetchUrlContent(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Minerval/1.0 (Knowledge Graph Indexer)",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
-  }
-
-  return response.text();
+  // SSRF-guarded: ingest URLs come from user proposals, grant plans, and
+  // the review agent's own web research — every hop must be public
+  // (src/services/url-guard.ts). A refused URL fails the job like any
+  // other unfetchable source.
+  return fetchPublicUrl(url);
 }

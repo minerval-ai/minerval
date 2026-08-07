@@ -33,7 +33,31 @@ export interface SweepStats {
   contributionsRequeued: number;
   escalationsRequeued: number;
   appealsRequeued: number;
+  ordersRequeued: number;
   parked: number;
+}
+
+/** How long a dispatched order may sit 'running' before we presume the
+ * worker died. Longer than any real Steward run; the claim-slot reclaim
+ * (15 min) prevents a double run either way, and the order's idempotent
+ * charge key (`charge:order:<id>`) makes the re-dispatch charge a no-op. */
+const ORDER_RECLAIM_MINUTES = 45;
+
+/**
+ * Return crashed orders to the pending lane (#stuck-running): a worker
+ * death after the charge left the user's owls taken, the run never
+ * settled, and the open-order check blocking the claim forever. The charge
+ * rides along (charge_entry_id survives), so the retry never double-debits.
+ */
+async function sweepStuckOrders(): Promise<number> {
+  const rows = await rawQuery<{ id: string }>(
+    `UPDATE assessment_orders
+        SET status = 'pending', started_at = NULL
+      WHERE status = 'running'
+        AND started_at < now() - interval '${ORDER_RECLAIM_MINUTES} minutes'
+      RETURNING id`
+  );
+  return rows.length;
 }
 
 export async function sweepStalledReviewWork(): Promise<SweepStats> {
@@ -89,10 +113,13 @@ export async function sweepStalledReviewWork(): Promise<SweepStats> {
                 AND arbitration_attempts >= ${MAX_REVIEW_ATTEMPTS}) AS n`
   );
 
+  const ordersRequeued = await sweepStuckOrders();
+
   return {
     contributionsRequeued: pending.length,
     escalationsRequeued: escalated.length,
     appealsRequeued: appeals.length,
+    ordersRequeued,
     parked: Number(parked[0]?.n ?? 0),
   };
 }
@@ -115,11 +142,15 @@ export function startRecoverySweep(options: {
     try {
       const stats = await sweepStalledReviewWork();
       const requeued =
-        stats.contributionsRequeued + stats.escalationsRequeued + stats.appealsRequeued;
+        stats.contributionsRequeued +
+        stats.escalationsRequeued +
+        stats.appealsRequeued +
+        stats.ordersRequeued;
       if (requeued > 0 || stats.parked > 0) {
         options.logger.info(
           `[recovery-sweep] requeued ${stats.contributionsRequeued} reviews, ` +
-            `${stats.escalationsRequeued} escalations, ${stats.appealsRequeued} appeals` +
+            `${stats.escalationsRequeued} escalations, ${stats.appealsRequeued} appeals, ` +
+            `${stats.ordersRequeued} orders` +
             (stats.parked > 0
               ? `; ${stats.parked} parked at the attempt cap — needs an operator`
               : "")

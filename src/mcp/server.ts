@@ -23,7 +23,12 @@ import {
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig } from "../config.js";
 import type { RequestAuth } from "../server/plugins/auth.js";
-import { checkAgenticQuota } from "../server/plugins/quota.js";
+import {
+  checkAgenticQuota,
+  withAgenticCharge,
+  type QuotaDecision,
+} from "../server/plugins/quota.js";
+import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
 import { hybridSearch } from "../services/search-service.js";
 import {
@@ -104,34 +109,38 @@ function formatAssessment(
 
 /**
  * Gate + attribute an agentic (LLM-backed) tool call: enforce the shared
- * rate-limit/monthly-grant quota, then run the work inside a usage context so
- * the metering chokepoint (llm/client.ts) attributes every token to the
- * calling account and key.
+ * rate-limit/owl-price quota, charge the flat price as the work starts
+ * (refunded if it throws — the user shouldn't pay for our failure), and run
+ * the work inside a usage context so the metering chokepoint (llm/client.ts)
+ * attributes every token to the calling account and key.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
+  op: PricedOp,
   fn: () => Promise<T>
 ): Promise<{ ok: true; value: T } | { ok: false; denied: CallToolResult }> {
-  const decision = await checkAgenticQuota(ctx.auth);
-  if (!decision.allowed) {
-    return {
-      ok: false,
-      denied: errorResult(
-        decision.code!,
-        decision.message!,
-        decision.entitlement ? { entitlement: decision.entitlement } : undefined
-      ),
-    };
-  }
-  const value = await runWithUsageContext(
-    {
-      userId: ctx.auth.userId,
-      apiKeyId: ctx.auth.apiKeyId,
-      requestId: ctx.requestId,
-    },
-    fn
+  const toDenied = (decision: QuotaDecision): CallToolResult =>
+    errorResult(
+      decision.code!,
+      decision.message!,
+      decision.entitlement ? { entitlement: decision.entitlement } : undefined
+    );
+
+  const decision = await checkAgenticQuota(ctx.auth, op);
+  if (!decision.allowed) return { ok: false, denied: toDenied(decision) };
+
+  const run = await withAgenticCharge(ctx.auth, op, {}, () =>
+    runWithUsageContext(
+      {
+        userId: ctx.auth.userId,
+        apiKeyId: ctx.auth.apiKeyId,
+        requestId: ctx.requestId,
+      },
+      fn
+    )
   );
-  return { ok: true, value };
+  if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
+  return { ok: true, value: run.value };
 }
 
 /** Match one assertion against the graph and shape the shared result. */
@@ -343,7 +352,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       },
     },
     async ({ assertion, context }) => {
-      const run = await agentic(ctx, () => matchAssertion(assertion, context));
+      const run = await agentic(ctx, "text_analysis", () =>
+        matchAssertion(assertion, context)
+      );
       if (!run.ok) return run.denied;
       return jsonResult(run.value);
     }
@@ -371,7 +382,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       },
     },
     async ({ text, source_type, max_claims }) => {
-      const run = await agentic(ctx, () =>
+      const run = await agentic(ctx, "text_analysis", () =>
         extractClaims({
           content: text,
           sourceType: source_type,
@@ -407,7 +418,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       },
     },
     async ({ text, max_claims }) => {
-      const run = await agentic(ctx, async () => {
+      const run = await agentic(ctx, "text_analysis", async () => {
         const extracted = await extractClaims({
           content: text,
           sourceType: "assess_text",

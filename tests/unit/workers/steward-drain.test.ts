@@ -11,6 +11,10 @@ const { runCalls, state } = vi.hoisted(() => ({
   runCalls: [] as string[],
   state: {
     pending: [] as string[],
+    // Claims whose assess action is covered on the ledger: the executor
+    // runs these ahead of everything, outside the fallback daily budget.
+    fundedPending: [] as string[],
+    completedActions: [] as string[],
     budgetThrows: false,
     // Per-claim attempt counter, keyed by id (defaults 0), so a requeued claim
     // is re-served with its incremented count like the real DB column.
@@ -23,16 +27,10 @@ const { runCalls, state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../../src/db/client.js", () => ({
-  rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
-    // Dispatch keys: SKIP LOCKED is unique to the task-claim query (the
-    // terminal writes also mention 'running' in their mid-run guards, so the
-    // state literal alone no longer identifies a claim). The quoted 'error' /
-    // 'pending' literals identify the park and requeue writes; the guarded
-    // success write ('done') is a no-op here.
-    if (q.includes("SKIP LOCKED")) {
-      const id = state.pending.shift();
-      return id
+const { handleQuery } = vi.hoisted(() => ({
+  handleQuery: async (q: string, params: unknown[] = []) => {
+    const serve = (id: string | undefined) =>
+      id
         ? [
             {
               id,
@@ -42,8 +40,53 @@ vi.mock("../../../src/db/client.js", () => ({
             },
           ]
         : [];
+    // nextRunnableAction: the ledger's covered open actions. Serve a
+    // covered standard assess action for the head of fundedPending.
+    if (q.includes("FROM actions a") && q.includes("coverage_micro_usd")) {
+      const id = state.fundedPending[0];
+      return id
+        ? [
+            {
+              id: `act:${id}`,
+              kind: "assess",
+              exclusion_group: `assess:${id}`,
+              variant: "standard",
+              claim_id: id,
+              target_ref: null,
+              cost_est_micro_usd: 150_000,
+              coverage_micro_usd: 150_000,
+            },
+          ]
+        : [];
     }
+    // claimAction / completeAction / releaseAction / supersede / cancel.
+    // The done-transition (metered) check comes first: its guard clause
+    // also mentions 'running', so the claimAction match must not eat it.
+    if (q.includes("UPDATE actions")) {
+      if (q.includes("metered_cost_micro_usd = $2")) {
+        state.completedActions.push(params[0] as string);
+        return [
+          { id: params[0], exclusion_group: `assess:${state.fundedPending[0] ?? "?"}` },
+        ];
+      }
+      if (q.includes("'running'")) return [{ id: params[0] }];
+      return [];
+    }
+    // Allocation reads/writes inside completeAction/largestActionFunder:
+    // no allocations in the mock; the SQL is covered live.
+    if (q.includes("action_allocations")) return [];
+    // The General mandate lookup: none seeded in these tests.
+    if (q.includes("is_platform")) return [];
+    if (q.includes("llm_usage")) return [];
     if (q.includes("count(")) return [{ n: state.pending.length }];
+    // The fallback lane's claim-select (SKIP LOCKED) vs the covered lane's
+    // claim-claim by id (WHERE id = $1).
+    if (q.includes("UPDATE claims") && q.includes("stewarded_at = now()")) {
+      if (q.includes("SKIP LOCKED")) return serve(state.pending.shift());
+      const id = params[0] as string;
+      if (state.fundedPending[0] === id) state.fundedPending.shift();
+      return serve(id);
+    }
     if (q.startsWith("UPDATE")) {
       const id = params[0] as string;
       if (q.includes("'error'")) {
@@ -57,7 +100,14 @@ vi.mock("../../../src/db/client.js", () => ({
       }
     }
     return [];
-  }),
+  },
+}));
+
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: vi.fn(handleQuery),
+  withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ query: handleQuery })
+  ),
 }));
 
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
@@ -86,6 +136,8 @@ describe("Steward DB-backed drain", () => {
   beforeEach(() => {
     runCalls.length = 0;
     state.pending = [];
+    state.fundedPending = [];
+    state.completedActions = [];
     state.budgetThrows = false;
     state.attempts = {};
     state.throwFor = null;
@@ -98,6 +150,18 @@ describe("Steward DB-backed drain", () => {
     const res = await drainStewardQueue();
     expect(runCalls).toEqual(["a", "b", "c"]);
     expect(res).toEqual({ processed: 3, budgetHit: false });
+  });
+
+  it("serves covered ledger actions first and closes them on success", async () => {
+    state.pending = ["a"];
+    state.fundedPending = ["funded-1"];
+    const res = await drainStewardQueue();
+    // The covered action runs before the fallback lane's pick, and its
+    // ledger row is completed (siblings superseded, cost consumed — the
+    // allocation SQL itself is covered live).
+    expect(runCalls).toEqual(["funded-1", "a"]);
+    expect(state.completedActions).toEqual(["act:funded-1"]);
+    expect(res.processed).toBe(2);
   });
 
   it("stops at maxTasks, leaving the rest pending (stubs)", async () => {

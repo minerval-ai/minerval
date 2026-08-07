@@ -46,7 +46,7 @@ const REVIEWER_LABELS: Record<string, string> = {
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
-    ? "—"
+    ? "–"
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -60,7 +60,7 @@ export async function generateMetadata({
   const label = detail
     ? TYPE_LABELS[detail.contribution.contribution_type] ?? "Contribution"
     : "Contribution";
-  return { title: `${label} — Minerval` };
+  return { title: `${label} · Minerval` };
 }
 
 export default async function ContributionPage({
@@ -191,10 +191,10 @@ export default async function ContributionPage({
             )}
             {c.review_status === "rejected" && (
               <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
-                A rejection can be appealed (<code>POST /appeals</code> with
-                this contribution&rsquo;s id); appeals go to the Dispute
-                Arbitrator, and an overturned decision restores standing,
-                reputation, and kudos in full.
+                A rejection can be appealed through the API
+                (<code>POST /appeals</code> with this contribution&rsquo;s id).
+                Appeals go to the Dispute Arbitrator, and an overturned
+                decision restores standing, reputation, and owls in full.
               </p>
             )}
           </>

@@ -1,26 +1,37 @@
 /**
- * Billing service — the seam where Stripe attaches (#70), now attached (#309).
+ * Billing service — the owl economy's entitlement surface.
  *
- * Two providers implement the interface #70 shipped:
- *   - FreeTierBillingProvider — everyone on the monthly trial grant; beyond it
- *     agentic endpoints 402. Active while Stripe is unconfigured.
- *   - StripeBillingProvider — the same free grant, plus purchased credits from
- *     credits_ledger (bought via Stripe Checkout, credited by webhook — see
- *     src/routes/billing.ts). Selected automatically when STRIPE_SECRET_KEY
- *     holds a real key. Nothing at the call sites (quota preHandler,
- *     /users/me, /usage) changed — exactly the swap #70 planned.
+ * The bill is the owl ledger (src/services/owl-ledger-service.ts): every
+ * agentic operation carries a per-run owl cap (src/services/owl.ts) charged
+ * as an explicit debit at the quota gate, with the unused fraction settled
+ * back after the meter runs. Balance = SUM(ledger). llm_usage metering
+ * underneath is what the settlement reads — the user pays metered cost-plus,
+ * never more than the cap.
  *
- * Free-vs-metered boundary (also documented in docs/accounts.md):
+ * Free-vs-priced boundary (also documented in docs/accounts.md):
  *   - Non-agentic reads (claim lookup, search, trees) are free and generous —
  *     they never touch this service.
- *   - Agentic surfaces (source ingestion, claim proposal, future extension /
- *     chat endpoints) consume the monthly grant.
+ *   - Agentic surfaces (claim proposal, source ingestion, extension, MCP
+ *     text tools) charge up to their cap from the owl balance.
  *   - Contribution review costs are system overhead, not user spend: good-
- *     faith contribution stays free (#71).
+ *     faith contribution stays free (#71) — and accepted contributions EARN
+ *     owls (contribution-award-service).
+ *
+ * Whether owls can be PURCHASED depends on Stripe being configured; the free
+ * signup/monthly grants work either way.
  */
 import { loadConfig } from "../config.js";
-import { getMonthToDateCostMicroUsd } from "./usage-service.js";
-import { getCreditBalanceMicroUsd } from "./credit-service.js";
+import {
+  ensureFreeGrants,
+  getOwlBalanceMicroUsd,
+} from "./owl-ledger-service.js";
+import {
+  microUsdToOwls,
+  owlPacks,
+  capListOwls,
+  capOwls,
+  type PricedOp,
+} from "./owl.js";
 
 /**
  * Is paid billing switched on for this deployment? True only when the secret
@@ -33,116 +44,87 @@ export function stripeConfigured(): boolean {
 }
 
 export interface Entitlement {
-  plan: "free" | "credits";
-  /** Monthly grant of metered (agentic) usage, in micro-USD of derived cost. */
-  monthlyGrantMicroUsd: number;
-  usedMicroUsd: number;
-  remainingMicroUsd: number;
-  /** Purchased-credit balance in micro-USD (always 0 on the free provider). */
-  creditBalanceMicroUsd: number;
-  /** Whether this deployment can sell credits (drives the 402 message + UI). */
+  /** Spendable balance in owls (fractional) and its exact micro-USD value. */
+  owlBalance: number;
+  owlBalanceMicroUsd: number;
+  /** What one owl costs to buy, in micro-USD ($4). Display only. */
+  owlPriceMicroUsd: number;
+  /** What one owl of spend covers, in micro-USD of metered cost ($1). */
+  owlCostMicroUsd: number;
+  /** Per-run caps, in owls: the MOST each operation can cost. The actual
+   * charge is metered cost-plus, settled after the run — legible before
+   * anything is spent (§15). */
+  capsOwls: Record<PricedOp, number>;
+  /** Whether this deployment can sell owls (drives the 402 message + UI). */
   creditsEnabled: boolean;
-}
-
-export interface SpendCheck {
-  allowed: boolean;
-  entitlement: Entitlement;
+  signupGrantOwls: number;
+  monthlyGrantOwls: number;
 }
 
 /** The wire shape (snake_case) shared by /users/me, /usage, and 402 bodies. */
 export function serializeEntitlement(e: Entitlement) {
   return {
-    plan: e.plan,
-    monthly_grant_micro_usd: e.monthlyGrantMicroUsd,
-    used_micro_usd: e.usedMicroUsd,
-    remaining_micro_usd: e.remainingMicroUsd,
-    credit_balance_micro_usd: e.creditBalanceMicroUsd,
+    owl_balance: e.owlBalance,
+    owl_balance_micro_usd: e.owlBalanceMicroUsd,
+    owl_price_micro_usd: e.owlPriceMicroUsd,
+    owl_cost_micro_usd: e.owlCostMicroUsd,
+    caps_owls: e.capsOwls,
     credits_enabled: e.creditsEnabled,
+    signup_grant_owls: e.signupGrantOwls,
+    monthly_grant_owls: e.monthlyGrantOwls,
   };
 }
 
-export interface BillingProvider {
-  getEntitlement(userId: string): Promise<Entitlement>;
-  /** May the user start a new metered (agentic) operation right now? */
-  checkSpend(userId: string): Promise<SpendCheck>;
-}
-
 /**
- * The pre-payments provider: everyone is on the free plan with a monthly
- * trial grant (FREE_TIER_MONTHLY_USD). Beyond it, agentic endpoints return
- * 402 — purchasing credits is "not yet available" until Stripe lands.
+ * The user's current entitlement. Ensures the free grants first (idempotent),
+ * which is what makes the signup grant and monthly trickle "lazy" — they land
+ * on whatever entitlement read sees the user first.
  */
-class FreeTierBillingProvider implements BillingProvider {
-  async getEntitlement(userId: string): Promise<Entitlement> {
-    const grant = Math.round(loadConfig().freeTierMonthlyUsd * 1_000_000);
-    const used = await getMonthToDateCostMicroUsd(userId);
-    return {
-      plan: "free",
-      monthlyGrantMicroUsd: grant,
-      usedMicroUsd: used,
-      remainingMicroUsd: Math.max(0, grant - used),
-      creditBalanceMicroUsd: 0,
-      creditsEnabled: false,
-    };
-  }
-
-  async checkSpend(userId: string): Promise<SpendCheck> {
-    const entitlement = await this.getEntitlement(userId);
-    // A grant of 0 disables the free trial entirely; otherwise allow starting
-    // an operation while any grant remains (the operation itself is metered,
-    // so a user can overshoot by at most one operation — acceptable slack for
-    // a trial tier, and the next request is blocked).
-    return { allowed: entitlement.remainingMicroUsd > 0, entitlement };
-  }
+export async function getEntitlement(userId: string): Promise<Entitlement> {
+  const config = loadConfig();
+  await ensureFreeGrants(userId);
+  const balanceMicro = await getOwlBalanceMicroUsd(userId);
+  return {
+    owlBalance: microUsdToOwls(balanceMicro),
+    owlBalanceMicroUsd: balanceMicro,
+    owlPriceMicroUsd: config.owlPriceMicroUsd,
+    owlCostMicroUsd: config.owlCostMicroUsd,
+    capsOwls: capListOwls(),
+    creditsEnabled: stripeConfigured(),
+    signupGrantOwls: config.signupGrantOwls,
+    monthlyGrantOwls: config.monthlyGrantOwls,
+  };
 }
 
-/**
- * Paid billing (#309): free monthly grant first, then purchased credits.
- * Usage is still metered once in llm_usage — the credit balance is derived
- * (grants minus beyond-grant usage, src/services/credit-service.ts), so
- * spending needs no per-call ledger writes. The same one-operation overshoot
- * slack as the free tier applies at the credit floor.
- */
-class StripeBillingProvider implements BillingProvider {
-  async getEntitlement(userId: string): Promise<Entitlement> {
-    const grant = Math.round(loadConfig().freeTierMonthlyUsd * 1_000_000);
-    const [used, creditBalance] = await Promise.all([
-      getMonthToDateCostMicroUsd(userId),
-      getCreditBalanceMicroUsd(userId),
-    ]);
-    return {
-      plan: creditBalance > 0 ? "credits" : "free",
-      monthlyGrantMicroUsd: grant,
-      usedMicroUsd: used,
-      remainingMicroUsd: Math.max(0, grant - used),
-      creditBalanceMicroUsd: creditBalance,
-      creditsEnabled: true,
-    };
-  }
-
-  async checkSpend(userId: string): Promise<SpendCheck> {
-    const entitlement = await this.getEntitlement(userId);
-    return {
-      allowed:
-        entitlement.remainingMicroUsd > 0 ||
-        entitlement.creditBalanceMicroUsd > 0,
-      entitlement,
-    };
-  }
+export interface SpendCheck {
+  allowed: boolean;
+  /** The operation's cap in owls — what affordability is checked against. */
+  capOwls: number;
+  entitlement: Entitlement;
 }
 
-let _provider: BillingProvider | null = null;
-
-export function getBillingProvider(): BillingProvider {
-  if (!_provider) {
-    _provider = stripeConfigured()
-      ? new StripeBillingProvider()
-      : new FreeTierBillingProvider();
-  }
-  return _provider;
+/** Can the user afford this operation's cap right now? Read-only — no charge. */
+export async function checkSpend(
+  userId: string,
+  op: PricedOp
+): Promise<SpendCheck> {
+  const entitlement = await getEntitlement(userId);
+  const cap = capOwls(op);
+  return {
+    allowed: entitlement.owlBalance >= cap,
+    capOwls: cap,
+    entitlement,
+  };
 }
 
-/** Test hook / future Stripe swap-in point. */
-export function setBillingProvider(provider: BillingProvider | null): void {
-  _provider = provider;
+/** Serialized purchase packs for entitlement/402/account surfaces. */
+export function serializeOwlPacks() {
+  if (!stripeConfigured()) return [];
+  return owlPacks().map((p) => ({
+    id: p.id,
+    owls: p.owls,
+    name: p.name,
+    price_cents: p.priceCents,
+    discount_percent: p.discountPercent,
+  }));
 }

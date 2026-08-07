@@ -35,14 +35,18 @@ import {
 } from "../tools/elicit-tools.js";
 import { getClaimById } from "../../services/claim-service.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, runWithUsageContext } from "../usage-context.js";
 
-// Tag every LLM call in this agent for the per-token meter (#70); the
-// wrapper keeps attribution correct for any call site.
+// Tag every LLM call in this agent for the per-token meter (#70), and
+// attribute it to the claim being stewarded (#217) so per-claim cost — the
+// marginal-cost half of the allocation estimate — is a query, not
+// archaeology. The wrapper keeps attribution correct for any call site.
 export function runClaimSteward(
   input: Parameters<typeof runClaimStewardImpl>[0]
 ): ReturnType<typeof runClaimStewardImpl> {
-  return withAgent("steward", () => runClaimStewardImpl(input));
+  return runWithUsageContext({ claimId: input.claimId }, () =>
+    withAgent("steward", () => runClaimStewardImpl(input))
+  );
 }
 
 async function runClaimStewardImpl(input: {

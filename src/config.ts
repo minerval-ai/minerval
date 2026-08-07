@@ -97,37 +97,98 @@ const configSchema = z.object({
   openrouterApiKey: z.string().default(""),
   awsRegion: z.string().default("us-east-1"),
 
-  // Accounts / metering (#70)
-  // Monthly free-tier grant for METERED (agentic/LLM-backed) usage, in billed
-  // USD (derived cost × usageMarkupMultiplier below). Non-agentic reads are
-  // never metered. 0 disables the trial
-  // (all agentic use requires credits, which aren't purchasable yet → 402).
-  freeTierMonthlyUsd: z.coerce.number().default(5),
+  // Accounts / owls (#70, owl economy)
+  // The two sides of the owl, kept deliberately distinct:
+  //
+  //   owlPriceMicroUsd — what one owl costs to BUY ($4). Used only for
+  //     purchase-pack discount math and price display. The platform's whole
+  //     margin lives here, and it is public.
+  //   owlCostMicroUsd — what one owl of SPEND covers: one dollar of metered
+  //     cost, one for one. Cost is measured in dollars, not owls: an action
+  //     that costs a dollar costs a whole owl, regardless of what the owl
+  //     sold for. Every ledger/charge/estimate conversion uses this.
+  owlPriceMicroUsd: z.coerce.number().positive().default(4_000_000),
+  owlCostMicroUsd: z.coerce.number().positive().default(1_000_000),
+  // Per-run CAPS for bounded agentic operations, in owls (fractions
+  // allowed) — the most a run may cost, not a fixed price. Everything is
+  // metered at cost-plus; the cap is charged up front, the unused fraction
+  // settles back after the run, and overage past the cap is absorbed. Set
+  // each cap near the operation's average cost so the figure on the button
+  // is honest. See src/services/owl.ts. Open-ended work (deep
+  // decomposition, grants) is budgeted, not capped per run.
+  capClaimProposalOwls: z.coerce.number().default(1),
+  capAssessmentOwls: z.coerce.number().default(1),
+  capSourceIngestOwls: z.coerce.number().default(0.1),
+  capExtensionAnalysisOwls: z.coerce.number().default(0.1),
+  capExtensionChatOwls: z.coerce.number().default(0.1),
+  capTextAnalysisOwls: z.coerce.number().default(0.1),
+  // Free tier: a one-time signup grant (the "see a claim you care about,
+  // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
+  // trickle so returning users always have something. 0 disables either.
+  signupGrantOwls: z.coerce.number().default(5),
+  monthlyGrantOwls: z.coerce.number().default(1),
+  // Owls earned per kudos point of an accepted contribution (the old 1–5
+  // scale from claim importance, paid in the spendable currency). OFF at
+  // launch (0 = no awards minted): accepted contributions minting
+  // spendable owls is a faucet whose gaming surface (sybil contributions
+  // past the reviewer) we want to observe before it pays real money. Turn
+  // it on deliberately via CONTRIBUTION_AWARD_OWL_PER_POINT (e.g. 0.25
+  // owl/point → $1–$5 face per acceptance); the award machinery,
+  // idempotency keys, and leaderboard accounting are all live and tested,
+  // so enabling is a config change, not a deploy.
+  contributionAwardOwlPerPoint: z.coerce.number().default(0),
   // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
   // A blunt in-memory backstop against runaway clients; the real spend
-  // guardrail is the metered monthly grant above.
+  // guardrail is the owl balance.
   agenticRateLimitPerHour: z.coerce.number().default(30),
 
-  // Stripe (#309). Empty/placeholder secret key = payments off: the free-tier
-  // provider stays active and /billing/checkout returns 503. The provider
-  // swap keys off the secret LOOKING like a Stripe key ("sk_…") because infra
-  // provisions placeholder secrets before they're populated — see
+  // Stripe (#309). Empty/placeholder secret key = payments off: owls can't
+  // be purchased (free grants still work) and /billing/checkout returns 503.
+  // The swap keys off the secret LOOKING like a Stripe key ("sk_…") because
+  // infra provisions placeholder secrets before they're populated — see
   // stripeConfigured() in src/services/billing-service.ts.
   stripeSecretKey: z.string().default(""),
   // Signing secret for the /billing/webhook endpoint ("whsec_…"), from the
-  // Stripe dashboard's webhook-endpoint config. Required for credits to be
-  // granted — without it every webhook delivery is rejected.
+  // Stripe dashboard's webhook-endpoint config. Required for purchases to be
+  // credited — without it every webhook delivery is rejected.
   stripeWebhookSecret: z.string().default(""),
-  // Bounds on a single credit purchase, in whole USD.
-  creditPurchaseMinUsd: z.coerce.number().default(5),
-  creditPurchaseMaxUsd: z.coerce.number().default(500),
-  // Multiplier applied to derived model cost at the metering insert
-  // (usage-service). Everything downstream — free-tier grant, credit burn,
-  // dashboard usage — is denominated in these marked-up dollars. Raw provider
-  // cost is recoverable by dividing usage rows by the multiplier in effect
-  // when they were written; changing it only affects new rows.
-  usageMarkupMultiplier: z.coerce.number().positive().default(4),
-
+  // Purchase packs: "owls:cents[:name]" entries, comma-separated. Larger
+  // packs price owls below the $4 face value — the bulk discount. The
+  // ladder: Clutch (entry, face value), Perch (10% off), Wisdom (25% off),
+  // Parliament (50% off — mandate-scale funding; a parliament of owls).
+  // A malformed entry FAILS startup rather than silently dropping packs —
+  // a typo'd OWL_PACKS must never quietly turn purchases off. An empty
+  // string is the explicit way to sell no packs.
+  owlPacks: z
+    .string()
+    .transform((s, ctx) => {
+      const entries = s
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      const packs = entries.map((entry) => {
+        const [owls, cents, name] = entry.split(":");
+        const pack = {
+          owls: Number(owls),
+          priceCents: Number(cents),
+          name: name?.trim() || null,
+        };
+        if (
+          !Number.isFinite(pack.owls) ||
+          !Number.isFinite(pack.priceCents) ||
+          pack.owls <= 0 ||
+          pack.priceCents <= 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `OWL_PACKS entry "${entry}" is not owls:cents[:name] with positive numbers`,
+          });
+        }
+        return pack;
+      });
+      return packs;
+    })
+    .default("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
   contributionRateLimitPerHour: z.coerce.number().default(10),
@@ -160,9 +221,10 @@ const configSchema = z.object({
   // behavior) — that makes "which claims predate fix X" a query instead of
   // archaeology, and lets scripts/archive-legacy-claims.ts retire a cohort
   // wholesale. NULL pipeline_epoch = legacy claims from before stamping existed.
-  // Current epoch: the #97/#98/#68 fixes (contestedness stop rule, importance =
-  // consequence-if-wrong × contestability, deferred-stub brake).
-  pipelineEpoch: z.string().default("2026-07-contestedness"),
+  // Current epoch: the owl-economy allocation core (§19 amendment — composite
+  // queue priority with stakes/yield/staleness as ordering inputs distinct
+  // from importance, express lane for paid orders, cadence reassessment).
+  pipelineEpoch: z.string().default("2026-08-owl-economy"),
   matchingTopK: z.coerce.number().default(20),
   // Quantity caps to bound graph fan-out (0 = unlimited). The dominant cost
   // driver is extraction count, since each extracted claim seeds a tree.
@@ -183,6 +245,85 @@ const configSchema = z.object({
   // debate subtree by default. The Steward revises it with a considered
   // judgment like any other prior.
   proposedClaimImportancePrior: z.coerce.number().default(0.3),
+
+  // --- Allocation core: expected value / expected cost (background lane) ---
+  // The background lane's standard is the ratio of expected marginal VALUE
+  // to expected marginal COST across the candidate actions, taken highest
+  // ratio first until the day's budget is spent. For assessing a claim the
+  // value heuristic (priority-service.ts) is the multiplicative core the
+  // essay argues for:
+  //   value = importance × contested-factor × expected-quality-gain
+  //         + stake boost + provenance boost
+  // where contested-factor = floor + (1−floor)×contestation and the gain
+  // term is the last pass's marginal_yield (1.0 when unassessed), revived
+  // by staleness as evidence drifts. All knobs are legible and printable —
+  // heuristics start as guesses and get revised as the eval engine grows.
+  // The contested-factor floor: how fundable an uncontested claim stays.
+  valueContestationFloor: z.coerce.number().default(0.25),
+  // Money never enters the VALUE estimate. Reader contributions toward a
+  // claim reduce its effective COST in the selection ratio, and once they
+  // cover the expected cost the pass simply runs, funded (steward-pipeline).
+  // Days until staleness alone fully revives a claim's expected gain.
+  priorityStalenessSaturationDays: z.coerce.number().default(90),
+  // User-proposed claims outrank equal-value corpus work (#284): a human
+  // cared enough to type it in.
+  priorityUserProvenanceBoost: z.coerce.number().default(0.15),
+  // Model tiering (empty = tiering off, everything uses stewardModel).
+  // When set, every assess/reassess exclusion group gets a 'strong' variant
+  // row beside the standard one, and each mandate's allocator decides by
+  // MARGINAL return whether the upgrade is worth funding: back the strong
+  // sibling only when Δvalue/Δcost clears the day's bar. Paid express
+  // orders always use the strong model — the buyer pays for the real thing.
+  stewardStrongModel: z.string().default(""),
+  // How much more a strong-model pass is expected to be worth than a
+  // standard pass of the same claim: value(strong) = value(standard) × this.
+  // A guess to be revised by the governing mandate's Grantmaker (it is a
+  // policy knob, strong_gain_multiplier); the marginal-return rule does the
+  // real work of deciding when the upgrade is bought. Bounded to the same
+  // range POLICY_BOUNDS enforces on the agent — env config doesn't get a
+  // wider lever than the mandate does.
+  strongGainMultiplier: z.coerce.number().min(1).max(5).default(1.3),
+  // Expected-cost priors for one Steward pass, in owls, by tier — the EC
+  // denominators of the allocators' value/cost ordering. Deliberately not
+  // round numbers: they are guesses at the metered average (a sonnet pass
+  // vs. a fable pass), and the live rolling average replaces them once
+  // enough recent runs exist (cost-estimate-service.ts).
+  estStewardRunCostOwls: z.coerce.number().default(0.15),
+  estStewardRunCostStrongOwls: z.coerce.number().default(0.9),
+  costEstimateWindowDays: z.coerce.number().default(14),
+  costEstimateMinRuns: z.coerce.number().default(5),
+  // The background lane's total metered spend per UTC day, in owls
+  // (0 = uncapped). This replaces "drain the queue": the highest value/cost
+  // actions run until the day's budget is gone, and the rest wait.
+  backgroundDailyBudgetOwls: z.coerce.number().default(50),
+  // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
+  // can chain passes within a day (continue_review) when the mission needs
+  // the bandwidth — enumerating a big source backlog, a territory survey.
+  // This caps how many passes a day the ledger will FUND per mandate: a
+  // cost bound on the mechanism, deliberately not a narrowing of the
+  // agent's affordances. Each pass is also individually capped and metered.
+  // 0 is a deliberate off-switch (no autonomous review passes get funded);
+  // negative values are a misconfiguration, refused at startup.
+  mandateReviewMaxPassesPerDay: z.coerce.number().int().min(0).default(12),
+  // Structural bounds on the AUTONOMOUS review pass's money movement
+  // (regrant + spawn_mandate): at most this fraction of the mandate's
+  // escrowed budget per pass / per UTC day. The review agent reads
+  // attacker-influenceable text (web search, claims, sources) in the same
+  // context as tools that move escrow; the "data, never instructions"
+  // briefing is guidance, these caps are the control. The owner-driven
+  // Grantmaker chat is not bound by them (a human is in the loop).
+  mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
+  mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
+  // The allocation scheduler (workers/allocation-scheduler.ts): how often to
+  // refresh pending priorities and check assessed claims for staleness
+  // (0 disables), and the reassessment-inflow cap per sweep — a bounded
+  // producer so cadence can never cascade the queue (#295's R<1).
+  allocationSweepIntervalHours: z.coerce.number().default(6),
+  stalenessBaseDays: z.coerce.number().default(60),
+  stalenessMaxPerSweep: z.coerce.number().default(5),
+  // Grant policy 'maintain': in-scope assessments older than this many days
+  // are due for a funded refresh.
+  grantMaintainCadenceDays: z.coerce.number().default(30),
 
   // The Steward owns decomposition + assessment in one tool-use loop, so its
   // iteration cap is a pure runaway backstop, NOT a work budget — set it high.
@@ -270,6 +411,11 @@ const configSchema = z.object({
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
   extensionModel: modelId(MODELS.sonnet),
+  // The Grantmaker runs the granting conversation: mandate design, cost
+  // quoting, and the authority to refuse mandates that would warp the
+  // graph. Always the best available model — this is judgment-heavy,
+  // user-facing work where a weak model would be a false economy.
+  grantmakerModel: modelId(MODELS.fable),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -326,14 +472,21 @@ export function loadConfig(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
     awsRegion: process.env.AWS_REGION,
-    freeTierMonthlyUsd: process.env.FREE_TIER_MONTHLY_USD,
+    owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
+    capClaimProposalOwls: process.env.CAP_CLAIM_PROPOSAL_OWLS,
+    capAssessmentOwls: process.env.CAP_ASSESSMENT_OWLS,
+    capSourceIngestOwls: process.env.CAP_SOURCE_INGEST_OWLS,
+    capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
+    capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
+    capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
+    signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
+    monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
+    contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    creditPurchaseMinUsd: process.env.CREDIT_PURCHASE_MIN_USD,
-    creditPurchaseMaxUsd: process.env.CREDIT_PURCHASE_MAX_USD,
-    usageMarkupMultiplier: process.env.USAGE_MARKUP_MULTIPLIER,
+    owlPacks: process.env.OWL_PACKS,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
@@ -349,6 +502,27 @@ export function loadConfig(): Config {
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
+    valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
+    owlCostMicroUsd: process.env.OWL_COST_MICRO_USD,
+    priorityStalenessSaturationDays:
+      process.env.PRIORITY_STALENESS_SATURATION_DAYS,
+    priorityUserProvenanceBoost: process.env.PRIORITY_USER_PROVENANCE_BOOST,
+    stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
+    strongGainMultiplier: process.env.STRONG_GAIN_MULTIPLIER,
+    estStewardRunCostOwls: process.env.EST_STEWARD_RUN_COST_OWLS,
+    estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
+    costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
+    costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
+    backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
+    mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
+    mandateReviewMoveFractionPerPass:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
+    mandateReviewMoveFractionPerDay:
+      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
+    allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
+    stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
+    stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
+    grantMaintainCadenceDays: process.env.GRANT_MAINTAIN_CADENCE_DAYS,
     stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
@@ -368,6 +542,7 @@ export function loadConfig(): Config {
     auditModel: process.env.AUDIT_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
     extensionModel: process.env.EXTENSION_MODEL,
+    grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,

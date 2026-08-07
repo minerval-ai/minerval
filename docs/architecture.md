@@ -43,9 +43,10 @@ metered per account.
 The work is done once, at ingestion, and reused everywhere a claim recurs: the
 same claim appears across thousands of documents but is decomposed and assessed
 a single time. Nor does every claim get the full treatment immediately. Each
-claim carries an importance score, and stewardship drains in importance order,
-so the most consequential claims are structured and assessed first while minor
-ones wait as searchable stubs.
+claim carries an importance score that anchors the expected-value estimates
+the allocation engine funds work by (docs/allocation.md), so the most
+consequential claims draw assessment first while minor ones remain
+searchable stubs until an allocation covers them.
 
 The stack is TypeScript end to end: a Fastify API, background workers driven by
 a job queue (AWS SQS in production, an in-memory runner locally), and
@@ -103,14 +104,13 @@ a prior at ingestion; the claim's Steward sets the authoritative value once it
 has decomposed the claim and seen its neighborhood. Importance decides both how
 soon a claim is stewarded and how much effort its Steward spends.
 
-Two further signals are recorded but not yet acted on (issue #172, phase 1 of
-splitting stakes from expected yield): `contestation` on the claim, how live
-the dispute is stated unfused from the consequence half, and `marginal_yield`
-on each assessment, the Steward's exit judgment of how much another, stronger
-pass would improve it. Queue order, the decomposition brake, and effort
-selection still read only the fused importance score; the follow-up phases in
-#172 will move scheduling to a function of both dimensions once these fields
-have accrued data.
+Two further signals complete the picture (issue #172): `contestation` on the
+claim, how live the dispute is stated unfused from the consequence half, and
+`marginal_yield` on each assessment, the Steward's exit judgment of how much
+another, stronger pass would improve it. Both are live inputs to the
+expected-value estimate the allocation engine funds work by
+(docs/allocation.md): value = importance × contested-factor × expected
+quality gain, with cost on the other side of the ratio.
 
 ### Arguments
 
@@ -412,22 +412,24 @@ writes to the graph.
 
 ### Models
 
-Model choice follows the stakes of the judgment, not a single default:
+Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
 | Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
-| Claim Steward · Curator · Dispute Arbitrator · Audit Agent | Claude Fable 5 |
+| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5 |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
 non-Anthropic model. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
-gracefully instead of failing the job. Because stewardship drains in importance
-order, the most capable model is always spent on the most load-bearing claims;
-when a budget caps a run, what goes unassessed is the tail.
+gracefully instead of failing the job. Background assessments carry a
+standard-model and a strong-model variant on the action ledger, and the
+upgrade is bought exactly when its marginal gain justifies its marginal cost
+(docs/allocation.md) — so the most capable model is spent where it buys the
+most; what goes unfunded is the tail.
 
 ### Providers
 
@@ -495,15 +497,16 @@ Missing credentials fail as a clear configuration error at call time, not as an
 opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
 `OPENROUTER_API_KEY`.
 
-### Queues and failure handling
+### Workers and failure handling
 
 Ingestion and the governance pipelines ride SQS queues in production and an
 in-memory runner locally, with identical handlers. Stewardship is the
-exception: it has no message queue at all. The claim row *is* the queue; a
-steward-state column plus a partial index makes enqueueing idempotent (a claim
-re-triggered while already pending coalesces into one run), and workers drain
-it in importance order with `FOR UPDATE SKIP LOCKED`, so concurrent workers
-never collide.
+exception: it has no message queue at all. A claim's steward-state column
+marks it a CANDIDATE (idempotently — a claim re-triggered while already
+pending coalesces into one run), the action ledger holds its priced
+assess/reassess actions, and the executor runs whatever the allocations on
+that ledger cover (docs/allocation.md), claiming work with
+`FOR UPDATE SKIP LOCKED` so concurrent workers never collide.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
@@ -635,11 +638,12 @@ which the account is provisioned on first sign-in.
 API keys are prefixed `epk_`, stored only as hashes, shown once at creation,
 and scoped `user` or `service`. Every model call in the system is metered at
 the LLM client chokepoint: tokens are priced into micro-USD and recorded per
-agent, user, and key. Quota enforcement is two gates at the API boundary, a
-sliding-hour rate limit and a monthly grant; exceeding the grant returns a
-payment-required error. Billing behind the grant is a deliberate seam: the free
-tier is the only provider wired in today, and a paid provider can be swapped in
-without touching the metering.
+agent, user, and key. Spending runs on the owl economy (docs/accounts.md,
+docs/allocation.md): one owl of spend covers a dollar of metered cost,
+agentic operations charge a cap that settles to the metered actual, free
+signup and monthly grants keep the entry free, and Stripe Checkout sells owl
+packs. Rate limits at the API boundary are a runaway backstop; the real
+spend guardrail is the owl balance and the escrowed budgets behind mandates.
 
 ---
 

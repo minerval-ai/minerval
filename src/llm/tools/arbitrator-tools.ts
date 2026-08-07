@@ -39,7 +39,7 @@ export function getArbitratorToolDefinitions(): Tool[] {
         "(reputation, standing, any reputation-imposed suspension) and an " +
         "intake contribution is materialized through the Matcher; when the " +
         "case arrived by escalation and no outcome was ever applied, the " +
-        "final accept or reject consequences (reputation, kudos, and a " +
+        "final accept or reject consequences (reputation, owl awards, and a " +
         "bad-faith finding's penalty and standing when you attach one) are " +
         "applied directly. Results are reported in the tool result.",
       input_schema: {
@@ -281,13 +281,13 @@ export async function executeArbitratorTool(
         // An overturned rejection restores the contributor (#71): reputation
         // penalties are compensated in the ledger, a bad-faith flag and its
         // must-pay standing are cleared, an auto-suspension lifts, and the
-        // now-accepted contribution earns kudos (with a survived-scrutiny
+        // now-accepted contribution earns owls (with a survived-scrutiny
         // bonus). False-positive flags must not leave lasting damage.
         //
         // An escalated case has no penalties to reverse — an 'escalate'
         // review applies nothing — so when there is nothing to restore the
         // final decision is applied directly (#179): acceptance credit and
-        // kudos on an overturn, the ordinary rejection outcome on an uphold.
+        // owls on an overturn, the ordinary rejection outcome on an uphold.
         // Both service calls are idempotent no-ops when the outcome was
         // already applied at review time or by a prior arbitration.
         let restoration = null;
@@ -354,7 +354,7 @@ export async function executeArbitratorTool(
                   reputation: restoration.newScore,
                   standing_restored: restoration.standingRestored,
                   unsuspended: restoration.unsuspended,
-                  kudos_awarded: restoration.kudosAwarded,
+                  owls_awarded: restoration.owlsAwarded,
                 },
               }
             : {}),
@@ -364,7 +364,7 @@ export async function executeArbitratorTool(
                   reputation: resolution.newScore,
                   standing: resolution.standing,
                   suspended: resolution.suspended,
-                  kudos_awarded: resolution.kudosAwarded,
+                  owls_awarded: resolution.owlsAwarded,
                 },
               }
             : {}),

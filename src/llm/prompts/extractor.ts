@@ -87,8 +87,8 @@ fifteen words, rarely more than twenty-five.
 
 Importance, consequence-if-wrong times contestability, is the Steward's
 judgment to make with graph-wide context (§19). Seeing one document, you
-supply the prior that gives fresh claims a sensible initial place in the
-work queue. Estimate it from the claim's salience here (thesis or aside?),
+supply the prior the allocation engine's value estimates start from until a
+Steward judges. Estimate it from the claim's salience here (thesis or aside?),
 its contestedness (a live dispute, or a settled fact stated in passing?),
 and its reach beyond this document, against the constitution's anchors:
 roughly 0.9 central, 0.6 major, 0.35 notable, 0.15 minor or settled. One

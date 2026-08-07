@@ -14,10 +14,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const { detail } = await loadClaim(id);
-  if (!detail) return { title: "Claim map — Minerval" };
+  if (!detail) return { title: "Claim map · Minerval" };
   const text = detail.claim.text;
   return {
-    title: `${text.length > 80 ? `${text.slice(0, 77)}…` : text} · map — Minerval`,
+    title: `${text.length > 80 ? `${text.slice(0, 77)}…` : text} · map · Minerval`,
     description: `The claim graph around: ${text}`,
   };
 }

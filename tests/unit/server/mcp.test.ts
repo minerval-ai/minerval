@@ -54,6 +54,8 @@ const mocks = vi.hoisted(() => ({
   resolveApiKey: vi.fn(async () => null as unknown),
   resolveAccessToken: vi.fn(async () => null as unknown),
   checkSpend: vi.fn(),
+  chargeOwls: vi.fn(async () => ({ charged: true, entryId: "entry-1" })),
+  refundOwls: vi.fn(async () => {}),
   usageContexts: [] as unknown[],
 }));
 
@@ -107,7 +109,16 @@ vi.mock("../../../src/services/billing-service.js", async (importOriginal) => ({
   ...(await importOriginal<
     typeof import("../../../src/services/billing-service.js")
   >()),
-  getBillingProvider: () => ({ checkSpend: mocks.checkSpend }),
+  checkSpend: mocks.checkSpend,
+  getEntitlement: vi.fn(),
+  serializeOwlPacks: () => [],
+}));
+vi.mock("../../../src/services/owl-ledger-service.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../src/services/owl-ledger-service.js")
+  >()),
+  chargeOwls: mocks.chargeOwls,
+  refundOwls: mocks.refundOwls,
 }));
 
 let app: FastifyInstance;
@@ -242,13 +253,20 @@ beforeEach(async () => {
   mocks.resolveApiKey.mockReset().mockResolvedValue(null);
   mocks.checkSpend.mockReset().mockResolvedValue({
     allowed: true,
+    capOwls: 0.1,
     entitlement: {
-      plan: "free",
-      monthlyGrantMicroUsd: 5_000_000,
-      usedMicroUsd: 0,
-      remainingMicroUsd: 5_000_000,
+      owlBalance: 5,
+      owlBalanceMicroUsd: 20_000_000,
+      owlPriceMicroUsd: 4_000_000,
+      capsOwls: { text_analysis: 0.1 },
+      creditsEnabled: false,
+      signupGrantOwls: 5,
+      monthlyGrantOwls: 1,
     },
   });
+  mocks.chargeOwls
+    .mockReset()
+    .mockResolvedValue({ charged: true, entryId: "entry-1" });
 });
 
 describe("MCP endpoint auth", () => {
@@ -629,18 +647,22 @@ describe("MCP identity & metering", () => {
     await client.close();
   });
 
-  it("denies agentic tools once the monthly grant is exhausted", async () => {
+  it("denies agentic tools once the owl balance is empty", async () => {
     mocks.resolveApiKey.mockResolvedValue({
       key: { id: "key-1", scope: "consumer" },
       user: { id: "user-1", externalId: "auth0:jane", isSuspended: false },
     });
     mocks.checkSpend.mockResolvedValue({
       allowed: false,
+      capOwls: 0.1,
       entitlement: {
-        plan: "free",
-        monthlyGrantMicroUsd: 5_000_000,
-        usedMicroUsd: 5_000_000,
-        remainingMicroUsd: 0,
+        owlBalance: 0,
+        owlBalanceMicroUsd: 0,
+        owlPriceMicroUsd: 4_000_000,
+        capsOwls: { text_analysis: 0.1 },
+        creditsEnabled: false,
+        signupGrantOwls: 5,
+        monthlyGrantOwls: 1,
       },
     });
     const client = await connect({ "x-api-key": "ep_user_key" });
@@ -650,7 +672,9 @@ describe("MCP identity & metering", () => {
       arguments: { assertion: "anything" },
     });
     expect(denied.isError).toBe(true);
-    expect(parseText(denied).error).toMatchObject({ code: "QUOTA_EXCEEDED" });
+    expect(parseText(denied).error).toMatchObject({
+      code: "INSUFFICIENT_OWLS",
+    });
     expect(mocks.matchClaim).not.toHaveBeenCalled();
 
     // Free reads stay available even when the grant is exhausted.

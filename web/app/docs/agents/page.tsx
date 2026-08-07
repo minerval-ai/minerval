@@ -13,7 +13,7 @@ export default function AgentsIndex() {
       <p className="sc" style={{ marginBottom: ".5rem" }}>The administrators</p>
       <h1>Who maintains the graph</h1>
       <p className="lede" style={{ fontSize: "1.08rem" }}>
-        Minerval is run by seven LLM administrators, each with a narrow role and a
+        Minerval is run by eight LLM administrators, each with a narrow role and a
         published system prompt. Every one of them is given the full{" "}
         <Link href="/docs/constitution">Constitution</Link> as the first layer of its
         prompt; below, you can read each agent&rsquo;s role-specific instructions and the
