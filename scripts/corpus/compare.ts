@@ -6,19 +6,45 @@
  * `scorecard.json` files so a prompt change can be judged as better/worse/noise
  * rather than eyeballed.
  *
- * Usage:  tsx scripts/corpus/compare.ts <dirOrFileA> <dirOrFileB>
+ * Usage:  tsx scripts/corpus/compare.ts <refA> <refB>
  *
- * Accepts run directories (containing scorecard.json) or scorecard.json paths
- * directly — including files from the committed history in corpus/scorecards/.
+ * A ref is a run directory (containing scorecard.json), a scorecard.json path
+ * — including files from the committed history in corpus/scorecards/ — or
+ * `db:<id-prefix>` for a run in the eval-run registry (see corpus:runs).
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Scorecard } from "./score.js";
 
-function load(pathish: string): Scorecard {
-  const file = pathish.endsWith(".json") ? pathish : join(pathish, "scorecard.json");
+async function load(ref: string): Promise<Scorecard> {
+  if (ref.startsWith("db:")) return loadFromRegistry(ref.slice(3));
+  const file = ref.endsWith(".json") ? ref : join(ref, "scorecard.json");
   if (!existsSync(file)) throw new Error(`no scorecard at ${file}`);
   return JSON.parse(readFileSync(file, "utf-8")) as Scorecard;
+}
+
+/**
+ * Resolve a registry ref by id prefix. The DB modules load lazily so the
+ * file-only path stays dependency-free (and lib.js pins the corpus DB before
+ * any config caches).
+ */
+async function loadFromRegistry(idPrefix: string): Promise<Scorecard> {
+  await import("./lib.js");
+  const { rawQuery } = await import("../../src/db/client.js");
+  if (!/^[0-9a-f-]{4,36}$/.test(idPrefix)) {
+    throw new Error(`db: ref needs a hex id prefix (≥4 chars), got "${idPrefix}"`);
+  }
+  const rows = await rawQuery<{ id: string; scorecard: Scorecard | null }>(
+    `SELECT id, scorecard FROM eval_runs WHERE id::text LIKE $1 || '%'
+      ORDER BY created_at DESC LIMIT 2`,
+    [idPrefix]
+  );
+  if (rows.length === 0) throw new Error(`no eval run matching db:${idPrefix}`);
+  if (rows.length > 1) {
+    throw new Error(`db:${idPrefix} is ambiguous — use more id characters`);
+  }
+  if (!rows[0]!.scorecard) throw new Error(`eval run ${rows[0]!.id} has no scorecard`);
+  return rows[0]!.scorecard;
 }
 
 function delta(a: number | null | undefined, b: number | null | undefined): string {
@@ -31,14 +57,14 @@ function fmt(x: number | null | undefined): string {
   return x == null ? "n/a" : String(Math.round(x * 100) / 100);
 }
 
-function main() {
+async function main() {
   const [aPath, bPath] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   if (!aPath || !bPath) {
-    console.error("Usage: tsx scripts/corpus/compare.ts <dirA> <dirB>");
+    console.error("Usage: tsx scripts/corpus/compare.ts <refA> <refB>  (ref = dir | file.json | db:<id>)");
     process.exit(1);
   }
-  const a = load(aPath);
-  const b = load(bPath);
+  const a = await load(aPath);
+  const b = await load(bPath);
 
   const rows: Array<[string, string]> = [
     ["A · claims per 1k words", delta(a.structural.extraction.claimsPer1kWords, b.structural.extraction.claimsPer1kWords)],
@@ -78,4 +104,15 @@ function gap(s: Scorecard): number | null {
   return at == null || co == null ? null : at - co;
 }
 
-main();
+main()
+  .then(async () => {
+    // Close the pool iff a db: ref opened it (lazy import above).
+    const { closeDb } = await import("../../src/db/client.js");
+    await closeDb().catch(() => {});
+  })
+  .catch(async (err) => {
+    console.error(err instanceof Error ? err.message : err);
+    const { closeDb } = await import("../../src/db/client.js");
+    await closeDb().catch(() => {});
+    process.exit(1);
+  });

@@ -295,6 +295,13 @@
       "when": 1786122275122,
       "tag": "0041_enqueue_telemetry",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786131797936,
+      "tag": "0042_eval_run_registry",
+      "breakpoints": true
     }
   ]
 }

@@ -97,7 +97,29 @@ npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
 Every `corpus:score` also files its `scorecard.json` into the committed history
 at `corpus/scorecards/<cluster>/` (with the epoch/models/commit fingerprint
 embedded) — commit the ones that matter as baselines. See
-[`scorecards/README.md`](./scorecards/README.md).
+[`scorecards/README.md`](./scorecards/README.md). It also registers the run in
+the **eval-run registry** (`eval_runs`, which `corpus:reset` deliberately does
+not truncate):
+
+```bash
+npm run corpus:runs                              # list registered runs + headline metrics
+npm run corpus:compare -- db:<idA> db:<idB>      # compare straight from the registry
+```
+
+**Snapshots** make re-runs cheap — a template-database copy takes seconds, so
+you can drain a cluster once and branch experiments off it (the primitive
+behind metamorphic re-runs and adversarial episodes):
+
+```bash
+npm run corpus:snapshot -- save baseline         # corpus DB → episteme_corpus_snap_baseline
+npm run corpus:snapshot -- restore baseline      # replace corpus DB from the snapshot
+npm run corpus:snapshot -- list
+npm run corpus:snapshot -- drop baseline
+```
+
+Snapshot operations force-terminate other connections on the databases they
+touch (Postgres template semantics) — never run one mid-drain. The main
+`episteme` database is refused by name.
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard

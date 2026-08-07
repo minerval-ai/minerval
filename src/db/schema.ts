@@ -742,6 +742,41 @@ export const queueDepthSnapshots = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// eval_runs
+//
+// The eval-run registry (#334 L1): scorecard history as a table, so "how did
+// this metric move across the last N runs" is a query instead of file
+// archaeology. Written by corpus:score alongside its file artifacts; read by
+// corpus:runs and corpus:compare (db:<id> refs). In the corpus database this
+// table is deliberately EXCLUDED from corpus:reset's truncate list — the
+// graph is disposable, the history of measurements of it is not. The
+// committed corpus/scorecards/ files remain the cross-machine record;
+// this is the queryable local one, and the seam the noise-band compare
+// machinery (#334 L2) will read.
+// ---------------------------------------------------------------------------
+export const evalRuns = pgTable(
+  "eval_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cluster: text("cluster").notNull(),
+    // What produced this row: 'score' today; 'corpus_run', 'model_swap',
+    // 'golden' etc. as the harness grows.
+    kind: text("kind").notNull().default("score"),
+    // The run's configuration fingerprint (pipelineEpoch, git commit, agent +
+    // judge models) — comparisons only mean something within a fingerprint.
+    config: jsonb("config").notNull(),
+    // The full scorecard JSON, null if the run was registered but not scored.
+    scorecard: jsonb("scorecard"),
+    // Where the file artifacts (report.md, trace.jsonl, scorecard.md) live.
+    runDir: text("run_dir"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_eval_runs_cluster_time").on(table.cluster, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
 // owl_ledger
 //
 // The one spendable balance: owls, the platform's unit of account (1 owl =
