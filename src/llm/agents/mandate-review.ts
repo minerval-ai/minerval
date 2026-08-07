@@ -73,6 +73,9 @@ async function runMandateReviewImpl(input: {
   model?: string;
 }): Promise<MandateReviewResult> {
   const config = loadConfig();
+  // Anchors the two-pass closure rule: a close request is only
+  // confirmable by a pass that STARTED after it was recorded.
+  const passStartedAt = new Date();
   const [grant] = await rawQuery<{
     id: string;
     name: string;
@@ -339,8 +342,12 @@ async function runMandateReviewImpl(input: {
         "Close the mandate: the mission is fulfilled (or cannot be " +
         "usefully continued) and the unspent budget should refund to its " +
         "funders — user contributors and regranting mandates, pro rata. " +
-        "This is your call to make; exhausting the current plan is a " +
-        "waypoint, not by itself a reason to close.",
+        "Closure is TWO-PASS: the first call records your intent to " +
+        "close; the close executes only when a LATER review pass calls " +
+        "this again, still judging the mission done. One pass — however " +
+        "convinced — cannot irreversibly end the mandate, which also " +
+        "means nothing you read during a single pass can. Exhausting the " +
+        "current plan is a waypoint, not by itself a reason to close.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -426,7 +433,7 @@ async function runMandateReviewImpl(input: {
       `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS moved
          FROM regrants
         WHERE from_grant_id = $1
-          AND created_at >= date_trunc('day', now())`,
+          AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
       [grant.id]
     );
     if (Number(today?.moved ?? 0) + requested > moveCapDayMicro) {
@@ -614,6 +621,45 @@ async function runMandateReviewImpl(input: {
         });
       }
       if (name === "complete_mandate") {
+        // TWO-PASS closure: an autonomous pass that reads the open web in
+        // the same context as this tool must not be able to irreversibly
+        // end the mandate on one (possibly injected) judgment. The first
+        // call records the intent; only a call from a LATER pass — a
+        // fresh context, re-judging the mission — executes it. Requests
+        // older than the confirmation window go stale and start over.
+        const CONFIRM_WINDOW_DAYS = 7;
+        const reason = String(toolInput.reason ?? "").trim();
+        const [pending] = await rawQuery<{ at: string | null }>(
+          `SELECT mandate->'close_requested'->>'at' AS at
+             FROM grants WHERE id = $1`,
+          [grant.id]
+        );
+        const requestedAt = pending?.at ? Date.parse(pending.at) : null;
+        const confirmable =
+          requestedAt !== null &&
+          requestedAt < passStartedAt.getTime() &&
+          requestedAt > Date.now() - CONFIRM_WINDOW_DAYS * 86_400_000;
+        if (!confirmable) {
+          await rawQuery(
+            `UPDATE grants
+                SET mandate = jsonb_set(
+                      COALESCE(mandate, '{}'::jsonb), '{close_requested}',
+                      jsonb_build_object('at', to_jsonb(now()),
+                                         'reason', $2::text)),
+                    updated_at = now()
+              WHERE id = $1 AND status = 'active'`,
+            [grant.id, reason || "(no reason given)"]
+          );
+          return JSON.stringify({
+            success: true,
+            closed: false,
+            note:
+              "Closure REQUESTED and recorded. The mandate stays live; if " +
+              "a later review pass still judges the mission done, calling " +
+              "complete_mandate again will close it and refund the " +
+              "unspent budget. Note the pending closure in your workspace.",
+          });
+        }
         const refunded = await refundUnspentBudget({
           id: grant.budget_job_id,
           userId: grant.funder_user_id,
@@ -632,6 +678,7 @@ async function runMandateReviewImpl(input: {
         continueRequested = false;
         return JSON.stringify({
           success: true,
+          closed: true,
           refunded_owls: microUsdToOwls(refunded),
           note: "Mandate closed; finish with your closing note.",
         });

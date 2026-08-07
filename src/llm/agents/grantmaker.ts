@@ -324,12 +324,15 @@ async function runGrantmakerTurnImpl(input: {
   const policyTool: Tool = {
     name: "update_allocation_policy",
     description:
-      "Amend this mandate's allocation policy: the formula knobs its " +
-      "spending runs on (value heuristic, cost priors, strong-pass gain " +
-      "multiplier, reassessment cadence). This is how the formulas evolve: they are " +
-      "asked of you in conversation, never edited in code. Every key is " +
-      "bounded by the framework; out-of-range values are clamped. Known " +
-      "keys: contestation_floor, staleness_saturation_days, " +
+      "Amend the platform General mandate's allocation policy: the " +
+      "formula knobs its bulk valuer runs on (value heuristic, cost " +
+      "priors, strong-pass gain multiplier, reassessment cadence). ONLY " +
+      "the General mandate's spending is formula-driven — an ordinary " +
+      "mandate's spending follows its Grantmaker's own valuations " +
+      "(set_valuations), so this tool refuses on other mandates rather " +
+      "than pretending a write took effect. Every key is bounded by the " +
+      "framework; out-of-range values are clamped. Known keys: " +
+      "contestation_floor, staleness_saturation_days, " +
       "user_provenance_boost, strong_gain_multiplier, " +
       "est_steward_run_cost_owls, est_steward_run_cost_strong_owls, " +
       "staleness_base_days, staleness_max_per_sweep.",
@@ -784,9 +787,23 @@ async function executeManagementTool(
   if (name === "update_allocation_policy") {
     const note = String(toolInput.note ?? "").trim();
     if (!note) return JSON.stringify({ success: false, problem: "note required" });
-    const { updateAllocationPolicy } = await import(
+    const { updateAllocationPolicy, getGeneralMandate } = await import(
       "../../services/allocation-policy-service.js"
     );
+    // Honesty guard: only the General mandate's lane reads these knobs.
+    // Reporting success for a write nothing consumes would teach the
+    // agent (and its funder) that a lever exists where none does.
+    const general = await getGeneralMandate();
+    if (!general || general.grantId !== grantId) {
+      return JSON.stringify({
+        success: false,
+        problem:
+          "This mandate's spending follows your own valuations " +
+          "(set_valuations), not formula knobs; allocation policy governs " +
+          "only the platform's General assessment lane. Express your " +
+          "judgment by revaluing the open ledger instead.",
+      });
+    }
     const result = await updateAllocationPolicy(
       grantId,
       (toolInput.updates ?? {}) as Record<string, unknown>

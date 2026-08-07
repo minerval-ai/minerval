@@ -279,8 +279,10 @@ const configSchema = z.object({
   // standard pass of the same claim: value(strong) = value(standard) × this.
   // A guess to be revised by the governing mandate's Grantmaker (it is a
   // policy knob, strong_gain_multiplier); the marginal-return rule does the
-  // real work of deciding when the upgrade is bought.
-  strongGainMultiplier: z.coerce.number().default(1.3),
+  // real work of deciding when the upgrade is bought. Bounded to the same
+  // range POLICY_BOUNDS enforces on the agent — env config doesn't get a
+  // wider lever than the mandate does.
+  strongGainMultiplier: z.coerce.number().min(1).max(5).default(1.3),
   // Expected-cost priors for one Steward pass, in owls, by tier — the EC
   // denominators of the allocators' value/cost ordering. Deliberately not
   // round numbers: they are guesses at the metered average (a sonnet pass
@@ -300,7 +302,9 @@ const configSchema = z.object({
   // This caps how many passes a day the ledger will FUND per mandate: a
   // cost bound on the mechanism, deliberately not a narrowing of the
   // agent's affordances. Each pass is also individually capped and metered.
-  mandateReviewMaxPassesPerDay: z.coerce.number().default(12),
+  // 0 is a deliberate off-switch (no autonomous review passes get funded);
+  // negative values are a misconfiguration, refused at startup.
+  mandateReviewMaxPassesPerDay: z.coerce.number().int().min(0).default(12),
   // Structural bounds on the AUTONOMOUS review pass's money movement
   // (regrant + spawn_mandate): at most this fraction of the mandate's
   // escrowed budget per pass / per UTC day. The review agent reads
