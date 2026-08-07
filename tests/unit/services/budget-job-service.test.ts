@@ -42,12 +42,14 @@ const { state, handleQuery } = vi.hoisted(() => {
       return state.regrantsIn;
     }
     if (q.includes("UPDATE regrants")) {
+      // Set-to-target stamp: returns the PRIOR refunded value when the
+      // stamp advanced, nothing when already at/past the target.
       if (!state.stampAccepted) return [];
       state.stamps.push({
         regrantId: params[0] as string,
         amount: params[1] as number,
       });
-      return [{ id: params[0] }];
+      return [{ prior: 0 }];
     }
     if (q.includes("UPDATE budget_jobs") && q.includes("budget_micro_usd + $2")) {
       state.budgetCredits.push(params);

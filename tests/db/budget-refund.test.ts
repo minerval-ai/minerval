@@ -237,22 +237,12 @@ describe("refundUnspentBudget — regrant-return path", () => {
     expect(await jobBudget(source.jobId)).toBe(1_000_000);
   });
 
-  // KNOWN BUG (found by this harness; owned by the parent session):
-  // refundUnspentBudget is NOT idempotent for a job funded entirely by
-  // regrants. After the first settlement fully stamps the regrant rows,
-  // a re-run recomputes unspent (still 300k — nothing was metered), but
-  // regrantsIn now excludes the fully-refunded regrant, so totalHeld = 0
-  // and the "no escrow rows (shouldn't happen)" fallback
-  // (src/services/budget-job-service.ts, shares computation) mints the
-  // WHOLE unspent amount to the job owner with the never-before-used key
-  // `escrow_refund:<job>:<owner>` — 300k created from nothing on the
-  // second call. User-contributed jobs are safe (their per-contributor
-  // keys collide); only the pure-regrant case double-pays. Callers
-  // currently guard re-entry via status transitions, so this needs a
-  // retried/crashed settlement to fire in production — but the function's
-  // own contract says "exactly once per contributor". Marked .fails so
-  // the harness lands green while documenting the defect.
-  it.fails("a re-run after a fully-returned regrant mints nothing new", async () => {
+  // Regression (found by this harness): a re-run used to see totalHeld=0
+  // (the fully-refunded regrant fell out of the basis) and the owner
+  // fallback minted the whole unspent amount from nothing. Fixed: shares
+  // are based on ORIGINAL regrant amounts and the stamp is set-to-target,
+  // so a replayed settlement is a no-op end to end.
+  it("a re-run after a fully-returned regrant mints nothing new", async () => {
     const { sourceFunder, targetFunder, target } = await regrantedPair();
     const first = await refundUnspentBudget({
       id: target.jobId,
@@ -278,5 +268,58 @@ describe("refundUnspentBudget — regrant-return path", () => {
         (x) => x.reason === "escrow_refund"
       )
     ).toHaveLength(0);
+  });
+});
+
+describe("contribution racing cancellation", () => {
+  // Regression (found by a live-DB probe): addBudget used to commit the
+  // hold and reverse it afterwards when the status guard failed. A
+  // settlement racing that window counted the doomed hold in its pro-rata
+  // basis, paying the contributor a share of the funder's refund ON TOP of
+  // the reversal — escrow silently redistributed. The transactional
+  // hold+increment makes the hold visible only when the contribution
+  // really landed, so under any interleaving the contributor's money is
+  // conserved.
+  it("CONCURRENCY: contribute × cancel conserves the contributor's owls (10 rounds)", async () => {
+    const { contributeToBudgetJob, cancelBudgetJob } = await import(
+      "../../src/services/budget-job-service.js"
+    );
+    for (let i = 0; i < 10; i++) {
+      const funder = await seedUser(`race-funder-${i}`);
+      const contributor = await seedUser(`race-contrib-${i}`);
+      await rawQuery(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason)
+         VALUES ($1, 3000000, 'purchase'), ($2, 3000000, 'purchase')`,
+        [funder, contributor]
+      );
+      const [job] = await rawQuery<{ id: string }>(
+        `INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status)
+         VALUES ($1, 'deep_decomposition', 1000000, 'running') RETURNING id`,
+        [funder]
+      );
+      await rawQuery(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
+         VALUES ($1, -1000000, 'escrow_hold', $2)`,
+        [funder, job!.id]
+      );
+      await Promise.all([
+        contributeToBudgetJob({ jobId: job!.id, userId: contributor, owls: 2 }),
+        cancelBudgetJob({ jobId: job!.id, userId: funder }),
+      ]);
+      const [bal] = await rawQuery<{ t: string }>(
+        `SELECT COALESCE(SUM(amount_micro_usd), 0) AS t FROM owl_ledger
+          WHERE user_id = $1`,
+        [contributor]
+      );
+      const [jobRow] = await rawQuery<{ status: string }>(
+        `SELECT status FROM budget_jobs WHERE id = $1`,
+        [job!.id]
+      );
+      // Whatever the interleaving: a cancelled job leaves the contributor
+      // whole (contribution reversed by rollback, or landed and refunded).
+      if (jobRow!.status === "cancelled") {
+        expect(Number(bal!.t), `round ${i}`).toBe(3_000_000);
+      }
+    }
   });
 });
