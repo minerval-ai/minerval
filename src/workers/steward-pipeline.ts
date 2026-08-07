@@ -93,7 +93,7 @@ async function unattributedSpentTodayMicroUsd(): Promise<number> {
     `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS spent
        FROM llm_usage
       WHERE user_id IS NULL AND job_id IS NULL
-        AND created_at >= date_trunc('day', now())`
+        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
   );
   return Number(row?.spent ?? 0);
 }

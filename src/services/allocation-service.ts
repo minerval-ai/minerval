@@ -260,7 +260,7 @@ export async function runMandateAllocator(
   const [today] = await tx.query<{ placed: number }>(
     `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
        FROM action_allocations
-      WHERE grant_id = $1 AND created_at >= date_trunc('day', now())`,
+      WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [grantId]
   );
   const dailyRate = Number(grant.daily_budget_micro_usd);
@@ -471,7 +471,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         AND (a.kind <> 'mandate_review'
              OR (SELECT COUNT(*) FROM action_allocations al
                   WHERE al.exclusion_group = a.exclusion_group
-                    AND al.created_at >= date_trunc('day', now())) < $1)
+                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') < $1)
       LIMIT 100`,
     [loadConfig().mandateReviewMaxPassesPerDay ?? 12]
   );

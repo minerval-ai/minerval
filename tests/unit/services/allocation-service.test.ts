@@ -43,7 +43,7 @@ const { handleQuery } = vi.hoisted(() => ({
     if (q.includes("FROM grants g JOIN budget_jobs")) {
       return state.grant ? [state.grant] : [];
     }
-    if (q.includes("created_at >= date_trunc('day', now())")) {
+    if (q.includes("created_at >= date_trunc('day'")) {
       return [{ placed: state.placedToday }];
     }
     if (q.includes("FILTER (WHERE released_at IS NULL)")) {
