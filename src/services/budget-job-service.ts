@@ -11,7 +11,7 @@
  * top-up — it never silently dies mid-run (src/workers/budget-job-pipeline.ts).
  */
 import { desc, eq } from "drizzle-orm";
-import { getDb, rawQuery } from "../db/client.js";
+import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
@@ -36,22 +36,6 @@ async function holdOwls(input: {
     [input.userId, -input.amountMicroUsd, input.jobId, input.amountMicroUsd]
   );
   return rows[0]?.id ?? null;
-}
-
-/** Reverse one hold (a follow-up write failed), exactly once. */
-async function releaseHold(input: {
-  userId: string;
-  amountMicroUsd: number;
-  jobId: string;
-  holdEntryId: string;
-}): Promise<void> {
-  await recordOwlEntry({
-    userId: input.userId,
-    amountMicroUsd: input.amountMicroUsd,
-    reason: OWL_REASONS.escrowRefund,
-    jobId: input.jobId,
-    idempotencyKey: `hold_reversal:${input.holdEntryId}`,
-  });
 }
 
 export type FundJobResult =
@@ -139,37 +123,47 @@ async function addBudget(input: {
     };
   }
   const amountMicro = owlsToMicroUsd(input.owls);
-  const held = await holdOwls({
-    userId: input.userId,
-    amountMicroUsd: amountMicro,
-    jobId: job.id,
+  // Hold and increment in ONE transaction: the guarded increment (status
+  // must still be running/paused) either commits together with the hold or
+  // rolls the hold back entirely. A committed-then-reversed hold is not
+  // just untidy — a settlement racing the reversal counts the hold in its
+  // pro-rata refund basis and pays the contributor a share of money that
+  // is also being handed back to them, at the other funders' expense.
+  const outcome = await withTransaction(async (tx) => {
+    const held = await tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
+       SELECT $1, $2, 'escrow_hold', $3
+        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
+                 FROM owl_ledger WHERE user_id = $1) >= $4
+       RETURNING id`,
+      [input.userId, -amountMicro, job.id, amountMicro]
+    );
+    if (held.length === 0) return "insufficient" as const;
+    const updated = await tx.query<{ id: string }>(
+      `UPDATE budget_jobs
+          SET budget_micro_usd = budget_micro_usd + $2,
+              status = 'running', updated_at = now()
+        WHERE id = $1 AND status IN ('running', 'paused_budget')
+        RETURNING id`,
+      [job.id, amountMicro]
+    );
+    if (updated.length === 0) {
+      // Roll the whole transaction (including the hold) back.
+      throw new JobNotToppableError();
+    }
+    return "added" as const;
+  }).catch((err) => {
+    if (err instanceof JobNotToppableError) return "not_toppable" as const;
+    throw err;
   });
-  if (!held) {
+  if (outcome === "insufficient") {
     return {
       ok: false,
       code: "INSUFFICIENT_OWLS",
       message: `Adding ${input.owls} owls exceeds your balance`,
     };
   }
-  // Atomic increment with a live-status guard: two concurrent top-ups both
-  // land (no lost update from a stale read), and a contribution racing a
-  // cancellation cannot resurrect a job whose refunds already went out —
-  // in that case the hold is reversed instead.
-  const updated = await rawQuery<{ id: string }>(
-    `UPDATE budget_jobs
-        SET budget_micro_usd = budget_micro_usd + $2,
-            status = 'running', updated_at = now()
-      WHERE id = $1 AND status IN ('running', 'paused_budget')
-      RETURNING id`,
-    [job.id, amountMicro]
-  );
-  if (updated.length === 0) {
-    await releaseHold({
-      userId: input.userId,
-      amountMicroUsd: amountMicro,
-      jobId: job.id,
-      holdEntryId: held,
-    });
+  if (outcome === "not_toppable") {
     return {
       ok: false,
       code: "NOT_TOPPABLE",
@@ -178,6 +172,13 @@ async function addBudget(input: {
   }
   const fresh = await getBudgetJob(job.id);
   return { ok: true, job: fresh! };
+}
+
+/** Internal control-flow sentinel: rolls addBudget's transaction back. */
+class JobNotToppableError extends Error {
+  constructor() {
+    super("job no longer toppable");
+  }
 }
 
 export async function topUpBudgetJob(input: {
@@ -252,7 +253,7 @@ export async function jobSpentTodayMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
     `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS total
        FROM llm_usage
-      WHERE job_id = $1 AND created_at >= date_trunc('day', now())`,
+      WHERE job_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [jobId]
   );
   return Number(row?.total ?? 0);
@@ -329,18 +330,22 @@ export async function refundUnspentBudget(job: {
   if (unspent <= 0) return 0;
 
   const contributions = await getJobContributions(job.id);
-  // Mandate funders: regrants into the grant this job backs (if any).
+  // Mandate funders: regrants into the grant this job backs (if any). The
+  // basis is each regrant's ORIGINAL amount, refunded or not: filtering to
+  // the remaining amount made a re-run see totalHeld = 0 after a full
+  // return and fall into the owner fallback — minting the whole unspent
+  // sum to the owner on the second call. Shares derived from original
+  // amounts are deterministic per settlement, and the set-to-target stamp
+  // below makes replays no-ops.
   const regrantsIn = await rawQuery<{
     id: string;
     from_grant_id: string;
     amount: number;
   }>(
-    `SELECT r.id, r.from_grant_id,
-            (r.amount_micro_usd - r.refunded_micro_usd)::bigint AS amount
+    `SELECT r.id, r.from_grant_id, r.amount_micro_usd::bigint AS amount
        FROM regrants r
        JOIN grants g ON g.id = r.to_grant_id
-      WHERE g.budget_job_id = $1
-        AND r.amount_micro_usd > r.refunded_micro_usd`,
+      WHERE g.budget_job_id = $1`,
     [job.id]
   );
   const totalHeld =
@@ -391,14 +396,23 @@ export async function refundUnspentBudget(job: {
     // COMMITTED — so the stamp alone is the return for a live source: its
     // net regrants-out drop and the headroom comes back. Crediting its
     // budget on top would mint the share a second time.
-    const stamped = await rawQuery<{ id: string }>(
-      `UPDATE regrants
-          SET refunded_micro_usd = refunded_micro_usd + $2
-        WHERE id = $1 AND refunded_micro_usd + $2 <= amount_micro_usd
-        RETURNING id`,
+    //
+    // The stamp SETS refunded to this settlement's target (never
+    // increments): the share is a deterministic function of the frozen
+    // unspent amount, so a replayed settlement computes the same target
+    // and the `prior < target` guard makes it a no-op. What actually
+    // moved this call is the delta over the prior stamp.
+    const stamped = await rawQuery<{ prior: number }>(
+      `UPDATE regrants r
+          SET refunded_micro_usd = $2
+         FROM (SELECT refunded_micro_usd AS prior FROM regrants
+                WHERE id = $1 FOR UPDATE) p
+        WHERE r.id = $1 AND p.prior < $2 AND $2 <= r.amount_micro_usd
+        RETURNING p.prior::bigint AS prior`,
       [share.regrantId, share.amount]
     );
     if (stamped.length === 0) continue;
+    const delta = share.amount - Number(stamped[0]!.prior);
     const [live] = await rawQuery<{ id: string }>(
       `SELECT g.id FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.id = $1
@@ -416,14 +430,14 @@ export async function refundUnspentBudget(job: {
       if (source) {
         await recordOwlEntry({
           userId: source.funder_user_id,
-          amountMicroUsd: share.amount,
+          amountMicroUsd: delta,
           reason: OWL_REASONS.escrowRefund,
           jobId: job.id,
           idempotencyKey: `escrow_refund:${job.id}:regrant:${share.regrantId}`,
         });
       }
     }
-    refunded += share.amount;
+    refunded += delta;
   }
   return refunded;
 }

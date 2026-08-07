@@ -111,7 +111,7 @@ export default async function GrantPage({
             <thead>
               <tr>
                 <th>#</th>
-                <th>claim</th>
+                <th>target</th>
                 <th>action</th>
                 <th>why</th>
               </tr>
@@ -119,7 +119,7 @@ export default async function GrantPage({
             <tbody>
               {planItems.map((item, i) => (
                 <tr
-                  key={`${item.claim_id}-${i}`}
+                  key={`${item.claim_id ?? item.url ?? "item"}-${i}`}
                   style={
                     grant.status === "active" && i < grant.plan_cursor
                       ? { color: "var(--faint)" }
@@ -128,7 +128,24 @@ export default async function GrantPage({
                 >
                   <td>{i + 1}</td>
                   <td>
-                    <Link href={`/claims/${item.claim_id}`}>view claim</Link>
+                    {/* Claim items link into the graph; ingest items name
+                        their source URL (external, so it can't be a claim
+                        link — /claims/undefined was exactly this bug). */}
+                    {item.claim_id ? (
+                      <Link href={`/claims/${item.claim_id}`}>view claim</Link>
+                    ) : item.url ? (
+                      <a href={item.url} rel="noreferrer nofollow">
+                        {(() => {
+                          try {
+                            return new URL(item.url).hostname;
+                          } catch {
+                            return item.url;
+                          }
+                        })()}
+                      </a>
+                    ) : (
+                      <span style={{ color: "var(--faint)" }}>—</span>
+                    )}
                   </td>
                   <td>{item.action}</td>
                   <td>{item.rationale}</td>

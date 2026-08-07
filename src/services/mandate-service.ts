@@ -450,7 +450,7 @@ export async function getMandateAllocationView(
        LEFT JOIN mandate_valuations mv
          ON mv.action_id = a.id AND mv.grant_id = al.grant_id
       WHERE al.grant_id = $1
-        AND al.created_at >= date_trunc('day', now())`,
+        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [grantId]
   );
 
