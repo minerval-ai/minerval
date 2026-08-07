@@ -94,10 +94,11 @@ export default function Privacy() {
       <p>
         Analysis runs on infrastructure and model providers acting on our
         behalf: pages you submit are processed by third-party large language
-        model providers (currently Anthropic&rsquo;s Claude models), always
-        under API terms that exclude training on your data, and our servers
-        run on AWS with the web app hosted on Vercel. These providers process
-        data to provide the service and for no other purpose.
+        model providers (currently Anthropic, OpenAI for embeddings, and
+        DeepSeek routed through OpenRouter), always under API terms that
+        exclude training on your data, and our servers run on AWS with the
+        web app hosted on Vercel. These providers process data to provide
+        the service and for no other purpose.
       </p>
 
       <h2 id="retention">Retention &amp; deletion</h2>

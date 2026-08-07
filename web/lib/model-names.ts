@@ -12,6 +12,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+  "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash",
 };
 
 /**

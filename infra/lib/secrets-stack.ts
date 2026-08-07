@@ -4,6 +4,7 @@ import { Construct } from "constructs";
 
 export class SecretsStack extends cdk.Stack {
   public readonly openaiApiKeySecret: secretsmanager.Secret;
+  public readonly openrouterApiKeySecret: secretsmanager.Secret;
   public readonly anthropicApiKeySecret: secretsmanager.Secret;
   public readonly apiKeysSecret: secretsmanager.Secret;
   public readonly elicitApiKeySecret: secretsmanager.Secret;
@@ -20,6 +21,20 @@ export class SecretsStack extends cdk.Stack {
         secretName: "episteme/openai-api-key",
         description:
           "OpenAI API key for Episteme embeddings. Must be manually populated after deploy.",
+      }
+    );
+
+    // OpenRouter (#257): the "vendor/model" provider. Until the real key is
+    // populated this holds a CDK-generated placeholder; nothing routes to
+    // OpenRouter unless an agent's *_MODEL env var is pointed at a
+    // vendor/model ID, so the placeholder is inert.
+    this.openrouterApiKeySecret = new secretsmanager.Secret(
+      this,
+      "OpenrouterApiKeySecret",
+      {
+        secretName: "episteme/openrouter-api-key",
+        description:
+          "OpenRouter API key for LLM inference (#257). Must be manually populated after deploy.",
       }
     );
 

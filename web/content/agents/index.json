@@ -18,7 +18,7 @@
     "group": "processing",
     "tagline": "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    "model": "Claude Haiku 4.5",
+    "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
     "roleChars": 3870,
     "fullChars": 50740
