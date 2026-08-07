@@ -37,10 +37,13 @@ import {
  * Is paid billing switched on for this deployment? True only when the secret
  * looks like an actual Stripe key — infra provisions placeholder secrets
  * before they're populated (like the Elicit key), and a placeholder must NOT
- * flip the API into advertising purchases that would fail.
+ * flip the API into advertising purchases that would fail. Accepts standard
+ * ("sk_…") and restricted ("rk_…") keys; production uses a restricted key
+ * scoped to Checkout Sessions: Write, the only Stripe API call we make.
  */
 export function stripeConfigured(): boolean {
-  return loadConfig().stripeSecretKey.startsWith("sk_");
+  const key = loadConfig().stripeSecretKey;
+  return key.startsWith("sk_") || key.startsWith("rk_");
 }
 
 export interface Entitlement {

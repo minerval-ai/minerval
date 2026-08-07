@@ -265,9 +265,10 @@ spending never lowers it. Audit supersession claws awards back.
 
 ## Buying owls (Stripe)
 
-Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` —
-`stripeConfigured()`); a placeholder keeps the deployment on free grants
-only. Owls are sold in fixed packs with bulk discounts (`OWL_PACKS`,
+Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` or a
+restricted `rk_…` — `stripeConfigured()`); a placeholder keeps the deployment
+on free grants only. Production should use a restricted key scoped to
+Checkout Sessions: Write, the only Stripe API call the integration makes. Owls are sold in fixed packs with bulk discounts (`OWL_PACKS`,
 default `5:2000,15:5500,40:14000,125:40000` as owls:cents — $20 face value
 up to 20% off at 125 owls):
 

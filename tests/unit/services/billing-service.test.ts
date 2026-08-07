@@ -47,6 +47,11 @@ describe("stripeConfigured", () => {
     expect(svc.serializeOwlPacks().length).toBeGreaterThan(0);
   });
 
+  it("activates on a restricted key (rk_…)", async () => {
+    const svc = await loadBillingService("rk_test_123");
+    expect(svc.stripeConfigured()).toBe(true);
+  });
+
   it("hides packs when purchases are off", async () => {
     const svc = await loadBillingService(undefined);
     expect(svc.serializeOwlPacks()).toEqual([]);

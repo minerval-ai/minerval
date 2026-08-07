@@ -144,7 +144,7 @@ const configSchema = z.object({
 
   // Stripe (#309). Empty/placeholder secret key = payments off: owls can't
   // be purchased (free grants still work) and /billing/checkout returns 503.
-  // The swap keys off the secret LOOKING like a Stripe key ("sk_…") because
+  // The swap keys off the secret LOOKING like a Stripe key ("sk_…"/"rk_…") because
   // infra provisions placeholder secrets before they're populated — see
   // stripeConfigured() in src/services/billing-service.ts.
   stripeSecretKey: z.string().default(""),
