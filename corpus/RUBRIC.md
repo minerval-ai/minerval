@@ -69,12 +69,13 @@ proposition is the claim. (Constitution §3, §2; Policy 2; Extractor prompt.)
 
 ## C. Matching / canonicalization / dedup — **the core test**
 
-This is the dimension the corpus is built to stress. **Note the two paths — they fail differently:**
-
-- **Top-level claims** retrieve candidates by embedding (cosine ≥ 0.8) then a **Matcher LLM** decides
-  match-vs-new with reasoning. (`url-extraction.ts`)
-- **Subclaims** match by **embedding only** — top-1 above the threshold, **no LLM judgment**.
-  (`claim-pipeline.ts`)
+This is the dimension the corpus is built to stress. **All claim identity — top-level and subclaim —
+is decided by the single agentic Matcher** (`src/llm/agents/matcher.ts`): top-level claims reach it via
+`url-extraction.ts`, subclaims via the Steward's `match_claim` tool. Embedding similarity is retrieval,
+not decision — each search returns the top `MATCHING_TOP_K` candidates (default 20) above a deliberately
+low 0.4 cosine floor, and the Matcher LLM makes the match-vs-new call with reasoning, after searching
+multiple framings including the negation. The two entry paths can still fail differently (the Steward
+decides *when* to consult the Matcher for subclaims), so attribute a failure to the right stage.
 
 **Standard.** Two formulations are the same claim when they turn on the same considerations: nothing could
 count as evidence or argument bearing on one without bearing equally on the other. Identical decomposition
@@ -86,22 +87,24 @@ mapping, conservative merging. (Constitution §2, §3, §5; Policy 4; Matcher pr
 - **Over-merging (the worst failure).** Collapsing claims that turn on different considerations into one
   canonical node — e.g. "AGI will kill everyone" merged with "AGI poses serious catastrophic risk." This
   silently *destroys the disagreement the system exists to surface* (§1 clarity, §18 fair representation,
-  §2 individuation). A claim and its denial are correctly one node, but only with the stance recorded; the
-  embedding-only subclaim path is especially exposed here, because a negation absorbed with no LLM judgment
-  gets no stance flip.
+  §2 individuation). A claim and its denial are correctly one node, but only with the stance recorded —
+  check that a negation the Matcher absorbs into an existing node carries the flipped stance.
 - **Fragmentation / under-merging.** The same proposition, stated across several posts, ends up as multiple
   canonical claims because canonical forms diverged (see B) or embeddings fell below threshold. This defeats
   the core scaling premise that redundant claims collapse to one node (README). Watch the
   near-duplicate-canonical-pairs section.
-- **Threshold artifacts.** Matches/non-matches that look arbitrary and would flip with a small change to the
-  0.8 / 0.85 cutoffs. If a merge decision hinges on the threshold rather than the meaning, flag it.
+- **Retrieval artifacts.** A miss caused by retrieval never surfacing the candidate (outside the top
+  `MATCHING_TOP_K`, or below the 0.4 floor) rather than by the Matcher judging it and deciding wrongly.
+  If a match decision hinges on whether the candidate was retrieved rather than on the meaning, flag it —
+  the fix is retrieval tuning or canonical-form quality (B), not the Matcher prompt.
 - **Order sensitivity.** Matching is stateful — the first phrasing ingested becomes the canonical node and
   later phrasings attach to it. Check that the "winning" canonical form is a good one and not an artifact of
   which post happened to be processed first.
 - **Relationship neglect.** When two top-level claims are correctly kept separate but are related
-  (specification, contradiction), the ingestion path creates **no relationship** between them — only the
-  decomposer makes edges. So related-but-distinct claims from different posts can sit as disconnected
-  islands. That's "liberal creation" without the "rigorous mapping" half (§2). Note where it happens.
+  (specification, contradiction), the ingestion path creates **no relationship** between them — edges come
+  from the Steward's decomposition and the Curator's sweeps. So related-but-distinct claims from different
+  posts can sit as disconnected islands. That's "liberal creation" without the "rigorous mapping" half
+  (§2). Note where it happens.
 
 **Where to look.** Per-canonical-claim instance lists (what got collapsed, and whether it should have);
 the near-duplicate-canonical-pairs section (fragmentation candidates); the Matcher reasoning traces for any
@@ -115,14 +118,18 @@ merge that surprises you.
 reaching genuine bedrock (bedrock fact / contested empirical / value premise). Surface definitional
 subclaims (DEFINES) and hidden assumptions (ASSUMES). Include both supporting and contradicting
 dependencies. Group distinct lines of reasoning into named arguments; don't manufacture arguments for simple
-claims. Don't add subclaims that aren't logically necessary. (Constitution §6, §7; Policy 2; Decomposer prompt.)
+claims. Don't add subclaims that aren't logically necessary. (Constitution §6, §7; Policy 2; Steward prompt —
+decomposition and assessment are one judgment owned by the Claim Steward, Part VIII.)
 
 **Failure modes.**
 - **Shallow decomposition** — stops early, marks a clearly compound claim atomic.
-- **Runaway / filler decomposition** — generates generic boilerplate subclaims, or keeps splitting until it
-  hits the depth cap (`maxDecompositionDepth` = 5) without ever reaching real bedrock.
-- **Evaluation leakage** — the decomposer judges validity instead of structure ("this subclaim is false…"),
-  violating neutral decomposition.
+- **Runaway / filler decomposition** — generates generic boilerplate subclaims, or keeps splitting without
+  ever reaching real bedrock. There is no fixed depth cap; the brake is economic (§19): subclaims below the
+  importance threshold (`STEWARD_ENQUEUE_MIN_IMPORTANCE`) stay embedded stubs rather than being enqueued
+  for their own stewardship, so watch for depth achieved by inflating subclaim importance.
+- **Evaluation leakage** — decomposition judges validity instead of structure ("this subclaim is false…"),
+  violating neutral decomposition. (The Steward does assess, but in the assessment — the decomposition
+  itself stays neutral, §6.)
 - **Missing definitional / assumption subclaims** — fails to surface what load-bearing terms mean
   ("aligned," "AGI," "sharp left turn"). These are exactly the hidden disagreements §6 wants exposed.
 - **Argument structure misuse** — dumps everything into one default argument when distinct for/against lines
@@ -207,9 +214,10 @@ canonical form changed after their instances were first created.
 
 > **Conflict, escalation, arbitration** are part of this organization but are **not exercised by ingestion**
 > — they require contributions submitted via the API. Until a contributions scenario exists, treat their
-> absence in a run as expected, not as a pass. The wiring also has a known gap: the **audit** agent is
-> defined and drained but nothing currently enqueues audit work (no `enqueueAudit` call site), so the audit
-> path never runs even in production. Flag in Field Notes if a run suggests otherwise.
+> absence in a run as expected, not as a pass. The **audit** agent (#180) runs in production via
+> `requestAudit` — scheduled sweeps, arbitration overturns, bad-faith flags, suspension reviews — but none
+> of those triggers fire during a corpus ingest (the sweep scheduler starts only with the full server), so
+> an empty audit queue in a run is likewise expected.
 
 ## H. Cross-cutting properties
 

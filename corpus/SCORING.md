@@ -57,9 +57,12 @@ note, so a low number is always traceable to specific claims.
   only if it repeats across N≈3 runs or exceeds run-to-run noise — `corpus:compare`
   prints the deltas but does not pretend a single diff is significant.
 
-Not yet done (deliberately, to keep this PR focused): calibrating the judges
-against human labels, the Matcher golden-pair set, and wiring `compare` into a
-CI gate. See the issue for the full three-layer design.
+Not yet done: calibrating the judges against human labels, the Matcher
+golden-pair set, and wiring `compare` into a CI gate. These are tracked in the
+eval master plan (#334: layer 1 → suite S1, calibration → the L2 judge
+framework, the CI gate → L4), which is also where this scorecard's successor —
+eval runs as first-class records with persisted history — is designed. Until
+then, scorecards accumulate as files in `corpus/scorecards/` (see its README).
 
 ## Cost
 

@@ -7,6 +7,9 @@
  * rather than eyeballed.
  *
  * Usage:  tsx scripts/corpus/compare.ts <dirOrFileA> <dirOrFileB>
+ *
+ * Accepts run directories (containing scorecard.json) or scorecard.json paths
+ * directly — including files from the committed history in corpus/scorecards/.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";

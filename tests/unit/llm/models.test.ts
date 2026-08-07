@@ -24,6 +24,12 @@ describe("model helpers", () => {
     // Haiku 4.x and Sonnet 4.x still accept it.
     expect(modelAcceptsTemperature(MODELS.haiku)).toBe(true);
     expect(modelAcceptsTemperature("claude-sonnet-4-6")).toBe(true);
+    // The allowlist is version-specific: a future family member is not assumed
+    // to accept temperature until verified (#324's forward-compat hole — a
+    // hypothetical claude-haiku-5 matching a bare "haiku" allowlist would 400
+    // every Matcher run).
+    expect(modelAcceptsTemperature("claude-haiku-5")).toBe(false);
+    expect(modelAcceptsTemperature("claude-haiku-5-20270101")).toBe(false);
   });
 
   it("opts only the Fable/Mythos family into the refusal fallback", () => {

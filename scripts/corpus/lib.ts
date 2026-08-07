@@ -58,6 +58,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, "..", "..");
 export const CORPUS_ROOT = join(REPO_ROOT, "corpus");
 export const RUNS_ROOT = join(REPO_ROOT, "runs");
+/**
+ * Committed scorecard history (#334 phase 0). runs/ is gitignored, so without
+ * this there is nowhere a past run's numbers survive — the regression history
+ * docs/graph-epochs.md describes. corpus:score writes a copy of every
+ * scorecard.json here; commit the ones from runs you want as baselines.
+ */
+export const SCORECARDS_ROOT = join(CORPUS_ROOT, "scorecards");
 export const MIGRATIONS_DIR = join(REPO_ROOT, "src", "db", "migrations");
 
 export function clusterDir(name: string): string {

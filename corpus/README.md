@@ -21,13 +21,15 @@ the main graph, so you can wipe and re-run freely.
 ```
 corpus/
   RUBRIC.md              qualitative review rubric, distilled from the constitution
+  SCORING.md             scorecard design (corpus:score / corpus:compare)
+  scorecards/            committed scorecard history (see its README)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
     posts/<id>.md        clean markdown, committed so runs are reproducible offline
     posts/<id>.json      metadata sidecar (title, author, score, url, fetchedAt)
-scripts/corpus/          fetch / reset / run / report (run via tsx)
-runs/                    report.md + graph.json per run (gitignored)
+scripts/corpus/          fetch / reset / run / report / score / compare (run via tsx)
+runs/                    report.md + trace + graph.json per run (gitignored)
 ```
 
 Clusters:
@@ -39,10 +41,21 @@ Clusters:
   Epistack case studies. A `web` cluster (see below): curated, committed markdown
   from CERN/LSAG, a Giddings–Mangano safety paper, Wikipedia, and a published
   dissent. A near-settled but deeply-argued question — heavy overlap on a few
-  load-bearing claims plus a couple of genuine cruxes.
+  load-bearing claims plus a couple of genuine cruxes. The near-settled control
+  to `lableak`'s genuinely-open case.
+- **`lableak`** — the origin of SARS-CoV-2 (zoonosis vs. lab leak), the hardest
+  and most-contested FLF case study. A `web` cluster with both sides
+  steelmanned and primary sources behind each synthesis. Stresses
+  contested-claim handling and head-to-head disagreement at maximum difficulty
+  — the good target for robustness and consistency work.
+- **`eggs`** — the health effects of eggs, the third FLF case study. A `web`
+  cluster. A deliberately mundane question that is really about ways of
+  knowing: observational cohorts vs. randomized trials, confounding, subgroup
+  effects. Stresses methodology-driven disagreement where the cruxes are about
+  evidence quality rather than a single fact.
 
-The three FLF case studies (lab leak / black holes / eggs) are the intended
-production seed set; `blackholes` is the first one built.
+The three FLF case studies (`lableak` / `blackholes` / `eggs`) are the intended
+production seed set, and all three are built.
 
 ### Cluster kinds
 
@@ -81,6 +94,11 @@ npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
 npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
 ```
 
+Every `corpus:score` also files its `scorecard.json` into the committed history
+at `corpus/scorecards/<cluster>/` (with the epoch/models/commit fingerprint
+embedded) — commit the ones that matter as baselines. See
+[`scorecards/README.md`](./scorecards/README.md).
+
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only).
@@ -105,10 +123,12 @@ dump for deeper digging.
   cost** — one invocation is a whole tool-use loop, and decomposition seeds more
   Steward runs. **Always start cheap** and scale up only once a tiny run looks
   right.
-- **Every run prints an LLM usage + cost report** at the end (calls, fresh vs
-  cache-read vs cache-write input, output, and a Sonnet-priced **upper-bound**
-  dollar estimate — the Matcher runs on cheaper Haiku, so the real bill is lower).
-  Read it; it's the ground truth for what a run costs.
+- **Every run prints an LLM usage + cost report** at the end: calls, fresh vs
+  cache-read vs cache-write input, output, and the **exact metered cost** — every
+  call priced at its own model's raw rate through the same metering chokepoint
+  production bills through (`src/llm/pricing.ts` via the usage-context cost
+  meter), so the figure tracks whatever models the agents are actually
+  configured to run on. Read it; it's the ground truth for what a run costs.
 - **The cost knobs (set in `.env` or inline; 0 = unlimited):**
   | knob | bounds | good test value |
   |---|---|---|
@@ -144,8 +164,12 @@ dump for deeper digging.
   included; no dev-specific tool wiring is needed.
 - Every processed message is recorded to `runs/<run>/trace.jsonl` (queue, message,
   ok/error, duration) so inter-agent behavior and propagation are observable.
-- `enqueueAudit` has no call site anywhere, so the audit agent never runs even in
-  production — the runner drains the audit queue but it stays empty.
+- The audit agent runs in production via `requestAudit` (#180): scheduled sweeps
+  (`startAuditScheduler`, `AUDIT_SWEEP_INTERVAL_HOURS`), arbitration overturns,
+  bad-faith flags, and suspension reviews. A corpus run drains the audit queue,
+  but the sweep scheduler only starts with the full server (`index.ts`), and
+  ingestion doesn't produce the other triggers — so audit work is normally
+  absent from a run, which is expected, not a gap.
 - All claim identity — top-level and subclaim — is decided by the single
   agentic Matcher (`src/llm/agents/matcher.ts`): top-level claims reach it via
   `url-extraction.ts`, subclaims via the Steward's `match_claim` tool.
