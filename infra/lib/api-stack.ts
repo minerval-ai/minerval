@@ -104,6 +104,12 @@ export class ApiStack extends cdk.Stack {
         CURATOR_MODEL: "claude-fable-5",
         AUDIT_MODEL: "claude-fable-5",
         ARBITRATION_MODEL: "claude-fable-5",
+        // The Matcher's judgment is narrow (same proposition?) over candidates
+        // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
+        // quality and price (#257). First agent routed off Anthropic; the rest
+        // keep their defaults until the eval apparatus (#273/#297) can rank
+        // candidates.
+        MATCHER_MODEL: "deepseek/deepseek-v4-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

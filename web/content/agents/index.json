@@ -18,7 +18,7 @@
     "group": "processing",
     "tagline": "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    "model": "Claude Haiku 4.5",
+    "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
     "roleChars": 3870,
     "fullChars": 44479
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5",
     "hasConstitution": true,
-    "roleChars": 15968,
-    "fullChars": 56577
+    "roleChars": 18794,
+    "fullChars": 59403
   },
   {
     "key": "curator",
