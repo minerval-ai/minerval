@@ -91,6 +91,18 @@ export function ratesForModel(model: string): ModelRates {
   return best ?? FALLBACK_RATES;
 }
 
+/**
+ * Whether the model has an explicit entry in the rate table (vs metering at
+ * the conservative FALLBACK_RATES). An Anthropic/OpenAI model without explicit
+ * rates silently meters at the top-tier fallback — a real misbill against user
+ * credit grants until noticed — so the model-guard test asserts this is true
+ * for every model the system is configured to reach. OpenRouter models are
+ * exempt: they report provider cost per call and are priced from that instead.
+ */
+export function hasExplicitRates(model: string): boolean {
+  return Object.keys(MODEL_RATES).some((prefix) => model.startsWith(prefix));
+}
+
 export interface UsageTokens {
   inputTokens: number;
   outputTokens: number;

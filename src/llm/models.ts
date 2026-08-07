@@ -41,12 +41,14 @@ export function isAnthropicModelId(id: string): boolean {
  * family (Fable 5, Sonnet 5) and Opus 4.7+ reject non-default sampling params
  * with a 400 — and the client sends `temperature: 0`, which counts as
  * non-default — so this is an ALLOWLIST of families known to accept it
- * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. Omitting the
- * parameter is always safe; sending it to the wrong model fails every run of
- * that agent (see issue #77).
+ * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. The version is
+ * part of the allowlist: a future family member (e.g. a Haiku 5) is NOT
+ * assumed to accept it until verified, since a wrong guess 400s every run of
+ * the agent routed to it (issue #77; the forward-compat hole from #324's
+ * audit). Omitting the parameter is always safe.
  */
 export function modelAcceptsTemperature(id: string): boolean {
-  return /^claude-(haiku|sonnet-4)-/.test(id);
+  return /^claude-(haiku-4|sonnet-4)-/.test(id);
 }
 
 /**

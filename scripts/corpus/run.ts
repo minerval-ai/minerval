@@ -36,7 +36,8 @@ import {
 import type { ManifestPost } from "./lib.js";
 import { closeDb } from "../../src/db/client.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
-import type { SessionUsage } from "../../src/llm/budget-tracker.js";
+import { formatMicroUsd } from "../../src/llm/pricing.js";
+import { runWithUsageContext } from "../../src/llm/usage-context.js";
 import { getJobById } from "../../src/services/job-service.js";
 import { buildApp } from "../../src/server/app.js";
 import { drainLocalQueues } from "../../src/workers/local-runner.js";
@@ -54,21 +55,14 @@ function formatActivity(stats: DrainStats): string {
   return s;
 }
 
-// Per-1M-token prices for the cost estimate. We price EVERYTHING at Sonnet
-// rates even though the Matcher/second-opinion run on Haiku (≈3x cheaper), so
-// the printed figure is a deliberate UPPER BOUND — if this stays small, the real
-// bill is smaller. Cache reads are ~0.1x input; cache writes ~1.25x input.
-const PRICE = { input: 3.0, output: 15.0, cacheRead: 0.3, cacheWrite: 3.75 };
-
-function estimateCostUsd(u: SessionUsage): number {
-  return (
-    (u.inputTokens * PRICE.input +
-      u.outputTokens * PRICE.output +
-      u.cacheReadTokens * PRICE.cacheRead +
-      u.cacheCreationTokens * PRICE.cacheWrite) /
-    1_000_000
-  );
-}
+// Exact run cost, from the same metering chokepoint production bills through:
+// the whole run executes inside a usage-context cost meter, which every
+// provider adapter feeds synchronously per call (src/llm/usage-context.ts,
+// meterLlmUsage). This prices each call at its own model's real (raw, unmarked)
+// rate — including the refusal-fallback and any OpenRouter provider-reported
+// cost — replacing the old hand-maintained "Sonnet-priced upper bound" table
+// that drifted from src/llm/pricing.ts.
+const runMeter = { billedMicroUsd: 0 };
 
 function printUsage(label: string): void {
   const u = getSessionUsage();
@@ -82,7 +76,7 @@ function printUsage(label: string): void {
       `  input:  ${k(u.inputTokens)} fresh + ${k(u.cacheReadTokens)} cache-read ` +
       `+ ${k(u.cacheCreationTokens)} cache-write  (cache hit rate ${hitRate}%)\n` +
       `  output: ${k(u.outputTokens)}\n` +
-      `  est. cost (Sonnet-priced upper bound): $${estimateCostUsd(u).toFixed(3)}`
+      `  metered cost (exact, per-model raw rates): ${formatMicroUsd(runMeter.billedMicroUsd)}`
   );
 }
 
@@ -217,11 +211,14 @@ async function main(): Promise<void> {
   if (scoreFlag !== undefined) {
     const sample = scoreFlag === "" ? undefined : Number(scoreFlag);
     console.log("\nScoring the run…");
-    const { dir } = await scoreRun(cluster, {
+    const { dir, judgeCostMicroUsd } = await scoreRun(cluster, {
       sample: Number.isFinite(sample) ? sample : undefined,
       judge: sample !== 0,
       outDir: runDir,
     });
+    // scoreRun measures the judge under its own (shadowing) meter; fold it
+    // back in so the printed run total covers everything this command spent.
+    runMeter.billedMicroUsd += judgeCostMicroUsd;
     console.log(`Scorecard: ${join(dir, "scorecard.md")}`);
   }
 
@@ -230,7 +227,7 @@ async function main(): Promise<void> {
   await closeDb();
 }
 
-main().catch(async (err) => {
+runWithUsageContext({ meter: runMeter }, main).catch(async (err) => {
   console.error(err);
   // Still report what the run cost before it failed — a crash shouldn't hide spend.
   try {

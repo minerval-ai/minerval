@@ -10,6 +10,7 @@
  * the agent under test.
  */
 import { completeStructured } from "../../src/llm/client.js";
+import { withAgent } from "../../src/llm/usage-context.js";
 import { loadConfig } from "../../src/config.js";
 
 const CONSTITUTION_STANDARDS = `Standards, from the Minerval constitution (cited by section):
@@ -95,17 +96,21 @@ ${input.reasoningTrace ?? "(none)"}
 ${subs}`;
 
   const model = loadConfig().judgeModel;
-  const verdict = await completeStructured<Omit<JudgeVerdict, "id" | "text" | "importanceStored" | "status">>({
-    messages: [{ role: "user", content: prompt }],
-    schema: SCHEMA,
-    schemaName: "ClaimQualityVerdict",
-    model,
-    // Claude-5 judge models think before answering, and thinking counts against
-    // max_tokens: too low a budget is spent thinking and the structured JSON
-    // output is truncated. Give comfortable headroom for a small JSON verdict —
-    // the cap is a backstop, not a budget.
-    maxTokens: 8192,
-  });
+  // Tagged "judge" so its llm_usage rows are attributable and separable from
+  // the agents under test — the judge is an agent like any other to the meter.
+  const verdict = await withAgent("judge", () =>
+    completeStructured<Omit<JudgeVerdict, "id" | "text" | "importanceStored" | "status">>({
+      messages: [{ role: "user", content: prompt }],
+      schema: SCHEMA,
+      schemaName: "ClaimQualityVerdict",
+      model,
+      // Claude-5 judge models think before answering, and thinking counts against
+      // max_tokens: too low a budget is spent thinking and the structured JSON
+      // output is truncated. Give comfortable headroom for a small JSON verdict —
+      // the cap is a backstop, not a budget.
+      maxTokens: 8192,
+    })
+  );
 
   return {
     id: input.id,

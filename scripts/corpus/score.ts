@@ -14,17 +14,41 @@
  *   tsx scripts/corpus/score.ts [cluster] [--sample=N] [--no-judge] [--out=DIR]
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
+import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertCorpusDb, RUNS_ROOT } from "./lib.js";
+import { assertCorpusDb, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
 import { closeDb, rawQuery } from "../../src/db/client.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
-import { costMicroUsd } from "../../src/llm/pricing.js";
+import { withCostMeter } from "../../src/llm/usage-context.js";
 import { loadConfig } from "../../src/config.js";
 import { computeStructuralMetrics, type GraphSnapshot, type StructuralMetrics } from "./metrics.js";
 import { judgeClaim, type JudgeInput, type JudgeVerdict } from "./judge.js";
 
 const DEFAULT_SAMPLE = 15;
+
+/**
+ * The run's configuration fingerprint, embedded so a scorecard in the
+ * committed history (corpus/scorecards/) stays interpretable on its own: which
+ * epoch and prompts produced this graph, which models ran the agents, which
+ * commit of the repo. Comparisons only mean something within a fingerprint —
+ * across epochs they are cross-cohort comparisons (docs/graph-epochs.md).
+ */
+interface ScorecardConfig {
+  pipelineEpoch: string;
+  gitCommit: string | null;
+  models: { steward: string; curator: string; matcher: string; judge: string };
+}
+
+function gitCommit(): string | null {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
 
 interface JudgedSummary {
   model: string;
@@ -41,6 +65,7 @@ export interface Scorecard {
   generatedAt: string;
   cluster: string;
   database: string;
+  config: ScorecardConfig;
   structural: StructuralMetrics;
   judged: JudgedSummary | null;
   cost: { calls: number; usd: number } | null;
@@ -210,32 +235,31 @@ function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary
 export async function scoreRun(
   cluster: string,
   opts: { sample?: number; judge?: boolean; outDir?: string } = {}
-): Promise<{ scorecard: Scorecard; dir: string }> {
+): Promise<{ scorecard: Scorecard; dir: string; judgeCostMicroUsd: number }> {
   assertCorpusDb();
   const sample = opts.sample ?? DEFAULT_SAMPLE;
   const doJudge = opts.judge ?? true;
+  const cfg = loadConfig();
 
   const snapshot = await loadSnapshot();
   const structural = computeStructuralMetrics(snapshot);
 
   let judged: JudgedSummary | null = null;
   let cost: Scorecard["cost"] = null;
+  let judgeCostMicroUsd = 0;
   if (doJudge && sample > 0) {
     const before = getSessionUsage();
     const inputs = pickSample(snapshot, sample);
-    console.log(`  judging ${inputs.length} claims with ${loadConfig().judgeModel}…`);
-    const verdicts = await judgeSample(inputs);
-    judged = summarizeJudged(loadConfig().judgeModel, verdicts);
-    const after = getSessionUsage();
-    const micro = costMicroUsd(loadConfig().judgeModel, {
-      inputTokens: after.inputTokens - before.inputTokens,
-      outputTokens: after.outputTokens - before.outputTokens,
-      cacheReadTokens: after.cacheReadTokens - before.cacheReadTokens,
-      cacheCreationTokens: after.cacheCreationTokens - before.cacheCreationTokens,
-    });
+    console.log(`  judging ${inputs.length} claims with ${cfg.judgeModel}…`);
+    // The cost meter is fed synchronously per call at the metering chokepoint,
+    // so this is the judge's exact metered cost (raw rates, whatever model
+    // actually served each call) — not a session-total diff priced by hand.
+    const { value: verdicts, billedMicroUsd } = await withCostMeter(() => judgeSample(inputs));
+    judged = summarizeJudged(cfg.judgeModel, verdicts);
+    judgeCostMicroUsd = billedMicroUsd;
     cost = {
-      calls: after.calls - before.calls,
-      usd: Math.round(micro / 10_000) / 100, // micro-USD → USD, 2 dp
+      calls: getSessionUsage().calls - before.calls,
+      usd: Math.round(billedMicroUsd / 10_000) / 100, // micro-USD → USD, 2 dp
     };
   }
 
@@ -243,6 +267,16 @@ export async function scoreRun(
     generatedAt: new Date().toISOString(),
     cluster,
     database: new URL(process.env.DATABASE_URL!).pathname.slice(1),
+    config: {
+      pipelineEpoch: cfg.pipelineEpoch,
+      gitCommit: gitCommit(),
+      models: {
+        steward: cfg.stewardModel,
+        curator: cfg.curatorModel,
+        matcher: cfg.matcherModel,
+        judge: cfg.judgeModel,
+      },
+    },
     structural,
     judged,
     cost,
@@ -254,7 +288,14 @@ export async function scoreRun(
   writeFileSync(join(dir, "scorecard.json"), JSON.stringify(scorecard, null, 2));
   writeFileSync(join(dir, "scorecard.md"), renderMarkdown(scorecard));
 
-  return { scorecard, dir };
+  // Also file the scorecard into the committed history (corpus/scorecards/),
+  // since runs/ is gitignored — this is where baselines and regression history
+  // live until the eval-run registry (#334 L1) replaces files with a table.
+  const historyDir = join(SCORECARDS_ROOT, cluster);
+  mkdirSync(historyDir, { recursive: true });
+  writeFileSync(join(historyDir, `${stamp}.json`), JSON.stringify(scorecard, null, 2));
+
+  return { scorecard, dir, judgeCostMicroUsd };
 }
 
 function renderMarkdown(s: Scorecard): string {
@@ -264,6 +305,11 @@ function renderMarkdown(s: Scorecard): string {
   w(`# Corpus run scorecard — ${s.cluster}`);
   w();
   w(`_generated ${s.generatedAt} · database \`${s.database}\`_`);
+  w(
+    `_epoch \`${s.config.pipelineEpoch}\` · commit \`${s.config.gitCommit ?? "?"}\` · ` +
+      `steward \`${s.config.models.steward}\` · matcher \`${s.config.models.matcher}\` · ` +
+      `judge \`${s.config.models.judge}\`_`
+  );
   w();
   w(`Scored, diffable counterpart to \`report.md\`. Structural metrics are free;`);
   w(`the judged block is a bounded LLM-judge sample (#99). Compare two runs with`);
@@ -302,7 +348,7 @@ function renderMarkdown(s: Scorecard): string {
     w(`| granularity | ${Object.entries(j.granularity).map(([k, v]) => `${k} ${v}`).join(", ")} | |`);
     w(`| flags | ${Object.entries(j.flags).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} | |`);
     w();
-    if (s.cost) w(`_judge cost: ${s.cost.calls} calls, ~$${s.cost.usd} (${j.model}-priced)._`);
+    if (s.cost) w(`_judge cost: ${s.cost.calls} calls, $${s.cost.usd} (metered)._`);
     w();
     w(`### Lowest-scoring sampled claims`);
     w();
