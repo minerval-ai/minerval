@@ -9,6 +9,7 @@ import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
+import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
@@ -113,6 +114,11 @@ async function main() {
   // per-sweep inflow (#295). Both jobs are idempotent, so running it in
   // every task is safe.
   pollers.push(startAllocationScheduler({ logger }));
+
+  // The queue-depth sampler (#217) persists a periodic snapshot of the
+  // steward lane + action ledger. Period-keyed, so every task can run it and
+  // exactly one snapshot lands per period.
+  pollers.push(startQueueDepthSampler({ logger }));
 
   // The recovery sweep (#218) re-enqueues review/arbitration work whose
   // in-memory message was lost (restart, dropped on error). The pipeline

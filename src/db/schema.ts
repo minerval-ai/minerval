@@ -663,6 +663,85 @@ export const agentSteps = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// enqueue_events
+//
+// Orchestration telemetry (#334 L0, #217's fan-out half): one row per enqueue
+// through the queue-service chokepoint — who (source agent run) caused what
+// (target queue + trigger). This is the data that answers "when an agent of
+// type Y runs in situation A, how many agents of type X does it enqueue",
+// reconstructs propagation trees for cascade-stability analysis (#295's
+// empirical R), and measures how much of a propagation storm the steward's
+// pending-slot coalescing (#182) actually absorbs (`coalesced`).
+//
+// Source attribution rides in from the ambient usage context; a NULL
+// source_agent means the enqueue came from a route/worker outside any agent
+// run (e.g. ingestion intake). Writes are fire-and-forget (like llm_usage and
+// the trace tables): telemetry never fails or slows an enqueue. Plain uuids,
+// no FKs, safe to prune by created_at.
+// ---------------------------------------------------------------------------
+export const enqueueEvents = pgTable(
+  "enqueue_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Target queue: steward | curator | contribution | arbitration | audit |
+    // claim_pipeline | url_extraction.
+    queue: text("queue").notNull(),
+    // The message's situation taxonomy: StewardMessage.trigger,
+    // CuratorMessage.trigger, ArbitrationMessage.trigger, AuditMessage.
+    // auditType. NULL for queues whose messages carry no trigger.
+    trigger: text("trigger"),
+    // Target-side attribution, when the message names one.
+    claimId: uuid("claim_id"),
+    jobId: uuid("job_id"),
+    contributionId: uuid("contribution_id"),
+    // Source-side attribution, snapshotted from the usage context: which
+    // agent run did the enqueuing (join agent_runs via source_run_id for the
+    // full causal lineage), and which claim's work it was doing.
+    sourceAgent: text("source_agent"),
+    sourceRunId: uuid("source_run_id"),
+    sourceClaimId: uuid("source_claim_id"),
+    // Steward lane only: true when the enqueue APPENDED to an existing
+    // pending slot (absorbed by #182's coalescing), false when it created
+    // the slot. NULL for the other queues, which have no slots.
+    coalesced: boolean("coalesced"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_enqueue_events_queue_time").on(table.queue, table.createdAt),
+    index("idx_enqueue_events_source_run").on(table.sourceRunId),
+    index("idx_enqueue_events_claim").on(table.claimId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// queue_depth_snapshots
+//
+// Periodic depth samples (#217): the steward lane by state plus the open
+// action ledger, persisted so fan-out spikes and silent pile-ups are visible
+// over time instead of only at the moment someone hits GET /queue. Written by
+// the queue-depth sampler worker on a period key, so concurrent instances
+// record each period at most once. Safe to prune by created_at.
+// ---------------------------------------------------------------------------
+export const queueDepthSnapshots = pgTable(
+  "queue_depth_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // '<unix period number>' for the sampling interval in effect; UNIQUE so
+    // one row per period across processes (losers' inserts no-op).
+    periodKey: text("period_key").unique(),
+    // Extracted for cheap charting; the full detail rides in `detail`.
+    stewardPending: integer("steward_pending").notNull().default(0),
+    detail: jsonb("detail").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_queue_depth_snapshots_time").on(table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
 // owl_ledger
 //
 // The one spendable balance: owls, the platform's unit of account (1 owl =
