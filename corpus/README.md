@@ -121,6 +121,22 @@ Snapshot operations force-terminate other connections on the databases they
 touch (Postgres template semantics) — never run one mid-drain. The main
 `episteme` database is refused by name.
 
+**Matcher golden pairs** (#99 layer 1) — the per-PR regression net for the one
+agent whose task saturates enough for exact-match grading. 30 pinned pairs in
+[`golden/matcher-pairs.json`](./golden/matcher-pairs.json) (paraphrase /
+negation-with-stance / specification / similar-but-different / hard), each
+seeded into the corpus DB and run through the real agentic Matcher:
+
+```bash
+npm run corpus:golden                        # all pairs, cents per run
+npm run corpus:golden -- --category=negation --model=gpt-5-mini
+npm run corpus:golden -- --min-pass=0.9      # exit 1 below the bar (CI gate)
+```
+
+Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
+them). Per the constitution (§2), a negation is expected to MATCH its
+counterpart with stance `denies` — a claim and its denial are one node.
+
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only).

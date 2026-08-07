@@ -23,7 +23,8 @@
     "corpus:score": "tsx scripts/corpus/score.ts",
     "corpus:compare": "tsx scripts/corpus/compare.ts",
     "corpus:runs": "tsx scripts/corpus/runs.ts",
-    "corpus:snapshot": "tsx scripts/corpus/snapshot.ts"
+    "corpus:snapshot": "tsx scripts/corpus/snapshot.ts",
+    "corpus:golden": "tsx scripts/corpus/golden-matcher.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
