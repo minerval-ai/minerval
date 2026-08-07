@@ -86,4 +86,77 @@ describe("computeStructuralMetrics", () => {
     const cyc = computeStructuralMetrics(g);
     expect(Number.isFinite(cyc.decomposition.maxDepth)).toBe(true);
   });
+
+  it("finds no §21 coherence problems in the clean fixture", () => {
+    expect(m.coherence.violations).toBe(0);
+    expect(m.coherence.tensions).toBe(0);
+  });
+});
+
+// §21's crisp rules (#334 S3 tier 2): verified cannot rest on a contradicted
+// `requires` premise; a `contradicts` edge cannot join two verified claims.
+// Supported-grade near-misses are tensions, not violations. `assumes` and
+// `supports` children never fire the premise rule, and unassessed endpoints
+// never fire anything.
+describe("§21 coherence rules", () => {
+  const base = (): GraphSnapshot => ({
+    claims: [
+      { id: "p", text: "Parent claim", claimType: "causal", importance: 0.5, createdBy: "x" },
+      { id: "c", text: "Child claim", claimType: "causal", importance: 0.5, createdBy: "x" },
+    ],
+    edges: [],
+    assessments: [],
+    instances: [],
+    sourceWords: 0,
+  });
+
+  it("flags verified-on-contradicted-premise as a violation, supported as a tension", () => {
+    const g = base();
+    g.edges.push({ parent: "p", child: "c", rel: "requires" });
+    g.assessments.push(
+      { claimId: "p", status: "verified", confidence: 0.9, reasoningTrace: "" },
+      { claimId: "c", status: "contradicted", confidence: 0.9, reasoningTrace: "" }
+    );
+    const hard = computeStructuralMetrics(g).coherence;
+    expect(hard.violations).toBe(1);
+    expect(hard.items[0]).toMatchObject({ rule: "premise", severity: "violation" });
+
+    g.assessments[0]!.status = "supported";
+    const soft = computeStructuralMetrics(g).coherence;
+    expect(soft.violations).toBe(0);
+    expect(soft.tensions).toBe(1);
+  });
+
+  it("flags co-verified contradiction edges; mixed positive grades are tensions", () => {
+    const g = base();
+    g.edges.push({ parent: "p", child: "c", rel: "contradicts" });
+    g.assessments.push(
+      { claimId: "p", status: "verified", confidence: 0.9, reasoningTrace: "" },
+      { claimId: "c", status: "verified", confidence: 0.9, reasoningTrace: "" }
+    );
+    expect(computeStructuralMetrics(g).coherence.violations).toBe(1);
+
+    g.assessments[1]!.status = "supported";
+    const mixed = computeStructuralMetrics(g).coherence;
+    expect(mixed.violations).toBe(0);
+    expect(mixed.tensions).toBe(1);
+  });
+
+  it("never fires on assumes/supports children or unassessed endpoints", () => {
+    const g = base();
+    g.edges.push(
+      { parent: "p", child: "c", rel: "assumes" },
+      { parent: "p", child: "c", rel: "supports" }
+    );
+    g.assessments.push(
+      { claimId: "p", status: "verified", confidence: 0.9, reasoningTrace: "" },
+      { claimId: "c", status: "contradicted", confidence: 0.9, reasoningTrace: "" }
+    );
+    expect(computeStructuralMetrics(g).coherence.items).toEqual([]);
+
+    const h = base();
+    h.edges.push({ parent: "p", child: "c", rel: "requires" });
+    h.assessments.push({ claimId: "c", status: "contradicted", confidence: 0.9, reasoningTrace: "" });
+    expect(computeStructuralMetrics(h).coherence.items).toEqual([]);
+  });
 });

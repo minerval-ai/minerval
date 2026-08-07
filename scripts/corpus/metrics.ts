@@ -66,6 +66,25 @@ export interface StructuralMetrics {
     meanAtomic: number | null; // mean importance of atomic (leaf) claims
     meanCompound: number | null; // mean importance of claims with children
   };
+  /**
+   * Constitution §21's crisp coherence rules, checked mechanically (#334 S3
+   * tier 2, the always-free slice): a claim cannot stand verified while a
+   * premise it requires stands contradicted, and two claims joined by a
+   * contradiction edge cannot both be verified. `violations` are the letter
+   * of §21; `tensions` are the supported-grade near-misses worth watching.
+   * These surface candidates for the Steward/Curator to judge — a violation
+   * is a defect in an assessment OR in an edge, and which one is a judgment.
+   */
+  coherence: {
+    violations: number;
+    tensions: number;
+    items: Array<{
+      rule: "premise" | "contradiction";
+      severity: "violation" | "tension";
+      parent: string;
+      child: string;
+    }>;
+  };
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -222,5 +241,55 @@ export function computeStructuralMetrics(g: GraphSnapshot): StructuralMetrics {
       meanAtomic: mean(atomicImps),
       meanCompound: mean(compoundImps),
     },
+    coherence: computeCoherence(g),
+  };
+}
+
+/**
+ * §21's two mechanical rules over current assessments and edges.
+ *
+ * Rule "premise": parent leaning on a `requires` child (a load-bearing
+ * premise — `assumes` is deliberately excluded: a failed assumption makes the
+ * parent ill-posed, not false, per the relation guidance). Parent verified
+ * with the premise contradicted is a violation; parent supported with the
+ * premise contradicted is a tension.
+ *
+ * Rule "contradiction": a `contradicts` edge with both endpoints verified is
+ * a violation; both at least supported (but not both verified) is a tension.
+ * Unassessed endpoints never fire either rule.
+ */
+function computeCoherence(g: GraphSnapshot): StructuralMetrics["coherence"] {
+  const statusOf = new Map(g.assessments.map((a) => [a.claimId, a.status]));
+  const items: StructuralMetrics["coherence"]["items"] = [];
+  const positive = (s: string | undefined) => s === "verified" || s === "supported";
+
+  for (const e of g.edges) {
+    const parent = statusOf.get(e.parent);
+    const child = statusOf.get(e.child);
+    if (e.rel === "requires") {
+      if (child === "contradicted" && positive(parent)) {
+        items.push({
+          rule: "premise",
+          severity: parent === "verified" ? "violation" : "tension",
+          parent: e.parent,
+          child: e.child,
+        });
+      }
+    } else if (e.rel === "contradicts") {
+      if (positive(parent) && positive(child)) {
+        items.push({
+          rule: "contradiction",
+          severity:
+            parent === "verified" && child === "verified" ? "violation" : "tension",
+          parent: e.parent,
+          child: e.child,
+        });
+      }
+    }
+  }
+  return {
+    violations: items.filter((i) => i.severity === "violation").length,
+    tensions: items.filter((i) => i.severity === "tension").length,
+    items,
   };
 }
