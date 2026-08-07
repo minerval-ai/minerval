@@ -3,6 +3,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { refreshQueuePriority } from "./priority-service.js";
 import { ensureAssessActions } from "./action-service.js";
+import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -120,16 +121,20 @@ export async function enqueueClaimPipeline(
   if (!config.sqsClaimPipelineQueue) {
     // Local dev: push to in-memory queue
     localQueues.claimPipeline.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsClaimPipelineQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsClaimPipelineQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({
+    queue: "claim_pipeline",
+    claimId: message.claimId,
+    jobId: message.jobId,
+  });
 }
 
 export async function enqueueUrlExtraction(
@@ -140,16 +145,16 @@ export async function enqueueUrlExtraction(
   if (!config.sqsUrlExtractionQueue) {
     // Local dev: push to in-memory queue
     localQueues.urlExtraction.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsUrlExtractionQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsUrlExtractionQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({ queue: "url_extraction", jobId: message.jobId });
 }
 
 export async function enqueueContribution(
@@ -158,15 +163,19 @@ export async function enqueueContribution(
   const config = loadConfig();
   if (!config.sqsContributionQueue) {
     localQueues.contribution.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsContributionQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsContributionQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({
+    queue: "contribution",
+    contributionId: message.contributionId,
+  });
 }
 
 export async function enqueueArbitration(
@@ -175,15 +184,20 @@ export async function enqueueArbitration(
   const config = loadConfig();
   if (!config.sqsArbitrationQueue) {
     localQueues.arbitration.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsArbitrationQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsArbitrationQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({
+    queue: "arbitration",
+    trigger: message.trigger,
+    contributionId: message.contributionId,
+  });
 }
 
 // Backstop against a propagation storm growing a pending slot without bound:
@@ -212,7 +226,14 @@ export async function enqueueSteward(
   message: StewardMessage
 ): Promise<void> {
   const chunk = `[${message.trigger}] ${message.context}`.trim();
-  await rawQuery(
+  // The FROM subquery locks the row and carries its PRE-update state out
+  // through RETURNING (SET expressions always read old values, so the CASE
+  // semantics are unchanged) — that's how the enqueue event below can tell
+  // "created the pending slot" from "appended to one" (#217, the coalescing
+  // absorption #182 was built on but never measured). Still one statement:
+  // concurrent enqueues serialize on the row lock and each sees the true
+  // prior state.
+  const rows = await rawQuery<{ prev_state: string }>(
     `UPDATE claims
         SET steward_state = 'pending',
             steward_trigger = CASE
@@ -233,10 +254,24 @@ export async function enqueueSteward(
               ELSE $3
             END,
             updated_at = now()
-      WHERE id = $1
-        AND state = 'active'`,
+       FROM (SELECT id, steward_state AS prev_state
+               FROM claims WHERE id = $1 FOR UPDATE) prev
+      WHERE claims.id = prev.id
+        AND state = 'active'
+      RETURNING prev.prev_state AS prev_state`,
     [message.claimId, message.trigger, chunk]
   );
+
+  // No row = the claim is missing or inactive; nothing was enqueued, so
+  // there is no event to record.
+  if (rows.length > 0) {
+    recordEnqueueEvent({
+      queue: "steward",
+      trigger: message.trigger,
+      claimId: message.claimId,
+      coalesced: rows[0]!.prev_state === "pending",
+    });
+  }
 
   // Stamp the composite queue priority as the claim enters the lane, so the
   // drain's ordering is current the moment the slot exists. (Refreshed again
@@ -271,15 +306,20 @@ export async function enqueueCurator(
   const config = loadConfig();
   if (!config.sqsCuratorQueue) {
     localQueues.curator.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsCuratorQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsCuratorQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({
+    queue: "curator",
+    trigger: message.trigger,
+    claimId: message.claimId,
+  });
 }
 
 export async function enqueueAudit(
@@ -288,15 +328,16 @@ export async function enqueueAudit(
   const config = loadConfig();
   if (!config.sqsAuditQueue) {
     localQueues.audit.push(message);
-    return;
+  } else {
+    const client = getSqsClient();
+    await client.send(
+      new SendMessageCommand({
+        QueueUrl: config.sqsAuditQueue,
+        MessageBody: JSON.stringify(message),
+      })
+    );
   }
-  const client = getSqsClient();
-  await client.send(
-    new SendMessageCommand({
-      QueueUrl: config.sqsAuditQueue,
-      MessageBody: JSON.stringify(message),
-    })
-  );
+  recordEnqueueEvent({ queue: "audit", trigger: message.auditType });
 }
 
 /**

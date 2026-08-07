@@ -288,6 +288,13 @@
       "when": 1786073301512,
       "tag": "0040_trace_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786122275122,
+      "tag": "0041_enqueue_telemetry",
+      "breakpoints": true
     }
   ]
 }

@@ -215,6 +215,14 @@ const configSchema = z.object({
   // under vitest, full everywhere else — so dev and the corpus harness trace
   // by default.
   traceLevel: z.enum(["off", "full"]).optional(),
+  // Enqueue-event telemetry (#334 L0, #217): one tiny row per enqueue through
+  // the queue-service chokepoint. Unset resolves in enqueue-events-service.ts:
+  // off under vitest, ON everywhere else including production — fan-out data
+  // is the point.
+  enqueueEvents: z.enum(["on", "off"]).optional(),
+  // Queue-depth snapshot cadence (#217): hours between persisted samples of
+  // the steward lane + action ledger. 0 disables.
+  queueDepthSampleIntervalHours: z.coerce.number().default(6),
 
   // SQS queues
   sqsUrlExtractionQueue: z.string().default(""),
@@ -500,6 +508,8 @@ export function loadConfig(): Config {
     llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
     llmDailyCallLimit: process.env.LLM_DAILY_CALL_LIMIT,
     traceLevel: process.env.TRACE_LEVEL,
+    enqueueEvents: process.env.ENQUEUE_EVENTS,
+    queueDepthSampleIntervalHours: process.env.QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS,
     llmHourlyTokenLimit: process.env.LLM_HOURLY_TOKEN_LIMIT,
     llmDailyTokenLimit: process.env.LLM_DAILY_TOKEN_LIMIT,
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,

@@ -30,6 +30,8 @@ function adminUrlOf(url: string): string {
 const DATA_TABLES = [
   "agent_steps",
   "agent_runs",
+  "enqueue_events",
+  "queue_depth_snapshots",
   "claim_instances",
   "claim_relationships",
   "assessments",

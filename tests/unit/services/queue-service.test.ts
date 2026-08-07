@@ -12,12 +12,19 @@ vi.mock("../../../src/services/priority-service.js", () => ({
 vi.mock("../../../src/services/action-service.js", () => ({
   ensureAssessActions: vi.fn(async () => {}),
 }));
+// Enqueue-event telemetry is its own service's concern (and self-disables
+// under vitest); mocking it here lets the coalescing-split tests assert what
+// the enqueue statement reported without a database.
+vi.mock("../../../src/services/enqueue-events-service.js", () => ({
+  recordEnqueueEvent: vi.fn(),
+}));
 
 import {
   enqueueSteward,
   STEWARD_CONTEXT_MAX_CHARS,
 } from "../../../src/services/queue-service.js";
 import { rawQuery } from "../../../src/db/client.js";
+import { recordEnqueueEvent } from "../../../src/services/enqueue-events-service.js";
 
 // The claim row is the Steward's queue, so these semantics live in one SQL
 // statement (atomic under concurrent enqueues). The regression this pins
@@ -83,5 +90,53 @@ describe("enqueueSteward (#182 pending-slot append)", () => {
   it("still only enqueues active claims", async () => {
     const sql = await call();
     expect(sql).toContain("AND state = 'active'");
+  });
+});
+
+// The enqueue statement carries the row's PRE-update state out through
+// RETURNING, so the telemetry can distinguish "created the pending slot" from
+// "appended to one" — the #182 coalescing absorption #217 wants measured.
+describe("enqueueSteward → enqueue-event coalescing split (#217)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const message = {
+    claimId: "22222222-2222-2222-2222-222222222222",
+    trigger: "subclaim_change" as const,
+    context: "upstream credence moved",
+  };
+
+  it("returns the pre-update state from the same statement", async () => {
+    await enqueueSteward(message);
+    const sql = vi.mocked(rawQuery).mock.calls[0]![0] as string;
+    expect(sql).toContain("steward_state AS prev_state");
+    expect(sql).toContain("FOR UPDATE");
+    expect(sql).toContain("RETURNING prev.prev_state");
+  });
+
+  it("reports coalesced=false when the enqueue created the pending slot", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ prev_state: "done" }]);
+    await enqueueSteward(message);
+    expect(recordEnqueueEvent).toHaveBeenCalledWith({
+      queue: "steward",
+      trigger: "subclaim_change",
+      claimId: message.claimId,
+      coalesced: false,
+    });
+  });
+
+  it("reports coalesced=true when it appended to an existing slot", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([{ prev_state: "pending" }]);
+    await enqueueSteward(message);
+    expect(recordEnqueueEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ coalesced: true })
+    );
+  });
+
+  it("records no event when the claim is missing or inactive (nothing enqueued)", async () => {
+    vi.mocked(rawQuery).mockResolvedValueOnce([]);
+    await enqueueSteward(message);
+    expect(recordEnqueueEvent).not.toHaveBeenCalled();
   });
 });
