@@ -101,6 +101,17 @@ what the user owes is the owl ledger, below.
 Usage is queryable per user/key/day/agent (`GET /usage`) and in aggregate for
 ops (`GET /usage/system`, service-only).
 
+**Legacy balances (the credits→owls cutover).** Accounts created before the
+owl ledger (migration 0028) held *credits*: a derived balance of purchases
+minus metered usage billed at a markup. The cutover renamed that ledger in
+place, which made two deliberate, accepted choices — recorded in migration
+`0039_money_reconciliation.sql` and to be revisited before any production
+run with material legacy balances: pre-cutover usage was **forgiven** (no
+debit rows were backfilled), and surviving balances keep their **face value
+in owls** (a revaluation, since an owl covers raw metered cost while a
+credit covered marked-up cost). The write-off is bounded by the pre-launch
+cohort's total prior usage.
+
 ## The owl: caps, free tier & quotas
 
 Nothing has a fixed price: every operation is metered at cost-plus, and the

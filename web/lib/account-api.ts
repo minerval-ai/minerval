@@ -395,7 +395,13 @@ export interface GrantView {
   budget_job_id: string;
   plan: {
     strategy?: string;
-    items?: Array<{ claim_id: string; action: string; rationale: string }>;
+    // claim_id for assess/reassess/deepen items; url for ingest items.
+    items?: Array<{
+      claim_id?: string;
+      url?: string;
+      action: string;
+      rationale: string;
+    }>;
   } | null;
   plan_cursor: number;
   funded_assessments: Array<{
