@@ -92,6 +92,10 @@ function baseParams(req: {
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
     // Ask for the full usage block: token counts, cached tokens, and cost.
     usage: { include: true },
+    // Route only to hosts whose data policy forbids training on prompts —
+    // the privacy page promises "API terms that exclude training on your
+    // data", and OpenRouter's zoo includes hosts where that isn't true.
+    provider: { data_collection: "deny" },
   };
 }
 

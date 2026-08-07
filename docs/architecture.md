@@ -51,10 +51,10 @@ The stack is TypeScript end to end: a Fastify API, background workers driven by
 a job queue (AWS SQS in production, an in-memory runner locally), and
 PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
-models sit behind every agent by default; the client calls the Anthropic
-Messages API directly, model ids are centralized in `src/llm/models.ts`, and in
-production the load-bearing agents run on Claude Fable 5. Any agent can be
-pointed at OpenAI or OpenRouter instead with a single env var — see
+models sit behind every agent by default; model ids are centralized in
+`src/llm/models.ts`, and in production the load-bearing agents run on Claude
+Fable 5. Any agent can be pointed at OpenAI or OpenRouter instead with a
+single env var — the Matcher runs on DeepSeek V4 Flash this way — see
 [Providers](#providers).
 
 ---
@@ -309,7 +309,7 @@ dispute about one of its subclaims.
 
 ## The Agent Pipeline
 
-Each agent is a Claude model with a system prompt assembled in layers: the full
+Each agent is a model with a system prompt assembled in layers: the full
 constitution first, then the agent's specific role (governance roles also
 splice in the relevant operational policies). The assembled prompt is sent as a
 single cached block, so the constitution is paid for once per agent rather than
@@ -416,12 +416,13 @@ Model choice follows the stakes of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Matcher | Claude Haiku 4.5 |
+| Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent | Claude Fable 5 |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
-retrieves itself, so a small model suffices. The load-bearing epistemic work
+retrieves itself, so a small model suffices; it is the first agent routed to a
+non-Anthropic model. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Because stewardship drains in importance
