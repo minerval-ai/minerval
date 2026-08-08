@@ -356,6 +356,7 @@ function renderMarkdown(s: Scorecard): string {
   w(`| E cross-doc | shared subclaims (>1 parent) | ${st.crossDoc.sharedSubclaims} |`);
   w(`| F assessment | status distribution | ${Object.entries(st.assessment.statusDistribution).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} |`);
   w(`| F assessment | % with trace / mean trace len | ${(st.assessment.pctWithTrace * 100).toFixed(0)}% / ${st.assessment.meanTraceLength} |`);
+  w(`| §21 coherence | violations / tensions | ${st.coherence.violations} / ${st.coherence.tensions} |`);
   w(`| importance | mean / atomic / compound | ${st.importance.mean} / ${st.importance.meanAtomic ?? "n/a"} / ${st.importance.meanCompound ?? "n/a"} |`);
   w(`| importance | histogram | ${Object.entries(st.importance.histogram).sort().map(([k, v]) => `${k}:${v}`).join(" ")} |`);
   w();

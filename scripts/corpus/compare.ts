@@ -75,6 +75,7 @@ async function main() {
     ["D · atomic share", delta(a.structural.decomposition.atomicShare, b.structural.decomposition.atomicShare)],
     ["E · shared subclaims", delta(a.structural.crossDoc.sharedSubclaims, b.structural.crossDoc.sharedSubclaims)],
     ["F · % with trace", delta(a.structural.assessment.pctWithTrace, b.structural.assessment.pctWithTrace)],
+    ["§21 · coherence violations", delta(a.structural.coherence?.violations, b.structural.coherence?.violations)],
     ["imp · mean", delta(a.structural.importance.mean, b.structural.importance.mean)],
     ["imp · atomic vs compound gap", delta(gap(a), gap(b))],
   ];
