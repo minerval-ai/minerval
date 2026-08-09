@@ -1,0 +1,180 @@
+{
+  "generatedAt": "2026-08-09T23:37:10.567Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus",
+  "config": {
+    "pipelineEpoch": "2026-08-owl-economy",
+    "gitCommit": "a0e5fd3",
+    "models": {
+      "steward": "deepseek/deepseek-v4-flash",
+      "curator": "claude-sonnet-5",
+      "matcher": "deepseek/deepseek-v4-flash",
+      "judge": "claude-fable-5,gpt-5.6-sol"
+    }
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 21,
+      "instances": 29,
+      "totalClaims": 27,
+      "claimsPer1kWords": 7.978723404255319,
+      "typeDistribution": {
+        "causal": 11,
+        "empirical_verifiable": 2,
+        "empirical_derived": 14
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 15,
+        "p90": 21,
+        "max": 25,
+        "mean": 15.9
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1.380952380952381
+    },
+    "decomposition": {
+      "maxDepth": 2,
+      "depthHistogram": {
+        "0": 19,
+        "1": 1,
+        "2": 1
+      },
+      "atomicShare": 0.926,
+      "meanChildrenPerParent": 7
+    },
+    "crossDoc": {
+      "sharedSubclaims": 0
+    },
+    "assessment": {
+      "statusDistribution": {
+        "supported": 2
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 2212
+    },
+    "importance": {
+      "mean": 0.378,
+      "histogram": {
+        "0.4-0.6": 12,
+        "0.2-0.4": 13,
+        "0.0-0.2": 1,
+        "0.6-0.8": 1
+      },
+      "meanAtomic": 0.362,
+      "meanCompound": 0.575
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    }
+  },
+  "judged": {
+    "model": "claude-fable-5",
+    "sampleSize": 0,
+    "claimBarPassRate": 0,
+    "importanceAlignment": {
+      "meanStored": 0,
+      "meanJudged": 0,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 0,
+      "reasoningFit": 0,
+      "impartiality": 0
+    },
+    "granularity": {},
+    "flags": {},
+    "items": []
+  },
+  "judgePanel": [
+    {
+      "model": "claude-fable-5",
+      "sampleSize": 0,
+      "claimBarPassRate": 0,
+      "importanceAlignment": {
+        "meanStored": 0,
+        "meanJudged": 0,
+        "overratedShare": 0
+      },
+      "assessmentQuality": {
+        "readability": 0,
+        "reasoningFit": 0,
+        "impartiality": 0
+      },
+      "granularity": {},
+      "flags": {},
+      "items": []
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "sampleSize": 2,
+      "claimBarPassRate": 1,
+      "importanceAlignment": {
+        "meanStored": 0.57,
+        "meanJudged": 0.32,
+        "overratedShare": 0.5
+      },
+      "assessmentQuality": {
+        "readability": 4,
+        "reasoningFit": 3,
+        "impartiality": 2.5
+      },
+      "granularity": {
+        "too_granular": 2
+      },
+      "flags": {
+        "false_precision": 1,
+        "other": 1,
+        "status_miscalibrated": 1,
+        "bias": 1,
+        "boilerplate_trace": 1
+      },
+      "items": [
+        {
+          "id": "0ff2e609-f85a-4db6-bf03-42bc50750296",
+          "text": "Hypothetical TeV-scale black holes that could be produced at the LHC pose no significant risk to Earth",
+          "importanceStored": 0.6,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.25,
+          "flags": [
+            "false_precision",
+            "other"
+          ],
+          "note": "The supported verdict is plausible, but the reasoning mostly invokes authorities and dismisses objections without explaining their errors or the assumptions limiting cosmic-ray and compact-star arguments. The decomposition duplicates the Hawking-evaporation proposition, and the Standard Model nonproduction claim is not probative under the claim’s premise that production is possible; the stated confidence also shifts inconsistently from 0.95 to 0.99."
+        },
+        {
+          "id": "560264a6-1159-44a7-b72e-216f0022a9e8",
+          "text": "Observed longevity of white dwarfs and neutron stars rules out dangerous accretion by TeV-scale black holes",
+          "importanceStored": 0.55,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 2,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.38,
+          "flags": [
+            "status_miscalibrated",
+            "bias",
+            "boilerplate_trace"
+          ],
+          "note": "The reasoning supports a narrower, conditional claim—especially for stable charged holes that cosmic rays would produce and compact stars would capture—not the unqualified statement about all dangerous TeV-scale black-hole accretion. Confidence 0.9 is therefore excessive, and the evidence discussion leans heavily on one analysis and derivative endorsements while dismissing the counterargument too briefly; additionally, the settled stellar-age premise should remain prose rather than a subclaim."
+        }
+      ]
+    }
+  ],
+  "cost": {
+    "calls": 2,
+    "usd": 0.06
+  }
+}
