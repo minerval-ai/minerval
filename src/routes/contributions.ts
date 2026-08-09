@@ -210,8 +210,12 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         200: {
           type: "object",
           properties: {
-            contribution: { type: "object" },
-            review: { type: "object", nullable: true },
+            // additionalProperties is load-bearing, not decoration:
+            // fast-json-stringify serializes a bare `type: "object"` with no
+            // declared properties as `{}`, silently dropping every key. This
+            // endpoint shipped the whole contribution as an empty object.
+            contribution: { type: "object", additionalProperties: true },
+            review: { type: "object", nullable: true, additionalProperties: true },
           },
         },
         404: {

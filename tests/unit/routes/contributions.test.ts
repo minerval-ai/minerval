@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
     limitPerHour: 10,
     sandboxed: false,
   })),
+  getContributionById: vi.fn(),
+  getReviewForContribution: vi.fn(async () => null),
 }));
 
 vi.mock("../../../src/services/claim-service.js", () => ({
@@ -34,9 +36,9 @@ vi.mock("../../../src/services/contributor-service.js", () => ({
 }));
 vi.mock("../../../src/services/contribution-service.js", () => ({
   createContribution: mocks.createContribution,
-  getContributionById: vi.fn(),
+  getContributionById: mocks.getContributionById,
   listContributions: vi.fn(async () => []),
-  getReviewForContribution: vi.fn(),
+  getReviewForContribution: mocks.getReviewForContribution,
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueContribution: mocks.enqueueContribution,
@@ -157,5 +159,105 @@ describe("POST /contributions gates (#71)", () => {
     expect(res.statusCode).toBe(429);
     expect(res.json().error.code).toBe("CONTRIBUTION_RATE_LIMITED");
     expect(mocks.createContribution).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The same fast-json-stringify stripping class as #16 (see
+ * claims-serialization.test.ts), recurred on this endpoint: the 200 schema
+ * declared `contribution: { type: "object" }` with no properties and no
+ * additionalProperties, so the serializer dropped every key and the endpoint
+ * answered `{"contribution": {}, "review": null}` for a row it had loaded.
+ *
+ * That blanked payload then broke the public record page: `{}` is truthy, so it
+ * slipped past the not-found check and threw on the first field access, turning
+ * every /contributions/:id into a server-side exception. Asserted through
+ * app.inject so the response really passes through the compiled serializer —
+ * testing the schema object alone would not have caught it.
+ */
+describe("GET /contributions/:id serialization", () => {
+  const row = {
+    id: "852cbfdf-1c5b-477d-8e02-e96f891a0a5c",
+    claimId: CLAIM_ID,
+    contributorId: "c-1",
+    contributionType: "challenge",
+    content: "This claim has not been reassessed in a while.",
+    evidenceUrls: ["https://example.org/paper"],
+    submittedAt: new Date("2026-08-09T14:55:22.635Z"),
+    reviewStatus: "pending",
+    mergeTargetClaimId: null,
+    proposedCanonicalForm: null,
+  };
+
+  it("returns the contribution's fields instead of an empty object", async () => {
+    mocks.getContributionById.mockResolvedValueOnce(row as never);
+    const app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: `/contributions/${row.id}` });
+
+    expect(res.statusCode).toBe(200);
+    const { contribution } = res.json();
+    expect(contribution).not.toEqual({});
+    expect(contribution).toMatchObject({
+      id: row.id,
+      claim_id: CLAIM_ID,
+      contribution_type: "challenge",
+      content: row.content,
+      review_status: "pending",
+      evidence_urls: ["https://example.org/paper"],
+      submitted_at: "2026-08-09T14:55:22.635Z",
+    });
+  });
+
+  it("keeps an intake proposal's null claim_id null rather than coercing it", async () => {
+    mocks.getContributionById.mockResolvedValueOnce({
+      ...row,
+      claimId: null,
+      contributionType: "propose_claim",
+      proposedCanonicalForm: "A proposed claim.",
+    } as never);
+    const app = await buildApp();
+
+    const { contribution } = (
+      await app.inject({ method: "GET", url: `/contributions/${row.id}` })
+    ).json();
+
+    expect(contribution.claim_id).toBeNull();
+    expect(contribution.proposed_canonical_form).toBe("A proposed claim.");
+  });
+
+  it("serializes the review's reasoning when one has landed", async () => {
+    mocks.getContributionById.mockResolvedValueOnce({
+      ...row,
+      reviewStatus: "rejected",
+    } as never);
+    mocks.getReviewForContribution.mockResolvedValueOnce({
+      id: "rev-1",
+      decision: "reject",
+      reasoning: "The cited source does not support the challenge.",
+      confidence: 0.8,
+      policyCitations: ["§7"],
+      reviewedAt: new Date("2026-08-09T15:00:00.000Z"),
+      reviewedBy: "contribution_reviewer",
+    } as never);
+    const app = await buildApp();
+
+    const { review } = (
+      await app.inject({ method: "GET", url: `/contributions/${row.id}` })
+    ).json();
+
+    expect(review).not.toEqual({});
+    expect(review.reasoning).toBe("The cited source does not support the challenge.");
+    expect(review.policy_citations).toEqual(["§7"]);
+    expect(review.reviewed_by).toBe("contribution_reviewer");
+  });
+
+  it("404s an unknown contribution", async () => {
+    mocks.getContributionById.mockResolvedValueOnce(null as never);
+    const app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: `/contributions/${row.id}` });
+
+    expect(res.statusCode).toBe(404);
   });
 });

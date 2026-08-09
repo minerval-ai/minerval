@@ -25,6 +25,12 @@ async function request<T>(
   body?: unknown
 ): Promise<{ status: number; data: T }> {
   const settings = await getSettings();
+  // The localhost carve-out is deliberate: a keyless local API takes the dev
+  // bypass (server/plugins/auth.ts), so a developer pointing here shouldn't be
+  // made to mint a key. It only misfired because the DEFAULT base URL was
+  // localhost, which sent fresh installs down the dev path and left them with a
+  // bare network error instead of this message. With the default now pointing at
+  // the hosted API, the carve-out only applies to someone who asked for it.
   if (!settings.apiKey && !settings.apiBaseUrl.includes("localhost")) {
     throw new ApiError(
       "No API key configured. Create one in your Minerval dashboard and paste it in the extension settings.",
@@ -32,14 +38,27 @@ async function request<T>(
     );
   }
 
-  const res = await fetch(`${settings.apiBaseUrl.replace(/\/$/, "")}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-      ...(settings.apiKey ? { "x-api-key": settings.apiKey } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  const url = `${settings.apiBaseUrl.replace(/\/$/, "")}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(settings.apiKey ? { "x-api-key": settings.apiKey } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch {
+    // A network-level failure surfaces in Chrome as a bare "Failed to fetch",
+    // which background.ts forwards verbatim to the panel. Say which host could
+    // not be reached, since a misconfigured base URL is the usual cause and the
+    // raw message gives the user nothing to act on.
+    throw new ApiError(
+      `Could not reach the Minerval API at ${settings.apiBaseUrl}. Check the API base URL in the extension settings.`,
+      0
+    );
+  }
 
   if (!res.ok) {
     let detail = `${res.status}`;

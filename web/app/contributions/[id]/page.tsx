@@ -57,9 +57,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const detail = apiConfigured() ? await fetchContribution(id) : null;
-  const label = detail
-    ? TYPE_LABELS[detail.contribution.contribution_type] ?? "Contribution"
-    : "Contribution";
+  const label =
+    TYPE_LABELS[detail?.contribution?.contribution_type ?? ""] ?? "Contribution";
   return { title: `${label} · Minerval` };
 }
 
@@ -83,7 +82,12 @@ export default async function ContributionPage({
   }
 
   const detail = await fetchContribution(id);
-  if (!detail) notFound();
+  // A present-but-empty contribution is not the same as a missing one, and it
+  // used to be worse than either: the object was truthy, so it slipped past the
+  // not-found check and then threw on the first field access, turning the whole
+  // page into a server-side exception. Treat an unusable payload as not-found
+  // and keep the failure legible.
+  if (!detail?.contribution?.contribution_type) notFound();
   const { contribution: c, review } = detail;
 
   // Refer to the claim by what it says, never a bare identifier; the claim

@@ -191,8 +191,10 @@ export async function appealRoutes(app: FastifyInstance): Promise<void> {
         200: {
           type: "object",
           properties: {
-            appeal: { type: "object" },
-            arbitration: { type: "object", nullable: true },
+            // Without additionalProperties, fast-json-stringify drops every
+            // key of a property-less object schema (see contributions.ts).
+            appeal: { type: "object", additionalProperties: true },
+            arbitration: { type: "object", nullable: true, additionalProperties: true },
           },
         },
         404: {
