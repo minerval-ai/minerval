@@ -71,6 +71,19 @@ describe("recordEnqueueEvent", () => {
     expect(row.sourceClaimId).toBe("44444444-4444-4444-4444-444444444444");
   });
 
+  it("nulls non-uuid sentinels instead of failing the row", () => {
+    // Upstream convention: steward-created claims enqueue the pipeline with
+    // jobId "steward" (no job row exists). The event must still record.
+    recordEnqueueEvent({
+      queue: "claim_pipeline",
+      claimId: "55555555-5555-5555-5555-555555555555",
+      jobId: "steward",
+    });
+    const row = mocks.insertValues.mock.calls[0]![0] as Record<string, unknown>;
+    expect(row.claimId).toBe("55555555-5555-5555-5555-555555555555");
+    expect(row.jobId).toBeNull();
+  });
+
   it("records system enqueues (no agent context) with null source fields", () => {
     recordEnqueueEvent({ queue: "url_extraction", jobId: "66666666-6666-6666-6666-666666666666" });
     const row = mocks.insertValues.mock.calls[0]![0] as Record<string, unknown>;
