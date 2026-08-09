@@ -72,14 +72,16 @@ export async function fetchClaimEvents(id: string): Promise<ClaimEventsPage> {
 // The claim plus its decomposition tree, without the deep payload (arguments,
 // instances, dependents). Used by the /claims territory overview (#206), which
 // only needs the subtree to derive counts and the verdict mix. `standard`
-// carries the tree. We deliberately send NO explicit depth: the API clamps the
-// walk to its own default, which this change raises from 5 to 10. Passing an
-// explicit depth would 400 against an API that still enforces the old cap
-// (Vercel and the API deploy independently), so relying on the server default
-// keeps the overview working across the deploy and deepens automatically once
-// the API side lands.
+// carries the tree.
+//
+// This one DOES send an explicit depth. The API's default dropped to 3 to stop
+// agent readers paying for tree they didn't ask for, but the territory counts
+// are computed over the subtree, so they would silently shallow out on the
+// server default. Stating the depth here keeps a rendering surface's needs
+// independent of agent-context tuning. 8 is inside both the new cap and the
+// old one, so it is safe whichever of Vercel and the API deploys first.
 export async function fetchClaimTree(id: string): Promise<ClaimDetail> {
-  return apiGet<ClaimDetail>(`/claims/${id}?information_depth=standard`);
+  return apiGet<ClaimDetail>(`/claims/${id}?information_depth=standard&depth=8`);
 }
 
 // Serialize the active filters into API query params. Defaults (all / 0) are

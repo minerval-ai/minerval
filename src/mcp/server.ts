@@ -40,7 +40,7 @@ import { getCurrentAssessment } from "../services/assessment-service.js";
 import {
   getClaimTree,
   getSubclaimCount,
-  getClaimDependents,
+  listClaimDependents,
 } from "../services/tree-service.js";
 import { getArgumentsForClaim } from "../services/argument-service.js";
 import { matchClaim } from "../llm/agents/matcher.js";
@@ -249,16 +249,21 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "supported, contested, unsupported, contradicted, or unknown), a " +
         "confidence that the status is the right reading of the evidence, " +
         "and a credence that the claim is true where a single number is an " +
-        "honest summary (null where it would be false precision). Free.",
+        "honest summary (null where it would be false precision). " +
+        "Dependents come back as the most load-bearing page by importance " +
+        "with `dependents_total` beside them, since a hub claim has " +
+        "hundreds; page through the rest with `dependents_offset`. Free.",
       inputSchema: {
         claim_id: z.string().uuid(),
         include: z
           .array(z.enum(["provenance", "arguments", "dependents"]))
           .default(["provenance"])
           .describe("Optional detail sections to include"),
+        dependents_limit: z.number().int().min(1).max(100).default(25),
+        dependents_offset: z.number().int().min(0).default(0),
       },
     },
-    async ({ claim_id, include }) => {
+    async ({ claim_id, include, dependents_limit, dependents_offset }) => {
       const claim = await getClaimById(claim_id);
       if (!claim) return errorResult("NOT_FOUND", "Claim not found");
 
@@ -292,7 +297,16 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         }));
       }
       if (include.includes("dependents")) {
-        payload.dependents = await getClaimDependents(claim_id);
+        // Paginated: an unbounded list let one hub claim push hundreds of rows
+        // at a client. `dependents` stays an array so existing callers keep
+        // iterating it; the count they were previously deriving from its
+        // length now lives in `dependents_total`.
+        const { dependents, total } = await listClaimDependents(claim_id, {
+          limit: dependents_limit,
+          offset: dependents_offset,
+        });
+        payload.dependents = dependents;
+        payload.dependents_total = total;
       }
       return jsonResult(payload);
     }
@@ -307,10 +321,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "(requires, supports, contradicts, and so on) and grouped into a " +
         "named argument where one exists; each node carries its own " +
         "assessment status, so a disputed subclaim under a well-supported " +
-        "parent marks exactly where the disagreement lives. Free.",
+        "parent marks exactly where the disagreement lives. Descends only: " +
+        "for what rests ON this claim, use get_claim with " +
+        "include=['dependents']. Free.",
       inputSchema: {
         claim_id: z.string().uuid(),
-        max_depth: z.number().int().min(1).max(20).default(10),
+        max_depth: z.number().int().min(1).max(8).default(3),
       },
     },
     async ({ claim_id, max_depth }) => {

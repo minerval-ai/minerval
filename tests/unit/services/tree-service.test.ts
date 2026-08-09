@@ -122,7 +122,10 @@ describe("tree-service", () => {
       mockRawQuery.mockResolvedValueOnce([edgeRow("shared", "leaf")]);
       mockRawQuery.mockResolvedValueOnce([]); // leaf level
 
-      const tree = await getClaimTree("root");
+      // Explicit depth: this fixture is four levels deep (root → a/b →
+      // shared → leaf), and the default is deliberately shallower (3), so
+      // the diamond logic is exercised independently of that default.
+      const tree = await getClaimTree("root", 5);
       const underA = tree!.children[0]!.children[0]!;
       const underB = tree!.children[1]!.children[0]!;
 
@@ -174,6 +177,24 @@ describe("tree-service", () => {
       expect(tree!.children).toHaveLength(1);
       expect(tree!.children[0]!.id).toBe("c1");
       expect(tree!.children_truncated).toBe(true);
+    });
+
+    it("walks only three levels by default, leaving deeper nodes as leaves", async () => {
+      // A chain five levels deep. The default exists to bound what an agent
+      // reader pays for in context, so it must stop at 3 without being asked.
+      mockRawQuery.mockResolvedValueOnce([rootRow("root")]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("root", "d1")]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("d1", "d2")]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("d2", "d3")]);
+
+      const tree = await getClaimTree("root");
+
+      // Root lookup + exactly three level queries: d3 is fetched, but the
+      // level that would expand it is never issued.
+      expect(mockRawQuery).toHaveBeenCalledTimes(4);
+      const d3 = tree!.children[0]!.children[0]!.children[0]!;
+      expect(d3.id).toBe("d3");
+      expect(d3.children).toHaveLength(0);
     });
   });
 
