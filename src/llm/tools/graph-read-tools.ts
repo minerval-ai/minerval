@@ -29,7 +29,7 @@ import { getClaimById, getClaimInstances } from "../../services/claim-service.js
 import { getCurrentAssessment } from "../../services/assessment-service.js";
 import { getArgumentsForClaim } from "../../services/argument-service.js";
 import {
-  getClaimAncestors,
+  getTransitiveDependents,
   getClaimTree,
   getSubclaimCount,
   listClaimDependents,
@@ -277,7 +277,7 @@ export async function executeGraphReadTool(
     if (!claim) return JSON.stringify({ error: "claim not found" });
     return JSON.stringify({
       claim_id: claimId,
-      ...(await getClaimAncestors(claimId, clampDepth(input.max_depth))),
+      ...(await getTransitiveDependents(claimId, clampDepth(input.max_depth))),
     });
   }
 

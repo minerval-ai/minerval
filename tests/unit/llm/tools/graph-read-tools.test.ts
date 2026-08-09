@@ -15,7 +15,7 @@ vi.mock("../../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: vi.fn(),
 }));
 vi.mock("../../../../src/services/tree-service.js", () => ({
-  getClaimAncestors: vi.fn(),
+  getTransitiveDependents: vi.fn(),
   getClaimTree: vi.fn(),
   getSubclaimCount: vi.fn(),
   listClaimDependents: vi.fn(),
@@ -30,7 +30,7 @@ import { rawQuery } from "../../../../src/db/client.js";
 import { getClaimById } from "../../../../src/services/claim-service.js";
 import { getCurrentAssessment } from "../../../../src/services/assessment-service.js";
 import {
-  getClaimAncestors,
+  getTransitiveDependents,
   getClaimTree,
   getSubclaimCount,
 } from "../../../../src/services/tree-service.js";
@@ -40,7 +40,7 @@ const mockRawQuery = vi.mocked(rawQuery);
 const mockGetClaim = vi.mocked(getClaimById);
 const mockAssessment = vi.mocked(getCurrentAssessment);
 const mockTree = vi.mocked(getClaimTree);
-const mockAncestors = vi.mocked(getClaimAncestors);
+const mockTransitiveDeps = vi.mocked(getTransitiveDependents);
 const mockSubclaimCount = vi.mocked(getSubclaimCount);
 
 describe("graph-read-tools", () => {
@@ -111,7 +111,7 @@ describe("graph-read-tools", () => {
     beforeEach(() => {
       mockGetClaim.mockResolvedValue({ id: "c1", text: "A claim" } as never);
       mockTree.mockResolvedValue(null as never);
-      mockAncestors.mockResolvedValue({
+      mockTransitiveDeps.mockResolvedValue({
         dependents: [],
         total: 0,
         truncated: false,
@@ -123,7 +123,7 @@ describe("graph-read-tools", () => {
       await executeGraphReadTool("get_dependents", { claim_id: "c1" });
 
       expect(mockTree).toHaveBeenCalledWith("c1", 3);
-      expect(mockAncestors).toHaveBeenCalledWith("c1", 3);
+      expect(mockTransitiveDeps).toHaveBeenCalledWith("c1", 3);
     });
 
     it("clamps a greedy depth request to the ceiling", async () => {
@@ -141,7 +141,7 @@ describe("graph-read-tools", () => {
         max_depth: "deep",
       });
 
-      expect(mockAncestors).toHaveBeenCalledWith("c1", 3);
+      expect(mockTransitiveDeps).toHaveBeenCalledWith("c1", 3);
     });
   });
 

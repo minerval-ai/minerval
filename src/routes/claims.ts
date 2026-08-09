@@ -10,7 +10,7 @@ import { claimSearchParams, claimListParams, claimGetParams, claimDependentsPara
 import { getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
-import { getClaimTree, getSubclaimCount, getClaimDependents, getClaimAncestors, listClaimDependents } from "../services/tree-service.js";
+import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
 import {
@@ -610,7 +610,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        const walk = await getClaimAncestors(claim_id, params.depth);
+        const walk = await getTransitiveDependents(claim_id, params.depth);
         return reply.send({
           dependents: walk.dependents.slice(
             params.offset,

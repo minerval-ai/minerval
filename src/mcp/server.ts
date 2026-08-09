@@ -41,7 +41,7 @@ import { getCurrentAssessment } from "../services/assessment-service.js";
 import {
   getClaimTree,
   getSubclaimCount,
-  getClaimAncestors,
+  getTransitiveDependents,
   listClaimDependents,
 } from "../services/tree-service.js";
 import { getArgumentsForClaim } from "../services/argument-service.js";
@@ -369,7 +369,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     async ({ claim_id, max_depth }) => {
       const claim = await getClaimById(claim_id);
       if (!claim) return errorResult("NOT_FOUND", "Claim not found");
-      const walk = await getClaimAncestors(claim_id, max_depth);
+      const walk = await getTransitiveDependents(claim_id, max_depth);
       return jsonResult({
         claim_id,
         page_url: claimPageUrl(claim_id),

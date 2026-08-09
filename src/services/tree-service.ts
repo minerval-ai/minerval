@@ -184,7 +184,7 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
 }
 
 /** One claim reached by walking upward, with how many edges away it sits. */
-export interface AncestorClaim extends DependentClaim {
+export interface TransitiveDependent extends DependentClaim {
   /** 1 = directly depends on the subject claim, 2 = depends on one of those. */
   depth: number;
 }
@@ -208,13 +208,13 @@ export interface AncestorClaim extends DependentClaim {
  * cycle terminates), `maxDepth` levels, and `maxNodes` as the cost bound with
  * `truncated` set rather than silently dropping rows.
  */
-export async function getClaimAncestors(
+export async function getTransitiveDependents(
   claimId: string,
   maxDepth: number = 3,
   maxNodes: number = MAX_TREE_NODES
-): Promise<{ dependents: AncestorClaim[]; total: number; truncated: boolean }> {
+): Promise<{ dependents: TransitiveDependent[]; total: number; truncated: boolean }> {
   const visited = new Set<string>([claimId]);
-  const found: AncestorClaim[] = [];
+  const found: TransitiveDependent[] = [];
   let frontier = [claimId];
   let truncated = false;
 
