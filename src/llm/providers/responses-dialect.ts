@@ -32,7 +32,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 
-import { parseToolArguments, toolResultText } from "./openai-dialect.js";
+import { isServerTool, parseToolArguments, toolResultText } from "./openai-dialect.js";
 import type { LlmContentBlock, LlmMessage, LlmTool, ToolUse } from "./types.js";
 
 type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
@@ -139,20 +139,43 @@ export function toResponsesInput(messages: LlmMessage[]): ResponseInputItem[] {
 }
 
 /**
+ * Anthropic server tools this adapter can serve with OpenAI's OWN hosted
+ * equivalent instead of refusing. Only web search today: the seam's
+ * `web_search_20260209` maps to Responses' `{ type: "web_search" }`, which the
+ * model calls without a round trip through executeTool (search results are
+ * folded in server-side, exactly like Anthropic's). Other Anthropic server
+ * tools (code execution, containers) still fail the capability guard.
+ */
+export function isOpenAiHostedMappable(tool: LlmTool): boolean {
+  return (
+    isServerTool(tool) &&
+    typeof (tool as { type?: unknown }).type === "string" &&
+    ((tool as { type: string }).type.startsWith("web_search"))
+  );
+}
+
+/**
  * Build the request's `tools` array from the seam's Anthropic client tools.
  *
  * HOSTED-TOOL SEAM: OpenAI's server-side tools are ordinary entries in this
  * same array — `{ type: "web_search" }`, `{ type: "code_interpreter",
  * container: { type: "auto" } }` — and the model calls them without a round
  * trip through executeTool. Being able to push them here is the whole reason
- * this adapter moved off Chat Completions. Nothing does yet: the seam's
- * server-tool vocabulary is still Anthropic's (see
- * assertAnthropicOnlyCapabilitiesUnused), so mapping one across is a separate
- * change to types.ts, not something to guess at here.
+ * this adapter moved off Chat Completions. Web search is mapped (see
+ * isOpenAiHostedMappable above); the rest of the seam's server-tool
+ * vocabulary is still Anthropic-only (assertAnthropicOnlyCapabilitiesUnused).
+ * Note the hosted tool's per-call fee is billed by OpenAI outside token
+ * usage, so llm_usage slightly understates the cost of searching turns.
  */
 export function toResponsesTools(tools: LlmTool[]): ResponsesTool[] {
   const out: ResponsesTool[] = [];
   for (const tool of tools) {
+    if (isOpenAiHostedMappable(tool)) {
+      // Anthropic's max_uses has no direct equivalent here; the agent-side
+      // iteration budget bounds search volume instead.
+      out.push({ type: "web_search" } as ResponsesTool);
+      continue;
+    }
     const t = tool as Anthropic.Tool;
     out.push({
       type: "function",

@@ -13,9 +13,11 @@
  * seam assumes server-side conversation state, and opting in would make the
  * loop unresumable from a different process.
  *
- * Not supported here, by design: Anthropic server tools and containers (see
- * assertAnthropicOnlyCapabilitiesUnused). OpenAI's OWN hosted tools slot into
- * toResponsesTools — that seam is the point of being on this API.
+ * Anthropic server tools and containers are refused by design (see
+ * assertAnthropicOnlyCapabilitiesUnused) — with one mapped exception: the
+ * seam's web_search tool is served by OpenAI's own hosted web search
+ * (isOpenAiHostedMappable in responses-dialect.ts), which is the point of
+ * being on this API.
  */
 import OpenAI from "openai";
 
@@ -30,6 +32,7 @@ import {
 } from "./openai-dialect.js";
 import {
   fromResponse,
+  isOpenAiHostedMappable,
   mapResponseStatus,
   toResponsesInput,
   toResponsesTools,
@@ -156,7 +159,12 @@ export const openaiAdapter: ProviderAdapter = {
   name: "openai",
 
   async complete(req: CompleteRequest): Promise<CompletionResult> {
-    assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, req);
+    // Web-search server tools are mapped to OpenAI's hosted search rather than
+    // refused; guard everything else.
+    assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, {
+      ...req,
+      tools: req.tools?.filter((t) => !isOpenAiHostedMappable(t)),
+    });
 
     const response = await getClient().responses.create({
       ...baseParams(req),
@@ -181,7 +189,12 @@ export const openaiAdapter: ProviderAdapter = {
   },
 
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
-    assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, req);
+    // Web-search server tools are mapped to OpenAI's hosted search rather than
+    // refused; guard everything else.
+    assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, {
+      ...req,
+      tools: req.tools.filter((t) => !isOpenAiHostedMappable(t)),
+    });
 
     const response = await getClient().responses.create({
       ...baseParams(req),

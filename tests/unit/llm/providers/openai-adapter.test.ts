@@ -241,10 +241,36 @@ describe("openai adapter — request construction", () => {
     expect(sentBody().tool_choice).toBe("auto");
   });
 
-  it("refuses Anthropic-only capabilities instead of sending a doomed request", async () => {
-    const serverTool = {
+  it("maps the seam's web_search server tool to OpenAI's hosted web search", async () => {
+    const webSearch = {
       type: "web_search_20260209",
       name: "web_search",
+      max_uses: 5,
+    } as unknown as Anthropic.Messages.ToolUnion;
+
+    await openaiAdapter.completeWithTools({
+      messages,
+      model: "gpt-5-nano",
+      maxTokens: 64,
+      tools: [webSearch, CLIENT_TOOL],
+    });
+
+    expect(sentBody().tools).toEqual([
+      { type: "web_search" },
+      {
+        type: "function",
+        name: "search_claims",
+        description: "Search the graph",
+        parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] },
+        strict: false,
+      },
+    ]);
+  });
+
+  it("refuses other Anthropic-only server tools instead of sending a doomed request", async () => {
+    const serverTool = {
+      type: "code_execution_20260521",
+      name: "code_execution",
     } as unknown as Anthropic.Messages.ToolUnion;
 
     await expect(
