@@ -41,7 +41,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentAssessment: vi.fn(),
   getClaimTree: vi.fn(),
   getSubclaimCount: vi.fn(async () => 3),
-  getClaimDependents: vi.fn(async () => []),
+  listClaimDependents: vi.fn(async () => ({ dependents: [], total: 0 })),
   getArgumentsForClaim: vi.fn(async () => []),
   matchClaim: vi.fn(),
   extractClaims: vi.fn(),
@@ -73,7 +73,7 @@ vi.mock("../../../src/services/assessment-service.js", () => ({
 vi.mock("../../../src/services/tree-service.js", () => ({
   getClaimTree: mocks.getClaimTree,
   getSubclaimCount: mocks.getSubclaimCount,
-  getClaimDependents: mocks.getClaimDependents,
+  listClaimDependents: mocks.listClaimDependents,
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
@@ -412,6 +412,57 @@ describe("MCP tools", () => {
     const payload = parseText(result);
     expect(payload.tree).toMatchObject({ id: CLAIM_ID });
     expect(mocks.getClaimTree).toHaveBeenCalledWith(CLAIM_ID, 3);
+    await client.close();
+  });
+
+  it("get_decomposition walks three levels when no depth is asked for", async () => {
+    await client.callTool({
+      name: "get_decomposition",
+      arguments: { claim_id: CLAIM_ID },
+    });
+    expect(mocks.getClaimTree).toHaveBeenCalledWith(CLAIM_ID, 3);
+    await client.close();
+  });
+
+  it("get_claim pages dependents and reports the full count", async () => {
+    // A hub claim: far more dependents than one page, which used to come back
+    // in full because the tool called the unbounded query.
+    mocks.listClaimDependents.mockResolvedValueOnce({
+      dependents: [{ id: OTHER_ID, text: "A dependent", importance: 0.9 }],
+      total: 240,
+    } as never);
+
+    const result = await client.callTool({
+      name: "get_claim",
+      arguments: { claim_id: CLAIM_ID, include: ["dependents"] },
+    });
+
+    const payload = parseText(result);
+    // Still an array, so callers that iterate it are unaffected...
+    expect(payload.dependents).toHaveLength(1);
+    // ...but the count they used to take from its length is now explicit.
+    expect(payload.dependents_total).toBe(240);
+    expect(mocks.listClaimDependents).toHaveBeenCalledWith(CLAIM_ID, {
+      limit: 25,
+      offset: 0,
+    });
+    await client.close();
+  });
+
+  it("get_claim honours an explicit dependents page", async () => {
+    await client.callTool({
+      name: "get_claim",
+      arguments: {
+        claim_id: CLAIM_ID,
+        include: ["dependents"],
+        dependents_limit: 5,
+        dependents_offset: 10,
+      },
+    });
+    expect(mocks.listClaimDependents).toHaveBeenCalledWith(CLAIM_ID, {
+      limit: 5,
+      offset: 10,
+    });
     await client.close();
   });
 

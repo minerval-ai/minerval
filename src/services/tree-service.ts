@@ -52,10 +52,18 @@ const MAX_TREE_NODES = 500;
  * `maxDepth` bounds how many BFS levels (sequential queries) the walk runs; it
  * is NOT the cost guard. The walk exits the moment a level adds no new nodes,
  * so a generous cap only costs on trees that are genuinely that deep. What
- * bounds cost — and answers "a tree of thousands of subclaims isn't worth
+ * bounds DB cost — and answers "a tree of thousands of subclaims isn't worth
  * computing" — is `maxNodes` (MAX_TREE_NODES): the walk stops fetching once it
  * has that many distinct claims, flagging the parents whose children it
  * dropped. Depth and breadth are separate levers; tune them separately.
+ *
+ * The default is deliberately shallow (3). The dominant consumer of a tree is
+ * now an agent paying for its own context — a mandate's Grantmaker reading a
+ * decomposition alongside its workspace and web-search results — and for that
+ * reader depth is a TOKEN cost the node cap doesn't bound. Three levels is
+ * where a disputed subclaim under a well-supported parent shows up; anything
+ * deeper is a deliberate drill-down, asked for explicitly. Callers that render
+ * rather than reason (the territory overview's subtree counts) pass their own.
  *
  * The graph is a DAG, not a tree: shared subclaims are the point of the
  * design. The previous recursive CTE re-expanded a diamond once per *path*,
@@ -68,7 +76,7 @@ const MAX_TREE_NODES = 500;
  */
 export async function getClaimTree(
   claimId: string,
-  maxDepth: number = 10,
+  maxDepth: number = 3,
   maxNodes: number = MAX_TREE_NODES
 ): Promise<TreeNode | null> {
   const [root] = await rawQuery<TreeRootRow>(
