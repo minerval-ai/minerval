@@ -197,6 +197,14 @@ const configSchema = z.object({
   // src/services/reputation-service.ts (deltas, thresholds), not env config —
   // the rules are policy, not deployment tuning.
   newContributorRateLimitPerHour: z.coerce.number().default(3),
+  // Hourly cap on granting-conversation turns per user (0 = unlimited).
+  // Every turn runs the Grantmaker on the best model, synchronously, and
+  // deliberately free: nothing is charged until a drafted mandate is funded,
+  // because charging people to be told their mandate is unfundable is the
+  // wrong incentive. That leaves the turn itself with no cost ceiling of its
+  // own, so it needs a rate one. 30 an hour is far above a real design
+  // conversation and far below a loop.
+  grantConversationRateLimitPerHour: z.coerce.number().default(30),
 
   // Browser extension (#72)
   // Cap on claims extracted per analyzed page — extension pages are ephemeral
@@ -311,6 +319,22 @@ const configSchema = z.object({
   // (0 = uncapped). This replaces "drain the queue": the highest value/cost
   // actions run until the day's budget is gone, and the rest wait.
   backgroundDailyBudgetOwls: z.coerce.number().default(50),
+  // The fallback lane: direct budgeted Steward runs with NO mandate behind
+  // them, capped only by the owl budget above and attributed to nobody.
+  // It exists so a fresh dev database and the test suite can drain a queue
+  // without seeding a General mandate, and it engages whenever
+  // getGeneralMandate() returns null — which is also true of a mandate that
+  // has been COMPLETED or CANCELLED, something its own review pass can now
+  // decide. Left implicit, that turns "the platform's mandate closed" into
+  // "spend from the config budget instead, off the ledger", which is the
+  // one thing the escrow is supposed to prevent. So it is opt-in: absent
+  // this flag, a deployment with no active General mandate simply rests.
+  // (z.coerce.boolean() would read the STRING "false" as true, so this
+  // follows enableContributions' convention instead.)
+  backgroundFallbackLaneEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .default("false"),
   // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
   // can chain passes within a day (continue_review) when the mission needs
   // the bandwidth — enumerating a big source backlog, a territory survey.
@@ -319,7 +343,14 @@ const configSchema = z.object({
   // agent's affordances. Each pass is also individually capped and metered.
   // 0 is a deliberate off-switch (no autonomous review passes get funded);
   // negative values are a misconfiguration, refused at startup.
-  mandateReviewMaxPassesPerDay: z.coerce.number().int().min(0).default(12),
+  // 12 was set when review passes were funded beside the daily rate rather
+  // than out of it, so the count was the only bound. Now that they compete
+  // with the mandate's substantive work for the same room, a mandate that
+  // spends a third of its day deliberating is choosing that at the expense
+  // of assessments, and 4 is the honest ceiling on a pace nobody would set
+  // deliberately. Raise it per-deployment if a mission genuinely needs the
+  // bandwidth.
+  mandateReviewMaxPassesPerDay: z.coerce.number().int().min(0).default(4),
   // Structural bounds on the AUTONOMOUS review pass's money movement
   // (regrant + spawn_mandate): at most this fraction of the mandate's
   // escrowed budget per pass / per UTC day. The review agent reads
@@ -503,6 +534,8 @@ export function loadConfig(): Config {
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     owlPacks: process.env.OWL_PACKS,
     contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
+    grantConversationRateLimitPerHour:
+      process.env.GRANT_CONVERSATION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
       process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
     llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
@@ -532,6 +565,7 @@ export function loadConfig(): Config {
     costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
     costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
+    backgroundFallbackLaneEnabled: process.env.BACKGROUND_FALLBACK_LANE_ENABLED,
     mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
     mandateReviewMoveFractionPerPass:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,

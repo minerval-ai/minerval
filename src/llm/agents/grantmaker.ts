@@ -585,8 +585,12 @@ async function runGrantmakerTurnImpl(input: {
  * public dashboard shows, plus the one write the framework allows
  * (amending the unexecuted remainder of the plan). Returns null for tool
  * names it doesn't own.
+ *
+ * Shared with the autonomous review pass (mandate-review.ts), which offers
+ * a subset of these: one implementation, so a guard added here holds on
+ * both paths rather than being reasoned about twice.
  */
-async function executeManagementTool(
+export async function executeManagementTool(
   grantId: string,
   name: string,
   toolInput: Record<string, unknown>
@@ -766,20 +770,26 @@ async function executeManagementTool(
   if (name === "update_allocation_policy") {
     const note = String(toolInput.note ?? "").trim();
     if (!note) return JSON.stringify({ success: false, problem: "note required" });
-    const { updateAllocationPolicy, getGeneralMandate } = await import(
+    const { updateAllocationPolicy } = await import(
       "../../services/allocation-policy-service.js"
     );
-    // Honesty guard: only the General mandate's lane reads these knobs.
-    // Reporting success for a write nothing consumes would teach the
-    // agent (and its funder) that a lever exists where none does.
-    const general = await getGeneralMandate();
-    if (!general || general.grantId !== grantId) {
+    // Honesty guard, on the mandate's POLICY rather than its identity: the
+    // knobs are read by the formula valuer, so they are live for any
+    // formula mandate (the platform's General lane is one instance, no
+    // longer the only permitted one). For a judgment mandate the formula
+    // never runs, so reporting success here would teach the agent and its
+    // funder that a lever exists where none does.
+    const [row] = await rawQuery<{ policy: string }>(
+      `SELECT policy FROM grants WHERE id = $1`,
+      [grantId]
+    );
+    if (row?.policy !== "general") {
       return JSON.stringify({
         success: false,
         problem:
           "This mandate's spending follows your own valuations " +
-          "(set_valuations), not formula knobs; allocation policy governs " +
-          "only the platform's General assessment lane. Express your " +
+          "(set_valuations), not formula knobs: allocation policy is read " +
+          "only where valuations come from the formula. Express your " +
           "judgment by revaluing the open ledger instead.",
       });
     }

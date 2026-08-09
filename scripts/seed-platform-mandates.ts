@@ -47,7 +47,12 @@ const MANDATES: PlatformMandate[] = [
       "remaining cost, across the whole graph, until the day's rate is " +
       "committed. Co-fund partially backed claims rather than duplicate " +
       "other funders' allocations.",
-    budgetOwls: 2000,
+    // The escrow is the only hard ceiling on this mandate's spend, since the
+    // daily rate is a pace target rather than a cap. 200 owls is deliberately
+    // a first-run number: about four days at the rate below, after which the
+    // mandate halts until someone tops it up. Raise it once the live epoch
+    // shows where the money actually goes.
+    budgetOwls: 200,
     policy: "general",
     dailyBudgetOwls: 50,
   },

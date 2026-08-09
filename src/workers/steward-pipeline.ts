@@ -153,8 +153,19 @@ export async function processNextStewardTask(
     return runCoveredAction(action, opts);
   }
 
-  // Fallback mode (no General mandate seeded): direct budgeted runs on
-  // the standard tier, best expected value first.
+  // Fallback mode (no ACTIVE General mandate): direct budgeted runs on the
+  // standard tier, best expected value first, attributed to nobody and
+  // bounded only by the config owl budget.
+  //
+  // Opt-in, because "no active General mandate" is not only the fresh-dev
+  // case it was written for: a mandate that has been completed or cancelled
+  // reaches the same state, and its own review pass can decide that. Off by
+  // default, a deployment that loses its mandate rests until someone tops it
+  // up or re-seeds, rather than quietly moving its spending off the ledger.
+  if (!config.backgroundFallbackLaneEnabled) {
+    const pending = await pendingStewardCount();
+    return { status: pending > 0 ? "budget" : "empty" };
+  }
   const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
   if (dailyBudgetOwls > 0) {
     const spent = await unattributedSpentTodayMicroUsd();

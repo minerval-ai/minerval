@@ -167,9 +167,14 @@ export async function reconcileActions(): Promise<{
     }
 
     // The mandate's periodic review pass — its Grantmaker stewarding the
-    // mandate with discretion. The General mandate is exempt (its
-    // valuations are its published formula, refreshed mechanically).
-    if (g.status === "active" && g.policy !== "general") {
+    // mandate with discretion. Every active mandate gets one, the General
+    // mandate included: its valuations come from a formula rather than from
+    // per-action judgment, but the formula's knobs are exactly the kind of
+    // thing a steward should revise as evidence about allocation itself
+    // accumulates, and it has the same pacing, regranting and scope
+    // decisions to make as any other. Exempting it left the platform's own
+    // lane as the one mandate no agent was ever asked to think about.
+    if (g.status === "active") {
       await rawQuery(
         `INSERT INTO actions
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)

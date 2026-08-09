@@ -38,6 +38,7 @@ import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
+import { grantCommittedMicroUsd } from "./regrant-service.js";
 
 export type AllocateResult =
   | {
@@ -235,11 +236,13 @@ export async function runMandateAllocator(
   };
 
   const [grant] = await rawQuery<{
+    budget_job_id: string;
     daily_budget_micro_usd: number;
     budget_micro_usd: number;
     job_status: string;
   }>(
-    `SELECT g.daily_budget_micro_usd, j.budget_micro_usd, j.status AS job_status
+    `SELECT g.budget_job_id, g.daily_budget_micro_usd, j.budget_micro_usd,
+            j.status AS job_status
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
     [grantId]
@@ -271,13 +274,20 @@ export async function runMandateAllocator(
   if (dayRoom <= 0) return result;
 
   // Escrow headroom: never promise money the escrow doesn't hold.
-  const exposure = await grantAllocationExposureMicroUsd(grantId);
-  let escrowRoom = Math.max(
-    0,
-    Number(grant.budget_micro_usd) -
-      exposure.spentMicroUsd -
-      exposure.outstandingMicroUsd
+  //
+  // The SAME accounting every other consumer of this escrow uses
+  // (grantCommittedMicroUsd — also what fundGrantSelfActions computes
+  // inline). This used to subtract allocation exposure alone, which is two
+  // terms short: metered spend that never went through an allocation, and
+  // money regranted out to other mandates. Both are gone from the escrow,
+  // so counting neither meant the allocator would promise a mandate's
+  // regranted owls a second time, and the overcommit surfaced later as a
+  // covered action with no money behind it.
+  const committed = await grantCommittedMicroUsd(
+    { id: grantId, budgetJobId: grant.budget_job_id },
+    tx
   );
+  let escrowRoom = Math.max(0, Number(grant.budget_micro_usd) - committed);
   if (escrowRoom <= 0) return result;
 
   // The mandate's valued open actions, with the live backing per action.
@@ -409,8 +419,17 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
  * covers its periodic valuation pass, and an agent-policy mandate covers
  * its plan's unexecuted ingest items — all from its escrow, all fully
  * (the money is the grant's own; there is nothing to co-fund). The engine
- * executor then runs whatever is covered. Bounded by escrow headroom
- * (committed money includes these allocations and any regrants out).
+ * executor then runs whatever is covered.
+ *
+ * Deliberation pays its own way: these allocations come out of the SAME
+ * daily rate as the mandate's substantive work, not from beside it. They
+ * always did on the spending side — runMandateAllocator counts every
+ * allocation placed today, self-funded ones included — but this function
+ * used to check only escrow headroom, so a day of chained review passes
+ * could commit the whole rate and leave the substantive allocator with
+ * dayRoom = 0. Thinking about the work now competes with the work.
+ * Bounded by escrow headroom too (committed money includes these
+ * allocations and any regrants out).
  */
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
@@ -420,6 +439,8 @@ export async function fundGrantSelfActions(): Promise<number> {
     grant_id: string;
     needed: number;
     headroom: number;
+    /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
+    day_room: number | null;
   }>(
     `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id,
             GREATEST(0, a.cost_est_micro_usd -
@@ -448,7 +469,17 @@ export async function fundGrantSelfActions(): Promise<number> {
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
                             FROM regrants r
                            WHERE r.from_grant_id = g.id), 0))::bigint
-              AS headroom
+              AS headroom,
+            -- The day's remaining room under the mandate's rate, counted the
+            -- same way runMandateAllocator counts it. A rate of 0 means
+            -- unpaced, matching the substantive allocator's reading.
+            (CASE WHEN g.daily_budget_micro_usd > 0
+                  THEN GREATEST(0, g.daily_budget_micro_usd
+                    - COALESCE((SELECT SUM(al.amount_micro_usd)
+                                  FROM action_allocations al
+                                 WHERE al.grant_id = g.id
+                                   AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))
+                  ELSE NULL END)::bigint AS day_room
        FROM actions a
        JOIN grants g
          ON (a.kind IN ('grant_planning', 'mandate_review') AND a.target_ref = g.id::text)
@@ -476,9 +507,20 @@ export async function fundGrantSelfActions(): Promise<number> {
     [loadConfig().mandateReviewMaxPassesPerDay ?? 12]
   );
   let placed = 0;
+  // Both rooms are a snapshot from one query, so a call that funds several
+  // self-actions on the same grant has to draw them down itself — otherwise
+  // each row sees the full room and together they overcommit.
+  const spentThisPass = new Map<string, number>();
   for (const row of rows) {
     const needed = Number(row.needed);
-    if (needed <= 0 || needed > Number(row.headroom)) continue;
+    if (needed <= 0) continue;
+    const drawn = spentThisPass.get(row.grant_id) ?? 0;
+    if (needed > Number(row.headroom) - drawn) continue;
+    const dayRoom =
+      row.day_room === null
+        ? Number.POSITIVE_INFINITY
+        : Number(row.day_room) - drawn;
+    if (needed > dayRoom) continue;
     const inserted = await rawQuery<{ id: string }>(
       `INSERT INTO action_allocations
          (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd)
@@ -487,7 +529,9 @@ export async function fundGrantSelfActions(): Promise<number> {
        RETURNING id`,
       [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, needed]
     );
-    if (inserted.length > 0) placed++;
+    if (inserted.length === 0) continue;
+    placed++;
+    spentThisPass.set(row.grant_id, drawn + needed);
   }
   return placed;
 }

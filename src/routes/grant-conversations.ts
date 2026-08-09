@@ -50,7 +50,10 @@ export async function grantConversationRoutes(
         message: request.body.message,
       });
       if (!result.ok) {
-        return reply.code(400).send({ error: result.message, code: result.code });
+        const status = result.code === "RATE_LIMITED" ? 429 : 400;
+        return reply
+          .code(status)
+          .send({ error: result.message, code: result.code });
       }
       return reply
         .code(201)
@@ -116,7 +119,12 @@ export async function grantConversationRoutes(
           message: request.body.message,
         });
         if (!result.ok) {
-          const status = result.code === "NOT_FOUND" ? 404 : 409;
+          const status =
+            result.code === "NOT_FOUND"
+              ? 404
+              : result.code === "RATE_LIMITED"
+                ? 429
+                : 409;
           return reply
             .code(status)
             .send({ error: result.message, code: result.code });

@@ -7,21 +7,27 @@
  * layer (action-service.ts) never reads them — actions run on allocations
  * alone — but every mandate's allocator spends against its own valuations.
  *
- * WHO writes them differs by mandate, deliberately:
+ * WHO writes them differs by the mandate's POLICY, not by which mandate it
+ * is:
  *
- *  - The General assessment mandate's scope genuinely is the whole graph,
- *    and its published value formula IS its allocation policy — so its
- *    valuations are a bulk formula refresh (below), with the formula's
- *    knobs amendable by its Grantmaker in conversation.
+ *  - A FORMULA mandate (policy 'general') values in bulk from its own
+ *    allocation policy — the refresh below, run over its scope with its
+ *    own knobs, amendable by its Grantmaker in conversation. The
+ *    platform's General assessment mandate is the one we seed, but it is
+ *    an instance of the kind and not a special case in the code: a second
+ *    formula mandate values its own scope from its own knobs, which is
+ *    what makes the machinery replicable rather than platform-only.
  *
- *  - Every other mandate's scope is defined in WORDS — its mandate text —
+ *  - A JUDGMENT mandate's scope is defined in WORDS — its mandate text —
  *    and which actions fall under it is a judgment call. Its Grantmaker
  *    runs periodic VALUATION passes (kind 'valuation' actions on the
  *    ledger, self-funded, executed by the engine executor) with real
  *    affordances: search the graph, browse the open ledger, and write
  *    valuations with rationale (setMandateValuations below). No keyword
  *    filter is ever treated as the scope: agents are trusted with the
- *    same discretion a person holding the mandate would have.
+ *    same discretion a person holding the mandate would have. The formula
+ *    never runs for these — it would clobber the agent's judgments, which
+ *    share the same (grant, action) rows.
  *
  * Money appears NOWHERE in a valuation: allocations reduce what remains
  * to be covered on the cost side, never how valuable an action is, and
@@ -30,7 +36,7 @@
 import { rawQuery } from "../db/client.js";
 import {
   getGeneralMandate,
-  getEffectiveAllocationPolicy,
+  getMandateAllocationPolicy,
 } from "./allocation-policy-service.js";
 
 /** The General formula for one claims row `c` and actions row `a`:
@@ -58,23 +64,40 @@ const GENERAL_VALUE_SQL = `
   ) * CASE WHEN a.variant = 'strong' THEN $4::real ELSE 1.0 END`;
 
 /**
- * Refresh the General mandate's valuations over every open assess/reassess
- * action, and mirror its standard-variant values into claims.queue_priority
- * (a display cache for claim pages; the authoritative store is the
- * valuations table). Returns the valuation count; 0 when no General
- * mandate is seeded (dev and tests run without one).
+ * Refresh ONE formula mandate's valuations over the open assess/reassess
+ * actions inside its scope, using that mandate's own policy knobs. A
+ * mandate with no scope (the platform's General assessment) values the
+ * whole graph; a scoped one values its subtree and/or keyword scope, the
+ * same scope resolution the Grantmaker's survey uses.
+ *
+ * Returns the valuation count.
  */
-export async function refreshGeneralValuations(): Promise<number> {
-  const general = await getGeneralMandate();
-  if (!general) return 0;
-  const policy = await getEffectiveAllocationPolicy();
+export async function refreshFormulaValuations(
+  grantId: string,
+  scope: { scopeClaimId: string | null; scopeQuery: string | null }
+): Promise<number> {
+  const policy = await getMandateAllocationPolicy(grantId);
   const rows = await rawQuery<{ action_id: string }>(
-    `INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM claims WHERE id = $6
+       UNION
+       SELECT cr.child_claim_id
+         FROM claim_relationships cr JOIN subtree s ON cr.parent_claim_id = s.id
+     )
+     INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
      SELECT $5, a.id, ${GENERAL_VALUE_SQL}, now()
        FROM actions a
        JOIN claims c ON c.id = a.claim_id
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
         AND c.state = 'active'
+        -- An unscoped formula mandate values the whole graph. A scoped one
+        -- values what its scope covers, subtree OR keyword: the same
+        -- disjunction surveyScope resolves, so what the Grantmaker is shown
+        -- as its territory is what its formula actually values.
+        AND (($6::uuid IS NULL AND $7::text IS NULL)
+             OR ($6::uuid IS NOT NULL AND c.id IN (SELECT id FROM subtree))
+             OR ($7::text IS NOT NULL
+                 AND c.text_search @@ websearch_to_tsquery('english', $7)))
      ON CONFLICT (grant_id, action_id) DO UPDATE
         SET value_est = EXCLUDED.value_est, updated_at = now()
      RETURNING action_id`,
@@ -83,19 +106,66 @@ export async function refreshGeneralValuations(): Promise<number> {
       policy.staleness_saturation_days,
       policy.user_provenance_boost,
       policy.strong_gain_multiplier,
-      general.grantId,
+      grantId,
+      scope.scopeClaimId,
+      scope.scopeQuery,
     ]
   );
-  await pruneClosedValuations(general.grantId);
-  await rawQuery(
-    `UPDATE claims c SET queue_priority = mv.value_est
-       FROM mandate_valuations mv
-       JOIN actions a ON a.id = mv.action_id
-      WHERE mv.grant_id = $1 AND a.claim_id = c.id
-        AND a.variant = 'standard' AND a.status = 'open'`,
-    [general.grantId]
-  );
+  await pruneClosedValuations(grantId);
   return rows.length;
+}
+
+/**
+ * The platform lane's refresh: the General mandate's own formula pass, plus
+ * the mirror of its standard-variant values into claims.queue_priority (a
+ * display cache for claim pages; the authoritative store is the valuations
+ * table). Returns the valuation count; 0 when no General mandate is seeded
+ * (dev and tests run without one).
+ */
+export async function refreshGeneralValuations(): Promise<number> {
+  const general = await getGeneralMandate();
+  if (!general) return 0;
+  const count = await refreshFormulaValuations(general.grantId, {
+    scopeClaimId: null,
+    scopeQuery: null,
+  });
+  await refreshQueuePriorityCache();
+  return count;
+}
+
+/**
+ * Recompute the claims table's display cache from every mandate's
+ * valuations: a claim's shown priority is the HIGHEST value any funder puts
+ * on its standard open action.
+ *
+ * This used to be one mandate assigning its own values into the column,
+ * which made the displayed priority whichever mandate's refresh ran last —
+ * so a narrow mandate valuing a claim low visibly demoted a claim the
+ * platform lane valued highly. The max is over mandates, not over history:
+ * a full recompute, so a value that falls is shown falling.
+ */
+export async function refreshQueuePriorityCache(): Promise<void> {
+  await rawQuery(
+    `UPDATE claims c
+        SET queue_priority = COALESCE(
+              (SELECT MAX(mv.value_est)
+                 FROM mandate_valuations mv
+                 JOIN actions a ON a.id = mv.action_id
+                WHERE a.claim_id = c.id
+                  AND a.variant = 'standard'
+                  AND a.status = 'open'), 0)
+      WHERE EXISTS (SELECT 1 FROM actions a2
+                     WHERE a2.claim_id = c.id
+                       AND a2.variant = 'standard'
+                       AND a2.status = 'open')
+        AND c.queue_priority IS DISTINCT FROM COALESCE(
+              (SELECT MAX(mv.value_est)
+                 FROM mandate_valuations mv
+                 JOIN actions a ON a.id = mv.action_id
+                WHERE a.claim_id = c.id
+                  AND a.variant = 'standard'
+                  AND a.status = 'open'), 0)`
+  );
 }
 
 /** Drop judgments about actions no longer open: the table stays a live
@@ -229,5 +299,9 @@ export async function setMandateValuations(
     else written++;
   }
   await pruneClosedValuations(grantId);
+  // A judgment mandate's values belong in the display cache too: the shown
+  // priority is the best any funder puts on a claim, not the platform
+  // lane's opinion alone.
+  if (written > 0) await refreshQueuePriorityCache();
   return { written, unknownActionIds: unknown };
 }

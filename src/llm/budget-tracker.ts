@@ -1,5 +1,25 @@
+/**
+ * The process-wide circuit breaker on LLM spend — and, deliberately, only
+ * over the work that has no other bound.
+ *
+ * Attributed work carries its own ceiling: a user's call is charged against
+ * their owl balance with a per-operation cap, and a funded job's call is
+ * charged against a mandate's escrow (which the allocation engine will not
+ * overcommit). For that work these counters are a second, cruder limit on
+ * top of a real one, and they were doing active harm: one process-global
+ * hourly count, shared by every lane, meant a busy background sweep could
+ * exhaust the hour and start refusing PAID requests — the platform's own
+ * housekeeping denying service to the people funding it, and the reverse
+ * too, a burst of user traffic starving the background lane.
+ *
+ * So the limits scope to UNATTRIBUTED work: no paying user, no funded job.
+ * That is the lane with nothing else standing between a runaway loop and
+ * the bill, which is exactly what a circuit breaker is for. Session totals
+ * stay whole-process: the cost report should show what the run really spent.
+ */
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "./errors.js";
+import { getUsageContext } from "./usage-context.js";
 
 interface BudgetCounters {
   hourlyCallCount: number;
@@ -55,9 +75,22 @@ function rolloverIfNeeded(): void {
 }
 
 /**
+ * Whether this call has money of its own behind it: a paying user, or a
+ * budget job whose escrow the allocation engine has already bounded. Absent
+ * both, it is system work billed to nobody, and these counters are the only
+ * thing bounding it.
+ */
+function isAttributedCall(): boolean {
+  const ctx = getUsageContext();
+  return Boolean(ctx.userId || ctx.jobId);
+}
+
+/**
  * Check limits before making an LLM call. Throws if any limit is exceeded.
+ * A no-op for attributed calls, which are bounded by their own budget.
  */
 export function checkBudget(): void {
+  if (isAttributedCall()) return;
   rolloverIfNeeded();
   const config = loadConfig();
 
@@ -115,6 +148,10 @@ export function checkBudget(): void {
  * cheaper than fresh input. The hourly/daily LIMIT counters intentionally keep
  * summing only uncached input+output (their historical behavior) so a large but
  * cheap cache-read prefix doesn't trip the circuit breaker prematurely.
+ *
+ * The limit counters also only count UNATTRIBUTED calls, matching what
+ * checkBudget enforces: counting paid work into a limit it is exempt from
+ * would let user traffic close the breaker on the background lane.
  */
 export function recordUsage(
   inputTokens: number,
@@ -123,10 +160,12 @@ export function recordUsage(
 ): void {
   rolloverIfNeeded();
   const totalTokens = inputTokens + outputTokens;
-  _counters.hourlyCallCount += 1;
-  _counters.dailyCallCount += 1;
-  _counters.hourlyTokenCount += totalTokens;
-  _counters.dailyTokenCount += totalTokens;
+  if (!isAttributedCall()) {
+    _counters.hourlyCallCount += 1;
+    _counters.dailyCallCount += 1;
+    _counters.hourlyTokenCount += totalTokens;
+    _counters.dailyTokenCount += totalTokens;
+  }
 
   _counters.sessionCalls += 1;
   _counters.sessionInputTokens += inputTokens;
