@@ -47,10 +47,14 @@ URL:   https://api.claimgraph.io/mcp
   },
   {
     id: "rest", label: "REST",
-    code: `# Reads are open. Search, then walk a claim and its decomposition:
+    code: `# Reads are open. Search, then walk a claim in both directions:
 GET  https://api.claimgraph.io/claims/search/inflation
 GET  https://api.claimgraph.io/claims/inflation-2022
 GET  https://api.claimgraph.io/claims/inflation-2022/trajectory
+
+# Down into what it rests on, up into what rests on it:
+GET  .../claims/inflation-2022?information_depth=standard&depth=3
+GET  .../claims/inflation-2022/dependents?depth=3
 
 # Agentic calls & writes authenticate with your key.
 # Proposals are reviewed before they join the graph:
@@ -67,7 +71,8 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
     tools: [
       { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims." },
       { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, confidence, and reasoning." },
-      { name: "get_decomposition", desc: "The recursive subclaim tree, every node with its relation and verdict." },
+      { name: "get_decomposition", desc: "Walk down: the subclaim tree a claim rests on, every node with its relation and verdict." },
+      { name: "get_dependents", desc: "Walk up: what rests on a claim, and so what would move if its verdict changed." },
     ],
   },
   {

@@ -10,7 +10,7 @@ import { claimSearchParams, claimListParams, claimGetParams, claimDependentsPara
 import { getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
-import { getClaimTree, getSubclaimCount, getClaimDependents, listClaimDependents } from "../services/tree-service.js";
+import { getClaimTree, getSubclaimCount, getClaimDependents, getClaimAncestors, listClaimDependents } from "../services/tree-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
 import {
@@ -537,6 +537,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             limit: { type: "integer", minimum: 1, maximum: 200, default: 50 },
             offset: { type: "integer", minimum: 0, default: 0 },
+            depth: {
+              type: "integer",
+              minimum: 1,
+              maximum: 8,
+              default: 1,
+              description:
+                "Edges to walk upward. 1 = direct dependents. Above 1 walks transitively, each row tagged with the depth it was found at, which is how you see what a claim is load-bearing for when the weight sits more than one edge away.",
+            },
           },
         },
         response: {
@@ -557,10 +565,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
                     assessment_credence: { type: "number", nullable: true },
+                    // How many edges up this dependent sits: 1 is direct.
+                    depth: { type: "integer" },
                   },
                 },
               },
               total: { type: "integer" },
+              // Only meaningful for a transitive walk: the node cap stopped it
+              // before the graph ran out, so `total` is a floor, not a count.
+              truncated: { type: "boolean" },
             },
           },
           404: errorEnvelope,
@@ -581,12 +594,31 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        const { dependents, total } = await listClaimDependents(claim_id, {
-          limit: params.limit,
-          offset: params.offset,
-        });
+        // depth 1 keeps the paginated SQL path: a hub claim's direct
+        // dependents are counted and paged in the database. Above 1 the walk
+        // is bounded by its node cap instead, so the page is sliced from the
+        // ranked result and `total` is what the walk actually reached.
+        if (params.depth === 1) {
+          const { dependents, total } = await listClaimDependents(claim_id, {
+            limit: params.limit,
+            offset: params.offset,
+          });
+          return reply.send({
+            dependents: dependents.map((d) => ({ ...d, depth: 1 })),
+            total,
+            truncated: false,
+          });
+        }
 
-        return reply.send({ dependents, total });
+        const walk = await getClaimAncestors(claim_id, params.depth);
+        return reply.send({
+          dependents: walk.dependents.slice(
+            params.offset,
+            params.offset + params.limit
+          ),
+          total: walk.total,
+          truncated: walk.truncated,
+        });
       },
     }
   );

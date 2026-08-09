@@ -42,6 +42,11 @@ const mocks = vi.hoisted(() => ({
   getClaimTree: vi.fn(),
   getSubclaimCount: vi.fn(async () => 3),
   listClaimDependents: vi.fn(async () => ({ dependents: [], total: 0 })),
+  getClaimAncestors: vi.fn(async () => ({
+    dependents: [],
+    total: 0,
+    truncated: false,
+  })),
   getArgumentsForClaim: vi.fn(async () => []),
   matchClaim: vi.fn(),
   extractClaims: vi.fn(),
@@ -74,6 +79,7 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   getClaimTree: mocks.getClaimTree,
   getSubclaimCount: mocks.getSubclaimCount,
   listClaimDependents: mocks.listClaimDependents,
+  getClaimAncestors: mocks.getClaimAncestors,
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
@@ -341,6 +347,7 @@ describe("MCP tools", () => {
       "get_claim",
       "get_contribution_status",
       "get_decomposition",
+      "get_dependents",
       "match_claim",
       "search_claims",
       "submit_contribution",
@@ -421,6 +428,46 @@ describe("MCP tools", () => {
       arguments: { claim_id: CLAIM_ID },
     });
     expect(mocks.getClaimTree).toHaveBeenCalledWith(CLAIM_ID, 3);
+    await client.close();
+  });
+
+  it("get_dependents walks upward, three levels by default", async () => {
+    mocks.getClaimAncestors.mockResolvedValueOnce({
+      dependents: [
+        { id: OTHER_ID, text: "Rests on it", importance: 0.9, depth: 2 },
+      ],
+      total: 1,
+      truncated: false,
+    } as never);
+
+    const result = await client.callTool({
+      name: "get_dependents",
+      arguments: { claim_id: CLAIM_ID },
+    });
+
+    const payload = parseText(result);
+    expect(mocks.getClaimAncestors).toHaveBeenCalledWith(CLAIM_ID, 3);
+    // The depth tag is the point: it says how far up the weight sits.
+    expect(payload.dependents).toEqual([
+      { id: OTHER_ID, text: "Rests on it", importance: 0.9, depth: 2 },
+    ]);
+    expect(payload.truncated).toBe(false);
+    await client.close();
+  });
+
+  it("get_dependents 404s an unknown claim and honours an explicit depth", async () => {
+    await client.callTool({
+      name: "get_dependents",
+      arguments: { claim_id: CLAIM_ID, max_depth: 5 },
+    });
+    expect(mocks.getClaimAncestors).toHaveBeenCalledWith(CLAIM_ID, 5);
+
+    const missing = await client.callTool({
+      name: "get_dependents",
+      arguments: { claim_id: OTHER_ID },
+    });
+    expect(missing.isError).toBe(true);
+    expect(parseText(missing).error).toMatchObject({ code: "NOT_FOUND" });
     await client.close();
   });
 

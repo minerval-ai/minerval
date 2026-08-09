@@ -7,7 +7,8 @@
  * baked into the instance, so every tool call is attributed to a user.
  *
  * Tool tiers mirror the REST API's metering split (#70):
- *   - Free reads: search_claims, get_claim, get_decomposition — no LLM work.
+ *   - Free reads: search_claims, get_claim, get_decomposition, get_dependents
+ *     — no LLM work.
  *   - Agentic (metered + quota-gated): match_claim, extract_claims,
  *     assess_text — these run the Matcher/Extractor, so each call passes the
  *     same rate-limit + monthly-grant gate as the REST agentic endpoints, and
@@ -40,6 +41,7 @@ import { getCurrentAssessment } from "../services/assessment-service.js";
 import {
   getClaimTree,
   getSubclaimCount,
+  getClaimAncestors,
   listClaimDependents,
 } from "../services/tree-service.js";
 import { getArgumentsForClaim } from "../services/argument-service.js";
@@ -322,8 +324,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "named argument where one exists; each node carries its own " +
         "assessment status, so a disputed subclaim under a well-supported " +
         "parent marks exactly where the disagreement lives. Descends only: " +
-        "for what rests ON this claim, use get_claim with " +
-        "include=['dependents']. Free.",
+        "for what rests ON this claim, use get_dependents. Free.",
       inputSchema: {
         claim_id: z.string().uuid(),
         max_depth: z.number().int().min(1).max(8).default(3),
@@ -337,6 +338,42 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         claim_id,
         page_url: claimPageUrl(claim_id),
         tree,
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_dependents",
+    {
+      title: "Get dependents",
+      description:
+        "Walk UP from a claim: everything that rests on it, directly or " +
+        "through a chain, ranked by importance and tagged with how many " +
+        "edges away it sits. This is what shows whether a claim is " +
+        "LOAD-BEARING, which is not readable off the claim itself — a modest " +
+        "lemma carrying six high-importance dependents matters more than an " +
+        "isolated claim that scores higher alone. The mirror of " +
+        "get_decomposition, and the question 'what would move if this " +
+        "verdict changed'. Free.",
+      inputSchema: {
+        claim_id: z.string().uuid(),
+        max_depth: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .default(3)
+          .describe("Edges to walk upward; 1 is direct dependents only."),
+      },
+    },
+    async ({ claim_id, max_depth }) => {
+      const claim = await getClaimById(claim_id);
+      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      const walk = await getClaimAncestors(claim_id, max_depth);
+      return jsonResult({
+        claim_id,
+        page_url: claimPageUrl(claim_id),
+        ...walk,
       });
     }
   );
