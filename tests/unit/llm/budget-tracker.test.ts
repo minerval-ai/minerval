@@ -23,6 +23,7 @@ import {
   getSessionUsage,
 } from "../../../src/llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 describe("BudgetTracker", () => {
   beforeEach(() => {
@@ -188,5 +189,59 @@ describe("BudgetTracker", () => {
     expect(status.dailyCallCount).toBe(0);
 
     vi.useRealTimers();
+  });
+});
+
+/**
+ * The breaker's scope. Attributed work already has a real ceiling — a user's
+ * owl balance, a mandate's escrow — so these counters exist for the work
+ * that has none. Sharing one process-global count across every lane meant a
+ * background sweep could exhaust the hour and start refusing PAID requests,
+ * and a burst of user traffic could close the breaker on the background lane.
+ */
+describe("what the breaker is scoped to", () => {
+  beforeEach(() => {
+    resetBudgetCounters();
+  });
+
+  const exhaustTheHour = () => {
+    for (let i = 0; i < 10; i++) recordUsage(100, 200);
+  };
+
+  it("refuses unattributed work once the hour is spent", () => {
+    exhaustTheHour();
+    expect(() => checkBudget()).toThrow(LlmBudgetExceededError);
+  });
+
+  it("still serves a paying user after the background lane spent the hour", () => {
+    exhaustTheHour();
+    runWithUsageContext({ userId: "u-1" }, () => {
+      expect(() => checkBudget()).not.toThrow();
+    });
+  });
+
+  it("still serves a funded job after the background lane spent the hour", () => {
+    exhaustTheHour();
+    runWithUsageContext({ jobId: "job-1" }, () => {
+      expect(() => checkBudget()).not.toThrow();
+    });
+  });
+
+  it("does not count paid work into the limit the paid work is exempt from", () => {
+    // Otherwise user traffic closes the breaker on the background lane.
+    runWithUsageContext({ userId: "u-1" }, () => {
+      for (let i = 0; i < 20; i++) recordUsage(1000, 1000);
+    });
+    expect(getBudgetStatus().hourlyCallCount).toBe(0);
+    expect(() => checkBudget()).not.toThrow();
+  });
+
+  it("still reports paid work in the session totals: the cost report is whole-process", () => {
+    runWithUsageContext({ userId: "u-1" }, () => recordUsage(1000, 500));
+    recordUsage(10, 20);
+    const session = getSessionUsage();
+    expect(session.calls).toBe(2);
+    expect(session.inputTokens).toBe(1010);
+    expect(session.outputTokens).toBe(520);
   });
 });

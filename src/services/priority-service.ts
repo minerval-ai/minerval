@@ -40,6 +40,21 @@ import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
 
+/** Any mandate's live valuation of this claim's standard open action, as a
+ * floor under the platform formula. queue_priority is one column shared by
+ * every funder's opinion (mandate-valuer-service's
+ * refreshQueuePriorityCache writes the same max), so a per-claim refresh
+ * here must not silently demote a claim some other mandate values highly:
+ * without this term, an enqueue-time refresh would overwrite a topical
+ * mandate's 9 with the platform formula's 2 until the next full recompute. */
+const OTHER_MANDATE_FLOOR_SQL = `
+  COALESCE((SELECT MAX(mv.value_est)
+              FROM mandate_valuations mv
+              JOIN actions a ON a.id = mv.action_id
+             WHERE a.claim_id = c.id
+               AND a.variant = 'standard'
+               AND a.status = 'open'), 0)`;
+
 /** The SQL expression computing the expected value for one claims row `c`.
  * The knobs come from the governing mandate's allocation policy (config
  * defaults overlaid with what its Grantmaker has set). */
@@ -79,7 +94,8 @@ async function valueSql(): Promise<{ sql: string; params: number[] }> {
 export async function refreshQueuePriority(claimId: string): Promise<number> {
   const { sql, params } = await valueSql();
   const rows = await rawQuery<{ queue_priority: number }>(
-    `UPDATE claims c SET queue_priority = ${sql}
+    `UPDATE claims c
+        SET queue_priority = GREATEST(${sql}, ${OTHER_MANDATE_FLOOR_SQL})
       WHERE c.id = $1
       RETURNING c.queue_priority`,
     [claimId, ...params]
@@ -95,7 +111,8 @@ export async function refreshQueuePriority(claimId: string): Promise<number> {
 export async function refreshPendingQueuePriorities(): Promise<number> {
   const { sql, params } = await valueSql();
   const rows = await rawQuery<{ id: string }>(
-    `UPDATE claims c SET queue_priority = ${sql}
+    `UPDATE claims c
+        SET queue_priority = GREATEST(${sql}, ${OTHER_MANDATE_FLOOR_SQL})
       WHERE c.state = 'active' AND c.steward_state = 'pending' AND $1::int = 1
       RETURNING c.id`,
     [1, ...params]

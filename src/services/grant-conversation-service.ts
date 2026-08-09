@@ -28,6 +28,7 @@ import {
   type TranscriptMessage,
 } from "../llm/agents/grantmaker.js";
 import { owlsToMicroUsd } from "./owl.js";
+import { loadConfig } from "../config.js";
 
 /** Hard ceilings on turns per conversation — a runaway/abuse backstop.
  * Funded conversations get more room: they manage a live mandate and stay
@@ -45,9 +46,60 @@ export type ConverseResult =
   | { ok: true; conversation: GrantConversation }
   | {
       ok: false;
-      code: "NOT_FOUND" | "CLOSED" | "TOO_LONG" | "EMPTY_MESSAGE";
+      code:
+        | "NOT_FOUND"
+        | "CLOSED"
+        | "TOO_LONG"
+        | "EMPTY_MESSAGE"
+        | "RATE_LIMITED";
       message: string;
     };
+
+// userId → turn timestamps (ms) within the last hour. In-memory sliding
+// window, the same construction as the contribution rate limit: a blunt
+// backstop, not an accounting system.
+const turnWindows = new Map<string, number[]>();
+
+/** Test hook. */
+export function resetGrantConversationRateLimiter(): void {
+  turnWindows.clear();
+}
+
+/**
+ * Per-user hourly cap on conversation turns.
+ *
+ * Every turn runs the Grantmaker on the best model, synchronously, and
+ * deliberately free — nothing is charged until a mandate is funded. The
+ * per-conversation MAX_MESSAGES ceilings above don't bound this: a user can
+ * open unlimited conversations, each with its own fresh allowance. And
+ * because these turns are attributed to a user, they are outside the
+ * process-wide LLM breaker (budget-tracker.ts scopes that to unattributed
+ * work, on the grounds that attributed work is bounded by its own money —
+ * true of a funded job, and true of this only once there is a rate on it).
+ */
+function checkTurnRateLimit(userId: string): boolean {
+  const limit = loadConfig().grantConversationRateLimitPerHour;
+  if (limit <= 0) return true;
+  const now = Date.now();
+  const hits = (turnWindows.get(userId) ?? []).filter((t) => t > now - 3_600_000);
+  if (hits.length >= limit) {
+    turnWindows.set(userId, hits);
+    return false;
+  }
+  hits.push(now);
+  turnWindows.set(userId, hits);
+  return true;
+}
+
+const rateLimited = (): ConverseResult => ({
+  ok: false,
+  code: "RATE_LIMITED",
+  message:
+    `You've reached the hourly limit on granting-conversation turns ` +
+    `(${loadConfig().grantConversationRateLimitPerHour}). Each turn runs a ` +
+    `full agent on your behalf at no charge; the limit resets within the ` +
+    `hour, and a funded mandate's conversation is unaffected by the wait.`,
+});
 
 function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
   const messages = (convo.messages ?? []) as ConversationMessage[];
@@ -132,6 +184,9 @@ export async function startConversation(input: {
       message: "Say what you want the mandate to do",
     };
   }
+  // Checked before the row is created: otherwise a rate-limited caller still
+  // leaves an empty conversation behind on every attempt.
+  if (!checkTurnRateLimit(input.userId)) return rateLimited();
   const db = getDb();
   const [convo] = await db
     .insert(grantConversations)
@@ -166,6 +221,7 @@ export async function addMessage(input: {
       message: "This conversation is at its length limit; start a fresh one",
     };
   }
+  if (!checkTurnRateLimit(input.userId)) return rateLimited();
   const updated = await runTurn(convo, input.message.trim());
   return { ok: true, conversation: updated };
 }

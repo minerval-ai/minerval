@@ -24,6 +24,9 @@ const { runCalls, state } = vi.hoisted(() => ({
     throwFor: null as null | ((id: string) => Error | null),
     markedPendingAgain: [] as string[],
     markedError: [] as string[],
+    // The fallback lane's opt-in flag: on for these cases, which drain with
+    // no General mandate seeded. One test turns it off deliberately.
+    fallbackLaneEnabled: true,
   },
 }));
 
@@ -124,7 +127,14 @@ vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardModel: "claude-sonnet-5", stewardMaxRuns: 0 }),
+  // These cases drain without a General mandate, which is exactly the
+  // fallback lane the flag now gates. Tests are one of the two places it is
+  // meant to be on.
+  loadConfig: () => ({
+    stewardModel: "claude-sonnet-5",
+    stewardMaxRuns: 0,
+    backgroundFallbackLaneEnabled: state.fallbackLaneEnabled,
+  }),
 }));
 
 import {
@@ -143,6 +153,35 @@ describe("Steward DB-backed drain", () => {
     state.throwFor = null;
     state.markedPendingAgain = [];
     state.markedError = [];
+    state.fallbackLaneEnabled = true;
+  });
+
+  /**
+   * The fallback lane spends with no mandate behind it, attributed to
+   * nobody. It engages whenever there is no ACTIVE General mandate — which
+   * is the fresh-dev case it was written for, but equally a mandate that has
+   * been completed or cancelled, something the mandate's own review pass can
+   * now decide. Off by default, that state means rest, not off-ledger spend.
+   */
+  it("rests instead of spending off-ledger when the fallback lane is not enabled", async () => {
+    state.fallbackLaneEnabled = false;
+    state.pending = ["a", "b"];
+    const res = await drainStewardQueue();
+    expect(runCalls).toEqual([]);
+    expect(res.budgetHit).toBe(true);
+    expect(res.processed).toBe(0);
+    // The claims are still pending: nothing was consumed or parked.
+    expect(state.markedError).toEqual([]);
+  });
+
+  it("still runs ledger-covered work with the fallback lane off", async () => {
+    // The gate gates UNFUNDED work. An action a mandate has actually paid
+    // for runs regardless: that is the ledger doing its job.
+    state.fallbackLaneEnabled = false;
+    state.fundedPending = ["a"];
+    const res = await drainStewardQueue();
+    expect(runCalls).toEqual(["a"]);
+    expect(res.processed).toBe(1);
   });
 
   it("drains every pending claim, then reports empty", async () => {

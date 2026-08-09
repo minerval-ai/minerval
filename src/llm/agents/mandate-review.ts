@@ -38,7 +38,11 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { surveyScope } from "./grantor.js";
-import { validateMandate, type GrantMandate } from "./grantmaker.js";
+import {
+  validateMandate,
+  executeManagementTool,
+  type GrantMandate,
+} from "./grantmaker.js";
 import type { PlanItem } from "../../services/grant-service.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, owlsToMicroUsd, capOwls } from "../../services/owl.js";
@@ -187,6 +191,50 @@ async function runMandateReviewImpl(input: {
           },
         },
         required: ["entries"],
+      },
+    },
+    {
+      name: "grant_overview",
+      description:
+        "Your mandate's own state as the public dashboard shows it: status, " +
+        "the plan and how far it has executed, escrow and what is committed " +
+        "against it, spend so far. The briefing gives you the headline " +
+        "numbers; read this when you need the itemised picture before " +
+        "spending or repacing.",
+      input_schema: { type: "object" as const, properties: {}, required: [] },
+    },
+    {
+      name: "update_allocation_policy",
+      description:
+        "Amend your mandate's ALLOCATION POLICY: the formula your valuations " +
+        "are computed from, and the cadence and cost priors around it. Only " +
+        "meaningful for a formula mandate — one whose valuations come from " +
+        "the policy rather than from your own set_valuations calls; it " +
+        "refuses, with the reason, otherwise. This is the lever for what " +
+        "you learn about ALLOCATION ITSELF rather than about a claim: that " +
+        "uncontested work stays more fundable than the floor allows, that " +
+        "the staleness horizon is too short. Every knob is bounded; the " +
+        "change takes effect on the next pass. A note is required, and it " +
+        "is the public record of why the formula changed.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          updates: {
+            type: "object",
+            description:
+              "Knobs to set: contestation_floor, " +
+              "staleness_saturation_days, user_provenance_boost, " +
+              "strong_gain_multiplier, est_steward_run_cost_owls, " +
+              "est_steward_run_cost_strong_owls, staleness_base_days, " +
+              "staleness_max_per_sweep.",
+          },
+          note: {
+            type: "string",
+            description:
+              "What you learned that justifies the change, in your own words.",
+          },
+        },
+        required: ["updates", "note"],
       },
     },
     {
@@ -371,6 +419,16 @@ async function runMandateReviewImpl(input: {
     ? JSON.stringify(grant.mandate, null, 2)
     : `(untitled mandate "${grant.name}")`;
   const items = grant.plan?.items ?? [];
+  // A mandate gets the valuation lever its policy actually reads. For a
+  // formula mandate the two would fight: the bulk refresh upserts the same
+  // (grant, action) rows, so a hand-written valuation would survive only
+  // until the next refresh overwrote it. Its lever is the formula itself.
+  const isFormulaMandate = grant.policy === "general";
+  const valuationClause = isFormulaMandate
+    ? `revise the FORMULA your valuations are computed from where what you ` +
+      `have learned about allocation itself warrants it ` +
+      `(update_allocation_policy)`
+    : `revise your valuations over the open ledger`;
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -387,8 +445,8 @@ async function runMandateReviewImpl(input: {
       : `(empty — this is your first pass, or you have not written notes ` +
         `yet. Start the map.)`) +
     `\n\n---\n\n` +
-    `Do what the mandate needs this pass: survey (graph and web), revise ` +
-    `your valuations over the open ledger, extend the plan with the work ` +
+    `Do what the mandate needs this pass: survey (graph and web), ` +
+    `${valuationClause}, extend the plan with the work ` +
     `you discovered, adjust your pacing, regrant or spawn where part of ` +
     `the mission belongs in other hands. Skip what doesn't need doing. ` +
     `Before finishing, update your workspace so the next pass starts ` +
@@ -445,9 +503,17 @@ async function runMandateReviewImpl(input: {
     movedThisPassMicro += owlsToMicroUsd(Number(owls) || 0);
   };
 
+  const availableTools = tools.filter((t) =>
+    isFormulaMandate
+      ? t.name !== "set_valuations"
+      : t.name !== "update_allocation_policy"
+  );
+
   const result = await toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
-    tools: webSearchAvailable ? [webSearchTool, ...tools] : tools,
+    tools: webSearchAvailable
+      ? [webSearchTool, ...availableTools]
+      : availableTools,
     system: getGrantmakerSystemPrompt(),
     model,
     maxTokens: 4096,
@@ -489,6 +555,11 @@ async function runMandateReviewImpl(input: {
         valuationsWritten += res.written;
         return JSON.stringify(res);
       }
+      // The management tools this pass shares with the owner-driven chat
+      // (grant_overview, update_allocation_policy) run the same
+      // implementation, honesty guard included. Null means "not mine".
+      const management = await executeManagementTool(grant.id, name, toolInput);
+      if (management !== null) return management;
       if (name === "estimate_costs") {
         const tiers = await stewardTierCostEstimates();
         const passOwls = microUsdToOwls(tiers.strongMicroUsd);

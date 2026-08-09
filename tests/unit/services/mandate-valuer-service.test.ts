@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// The valuation layer's two writers: the General mandate's bulk formula
-// refresh (its scope genuinely is the whole graph and its formula is its
-// published policy), and setMandateValuations — the agent valuer's pen,
-// used by every other mandate's review pass with its own judgment.
+// The valuation layer's two writers: a formula mandate's bulk refresh (its
+// own policy knobs, over its own scope — the platform's General mandate is
+// the unscoped instance), and setMandateValuations — the agent valuer's pen,
+// used by every judgment mandate's review pass.
 
 const { calls, state } = vi.hoisted(() => ({
   calls: [] as Array<{ q: string; params: unknown[] }>,
@@ -31,7 +31,7 @@ vi.mock("../../../src/db/client.js", () => ({
 
 vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   getGeneralMandate: vi.fn(async () => ({ grantId: "g-general" })),
-  getEffectiveAllocationPolicy: vi.fn(async () => ({
+  getMandateAllocationPolicy: vi.fn(async () => ({
     contestation_floor: 0.25,
     staleness_saturation_days: 90,
     user_provenance_boost: 0.15,
@@ -45,6 +45,7 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
 
 import {
   refreshGeneralValuations,
+  refreshFormulaValuations,
   setMandateValuations,
 } from "../../../src/services/mandate-valuer-service.js";
 
@@ -63,13 +64,57 @@ describe("refreshGeneralValuations", () => {
     expect(upsert).toBeDefined();
     // The published formula's knobs ride as parameters, in policy order.
     expect(upsert!.q).toContain("WHEN a.variant = 'strong' THEN $4");
-    expect(upsert!.params).toEqual([0.25, 90, 0.15, 1.3, "g-general"]);
-    // The queue_priority display cache mirrors the standard-variant value.
-    const mirror = calls.find((c) =>
-      c.q.includes("SET queue_priority = mv.value_est")
-    );
+    // The platform lane is the UNSCOPED formula mandate: null scope on both
+    // terms, which the query reads as "the whole graph".
+    expect(upsert!.params).toEqual([0.25, 90, 0.15, 1.3, "g-general", null, null]);
+    // The display cache is recomputed as the max across mandates.
+    const mirror = calls.find((c) => c.q.includes("SET queue_priority = COALESCE"));
     expect(mirror).toBeDefined();
+    expect(mirror!.q).toContain("MAX(mv.value_est)");
     expect(mirror!.q).toContain("a.variant = 'standard'");
+  });
+});
+
+/**
+ * The formula is a KIND of mandate, not one privileged row. A second
+ * formula mandate values its own scope from its own knobs; the platform's
+ * General assessment is simply the instance whose scope is null.
+ */
+describe("refreshFormulaValuations (the formula generalised)", () => {
+  it("values only what a scoped mandate's scope covers", async () => {
+    await refreshFormulaValuations("g-topical", {
+      scopeClaimId: "c-root",
+      scopeQuery: "mathematics OR theorem",
+    });
+    const upsert = calls.find((c) =>
+      c.q.includes("INSERT INTO mandate_valuations")
+    );
+    expect(upsert!.params).toEqual([
+      0.25, 90, 0.15, 1.3, "g-topical", "c-root", "mathematics OR theorem",
+    ]);
+    // Subtree OR keyword, the same disjunction surveyScope resolves.
+    expect(upsert!.q).toContain("c.id IN (SELECT id FROM subtree)");
+    expect(upsert!.q).toContain("websearch_to_tsquery('english', $7)");
+  });
+
+  it("does not touch the display cache: that is the platform lane's mirror", async () => {
+    await refreshFormulaValuations("g-topical", {
+      scopeClaimId: "c-root",
+      scopeQuery: null,
+    });
+    expect(calls.some((c) => c.q.includes("SET queue_priority"))).toBe(false);
+  });
+
+  it("prunes judgments about actions that have closed", async () => {
+    await refreshFormulaValuations("g-topical", {
+      scopeClaimId: null,
+      scopeQuery: "ai",
+    });
+    const prune = calls.find((c) =>
+      c.q.includes("DELETE FROM mandate_valuations")
+    );
+    expect(prune).toBeDefined();
+    expect(prune!.params).toEqual(["g-topical"]);
   });
 });
 
