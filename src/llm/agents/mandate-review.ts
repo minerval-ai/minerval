@@ -33,6 +33,10 @@ import { loadConfig } from "../../config.js";
 import { resolveProvider } from "../providers/routing.js";
 import { withAgent } from "../usage-context.js";
 import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import {
+  executeGraphReadTool,
+  getGraphReadToolDefinitions,
+} from "../tools/graph-read-tools.js";
 import { surveyScope } from "./grantor.js";
 import { validateMandate, type GrantMandate } from "./grantmaker.js";
 import type { PlanItem } from "../../services/grant-service.js";
@@ -113,21 +117,12 @@ async function runMandateReviewImpl(input: {
     max_uses: 5,
   };
   const tools: Tool[] = [
-    {
-      name: "search_claims",
-      description:
-        "Search the graph's claims by keywords. A search aid, not your " +
-        "scope: your scope is your mandate's words, and you judge what " +
-        "falls under them.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          query: { type: "string" },
-          limit: { type: "number", description: "Max results, default 15." },
-        },
-        required: ["query"],
-      },
-    },
+    // Shared graph reads: semantic search plus the three structural reads
+    // (get_claim, get_decomposition, get_dependents). Valuing the ledger is a
+    // judgment call about what falls under this mandate's words, and that is
+    // not answerable from keyword hits and scalars — it needs the claim's
+    // reasoning, what it rests on, and what rests on it.
+    ...getGraphReadToolDefinitions(),
     {
       name: "survey_scope",
       description:
@@ -458,22 +453,10 @@ async function runMandateReviewImpl(input: {
     maxTokens: 4096,
     maxIterations: 24,
     executeTool: async (name, toolInput) => {
-      if (name === "search_claims") {
-        const limit = Math.min(30, Math.max(1, Number(toolInput.limit ?? 15)));
-        const rows = await rawQuery(
-          `SELECT c.id, c.text, c.importance, c.contestation, c.steward_state,
-                  a.status AS assessment_status
-             FROM claims c
-             LEFT JOIN assessments a
-               ON a.claim_id = c.id AND a.is_current = true
-            WHERE c.state = 'active'
-              AND c.text_search @@ websearch_to_tsquery('english', $1)
-            ORDER BY c.importance DESC
-            LIMIT $2`,
-          [String(toolInput.query ?? ""), limit]
-        );
-        return JSON.stringify({ count: rows.length, claims: rows });
-      }
+      // Shared graph reads first; null means "not mine", so the mandate's own
+      // handlers below still run.
+      const graphRead = await executeGraphReadTool(name, toolInput);
+      if (graphRead !== null) return graphRead;
       if (name === "survey_scope") {
         const rows = await surveyScope({
           scopeClaimId:

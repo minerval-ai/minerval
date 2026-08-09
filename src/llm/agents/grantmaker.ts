@@ -23,6 +23,10 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
 import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import {
+  executeGraphReadTool,
+  getGraphReadToolDefinitions,
+} from "../tools/graph-read-tools.js";
 import { surveyScope } from "./grantor.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
@@ -173,21 +177,12 @@ async function runGrantmakerTurnImpl(input: {
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
-  const searchTool: Tool = {
-    name: "search_claims",
-    description:
-      "Search the graph's claims by keywords. Returns matches with their " +
-      "assessment state, importance, and contestation, most consequential " +
-      "first. Use this to find scope roots and to see what already exists.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        query: { type: "string" },
-        limit: { type: "number", description: "Max results, default 15." },
-      },
-      required: ["query"],
-    },
-  };
+  // search_claims / get_claim / get_decomposition / get_dependents come from
+  // the shared graph reads (llm/tools/graph-read-tools.ts). search_claims used
+  // to be hand-rolled here as a tsvector match sorted by importance; it now
+  // goes through hybridSearch like every other search path, and the three
+  // reads beside it were previously MCP-only.
+  const graphReadTools = getGraphReadToolDefinitions();
   const surveyTool: Tool = {
     name: "survey_scope",
     description:
@@ -450,7 +445,7 @@ async function runGrantmakerTurnImpl(input: {
 
   const managed = !!input.grantId;
   const tools: Tool[] = [
-    searchTool,
+    ...graphReadTools,
     surveyTool,
     costTool,
     ...(managed
@@ -495,26 +490,10 @@ async function runGrantmakerTurnImpl(input: {
     maxTokens: 4096,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
-      if (name === "search_claims") {
-        const limit = Math.min(30, Math.max(1, Number(toolInput.limit ?? 15)));
-        const rows = await rawQuery(
-          `SELECT c.id, c.text, c.importance, c.contestation,
-                  c.steward_state,
-                  a.status AS assessment_status,
-                  CASE WHEN a.assessed_at IS NULL THEN NULL
-                       ELSE FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at))
-                                  / 86400)::int END AS days_since_assessed
-             FROM claims c
-             LEFT JOIN assessments a
-               ON a.claim_id = c.id AND a.is_current = true
-            WHERE c.state = 'active'
-              AND c.text_search @@ websearch_to_tsquery('english', $1)
-            ORDER BY c.importance DESC
-            LIMIT $2`,
-          [String(toolInput.query ?? ""), limit]
-        );
-        return JSON.stringify({ count: rows.length, claims: rows });
-      }
+      // Shared graph reads first; returns null for anything it doesn't own,
+      // so the mandate-specific handlers below still get their turn.
+      const graphRead = await executeGraphReadTool(name, toolInput);
+      if (graphRead !== null) return graphRead;
       if (name === "survey_scope") {
         const rows = await surveyScope({
           scopeClaimId:
