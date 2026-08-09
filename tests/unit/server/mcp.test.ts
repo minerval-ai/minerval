@@ -42,7 +42,7 @@ const mocks = vi.hoisted(() => ({
   getClaimTree: vi.fn(),
   getSubclaimCount: vi.fn(async () => 3),
   listClaimDependents: vi.fn(async () => ({ dependents: [], total: 0 })),
-  getClaimAncestors: vi.fn(async () => ({
+  getTransitiveDependents: vi.fn(async () => ({
     dependents: [],
     total: 0,
     truncated: false,
@@ -79,7 +79,7 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   getClaimTree: mocks.getClaimTree,
   getSubclaimCount: mocks.getSubclaimCount,
   listClaimDependents: mocks.listClaimDependents,
-  getClaimAncestors: mocks.getClaimAncestors,
+  getTransitiveDependents: mocks.getTransitiveDependents,
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
@@ -432,7 +432,7 @@ describe("MCP tools", () => {
   });
 
   it("get_dependents walks upward, three levels by default", async () => {
-    mocks.getClaimAncestors.mockResolvedValueOnce({
+    mocks.getTransitiveDependents.mockResolvedValueOnce({
       dependents: [
         { id: OTHER_ID, text: "Rests on it", importance: 0.9, depth: 2 },
       ],
@@ -446,7 +446,7 @@ describe("MCP tools", () => {
     });
 
     const payload = parseText(result);
-    expect(mocks.getClaimAncestors).toHaveBeenCalledWith(CLAIM_ID, 3);
+    expect(mocks.getTransitiveDependents).toHaveBeenCalledWith(CLAIM_ID, 3);
     // The depth tag is the point: it says how far up the weight sits.
     expect(payload.dependents).toEqual([
       { id: OTHER_ID, text: "Rests on it", importance: 0.9, depth: 2 },
@@ -460,7 +460,7 @@ describe("MCP tools", () => {
       name: "get_dependents",
       arguments: { claim_id: CLAIM_ID, max_depth: 5 },
     });
-    expect(mocks.getClaimAncestors).toHaveBeenCalledWith(CLAIM_ID, 5);
+    expect(mocks.getTransitiveDependents).toHaveBeenCalledWith(CLAIM_ID, 5);
 
     const missing = await client.callTool({
       name: "get_dependents",

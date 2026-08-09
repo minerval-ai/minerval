@@ -6,7 +6,7 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 
 import {
-  getClaimAncestors,
+  getTransitiveDependents,
   getClaimTree,
   getSubclaimCount,
   listClaimDependents,
@@ -203,7 +203,7 @@ describe("tree-service", () => {
     });
   });
 
-  describe("getClaimAncestors", () => {
+  describe("getTransitiveDependents", () => {
     const depRow = (id: string, importance: number) => ({
       id,
       text: `Claim ${id}`,
@@ -223,7 +223,7 @@ describe("tree-service", () => {
       mockRawQuery.mockResolvedValueOnce([depRow("top", 0.9)]);
       mockRawQuery.mockResolvedValueOnce([]);
 
-      const result = await getClaimAncestors("leaf");
+      const result = await getTransitiveDependents("leaf");
 
       expect(result.total).toBe(2);
       expect(result.truncated).toBe(false);
@@ -239,7 +239,7 @@ describe("tree-service", () => {
       mockRawQuery.mockResolvedValueOnce([depRow("a2", 0.2)]);
       mockRawQuery.mockResolvedValueOnce([depRow("a3", 0.3)]);
 
-      const result = await getClaimAncestors("leaf");
+      const result = await getTransitiveDependents("leaf");
 
       expect(mockRawQuery).toHaveBeenCalledTimes(3);
       expect(result.dependents.map((d) => d.id).sort()).toEqual(["a1", "a2", "a3"]);
@@ -250,7 +250,7 @@ describe("tree-service", () => {
       mockRawQuery.mockResolvedValueOnce([depRow("a", 0.5)]);
       mockRawQuery.mockResolvedValueOnce([depRow("leaf", 0.5)]);
 
-      const result = await getClaimAncestors("leaf");
+      const result = await getTransitiveDependents("leaf");
 
       expect(mockRawQuery).toHaveBeenCalledTimes(2);
       expect(result.dependents).toHaveLength(1);
@@ -262,7 +262,7 @@ describe("tree-service", () => {
       // "x" was admitted before the cap bit, so its own level is still walked.
       mockRawQuery.mockResolvedValueOnce([]);
 
-      const result = await getClaimAncestors("leaf", 3, 2); // subject + 1
+      const result = await getTransitiveDependents("leaf", 3, 2); // subject + 1
 
       expect(result.dependents).toHaveLength(1);
       expect(result.truncated).toBe(true);
