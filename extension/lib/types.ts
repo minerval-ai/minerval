@@ -80,7 +80,11 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  apiBaseUrl: "http://localhost:3000",
+  // The hosted API, matching the popup's placeholder. This defaulted to
+  // localhost, so a fresh install pointed at a port with nothing on it and
+  // every call died as a bare "Failed to fetch". Developers override it in
+  // the popup; users should not have to.
+  apiBaseUrl: "https://api.claimgraph.io",
   apiKey: "",
   markupLevel: "conservative",
   autoAnalyze: false,

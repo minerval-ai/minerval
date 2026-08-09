@@ -22,7 +22,9 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
               id: { type: "string", format: "uuid" },
               type: { type: "string" },
               status: { type: "string", enum: ["pending", "processing", "complete", "failed"] },
-              result: { type: "object", nullable: true },
+              // Same fast-json-stringify trap: a property-less object schema
+              // serializes to {}, so a completed job's result vanished.
+              result: { type: "object", nullable: true, additionalProperties: true },
               error: { type: "string", nullable: true },
             },
           },
