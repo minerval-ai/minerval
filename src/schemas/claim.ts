@@ -44,6 +44,11 @@ export const claimGetParams = z.object({
 export const claimDependentsParams = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  // How many edges to walk upward. 1 (the default) is the direct dependents,
+  // served by the paginated SQL query. Above 1 walks transitively, which is
+  // what answers "what is load-bearing here" — a claim's weight often sits two
+  // edges up, in a dependent of a dependent.
+  depth: z.coerce.number().int().min(1).max(8).default(1),
 });
 
 export const claimProposeBody = z.object({

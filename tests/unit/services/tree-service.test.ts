@@ -5,7 +5,12 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(),
 }));
 
-import { getClaimTree, getSubclaimCount, listClaimDependents } from "../../../src/services/tree-service.js";
+import {
+  getClaimAncestors,
+  getClaimTree,
+  getSubclaimCount,
+  listClaimDependents,
+} from "../../../src/services/tree-service.js";
 import { rawQuery } from "../../../src/db/client.js";
 
 const mockRawQuery = vi.mocked(rawQuery);
@@ -195,6 +200,72 @@ describe("tree-service", () => {
       const d3 = tree!.children[0]!.children[0]!.children[0]!;
       expect(d3.id).toBe("d3");
       expect(d3.children).toHaveLength(0);
+    });
+  });
+
+  describe("getClaimAncestors", () => {
+    const depRow = (id: string, importance: number) => ({
+      id,
+      text: `Claim ${id}`,
+      claim_type: "causal",
+      relation_type: "requires",
+      reasoning: `why ${id} leans on it`,
+      importance,
+      assessment_status: null,
+      assessment_confidence: null,
+      assessment_credence: null,
+    });
+
+    it("walks upward transitively, tagging how far each dependent sits", async () => {
+      // leaf <- mid <- top: the weight is two edges up, where one level
+      // of dependents cannot see it.
+      mockRawQuery.mockResolvedValueOnce([depRow("mid", 0.4)]);
+      mockRawQuery.mockResolvedValueOnce([depRow("top", 0.9)]);
+      mockRawQuery.mockResolvedValueOnce([]);
+
+      const result = await getClaimAncestors("leaf");
+
+      expect(result.total).toBe(2);
+      expect(result.truncated).toBe(false);
+      // Ranked by importance, not by distance: the load-bearing one leads.
+      expect(result.dependents[0]!.id).toBe("top");
+      expect(result.dependents[0]!.depth).toBe(2);
+      expect(result.dependents[1]!.id).toBe("mid");
+      expect(result.dependents[1]!.depth).toBe(1);
+    });
+
+    it("stops at three levels by default", async () => {
+      mockRawQuery.mockResolvedValueOnce([depRow("a1", 0.1)]);
+      mockRawQuery.mockResolvedValueOnce([depRow("a2", 0.2)]);
+      mockRawQuery.mockResolvedValueOnce([depRow("a3", 0.3)]);
+
+      const result = await getClaimAncestors("leaf");
+
+      expect(mockRawQuery).toHaveBeenCalledTimes(3);
+      expect(result.dependents.map((d) => d.id).sort()).toEqual(["a1", "a2", "a3"]);
+    });
+
+    it("terminates on a cycle instead of revisiting", async () => {
+      // leaf <- a <- leaf: the back edge must not re-enter the frontier.
+      mockRawQuery.mockResolvedValueOnce([depRow("a", 0.5)]);
+      mockRawQuery.mockResolvedValueOnce([depRow("leaf", 0.5)]);
+
+      const result = await getClaimAncestors("leaf");
+
+      expect(mockRawQuery).toHaveBeenCalledTimes(2);
+      expect(result.dependents).toHaveLength(1);
+      expect(result.dependents[0]!.id).toBe("a");
+    });
+
+    it("flags truncation at the node cap rather than dropping rows silently", async () => {
+      mockRawQuery.mockResolvedValueOnce([depRow("x", 0.8), depRow("y", 0.7)]);
+      // "x" was admitted before the cap bit, so its own level is still walked.
+      mockRawQuery.mockResolvedValueOnce([]);
+
+      const result = await getClaimAncestors("leaf", 3, 2); // subject + 1
+
+      expect(result.dependents).toHaveLength(1);
+      expect(result.truncated).toBe(true);
     });
   });
 

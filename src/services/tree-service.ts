@@ -183,6 +183,80 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
   );
 }
 
+/** One claim reached by walking upward, with how many edges away it sits. */
+export interface AncestorClaim extends DependentClaim {
+  /** 1 = directly depends on the subject claim, 2 = depends on one of those. */
+  depth: number;
+}
+
+/**
+ * Walk UPWARD transitively: everything that rests on this claim, directly or
+ * through a chain. The mirror of `getClaimTree`, and the answer to a question
+ * nothing else here could answer — "what moves if this verdict changes?"
+ *
+ * Load-bearingness is the signal an allocator actually wants and it is not a
+ * property of the claim itself: a modest-importance lemma carrying six
+ * high-importance dependents is worth more attention than an isolated claim
+ * scoring higher on `importance`. One level up (`getClaimDependents`) cannot
+ * see that, because the weight often sits two edges away.
+ *
+ * Returned FLAT, ranked by importance, each row tagged with its depth, rather
+ * than as a nested ancestor tree. The consumer is usually an agent paying for
+ * its own context, and for "is this load-bearing" a ranked list plus a count
+ * carries the whole signal at a fraction of the tokens a nested structure
+ * would. Same guards as the downward walk: a visited set (so a diamond or a
+ * cycle terminates), `maxDepth` levels, and `maxNodes` as the cost bound with
+ * `truncated` set rather than silently dropping rows.
+ */
+export async function getClaimAncestors(
+  claimId: string,
+  maxDepth: number = 3,
+  maxNodes: number = MAX_TREE_NODES
+): Promise<{ dependents: AncestorClaim[]; total: number; truncated: boolean }> {
+  const visited = new Set<string>([claimId]);
+  const found: AncestorClaim[] = [];
+  let frontier = [claimId];
+  let truncated = false;
+
+  for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
+    const rows = await rawQuery<DependentClaim>(
+      `SELECT DISTINCT ON (cr.parent_claim_id)
+              cr.parent_claim_id AS id, c.text, c.claim_type,
+              cr.relation_type, cr.reasoning, c.importance,
+              a.status AS assessment_status, a.confidence AS assessment_confidence,
+              a.claim_credence AS assessment_credence
+         FROM claim_relationships cr
+         JOIN claims c ON c.id = cr.parent_claim_id
+         LEFT JOIN assessments a
+                ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+        WHERE cr.child_claim_id = ANY($1) AND c.state = 'active'
+        ORDER BY cr.parent_claim_id, c.importance DESC`,
+      [frontier]
+    );
+
+    const next: string[] = [];
+    for (const row of rows) {
+      if (visited.has(row.id)) continue;
+      if (visited.size >= maxNodes) {
+        truncated = true;
+        continue;
+      }
+      visited.add(row.id);
+      found.push({ ...row, depth });
+      next.push(row.id);
+    }
+    frontier = next;
+  }
+
+  found.sort(
+    (x, y) =>
+      y.importance - x.importance ||
+      (y.assessment_confidence ?? 0) - (x.assessment_confidence ?? 0) ||
+      x.depth - y.depth
+  );
+  return { dependents: found, total: found.length, truncated };
+}
+
 /**
  * Paginated variant for GET /claims/:id/dependents (issue #102): the claim map
  * recentres often and only shows a handful of dependent chips plus a count, so
