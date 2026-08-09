@@ -41,6 +41,7 @@ import {
   postUrl,
 } from "./lib.js";
 import { closeDb, rawQuery } from "../../src/db/client.js";
+import { loadConfig } from "../../src/config.js";
 import { formatMicroUsd } from "../../src/llm/pricing.js";
 import { isSupportedModelId, unresolvableModelIdMessage } from "../../src/llm/providers/routing.js";
 import { buildApp } from "../../src/server/app.js";
@@ -52,7 +53,18 @@ import { scoreRun } from "./score.js";
 const PHASE_STARTED_AT = new Date();
 
 function snapshotName(cluster: string): string {
-  return `bakeoff-${cluster}`;
+  // Snapshot names are [a-z0-9_] only (snapshot-core assertSnapshotName).
+  return `bakeoff_${cluster.toLowerCase().replace(/[^a-z0-9_]/g, "_")}`;
+}
+
+/**
+ * The env-configured operator key, when API auth is on. The corpus harness
+ * injects against the real routes, so it authenticates the way any client
+ * would; with no key configured the server's keyless dev bypass applies.
+ */
+function apiKeyHeader(): Record<string, string> {
+  const key = loadConfig().apiKeys.find((k) => k !== "");
+  return key ? { "x-api-key": key } : {};
 }
 
 async function printWindowUsage(): Promise<void> {
@@ -90,6 +102,7 @@ async function prepare(cluster: string): Promise<void> {
       const res = await app.inject({
         method: "POST",
         url: "/sources",
+        headers: apiKeyHeader(),
         payload: { url: postUrl(p), title: p.title, content: readFileSync(mdPath, "utf8") },
       });
       if (res.statusCode !== 202) {
