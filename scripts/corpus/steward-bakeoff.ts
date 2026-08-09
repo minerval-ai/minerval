@@ -123,6 +123,10 @@ async function prepare(cluster: string): Promise<void> {
   console.log(`\nParked steward queue: ${pending?.n ?? 0} claims pending.`);
   await printWindowUsage();
 
+  // Snapshotting force-terminates connections on the corpus DB (template
+  // semantics) — close our own pool first or the idle clients die with an
+  // unhandled 'error' event after the work is already done.
+  await closeDb();
   await saveSnapshot(CORPUS_DATABASE_URL, snapshotName(cluster));
   console.log(`✓ snapshot "${snapshotName(cluster)}" saved — run phases against it.`);
 }
