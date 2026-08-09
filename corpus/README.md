@@ -137,6 +137,19 @@ Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
+**Judge calibration** (#99/#137) — no judge number feeds a gate until checked
+against human labels. After a scored run:
+
+```bash
+npm run corpus:calibrate -- sheet            # blinded labeling sheet from the latest scored run
+# … fill every `labels` block by hand …
+npm run corpus:calibrate -- compare corpus/calibration/<sheet>.md
+```
+
+The sheet reproduces the judge's pinned standards and the full claim context
+but withholds the judge's verdicts (no anchoring); `compare` prints per-
+dimension agreement. Generate the sheet before resetting the graph.
+
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only).
