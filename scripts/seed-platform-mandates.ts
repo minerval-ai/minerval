@@ -11,9 +11,18 @@
  * the platform's formulas, amendable by its Grantmaker in conversation.
  * Beside it: Mathematics and AI Economics, topical standing mandates.
  *
- * Idempotent: re-running tops nothing up and never duplicates.
+ * Idempotent: re-running tops nothing up and never duplicates — it matches on
+ * mandate TITLE, so changing a budget here never alters an existing row.
  *
- * Usage: DATABASE_URL=… npx tsx scripts/seed-platform-mandates.ts
+ * Local:  DATABASE_URL=… npm run seed:platform-mandates
+ * Prod:   the DB is private, so run it as a one-off ECS task on the API's own
+ *         task definition, which supplies DB_HOST/DB_NAME and the credential
+ *         secrets already:
+ *
+ *   aws ecs run-task --cluster <cluster> --task-definition <api-taskdef> \
+ *     --launch-type FARGATE --network-configuration <the service's subnets/SG> \
+ *     --overrides '{"containerOverrides":[{"name":"api",
+ *       "command":["npm","run","seed:platform-mandates"]}]}'
  */
 import { rawQuery, withTransaction } from "../src/db/client.js";
 import { owlsToMicroUsd } from "../src/services/owl.js";
@@ -49,12 +58,12 @@ const MANDATES: PlatformMandate[] = [
       "other funders' allocations.",
     // The escrow is the only hard ceiling on this mandate's spend, since the
     // daily rate is a pace target rather than a cap. 200 owls is deliberately
-    // a first-run number: about four days at the rate below, after which the
+    // a first-run number: roughly a week at the rate below, after which the
     // mandate halts until someone tops it up. Raise it once the live epoch
     // shows where the money actually goes.
     budgetOwls: 200,
     policy: "general",
-    dailyBudgetOwls: 50,
+    dailyBudgetOwls: 30,
   },
   {
     key: "mathematics",
@@ -72,7 +81,10 @@ const MANDATES: PlatformMandate[] = [
       "Cover unassessed mathematical claims in scope first, then keep " +
       "assessments fresh as new results land. Depth goes to claims whose " +
       "subtrees carry contested lemmas or disputed applicability.",
-    budgetOwls: 250,
+    // A topical mandate runs at a tenth of its escrow a day, so 100 owls is
+    // about ten days of pace: long enough to see whether the scope query and
+    // the Grantmaker's judgment of it are picking up the right claims.
+    budgetOwls: 100,
     policy: "cover",
     dailyBudgetOwls: 10,
   },
@@ -91,7 +103,7 @@ const MANDATES: PlatformMandate[] = [
       "Cover the unassessed cruxes first, reassess anything stale in a " +
       "field that moves monthly, and deepen the claims whose subtrees " +
       "carry the contested elasticity and adoption estimates.",
-    budgetOwls: 250,
+    budgetOwls: 100,
     policy: "cover",
     dailyBudgetOwls: 10,
   },
