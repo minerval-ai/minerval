@@ -1,0 +1,2727 @@
+{
+  "generatedAt": "2026-08-09T20:35:54.333Z",
+  "cluster": "blackholes",
+  "sampleSize": 13,
+  "config": {
+    "pipelineEpoch": "2026-08-owl-economy",
+    "gitCommit": "731a331"
+  },
+  "models": [
+    {
+      "model": "deepseek/deepseek-v4-flash",
+      "summary": {
+        "model": "deepseek/deepseek-v4-flash",
+        "sampleSize": 13,
+        "claimBarPassRate": 1,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.38,
+          "overratedShare": 0
+        },
+        "assessmentQuality": {
+          "readability": 4.15,
+          "reasoningFit": 4.38,
+          "impartiality": 4.15
+        },
+        "granularity": {
+          "good": 8,
+          "n_a": 2,
+          "too_granular": 3
+        },
+        "flags": {
+          "status_miscalibrated": 3,
+          "opaque_ids": 5,
+          "bias": 2,
+          "hallucination_risk": 2,
+          "boilerplate_trace": 1
+        },
+        "items": [
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.45,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The reasoning is clear and even-handed, but the status is miscalibrated relative to its own decomposition: the two subclaims that directly bear on the claim are one contested and one supported, and the reasoning itself says the debate is \"genuinely technical and ongoing.\" Claiming 'supported' while acknowledging genuine ongoing disagreement on the governing subclaims rounds a contested matter up, which §10 forbids — especially since the reasoning leans on the hedging word 'may not' to make the supported reading trivially safe."
+          },
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.12,
+            "flags": [],
+            "note": "Strong reasoning with good identification of the relevant physics and source evidence. The importance may be slightly overestimated (0.15 vs 0.12) because the claim, while true, is a fairly settled scaling relationship—the live debate is about quantitative consequences, not the direction of the effect itself, so it borders on minor/settled territory."
+          },
+          {
+            "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+            "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.25,
+            "flags": [],
+            "note": "Clean reasoning and well-grounded status; the only substantive observation is that the stored importance of 0.35 may be slightly high given the scenario's purely hypothetical nature and the fact that much of the debate concerns whether such black holes exist at all (a separate claim) rather than the consequences-if-captured, which reduces contestability within the mapped claim."
+          },
+          {
+            "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+            "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+            "importanceStored": 0.35,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.25,
+            "flags": [
+              "opaque_ids"
+            ],
+            "note": "The decomposition breaks settled supporting material into separate claim nodes (e.g. the mass-cubed lifetime relation is a textbook formula, not a live contestable proposition), and the opaque ID references force the reader to break flow and lookup what those subclaims say, undermining traceability."
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.35,
+            "flags": [
+              "bias",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The reasoning omits the actual primary source confirming the observation (e.g., a specific survey or paper that looked for destruction), citing only secondary news summaries and a theoretical paper that undercuts the evidential weight; this is a hallucination risk because we cannot verify which observational study the claim rests on."
+          },
+          {
+            "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+            "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.35,
+            "flags": [
+              "bias"
+            ],
+            "note": "The claim itself is sound and the primary-source support is strong, but the reasoning is written as a brief for that conclusion — it dismisses the magnetic deceleration objection as 'a refinement' rather than fairly representing that it weakens the neutron-star/white-dwarf prong of the evidence, and the stored importance (0.3) is too high for what is essentially a settled textbook fact relied on instrumentally (to allay LHC-safety fears), not a live contested point."
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.7,
+            "flags": [
+              "opaque_ids",
+              "status_miscalibrated"
+            ],
+            "note": "The reasoning is thorough and even-handed, weighing robustness/universality arguments against the philosophy-of-physics critique with both sides represented. The status of contested with lean toward robustness is defensible. However, the stated confidence (0.75) contradicts the stated credence of 0.4 — the assessment explicitly leans 60/40 against the claim, so \"contested\" is defensible but the confidence number is internally inconsistent with the credence reported. Also, subclaims are referred to by effect rather than opaque ids (which is good), but the importance estimate of 0.5 seems low: this is a live, widely-consequential question at the heart of the semiclassical-vs-quantum-gravity debate, closer to 0.7-0.8 on the §19 anchors than a mere \"major within a domain\" 0.5."
+          },
+          {
+            "id": "74137053-82a6-477e-8842-45a1639d9f17",
+            "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+            "importanceStored": 0.25,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [
+              "boilerplate_trace",
+              "opaque_ids"
+            ],
+            "note": "The reasoning is strong and traceable, but the stored importance of 0.25 is reasonable for a narrow attribution claim; the opaque-id reference to the subclaim should briefly restate what it says."
+          },
+          {
+            "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+            "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.4,
+            "flags": [],
+            "note": "The reasoning is exemplary: it names the primary evidence, explains how competing theoretical uncertainties are handled (Hawking radiation unconfirmed but made redundant by the astronomical-bodies argument), identifies why the historical controversy does not constitute a genuine dispute, and justifies the confidence ceiling with epistemic humility. No defects found."
+          },
+          {
+            "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+            "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 5,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [],
+            "note": "The reasoning thoroughly explains how each subclaim supports the conclusion, accounts for the Peter critique even-handedly, and ties confidence calibration to explicit residual uncertainties—a model audit."
+          },
+          {
+            "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+            "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+            "importanceStored": 0.4,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.45,
+            "flags": [],
+            "note": "The reasoning is thorough, even-handed, and readably walks through the three sub-claims and how they triangulate to \"supported\" rather than \"verified\" or \"contested.\" The decomposition is sensible and not over-granular. Minor quibbles: the third subclaim (\"semiclassical calculations may not reliably apply\") is arguably not itself a claim-constituting proposition about the world but the reasoning handles this adequately; and the importance of 0.4 seems slightly low for a claim with genuine live scientific and public-safety significance, though it is within a defensible range given the mainstream consensus."
+          },
+          {
+            "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+            "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.3,
+            "flags": [
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The reasoning clearly reports the Giddings-Mangano result and the minority critique, and the fit to the 'supported' status is plausible. However, the claim is arguably a derived consequence (Bondi accretion timescale < stellar age) of a more fundamental claim about micro black hole capture, not a standalone disputable proposition—it fails the claim bar on the ground that its content is settled physics *if* the existence premise is granted. The stored importance 0.35 seems too high for a claim that is purely derivative of the capture premise and uncontested on its own terms; 0.2–0.25 would be more appropriate. The subclaim flagged as 'too_granular': 'Bondi accretion onto a black hole in a white dwarf is slower than in a neutron star because of lower density' is an uncontroversial hydrostatic relation better left as a prose remark, not a full node."
+          },
+          {
+            "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+            "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.65,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The reasoning treats the claim as 'supported' but the evidence it marshals actually points to the claim being 'contested': a specific technical objection (assumptions-caveat subclaim) is acknowledged as a non-frivolous, serious minority position that directly challenges the generalisation to 'unknown Planck-scale physics,' and the reasoning's own final paragraph admits the general statement is 'not fully nailed down.' That is the textbook definition of contested, not supported. The status is therefore miscalibrated by one step. For a claim this close to the live debate boundary, a confidence drop to 0.6 under contested would be truer to the presented evidence."
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 0
+      },
+      "wallSeconds": 27
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "summary": {
+        "model": "gpt-5.6-terra",
+        "sampleSize": 13,
+        "claimBarPassRate": 0.85,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.34,
+          "overratedShare": 0
+        },
+        "assessmentQuality": {
+          "readability": 3.69,
+          "reasoningFit": 2.38,
+          "impartiality": 2.85
+        },
+        "granularity": {
+          "too_granular": 6,
+          "good": 2,
+          "n_a": 1,
+          "too_shallow": 4
+        },
+        "flags": {
+          "status_miscalibrated": 10,
+          "hallucination_risk": 10,
+          "opaque_ids": 6,
+          "false_precision": 12,
+          "bias": 2,
+          "other": 3
+        },
+        "items": [
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "readability": 3,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.4,
+            "flags": [
+              "status_miscalibrated",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The central conclusion is plausibly supported: semiclassical gravity is not controlled for a black hole at the Planck scale. But the reasoning overstates specialist consensus and treats broad robustness claims as a contradiction despite its own explanation that such results principally concern large, low-curvature black holes; the two uncontested premises should not be graph nodes, and opaque claim IDs impede auditability."
+          },
+          {
+            "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+            "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 2,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.3,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk"
+            ],
+            "note": "The conditional mechanism is a reusable, disputable proposition, but the reasoning treats capture caveats as irrelevant even though capture and retention are explicit parts of the claim. A supported verdict may be defensible for suitably specified neutral stable black holes under Giddings–Mangano assumptions, but 0.85 is overconfident for a claim spanning both white dwarfs and neutron stars while its capture dependency has no assessment and the cited 2017 corroborating paper is not identified precisely."
+          },
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "readability": 3,
+            "reasoning_fit": 2,
+            "impartiality": 2,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.15,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "bias",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The qualitative comparison is plausible, but the reasoning overattributes it to density: Bondi flow also depends strongly on sound speed, equation of state, and whether the Bondi-fluid approximation applies in degenerate compact-star matter. The cited summaries and an opaque parent-claim reference do not establish a 0.92 “verified” verdict; “supported,” with explicit conditions on black-hole mass and local stellar conditions, would be more defensible."
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.3,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision"
+            ],
+            "note": "The reasoning establishes that old white dwarfs and neutron stars are observed, but that is not by itself strong verification of the more specific claim that they show no relevant evidence of black-hole accretion under cosmic-ray bombardment. Peter's objection is treated too narrowly: it directly undercuts whether stellar survival/non-destruction is probative for the claimed black-hole scenario, so a high-confidence verified verdict is not justified without sharply narrowing the claim to the bare observational fact."
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.55,
+            "flags": [
+              "false_precision",
+              "hallucination_risk",
+              "other"
+            ],
+            "note": "The contested verdict is broadly defensible, but the reasoning conflates the uncontested trans-Planckian tracing in Hawking’s original calculation with the much more specific disputed question of whether UV robustness establishes the physical prediction. The settled historical premise should not be a claim node, while the cited analogue experiments support model robustness rather than directly demonstrating insensitivity of real black-hole radiation to Planck-scale physics; moreover, the stated 0.4 credence is unexplained alongside a 0.75 assessment confidence."
+          },
+          {
+            "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+            "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+            "importanceStored": 0.35,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.6,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The stated claim includes complete eventual evaporation, yet the reasoning expressly concludes that literal completion to zero mass remains unresolved; “verified” at 0.85 is therefore incompatible with the audit’s own evidence. The mass-loss portion is strongly supported within semiclassical gravity, but it should be separated from the contested endpoint; the lifetime formula and much of the derivational detail belong in supporting prose rather than direct claim nodes."
+          },
+          {
+            "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+            "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.2,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk",
+              "other"
+            ],
+            "note": "The record substantially supports the mainstream conclusion that no credible dangerous LHC mechanism is known, but it does not verify the absolute future-facing claim that collisions pose “no danger” whatsoever; “supported” is better calibrated than verified at 0.95. The decomposition includes non-claim background and derivation steps—especially the fact that speculative extra-dimension theories make a prediction and the Hawking-radiation premise—while the reasoning also over-relies on institutional endorsement and weak secondary sources rather than carefully stating the scope and limits of the underlying safety analyses."
+          },
+          {
+            "id": "74137053-82a6-477e-8842-45a1639d9f17",
+            "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+            "importanceStored": 0.25,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "opaque_ids"
+            ],
+            "note": "The cited literature supports the narrower conditional attribution that ADD/low-Planck-scale extra-dimension models permit or predict black-hole production under additional semiclassical assumptions; the wording misleadingly generalizes this to “theories with extra spatial dimensions” broadly. This is a settled model-description fact rather than a live reusable controversy, and the added subclaim is an unnecessary derivational premise identified partly by an opaque ID."
+          },
+          {
+            "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+            "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 3,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "false_precision",
+              "other"
+            ],
+            "note": "This is essentially a settled observational premise used in an LHC-safety argument, not a live, reusable disputed proposition. The cited material supports high-energy cosmic-ray exposure, but the reasoning overstates what it establishes for the vague causal phrase “without causing catastrophe,” and its two direct subclaims are undisputed derivation premises with no recorded statuses."
+          },
+          {
+            "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+            "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+            "importanceStored": 0.4,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.3,
+            "flags": [
+              "false_precision",
+              "hallucination_risk"
+            ],
+            "note": "“Supported” is broadly defensible for the conditional claim, but 0.85 confidence overstates what follows from model-dependent semiclassical extrapolation and no direct observation of Hawking radiation. The decomposition also treats a four-dimensional mass-cubed lifetime law as a required general premise, although TeV-scale LHC black-hole scenarios commonly invoke extra dimensions, where the lifetime scaling differs; the relevant model assumptions are missing."
+          },
+          {
+            "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+            "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 2,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.35,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "bias",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The claim is a reusable, disputable conditional proposition, but it is overly broad: the relevant growth time depends on the black hole’s initial properties and on modeling assumptions that the reasoning does not state. The assessment leans too heavily on one calculation, dismisses an unnamed contrary technical argument as “non-mainstream,” and incorrectly records the slower-white-dwarf observation as a contradicting subclaim even though it does not contradict the parent claim."
+          },
+          {
+            "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+            "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 3,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.6,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The cited robustness results support a narrower conditional proposition—insensitivity to specified high-frequency dispersion modifications under semiclassical assumptions—not the claim’s broad assertion about unknown Planck-scale physics. The serious objection described is therefore not merely a qualification: it substantially contests the proposition as worded; this should be marked contested, or the claim rewritten and then assessed supported."
+          },
+          {
+            "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+            "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.35,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk"
+            ],
+            "note": "The reasoning supports a strong, model-dependent safety argument, but its own acknowledged coverage loopholes make “verified” and an exact 0.88 confidence too strong for the unqualified claim that survival rules out danger. The decomposition also omits crucial disputed links: whether cosmic-ray collisions adequately reproduce the relevant production conditions and whether every dangerous stable-black-hole model would be captured and accrete on the necessary timescale; broad assertions that no later literature revived the critique need substantiation."
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 0.16
+      },
+      "wallSeconds": 46
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "summary": {
+        "model": "gpt-5.6-sol",
+        "sampleSize": 13,
+        "claimBarPassRate": 0.85,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.32,
+          "overratedShare": 0
+        },
+        "assessmentQuality": {
+          "readability": 4.08,
+          "reasoningFit": 3,
+          "impartiality": 3.54
+        },
+        "granularity": {
+          "too_granular": 6,
+          "n_a": 1,
+          "good": 4,
+          "too_shallow": 2
+        },
+        "flags": {
+          "hallucination_risk": 4,
+          "opaque_ids": 2,
+          "status_miscalibrated": 8,
+          "false_precision": 6,
+          "boilerplate_trace": 3,
+          "other": 5
+        },
+        "items": [
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.42,
+            "flags": [
+              "hallucination_risk",
+              "opaque_ids"
+            ],
+            "note": "The supported verdict is plausible for the modest “may not reliably apply” formulation, but the decomposition improperly promotes two acknowledged textbook premises into claim nodes. The assertion that essentially all specialists agree is stronger than the cited literature scan establishes, and the unexplained 2026 citation creates a verification risk."
+          },
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.18,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision"
+            ],
+            "note": "The reasoning states that Bondi accretion scales as ρ/c_s³ but then attributes the comparison to density without actually comparing sound speeds or other regime assumptions; cited consumption times support a qualitative difference, not that density alone establishes it. “Supported” with lower confidence would be better calibrated than verified at 0.92."
+          },
+          {
+            "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+            "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [
+              "status_miscalibrated",
+              "hallucination_risk"
+            ],
+            "note": "The reasoning supports capture and destruction only under specified production, velocity, charge, density, and magnetic-field conditions, while the claim states an unqualified outcome for any micro black hole formed inside either star. It also relies on vaguely described charge/capture literature and overstates the independence and convergence of a small, closely related theoretical literature."
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.3,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "boilerplate_trace"
+            ],
+            "note": "The cited reports largely restate the same collider-safety argument, while old-star population studies establish survival rather than specifically excluding destruction by black-hole accretion; this supports the claim but does not justify “verified” at 0.88 confidence. The discussion of Peter’s objection is useful, though detectability and observational-selection uncertainties remain underweighed."
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.55,
+            "flags": [
+              "false_precision",
+              "other"
+            ],
+            "note": "The contested verdict is plausible and both positions are discussed, but the graph omits the substantive affirming dependency while retaining a settled trans-Planckian-mode premise as a node. The unexplained shift between confidence 0.75 and “credence of 0.4,” plus no clear account of what evidence would resolve the dispute, weakens calibration."
+          },
+          {
+            "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+            "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+            "importanceStored": 0.35,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.38,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk"
+            ],
+            "note": "The reasoning explicitly concedes that complete evaporation—the claim’s second conjunct—is unresolved, then preserves “verified” by treating that wording as nonliteral; the claim should be narrowed to mass loss or assigned a non-verified status. The settled mass-cubed relation also does not warrant a separate claim node, and the unusual 2026 citation needs verification."
+          },
+          {
+            "id": "74137053-82a6-477e-8842-45a1639d9f17",
+            "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+            "importanceStored": 0.25,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision"
+            ],
+            "note": "The evidence verifies that particular ADD-type models were presented as permitting black-hole production, but the claim loosely attributes this to “theories with extra spatial dimensions” generally and omits important model and energy assumptions. This is largely a settled attribution rather than a live claim, while the decomposed Planck-scale premise is an undisputed model feature better kept in prose."
+          },
+          {
+            "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+            "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "boilerplate_trace",
+              "other"
+            ],
+            "note": "The reasoning itself calls both components settled bedrock facts, so they should remain evidentiary prose rather than claim nodes. It also insufficiently resolves the wording’s ambiguity between primary cosmic-ray energy and collision center-of-mass energy, while “other bodies” and “catastrophe” remain underspecified."
+          },
+          {
+            "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+            "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.22,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The evidence strongly verifies the narrower proposition that LHC collisions pose no credible catastrophic global risk, but it does not establish the literal absolute “no danger,” which can include ordinary radiation and facility hazards. The decomposition also promotes largely settled premises and a theory-description into nodes despite the issue’s low present contestability."
+          },
+          {
+            "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+            "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+            "importanceStored": 0.4,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [
+              "other"
+            ],
+            "note": "The overall supported verdict is reasonable, but the decomposition overstates Hawking evaporation as verified despite the cited lack of direct confirmation, and the mass-cubed lifetime law is specifically four-dimensional rather than generally applicable to the higher-dimensional scenarios invoked for LHC black holes."
+          },
+          {
+            "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+            "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.4,
+            "flags": [
+              "boilerplate_trace",
+              "opaque_ids",
+              "other"
+            ],
+            "note": "The cited calculation supports the conditional claim, but the APS commentary is not independent corroboration, and the reasoning does not specify what “short time” means or adequately examine model dependence and the white-dwarf critique. The sole subclaim is described as uncontroversial and does not contradict the parent—slower accretion can still consume a white dwarf quickly—so it should be prose rather than a contradicting node."
+          },
+          {
+            "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+            "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 2,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.38,
+            "flags": [
+              "status_miscalibrated",
+              "other"
+            ],
+            "note": "The reasoning itself establishes credible arguments on both sides, which meets §10’s definition of contested rather than supported. It also overgeneralizes from robustness under selected dispersion modifications and analogue systems to insensitivity to unknown Planck-scale physics broadly."
+          },
+          {
+            "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+            "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_shallow",
+            "importance_judged": 0.38,
+            "flags": [
+              "status_miscalibrated",
+              "false_precision",
+              "hallucination_risk"
+            ],
+            "note": "The decomposition omits the crucial bridge that cosmic-ray collisions would produce the relevant LHC-type black holes at sufficient rates and with capture conditions covering the dangerous parameter space. Given the claim’s absolute “rules out” wording and the reasoning’s admitted loopholes, “supported” is better justified than verified; the exact 0.88 confidence and unnamed independent literature are also insufficiently substantiated."
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 0.43
+      },
+      "wallSeconds": 92
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "summary": {
+        "model": "moonshotai/kimi-k3",
+        "sampleSize": 4,
+        "claimBarPassRate": 0.75,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.26,
+          "overratedShare": 0
+        },
+        "assessmentQuality": {
+          "readability": 4.25,
+          "reasoningFit": 3.5,
+          "impartiality": 4.25
+        },
+        "granularity": {
+          "too_granular": 3,
+          "n_a": 1
+        },
+        "flags": {
+          "false_precision": 1,
+          "other": 2,
+          "status_miscalibrated": 1
+        },
+        "items": [
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "flags": [],
+            "impartiality": 5,
+            "importance_judged": 0.15,
+            "note": "Physically correct and even-handedly sourced, but by its own reasoning (\"no credible source was found disputing the basic scaling\") this is an undisputed corollary of the textbook Bondi formula — both Giddings–Mangano and their critic Plaga agree on the direction, disagreeing only on magnitude. That makes it a derivation step of the parent safety question, failing the §2 claim bar and belonging in the parent's prose per §6, not a node. Given its existence, verified status and 0.15 importance are correctly calibrated.",
+            "readability": 5,
+            "reasoning_fit": 4
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "flags": [],
+            "impartiality": 4,
+            "importance_judged": 0.2,
+            "note": "\"Verified\" is defensible since even critics (Peter) concede the observation and attack only the inference, but stored importance 0.3 walks into §19's load-bearing trap: this premise is uncontested on all sides, so it should sit near 0.15–0.2, close to \"settled\" rather than \"notable contested point.\" Also worth guarding: the claim asserts only absence of *observable* destruction, which is weaker than the \"no destruction occurs\" premise the parent safety argument actually needs — the reasoning notes this, but downstream consumers of the graph could easily conflate the two.",
+            "readability": 4,
+            "reasoning_fit": 4
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.4,
+            "flags": [
+              "false_precision",
+              "other"
+            ],
+            "note": "\"Contested\" is the right status and both sides are steelmanned with real citations, but the decomposition violates §6 by keeping the mode-tracing premise — which the reasoning itself calls uncontested settled background — as a node instead of prose, and the stored confidence 0.75 is never derived (the reasoning instead lands on a credence of 0.4), while the two parallel denying subclaims carry inconsistent statuses (supported vs none) relative to how the reasoning uses them."
+          },
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "flags": [
+              "status_miscalibrated",
+              "other"
+            ],
+            "impartiality": 4,
+            "importance_judged": 0.3,
+            "note": "The reasoning itself says \"essentially all specialists agree\" with this hedged \"may not\" wording, so \"supported\" at 0.75 is miscalibrated: the modest reading is near-consensus (arguably verified, and barely disputable as phrased), while the stronger reading that would license real doubt is contested given the live robustness/universality literature. The decomposition also keeps two admittedly uncontested textbook premises as nodes (§6 says derivation steps belong in prose), and the subclaim statuses are internally inconsistent — the trans-Planckian-skeptic subclaim is \"contested\" while its near-negation, the robustness subclaim, is \"supported\" on the same cited literature.",
+            "reasoning_fit": 3,
+            "readability": 4
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 0.62
+      },
+      "wallSeconds": 423
+    },
+    {
+      "model": "claude-opus-5",
+      "summary": {
+        "model": "claude-opus-5",
+        "sampleSize": 13,
+        "claimBarPassRate": 0.62,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.27,
+          "overratedShare": 0.08
+        },
+        "assessmentQuality": {
+          "readability": 4.54,
+          "reasoningFit": 3.85,
+          "impartiality": 4.08
+        },
+        "granularity": {
+          "n_a": 2,
+          "good": 3,
+          "too_granular": 8
+        },
+        "flags": {
+          "hallucination_risk": 5,
+          "other": 6,
+          "status_miscalibrated": 4
+        },
+        "items": [
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.12,
+            "flags": [
+              "hallucination_risk"
+            ],
+            "note": "The proposition is a near-immediate consequence of the Bondi rate's linear density scaling that the reasoning itself says no one disputes, so it reads as a derivation step rather than a disputable claim (importance 0.15 and verified/0.92 are at least internally consistent); the attribution of a >10^10 white-dwarf timescale discrepancy to arXiv:0808.1415 should be checked, and the single-cause framing (\"due to the white dwarf's much lower density\") glosses over the sound-speed/degeneracy-pressure differences that actually complicate Giddings & Mangano's white-dwarf treatment."
+          },
+          {
+            "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+            "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.3,
+            "flags": [
+              "hallucination_risk"
+            ],
+            "note": "Solid, well-weighted verdict that correctly distinguishes critiques of capture conditions from the accrete-and-destroy mechanism, but the citation of arXiv:0912.5480 (\"The Black Hole Case\") to \"Wagner\" is a misattribution (that law-review piece is Eric E. Johnson's; Wagner was the litigant), and the 2017 EPJC paper's claimed independence from Giddings & Mangano is asserted rather than shown; also the reasoning calls both subclaims \"well supported\" while the capture subclaim is still unassessed, and the claim text (~27 words) exceeds the §3 length norm."
+          },
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.35,
+            "flags": [
+              "hallucination_risk",
+              "other"
+            ],
+            "note": "The reasoning is genuinely strong \\u2014 it names specific opposing sources (Agull\\u00f3 et al.'s invariant-cutoff insensitivity vs. Helfer's rebuttal and the Gryb/Th\\u00e9bault universality critique) and explains the key asymmetry that robustness arguments defend astrophysical, not Planck-mass, black holes \\u2014 but the hedged wording \\\"may not reliably apply\\\" softens the node toward a truism (the reasoning itself concedes \\\"essentially all specialists agree\\\"), the two [requires] premises are textbook facts that belong in prose rather than as nodes, and the citation \\\"arxiv.org/html/2604.04774\\\" has an implausible identifier suggesting a fabricated reference."
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.2,
+            "flags": [
+              "other"
+            ],
+            "note": "The reasoning is transparent and admirably handles Peter's detectability objection by distinguishing the observation from its evidential weight \\u2014 but that same distinction reveals the node fails \\u00a72: as stated it is an uncontested observational fact that both proponents and critics accept, while the genuinely disputable proposition (whether the survival of dense stars constrains mBH risk) lives in the parent; stored importance 0.3 also overstates a settled premise per \\u00a719's rule that load-bearing is not important."
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.45,
+            "flags": [
+              "other"
+            ],
+            "note": "The verdict is well-evidenced and both sides are named with real technical content, but two defects stand out: the uncontested factual premise (that the derivation traces modes to trans-Planckian frequencies) is kept as a node despite the reasoning itself calling it settled background, which \"belongs in prose\" per \ru00a76; and the analog-gravity denying instance is treated as near-empirical confirmation without confronting the obvious disanalogy (analog media have known, non-gravitational UV physics), while that same load-bearing subclaim is left unassessed (status none). The reasoning also never states what would change the conclusion, as \boxED{\text{\ru00a711}} requires."
+          },
+          {
+            "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+            "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+            "importanceStored": 0.35,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.3,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The reasoning concedes both that complete evaporation \"is not itself a fully closed question\" and that there is no direct astrophysical detection, yet lands on \"verified\" at 0.85 \\...eventually evaporate\" is precisely the disputed half of the sentence, so this looks like rounding a partly contested proposition up (supported would fit the evidence base better); separately, the trans-Planckian objection and the trans-Planckian robustness result are essentially the same dispute instantiated as two mirror-image nodes, and the mass-cubed lifetime relation is settled derivation material that belongs in prose."
+          },
+          {
+            "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+            "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "other"
+            ],
+            "note": "The reasoning is exemplary in showing its work \\u2014 named primary sources, quantified support, and an honest airing of the Giddings\\u2013Mangano magnetic-deceleration caveat without rounding it into 'contested' \\u2014 but it also concedes the claim's own case for exclusion: both subclaims are called \\\"essentially settled bedrock facts\\\" and no source denies the proposition, so this is a load-bearing premise rather than a disputable claim, the two stubs belong in prose (\\u00a76), and stored importance 0.3 overstates a settled observational fact (\\u22480.15)."
+          },
+          {
+            "id": "74137053-82a6-477e-8842-45a1639d9f17",
+            "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+            "importanceStored": 0.25,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.12,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The proposition — that ADD-type extra-dimension models predict LHC microscopic black hole production — is settled textbook/review material about what a theory entails, not a disputable proposition; the reasoning itself concedes \"the theoretical-attribution question is settled\" and that the live disagreement lies elsewhere, which is an admission the node fails the §2 claim bar, and the single subclaim (an uncontested design feature of ADD models) likewise belongs in prose."
+          },
+          {
+            "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+            "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "other"
+            ],
+            "note": "The reasoning is well-sourced and readable and the \"verified\" call is plainly right, but it also concedes \"the scientific question is not live\" and that no physicist offered a competing technical analysis \" which makes this settled consensus material rather than a disputable claim under \\u00a72, and makes the stored importance of 0.4 roughly double the \\u22480.15 anchor for settled propositions (load-bearing \\u2260 important). The four subclaims largely unfold the LSAG report's derivation steps, including the near-definitional \"extra-dimension theories predict BH production,\" rather than mapping live dispute."
+          },
+          {
+            "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+            "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.3,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "The reasoning is unusually legible and even-handed about the Peter critique, but the verdict is internally inconsistent: it rests on a subclaim assessed only 'supported' and on an inference the steward itself calls \"not logically airtight,\" which fits 'supported' at ~0.85 better than 'verified' at 0.88; the astrophysical-safety argument's known dependence on capture-efficiency assumptions is somewhat underweighted relative to the confident bottom line."
+          },
+          {
+            "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+            "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.45,
+            "flags": [
+              "status_miscalibrated"
+            ],
+            "note": "Well-structured reasoning that names its subclaims descriptively and states falsifiers implicitly, but the verdict is arguably rounded up: the reasoning itself concedes that the claim's operative generalization ('unknown Planck-scale physics') is exactly what the philosophy-of-physics critique disputes, which reads closer to 'contested on scope' than 'supported'; also note the typo 'astrocophysical' and that two of the four subclaims still carry status 'none'."
+          },
+          {
+            "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+            "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+            "importanceStored": 0.4,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.3,
+            "flags": [
+              "hallucination_risk"
+            ],
+            "note": "The weighing is exemplary \\icalical validity flagged as the real crux, Ross\ninstead: the assessment cleanly separates overwhelming mainstream convergence from the narrow semiclassical-validity caveat and correctly resists both 'verified' and false-parity 'contested'; however the law-review source is misattributed (\"The Black Hole Case\" is by Eric E. Johnson, not Jennifer), the mass-cubed lifetime subclaim is settled textbook derivation that belongs in prose rather than as an unassessed node, and calling the parent 'unobserved' while a required subclaim on Hawking radiation's existence is marked 'verified' is an internal tension left unexplained."
+          },
+          {
+            "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+            "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.3,
+            "flags": [
+              "hallucination_risk",
+              "other"
+            ],
+            "note": "The reasoning is legible and names its primary source, but it asserts \"thousands of years or less\" for *both* neutron-star and white-dwarf densities, which is in direct tension with its own verified subclaim that white-dwarf accretion is much slower \ntemplate\ttrue and with Giddings-Mangano's parameter-dependent white-dwarf timescales \ttthat is an unverified numerical over-claim; the lone subclaim is undisputed density physics that belongs in prose (\ntoo granular) and is mis-typed as \"contradicts\" a claim it does not actually contradict, while the one real critique is dismissed as an unnamed \"minority technical note ... flagged in web search results.\""
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 0.57
+      },
+      "wallSeconds": 77
+    },
+    {
+      "model": "claude-fable-5",
+      "summary": {
+        "model": "claude-fable-5",
+        "sampleSize": 13,
+        "claimBarPassRate": 0.77,
+        "importanceAlignment": {
+          "meanStored": 0.35,
+          "meanJudged": 0.31,
+          "overratedShare": 0
+        },
+        "assessmentQuality": {
+          "readability": 4.77,
+          "reasoningFit": 4.15,
+          "impartiality": 4.46
+        },
+        "granularity": {
+          "n_a": 2,
+          "good": 5,
+          "too_granular": 6
+        },
+        "flags": {
+          "other": 5,
+          "hallucination_risk": 3,
+          "status_miscalibrated": 2,
+          "boilerplate_trace": 2
+        },
+        "items": [
+          {
+            "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+            "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+            "importanceStored": 0.15,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 5,
+            "impartiality": 5,
+            "claim_bar": "no",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.15,
+            "flags": [
+              "other"
+            ],
+            "note": "The assessment itself demonstrates the node fails the claim bar: both the mainstream calculation and its critics agree on the density-driven scaling, making this an undisputed derivation step in the LHC safety debate that per §2/§6 belongs in prose under the parent claim rather than as its own node. The reasoning quality is otherwise exemplary — physics shown, sources named, and the residual quantitative dispute correctly routed to the parent."
+          },
+          {
+            "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+            "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [],
+            "note": "Strong assessment: sources are named, counter-evidence (Wagner's capture/charge/magnetic-shielding objections) was actively sought and weighed without false parity, and the supported-not-verified distinction for a hypothetical scenario is well argued. The one soft spot is that confidence 0.85 slightly outruns the graph state: the capture-and-retention subclaim — precisely where the live technical dispute sits — has no status yet, only a stated prior of 0.9."
+          },
+          {
+            "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+            "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+            "importanceStored": 0.45,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.35,
+            "flags": [
+              "hallucination_risk"
+            ],
+            "note": "Strong, well-sourced reasoning that candidly explains why the hedged 'may not' claim is supported rather than contested, but the two 'requires' subclaims are settled textbook premises that per §6 belong in prose, and the citation 'arxiv.org/html/2604.04774' has an implausible (future-dated) arXiv identifier. Given the reasoning's own admission that essentially all specialists agree the approximation is stressed in this regime, contestability is modest and the stored 0.45 importance is slightly inflated."
+          },
+          {
+            "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+            "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 5,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "n_a",
+            "importance_judged": 0.2,
+            "flags": [],
+            "note": "Exemplary reasoning: it correctly distinguishes the Peter (arXiv:0808.1415) critique as attacking the evidential weight for the parent safety inference rather than denying the observation itself. However, the reasoning's own finding of 'uniform agreement across proponents and critics' means the claim is uncontested within the live discourse, so it sits near the settled-fact edge of the claim bar and the stored importance of 0.3 is somewhat inflated; per §19 an uncontested load-bearing premise merits closer to 0.15-0.2."
+          },
+          {
+            "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+            "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+            "importanceStored": 0.5,
+            "status": "contested",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.4,
+            "flags": [
+              "other"
+            ],
+            "note": "A genuinely well-weighed contested verdict that avoids false parity (explicitly notes the mainstream lean while crediting the minority's technical force), but the first subclaim is admitted to be uncontested settled background and per §6 belongs in prose, not a node; the closing 'credence of 0.4' sits confusingly alongside the stated confidence of 0.75 without explaining they measure different things."
+          },
+          {
+            "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+            "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+            "importanceStored": 0.35,
+            "status": "verified",
+            "readability": 4,
+            "reasoning_fit": 3,
+            "impartiality": 3,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.5,
+            "flags": [
+              "status_miscalibrated",
+              "hallucination_risk"
+            ],
+            "note": "The claim text explicitly asserts black holes 'eventually evaporate,' yet the reasoning concedes complete evaporation is 'not itself a fully closed question' with a live remnant literature and a contradicting subclaim — awarding 'verified' rounds up a claim whose second conjunct is genuinely disputed and which lacks any direct astrophysical observation ('supported' fits the evidence shown). Additionally, the citation of a 2026 J. Math. Phys. result and unverifiable review details carry hallucination risk."
+          },
+          {
+            "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+            "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+            "importanceStored": 0.3,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "other"
+            ],
+            "note": "The reasoning is thorough and even-handedly handles the Giddings-Mangano magnetic-field nuance, but by its own admission this is settled bedrock (no credible source disputes it), so it fails the §2 claim bar; the live dispute in the LHC-safety discourse is whether the cosmic-ray analogy implies safety (e.g., whether collision products escape), not whether cosmic rays strike harmlessly. Decomposing an already-settled fact into two more settled-fact stubs violates §6, and stored importance 0.3 overrates uncontested material that per §19 should sit near 0.15."
+          },
+          {
+            "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+            "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 5,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.3,
+            "flags": [],
+            "note": "Strong, transparent assessment: subclaims named by content, the Hawking-radiation weakness is explicitly handled via the redundant astrophysical argument, and confidence is calibrated below maximum with reasons. The one soft spot is characterizing all dissent as 'non-expert fear' — a few physicists (e.g., Rössler, Plaga) did offer technical objections, which were rebutted; naming and dispatching them would be fairer than eliding them. Stored importance 0.4 is slightly high for a question that is no longer scientifically live (~0.25-0.3 fits the anchors better)."
+          },
+          {
+            "id": "74137053-82a6-477e-8842-45a1639d9f17",
+            "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+            "importanceStored": 0.25,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "no",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.15,
+            "flags": [
+              "other"
+            ],
+            "note": "The reasoning is well-sourced and transparent, but it concedes the fatal problem itself: no credible source disputes this attribution, making it settled literature fact that fails the §2 claim bar, and the sole subclaim is explicitly described as uncontested, so per §6 it belongs in prose rather than as a node. Stored importance 0.25 also overrates a settled point (§19 anchor ≈0.15)."
+          },
+          {
+            "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+            "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 4,
+            "reasoning_fit": 4,
+            "impartiality": 4,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.35,
+            "flags": [
+              "boilerplate_trace",
+              "other"
+            ],
+            "note": "The verdict is well-sourced and the minority white-dwarf critique is weighed rather than ignored, but the sole subclaim is, by the assessor's own admission, 'uncontroversial physics' that fails the §2 claim bar and belongs in prose; its 'contradicts' edge (verified) also sits in unexplained tension with the parent's 'supported' status. The aside about match_claim's earlier behavior is internal pipeline trace that should not appear in reasoning."
+          },
+          {
+            "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+            "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+            "importanceStored": 0.4,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "too_granular",
+            "importance_judged": 0.35,
+            "flags": [
+              "boilerplate_trace",
+              "status_miscalibrated"
+            ],
+            "note": "Strong, well-sourced reasoning that correctly lands on 'supported' rather than 'verified' (no experimental confirmation of Hawking radiation) or 'contested' (dissent is narrow/fringe), but the mass-cubed lifetime subclaim is settled textbook derivation that belongs in prose per §6, and the 'verified' status on the Hawking-radiation subclaim sits awkwardly against this claim's own admission that the mechanism has never been observed; internal jargon like 'claim_credence' and 'marginal yield of a further pass' leaks process boilerplate into the verdict."
+          },
+          {
+            "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+            "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+            "importanceStored": 0.4,
+            "status": "verified",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.35,
+            "flags": [
+              "hallucination_risk"
+            ],
+            "note": "Exemplary reasoning: subclaims cited by content, the strongest surviving critique investigated on its merits, and confidence explicitly capped with stated movers. One factual defect: arXiv:0808.1415 (the slow-accretion loophole) is by Rainer Plaga, not 'Peter' — the substance is described accurately but the misattribution suggests detail-level confabulation worth flagging."
+          },
+          {
+            "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+            "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+            "importanceStored": 0.35,
+            "status": "supported",
+            "readability": 5,
+            "reasoning_fit": 4,
+            "impartiality": 5,
+            "claim_bar": "yes",
+            "decomposition_granularity": "good",
+            "importance_judged": 0.4,
+            "flags": [],
+            "note": "A strong assessment: subclaims are cited by content, counter-evidence (the universality-critique paper) is given its strongest form without false parity, and the supported-vs-verified line is explicitly argued. The one soft spot is that the claim's own wording ('insensitive to unknown Planck-scale physics') is broader than the dispersive test cases actually establish, so the supported/contested boundary is genuinely close; the reasoning acknowledges this but a skeptic could reasonably push for contested."
+          }
+        ]
+      },
+      "cost": {
+        "calls": 13,
+        "usd": 1.26
+      },
+      "wallSeconds": 103
+    }
+  ],
+  "claimBarPairwiseAgreement": {
+    "deepseek/deepseek-v4-flash": {
+      "gpt-5.6-terra": 0.85,
+      "gpt-5.6-sol": 0.85,
+      "moonshotai/kimi-k3": 0.75,
+      "claude-opus-5": 0.62,
+      "claude-fable-5": 0.77
+    },
+    "gpt-5.6-terra": {
+      "deepseek/deepseek-v4-flash": 0.85,
+      "gpt-5.6-sol": 1,
+      "moonshotai/kimi-k3": 0.75,
+      "claude-opus-5": 0.77,
+      "claude-fable-5": 0.92
+    },
+    "gpt-5.6-sol": {
+      "deepseek/deepseek-v4-flash": 0.85,
+      "gpt-5.6-terra": 1,
+      "moonshotai/kimi-k3": 0.75,
+      "claude-opus-5": 0.77,
+      "claude-fable-5": 0.92
+    },
+    "moonshotai/kimi-k3": {
+      "deepseek/deepseek-v4-flash": 0.75,
+      "gpt-5.6-terra": 0.75,
+      "gpt-5.6-sol": 0.75,
+      "claude-opus-5": 0.75,
+      "claude-fable-5": 1
+    },
+    "claude-opus-5": {
+      "deepseek/deepseek-v4-flash": 0.62,
+      "gpt-5.6-terra": 0.77,
+      "gpt-5.6-sol": 0.77,
+      "moonshotai/kimi-k3": 0.75,
+      "claude-fable-5": 0.85
+    },
+    "claude-fable-5": {
+      "deepseek/deepseek-v4-flash": 0.77,
+      "gpt-5.6-terra": 0.92,
+      "gpt-5.6-sol": 0.92,
+      "moonshotai/kimi-k3": 1,
+      "claude-opus-5": 0.85
+    }
+  },
+  "majorityAgreement": {
+    "deepseek/deepseek-v4-flash": 0.83,
+    "gpt-5.6-terra": 1,
+    "gpt-5.6-sol": 1,
+    "moonshotai/kimi-k3": 1,
+    "claude-opus-5": 0.83,
+    "claude-fable-5": 1
+  },
+  "importanceDeviation": {
+    "deepseek/deepseek-v4-flash": 0.12,
+    "gpt-5.6-terra": 0.04,
+    "gpt-5.6-sol": 0.03,
+    "moonshotai/kimi-k3": 0.06,
+    "claude-opus-5": 0.04,
+    "claude-fable-5": 0.04
+  },
+  "items": [
+    {
+      "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+      "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+      "status": "supported",
+      "importanceStored": 0.35,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+          "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.25,
+          "flags": [],
+          "note": "Clean reasoning and well-grounded status; the only substantive observation is that the stored importance of 0.35 may be slightly high given the scenario's purely hypothetical nature and the fact that much of the debate concerns whether such black holes exist at all (a separate claim) rather than the consequences-if-captured, which reduces contestability within the mapped claim."
+        },
+        "gpt-5.6-terra": {
+          "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+          "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 2,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk"
+          ],
+          "note": "The conditional mechanism is a reusable, disputable proposition, but the reasoning treats capture caveats as irrelevant even though capture and retention are explicit parts of the claim. A supported verdict may be defensible for suitably specified neutral stable black holes under Giddings–Mangano assumptions, but 0.85 is overconfident for a claim spanning both white dwarfs and neutron stars while its capture dependency has no assessment and the cited 2017 corroborating paper is not identified precisely."
+        },
+        "gpt-5.6-sol": {
+          "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+          "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "status_miscalibrated",
+            "hallucination_risk"
+          ],
+          "note": "The reasoning supports capture and destruction only under specified production, velocity, charge, density, and magnetic-field conditions, while the claim states an unqualified outcome for any micro black hole formed inside either star. It also relies on vaguely described charge/capture literature and overstates the independence and convergence of a small, closely related theoretical literature."
+        },
+        "claude-opus-5": {
+          "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+          "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [
+            "hallucination_risk"
+          ],
+          "note": "Solid, well-weighted verdict that correctly distinguishes critiques of capture conditions from the accrete-and-destroy mechanism, but the citation of arXiv:0912.5480 (\"The Black Hole Case\") to \"Wagner\" is a misattribution (that law-review piece is Eric E. Johnson's; Wagner was the litigant), and the 2017 EPJC paper's claimed independence from Giddings & Mangano is asserted rather than shown; also the reasoning calls both subclaims \"well supported\" while the capture subclaim is still unassessed, and the claim text (~27 words) exceeds the §3 length norm."
+        },
+        "claude-fable-5": {
+          "id": "0336a104-7d40-4b92-86e5-c6c0e8c12a13",
+          "text": "A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [],
+          "note": "Strong assessment: sources are named, counter-evidence (Wagner's capture/charge/magnetic-shielding objections) was actively sought and weighed without false parity, and the supported-not-verified distinction for a hypothetical scenario is well argued. The one soft spot is that confidence 0.85 slightly outruns the graph state: the capture-and-retention subclaim — precisely where the live technical dispute sits — has no status yet, only a stated prior of 0.9."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    },
+    {
+      "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+      "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+      "status": "supported",
+      "importanceStored": 0.45,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.45,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning is clear and even-handed, but the status is miscalibrated relative to its own decomposition: the two subclaims that directly bear on the claim are one contested and one supported, and the reasoning itself says the debate is \"genuinely technical and ongoing.\" Claiming 'supported' while acknowledging genuine ongoing disagreement on the governing subclaims rounds a contested matter up, which §10 forbids — especially since the reasoning leans on the hedging word 'may not' to make the supported reading trivially safe."
+        },
+        "gpt-5.6-terra": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "readability": 3,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.4,
+          "flags": [
+            "status_miscalibrated",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The central conclusion is plausibly supported: semiclassical gravity is not controlled for a black hole at the Planck scale. But the reasoning overstates specialist consensus and treats broad robustness claims as a contradiction despite its own explanation that such results principally concern large, low-curvature black holes; the two uncontested premises should not be graph nodes, and opaque claim IDs impede auditability."
+        },
+        "gpt-5.6-sol": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.42,
+          "flags": [
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The supported verdict is plausible for the modest “may not reliably apply” formulation, but the decomposition improperly promotes two acknowledged textbook premises into claim nodes. The assertion that essentially all specialists agree is stronger than the cited literature scan establishes, and the unexplained 2026 citation creates a verification risk."
+        },
+        "moonshotai/kimi-k3": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "flags": [
+            "status_miscalibrated",
+            "other"
+          ],
+          "impartiality": 4,
+          "importance_judged": 0.3,
+          "note": "The reasoning itself says \"essentially all specialists agree\" with this hedged \"may not\" wording, so \"supported\" at 0.75 is miscalibrated: the modest reading is near-consensus (arguably verified, and barely disputable as phrased), while the stronger reading that would license real doubt is contested given the live robustness/universality literature. The decomposition also keeps two admittedly uncontested textbook premises as nodes (§6 says derivation steps belong in prose), and the subclaim statuses are internally inconsistent — the trans-Planckian-skeptic subclaim is \"contested\" while its near-negation, the robustness subclaim, is \"supported\" on the same cited literature.",
+          "reasoning_fit": 3,
+          "readability": 4
+        },
+        "claude-opus-5": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.35,
+          "flags": [
+            "hallucination_risk",
+            "other"
+          ],
+          "note": "The reasoning is genuinely strong \\u2014 it names specific opposing sources (Agull\\u00f3 et al.'s invariant-cutoff insensitivity vs. Helfer's rebuttal and the Gryb/Th\\u00e9bault universality critique) and explains the key asymmetry that robustness arguments defend astrophysical, not Planck-mass, black holes \\u2014 but the hedged wording \\\"may not reliably apply\\\" softens the node toward a truism (the reasoning itself concedes \\\"essentially all specialists agree\\\"), the two [requires] premises are textbook facts that belong in prose rather than as nodes, and the citation \\\"arxiv.org/html/2604.04774\\\" has an implausible identifier suggesting a fabricated reference."
+        },
+        "claude-fable-5": {
+          "id": "31233c47-7721-4c16-b37a-fb8fa973b0b8",
+          "text": "Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes",
+          "importanceStored": 0.45,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.35,
+          "flags": [
+            "hallucination_risk"
+          ],
+          "note": "Strong, well-sourced reasoning that candidly explains why the hedged 'may not' claim is supported rather than contested, but the two 'requires' subclaims are settled textbook premises that per §6 belong in prose, and the citation 'arxiv.org/html/2604.04774' has an implausible (future-dated) arXiv identifier. Given the reasoning's own admission that essentially all specialists agree the approximation is stressed in this regime, contestability is modest and the stored 0.45 importance is slightly inflated."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 6,
+        "no": 0
+      }
+    },
+    {
+      "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+      "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+      "status": "contested",
+      "importanceStored": 0.5,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.7,
+          "flags": [
+            "opaque_ids",
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning is thorough and even-handed, weighing robustness/universality arguments against the philosophy-of-physics critique with both sides represented. The status of contested with lean toward robustness is defensible. However, the stated confidence (0.75) contradicts the stated credence of 0.4 — the assessment explicitly leans 60/40 against the claim, so \"contested\" is defensible but the confidence number is internally inconsistent with the credence reported. Also, subclaims are referred to by effect rather than opaque ids (which is good), but the importance estimate of 0.5 seems low: this is a live, widely-consequential question at the heart of the semiclassical-vs-quantum-gravity debate, closer to 0.7-0.8 on the §19 anchors than a mere \"major within a domain\" 0.5."
+        },
+        "gpt-5.6-terra": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.55,
+          "flags": [
+            "false_precision",
+            "hallucination_risk",
+            "other"
+          ],
+          "note": "The contested verdict is broadly defensible, but the reasoning conflates the uncontested trans-Planckian tracing in Hawking’s original calculation with the much more specific disputed question of whether UV robustness establishes the physical prediction. The settled historical premise should not be a claim node, while the cited analogue experiments support model robustness rather than directly demonstrating insensitivity of real black-hole radiation to Planck-scale physics; moreover, the stated 0.4 credence is unexplained alongside a 0.75 assessment confidence."
+        },
+        "gpt-5.6-sol": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.55,
+          "flags": [
+            "false_precision",
+            "other"
+          ],
+          "note": "The contested verdict is plausible and both positions are discussed, but the graph omits the substantive affirming dependency while retaining a settled trans-Planckian-mode premise as a node. The unexplained shift between confidence 0.75 and “credence of 0.4,” plus no clear account of what evidence would resolve the dispute, weakens calibration."
+        },
+        "moonshotai/kimi-k3": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.4,
+          "flags": [
+            "false_precision",
+            "other"
+          ],
+          "note": "\"Contested\" is the right status and both sides are steelmanned with real citations, but the decomposition violates §6 by keeping the mode-tracing premise — which the reasoning itself calls uncontested settled background — as a node instead of prose, and the stored confidence 0.75 is never derived (the reasoning instead lands on a credence of 0.4), while the two parallel denying subclaims carry inconsistent statuses (supported vs none) relative to how the reasoning uses them."
+        },
+        "claude-opus-5": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.45,
+          "flags": [
+            "other"
+          ],
+          "note": "The verdict is well-evidenced and both sides are named with real technical content, but two defects stand out: the uncontested factual premise (that the derivation traces modes to trans-Planckian frequencies) is kept as a node despite the reasoning itself calling it settled background, which \"belongs in prose\" per \ru00a76; and the analog-gravity denying instance is treated as near-empirical confirmation without confronting the obvious disanalogy (analog media have known, non-gravitational UV physics), while that same load-bearing subclaim is left unassessed (status none). The reasoning also never states what would change the conclusion, as \boxED{\text{\ru00a711}} requires."
+        },
+        "claude-fable-5": {
+          "id": "3b19e31c-59fe-4c8b-b90b-2037ac50961c",
+          "text": "The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven",
+          "importanceStored": 0.5,
+          "status": "contested",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.4,
+          "flags": [
+            "other"
+          ],
+          "note": "A genuinely well-weighed contested verdict that avoids false parity (explicitly notes the mainstream lean while crediting the minority's technical force), but the first subclaim is admitted to be uncontested settled background and per §6 belongs in prose, not a node; the closing 'credence of 0.4' sits confusingly alongside the stated confidence of 0.75 without explaining they measure different things."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 6,
+        "no": 0
+      }
+    },
+    {
+      "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+      "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+      "status": "verified",
+      "importanceStored": 0.35,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+          "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+          "importanceStored": 0.35,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.25,
+          "flags": [
+            "opaque_ids"
+          ],
+          "note": "The decomposition breaks settled supporting material into separate claim nodes (e.g. the mass-cubed lifetime relation is a textbook formula, not a live contestable proposition), and the opaque ID references force the reader to break flow and lookup what those subclaims say, undermining traceability."
+        },
+        "gpt-5.6-terra": {
+          "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+          "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+          "importanceStored": 0.35,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.6,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The stated claim includes complete eventual evaporation, yet the reasoning expressly concludes that literal completion to zero mass remains unresolved; “verified” at 0.85 is therefore incompatible with the audit’s own evidence. The mass-loss portion is strongly supported within semiclassical gravity, but it should be separated from the contested endpoint; the lifetime formula and much of the derivational detail belong in supporting prose rather than direct claim nodes."
+        },
+        "gpt-5.6-sol": {
+          "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+          "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+          "importanceStored": 0.35,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.38,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk"
+          ],
+          "note": "The reasoning explicitly concedes that complete evaporation—the claim’s second conjunct—is unresolved, then preserves “verified” by treating that wording as nonliteral; the claim should be narrowed to mass loss or assigned a non-verified status. The settled mass-cubed relation also does not warrant a separate claim node, and the unusual 2026 citation needs verification."
+        },
+        "claude-opus-5": {
+          "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+          "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+          "importanceStored": 0.35,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.3,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning concedes both that complete evaporation \"is not itself a fully closed question\" and that there is no direct astrophysical detection, yet lands on \"verified\" at 0.85 \\...eventually evaporate\" is precisely the disputed half of the sentence, so this looks like rounding a partly contested proposition up (supported would fit the evidence base better); separately, the trans-Planckian objection and the trans-Planckian robustness result are essentially the same dispute instantiated as two mirror-image nodes, and the mass-cubed lifetime relation is settled derivation material that belongs in prose."
+        },
+        "claude-fable-5": {
+          "id": "3ea4bcb7-aa93-4357-bead-a8ac8377d1a8",
+          "text": "Hawking radiation causes black holes to lose mass and eventually evaporate",
+          "importanceStored": 0.35,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.5,
+          "flags": [
+            "status_miscalibrated",
+            "hallucination_risk"
+          ],
+          "note": "The claim text explicitly asserts black holes 'eventually evaporate,' yet the reasoning concedes complete evaporation is 'not itself a fully closed question' with a live remnant literature and a contradicting subclaim — awarding 'verified' rounds up a claim whose second conjunct is genuinely disputed and which lacks any direct astrophysical observation ('supported' fits the evidence shown). Additionally, the citation of a 2026 J. Math. Phys. result and unverifiable review details carry hallucination risk."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    },
+    {
+      "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+      "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+      "status": "verified",
+      "importanceStored": 0.3,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+          "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.35,
+          "flags": [
+            "bias"
+          ],
+          "note": "The claim itself is sound and the primary-source support is strong, but the reasoning is written as a brief for that conclusion — it dismisses the magnetic deceleration objection as 'a refinement' rather than fairly representing that it weakens the neutron-star/white-dwarf prong of the evidence, and the stored importance (0.3) is too high for what is essentially a settled textbook fact relied on instrumentally (to allay LHC-safety fears), not a live contested point."
+        },
+        "gpt-5.6-terra": {
+          "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+          "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 3,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "false_precision",
+            "other"
+          ],
+          "note": "This is essentially a settled observational premise used in an LHC-safety argument, not a live, reusable disputed proposition. The cited material supports high-energy cosmic-ray exposure, but the reasoning overstates what it establishes for the vague causal phrase “without causing catastrophe,” and its two direct subclaims are undisputed derivation premises with no recorded statuses."
+        },
+        "gpt-5.6-sol": {
+          "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+          "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "boilerplate_trace",
+            "other"
+          ],
+          "note": "The reasoning itself calls both components settled bedrock facts, so they should remain evidentiary prose rather than claim nodes. It also insufficiently resolves the wording’s ambiguity between primary cosmic-ray energy and collision center-of-mass energy, while “other bodies” and “catastrophe” remain underspecified."
+        },
+        "claude-opus-5": {
+          "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+          "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "other"
+          ],
+          "note": "The reasoning is exemplary in showing its work \\u2014 named primary sources, quantified support, and an honest airing of the Giddings\\u2013Mangano magnetic-deceleration caveat without rounding it into 'contested' \\u2014 but it also concedes the claim's own case for exclusion: both subclaims are called \\\"essentially settled bedrock facts\\\" and no source denies the proposition, so this is a load-bearing premise rather than a disputable claim, the two stubs belong in prose (\\u00a76), and stored importance 0.3 overstates a settled observational fact (\\u22480.15)."
+        },
+        "claude-fable-5": {
+          "id": "665cc530-4ba4-4ff2-8408-23dc0ad3b35d",
+          "text": "Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "other"
+          ],
+          "note": "The reasoning is thorough and even-handedly handles the Giddings-Mangano magnetic-field nuance, but by its own admission this is settled bedrock (no credible source disputes it), so it fails the §2 claim bar; the live dispute in the LHC-safety discourse is whether the cosmic-ray analogy implies safety (e.g., whether collision products escape), not whether cosmic rays strike harmlessly. Decomposing an already-settled fact into two more settled-fact stubs violates §6, and stored importance 0.3 overrates uncontested material that per §19 should sit near 0.15."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 1,
+        "no": 4
+      }
+    },
+    {
+      "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+      "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+      "status": "verified",
+      "importanceStored": 0.4,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+          "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.4,
+          "flags": [],
+          "note": "The reasoning is exemplary: it names the primary evidence, explains how competing theoretical uncertainties are handled (Hawking radiation unconfirmed but made redundant by the astronomical-bodies argument), identifies why the historical controversy does not constitute a genuine dispute, and justifies the confidence ceiling with epistemic humility. No defects found."
+        },
+        "gpt-5.6-terra": {
+          "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+          "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.2,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk",
+            "other"
+          ],
+          "note": "The record substantially supports the mainstream conclusion that no credible dangerous LHC mechanism is known, but it does not verify the absolute future-facing claim that collisions pose “no danger” whatsoever; “supported” is better calibrated than verified at 0.95. The decomposition includes non-claim background and derivation steps—especially the fact that speculative extra-dimension theories make a prediction and the Hawking-radiation premise—while the reasoning also over-relies on institutional endorsement and weak secondary sources rather than carefully stating the scope and limits of the underlying safety analyses."
+        },
+        "gpt-5.6-sol": {
+          "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+          "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.22,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The evidence strongly verifies the narrower proposition that LHC collisions pose no credible catastrophic global risk, but it does not establish the literal absolute “no danger,” which can include ordinary radiation and facility hazards. The decomposition also promotes largely settled premises and a theory-description into nodes despite the issue’s low present contestability."
+        },
+        "claude-opus-5": {
+          "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+          "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "other"
+          ],
+          "note": "The reasoning is well-sourced and readable and the \"verified\" call is plainly right, but it also concedes \"the scientific question is not live\" and that no physicist offered a competing technical analysis \" which makes this settled consensus material rather than a disputable claim under \\u00a72, and makes the stored importance of 0.4 roughly double the \\u22480.15 anchor for settled propositions (load-bearing \\u2260 important). The four subclaims largely unfold the LSAG report's derivation steps, including the near-definitional \"extra-dimension theories predict BH production,\" rather than mapping live dispute."
+        },
+        "claude-fable-5": {
+          "id": "694a1de3-20fb-4e83-821d-b15f01f94d81",
+          "text": "LHC particle collisions pose no danger to Earth or its inhabitants.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 5,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [],
+          "note": "Strong, transparent assessment: subclaims named by content, the Hawking-radiation weakness is explicitly handled via the redundant astrophysical argument, and confidence is calibrated below maximum with reasons. The one soft spot is characterizing all dissent as 'non-expert fear' — a few physicists (e.g., Rössler, Plaga) did offer technical objections, which were rebutted; naming and dispatching them would be fairer than eliding them. Stored importance 0.4 is slightly high for a question that is no longer scientifically live (~0.25-0.3 fits the anchors better)."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 4,
+        "no": 1
+      }
+    },
+    {
+      "id": "74137053-82a6-477e-8842-45a1639d9f17",
+      "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+      "status": "verified",
+      "importanceStored": 0.25,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "74137053-82a6-477e-8842-45a1639d9f17",
+          "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+          "importanceStored": 0.25,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "boilerplate_trace",
+            "opaque_ids"
+          ],
+          "note": "The reasoning is strong and traceable, but the stored importance of 0.25 is reasonable for a narrow attribution claim; the opaque-id reference to the subclaim should briefly restate what it says."
+        },
+        "gpt-5.6-terra": {
+          "id": "74137053-82a6-477e-8842-45a1639d9f17",
+          "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+          "importanceStored": 0.25,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "opaque_ids"
+          ],
+          "note": "The cited literature supports the narrower conditional attribution that ADD/low-Planck-scale extra-dimension models permit or predict black-hole production under additional semiclassical assumptions; the wording misleadingly generalizes this to “theories with extra spatial dimensions” broadly. This is a settled model-description fact rather than a live reusable controversy, and the added subclaim is an unnecessary derivational premise identified partly by an opaque ID."
+        },
+        "gpt-5.6-sol": {
+          "id": "74137053-82a6-477e-8842-45a1639d9f17",
+          "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+          "importanceStored": 0.25,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision"
+          ],
+          "note": "The evidence verifies that particular ADD-type models were presented as permitting black-hole production, but the claim loosely attributes this to “theories with extra spatial dimensions” generally and omits important model and energy assumptions. This is largely a settled attribution rather than a live claim, while the decomposed Planck-scale premise is an undisputed model feature better kept in prose."
+        },
+        "claude-opus-5": {
+          "id": "74137053-82a6-477e-8842-45a1639d9f17",
+          "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+          "importanceStored": 0.25,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.12,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The proposition — that ADD-type extra-dimension models predict LHC microscopic black hole production — is settled textbook/review material about what a theory entails, not a disputable proposition; the reasoning itself concedes \"the theoretical-attribution question is settled\" and that the live disagreement lies elsewhere, which is an admission the node fails the §2 claim bar, and the single subclaim (an uncontested design feature of ADD models) likewise belongs in prose."
+        },
+        "claude-fable-5": {
+          "id": "74137053-82a6-477e-8842-45a1639d9f17",
+          "text": "Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes",
+          "importanceStored": 0.25,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.15,
+          "flags": [
+            "other"
+          ],
+          "note": "The reasoning is well-sourced and transparent, but it concedes the fatal problem itself: no credible source disputes this attribution, making it settled literature fact that fails the §2 claim bar, and the sole subclaim is explicitly described as uncontested, so per §6 it belongs in prose rather than as a node. Stored importance 0.25 also overrates a settled point (§19 anchor ≈0.15)."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 1,
+        "no": 4
+      }
+    },
+    {
+      "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+      "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+      "status": "verified",
+      "importanceStored": 0.15,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.12,
+          "flags": [],
+          "note": "Strong reasoning with good identification of the relevant physics and source evidence. The importance may be slightly overestimated (0.15 vs 0.12) because the claim, while true, is a fairly settled scaling relationship—the live debate is about quantitative consequences, not the direction of the effect itself, so it borders on minor/settled territory."
+        },
+        "gpt-5.6-terra": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "readability": 3,
+          "reasoning_fit": 2,
+          "impartiality": 2,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.15,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "bias",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The qualitative comparison is plausible, but the reasoning overattributes it to density: Bondi flow also depends strongly on sound speed, equation of state, and whether the Bondi-fluid approximation applies in degenerate compact-star matter. The cited summaries and an opaque parent-claim reference do not establish a 0.92 “verified” verdict; “supported,” with explicit conditions on black-hole mass and local stellar conditions, would be more defensible."
+        },
+        "gpt-5.6-sol": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.18,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision"
+          ],
+          "note": "The reasoning states that Bondi accretion scales as ρ/c_s³ but then attributes the comparison to density without actually comparing sound speeds or other regime assumptions; cited consumption times support a qualitative difference, not that density alone establishes it. “Supported” with lower confidence would be better calibrated than verified at 0.92."
+        },
+        "moonshotai/kimi-k3": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "claim_bar": "no",
+          "decomposition_granularity": "too_granular",
+          "flags": [],
+          "impartiality": 5,
+          "importance_judged": 0.15,
+          "note": "Physically correct and even-handedly sourced, but by its own reasoning (\"no credible source was found disputing the basic scaling\") this is an undisputed corollary of the textbook Bondi formula — both Giddings–Mangano and their critic Plaga agree on the direction, disagreeing only on magnitude. That makes it a derivation step of the parent safety question, failing the §2 claim bar and belonging in the parent's prose per §6, not a node. Given its existence, verified status and 0.15 importance are correctly calibrated.",
+          "readability": 5,
+          "reasoning_fit": 4
+        },
+        "claude-opus-5": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.12,
+          "flags": [
+            "hallucination_risk"
+          ],
+          "note": "The proposition is a near-immediate consequence of the Bondi rate's linear density scaling that the reasoning itself says no one disputes, so it reads as a derivation step rather than a disputable claim (importance 0.15 and verified/0.92 are at least internally consistent); the attribution of a >10^10 white-dwarf timescale discrepancy to arXiv:0808.1415 should be checked, and the single-cause framing (\"due to the white dwarf's much lower density\") glosses over the sound-speed/degeneracy-pressure differences that actually complicate Giddings & Mangano's white-dwarf treatment."
+        },
+        "claude-fable-5": {
+          "id": "8236a74f-046c-45d4-be57-c127d28d8505",
+          "text": "Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density",
+          "importanceStored": 0.15,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "no",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.15,
+          "flags": [
+            "other"
+          ],
+          "note": "The assessment itself demonstrates the node fails the claim bar: both the mainstream calculation and its critics agree on the density-driven scaling, making this an undisputed derivation step in the LHC safety debate that per §2/§6 belongs in prose under the parent claim rather than as its own node. The reasoning quality is otherwise exemplary — physics shown, sources named, and the residual quantitative dispute correctly routed to the parent."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 3,
+        "no": 3
+      }
+    },
+    {
+      "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+      "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+      "status": "supported",
+      "importanceStored": 0.4,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+          "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+          "importanceStored": 0.4,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.45,
+          "flags": [],
+          "note": "The reasoning is thorough, even-handed, and readably walks through the three sub-claims and how they triangulate to \"supported\" rather than \"verified\" or \"contested.\" The decomposition is sensible and not over-granular. Minor quibbles: the third subclaim (\"semiclassical calculations may not reliably apply\") is arguably not itself a claim-constituting proposition about the world but the reasoning handles this adequately; and the importance of 0.4 seems slightly low for a claim with genuine live scientific and public-safety significance, though it is within a defensible range given the mainstream consensus."
+        },
+        "gpt-5.6-terra": {
+          "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+          "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+          "importanceStored": 0.4,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.3,
+          "flags": [
+            "false_precision",
+            "hallucination_risk"
+          ],
+          "note": "“Supported” is broadly defensible for the conditional claim, but 0.85 confidence overstates what follows from model-dependent semiclassical extrapolation and no direct observation of Hawking radiation. The decomposition also treats a four-dimensional mass-cubed lifetime law as a required general premise, although TeV-scale LHC black-hole scenarios commonly invoke extra dimensions, where the lifetime scaling differs; the relevant model assumptions are missing."
+        },
+        "gpt-5.6-sol": {
+          "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+          "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+          "importanceStored": 0.4,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "other"
+          ],
+          "note": "The overall supported verdict is reasonable, but the decomposition overstates Hawking evaporation as verified despite the cited lack of direct confirmation, and the mass-cubed lifetime law is specifically four-dimensional rather than generally applicable to the higher-dimensional scenarios invoked for LHC black holes."
+        },
+        "claude-opus-5": {
+          "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+          "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+          "importanceStored": 0.4,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.3,
+          "flags": [
+            "hallucination_risk"
+          ],
+          "note": "The weighing is exemplary \\icalical validity flagged as the real crux, Ross\ninstead: the assessment cleanly separates overwhelming mainstream convergence from the narrow semiclassical-validity caveat and correctly resists both 'verified' and false-parity 'contested'; however the law-review source is misattributed (\"The Black Hole Case\" is by Eric E. Johnson, not Jennifer), the mass-cubed lifetime subclaim is settled textbook derivation that belongs in prose rather than as an unassessed node, and calling the parent 'unobserved' while a required subclaim on Hawking radiation's existence is marked 'verified' is an internal tension left unexplained."
+        },
+        "claude-fable-5": {
+          "id": "919bf964-1fc6-4c69-b428-ff0a6dc7442f",
+          "text": "Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation",
+          "importanceStored": 0.4,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.35,
+          "flags": [
+            "boilerplate_trace",
+            "status_miscalibrated"
+          ],
+          "note": "Strong, well-sourced reasoning that correctly lands on 'supported' rather than 'verified' (no experimental confirmation of Hawking radiation) or 'contested' (dissent is narrow/fringe), but the mass-cubed lifetime subclaim is settled textbook derivation that belongs in prose per §6, and the 'verified' status on the Hawking-radiation subclaim sits awkwardly against this claim's own admission that the mechanism has never been observed; internal jargon like 'claim_credence' and 'marginal yield of a further pass' leaks process boilerplate into the verdict."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    },
+    {
+      "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+      "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+      "status": "supported",
+      "importanceStored": 0.35,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+          "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.3,
+          "flags": [
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The reasoning clearly reports the Giddings-Mangano result and the minority critique, and the fit to the 'supported' status is plausible. However, the claim is arguably a derived consequence (Bondi accretion timescale < stellar age) of a more fundamental claim about micro black hole capture, not a standalone disputable proposition—it fails the claim bar on the ground that its content is settled physics *if* the existence premise is granted. The stored importance 0.35 seems too high for a claim that is purely derivative of the capture premise and uncontested on its own terms; 0.2–0.25 would be more appropriate. The subclaim flagged as 'too_granular': 'Bondi accretion onto a black hole in a white dwarf is slower than in a neutron star because of lower density' is an uncontroversial hydrostatic relation better left as a prose remark, not a full node."
+        },
+        "gpt-5.6-terra": {
+          "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+          "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 2,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.35,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "bias",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The claim is a reusable, disputable conditional proposition, but it is overly broad: the relevant growth time depends on the black hole’s initial properties and on modeling assumptions that the reasoning does not state. The assessment leans too heavily on one calculation, dismisses an unnamed contrary technical argument as “non-mainstream,” and incorrectly records the slower-white-dwarf observation as a contradicting subclaim even though it does not contradict the parent claim."
+        },
+        "gpt-5.6-sol": {
+          "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+          "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.4,
+          "flags": [
+            "boilerplate_trace",
+            "opaque_ids",
+            "other"
+          ],
+          "note": "The cited calculation supports the conditional claim, but the APS commentary is not independent corroboration, and the reasoning does not specify what “short time” means or adequately examine model dependence and the white-dwarf critique. The sole subclaim is described as uncontroversial and does not contradict the parent—slower accretion can still consume a white dwarf quickly—so it should be prose rather than a contradicting node."
+        },
+        "claude-opus-5": {
+          "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+          "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.3,
+          "flags": [
+            "hallucination_risk",
+            "other"
+          ],
+          "note": "The reasoning is legible and names its primary source, but it asserts \"thousands of years or less\" for *both* neutron-star and white-dwarf densities, which is in direct tension with its own verified subclaim that white-dwarf accretion is much slower \ntemplate\ttrue and with Giddings-Mangano's parameter-dependent white-dwarf timescales \ttthat is an unverified numerical over-claim; the lone subclaim is undisputed density physics that belongs in prose (\ntoo granular) and is mis-typed as \"contradicts\" a claim it does not actually contradict, while the one real critique is dismissed as an unnamed \"minority technical note ... flagged in web search results.\""
+        },
+        "claude-fable-5": {
+          "id": "998aec97-11a1-45d6-9eb4-1081f72cd17f",
+          "text": "A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_granular",
+          "importance_judged": 0.35,
+          "flags": [
+            "boilerplate_trace",
+            "other"
+          ],
+          "note": "The verdict is well-sourced and the minority white-dwarf critique is weighed rather than ignored, but the sole subclaim is, by the assessor's own admission, 'uncontroversial physics' that fails the §2 claim bar and belongs in prose; its 'contradicts' edge (verified) also sits in unexplained tension with the parent's 'supported' status. The aside about match_claim's earlier behavior is internal pipeline trace that should not appear in reasoning."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    },
+    {
+      "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+      "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+      "status": "verified",
+      "importanceStored": 0.4,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+          "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [],
+          "note": "The reasoning thoroughly explains how each subclaim supports the conclusion, accounts for the Peter critique even-handedly, and ties confidence calibration to explicit residual uncertainties—a model audit."
+        },
+        "gpt-5.6-terra": {
+          "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+          "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.35,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk"
+          ],
+          "note": "The reasoning supports a strong, model-dependent safety argument, but its own acknowledged coverage loopholes make “verified” and an exact 0.88 confidence too strong for the unqualified claim that survival rules out danger. The decomposition also omits crucial disputed links: whether cosmic-ray collisions adequately reproduce the relevant production conditions and whether every dangerous stable-black-hole model would be captured and accrete on the necessary timescale; broad assertions that no later literature revived the critique need substantiation."
+        },
+        "gpt-5.6-sol": {
+          "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+          "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.38,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk"
+          ],
+          "note": "The decomposition omits the crucial bridge that cosmic-ray collisions would produce the relevant LHC-type black holes at sufficient rates and with capture conditions covering the dangerous parameter space. Given the claim’s absolute “rules out” wording and the reasoning’s admitted loopholes, “supported” is better justified than verified; the exact 0.88 confidence and unnamed independent literature are also insufficiently substantiated."
+        },
+        "claude-opus-5": {
+          "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+          "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning is unusually legible and even-handed about the Peter critique, but the verdict is internally inconsistent: it rests on a subclaim assessed only 'supported' and on an inference the steward itself calls \"not logically airtight,\" which fits 'supported' at ~0.85 better than 'verified' at 0.88; the astrophysical-safety argument's known dependence on capture-efficiency assumptions is somewhat underweighted relative to the confident bottom line."
+        },
+        "claude-fable-5": {
+          "id": "a046f07f-2cd7-45ca-bdac-908b3621d415",
+          "text": "Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.",
+          "importanceStored": 0.4,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "hallucination_risk"
+          ],
+          "note": "Exemplary reasoning: subclaims cited by content, the strongest surviving critique investigated on its merits, and confidence explicitly capped with stated movers. One factual defect: arXiv:0808.1415 (the slow-accretion loophole) is by Rainer Plaga, not 'Peter' — the substance is described accurately but the misattribution suggests detail-level confabulation worth flagging."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    },
+    {
+      "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+      "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+      "status": "verified",
+      "importanceStored": 0.3,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.35,
+          "flags": [
+            "bias",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The reasoning omits the actual primary source confirming the observation (e.g., a specific survey or paper that looked for destruction), citing only secondary news summaries and a theoretical paper that undercuts the evidential weight; this is a hallucination risk because we cannot verify which observational study the claim rests on."
+        },
+        "gpt-5.6-terra": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.3,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision"
+          ],
+          "note": "The reasoning establishes that old white dwarfs and neutron stars are observed, but that is not by itself strong verification of the more specific claim that they show no relevant evidence of black-hole accretion under cosmic-ray bombardment. Peter's objection is treated too narrowly: it directly undercuts whether stellar survival/non-destruction is probative for the claimed black-hole scenario, so a high-confidence verified verdict is not justified without sharply narrowing the claim to the bare observational fact."
+        },
+        "gpt-5.6-sol": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "boilerplate_trace"
+          ],
+          "note": "The cited reports largely restate the same collider-safety argument, while old-star population studies establish survival rather than specifically excluding destruction by black-hole accretion; this supports the claim but does not justify “verified” at 0.88 confidence. The discussion of Peter’s objection is useful, though detectability and observational-selection uncertainties remain underweighed."
+        },
+        "moonshotai/kimi-k3": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "flags": [],
+          "impartiality": 4,
+          "importance_judged": 0.2,
+          "note": "\"Verified\" is defensible since even critics (Peter) concede the observation and attack only the inference, but stored importance 0.3 walks into §19's load-bearing trap: this premise is uncontested on all sides, so it should sit near 0.15–0.2, close to \"settled\" rather than \"notable contested point.\" Also worth guarding: the claim asserts only absence of *observable* destruction, which is weaker than the \"no destruction occurs\" premise the parent safety argument actually needs — the reasoning notes this, but downstream consumers of the graph could easily conflate the two.",
+          "readability": 4,
+          "reasoning_fit": 4
+        },
+        "claude-opus-5": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "no",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.2,
+          "flags": [
+            "other"
+          ],
+          "note": "The reasoning is transparent and admirably handles Peter's detectability objection by distinguishing the observation from its evidential weight \\u2014 but that same distinction reveals the node fails \\u00a72: as stated it is an uncontested observational fact that both proponents and critics accept, while the genuinely disputable proposition (whether the survival of dense stars constrains mBH risk) lives in the parent; stored importance 0.3 also overstates a settled premise per \\u00a719's rule that load-bearing is not important."
+        },
+        "claude-fable-5": {
+          "id": "a39cdd0b-a08e-4b11-a338-af0944b0d229",
+          "text": "White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years",
+          "importanceStored": 0.3,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "n_a",
+          "importance_judged": 0.2,
+          "flags": [],
+          "note": "Exemplary reasoning: it correctly distinguishes the Peter (arXiv:0808.1415) critique as attacking the evidential weight for the parent safety inference rather than denying the observation itself. However, the reasoning's own finding of 'uniform agreement across proponents and critics' means the claim is uncontested within the live discourse, so it sits near the settled-fact edge of the claim bar and the stored importance of 0.3 is somewhat inflated; per §19 an uncontested load-bearing premise merits closer to 0.15-0.2."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 1
+      }
+    },
+    {
+      "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+      "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+      "status": "supported",
+      "importanceStored": 0.35,
+      "verdicts": {
+        "deepseek/deepseek-v4-flash": {
+          "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+          "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.65,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning treats the claim as 'supported' but the evidence it marshals actually points to the claim being 'contested': a specific technical objection (assumptions-caveat subclaim) is acknowledged as a non-frivolous, serious minority position that directly challenges the generalisation to 'unknown Planck-scale physics,' and the reasoning's own final paragraph admits the general statement is 'not fully nailed down.' That is the textbook definition of contested, not supported. The status is therefore miscalibrated by one step. For a claim this close to the live debate boundary, a confidence drop to 0.6 under contested would be truer to the presented evidence."
+        },
+        "gpt-5.6-terra": {
+          "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+          "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 3,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.6,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision",
+            "hallucination_risk",
+            "opaque_ids"
+          ],
+          "note": "The cited robustness results support a narrower conditional proposition—insensitivity to specified high-frequency dispersion modifications under semiclassical assumptions—not the claim’s broad assertion about unknown Planck-scale physics. The serious objection described is therefore not merely a qualification: it substantially contests the proposition as worded; this should be marked contested, or the claim rewritten and then assessed supported."
+        },
+        "gpt-5.6-sol": {
+          "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+          "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 4,
+          "reasoning_fit": 2,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.38,
+          "flags": [
+            "status_miscalibrated",
+            "other"
+          ],
+          "note": "The reasoning itself establishes credible arguments on both sides, which meets §10’s definition of contested rather than supported. It also overgeneralizes from robustness under selected dispersion modifications and analogue systems to insensitivity to unknown Planck-scale physics broadly."
+        },
+        "claude-opus-5": {
+          "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+          "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.45,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "Well-structured reasoning that names its subclaims descriptively and states falsifiers implicitly, but the verdict is arguably rounded up: the reasoning itself concedes that the claim's operative generalization ('unknown Planck-scale physics') is exactly what the philosophy-of-physics critique disputes, which reads closer to 'contested on scope' than 'supported'; also note the typo 'astrocophysical' and that two of the four subclaims still carry status 'none'."
+        },
+        "claude-fable-5": {
+          "id": "f17e7d15-80ba-4372-b13f-6aef8873c0af",
+          "text": "Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics",
+          "importanceStored": 0.35,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.4,
+          "flags": [],
+          "note": "A strong assessment: subclaims are cited by content, counter-evidence (the universality-critique paper) is given its strongest form without false parity, and the supported-vs-verified line is explicitly argued. The one soft spot is that the claim's own wording ('insensitive to unknown Planck-scale physics') is broader than the dispersive test cases actually establish, so the supported/contested boundary is genuinely close; the reasoning acknowledges this but a skeptic could reasonably push for contested."
+        }
+      },
+      "claimBarVotes": {
+        "yes": 5,
+        "no": 0
+      }
+    }
+  ]
+}

@@ -112,11 +112,12 @@ ${subs}`;
       schema: SCHEMA,
       schemaName: "ClaimQualityVerdict",
       model,
-      // Claude-5 judge models think before answering, and thinking counts against
-      // max_tokens: too low a budget is spent thinking and the structured JSON
-      // output is truncated. Give comfortable headroom for a small JSON verdict —
-      // the cap is a backstop, not a budget.
-      maxTokens: 8192,
+      // Thinking judge models (Claude 5 family, Kimi K3) reason before
+      // answering, and thinking counts against max_tokens: too low a budget is
+      // spent thinking and the structured JSON output is truncated. Kimi K3
+      // overran 8192 on most verdicts in the first bake-off, so give generous
+      // headroom for a small JSON verdict — the cap is a backstop, not a budget.
+      maxTokens: 16384,
     })
   );
 

@@ -40,7 +40,7 @@ import {
 
 const DEFAULT_SAMPLE = 15;
 
-interface ModelRun {
+export interface ModelRun {
   model: string;
   summary: JudgedSummary;
   cost: { calls: number; usd: number };
@@ -57,7 +57,7 @@ interface ItemRow {
   claimBarVotes: { yes: number; no: number };
 }
 
-interface Comparison {
+export interface Comparison {
   generatedAt: string;
   cluster: string;
   sampleSize: number;
@@ -90,7 +90,7 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 }
 
-function buildComparison(cluster: string, sampleSize: number, runs: ModelRun[]): Comparison {
+export function buildComparison(cluster: string, sampleSize: number, runs: ModelRun[]): Comparison {
   const models = runs.map((r) => r.model);
 
   // Per-item verdict grid, keyed by claim id.
@@ -188,7 +188,7 @@ function shortName(model: string): string {
     .replace(/^gpt-/, "");
 }
 
-function renderMarkdown(c: Comparison): string {
+export function renderMarkdown(c: Comparison): string {
   const o: string[] = [];
   const w = (l = "") => o.push(l);
   const names = c.models.map((r) => r.model);
@@ -331,10 +331,14 @@ async function main() {
   }
 }
 
-main()
-  .then(() => closeDb())
-  .catch(async (err) => {
-    console.error(err);
-    await closeDb().catch(() => {});
-    process.exit(1);
-  });
+// Run directly (guarded so the exported pieces are importable, e.g. by a
+// merge script that re-runs one failed judge and rebuilds the comparison).
+if ((process.argv[1] ?? "").endsWith("judge-compare.ts")) {
+  main()
+    .then(() => closeDb())
+    .catch(async (err) => {
+      console.error(err);
+      await closeDb().catch(() => {});
+      process.exit(1);
+    });
+}
