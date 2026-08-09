@@ -26,6 +26,7 @@
     "corpus:snapshot": "tsx scripts/corpus/snapshot.ts",
     "corpus:golden": "tsx scripts/corpus/golden-matcher.ts",
     "corpus:calibrate": "tsx scripts/corpus/calibration.ts",
+    "corpus:judge-compare": "tsx scripts/corpus/judge-compare.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts"
   },
   "dependencies": {

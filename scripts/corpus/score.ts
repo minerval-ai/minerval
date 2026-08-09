@@ -51,7 +51,7 @@ function gitCommit(): string | null {
   }
 }
 
-interface JudgedSummary {
+export interface JudgedSummary {
   model: string;
   sampleSize: number;
   claimBarPassRate: number;
@@ -68,11 +68,14 @@ export interface Scorecard {
   database: string;
   config: ScorecardConfig;
   structural: StructuralMetrics;
+  /** Primary judge (first panel member) — kept as the compare.ts surface. */
   judged: JudgedSummary | null;
+  /** Every panel member's summary (length 1 when a single judge ran). */
+  judgePanel: JudgedSummary[] | null;
   cost: { calls: number; usd: number } | null;
 }
 
-async function loadSnapshot(): Promise<GraphSnapshot> {
+export async function loadSnapshot(): Promise<GraphSnapshot> {
   const claims = await rawQuery<{
     id: string;
     text: string;
@@ -126,7 +129,7 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
  * claim-bar and granularity signals cover both. Deterministic ordering (by id)
  * so a re-score of the same graph judges the same sample.
  */
-function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
+export function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
   const childrenOf = new Map<string, Array<{ child: string; rel: string }>>();
   for (const e of g.edges) {
     (childrenOf.get(e.parent) ?? childrenOf.set(e.parent, []).get(e.parent)!).push({
@@ -178,14 +181,18 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
   return picked.slice(0, n).map(toInput);
 }
 
-async function judgeSample(inputs: JudgeInput[], concurrency = 3): Promise<JudgeVerdict[]> {
+export async function judgeSample(
+  inputs: JudgeInput[],
+  model?: string,
+  concurrency = 3
+): Promise<JudgeVerdict[]> {
   const out: JudgeVerdict[] = [];
   let idx = 0;
   async function worker() {
     while (idx < inputs.length) {
       const mine = inputs[idx++]!;
       try {
-        out.push(await judgeClaim(mine));
+        out.push(await judgeClaim(mine, model));
       } catch (err) {
         // A judge failure shouldn't sink the whole scorecard; skip the item.
         console.error(`  judge failed for ${mine.id.slice(0, 8)}: ${(err as Error).message}`);
@@ -196,7 +203,7 @@ async function judgeSample(inputs: JudgeInput[], concurrency = 3): Promise<Judge
   return out;
 }
 
-function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary {
+export function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary {
   const n = verdicts.length || 1;
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const round = (x: number) => Math.round(x * 100) / 100;
@@ -245,22 +252,33 @@ export async function scoreRun(
   const snapshot = await loadSnapshot();
   const structural = computeStructuralMetrics(snapshot);
 
+  // The judge panel (JUDGE_MODELS, default Fable + GPT-5.6 Sol). An empty
+  // panel falls back to the single legacy judge knob.
+  const panel = cfg.judgeModels.length > 0 ? cfg.judgeModels : [cfg.judgeModel];
+
   let judged: JudgedSummary | null = null;
+  let judgePanel: JudgedSummary[] | null = null;
   let cost: Scorecard["cost"] = null;
   let judgeCostMicroUsd = 0;
   if (doJudge && sample > 0) {
     const before = getSessionUsage();
     const inputs = pickSample(snapshot, sample);
-    console.log(`  judging ${inputs.length} claims with ${cfg.judgeModel}…`);
-    // The cost meter is fed synchronously per call at the metering chokepoint,
-    // so this is the judge's exact metered cost (raw rates, whatever model
-    // actually served each call) — not a session-total diff priced by hand.
-    const { value: verdicts, billedMicroUsd } = await withCostMeter(() => judgeSample(inputs));
-    judged = summarizeJudged(cfg.judgeModel, verdicts);
-    judgeCostMicroUsd = billedMicroUsd;
+    judgePanel = [];
+    for (const model of panel) {
+      console.log(`  judging ${inputs.length} claims with ${model}…`);
+      // The cost meter is fed synchronously per call at the metering chokepoint,
+      // so this is the judge's exact metered cost (raw rates, whatever model
+      // actually served each call) — not a session-total diff priced by hand.
+      const { value: verdicts, billedMicroUsd } = await withCostMeter(() =>
+        judgeSample(inputs, model)
+      );
+      judgePanel.push(summarizeJudged(model, verdicts));
+      judgeCostMicroUsd += billedMicroUsd;
+    }
+    judged = judgePanel[0] ?? null;
     cost = {
       calls: getSessionUsage().calls - before.calls,
-      usd: Math.round(billedMicroUsd / 10_000) / 100, // micro-USD → USD, 2 dp
+      usd: Math.round(judgeCostMicroUsd / 10_000) / 100, // micro-USD → USD, 2 dp
     };
   }
 
@@ -275,11 +293,12 @@ export async function scoreRun(
         steward: cfg.stewardModel,
         curator: cfg.curatorModel,
         matcher: cfg.matcherModel,
-        judge: cfg.judgeModel,
+        judge: panel.join(","),
       },
     },
     structural,
     judged,
+    judgePanel,
     cost,
   };
 
@@ -390,6 +409,22 @@ function renderMarkdown(s: Scorecard): string {
     w(`## Judged`);
     w();
     w(`_skipped (\`--no-judge\`)._`);
+    w();
+  }
+
+  if (s.judgePanel && s.judgePanel.length > 1) {
+    w(`## Judge panel (${s.judgePanel.length} judges over the same sample)`);
+    w();
+    w(`| metric | ${s.judgePanel.map((j) => `\`${j.model}\``).join(" | ")} |`);
+    w(`|---|${s.judgePanel.map(() => "---").join("|")}|`);
+    const cols = (f: (j: JudgedSummary) => string) =>
+      s.judgePanel!.map(f).join(" | ");
+    w(`| claim-bar pass-rate | ${cols((j) => `${(j.claimBarPassRate * 100).toFixed(0)}%`)} |`);
+    w(`| importance judged (mean) | ${cols((j) => `${j.importanceAlignment.meanJudged}`)} |`);
+    w(`| readability | ${cols((j) => `${j.assessmentQuality.readability}`)} |`);
+    w(`| reasoning-fit | ${cols((j) => `${j.assessmentQuality.reasoningFit}`)} |`);
+    w(`| impartiality | ${cols((j) => `${j.assessmentQuality.impartiality}`)} |`);
+    w(`| flags | ${cols((j) => Object.entries(j.flags).map(([k, v]) => `${k} ${v}`).join(", ") || "none")} |`);
     w();
   }
   return o.join("\n");

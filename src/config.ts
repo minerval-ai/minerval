@@ -8,6 +8,10 @@ import {
 const DEFAULT_DB_URL =
   "postgresql://episteme:episteme_dev@localhost:5432/episteme";
 
+// The default scorecard judge panel (JUDGE_MODELS). Exported so the model
+// guard test (S7) covers these IDs like any other configured-reachable model.
+export const DEFAULT_JUDGE_PANEL = "claude-fable-5,gpt-5.6-sol";
+
 // A model-ID field: defaults to an Anthropic API ID and accepts any ID that
 // RESOLVES TO A KNOWN PROVIDER — "claude-…", "gpt-…"/"o3", or an OpenRouter
 // "vendor/model" (see src/llm/providers/routing.ts). Bedrock-style
@@ -467,6 +471,33 @@ const configSchema = z.object({
   // under test — never let an agent grade its own trace with its own framing.
   // Default Sonnet; raise to Opus/Fable for a higher-confidence judge.
   judgeModel: modelId(MODELS.sonnet),
+  // The judge PANEL for corpus scorecards: comma-separated model IDs, each of
+  // which must resolve to a provider. The default pairs Fable with GPT-5.6 Sol
+  // — two frontier judges from DIFFERENT vendors, so pipeline output is never
+  // graded solely by the vendor family that produced it, and single-judge
+  // idiosyncrasies (one model's pet flag) show up as panel disagreement
+  // instead of silently becoming the metric. Empty ("") falls back to the
+  // single judgeModel above, which keeps tests and cheap local scoring on
+  // one Sonnet judge.
+  judgeModels: z
+    .string()
+    .default(DEFAULT_JUDGE_PANEL)
+    .transform((s) =>
+      s
+        .split(",")
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0)
+    )
+    .superRefine((models, ctx) => {
+      for (const id of models) {
+        if (!isSupportedModelId(id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: unresolvableModelIdMessage(id),
+          });
+        }
+      }
+    }),
   enableContributions: z
     .string()
     .transform((s) => s === "true")
@@ -596,6 +627,7 @@ export function loadConfig(): Config {
     extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
+    judgeModels: process.env.JUDGE_MODELS,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,

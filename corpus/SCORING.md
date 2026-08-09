@@ -46,9 +46,23 @@ note, so a low number is always traceable to specific claims.
 
 ## Judge design (why it's set up this way)
 
-- **Different model/context than the agent under test.** `JUDGE_MODEL` defaults to
-  Sonnet; the agents under test run on Fable in prod. Never let an agent grade
+- **Different model/context than the agent under test.** Never let an agent grade
   its own trace with its own framing in context.
+- **A cross-vendor panel, not a single judge.** `JUDGE_MODELS` (default
+  `claude-fable-5,gpt-5.6-sol`) runs every panel member over the same
+  deterministic sample; the scorecard records each member's summary
+  (`judgePanel`) with the first as the primary (`judged`, the `corpus:compare`
+  surface). Two frontier judges from different vendors means pipeline output is
+  never graded solely by the vendor family that produced it, and one judge's
+  idiosyncrasies surface as panel disagreement instead of silently becoming the
+  metric. Set `JUDGE_MODELS=""` to fall back to the single `JUDGE_MODEL` knob
+  (default Sonnet — the cheap local/test path).
+- **Judge selection is itself measured.** `corpus:judge-compare` runs any roster
+  of candidate judges over the same sample and emits per-model summaries,
+  pairwise claim-bar agreement, per-item vote grids, and metered cost
+  (`corpus/scorecards/judge-comparison/`), so the panel choice is an evidenced
+  decision, not a vibe. Pair it with the blinded human calibration sheet
+  (`corpus:calibrate`) to anchor the panel against human labels.
 - **Graded against the constitution, not the judge's intuition** — the relevant
   standards are pinned into the judge prompt so the bar is explicit and stable.
 - **Evidence, not just a number** — every verdict carries a note and the specific

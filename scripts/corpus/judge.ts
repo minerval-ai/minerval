@@ -7,7 +7,10 @@
  * through the real LLM client so calls are metered by the budget tracker and
  * priced like any other agent call. The judge model is a separate knob
  * (`JUDGE_MODEL`, default Sonnet) so it is never the same model or context as
- * the agent under test.
+ * the agent under test. Scorecards run a PANEL of judges (`JUDGE_MODELS`,
+ * default Fable + GPT-5.6 Sol — cross-vendor); the per-call model override
+ * lets the scorer and the judge bake-off (judge-compare.ts) pick the model
+ * per pass.
  */
 import { completeStructured } from "../../src/llm/client.js";
 import { withAgent } from "../../src/llm/usage-context.js";
@@ -75,7 +78,10 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
+export async function judgeClaim(
+  input: JudgeInput,
+  modelOverride?: string
+): Promise<JudgeVerdict> {
   const subs =
     input.subclaims.length > 0
       ? input.subclaims.map((s) => `- [${s.relation}] ${s.text} (status: ${s.status ?? "none"})`).join("\n")
@@ -97,7 +103,7 @@ ${input.reasoningTrace ?? "(none)"}
 ## Direct subclaims (${input.subclaims.length})
 ${subs}`;
 
-  const model = loadConfig().judgeModel;
+  const model = modelOverride ?? loadConfig().judgeModel;
   // Tagged "judge" so its llm_usage rows are attributable and separable from
   // the agents under test — the judge is an agent like any other to the meter.
   const verdict = await withAgent("judge", () =>

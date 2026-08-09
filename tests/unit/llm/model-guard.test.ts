@@ -24,6 +24,7 @@ import {
   modelNeedsRefusalFallback,
 } from "../../../src/llm/models.js";
 import { resolveProvider } from "../../../src/llm/providers/routing.js";
+import { DEFAULT_JUDGE_PANEL } from "../../../src/config.js";
 import {
   costMicroUsd,
   hasExplicitRates,
@@ -55,6 +56,12 @@ function reachableModels(): Array<{ source: string; model: string }> {
     ...productionPins().map((p) => ({
       source: `infra ${p.envVar}`,
       model: p.model,
+    })),
+    // The default scorecard judge panel (JUDGE_MODELS) — configured-reachable
+    // even with no env set, so it gets the same resolve/price coverage.
+    ...DEFAULT_JUDGE_PANEL.split(",").map((model) => ({
+      source: "config DEFAULT_JUDGE_PANEL",
+      model,
     })),
   ];
 }
