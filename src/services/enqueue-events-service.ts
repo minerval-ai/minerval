@@ -44,6 +44,19 @@ export function enqueueEventsEnabled(): boolean {
   return !process.env.VITEST;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Some message fields carry non-uuid sentinels by upstream convention (e.g.
+ * steward-created claims enqueue the claim pipeline with jobId "steward",
+ * there being no job row). The uuid columns here take real ids or NULL —
+ * a sentinel must not fail the whole event row (first seen live: 6 of a
+ * smoke run's 8 claim-pipeline enqueues silently lost).
+ */
+function uuidOrNull(value: string | null | undefined): string | null {
+  return value && UUID_RE.test(value) ? value : null;
+}
+
 /** Record one enqueue. Fire-and-forget; never throws. */
 export function recordEnqueueEvent(event: EnqueueEventInput): void {
   if (!enqueueEventsEnabled()) return;
@@ -53,12 +66,12 @@ export function recordEnqueueEvent(event: EnqueueEventInput): void {
       await getDb().insert(enqueueEvents).values({
         queue: event.queue,
         trigger: event.trigger ?? null,
-        claimId: event.claimId ?? null,
-        jobId: event.jobId ?? null,
-        contributionId: event.contributionId ?? null,
+        claimId: uuidOrNull(event.claimId),
+        jobId: uuidOrNull(event.jobId),
+        contributionId: uuidOrNull(event.contributionId),
         sourceAgent: ctx.agent ?? null,
-        sourceRunId: ctx.runId ?? null,
-        sourceClaimId: ctx.claimId ?? null,
+        sourceRunId: uuidOrNull(ctx.runId),
+        sourceClaimId: uuidOrNull(ctx.claimId),
         coalesced: event.coalesced ?? null,
       });
     } catch (err) {
