@@ -27,12 +27,12 @@ import { getUsageContext } from "../usage-context.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
   assertAnthropicOnlyCapabilitiesUnused,
+  isWebSearchServerTool,
   sanitizeSchemaName,
   toStrictJsonSchema,
 } from "./openai-dialect.js";
 import {
   fromResponse,
-  isOpenAiHostedMappable,
   mapResponseStatus,
   toResponsesInput,
   toResponsesTools,
@@ -163,7 +163,7 @@ export const openaiAdapter: ProviderAdapter = {
     // refused; guard everything else.
     assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, {
       ...req,
-      tools: req.tools?.filter((t) => !isOpenAiHostedMappable(t)),
+      tools: req.tools?.filter((t) => !isWebSearchServerTool(t)),
     });
 
     const response = await getClient().responses.create({
@@ -193,7 +193,7 @@ export const openaiAdapter: ProviderAdapter = {
     // refused; guard everything else.
     assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, {
       ...req,
-      tools: req.tools.filter((t) => !isOpenAiHostedMappable(t)),
+      tools: req.tools.filter((t) => !isWebSearchServerTool(t)),
     });
 
     const response = await getClient().responses.create({

@@ -46,7 +46,25 @@ export function isServerTool(tool: LlmTool): boolean {
 }
 
 /**
- * Server tools and containers are Anthropic-only in this pass. Fail with a
+ * The seam's web_search server tool. Every backend now serves it with its own
+ * hosted search — Anthropic natively, OpenAI via Responses `{type:
+ * "web_search"}` (responses-dialect.ts), OpenRouter via its beta
+ * `{type: "openrouter:web_search"}` server tool — so adapters exempt it from
+ * the Anthropic-only guard and translate it instead. This is a static
+ * capability of whichever provider the CONFIGURED model belongs to; nothing
+ * reroutes between providers at runtime.
+ */
+export function isWebSearchServerTool(tool: LlmTool): boolean {
+  return (
+    isServerTool(tool) &&
+    typeof (tool as { type?: unknown }).type === "string" &&
+    (tool as { type: string }).type.startsWith("web_search")
+  );
+}
+
+/**
+ * Server tools and containers are Anthropic-only in this pass (web search
+ * excepted — see isWebSearchServerTool). Fail with a
  * message that names the capability and the way out, rather than sending a
  * request the other provider will reject on its own obscure terms.
  */

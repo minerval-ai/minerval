@@ -145,10 +145,34 @@ describe("openrouter adapter — request construction", () => {
     expect(sentBody().temperature).toBe(0.5);
   });
 
-  it("rejects Anthropic server tools", async () => {
-    const serverTool = {
+  it("maps the seam's web_search server tool to openrouter:web_search", async () => {
+    respondWith(completion());
+    const webSearch = {
       type: "web_search_20260209",
       name: "web_search",
+      max_uses: 5,
+    } as unknown as Anthropic.Messages.ToolUnion;
+    const clientTool = {
+      name: "lookup",
+      description: "Look something up",
+      input_schema: schema,
+    } as unknown as Anthropic.Messages.ToolUnion;
+
+    await openrouterAdapter.completeWithTools({
+      messages,
+      model: MODEL,
+      maxTokens: 128,
+      tools: [webSearch, clientTool],
+    });
+
+    const tools = sentBody().tools as Array<Record<string, unknown>>;
+    expect(tools.map((t) => t.type)).toEqual(["function", "openrouter:web_search"]);
+  });
+
+  it("rejects other Anthropic server tools", async () => {
+    const serverTool = {
+      type: "code_execution_20260521",
+      name: "code_execution",
     } as unknown as Anthropic.Messages.ToolUnion;
 
     await expect(

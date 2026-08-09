@@ -16,6 +16,11 @@
  *  3. `temperature` is only sent when a caller explicitly asks for one. The zoo
  *     includes reasoning models that reject sampling params, and unlike the
  *     other two adapters we cannot enumerate which.
+ *  4. The seam's web_search server tool maps to OpenRouter's beta
+ *     `{type: "openrouter:web_search"}` server tool (auto engine: native
+ *     provider search where the host has one, Exa otherwise). Searches run
+ *     inside the completion, no executeTool round trip; the per-search fee is
+ *     included in OpenRouter's reported cost, which is what we meter.
  *
  * Deliberately NOT used: OpenRouter's beta Responses API.
  */
@@ -27,12 +32,14 @@ import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
   assertAnthropicOnlyCapabilitiesUnused,
   fromChatMessage,
+  isWebSearchServerTool,
   mapFinishReason,
   parseToolArguments,
   toChatMessages,
   toChatTools,
   usageFromCompletion,
 } from "./openai-dialect.js";
+import type { LlmTool } from "./types.js";
 import type {
   CompleteRequest,
   CompletionResult,
@@ -99,6 +106,25 @@ function baseParams(req: {
   };
 }
 
+/**
+ * Split the seam's tools into OpenRouter's wire shapes: client tools through
+ * the shared Chat Completions translation, the web_search server tool as
+ * OpenRouter's own hosted entry. Other server tools were already rejected by
+ * the capability guard before this runs.
+ */
+function toOpenRouterTools(
+  tools: LlmTool[]
+): OpenAI.Chat.Completions.ChatCompletionTool[] {
+  const client = tools.filter((t) => !isWebSearchServerTool(t));
+  const out = toChatTools(client);
+  if (tools.some(isWebSearchServerTool)) {
+    out.push({
+      type: "openrouter:web_search",
+    } as unknown as OpenAI.Chat.Completions.ChatCompletionTool);
+  }
+  return out;
+}
+
 /** OpenRouter's usage block, a superset of OpenAI's. */
 interface OpenRouterUsage extends OpenAI.CompletionUsage {
   /** Actual charge for the call, in USD credits. */
@@ -152,13 +178,17 @@ export const openrouterAdapter: ProviderAdapter = {
   name: "openrouter",
 
   async complete(req: CompleteRequest): Promise<CompletionResult> {
-    assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
+    // Web search maps to OpenRouter's own server tool; guard everything else.
+    assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, {
+      ...req,
+      tools: req.tools?.filter((t) => !isWebSearchServerTool(t)),
+    });
 
     const completion = await getClient().chat.completions.create({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       ...(req.tools && req.tools.length > 0
-        ? { tools: toChatTools(req.tools) }
+        ? { tools: toOpenRouterTools(req.tools) }
         : {}),
     } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
 
@@ -176,12 +206,16 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
-    assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
+    // Web search maps to OpenRouter's own server tool; guard everything else.
+    assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, {
+      ...req,
+      tools: req.tools.filter((t) => !isWebSearchServerTool(t)),
+    });
 
     const completion = await getClient().chat.completions.create({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
-      tools: toChatTools(req.tools),
+      tools: toOpenRouterTools(req.tools),
       tool_choice: "auto",
     } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
 

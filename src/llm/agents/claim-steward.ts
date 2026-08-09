@@ -34,7 +34,6 @@ import {
   isElicitTool,
 } from "../tools/elicit-tools.js";
 import { getClaimById } from "../../services/claim-service.js";
-import { resolveProvider } from "../providers/routing.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, runWithUsageContext } from "../usage-context.js";
 
@@ -59,14 +58,12 @@ async function runClaimStewardImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.stewardModel;
 
-  // The steward always has web search where the provider can serve it — it may
-  // need fresh external evidence to assess any claim, atomic or compound (#30).
-  // Anthropic models use the native server tool; OpenAI models get the same
-  // seam mapped onto OpenAI's hosted search (responses-dialect.ts). OpenRouter
-  // has no hosted search, so those models run SEARCH-BLIND: the tool is
-  // omitted, the prompt says so, and the run is comparable only with that
-  // handicap in mind (steward model bake-off).
-  const hasWebSearch = resolveProvider(model) !== "openrouter";
+  // The steward always has web search — it may need fresh external evidence to
+  // assess any claim, atomic or compound (#30). Every backend serves the seam's
+  // web_search tool with its own hosted search (Anthropic natively, OpenAI via
+  // the Responses web_search tool, OpenRouter via openrouter:web_search); this
+  // is a static capability of the configured model's provider, never a
+  // runtime reroute.
   const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
     type: "web_search_20260209",
     name: "web_search",
@@ -105,7 +102,7 @@ async function runClaimStewardImpl(input: {
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
-    ...(hasWebSearch ? [webSearchTool] : []),
+    webSearchTool,
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -170,11 +167,7 @@ ${structureStep}
    consequential, contested claims warrant deeper search and a second, adversarial
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   ${
-     hasWebSearch
-       ? "Use web_search for external evidence where it would change the verdict."
-       : "Web search is NOT available in this configuration. Assess from the source context, the graph, and your own knowledge; where a search would have changed your confidence, say so in the reasoning_trace and calibrate your confidence down accordingly."
-   }
+   Use web_search for external evidence where it would change the verdict.
    Credible instances that BOTH affirm and deny the claim are a strong signal
    toward CONTESTED. When a source you read itself asserts the claim (or its
    negation) — not merely reports on the debate — record that sighting with
