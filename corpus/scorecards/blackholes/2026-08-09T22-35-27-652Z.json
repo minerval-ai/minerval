@@ -1,0 +1,350 @@
+{
+  "generatedAt": "2026-08-09T22:35:27.652Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus",
+  "config": {
+    "pipelineEpoch": "2026-08-owl-economy",
+    "gitCommit": "6bdf1f8",
+    "models": {
+      "steward": "claude-sonnet-5",
+      "curator": "claude-sonnet-5",
+      "matcher": "deepseek/deepseek-v4-flash",
+      "judge": "claude-fable-5,gpt-5.6-sol"
+    }
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 21,
+      "instances": 33,
+      "totalClaims": 24,
+      "claimsPer1kWords": 7.092198581560283,
+      "typeDistribution": {
+        "causal": 11,
+        "empirical_verifiable": 2,
+        "empirical_derived": 11
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 16,
+        "p90": 21,
+        "max": 28,
+        "mean": 16.1
+      },
+      "overLongShare": 0.08333333333333333
+    },
+    "matching": {
+      "dedupRatio": 1.5714285714285714
+    },
+    "decomposition": {
+      "maxDepth": 4,
+      "depthHistogram": {
+        "0": 17,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1
+      },
+      "atomicShare": 0.833,
+      "meanChildrenPerParent": 4.75
+    },
+    "crossDoc": {
+      "sharedSubclaims": 2
+    },
+    "assessment": {
+      "statusDistribution": {
+        "verified": 3,
+        "contradicted": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 3374
+    },
+    "importance": {
+      "mean": 0.371,
+      "histogram": {
+        "0.4-0.6": 10,
+        "0.2-0.4": 12,
+        "0.0-0.2": 1,
+        "0.6-0.8": 1
+      },
+      "meanAtomic": 0.342,
+      "meanCompound": 0.513
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    }
+  },
+  "judged": {
+    "model": "claude-fable-5",
+    "sampleSize": 4,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.51,
+      "meanJudged": 0.35,
+      "overratedShare": 0.5
+    },
+    "assessmentQuality": {
+      "readability": 5,
+      "reasoningFit": 4.25,
+      "impartiality": 4.5
+    },
+    "granularity": {
+      "good": 4
+    },
+    "flags": {
+      "other": 3
+    },
+    "items": [
+      {
+        "id": "133a5ca3-7cc6-4b45-8b67-4ead49e32d11",
+        "text": "Micro black holes produced at the LHC could grow exponentially in mass, posing a catastrophic risk",
+        "importanceStored": 0.4,
+        "status": "contradicted",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.35,
+        "flags": [],
+        "note": "Exemplary verdict: subclaims cited by content, minority position weighed and dismissed with explicit §18 justification rather than false parity, and confidence held below maximal for honest reasons. The one gap is that the reasoning leans on the Hawking-evaporation route as 'independently sufficient' while that subclaim (and two others) remain unassessed (status: none); only the astrophysical bound is verified, so one of the two claimed independent rebuttals is not yet backed within the graph."
+      },
+      {
+        "id": "560264a6-1159-44a7-b72e-216f0022a9e8",
+        "text": "Observed longevity of white dwarfs and neutron stars empirically rules out dangerous accretion by TeV-scale black holes",
+        "importanceStored": 0.5,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.4,
+        "flags": [
+          "other"
+        ],
+        "note": "Thorough, well-sourced reasoning that fairly weighs Plaga's objection and the magnetic-field caveat, but the reasoning itself concedes the canonical text overstates the result ('empirically rules out' for all white dwarfs/neutron stars, when the bound rests on modeled accretion and eight specific low-field white dwarfs), so 'verified' is attached to a wording broader than what was actually established; 'supported' or a tightened canonical form would fit better. All four dependencies also sit at status 'none' beneath a verified parent."
+      },
+      {
+        "id": "0ff2e609-f85a-4db6-bf03-42bc50750296",
+        "text": "Hypothetical TeV-scale black holes that could be produced at the LHC pose no significant risk to Earth",
+        "importanceStored": 0.6,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.35,
+        "flags": [
+          "other"
+        ],
+        "note": "An exemplary assessment: sources named, subclaims cited by content, the strongest counter-arguments (Johnson's completeness critique, the exponential-growth scenario) weighed without false parity, and confidence appropriately short of 1.0. The one defect is stored importance: by the reasoning's own admission the physics has been static for over a decade with no live peer-reviewed dispute, so 0.6 overstates contestability for what is now a settled question (a historically notable point, ~0.35)."
+      },
+      {
+        "id": "c168f657-b244-47e4-9140-88683cafc43a",
+        "text": "Collisions at the LHC pose no danger to Earth or its inhabitants",
+        "importanceStored": 0.55,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.3,
+        "flags": [
+          "other"
+        ],
+        "note": "Thorough, transparent reasoning with subclaims named by content, but stored importance 0.55 overrates a question that is now essentially settled (fringe dissent only, ~0.25-0.35 per §19 anchors); also, 'verified' is granted while three of five mechanism subclaims remain unassessed, which the reasoning acknowledges but a stricter reading would call 'supported' pending those verdicts, and the assertion that no peer-reviewed rebuttal exists slightly understates published critiques (e.g., Plaga's, which drew a Giddings-Mangano response)."
+      }
+    ]
+  },
+  "judgePanel": [
+    {
+      "model": "claude-fable-5",
+      "sampleSize": 4,
+      "claimBarPassRate": 1,
+      "importanceAlignment": {
+        "meanStored": 0.51,
+        "meanJudged": 0.35,
+        "overratedShare": 0.5
+      },
+      "assessmentQuality": {
+        "readability": 5,
+        "reasoningFit": 4.25,
+        "impartiality": 4.5
+      },
+      "granularity": {
+        "good": 4
+      },
+      "flags": {
+        "other": 3
+      },
+      "items": [
+        {
+          "id": "133a5ca3-7cc6-4b45-8b67-4ead49e32d11",
+          "text": "Micro black holes produced at the LHC could grow exponentially in mass, posing a catastrophic risk",
+          "importanceStored": 0.4,
+          "status": "contradicted",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [],
+          "note": "Exemplary verdict: subclaims cited by content, minority position weighed and dismissed with explicit §18 justification rather than false parity, and confidence held below maximal for honest reasons. The one gap is that the reasoning leans on the Hawking-evaporation route as 'independently sufficient' while that subclaim (and two others) remain unassessed (status: none); only the astrophysical bound is verified, so one of the two claimed independent rebuttals is not yet backed within the graph."
+        },
+        {
+          "id": "560264a6-1159-44a7-b72e-216f0022a9e8",
+          "text": "Observed longevity of white dwarfs and neutron stars empirically rules out dangerous accretion by TeV-scale black holes",
+          "importanceStored": 0.5,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.4,
+          "flags": [
+            "other"
+          ],
+          "note": "Thorough, well-sourced reasoning that fairly weighs Plaga's objection and the magnetic-field caveat, but the reasoning itself concedes the canonical text overstates the result ('empirically rules out' for all white dwarfs/neutron stars, when the bound rests on modeled accretion and eight specific low-field white dwarfs), so 'verified' is attached to a wording broader than what was actually established; 'supported' or a tightened canonical form would fit better. All four dependencies also sit at status 'none' beneath a verified parent."
+        },
+        {
+          "id": "0ff2e609-f85a-4db6-bf03-42bc50750296",
+          "text": "Hypothetical TeV-scale black holes that could be produced at the LHC pose no significant risk to Earth",
+          "importanceStored": 0.6,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 5,
+          "impartiality": 5,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "other"
+          ],
+          "note": "An exemplary assessment: sources named, subclaims cited by content, the strongest counter-arguments (Johnson's completeness critique, the exponential-growth scenario) weighed without false parity, and confidence appropriately short of 1.0. The one defect is stored importance: by the reasoning's own admission the physics has been static for over a decade with no live peer-reviewed dispute, so 0.6 overstates contestability for what is now a settled question (a historically notable point, ~0.35)."
+        },
+        {
+          "id": "c168f657-b244-47e4-9140-88683cafc43a",
+          "text": "Collisions at the LHC pose no danger to Earth or its inhabitants",
+          "importanceStored": 0.55,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.3,
+          "flags": [
+            "other"
+          ],
+          "note": "Thorough, transparent reasoning with subclaims named by content, but stored importance 0.55 overrates a question that is now essentially settled (fringe dissent only, ~0.25-0.35 per §19 anchors); also, 'verified' is granted while three of five mechanism subclaims remain unassessed, which the reasoning acknowledges but a stricter reading would call 'supported' pending those verdicts, and the assertion that no peer-reviewed rebuttal exists slightly understates published critiques (e.g., Plaga's, which drew a Giddings-Mangano response)."
+        }
+      ]
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "sampleSize": 4,
+      "claimBarPassRate": 1,
+      "importanceAlignment": {
+        "meanStored": 0.51,
+        "meanJudged": 0.41,
+        "overratedShare": 0.5
+      },
+      "assessmentQuality": {
+        "readability": 4,
+        "reasoningFit": 3,
+        "impartiality": 3.25
+      },
+      "granularity": {
+        "good": 2,
+        "too_shallow": 2
+      },
+      "flags": {
+        "status_miscalibrated": 3,
+        "false_precision": 3,
+        "bias": 1,
+        "hallucination_risk": 1
+      },
+      "items": [
+        {
+          "id": "0ff2e609-f85a-4db6-bf03-42bc50750296",
+          "text": "Hypothetical TeV-scale black holes that could be produced at the LHC pose no significant risk to Earth",
+          "importanceStored": 0.6,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.38,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision"
+          ],
+          "note": "The reasoning strongly supports the scientific consensus that risk is negligible, but “verified” at 0.92 overstates what model-dependent Hawking-radiation and astrophysical arguments establish; incident-free operation is weak corroboration unless black-hole production occurred. The exact confidence also implies unjustified precision, and the stored importance is high for a question with enormous consequences but little remaining credible contestability."
+        },
+        {
+          "id": "560264a6-1159-44a7-b72e-216f0022a9e8",
+          "text": "Observed longevity of white dwarfs and neutron stars empirically rules out dangerous accretion by TeV-scale black holes",
+          "importanceStored": 0.5,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.58,
+          "flags": [
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning supports a conditional astrophysical bound based on particular low-field white dwarfs and modeled capture/accretion, not the broader statement that compact-star longevity empirically rules out dangerous TeV-scale black-hole accretion. The decomposition also omits the key premise that cosmic-ray collisions would produce equivalent black holes at sufficient rates; “supported” or a narrower claim would fit better than verified."
+        },
+        {
+          "id": "133a5ca3-7cc6-4b45-8b67-4ead49e32d11",
+          "text": "Micro black holes produced at the LHC could grow exponentially in mass, posing a catastrophic risk",
+          "importanceStored": 0.4,
+          "status": "contradicted",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 3,
+          "claim_bar": "yes",
+          "decomposition_granularity": "too_shallow",
+          "importance_judged": 0.34,
+          "flags": [
+            "false_precision",
+            "bias",
+            "hallucination_risk"
+          ],
+          "note": "The assessment strongly supports rejection of catastrophic growth generally, but it never directly evaluates the claim’s distinctive “exponentially in mass” mechanism or maps that dependency as a subclaim. It also overstates model-dependent arguments as universally and independently sufficient, while incident-free LHC operation is weak evidence unless relevant black-hole production occurred."
+        },
+        {
+          "id": "c168f657-b244-47e4-9140-88683cafc43a",
+          "text": "Collisions at the LHC pose no danger to Earth or its inhabitants",
+          "importanceStored": 0.55,
+          "status": "verified",
+          "readability": 4,
+          "reasoning_fit": 3,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.35,
+          "flags": [
+            "status_miscalibrated",
+            "false_precision"
+          ],
+          "note": "The mechanism-specific safety evidence strongly supports the scientific consensus, but it does not literally verify the unbounded proposition that LHC collisions pose “no danger” whatsoever; narrowing the claim or using supported would be better calibrated. The separate 0.92 confidence and 0.97 credence are not quantitatively justified, and importance is overstated given the very low credible contestability."
+        }
+      ]
+    }
+  ],
+  "cost": {
+    "calls": 8,
+    "usd": 0.55
+  }
+}

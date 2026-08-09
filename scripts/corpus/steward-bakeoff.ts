@@ -139,10 +139,21 @@ async function phase(cluster: string): Promise<void> {
   const sample = Number(argFlag("sample") ?? "15");
 
   // The phase's model must be the process-level steward config: score.ts and
-  // the pipeline both read loadConfig(), which caches, so set it before any
-  // config consumer runs. (Callers may also set STEWARD_MODEL in the shell —
-  // the flag wins.)
+  // the pipeline both read loadConfig(), which caches. Setting the env here is
+  // NOT sufficient on its own — imports can trigger loadConfig() before main()
+  // runs (the first bake-off burned $8 running the default Sonnet steward
+  // under a deepseek-labeled phase this way) — so callers must ALSO export
+  // STEWARD_MODEL in the shell, and we fail fast on any mismatch instead of
+  // silently assessing with the wrong model.
   process.env.STEWARD_MODEL = model;
+  const effective = loadConfig().stewardModel;
+  if (effective !== model) {
+    throw new Error(
+      `Config already resolved stewardModel="${effective}" before the --model ` +
+        `flag could apply. Export STEWARD_MODEL=${model} in the shell when ` +
+        `invoking this phase.`
+    );
+  }
 
   console.log(`\n=== bakeoff phase: ${cluster} · steward=${model} · runs=${runs} ===`);
   console.log(`Restoring snapshot "${snapshotName(cluster)}"…`);
