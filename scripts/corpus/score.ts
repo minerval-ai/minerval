@@ -272,6 +272,17 @@ export async function scoreRun(
       const { value: verdicts, billedMicroUsd } = await withCostMeter(() =>
         judgeSample(inputs, model)
       );
+      // A judge whose every call failed (dead key, exhausted credits) must be
+      // LOUD: the scorecard would otherwise quietly carry a one-judge panel —
+      // which is how an Anthropic credit outage turned the 2026-08-09 bake-off
+      // scorecards into Sol-only judgments, including Sol grading its own
+      // steward output.
+      if (verdicts.length === 0 && inputs.length > 0) {
+        console.warn(
+          `  ⚠ judge ${model} produced 0/${inputs.length} verdicts — its calls all ` +
+            `failed; this scorecard's panel is missing that judge entirely.`
+        );
+      }
       judgePanel.push(summarizeJudged(model, verdicts));
       judgeCostMicroUsd += billedMicroUsd;
     }

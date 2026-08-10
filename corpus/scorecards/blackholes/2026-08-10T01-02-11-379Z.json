@@ -1,0 +1,176 @@
+{
+  "generatedAt": "2026-08-10T01:02:11.379Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus",
+  "config": {
+    "pipelineEpoch": "2026-08-owl-economy",
+    "gitCommit": "1d78fa1",
+    "models": {
+      "steward": "gpt-5.6-sol",
+      "curator": "claude-sonnet-5",
+      "matcher": "deepseek/deepseek-v4-flash",
+      "judge": "claude-fable-5,gpt-5.6-sol"
+    }
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 21,
+      "instances": 29,
+      "totalClaims": 25,
+      "claimsPer1kWords": 7.387706855791962,
+      "typeDistribution": {
+        "causal": 11,
+        "empirical_verifiable": 2,
+        "empirical_derived": 12
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 15,
+        "p90": 19,
+        "max": 21,
+        "mean": 15
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1.380952380952381
+    },
+    "decomposition": {
+      "maxDepth": 2,
+      "depthHistogram": {
+        "0": 19,
+        "1": 1,
+        "2": 1
+      },
+      "atomicShare": 0.92,
+      "meanChildrenPerParent": 4
+    },
+    "crossDoc": {
+      "sharedSubclaims": 0
+    },
+    "assessment": {
+      "statusDistribution": {
+        "verified": 1,
+        "supported": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 2246
+    },
+    "importance": {
+      "mean": 0.351,
+      "histogram": {
+        "0.4-0.6": 10,
+        "0.2-0.4": 13,
+        "0.0-0.2": 2
+      },
+      "meanAtomic": 0.343,
+      "meanCompound": 0.435
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    }
+  },
+  "judged": {
+    "model": "claude-fable-5",
+    "sampleSize": 0,
+    "claimBarPassRate": 0,
+    "importanceAlignment": {
+      "meanStored": 0,
+      "meanJudged": 0,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 0,
+      "reasoningFit": 0,
+      "impartiality": 0
+    },
+    "granularity": {},
+    "flags": {},
+    "items": []
+  },
+  "judgePanel": [
+    {
+      "model": "claude-fable-5",
+      "sampleSize": 0,
+      "claimBarPassRate": 0,
+      "importanceAlignment": {
+        "meanStored": 0,
+        "meanJudged": 0,
+        "overratedShare": 0
+      },
+      "assessmentQuality": {
+        "readability": 0,
+        "reasoningFit": 0,
+        "impartiality": 0
+      },
+      "granularity": {},
+      "flags": {},
+      "items": []
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "sampleSize": 2,
+      "claimBarPassRate": 1,
+      "importanceAlignment": {
+        "meanStored": 0.44,
+        "meanJudged": 0.38,
+        "overratedShare": 0
+      },
+      "assessmentQuality": {
+        "readability": 5,
+        "reasoningFit": 4,
+        "impartiality": 4
+      },
+      "granularity": {
+        "good": 2
+      },
+      "flags": {
+        "hallucination_risk": 1,
+        "status_miscalibrated": 1,
+        "false_precision": 1
+      },
+      "items": [
+        {
+          "id": "0ff2e609-f85a-4db6-bf03-42bc50750296",
+          "text": "Hypothetical TeV-scale black holes that could be produced at the LHC pose no significant risk to Earth",
+          "importanceStored": 0.45,
+          "status": "verified",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.42,
+          "flags": [
+            "hallucination_risk",
+            "status_miscalibrated"
+          ],
+          "note": "The reasoning fairly weighs the principal safety analyses against the best-known objection and states a clear revision condition. However, the purported CMS citation arXiv:2603.06007 is highly suspect and should be verified or removed; moreover, “supported” is safer than “verified” for a model-dependent conclusion about hypothetical quantum-gravity objects."
+        },
+        {
+          "id": "560264a6-1159-44a7-b72e-216f0022a9e8",
+          "text": "Old white dwarfs and neutron stars rule out dangerous accretion by TeV-scale black holes",
+          "importanceStored": 0.42,
+          "status": "supported",
+          "readability": 5,
+          "reasoning_fit": 4,
+          "impartiality": 4,
+          "claim_bar": "yes",
+          "decomposition_granularity": "good",
+          "importance_judged": 0.34,
+          "flags": [
+            "false_precision"
+          ],
+          "note": "The reasoning clearly maps the main production, capture, growth, and stellar-survival dependencies and addresses the principal published objection. However, confidence 0.94 is overprecise and arguably too high for a model-dependent inference assessed mainly through the original safety analysis, an endorsing review, and the original authors’ rebuttal."
+        }
+      ]
+    }
+  ],
+  "cost": {
+    "calls": 2,
+    "usd": 0.06
+  }
+}
