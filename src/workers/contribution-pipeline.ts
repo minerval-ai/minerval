@@ -19,6 +19,25 @@ import type { ContributionMessage } from "../services/queue-service.js";
 import { runContributionReview } from "../llm/agents/contribution-reviewer.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
+import { runWithUsageContext } from "../llm/usage-context.js";
+
+/**
+ * Who this review is for. A contribution exists because one contributor
+ * submitted it, so that contributor is the review's subject — `contributors`
+ * IS the user table (llm_usage.user_id references it), so this is a usable
+ * attribution and not just a label.
+ *
+ * Without it the Reviewer's spend landed on rows with a null user and a null
+ * job: real money, metered correctly, assigned to nobody. Reviewing is not
+ * platform overhead — it happens because somebody asked for something.
+ */
+async function reviewSubject(contributionId: string): Promise<string | null> {
+  const [row] = await rawQuery<{ contributor_id: string | null }>(
+    `SELECT contributor_id FROM contributions WHERE id = $1`,
+    [contributionId]
+  );
+  return row?.contributor_id ?? null;
+}
 
 /** Reclaim window: a claim older than this counts as abandoned (crashed process). */
 export const REVIEW_RECLAIM_MINUTES = 15;
@@ -43,9 +62,12 @@ export async function handleContributionMessage(
   if (claimed.length === 0) return; // already reviewed, in flight, or parked
 
   try {
-    await runContributionReview({
-      contributionId: message.contributionId,
-    });
+    const userId = await reviewSubject(message.contributionId);
+    await runWithUsageContext({ userId }, () =>
+      runContributionReview({
+        contributionId: message.contributionId,
+      })
+    );
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) {
       await rawQuery(

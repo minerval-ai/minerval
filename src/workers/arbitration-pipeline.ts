@@ -14,6 +14,7 @@ import type { ArbitrationMessage } from "../services/queue-service.js";
 import { runArbitration } from "../llm/agents/dispute-arbitrator.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
+import { runWithUsageContext } from "../llm/usage-context.js";
 import {
   MAX_REVIEW_ATTEMPTS,
   REVIEW_RECLAIM_MINUTES,
@@ -70,17 +71,47 @@ async function releaseClaim(message: ArbitrationMessage): Promise<void> {
   );
 }
 
+/**
+ * Whose dispute this is. An APPEAL is attributed to the appellant, who is not
+ * necessarily the original contributor — someone else's rejected contribution
+ * can be appealed, and the party who asked for the arbitration is the party it
+ * is for. A reviewer escalation has no appellant, so it stays with the
+ * contributor whose submission provoked it.
+ *
+ * Arbitration is the most expensive governance call in the system and was
+ * being metered to nobody at all.
+ */
+async function disputeSubject(
+  message: ArbitrationMessage
+): Promise<string | null> {
+  if (message.appealId) {
+    const [appeal] = await rawQuery<{ appellant_id: string | null }>(
+      `SELECT appellant_id FROM appeals WHERE id = $1`,
+      [message.appealId]
+    );
+    if (appeal?.appellant_id) return appeal.appellant_id;
+  }
+  const [row] = await rawQuery<{ contributor_id: string | null }>(
+    `SELECT contributor_id FROM contributions WHERE id = $1`,
+    [message.contributionId]
+  );
+  return row?.contributor_id ?? null;
+}
+
 export async function handleArbitrationMessage(
   message: ArbitrationMessage
 ): Promise<void> {
   if (!(await claimWork(message))) return; // resolved, in flight, or parked
 
   try {
-    await runArbitration({
-      contributionId: message.contributionId,
-      trigger: message.trigger,
-      appealId: message.appealId,
-    });
+    const userId = await disputeSubject(message);
+    await runWithUsageContext({ userId }, () =>
+      runArbitration({
+        contributionId: message.contributionId,
+        trigger: message.trigger,
+        appealId: message.appealId,
+      })
+    );
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) await releaseClaim(message);
     throw err;

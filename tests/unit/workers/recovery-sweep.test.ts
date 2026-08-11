@@ -110,8 +110,13 @@ describe("handleContributionMessage claim guard", () => {
     await expect(
       handleContributionMessage({ contributionId: CONTRIB })
     ).rejects.toThrow("agent exploded");
-    // Only the claim UPDATE ran — no release.
-    expect(state.queries).toHaveLength(1);
+    // No release: the claim is held so the retry waits out the reclaim window.
+    // Asserted on the absence of the release UPDATE rather than on a query
+    // count, which also counts the read that attributes the review to its
+    // contributor.
+    expect(
+      state.queries.filter((q) => q.q.includes("review_claimed_at = NULL"))
+    ).toEqual([]);
   });
 });
 
