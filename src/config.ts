@@ -249,9 +249,23 @@ const configSchema = z.object({
   // from importance, express lane for paid orders, cadence reassessment).
   pipelineEpoch: z.string().default("2026-08-owl-economy"),
   matchingTopK: z.coerce.number().default(20),
-  // Quantity caps to bound graph fan-out (0 = unlimited). The dominant cost
-  // driver is extraction count, since each extracted claim seeds a tree.
-  extractionMaxClaims: z.coerce.number().default(0),
+  // There is deliberately no per-source claim cap here any more.
+  // EXTRACTION_MAX_CLAIMS (8 in production) truncated every source to the same
+  // number, which is the wrong shape: how many reusable propositions a document
+  // turns on is a property of the document, not a constant. A dense NBER paper
+  // and a blog post do not contain the same amount, and a fixed ceiling either
+  // discards real claims from the former or invites padding in the latter.
+  //
+  // What it was really standing in for was fan-out cost, and that now has a
+  // proper control: extracted claims become ledger actions, and a mandate's
+  // allocator funds only what clears its daily rate. Claims beyond what anyone
+  // will pay to assess simply sit pending — bounded by money, which is the
+  // honest bound, rather than by a count chosen in advance. The claim bar in
+  // the extractor's own prompt ("emit only claims that pass the bar; a short
+  // list is the expected result; do not pad") is the quality control.
+  //
+  // Callers that genuinely want a bound still pass one per call (the MCP text
+  // tools' `max_claims`, the extension's own cap).
   // Validity floor on extracted claims (#157 phase 3). The Extractor scores
   // each proposition with a confidence that it IS a well-formed claim; below
   // this floor the extraction is dropped (and counted in the job result)
@@ -571,7 +585,6 @@ export function loadConfig(): Config {
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
     matchingTopK: process.env.MATCHING_TOP_K,
-    extractionMaxClaims: process.env.EXTRACTION_MAX_CLAIMS,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
