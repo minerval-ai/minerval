@@ -321,14 +321,33 @@ const configSchema = z.object({
   // wider lever than the mandate does.
   strongGainMultiplier: z.coerce.number().min(1).max(5).default(1.3),
   // Expected-cost priors for one Steward pass, in owls, by tier — the EC
-  // denominators of the allocators' value/cost ordering. Deliberately not
-  // round numbers: they are guesses at the metered average (a sonnet pass
-  // vs. a fable pass), and the live rolling average replaces them once
-  // enough recent runs exist (cost-estimate-service.ts).
-  estStewardRunCostOwls: z.coerce.number().default(0.15),
-  estStewardRunCostStrongOwls: z.coerce.number().default(0.9),
+  // denominators of the allocators' value/cost ordering, used until enough
+  // recent runs exist for the live figure (cost-estimate-service.ts).
+  //
+  // Re-based on the first live epoch, where 0.15/0.9 turned out to be an order
+  // of magnitude low: 58 metered Fable 5 steward runs came in at p50 2.10 owls
+  // and p80 3.30. A prior that low is not a harmless guess — it under-funds
+  // every action until the live series exists, and the shortfall is spent off
+  // the escrow without passing through an allocation, so it escapes the
+  // mandate's daily rate entirely. These now sit near the p80 of a real run at
+  // each tier, which is what the live estimate converges to.
+  estStewardRunCostOwls: z.coerce.number().default(1.4),
+  estStewardRunCostStrongOwls: z.coerce.number().default(3.3),
   costEstimateWindowDays: z.coerce.number().default(14),
   costEstimateMinRuns: z.coerce.number().default(5),
+  // Which point of the recent-run cost distribution the estimate takes.
+  //
+  // The estimate is a CAP: the allocator covers an action for it, the run costs
+  // what it costs, and the excess is drawn off the escrow outside any
+  // allocation — unpaced by the daily rate. Run cost is right-skewed (mean 2.31
+  // owls against a p90 of 4.36 and a max of 7.01 in the first epoch), so the
+  // mean under-funds about half of all runs and always in the expensive
+  // direction. p80 funds the large majority outright.
+  //
+  // Higher is tighter but slower: a bigger per-action estimate means fewer
+  // actions clear the same daily rate. 0.5 reproduces the old median-ish
+  // behaviour if throughput ever matters more than pacing accuracy.
+  costEstimatePercentile: z.coerce.number().min(0).max(1).default(0.8),
   // The background lane's total metered spend per UTC day, in owls
   // (0 = uncapped). This replaces "drain the queue": the highest value/cost
   // actions run until the day's budget is gone, and the rest wait.
@@ -599,6 +618,7 @@ export function loadConfig(): Config {
     estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
     costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
     costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
+    costEstimatePercentile: process.env.COST_ESTIMATE_PERCENTILE,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
     backgroundFallbackLaneEnabled: process.env.BACKGROUND_FALLBACK_LANE_ENABLED,
     mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
