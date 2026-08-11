@@ -73,7 +73,16 @@ describe("loadConfig model defaults", () => {
 });
 
 describe("loadConfig load-bearing model env guard (#100)", () => {
-  const MODEL_ENV = ["STEWARD_MODEL", "CURATOR_MODEL", "AUDIT_MODEL", "ARBITRATION_MODEL"];
+  // EXTRACTOR_MODEL is load-bearing too: it authors the graph's canonical
+  // language, and its absence from this list is what let it run the cheap
+  // default through the first live epoch unnoticed.
+  const MODEL_ENV = [
+    "STEWARD_MODEL",
+    "CURATOR_MODEL",
+    "AUDIT_MODEL",
+    "ARBITRATION_MODEL",
+    "EXTRACTOR_MODEL",
+  ];
   const saved: Record<string, string | undefined> = {};
   let savedEnvironment: string | undefined;
 
@@ -115,6 +124,9 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
       message = err instanceof Error ? err.message : String(err);
     }
     expect(message).toContain("ARBITRATION_MODEL");
+    // The Extractor is named too: it went a whole live epoch on the cheap
+    // default because this guard did not cover it.
+    expect(message).toContain("EXTRACTOR_MODEL");
     expect(message).not.toContain("STEWARD_MODEL");
   });
 

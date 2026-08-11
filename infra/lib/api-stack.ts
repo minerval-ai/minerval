@@ -104,6 +104,20 @@ export class ApiStack extends cdk.Stack {
         CURATOR_MODEL: "claude-fable-5",
         AUDIT_MODEL: "claude-fable-5",
         ARBITRATION_MODEL: "claude-fable-5",
+        // The Extractor authors the graph's canonical language from arbitrary,
+        // wholly untrusted documents whose framing it must not adopt, and
+        // everything downstream inherits its wording. It also runs once per
+        // DOCUMENT rather than once per claim (6 sources yielded 41 claims in
+        // the first live epoch), so the tier is cheap leverage, and the spend
+        // is already attributed to the mandate that chose the source. It ran
+        // on the Sonnet default through that whole epoch only because it had
+        // no knob; config.ts now requires this env in production.
+        //
+        // Bio-adjacent refusals are the known failure here (#78) and Fable's
+        // server-side Opus fallback refuses with it, so extraction retries on
+        // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
+        // document.
+        EXTRACTOR_MODEL: "claude-fable-5",
         // The Matcher's judgment is narrow (same proposition?) over candidates
         // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
         // quality and price (#257). First agent routed off Anthropic; the rest

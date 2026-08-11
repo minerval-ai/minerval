@@ -447,6 +447,28 @@ const configSchema = z.object({
   // duplicates saturates, but a contested split is judgment, so production runs
   // it on Fable (CURATOR_MODEL).
   curatorModel: modelId(MODELS.sonnet),
+  // The Extractor authors the graph's language: given an arbitrary document —
+  // whose framing it must not adopt and whose text is wholly untrusted — it
+  // decides which propositions are claims and states each in the neutral
+  // canonical form an opponent would accept. Everything downstream inherits
+  // that wording, and a bad canonicalization is expensive to detect later.
+  // It also runs ONCE PER DOCUMENT rather than once per claim (6 sources
+  // yielded 41 claims in the first live epoch), so tier here is cheap
+  // leverage, and its cost is already attributed to the mandate that chose
+  // the source. Production sets EXTRACTOR_MODEL=claude-fable-5.
+  //
+  // Until this existed the extractor had no knob at all: no env, no config,
+  // and no model passed by its caller, so it silently ran the cheap
+  // DEFAULT_MODEL — the exact regression the production guard below was
+  // written to prevent, through a door that guard did not cover.
+  extractorModel: modelId(MODELS.sonnet),
+  // Where extraction retries when the chosen tier REFUSES. Fable declines
+  // bio-adjacent material (issue #78) and has already done so on this graph's
+  // virology cluster, and LlmRefusalError means the server-side Opus fallback
+  // refused too — so the retry has to leave the family. Without it, moving
+  // extraction to Fable would turn "this paper is about pathogens" into a
+  // cancelled ingest with the mandate's fetch money already spent.
+  extractorFallbackModel: modelId(MODELS.sonnet),
   // Shared by the Contribution Reviewer. The Audit Agent has its own knob
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
@@ -590,6 +612,8 @@ export function loadConfig(): Config {
     matcherModel: process.env.MATCHER_MODEL,
     stewardModel: process.env.STEWARD_MODEL,
     curatorModel: process.env.CURATOR_MODEL,
+    extractorModel: process.env.EXTRACTOR_MODEL,
+    extractorFallbackModel: process.env.EXTRACTOR_FALLBACK_MODEL,
     governanceModel: process.env.GOVERNANCE_MODEL,
     auditModel: process.env.AUDIT_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
@@ -632,24 +656,29 @@ export function loadConfig(): Config {
     "CURATOR_MODEL",
     "AUDIT_MODEL",
     "ARBITRATION_MODEL",
+    // EXTRACTOR_MODEL joins the list because its absence is what let the
+    // extractor run the cheap default unnoticed through the whole first live
+    // epoch: the agent authoring the graph's canonical language was the one
+    // load-bearing agent this guard did not cover.
+    "EXTRACTOR_MODEL",
   ].filter((k) => !process.env[k]);
   if (defaultedModelEnvs.length > 0) {
     if (_config.env === "production") {
       _config = null;
       throw new Error(
         `Missing model env(s) in production: ${defaultedModelEnvs.join(", ")}. ` +
-          "The load-bearing agents (Steward/Curator/Audit/Arbitration) must " +
-          "run an explicitly chosen tier (issue #77) — set the env(s) rather " +
-          "than silently falling back to the cheap default."
+          "The load-bearing agents (Steward/Curator/Extractor/Audit/" +
+          "Arbitration) must run an explicitly chosen tier (issue #77) — set " +
+          "the env(s) rather than silently falling back to the cheap default."
       );
     }
     if (!process.env.VITEST) {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
-          "Steward/Curator/Audit/Arbitration agents will run on the cheap " +
-          `default (${MODELS.sonnet}). Fine for local dev; set the env(s) ` +
-          "(production uses claude-fable-5) if this environment does real " +
-          "assessment work."
+          "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
+          `cheap default (${MODELS.sonnet}). Fine for local dev; set the ` +
+          "env(s) (production uses claude-fable-5) if this environment does " +
+          "real assessment work."
       );
     }
   }
