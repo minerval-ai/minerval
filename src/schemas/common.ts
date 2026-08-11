@@ -131,3 +131,178 @@ export const sourceTypeEnum = z.enum([
   "social_media",
   "unknown",
 ]);
+
+// ---------------------------------------------------------------------------
+// Provenance vocabulary (#286)
+//
+// The edges the Source Mapper records. The load-bearing ones are CLAIM-SCOPED:
+// they run from one source's assertion of a claim to the document that
+// assertion draws on. That scoping is the whole design. A paper cites forty
+// references; at most a couple bear on any one proposition, and a
+// document-level citation edge cannot say which. "A depends on B" is only ever
+// true relative to something, so the something is carried on the edge.
+//
+// A thin second vocabulary below covers facts that genuinely are properties of
+// a document PAIR rather than of a claim (shared authorship, syndication).
+// ---------------------------------------------------------------------------
+
+/**
+ * How a source's assertion of a claim relates to an upstream document.
+ * Discriminated by WHAT THE ASSERTION TAKES from the document it draws on,
+ * which is the question the reader actually has: is this another voice, or
+ * the same voice again?
+ */
+export const CLAIM_PROVENANCE_RELATION_TYPES = [
+  "repeats",
+  "derives_from",
+  "reanalyzes",
+  "republishes",
+  "cites_as_evidence",
+  "responds_to",
+] as const;
+
+export const claimProvenanceRelationEnum = z.enum(
+  CLAIM_PROVENANCE_RELATION_TYPES
+);
+
+/** Guidance handed to the model at the moment it picks a relation token. */
+export const CLAIM_PROVENANCE_RELATION_GUIDANCE =
+  "What this source's assertion of the claim takes from the upstream " +
+  "document. Decide by asking what would be lost if the upstream document " +
+  "did not exist. " +
+  "'repeats': it takes the assertion itself and restates it, adding no " +
+  "evidence of its own — the reader learns nothing new by reading both. " +
+  "'derives_from': it takes a finding or result and states the claim on that " +
+  "basis, as a news write-up states what a study found. " +
+  "'reanalyzes': it takes the underlying data or results and does new work " +
+  "on them, reaching the claim by its own analysis. " +
+  "'republishes': the whole document is the upstream one, syndicated or " +
+  "mirrored, so the two are one voice appearing twice. " +
+  "'cites_as_evidence': it offers the upstream document in support without " +
+  "depending on it for the assertion's content — the claim would still stand " +
+  "as stated if the citation were struck. " +
+  "'responds_to': it engages with, qualifies, or rebuts the upstream " +
+  "document's assertion of this claim.";
+
+/**
+ * What survives the crossing. The single most useful thing this map records
+ * and the thing no citation graph anywhere holds: a citation index says an
+ * edge exists, never what happened to the claim while travelling along it.
+ */
+export const PROVENANCE_FIDELITY = [
+  "faithful",
+  "strengthened",
+  "weakened",
+  "distorted",
+  "misattributed",
+  "unclear",
+] as const;
+
+export const provenanceFidelityEnum = z.enum(PROVENANCE_FIDELITY);
+
+export const PROVENANCE_FIDELITY_GUIDANCE =
+  "How the claim fared crossing this edge. " +
+  "'faithful': the assertion says what the upstream document supports. " +
+  "'strengthened': stated more confidently, more generally, or with " +
+  "qualifications dropped — the commonest failure and the one worth catching. " +
+  "'weakened': hedged beyond what the upstream document warrants. " +
+  "'distorted': the assertion is not what the upstream document supports, " +
+  "through misreading rather than invention. " +
+  "'misattributed': the upstream document is credited with something it does " +
+  "not say, or the wrong party is credited. " +
+  "'unclear': you could not establish this from what you read. Prefer it to " +
+  "a guess.";
+
+/**
+ * Whether a source's own evidence bears the assertion it makes. Recorded per
+ * instance while reading, and the main input the Steward reads: an instance
+ * whose source overstates its own evidence is worth knowing about before the
+ * stance count is taken at face value.
+ */
+export const INSTANCE_SUPPORT_READINGS = [
+  "supports",
+  "overstates",
+  "understates",
+  "asserts_without_evidence",
+  "contradicts_own_evidence",
+  "unclear",
+] as const;
+
+export const instanceSupportEnum = z.enum(INSTANCE_SUPPORT_READINGS);
+
+export const INSTANCE_SUPPORT_GUIDANCE =
+  "Whether the source's OWN evidence and argument bear the claim as this " +
+  "source states it. This is not whether the claim is true: that is the " +
+  "Steward's judgment, not yours. " +
+  "'supports': the source shows what it asserts. " +
+  "'overstates': the assertion outruns the source's evidence. " +
+  "'understates': the source's evidence would bear a stronger statement. " +
+  "'asserts_without_evidence': stated as given, with no supporting evidence " +
+  "offered — ordinary and not itself a fault, but worth recording. " +
+  "'contradicts_own_evidence': the source's own material cuts against its " +
+  "assertion. " +
+  "'unclear': you could not tell from what you read.";
+
+/**
+ * Mechanical check that an instance's recorded quote is actually in the
+ * source (#286's quote-fidelity payoff). Computed by normalized matching in
+ * src/services/source-map-service.ts, never by a model — a substring test is
+ * exact, free, and auditable where a model is none of the three.
+ */
+export const QUOTE_CHECK_RESULTS = [
+  "verbatim",
+  "normalized_match",
+  "not_found",
+  "no_stored_content",
+] as const;
+
+export const quoteCheckEnum = z.enum(QUOTE_CHECK_RESULTS);
+
+/**
+ * Relations between two DOCUMENTS, independent of any claim. Deliberately
+ * short: these are the facts that stay true whatever proposition you are
+ * tracing, and they are what let the map say that five sources are three
+ * voices.
+ */
+export const SOURCE_RELATION_TYPES = [
+  "shares_authorship",
+  "republishes",
+  "version_of",
+] as const;
+
+export const sourceRelationEnum = z.enum(SOURCE_RELATION_TYPES);
+
+export const SOURCE_RELATION_GUIDANCE =
+  "A relation between two documents that holds regardless of which claim is " +
+  "being traced. " +
+  "'shares_authorship': an author in common. Symmetric. " +
+  "'republishes': the child document is the parent's text, syndicated or " +
+  "mirrored. " +
+  "'version_of': the same work at a different stage (preprint and published " +
+  "article, draft and final). Record the LATER document as the parent.";
+
+/** Symmetric source relations, stored with the lexicographically smaller id as parent. */
+export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);
+
+/**
+ * Mapping onto published provenance vocabularies, carried so the graph can be
+ * exported and federated later without re-deciding what our tokens meant
+ * (CiTO for citation typing, W3C PROV-O for derivation). The house tokens stay
+ * primary: they read plainly in the constitution's voice (§12), where an IRI
+ * does not. Where our vocabulary is richer than both — fidelity, which encodes
+ * what survived the crossing — there is deliberately no mapping, because no
+ * standard has the concept.
+ */
+export const PROVENANCE_VOCABULARY_MAPPING: Record<
+  string,
+  { cito?: string; prov?: string }
+> = {
+  repeats: { cito: "cito:repeatsAssertionFrom", prov: "prov:wasQuotedFrom" },
+  derives_from: { cito: "cito:obtainsBackgroundFrom", prov: "prov:wasDerivedFrom" },
+  reanalyzes: { cito: "cito:usesDataFrom", prov: "prov:wasDerivedFrom" },
+  republishes: { prov: "prov:wasRevisionOf" },
+  cites_as_evidence: { cito: "cito:citesAsEvidence" },
+  responds_to: { cito: "cito:repliesTo" },
+  shares_authorship: {},
+  version_of: { prov: "prov:wasRevisionOf" },
+};
