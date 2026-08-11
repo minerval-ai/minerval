@@ -98,6 +98,13 @@ jobs:
     env:
       # lib.ts pins DATABASE_URL to this and refuses to run against 'episteme'.
       CORPUS_DATABASE_URL: postgresql://episteme:episteme@localhost:5432/episteme_corpus
+      # MUST track infra/lib/api-stack.ts — production sets MATCHER_MODEL there
+      # (#337 put the Matcher on DeepSeek via OpenRouter), while config.ts's
+      # DEFAULT is still Haiku. A gate that inherits the default protects a
+      # model production doesn't run: measured live, Haiku scores 28/30 on
+      # these pins at $0.30, where DeepSeek scores 30/30 at $0.06 — so an
+      # unpinned job would have failed every PR while testing the wrong thing.
+      MATCHER_MODEL: deepseek/deepseek-v4-flash
     steps:
       - uses: actions/checkout@v4
 
