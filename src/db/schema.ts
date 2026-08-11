@@ -122,6 +122,54 @@ export const claims = pgTable(
     // source would bias the prior). NULL = no seed.
     seedCredence: real("seed_credence"),
     seedNote: text("seed_note"),
+    // --- Resolvability (#334 S6, from #296): the calibration overlay ---
+    //
+    // Predictions are the ONE class of claim where reality eventually supplies
+    // ground truth, which makes them the only objective calibration anchor the
+    // project has. Deliberately an overlay of nullable columns rather than a
+    // 7th claim_type: resolvability CROSS-CUTS claim type ("Starship flies 12
+    // times in 2027" is empirical_verifiable AND resolvable; "compute scaling
+    // will displace >10% of jobs by 2030" is causal AND resolvable; "the Fed
+    // should cut in Q3" is normative, future-tense, and NOT resolvable). A 7th
+    // enum value would force a false choice and destroy the type signal on
+    // exactly the claims whose type the calibration slicing needs. Same
+    // encoding as seed_credence above: NULL means nobody stated one.
+    //
+    // What observable settles this, per which source of truth, in prose.
+    // NON-NULL IS THE PREDICATE — a claim is a resolvable prediction exactly
+    // when someone wrote a criterion. No boolean flag, because a flag could
+    // not say HOW it resolves, which is what the watcher and the reader need.
+    resolutionCriterion: text("resolution_criterion"),
+    // When the criterion becomes checkable: the watcher's due date, the
+    // horizon the calibration curve slices on, and the leakage cutoff.
+    // Revisable while open — a platform extending its question pushes this
+    // out; that is not a resolution.
+    resolvesAt: timestamp("resolves_at", { withTimezone: true }),
+    // Ground truth once reality supplies it: 1 = happened, 0 = did not.
+    // `real` rather than boolean so a genuinely partial resolution (a numeric
+    // question mapped onto the stated threshold) is not forced into a lie.
+    resolutionOutcome: real("resolution_outcome"),
+    // When the world settled it. resolved_at SET with resolution_outcome NULL
+    // is the ANNULLED case (a voided question): closed, out of the watcher
+    // queue, nothing scorable — distinct from an outcome of 0.
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // Where the question came from and who adjudicates it (platform + URL).
+    resolutionSource: text("resolution_source"),
+    // The crowd's probability, and WHEN it was taken. The timestamp is not
+    // decoration: comparing our credence to a baseline sampled at a different
+    // moment is not a comparison, and a baseline captured near resolution
+    // would flatter or damn us for no reason. Both or neither.
+    baselineCredence: real("baseline_credence"),
+    baselineAsOf: timestamp("baseline_as_of", { withTimezone: true }),
+    // Was this claim merged into merged_into as its NEGATION? mergeClaims
+    // already flips instance and argument stances for an opposed merge
+    // (reconciliation-service.ts) but records the polarity only inside the
+    // reconciliation_events payload, so a scorer would have to dig through
+    // JSONB — and across a merge chain — to learn it. It matters: an
+    // opposed-merged loser's frozen credence p is P(NOT the survivor), so
+    // inheriting the survivor's outcome without flipping inverts the sign and
+    // silently corrupts the calibration record.
+    mergedOpposed: boolean("merged_opposed").notNull().default(false),
     // Which claim's Steward wrote the seed — the provenance the mechanical
     // "preliminary" disclaimer names. SET NULL so the seed survives its author.
     seedSourceClaimId: uuid("seed_source_claim_id").references(
@@ -158,6 +206,30 @@ export const claims = pgTable(
     // Keyword search (`text_search @@ websearch_to_tsquery(...)`) scans this,
     // not the heap, as the graph grows.
     index("idx_claims_text_search").using("gin", table.textSearch),
+    // The resolution watcher's queue (#334 S6). Partial, like the steward
+    // queue above, so it stays the size of the OPEN prediction set rather
+    // than the graph.
+    index("idx_claims_resolution_due")
+      .on(table.resolvesAt)
+      .where(sql`resolution_criterion IS NOT NULL AND resolved_at IS NULL`),
+    check(
+      "ck_claims_resolution_outcome_unit",
+      sql`resolution_outcome IS NULL OR (resolution_outcome >= 0 AND resolution_outcome <= 1)`
+    ),
+    // An outcome with no resolution time is unscorable — the leakage guard is
+    // a time comparison — and neither may exist without a criterion, which
+    // would be an answer to a question nobody wrote down.
+    check(
+      "ck_claims_resolution_wellformed",
+      sql`(resolution_outcome IS NULL OR resolved_at IS NOT NULL)
+          AND (resolved_at IS NULL OR resolution_criterion IS NOT NULL)`
+    ),
+    // A baseline probability without its as-of timestamp is uninterpretable,
+    // so the pair is enforced rather than trusted.
+    check(
+      "ck_claims_baseline_paired",
+      sql`(baseline_credence IS NULL) = (baseline_as_of IS NULL)`
+    ),
   ]
 );
 
