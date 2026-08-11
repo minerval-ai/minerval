@@ -59,11 +59,20 @@ export async function grantCommittedMicroUsd(
                    FROM action_allocations
                   WHERE grant_id = $1 AND released_at IS NULL), 0)::bigint
          AS outstanding,
+       -- Metered spend on this job that NO allocation share accounts for.
+       --
+       -- This used to subtract actions.metered_cost_micro_usd — the full cost
+       -- of every ledger run — when what it means to subtract is what those
+       -- runs consumed AS SHARES. The two differ by exactly the overage on
+       -- runs that cost more than they were allocated, so the old form
+       -- cancelled that overage out and left it in no term at all (23.57 owls
+       -- on the General mandate's first epoch, invisible to its own escrow).
+       -- Subtracting shares means anything spent and not shared counts here.
        GREATEST(0,
          COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
                     WHERE job_id = $2), 0)
-         - COALESCE((SELECT SUM(metered_cost_micro_usd) FROM actions
-                      WHERE metered_job_id = $2), 0))::bigint AS nonledger,
+         - COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+                      WHERE grant_id = $1), 0))::bigint AS nonledger,
        COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
                    FROM regrants WHERE from_grant_id = $1), 0)::bigint
          AS regrants`,

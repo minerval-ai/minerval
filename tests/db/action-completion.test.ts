@@ -178,6 +178,116 @@ describe("completeAction", () => {
     expect((await ledgerRows(userA)).length).toBe(0);
   });
 
+  it("records a MANDATE's overage as a settled allocation, so the escrow sees it", async () => {
+    // The money is already gone when completeAction runs — the LLM calls
+    // happened and are metered against the grant's job. Clamping consumption
+    // and saying nothing left 23.57 owls of real spend in no term of
+    // grantCommittedMicroUsd on the first live epoch, which is how an escrow
+    // reporting 112 owls left actually had 79.
+    const funder = await seedUser("overage-mandate");
+    const { grantId } = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: 100 * OWL,
+    });
+    const claimId = await seedClaim("overage-mandate");
+    const group = `assess:${claimId}`;
+    const std = await seedAction({
+      group,
+      costMicroUsd: 2 * OWL,
+      status: "running",
+      claimId,
+    });
+    await seedAllocation({
+      group,
+      claimId,
+      grantId,
+      amountMicroUsd: 2 * OWL,
+    });
+
+    // Ran 3x its allocation, the shape the live epoch kept producing.
+    const consumed = await completeAction(std, 6 * OWL);
+
+    // Consumption is the truth now, not the promise.
+    expect(consumed).toBe(6 * OWL);
+    const [shares] = await rawQuery<{ spent: number }>(
+      `SELECT COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent
+         FROM action_allocations WHERE grant_id = $1`,
+      [grantId]
+    );
+    expect(Number(shares!.spent)).toBe(6 * OWL);
+
+    // The overage is its own row, already settled, so it never blocks a
+    // future live placement on this group.
+    const overage = await rawQuery<{
+      amount_micro_usd: number;
+      spent_micro_usd: number;
+      released_at: string | null;
+    }>(
+      `SELECT amount_micro_usd, spent_micro_usd, released_at
+         FROM action_allocations
+        WHERE grant_id = $1 AND amount_micro_usd = spent_micro_usd
+          AND amount_micro_usd = $2`,
+      [grantId, 4 * OWL]
+    );
+    expect(overage).toHaveLength(1);
+    expect(overage[0]!.released_at).not.toBeNull();
+  });
+
+  it("splits an overage across co-funding mandates pro rata to what each promised", async () => {
+    const funder = await seedUser("overage-split");
+    const big = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 100 * OWL });
+    const small = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 100 * OWL });
+    const claimId = await seedClaim("overage-split");
+    const group = `assess:${claimId}`;
+    const std = await seedAction({
+      group,
+      costMicroUsd: 4 * OWL,
+      status: "running",
+      claimId,
+    });
+    await seedAllocation({ group, claimId, grantId: big.grantId, amountMicroUsd: 3 * OWL });
+    await seedAllocation({ group, claimId, grantId: small.grantId, amountMicroUsd: 1 * OWL });
+
+    // 4 owls promised, 8 spent: 4 owls of overage, split 3:1.
+    await completeAction(std, 8 * OWL);
+
+    const spentFor = async (grantId: string) => {
+      const [row] = await rawQuery<{ spent: number }>(
+        `SELECT COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent
+           FROM action_allocations WHERE grant_id = $1`,
+        [grantId]
+      );
+      return Number(row!.spent);
+    };
+    expect(await spentFor(big.grantId)).toBe(6 * OWL);
+    expect(await spentFor(small.grantId)).toBe(2 * OWL);
+  });
+
+  it("never bills a USER past their cap: no overage row on a user-funded group", async () => {
+    // A person's allocation is a ceiling they were shown and can rely on. The
+    // platform eats the overrun; only mandates carry their own overspend.
+    const userA = await seedUser("overage-user");
+    const claimId = await seedClaim("overage-user");
+    const group = `assess:${claimId}`;
+    const std = await seedAction({
+      group,
+      costMicroUsd: 1 * OWL,
+      status: "running",
+      claimId,
+    });
+    await seedAllocation({ group, claimId, userId: userA, amountMicroUsd: 1 * OWL });
+
+    const consumed = await completeAction(std, 5 * OWL);
+
+    expect(consumed).toBe(1 * OWL);
+    const rows = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM action_allocations
+        WHERE exclusion_group = $1 AND user_id = $2`,
+      [group, userA]
+    );
+    expect(Number(rows[0]!.n)).toBe(1); // still just their one allocation
+  });
+
   it("rolls back completely when a mid-flight write fails (real transaction)", async () => {
     const s = await seedScenario();
     // Induce a failure INSIDE the close, after the done-transition and the

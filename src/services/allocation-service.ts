@@ -450,8 +450,11 @@ export async function fundGrantSelfActions(): Promise<number> {
                            AND al.released_at IS NULL), 0))::bigint AS needed,
             -- Same accounting as grantCommittedMicroUsd: consumed pro-rata
             -- shares + outstanding allocations + NON-LEDGER metered spend
-            -- (llm_usage minus what ledger runs already consumed as
-            -- shares, so a self-funded run isn't counted twice) + regrants.
+            -- (llm_usage minus what allocation SHARES already account for, so
+            -- a self-funded run isn't counted twice — and so a run that cost
+            -- more than it was allocated has its overage counted here rather
+            -- than cancelled out, which is what subtracting the full
+            -- actions.metered_cost used to do) + regrants.
             (j.budget_micro_usd
               - COALESCE((SELECT SUM(al.spent_micro_usd)
                             FROM action_allocations al
@@ -463,9 +466,9 @@ export async function fundGrantSelfActions(): Promise<number> {
               - GREATEST(0,
                   COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
                              WHERE u.job_id = g.budget_job_id), 0)
-                  - COALESCE((SELECT SUM(x.metered_cost_micro_usd)
-                                FROM actions x
-                               WHERE x.metered_job_id = g.budget_job_id), 0))
+                  - COALESCE((SELECT SUM(al.spent_micro_usd)
+                                FROM action_allocations al
+                               WHERE al.grant_id = g.id), 0))
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
                             FROM regrants r
                            WHERE r.from_grant_id = g.id), 0))::bigint
