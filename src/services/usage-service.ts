@@ -12,6 +12,7 @@ import { getDb, rawQuery } from "../db/client.js";
 import { apiKeys, llmUsage } from "../db/schema.js";
 import { costMicroUsd } from "../llm/pricing.js";
 import { getUsageContext } from "../llm/usage-context.js";
+import { loadConfig } from "../config.js";
 
 export interface LlmCallUsage {
   model: string;
@@ -50,6 +51,24 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   // the operation's work finishes, even if the durable insert below lags or
   // fails.
   if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
+  // Every LLM call is money, and money belongs to somebody: a paying user or a
+  // funded job. Metering has never missed a call — the chokepoint sees them
+  // all — but four worker pipelines established no identity at all, so their
+  // spend landed on rows owned by nobody and was invisible to every per-user
+  // and per-mandate view. It stayed invisible for a whole live epoch.
+  //
+  // A warning rather than a throw: refusing the call would turn an accounting
+  // defect into an outage, and the row is still worth recording. But it is
+  // loud, and it names the agent, so the next one shows up in the logs on its
+  // first run instead of in a spend investigation weeks later.
+  if (!ctx.userId && !ctx.jobId && loadConfig().env === "production") {
+    console.warn(
+      `[usage] unattributed LLM call from agent "${ctx.agent ?? "unknown"}" ` +
+        `(model ${call.model}): no userId and no jobId in the usage context. ` +
+        "Spend recorded but owned by nobody — the enqueuing run should carry " +
+        "its identity onto the message, and the handler should restore it."
+    );
+  }
   try {
     const db = getDb();
     await db.insert(llmUsage).values({

@@ -87,10 +87,25 @@ export interface CuratorMessage {
     // A Steward flagged something structural (likely duplicate, needs split, …).
     | "steward_escalation"
     // Look across a new claim's neighborhood for duplicates / missing edges.
+    // No longer produced: the unconditional post-extraction sweep was removed
+    // (it wrote nothing across 122 runs). Kept so an in-flight message from
+    // before that change still deserializes.
     | "neighborhood_sweep";
   // The claim whose neighborhood to reconcile (the escalating/anchor claim).
   claimId: string;
   context: string;
+  /**
+   * Who the curation is FOR, carried from the run that asked for it, so the
+   * Curator's spend lands on a row with an owner instead of a null user and a
+   * null job. A Steward escalation happens inside a funded assessment, and
+   * that funder is the honest answer to "who induced this".
+   *
+   * Attribution only — it makes the money visible, it does not decide whose
+   * escrow pays. Curation becoming a funded ledger action the General
+   * mandate's Grantmaker chooses to buy is tracked separately.
+   */
+  userId?: string | null;
+  jobId?: string | null;
 }
 
 // In-memory queue for local development.

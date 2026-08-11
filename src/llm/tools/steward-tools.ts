@@ -1409,10 +1409,16 @@ export async function executeStewardTool(
         const claimId = input.claim_id as string;
         const concern = input.concern as string;
 
+        // Carry this run's identity onto the message: the escalation happens
+        // inside a funded assessment, and the Curator run it spawns should not
+        // arrive at the meter anonymous.
+        const escalatingCtx = getUsageContext();
         await enqueueCurator({
           trigger: "steward_escalation",
           claimId,
           context: concern,
+          userId: escalatingCtx.userId ?? null,
+          jobId: escalatingCtx.jobId ?? null,
         });
 
         return JSON.stringify({
