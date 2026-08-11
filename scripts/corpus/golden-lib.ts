@@ -92,6 +92,16 @@ export interface PairResult {
   pass: boolean;
   failures: string[];
   decision: Pick<MatchDecision, "is_match" | "instance_stance" | "confidence" | "reasoning">;
+  /**
+   * How many Matcher calls this pair took (1 = passed or failed first try).
+   * >1 means the pair failed and was retried: the decision recorded above is
+   * the LAST attempt's. Retries exist because some pins sit on a genuine
+   * decision boundary — measured live, neg-03 and spec-05 each fail roughly 1
+   * run in 6 on deepseek-v4-flash while passing 5/5 in isolation — and a gate
+   * that blocks the repo one run in three is worse than no gate. A pair that
+   * is actually broken fails every attempt.
+   */
+  attempts?: number;
 }
 
 /**
@@ -146,17 +156,26 @@ export interface GoldenSummary {
   passed: number;
   passRate: number;
   byCategory: Record<string, { total: number; passed: number }>;
+  /**
+   * Pairs that failed at least once and passed on a retry. A green run with a
+   * rising count here is the suite degrading toward the boundary — the signal
+   * that retries would otherwise hide, so it is reported alongside the rate
+   * rather than folded into it.
+   */
+  passedOnRetry: string[];
 }
 
 export function summarize(results: PairResult[]): GoldenSummary {
   const byCategory: GoldenSummary["byCategory"] = {};
   let passed = 0;
+  const passedOnRetry: string[] = [];
   for (const r of results) {
     const c = (byCategory[r.category] ??= { total: 0, passed: 0 });
     c.total++;
     if (r.pass) {
       c.passed++;
       passed++;
+      if ((r.attempts ?? 1) > 1) passedOnRetry.push(r.id);
     }
   }
   return {
@@ -164,5 +183,6 @@ export function summarize(results: PairResult[]): GoldenSummary {
     passed,
     passRate: results.length ? Math.round((passed / results.length) * 1000) / 1000 : 0,
     byCategory,
+    passedOnRetry,
   };
 }

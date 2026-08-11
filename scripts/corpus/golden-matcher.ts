@@ -14,6 +14,7 @@
  *   npm run corpus:golden -- --pairs=neg-05,hard-03
  *   npm run corpus:golden -- --model=gpt-5-mini # override MATCHER_MODEL
  *   npm run corpus:golden -- --min-pass=0.9     # exit 1 below this rate
+ *   npm run corpus:golden -- --retries=2        # re-run a failing pair (CI)
  *
  * Needs OPENAI_API_KEY (embeddings) and a key for the Matcher's provider.
  * Runs against the isolated corpus DB; seeds are deleted afterward, but any
@@ -76,6 +77,14 @@ async function main(): Promise<void> {
   const onlyCategory = argFlag("category");
   const model = argFlag("model");
   const minPass = argFlag("min-pass") ? Number(argFlag("min-pass")) : null;
+  // Retries are OFF by default so a manual run reports the Matcher's raw
+  // single-shot behaviour, which is what you want when investigating. CI turns
+  // them on, because a blocking gate must not fire on a boundary coin-flip.
+  const retries = argFlag("retries") ? Number(argFlag("retries")) : 0;
+  if (!Number.isInteger(retries) || retries < 0) {
+    console.error(`--retries must be a non-negative integer (got "${argFlag("retries")}")`);
+    process.exit(1);
+  }
 
   let pairs = fixture.pairs;
   if (onlyIds?.length) pairs = pairs.filter((p) => onlyIds.includes(p.id));
@@ -100,28 +109,49 @@ async function main(): Promise<void> {
 
   const results: PairResult[] = [];
   for (const pair of pairs) {
-    const seededIds = await seedClaims(pair.existing);
-    try {
-      const decision = await matchClaim({
-        extractedText: pair.candidate.extractedText,
-        proposedCanonical: pair.candidate.proposedCanonical,
-        model: model ?? undefined,
-      });
-      const result = gradeDecision(pair, decision, seededIds);
-      results.push(result);
-      console.log(
-        `  ${result.pass ? "✓" : "✗"} ${pair.id.padEnd(8)} [${pair.category}]` +
-          (result.pass ? "" : ` — ${result.failures.join("; ")}`)
-      );
-    } finally {
-      await removeClaims(seededIds);
+    // Each attempt re-seeds from scratch: the seeds are deleted in the finally
+    // below, so a retry must recreate them (and gets fresh ids, which is why
+    // grading resolves expectations against THIS attempt's seededIds).
+    let result: PairResult | null = null;
+    let attempt = 0;
+    while (attempt <= retries) {
+      attempt++;
+      const seededIds = await seedClaims(pair.existing);
+      try {
+        const decision = await matchClaim({
+          extractedText: pair.candidate.extractedText,
+          proposedCanonical: pair.candidate.proposedCanonical,
+          model: model ?? undefined,
+        });
+        result = { ...gradeDecision(pair, decision, seededIds), attempts: attempt };
+      } finally {
+        await removeClaims(seededIds);
+      }
+      if (result.pass) break;
     }
+    results.push(result!);
+    const retried = (result!.attempts ?? 1) > 1;
+    console.log(
+      `  ${result!.pass ? "✓" : "✗"} ${pair.id.padEnd(8)} [${pair.category}]` +
+        (result!.pass
+          ? retried
+            ? ` — passed on attempt ${result!.attempts}`
+            : ""
+          : ` — ${result!.failures.join("; ")}` +
+            (retried ? ` (failed all ${result!.attempts} attempts)` : ""))
+    );
   }
 
   const summary = summarize(results);
   console.log(`\n  pass rate: ${summary.passed}/${summary.total} (${(summary.passRate * 100).toFixed(0)}%)`);
   for (const [cat, c] of Object.entries(summary.byCategory)) {
     console.log(`    ${cat.padEnd(22)} ${c.passed}/${c.total}`);
+  }
+  if (summary.passedOnRetry.length > 0) {
+    console.log(
+      `  passed only on retry: ${summary.passedOnRetry.join(", ")} — these pins sit ` +
+        `near the decision boundary; a growing list is the suite degrading.`
+    );
   }
   console.log(`  metered cost: ${formatMicroUsd(runMeter.billedMicroUsd)}`);
 
