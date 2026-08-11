@@ -22,9 +22,13 @@
  * they produced still describe them.
  *
  * TRACE_LEVEL: "full" records runs + steps; "off" records nothing. Unset, it
- * defaults off in production (until a retention job exists — traces are
- * large) and under vitest (unit tests must not attempt DB writes), and full
- * everywhere else — so dev and the corpus harness trace by default.
+ * defaults to full everywhere except vitest (unit tests must not attempt DB
+ * writes). Production traced by default only once a retention job existed to
+ * bound the growth — workers/trace-retention.ts is that job, so the old
+ * production-off default is gone. An operator who wants the firehose closed
+ * sets TRACE_LEVEL=off; one who wants it cheaper shortens
+ * TRACE_STEP_RETENTION_DAYS, which sheds the bulk without losing the run rows
+ * that per-claim cost attribution joins against.
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -49,7 +53,7 @@ export interface RunAttribution {
 export function traceLevel(): "off" | "full" {
   const config = loadConfig();
   if (config.traceLevel) return config.traceLevel;
-  if (config.env === "production" || process.env.VITEST) return "off";
+  if (process.env.VITEST) return "off";
   return "full";
 }
 

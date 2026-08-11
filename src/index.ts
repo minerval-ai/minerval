@@ -11,6 +11,7 @@ import { startAuditScheduler } from "./workers/audit-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
+import { startTraceRetention } from "./workers/trace-retention.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -124,6 +125,11 @@ async function main() {
   // in-memory message was lost (restart, dropped on error). The pipeline
   // handlers' atomic claims dedupe, so running it in every task is safe.
   pollers.push(startRecoverySweep({ logger }));
+
+  // Trace retention (#334 L0) bounds agent_runs/agent_steps growth, which is
+  // what allows TRACE_LEVEL to default on in production. Deletes are batched
+  // and idempotent, so running it in every task is safe.
+  pollers.push(startTraceRetention({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {
