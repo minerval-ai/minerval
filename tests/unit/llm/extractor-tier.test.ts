@@ -136,3 +136,34 @@ describe("extractor refusal fallback", () => {
     expect(state.calls).toEqual(["claude-fable-5", "claude-sonnet-5"]);
   });
 });
+
+/**
+ * No per-source claim cap.
+ *
+ * EXTRACTION_MAX_CLAIMS (8 in production) truncated every source to the same
+ * number. How many reusable propositions a document turns on is a property of
+ * the document: a dense working paper and a blog post do not contain the same
+ * amount, and one ceiling either discards real claims from the former or
+ * invites padding in the latter. The fan-out cost it stood in for is bounded by
+ * the mandate ledger now — extracted claims become actions, and an allocator
+ * funds only what clears its daily rate — so the bound is money rather than a
+ * count chosen in advance.
+ *
+ * Callers that genuinely want a limit still pass one (the MCP text tools).
+ */
+describe("claim count is not capped by default", () => {
+  it("extracts everything that passes the bar when no cap is given", async () => {
+    const claims = await extractClaims({ content: "a dense paper" });
+    expect(claims).toHaveLength(2); // the stub's full output, unsliced
+  });
+
+  it("still honours an explicit per-call cap from a caller", async () => {
+    const claims = await extractClaims({ content: "doc", maxClaims: 1 });
+    expect(claims).toHaveLength(1);
+  });
+
+  it("treats 0 as no cap rather than as zero claims", async () => {
+    const claims = await extractClaims({ content: "doc", maxClaims: 0 });
+    expect(claims).toHaveLength(2);
+  });
+});

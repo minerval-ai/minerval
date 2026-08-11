@@ -186,11 +186,13 @@ async function processUrlExtraction(
     }
 
     // Extract claims
+    // No claim cap: how many reusable propositions a document turns on is a
+    // property of the document. The extractor's own claim bar decides what
+    // qualifies, and the ledger decides how much of it anyone pays to assess.
     const extracted = await extractClaims({
       content,
       sourceType: source.sourceType,
       additionalContext: source.title,
-      maxClaims: loadConfig().extractionMaxClaims,
     });
 
     let claimsCreated = 0;

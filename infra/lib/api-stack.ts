@@ -138,13 +138,17 @@ export class ApiStack extends cdk.Stack {
         LLM_DAILY_CALL_LIMIT: "1667",
         LLM_HOURLY_TOKEN_LIMIT: "133333",
         LLM_DAILY_TOKEN_LIMIT: "500000",
-        // Bound fan-out per document (the dominant cost multiplier). 0 = unlimited.
-        EXTRACTION_MAX_CLAIMS: "8",
         // Extension page analysis is synchronous behind the ALB (#91): cap
         // claims per page so a typical analyze finishes inside the idle
         // timeout below. The async flow (#93) relaxes the latency pressure,
         // but the cap stays sensible — extension pages are reading surfaces,
-        // not corpus ingestion.
+        // not corpus ingestion, and this bound is about RESPONSE TIME rather
+        // than fan-out cost.
+        //
+        // EXTRACTION_MAX_CLAIMS (was "8") is deliberately gone: a per-source
+        // claim cap truncated dense sources and invited padding in thin ones,
+        // and the fan-out cost it stood in for is now bounded by the mandate
+        // ledger instead of by a count. See src/config.ts.
         EXTENSION_MAX_CLAIMS: "10",
       },
       secrets: {
