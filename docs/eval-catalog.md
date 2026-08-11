@@ -61,13 +61,17 @@ assessment, so a true drain cascades past the initial queue — in the bake-off,
   one agent whose task saturates, it passes 30/30, and it costs six cents — but
   `ci.yml` still runs only typecheck, unit tests, and cdk synth. Wiring it is
   the cheapest real gate available.
-- **Judge calibration.** The harness exists; no human labels have been
-  collected. Per the plan's own rule (#334 §2.8), *no judge number should feed
-  a gate until this is done* — including the ones in §1.
-- **Epoch baseline.** `pipelineEpoch` is `2026-08-owl-economy`; the
-  `docs/graph-epochs.md` norm wants a baseline cut under it. The scorecards in
-  `corpus/scorecards/blackholes/` are capped bake-off phases (2–4 claims), not
-  a full-cluster baseline.
+- **Judge calibration.** The harness exists and a blinded sheet is already
+  generated (`corpus/calibration/blackholes-2026-08-09-832f7f15.md`); no human
+  labels have been filled in. Per the plan's own rule (#334 §2.8), *no judge
+  number should feed a gate until this is done* — including the ones in §1.
+- **Epoch baseline — cut, but under a stale model config.** #349 landed a real
+  baseline under `2026-08-owl-economy` (blackholes, 26 claims, 13 assessed:
+  7 verified / 5 supported / 1 contested, $0.60 judged). It ran
+  **matcher=claude-haiku-4-5 and a single Sonnet judge** — both since replaced
+  (DeepSeek V4 Flash matcher per #337, cross-vendor Fable+Sol panel). It is a
+  valid epoch anchor; it is *not* a like-for-like reference for runs under the
+  current config, and comparisons across that gap are cross-configuration.
 
 ## 4. Not yet built
 
