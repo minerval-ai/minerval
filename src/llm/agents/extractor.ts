@@ -4,6 +4,8 @@ import {
   getExtractionPrompt,
 } from "../prompts/extractor.js";
 import { withAgent } from "../usage-context.js";
+import { loadConfig } from "../../config.js";
+import { LlmRefusalError } from "../errors.js";
 
 export interface ExtractedClaim {
   original_text: string;
@@ -53,18 +55,44 @@ async function extractClaimsImpl(input: {
   /** Cap the number of claims extracted (0 = unlimited). Bounds graph fan-out. */
   maxClaims?: number;
 }): Promise<ExtractedClaim[]> {
+  const config = loadConfig();
   const userPrompt =
     getExtractionPrompt(input.sourceType, input.additionalContext, input.maxClaims) +
     input.content;
+  const run = (model: string | undefined) =>
+    completeStructuredList<ExtractedClaim>({
+      messages: [{ role: "user", content: userPrompt }],
+      itemSchema: EXTRACTED_CLAIM_SCHEMA,
+      schemaName: "ExtractedClaim",
+      system: getExtractorSystemPrompt(),
+      ...(model ? { model } : {}),
+      maxTokens: 16384,
+    });
 
-  const claims = await completeStructuredList<ExtractedClaim>({
-    messages: [{ role: "user", content: userPrompt }],
-    itemSchema: EXTRACTED_CLAIM_SCHEMA,
-    schemaName: "ExtractedClaim",
-    system: getExtractorSystemPrompt(),
-    model: input.model,
-    maxTokens: 16384,
-  });
+  // The chosen tier decides which propositions become claims and how they are
+  // worded, so it is worth the strongest model available. But a REFUSAL is not
+  // a judgment about the document's claims — it is the model declining the
+  // subject matter, and this graph's live work includes a virology cluster
+  // Fable has refused before (#78). LlmRefusalError means the server-side
+  // Opus fallback refused too, so the retry must leave the family.
+  //
+  // Without this, a mandate that funds "ingest this pathogen paper" pays for
+  // the fetch and gets a cancelled ingest with no claims and no explanation.
+  const primary = input.model ?? config.extractorModel;
+  let claims: ExtractedClaim[];
+  try {
+    claims = await run(primary);
+  } catch (err) {
+    if (!(err instanceof LlmRefusalError)) throw err;
+    const fallback = config.extractorFallbackModel;
+    if (!fallback || fallback === primary) throw err;
+    console.warn(
+      `[extractor] ${primary} refused the document` +
+        (err.category ? ` (category: ${err.category})` : "") +
+        `; retrying extraction on ${fallback}.`
+    );
+    claims = await run(fallback);
+  }
 
   // Hard cap as a safety net in case the model exceeds the requested limit.
   return input.maxClaims && input.maxClaims > 0

@@ -5,7 +5,7 @@ import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
-import { enqueueClaimPipeline, enqueueCurator } from "../services/queue-service.js";
+import { enqueueClaimPipeline } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { loadConfig } from "../config.js";
@@ -271,21 +271,23 @@ async function processUrlExtraction(
           jobId: message.jobId,
         });
 
-        // Proactively sweep the new claim's neighborhood with the Curator, to
-        // catch duplicates/counterparts the Matcher missed and propose cross-claim
-        // edges (#55). Only for *newly created* top-level claims (matched ones are
-        // already placed); sampled by curatorSweepRate and bounded by curatorMaxRuns.
-        const { curatorSweepRate } = loadConfig();
-        if (curatorSweepRate > 0 && Math.random() < curatorSweepRate) {
-          await enqueueCurator({
-            trigger: "neighborhood_sweep",
-            claimId,
-            context:
-              "A new claim was just ingested. Sweep its neighborhood for duplicates " +
-              "or counterparts the Matcher may have missed, and for related claims " +
-              "that should be linked.",
-          });
-        }
+        // No Curator sweep here any more. This path used to fire one
+        // (`neighborhood_sweep`) for every newly created claim, to catch
+        // duplicates the Matcher missed and propose cross-claim edges (#55).
+        // The first live epoch measured it: 122 sweeps on the frontier model,
+        // 570k tokens, ~13 owls, and ZERO writes to the graph — no merge, no
+        // edge, no notification. Which is the predictable result, because the
+        // sweep only fires on claims the Matcher has *just* searched the graph
+        // for and declared novel. Two agents with overlapping remits, running
+        // back to back, the second costing more than the extraction that
+        // created the claim.
+        //
+        // Curation survives where the trigger carries judgment: the Steward's
+        // escalate_to_curator, fired by an agent that has actually seen
+        // structure it believes is wrong. If proactive sweeping is wanted
+        // again it belongs on the ledger as its own action kind, valued by a
+        // mandate and gated by that valuation, rather than unconditionally on
+        // every new row.
       }
 
       // Create instance linking claim to source. stance records whether this

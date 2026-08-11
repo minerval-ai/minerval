@@ -41,6 +41,7 @@ async function buildTestApp(
     process.env.CURATOR_MODEL = "claude-fable-5";
     process.env.AUDIT_MODEL = "claude-fable-5";
     process.env.ARBITRATION_MODEL = "claude-fable-5";
+    process.env.EXTRACTOR_MODEL = "claude-fable-5";
   }
   vi.resetModules();
   const { registerAuth } = await import("../../../src/server/plugins/auth.js");
@@ -78,6 +79,7 @@ const MODEL_ENVS = [
   "CURATOR_MODEL",
   "AUDIT_MODEL",
   "ARBITRATION_MODEL",
+  "EXTRACTOR_MODEL",
 ];
 
 describe("auth plugin", () => {
