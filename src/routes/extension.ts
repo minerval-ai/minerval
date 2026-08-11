@@ -117,6 +117,11 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
               userId: request.auth?.userId ?? null,
               apiKeyId: request.auth?.apiKeyId ?? null,
               requestId: request.id,
+              // The page under analysis is whatever tab the user is on, so no
+              // agent transcript may be persisted for this work (#334 L0).
+              // Cost metering is unaffected — llm_usage records tokens, not
+              // text — so extension usage stays fully billed and attributed.
+              sensitive: true,
             },
             () => startAnalysis(body)
           )
@@ -191,6 +196,11 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
               userId: request.auth?.userId ?? null,
               apiKeyId: request.auth?.apiKeyId ?? null,
               requestId: request.id,
+              // The page under analysis is whatever tab the user is on, so no
+              // agent transcript may be persisted for this work (#334 L0).
+              // Cost metering is unaffected — llm_usage records tokens, not
+              // text — so extension usage stays fully billed and attributed.
+              sensitive: true,
             },
             () => chatAboutPage(body)
           )

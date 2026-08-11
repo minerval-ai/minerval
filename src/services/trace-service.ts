@@ -48,6 +48,39 @@ export interface RunAttribution {
   jobId?: string | null;
   claimId?: string | null;
   requestId?: string | null;
+  /**
+   * This work reads content that is private to the user, so its transcript
+   * must never be persisted. Set by the browser-extension ingestion path
+   * (#72): the Extractor and Matcher there run over whatever page the user
+   * happens to be looking at — webmail, an internal wiki, a medical portal —
+   * and agent_steps would capture that text verbatim.
+   *
+   * Suppression happens at RECORDING, not retention, and the distinction is
+   * the whole point: writing private browsing to a table and deleting it a
+   * fortnight later is still collecting it, still in every backup taken in
+   * between, and still discoverable. The same runs invoked by the SYSTEM —
+   * corpus ingestion, a Steward's decomposition, /sources submissions — are
+   * traced normally, because their inputs are the public documents the graph
+   * is made of.
+   *
+   * llm_usage and enqueue_events are unaffected: they record token counts,
+   * cost, and ids, never content, so extension work stays fully accounted for
+   * financially while its text is never written down.
+   */
+  sensitive?: boolean;
+}
+
+/**
+ * Whether a run should be recorded at all. Pure and exported so the policy is
+ * testable without a database or a live config — the suppression path is
+ * exactly the one that must not regress silently.
+ */
+export function shouldRecordRun(
+  level: "off" | "full",
+  attribution: RunAttribution
+): boolean {
+  if (level === "off") return false;
+  return attribution.sensitive !== true;
 }
 
 export function traceLevel(): "off" | "full" {
@@ -69,7 +102,10 @@ export function startAgentRun(
   agent: string,
   attribution: RunAttribution
 ): AgentTrace | null {
-  if (traceLevel() === "off") return null;
+  // No trace handle means withAgent records no run AND toolUseLoop records no
+  // steps — one check suppresses the whole transcript, rather than leaving a
+  // headless run row or a half-written one.
+  if (!shouldRecordRun(traceLevel(), attribution)) return null;
   const runId = randomUUID();
   void (async () => {
     try {

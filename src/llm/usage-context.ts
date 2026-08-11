@@ -38,6 +38,14 @@ export interface UsageContext {
    *  when tracing is enabled; absent = don't record steps. */
   trace?: AgentTrace;
   /**
+   * This work reads user-private content, so no transcript may be persisted
+   * (see trace-service's RunAttribution.sensitive). Inherited by nested
+   * contexts through the merge in runWithUsageContext, so a route marking
+   * itself sensitive covers every agent it invokes, however deep — the
+   * extension's Extractor run and each of the Matcher runs it fans out to.
+   */
+  sensitive?: boolean;
+  /**
    * Live cost accumulator for the enclosing metered operation. The metering
    * chokepoint adds each call's BILLED (marked-up) cost here synchronously,
    * so cap-and-settle charging (owl-ledger-service.settleMeteredCharge) can
