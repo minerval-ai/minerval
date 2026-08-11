@@ -400,12 +400,15 @@ export async function completeAction(
     // silently exempted from consumption).
     const allocations = await tx.query<{
       id: string;
+      grant_id: string | null;
       user_id: string | null;
       claim_id: string | null;
       action_id: string | null;
+      amount: number;
       unspent: number;
     }>(
-      `SELECT id, user_id, claim_id, action_id,
+      `SELECT id, grant_id, user_id, claim_id, action_id,
+              amount_micro_usd::bigint AS amount,
               (amount_micro_usd - spent_micro_usd)::bigint AS unspent
          FROM action_allocations
         WHERE exclusion_group = $1 AND released_at IS NULL
@@ -470,6 +473,67 @@ export async function completeAction(
         );
         consumed += take;
         row.unspent = Number(row.unspent) - take;
+      }
+    }
+
+    // OVERAGE: the run cost more than its funders had promised. The money is
+    // already gone — the LLM calls happened and are metered against the
+    // funder's job — so the only question is whether the ledger admits it.
+    //
+    // It used to not. Consumption is clamped at `totalUnspent` above, so a run
+    // metering 5.76 owls against a 1.93 allocation recorded 1.93 and the rest
+    // vanished: absent from allocation shares, and cancelled out of the
+    // non-ledger term (which subtracts actions.metered_cost, so the very row
+    // recording the overspend erased it). Measured on the General mandate's
+    // first epoch: 23.57 owls of real spend counted in NO term of
+    // grantCommittedMicroUsd, which is why the escrow read 112 owls left when
+    // 79 was the truth. An escrow that cannot see a third of its own spend is
+    // not the hard ceiling the design leans on.
+    //
+    // So a MANDATE's overage is recorded as what it actually is: an
+    // allocation, already spent. A settled row (spent = amount) sits outside
+    // the live-placement unique index, so this never collides with a future
+    // placement on the same group. Two things follow for free — the escrow's
+    // committed total includes it, and because day room sums the amounts
+    // placed today, an expensive run draws down TODAY's room by its own
+    // overspend rather than leaving the pace target to describe fiction.
+    //
+    // A USER's overage stays absorbed by the platform: their cap is a promise
+    // ("the ceiling was theirs to rely on"), and a buyer must never be billed
+    // past the number on the button. Only grant-funded allocations are
+    // extended, and when a group has none, the shortfall stays off-ledger —
+    // where the corrected non-ledger term now counts it instead of hiding it.
+    const shortfall = Math.round(meteredMicroUsd) - consumed;
+    if (shortfall > 0) {
+      const byGrant = new Map<string, number>();
+      for (const r of covering) {
+        if (!r.grant_id) continue;
+        byGrant.set(r.grant_id, (byGrant.get(r.grant_id) ?? 0) + Number(r.amount));
+      }
+      const totalWeight = [...byGrant.values()].reduce((s, n) => s + n, 0);
+      if (totalWeight > 0) {
+        // Pro rata by what each mandate had promised: the funder that backed
+        // most of the work carries most of the overspend.
+        const entries = [...byGrant.entries()];
+        let assigned = 0;
+        for (const [i, [grantId, weight]] of entries.entries()) {
+          const share =
+            i === entries.length - 1
+              ? shortfall - assigned
+              : Math.floor((shortfall * weight) / totalWeight);
+          if (share <= 0) continue;
+          const claimId =
+            covering.find((r) => r.grant_id === grantId)?.claim_id ?? null;
+          await tx.query(
+            `INSERT INTO action_allocations
+               (exclusion_group, action_id, claim_id, grant_id,
+                amount_micro_usd, spent_micro_usd, released_at)
+             VALUES ($1, $2, $3, $4, $5, $5, now())`,
+            [action.exclusion_group, actionId, claimId, grantId, share]
+          );
+          assigned += share;
+          consumed += share;
+        }
       }
     }
 

@@ -9,7 +9,7 @@
  *
  *   1. Config priors (EST_* knobs) — starting guesses, deliberately cheap
  *      to revise as the eval engine grows.
- *   2. Live rolling averages of the metered billed cost of recent runs of
+ *   2. Live percentiles of the metered billed cost of recent runs of
  *      the same agent + model, which replace the prior once enough runs
  *      exist. Estimating a cost should never rival the cost of doing the
  *      thing, so this is one aggregate query, cached for a few minutes.
@@ -36,11 +36,29 @@ export function resetCostEstimateCache(): void {
 }
 
 /**
- * Rolling average billed cost of recent runs for one agent + model, or null
- * when there are not yet enough runs to trust. A "run" is approximated by
- * per-claim grouping (one steward pass = one claim's calls in the window).
+ * Billed cost of recent runs for one agent + model, or null when there are not
+ * yet enough runs to trust. A "run" is approximated by per-claim grouping (one
+ * steward pass = one claim's calls in the window).
+ *
+ * A PERCENTILE of that distribution, not the mean.
+ *
+ * This number is used as a cap: the allocator covers an action for it, the run
+ * then costs what it costs, and any excess is consumed off the escrow WITHOUT
+ * passing through an allocation — so it escapes the mandate's daily rate and is
+ * bounded only by the escrow. An estimate set at the mean is therefore wrong
+ * about half the time, and always in the expensive direction.
+ *
+ * Measured on the first live epoch (58 steward runs on Fable 5): mean 2.31
+ * owls, p50 2.10, p80 3.30, p90 4.36, max 7.01. Right-skewed, so the mean
+ * under-funded roughly half of runs by up to 3x and produced 11+ owls of
+ * unpaced overage on the General mandate alone.
+ *
+ * p80 is the default: it funds the large majority of runs completely while
+ * still reflecting typical cost, and the tail that remains is small. Raising it
+ * further trades throughput for tightness — a bigger per-action estimate means
+ * fewer actions clear the same daily rate.
  */
-async function recentAverageRunCostMicroUsd(
+async function recentRunCostEstimateMicroUsd(
   agent: string,
   model: string
 ): Promise<number | null> {
@@ -48,36 +66,38 @@ async function recentAverageRunCostMicroUsd(
   const windowDays = config.costEstimateWindowDays ?? 14;
   const minRuns = config.costEstimateMinRuns ?? 5;
   if (windowDays <= 0 || minRuns <= 0) return null;
+  const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
 
-  const key = `${agent}:${model}`;
+  const key = `${agent}:${model}:${percentile}`;
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value || null;
 
-  const [row] = await rawQuery<{ runs: number; avg_cost: number | null }>(
-    `SELECT COUNT(*)::int AS runs, AVG(run_cost)::bigint AS avg_cost
+  const [row] = await rawQuery<{ runs: number; est_cost: number | null }>(
+    `SELECT COUNT(*)::int AS runs,
+            percentile_cont($4) WITHIN GROUP (ORDER BY run_cost)::bigint AS est_cost
        FROM (SELECT claim_id, SUM(cost_micro_usd) AS run_cost
                FROM llm_usage
               WHERE agent = $1 AND model = $2 AND claim_id IS NOT NULL
                 AND created_at > now() - make_interval(days => $3)
               GROUP BY claim_id) runs`,
-    [agent, model, windowDays]
+    [agent, model, windowDays, percentile]
   );
-  const enough = (row?.runs ?? 0) >= minRuns && row?.avg_cost != null;
-  const value = enough ? Number(row!.avg_cost) : 0;
+  const enough = (row?.runs ?? 0) >= minRuns && row?.est_cost != null;
+  const value = enough ? Number(row!.est_cost) : 0;
   cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   return enough ? value : null;
 }
 
 /**
  * Expected cost of one Steward pass on the given model, in billed
- * micro-USD: the live rolling average when there is one, the config prior
+ * micro-USD: the live percentile when there is one, the config prior
  * otherwise.
  */
 export async function estimateStewardRunCostMicroUsd(
   model: string
 ): Promise<number> {
   const config = loadConfig();
-  const live = await recentAverageRunCostMicroUsd("steward", model).catch(
+  const live = await recentRunCostEstimateMicroUsd("steward", model).catch(
     () => null
   );
   if (live != null && live > 0) return live;
