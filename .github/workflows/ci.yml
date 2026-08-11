@@ -65,6 +65,112 @@ jobs:
       - name: DB-backed tests
         run: npm run test:db
 
+  # The S1 Matcher golden suite (#334 L4) — the per-PR regression net for the
+  # one agent whose task saturates. ~$0.06 and ~2 minutes of real LLM calls
+  # against 30 pinned pairs, so it runs on every PR without a path filter: a
+  # filter that guesses wrong fails open, and the whole point is that a prompt
+  # or model change can't silently move the Matcher.
+  #
+  # §21 coherence needs no job here — those rules are pure functions, unit
+  # tested in tests/unit/scripts/corpus-metrics.test.ts, and already gate every
+  # PR through the `check` job's vitest run.
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Supersede a PR's own in-flight run rather than paying for both.
+    concurrency:
+      group: golden-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: episteme
+          POSTGRES_PASSWORD: episteme
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U episteme"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # lib.ts pins DATABASE_URL to this and refuses to run against 'episteme'.
+      CORPUS_DATABASE_URL: postgresql://episteme:episteme@localhost:5432/episteme_corpus
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The suite spends real money, so it needs real keys: OpenAI for the
+      # embeddings it seeds with, and the Matcher's own provider (OpenRouter
+      # by default, per #337). A PR from a fork gets no secrets at all, and a
+      # repo that hasn't configured them yet must not have every PR blocked —
+      # so absence SKIPS with a warning instead of failing. `secrets` is not
+      # available to a job-level `if`, hence the step-output gate.
+      - name: Check for eval keys
+        id: keys
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ] && [ -n "$OPENROUTER_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Golden suite skipped::OPENAI_API_KEY and/or OPENROUTER_API_KEY are not configured for this run, so the Matcher regression net did not run."
+          fi
+
+      # Creates the isolated corpus DB, enables pgvector, applies the full
+      # migration chain. An empty graph also means an empty retrieval pool, so
+      # the only claims the Matcher can see are the pair's own seeds.
+      - name: Prepare corpus database
+        if: steps.keys.outputs.available == 'true'
+        run: npm run corpus:reset
+
+      # --min-pass=0.95 tolerates exactly one of thirty pairs: the Matcher is
+      # near-deterministic but not deterministic, and a single flake must not
+      # block every PR in the repo. A tolerated failure is still surfaced as an
+      # annotation below, so "29/30, same pair every time" reads as the
+      # regression it is instead of passing quietly.
+      - name: Matcher golden suite
+        if: steps.keys.outputs.available == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: npm run corpus:golden -- --min-pass=0.95
+
+      - name: Annotate failed pairs
+        if: always() && steps.keys.outputs.available == 'true'
+        run: |
+          report="$(ls -1d runs/golden-matcher-* 2>/dev/null | tail -1)/golden-report.json"
+          if [ ! -f "$report" ]; then
+            echo "no golden report produced"
+            exit 0
+          fi
+          node -e '
+            const fs = require("node:fs");
+            const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            for (const f of r.results.filter((x) => !x.pass)) {
+              console.log(`::warning title=Golden pair ${f.id} failed::[${f.category}] ${f.failures.join("; ")}`);
+            }
+            console.log(`pass rate ${r.summary.passed}/${r.summary.total}`);
+          ' "$report"
+
+      - name: Upload golden report
+        if: always() && steps.keys.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-report
+          path: runs/golden-matcher-*/golden-report.json
+          if-no-files-found: ignore
+
   plugin:
     runs-on: ubuntu-latest
     steps:
