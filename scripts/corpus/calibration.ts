@@ -1,24 +1,28 @@
 /**
- * Judge calibration (#334 L2, from #137/#99): the human-label loop.
+ * Judge review (#334 L2, from #137/#99; §2.8 as amended 2026-08-25): the
+ * human vetting loop for the LLM judge.
  *
- * No judge's numbers feed a gate until checked against human labels (#334
- * §2.8). This tool runs that loop in two halves:
+ * The judge is presumed good-faith, so its judgment is as good as its prompt.
+ * The check is therefore to READ its verdicts and reasoning, not to re-derive
+ * them blind and measure agreement: a reviewer endorses each verdict or names
+ * what it got wrong, and a disagreement is treated as a defect in the rubric
+ * wording (scripts/corpus/judge.ts), to be fixed and re-judged — not as a
+ * judge error to score. No agreement statistic is computed; the output is a
+ * vetted judge and a list of prompt defects.
  *
- *   npm run corpus:calibrate -- sheet [db:<id> | <scorecard.json>]
- *     Generates a BLINDED labeling sheet from a scored run: the same claims
- *     the judge scored, with full context (assessment, reasoning, subclaims)
- *     and the same constitution standards the judge was pinned to — but the
- *     judge's own verdicts withheld, so the labeler isn't anchored. Defaults
- *     to the most recent scored run in the eval-run registry.
+ *   npm run corpus:calibrate -- review [db:<id> | <scorecard.json>]
+ *     Generates a review sheet from a scored run: each judged claim with its
+ *     full context (assessment, reasoning, subclaims), the pinned standards
+ *     the judge graded against, and the judge's complete verdict — every
+ *     dimension, its flags, and its note. Defaults to the most recent scored
+ *     run in the eval-run registry.
  *
- *   npm run corpus:calibrate -- compare <filled-sheet.md>
- *     Parses the filled labels and prints per-dimension agreement with the
- *     judge's verdicts from the registry: mean absolute difference on the
- *     1-5 scales and importance, exact agreement on claim_bar/granularity.
+ * The reviewer fills the `review` block per item (agree yes/no/partly, and
+ * where they disagree, why). The filled sheet is committed as the record of
+ * the review; there is nothing to run afterward.
  *
- * The sheet carries its eval-run id, so the comparison always joins against
- * the exact run that was labeled. Claim context is read from the corpus DB —
- * generate the sheet before resetting the graph (or restore the snapshot).
+ * Claim context is read from the corpus DB — generate the sheet before
+ * resetting the graph (or restore the snapshot).
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -58,16 +62,12 @@ async function latestScoredRun(ref: string | undefined): Promise<RegistryRun> {
   return rows[0]!;
 }
 
-const LABEL_TEMPLATE = [
-  "readability:      # 1-5",
-  "reasoning_fit:    # 1-5",
-  "impartiality:     # 1-5",
-  "claim_bar:        # yes | no",
-  "granularity:      # good | too_granular | too_shallow | n_a",
-  "importance:       # 0.0-1.0 on the §19 anchors",
+const REVIEW_TEMPLATE = [
+  "agree:            # yes | no | partly",
+  "notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it",
 ].join("\n");
 
-async function makeSheet(ref: string | undefined): Promise<void> {
+async function makeReviewSheet(ref: string | undefined): Promise<void> {
   assertCorpusDb();
   const run = await latestScoredRun(ref);
   const items = run.scorecard.judged?.items ?? [];
@@ -77,22 +77,23 @@ async function makeSheet(ref: string | undefined): Promise<void> {
 
   const o: string[] = [];
   const w = (l = "") => o.push(l);
-  w(`# Judge-calibration labeling sheet — ${run.cluster}`);
+  w(`# Judge-review sheet — ${run.cluster}`);
   w();
   w(`eval_run: ${run.id}`);
   w();
   w(`## Instructions`);
   w();
-  w(`Label each claim below against the standards — the SAME standards the`);
-  w(`LLM judge is pinned to, reproduced here. Work from the claim, its`);
-  w(`assessment, and its subclaims alone; the judge's verdicts are withheld`);
-  w(`so your labels stay independent. Fill every field in each \`labels\``);
-  w(`block (replace the comments). Then run:`);
+  w(`Read each claim below, then the judge's verdict on it, against the`);
+  w(`standards — the SAME standards the judge is pinned to, reproduced here.`);
+  w(`Mark each \`review\` block: agree, disagree, or partly, with a note where`);
+  w(`you disagree. A disagreement is a defect in the rubric wording, not in`);
+  w(`the judge: the fix goes in scripts/corpus/judge.ts, then re-score and`);
+  w(`review again. Commit the filled sheet as the record of the review; no`);
+  w(`agreement statistic is computed (#334 §2.8 as amended).`);
   w();
-  w(`    npm run corpus:calibrate -- compare <this-file>`);
-  w();
-  w(`Disagreement is signal, not failure — where your labels and the judge`);
-  w(`diverge systematically is exactly what this measures (#137).`);
+  w(`Tip: importance is the one dimension where a fluent rationale most`);
+  w(`easily anchors — consider jotting your own number before reading the`);
+  w(`judge's on that dimension.`);
   w();
   w(`## Standards`);
   w();
@@ -125,7 +126,7 @@ async function makeSheet(ref: string | undefined): Promise<void> {
     if (!claim) {
       throw new Error(
         `Claim ${item.id} is no longer in the corpus DB — the graph was reset ` +
-          `since this run. Restore the snapshot, or label from a fresher run.`
+          `since this run. Restore the snapshot, or review a fresher run.`
       );
     }
 
@@ -150,116 +151,46 @@ async function makeSheet(ref: string | undefined): Promise<void> {
     }
     if (subclaims.length === 0) w(`- (atomic: no decomposition)`);
     w();
-    w("```labels");
+    w(`**Judge's verdict:**`);
+    w();
+    w(`| dimension | verdict |`);
+    w(`|---|---|`);
+    w(`| readability | ${item.readability} |`);
+    w(`| reasoning_fit | ${item.reasoning_fit} |`);
+    w(`| impartiality | ${item.impartiality} |`);
+    w(`| claim_bar | ${item.claim_bar} |`);
+    w(`| granularity | ${item.decomposition_granularity} |`);
+    w(`| importance (judged, vs ${item.importanceStored} stored) | ${item.importance_judged} |`);
+    w();
+    w(`Flags: ${item.flags.length > 0 ? item.flags.join(", ") : "none"}`);
+    w();
+    w(`> ${item.note}`);
+    w();
+    w("```review");
     w(`claim_id: ${item.id}`);
-    w(LABEL_TEMPLATE);
+    w(REVIEW_TEMPLATE);
     w("```");
   }
 
   mkdirSync(SHEETS_DIR, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
-  const path = join(SHEETS_DIR, `${run.cluster}-${stamp}-${run.id.slice(0, 8)}.md`);
+  const path = join(SHEETS_DIR, `${run.cluster}-${stamp}-${run.id.slice(0, 8)}-review.md`);
   writeFileSync(path, o.join("\n"));
-  console.log(`✓ labeling sheet: ${path} (${items.length} items)`);
-  console.log(`  fill every \`labels\` block, then: npm run corpus:calibrate -- compare ${path}`);
-}
-
-interface ParsedLabels {
-  claimId: string;
-  readability?: number;
-  reasoning_fit?: number;
-  impartiality?: number;
-  claim_bar?: string;
-  granularity?: string;
-  importance?: number;
-}
-
-function parseSheet(text: string): { evalRunId: string; labels: ParsedLabels[] } {
-  const evalRunId = /^eval_run: (\S+)/m.exec(text)?.[1];
-  if (!evalRunId) throw new Error("Sheet is missing its `eval_run:` line.");
-  const labels: ParsedLabels[] = [];
-  for (const block of text.matchAll(/```labels\n([\s\S]*?)```/g)) {
-    const body = block[1]!;
-    const get = (k: string) =>
-      new RegExp(`^${k}:\\s*([^#\\n]*)`, "m").exec(body)?.[1]?.trim() || undefined;
-    const num = (k: string) => {
-      const v = get(k);
-      return v === undefined || v === "" ? undefined : Number(v);
-    };
-    const claimId = get("claim_id");
-    if (!claimId) continue;
-    labels.push({
-      claimId,
-      readability: num("readability"),
-      reasoning_fit: num("reasoning_fit"),
-      impartiality: num("impartiality"),
-      claim_bar: get("claim_bar"),
-      granularity: get("granularity"),
-      importance: num("importance"),
-    });
-  }
-  return { evalRunId, labels };
-}
-
-async function compareSheet(path: string): Promise<void> {
-  assertCorpusDb();
-  const { evalRunId, labels } = parseSheet(readFileSync(path, "utf-8"));
-  const [run] = await rawQuery<RegistryRun>(
-    `SELECT id, cluster, scorecard FROM eval_runs WHERE id::text LIKE $1 || '%'`,
-    [evalRunId === "file" ? "" : evalRunId]
-  );
-  if (!run) throw new Error(`eval run ${evalRunId} not found in the registry`);
-  const judgeBy = new Map(run.scorecard.judged!.items.map((i) => [i.id, i]));
-
-  const scaleDims = ["readability", "reasoning_fit", "impartiality"] as const;
-  const diffs: Record<string, number[]> = { importance: [] };
-  for (const d of scaleDims) diffs[d] = [];
-  let barAgree = 0, barTotal = 0, granAgree = 0, granTotal = 0, labeled = 0;
-
-  for (const l of labels) {
-    const j = judgeBy.get(l.claimId);
-    if (!j) continue;
-    const complete = scaleDims.every((d) => Number.isFinite(l[d])) &&
-      l.claim_bar && l.granularity && Number.isFinite(l.importance);
-    if (!complete) continue;
-    labeled++;
-    for (const d of scaleDims) diffs[d]!.push(Math.abs(l[d]! - j[d]));
-    diffs.importance!.push(Math.abs(l.importance! - j.importance_judged));
-    barTotal++;
-    if (l.claim_bar === j.claim_bar) barAgree++;
-    granTotal++;
-    if (l.granularity === j.decomposition_granularity) granAgree++;
-  }
-
-  if (labeled === 0) {
-    throw new Error("No fully-filled label blocks found — fill every field in each block.");
-  }
-  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  console.log(`\nJudge calibration vs human labels — run ${run.id.slice(0, 8)} (${labeled} items)\n`);
-  for (const d of scaleDims) {
-    console.log(`  ${d.padEnd(14)} mean |Δ| ${mean(diffs[d]!).toFixed(2)}  (1-5 scale)`);
-  }
-  console.log(`  ${"importance".padEnd(14)} mean |Δ| ${mean(diffs.importance!).toFixed(2)}  (0-1 scale)`);
-  console.log(`  ${"claim_bar".padEnd(14)} exact agreement ${barAgree}/${barTotal}`);
-  console.log(`  ${"granularity".padEnd(14)} exact agreement ${granAgree}/${granTotal}`);
-  console.log(
-    `\n  Reading: |Δ| ≤ 1 on 1-5 scales and claim-bar agreement ≥ ~0.8 is the`
-  );
-  console.log(
-    `  working bar (#137) before judge numbers feed gates. Systematic skew on`
-  );
-  console.log(`  one dimension = fix that dimension's rubric wording, not the judge.`);
+  console.log(`✓ review sheet: ${path} (${items.length} items)`);
+  console.log(`  read each verdict, fill every \`review\` block, commit the filled sheet.`);
 }
 
 async function main(): Promise<void> {
   const command = positional(0);
-  if (command === "sheet") return makeSheet(positional(1));
-  if (command === "compare") {
-    const path = positional(1);
-    if (!path) throw new Error("Usage: corpus:calibrate -- compare <filled-sheet.md>");
-    return compareSheet(path);
+  if (command === "review") return makeReviewSheet(positional(1));
+  if (command === "sheet" || command === "compare") {
+    console.error(
+      `'${command}' was the blinded-calibration workflow, replaced by unblinded ` +
+        `review (#334 §2.8 as amended). Use: corpus:calibrate -- review [db:<id> | scorecard.json]`
+    );
+    process.exit(1);
   }
-  console.error("Usage: corpus:calibrate -- sheet [db:<id> | scorecard.json] | compare <sheet.md>");
+  console.error("Usage: corpus:calibrate -- review [db:<id> | scorecard.json]");
   process.exit(1);
 }
 

@@ -137,18 +137,21 @@ Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
-**Judge calibration** (#99/#137) — no judge number feeds a gate until checked
-against human labels. After a scored run:
+**Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
+gate until a human has read its verdicts and reasoning and either endorsed
+them or fixed the rubric they exposed as defective. The judge is presumed
+good-faith: its judgment is as good as its prompt, so a disagreement is a
+prompt defect to fix (in `scripts/corpus/judge.ts`), not a judge error to
+score, and no agreement statistic is computed. After a scored run:
 
 ```bash
-npm run corpus:calibrate -- sheet            # blinded labeling sheet from the latest scored run
-# … fill every `labels` block by hand …
-npm run corpus:calibrate -- compare corpus/calibration/<sheet>.md
+npm run corpus:calibrate -- review           # review sheet from the latest scored run
+# … read each verdict, fill every `review` block, commit the filled sheet …
 ```
 
-The sheet reproduces the judge's pinned standards and the full claim context
-but withholds the judge's verdicts (no anchoring); `compare` prints per-
-dimension agreement. Generate the sheet before resetting the graph.
+The sheet shows the full claim context plus the judge's complete verdict per
+item (every dimension, flags, and note). Generate it before resetting the
+graph (or restore the snapshot).
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard

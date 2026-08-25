@@ -57,12 +57,19 @@ note, so a low number is always traceable to specific claims.
   only if it repeats across N≈3 runs or exceeds run-to-run noise — `corpus:compare`
   prints the deltas but does not pretend a single diff is significant.
 
-Not yet done: calibrating the judges against human labels, the Matcher
-golden-pair set, and wiring `compare` into a CI gate. These are tracked in the
-eval master plan (#334: layer 1 → suite S1, calibration → the L2 judge
-framework, the CI gate → L4), which is also where this scorecard's successor —
-eval runs as first-class records with persisted history — is designed. Until
-then, scorecards accumulate as files in `corpus/scorecards/` (see its README).
+- **Vetted by review, not blind-calibrated.** Judge verdicts are checked by a
+  human READING them against the pinned standards (`corpus:calibrate review`),
+  per #334 §2.8 as amended: the judge is presumed good-faith, so its judgment
+  is as good as its prompt, and a disagreement is a rubric-wording defect to
+  fix and re-judge — not a judge error to score. No agreement statistic is
+  kept; the metrics that matter are the graph properties the scorecard
+  measures, not human-vs-judge concordance.
+
+Still pending from the master plan (#334): wiring the Matcher golden suite's
+`--min-pass` into a CI gate (L4). The Matcher golden-pair set itself shipped
+(S1, `corpus:golden`), and eval runs are first-class records in the `eval_runs`
+registry; scorecards also accumulate as files in `corpus/scorecards/` (see its
+README).
 
 ## Cost
 
