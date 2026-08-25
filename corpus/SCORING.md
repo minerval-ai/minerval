@@ -59,11 +59,12 @@ note, so a low number is always traceable to specific claims.
 
 - **Vetted by review, not blind-calibrated.** Judge verdicts are checked by a
   human READING them against the pinned standards (`corpus:calibrate review`),
-  per #334 §2.8 as amended: the judge is presumed good-faith, so its judgment
-  is as good as its prompt, and a disagreement is a rubric-wording defect to
-  fix and re-judge — not a judge error to score. No agreement statistic is
-  kept; the metrics that matter are the graph properties the scorecard
-  measures, not human-vs-judge concordance.
+  per #334 §2.8 as amended: the judge is presumed good-faith and competent at
+  its assigned task, so the reviewer's contribution is catching where the
+  task itself misses — standards that don't get at the right thing, missing
+  dimensions, better designs — not re-deriving numbers. No agreement
+  statistic is kept; the metrics that matter are the graph properties the
+  scorecard measures, not human-vs-judge concordance.
 
 Still pending from the master plan (#334): wiring the Matcher golden suite's
 `--min-pass` into a CI gate (L4). The Matcher golden-pair set itself shipped

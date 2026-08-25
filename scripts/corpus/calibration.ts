@@ -2,13 +2,15 @@
  * Judge review (#334 L2, from #137/#99; §2.8 as amended 2026-08-25): the
  * human vetting loop for the LLM judge.
  *
- * The judge is presumed good-faith, so its judgment is as good as its prompt.
- * The check is therefore to READ its verdicts and reasoning, not to re-derive
- * them blind and measure agreement: a reviewer endorses each verdict or names
- * what it got wrong, and a disagreement is treated as a defect in the rubric
- * wording (scripts/corpus/judge.ts), to be fixed and re-judged — not as a
- * judge error to score. No agreement statistic is computed; the output is a
- * vetted judge and a list of prompt defects.
+ * The judge is presumed good-faith and competent at its assigned task, so its
+ * judgment is as good as its prompt. The check is therefore to READ its
+ * verdicts and reasoning, not to re-derive them blind and measure agreement —
+ * and the reviewer's real contribution is not grading the judge's homework
+ * but catching where the assigned task itself misses: a standard that does
+ * not get at the right thing, a dimension that should exist and does not, a
+ * better task. Rubric-wording fixes go to judge.ts and get re-judged;
+ * what-is-measured fixes go to the plan (#334). No agreement statistic is
+ * computed.
  *
  *   npm run corpus:calibrate -- review [db:<id> | <scorecard.json>]
  *     Generates a review sheet from a scored run: each judged claim with its
@@ -17,9 +19,10 @@
  *     dimension, its flags, and its note. Defaults to the most recent scored
  *     run in the eval-run registry.
  *
- * The reviewer fills the `review` block per item (agree yes/no/partly, and
- * where they disagree, why). The filled sheet is committed as the record of
- * the review; there is nothing to run afterward.
+ * The reviewer fills a `review` block only where a verdict misses, and the
+ * closing `overall` block with the feedback that actually matters. The filled
+ * sheet is committed as the record of the review; there is nothing to run
+ * afterward.
  *
  * Claim context is read from the corpus DB — generate the sheet before
  * resetting the graph (or restore the snapshot).
@@ -62,10 +65,8 @@ async function latestScoredRun(ref: string | undefined): Promise<RegistryRun> {
   return rows[0]!;
 }
 
-const REVIEW_TEMPLATE = [
-  "agree:            # yes | no | partly",
-  "notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it",
-].join("\n");
+const REVIEW_TEMPLATE =
+  "notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse";
 
 async function makeReviewSheet(ref: string | undefined): Promise<void> {
   assertCorpusDb();
@@ -85,15 +86,14 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
   w();
   w(`Read each claim below, then the judge's verdict on it, against the`);
   w(`standards — the SAME standards the judge is pinned to, reproduced here.`);
-  w(`Mark each \`review\` block: agree, disagree, or partly, with a note where`);
-  w(`you disagree. A disagreement is a defect in the rubric wording, not in`);
-  w(`the judge: the fix goes in scripts/corpus/judge.ts, then re-score and`);
-  w(`review again. Commit the filled sheet as the record of the review; no`);
-  w(`agreement statistic is computed (#334 §2.8 as amended).`);
-  w();
-  w(`Tip: importance is the one dimension where a fluent rationale most`);
-  w(`easily anchors — consider jotting your own number before reading the`);
-  w(`judge's on that dimension.`);
+  w(`Fill a \`review\` block only where a verdict misses. The real output is`);
+  w(`the \`## Overall\` section at the end: not a grade of the judge's`);
+  w(`homework, but feedback on the task itself — where the standards or`);
+  w(`dimensions miss the right thing, what is measured that shouldn't be,`);
+  w(`what isn't measured that should be. Rubric-wording fixes go to`);
+  w(`scripts/corpus/judge.ts (then re-score and review again); what-is-`);
+  w(`measured fixes go to the plan (#334). Commit the filled sheet as the`);
+  w(`record; no agreement statistic is computed (#334 §2.8 as amended).`);
   w();
   w(`## Standards`);
   w();
@@ -171,6 +171,18 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
     w(REVIEW_TEMPLATE);
     w("```");
   }
+
+  w();
+  w(`---`);
+  w();
+  w(`## Overall`);
+  w();
+  w(`The output that matters: feedback on the task, not scores on the judge.`);
+  w();
+  w("```overall");
+  w(`# Free-form: misunderstandings in the task ("slight misunderstanding about X"),`);
+  w(`# things not measured ("we forgot Y"), or redesigns ("what if we did Z instead").`);
+  w("```");
 
   mkdirSync(SHEETS_DIR, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);

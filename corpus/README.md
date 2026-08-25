@@ -138,20 +138,25 @@ them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
-gate until a human has read its verdicts and reasoning and either endorsed
-them or fixed the rubric they exposed as defective. The judge is presumed
-good-faith: its judgment is as good as its prompt, so a disagreement is a
-prompt defect to fix (in `scripts/corpus/judge.ts`), not a judge error to
-score, and no agreement statistic is computed. After a scored run:
+gate until a human has read its verdicts and reasoning. The judge is presumed
+good-faith and competent at its assigned task — its judgment is as good as
+its prompt — so the reviewer's real contribution is not re-deriving numbers
+or grading the judge's homework but catching where the assigned task itself
+misses: a standard that doesn't get at the right thing, a dimension that
+should exist and doesn't, a better task. Rubric-wording fixes go to
+`scripts/corpus/judge.ts` and get re-judged; what-is-measured fixes go to the
+plan (#334). No agreement statistic is computed. After a scored run:
 
 ```bash
 npm run corpus:calibrate -- review           # review sheet from the latest scored run
-# … read each verdict, fill every `review` block, commit the filled sheet …
+# … read the verdicts, note only where one misses, fill the Overall block …
 ```
 
 The sheet shows the full claim context plus the judge's complete verdict per
-item (every dimension, flags, and note). Generate it before resetting the
-graph (or restore the snapshot).
+item (every dimension, flags, and note), and closes with the `## Overall`
+block — the feedback that actually matters. Commit the filled sheet as the
+record of the review. Generate it before resetting the graph (or restore the
+snapshot).
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard

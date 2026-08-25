@@ -6,15 +6,14 @@ eval_run: 832f7f15-3063-4c1a-8f2f-ccaf79cf92bb
 
 Read each claim below, then the judge's verdict on it, against the
 standards — the SAME standards the judge is pinned to, reproduced here.
-Mark each `review` block: agree, disagree, or partly, with a note where
-you disagree. A disagreement is a defect in the rubric wording, not in
-the judge: the fix goes in scripts/corpus/judge.ts, then re-score and
-review again. Commit the filled sheet as the record of the review; no
-agreement statistic is computed (#334 §2.8 as amended).
-
-Tip: importance is the one dimension where a fluent rationale most
-easily anchors — consider jotting your own number before reading the
-judge's on that dimension.
+Fill a `review` block only where a verdict misses. The real output is
+the `## Overall` section at the end: not a grade of the judge's
+homework, but feedback on the task itself — where the standards or
+dimensions miss the right thing, what is measured that shouldn't be,
+what isn't measured that should be. Rubric-wording fixes go to
+scripts/corpus/judge.ts (then re-score and review again); what-is-
+measured fixes go to the plan (#334). Commit the filled sheet as the
+record; no agreement statistic is computed (#334 §2.8 as amended).
 
 ## Standards
 
@@ -67,8 +66,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -112,8 +110,7 @@ Flags: false_precision
 
 ```review
 claim_id: 31233c47-7721-4c16-b37a-fb8fa973b0b8
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -154,8 +151,7 @@ Flags: false_precision
 
 ```review
 claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -199,8 +195,7 @@ Flags: status_miscalibrated, hallucination_risk
 
 ```review
 claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -240,8 +235,7 @@ Flags: other
 
 ```review
 claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -286,8 +280,7 @@ Flags: status_miscalibrated, false_precision
 
 ```review
 claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -334,8 +327,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -381,8 +373,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 694a1de3-20fb-4e83-821d-b15f01f94d81
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -421,8 +412,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 74137053-82a6-477e-8842-45a1639d9f17
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -464,8 +454,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 919bf964-1fc6-4c69-b428-ff0a6dc7442f
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -508,8 +497,7 @@ Flags: status_miscalibrated, other
 
 ```review
 claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -552,8 +540,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -599,6 +586,16 @@ Flags: none
 
 ```review
 claim_id: f17e7d15-80ba-4372-b13f-6aef8873c0af
-agree:            # yes | no | partly
-notes:            # where you disagree: what the verdict got wrong, and what in the rubric wording allowed it
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Overall
+
+The output that matters: feedback on the task, not scores on the judge.
+
+```overall
+# Free-form: misunderstandings in the task ("slight misunderstanding about X"),
+# things not measured ("we forgot Y"), or redesigns ("what if we did Z instead").
 ```
