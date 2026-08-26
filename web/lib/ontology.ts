@@ -261,7 +261,7 @@ export function decompositionNote(opts: {
 }
 
 // Claim importance — how much it is worth spending scarce intelligence to get the
-// claim right (roughly consequence-if-wrong × contestability), 0..1, a revisable
+// claim right (roughly consequence-if-wrong × liveness), 0..1, a revisable
 // judgment set by the Steward that orders its work queue. NOT mere graph
 // centrality: an uncontested claim is low importance even when much depends on it,
 // because getting a settled fact right is essentially free (#68). We bucket the

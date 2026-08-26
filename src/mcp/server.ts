@@ -200,8 +200,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       title: "Search claims",
       description:
         "Search Minerval's claim graph. A claim is a single reusable " +
-        "proposition about the world that informed people could dispute with " +
-        "evidence or reasons; each is stored once, under a neutral canonical " +
+        "proposition about the world, assessable with evidence and reasons; " +
+        "each is stored once, under a neutral canonical " +
         "wording shared by the claim and its denial. Combined semantic and " +
         "keyword search, ranked by similarity; each result carries its " +
         "current assessment status and a link to its minerval.ai page. " +
@@ -419,10 +419,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       title: "Extract claims from text",
       description:
         "Run a passage through Minerval's Extractor to surface the claims it " +
-        "asserts or relies on: single reusable propositions that informed " +
-        "people could dispute, each with a proposed canonical form, claim " +
-        "type, and provisional importance. Claims are scarce relative to " +
-        "text, so most sentences yield none. Runs a model: metered to your " +
+        "asserts or relies on: single reusable propositions assessable with " +
+        "evidence and reasons, each with a proposed canonical form, claim " +
+        "type, and provisional importance. Claims worth minting are scarce " +
+        "relative to text, so most sentences yield none. Runs a model: metered to your " +
         "account and quota-gated.",
       inputSchema: {
         text: z.string().min(1).max(100_000).describe("The text to extract from"),

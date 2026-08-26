@@ -72,11 +72,11 @@ export const claims = pgTable(
     // important claims are processed first under a run budget (§"Claim Importance
     // and Proportional Effort"). 0.5 = default/medium until judged.
     importance: real("importance").notNull().default(0.5),
-    // How live the dispute around the claim is (0..1), recorded separately from
-    // importance (#172 phase 1). Today importance fuses consequence-if-wrong
-    // with contestability; splitting the contestability half out is the first
-    // step toward scheduling on stakes × expected-yield instead of one fused
-    // score. Recorded by the Extractor (prior) and the Steward (authoritative),
+    // How live the claim is in the discourse (0..1), disputed or actively
+    // consulted, recorded separately from importance (#172 phase 1). Today
+    // importance fuses consequence-if-wrong with liveness; splitting the
+    // liveness half out is the first step toward scheduling on stakes ×
+    // expected-yield instead of one fused score. Recorded by the Extractor (prior) and the Steward (authoritative),
     // and read by the composite queue priority below.
     contestation: real("contestation"),
     // Composite BACKGROUND-QUEUE priority (the allocation core): the drain's

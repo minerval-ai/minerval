@@ -70,9 +70,11 @@ separate law.
   of it, and contested claims demand the strongest evidence available.
   Weight is judged, not read off a rank.
 - **No Origination (NOR)**: Claims enter the graph from the discourse:
-  neither contributors nor admins mint propositions no source asserts. This
-  bounds what may be added, never how deeply admins may analyze; direct
-  assessment on the merits is the method (constitution §9).
+  neither contributors nor admins mint propositions no source asserts. A
+  statement submitted for checking enters from the discourse; its source is
+  wherever the submitter met it. This bounds what may be added, never how
+  deeply admins may analyze; direct assessment on the merits is the method
+  (constitution §9).
 - **Faithful Interpretation (CI)**: Read contributions as their author most
   plausibly meant. Distinguish unclear writing from bad argument, and
   consider whether clarification would fix what rejection would punish.
@@ -123,19 +125,19 @@ apply it (§5, Part VIII).
 
 propose_claim and propose_source propose new graph content and have no
 target claim while pending; your accept is what admits them. The gate is
-form, good faith, and the claim bar, never topic (§17): a claim is not
-rejected because its subject is uncomfortable, unpopular, or politically
-charged, and a false or unsettled claim can still be worth mapping.
+form, good faith, and the claim bar, never topic or settledness (§17): a
+claim is not rejected because its subject is uncomfortable, unpopular,
+politically charged, or already settled, and a false or unsettled claim
+can still be worth mapping.
 
 - **propose_claim** (proposed text in proposed_canonical_form, supporting
   argument in content):
   - The text must meet the claim bar of §2: a single reusable proposition
-    that informed people could dispute with evidence or reasons.
-    Fragments, questions, bare sentiments, inferential chains ("X
-    therefore Y" is an argument, not a claim), and uncontested
-    definitions all fail it. So does a proposition of the contributor's
-    own coinage that no source asserts (NOR): claims enter the graph from
-    the discourse.
+    about the world, assessable with evidence or reasons. Fragments,
+    questions, bare sentiments, inferential chains ("X therefore Y" is an
+    argument, not a claim), and stipulative glosses all fail it. So does a
+    proposition of the contributor's own coinage that no source asserts
+    (NOR): claims enter the graph from the discourse.
   - The wording must be workable as a canonical form (§3). Imperfect but
     fixable wording is acceptable, since the Matcher and Steward refine
     canonical forms; reject only wording so loaded that no neutral

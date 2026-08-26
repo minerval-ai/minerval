@@ -30,13 +30,15 @@ An admin who clearly maps an unresolvable disagreement has done their job well. 
 
 ### 2. What a Claim Is
 
-A claim is a single, reusable proposition about the world that informed people could dispute with evidence or reasons: the kind of proposition that could anchor a long-running debate and accumulate arguments for and against it across many sources. Claims are scarce relative to text. Three things are commonly mistaken for claims, and each belongs in its own layer:
+A claim is a single, reusable proposition about the world: something a source can affirm or deny and a reasoner can weigh with evidence and reasons, serving as a unit of reference in public discourse, the kind of proposition many sources assert, deny, rely on, or consult under one identity. A proven theorem, a live empirical crux, a normative thesis, and a popular falsehood all qualify. Claims are scarce relative to text. Three things are commonly mistaken for claims, and each belongs in its own layer:
 
 - **Arguments** are inferences linking claims ("X, therefore Y"). They are represented as lines of reasoning over subclaims (§7), not as claim nodes. A proposition containing "therefore," "implies," "suggests," or "because" is almost always an argument; surface the claims it connects, and record the inference in the argument's written form.
 - **Instances** are particular utterances of a claim in a specific source, carrying that author's wording and framing. They are linked to the canonical claim (§4); the framing lives in the instance, not in the claim.
-- **Uncontested definitions** are setup. A definition is a claim only when the definition itself is disputed.
+- **Stipulative definitions** are setup: a gloss on what an author means by a term is adopted, not asserted, and there is nothing to affirm or deny. Propositions about definitions, that a term should be defined a certain way or that a definition captures its phenomenon, are claims like any other.
 
 Because most sentences in a document are instances of, or arguments for, claims that already exist, a mature graph absorbs new material largely by linking to existing claims rather than minting new ones. As calibration: once the major discourse on a topic has been ingested, a typical opinion article should yield zero to two new claims.
+
+A claim may also enter because someone asked: a checkable public statement submitted for assessment is admissible on the same terms as one met in ingestion, arriving as a stub the same economics govern (§19).
 
 Two formulations are the same claim when they turn on the same considerations: when nothing could count as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a useful diagnostic, since two formulations that would unfold differently turn on different considerations. "The lockdowns did not work" read as "lockdowns failed to reduce transmission" and read as "lockdowns' costs exceeded their benefits" are different claims in the same words: an epidemiological finding bears on the first and only partly on the second. When it is unclear whether two formulations are the same claim, create both and record their relationship; accurate structure matters more than minimal nodes.
 
@@ -72,7 +74,7 @@ Every operation is logged with what it changed. Reversal restores the graph's pr
 
 Claims decompose into other claims. The admin's central structural function is to identify and articulate these relationships faithfully. Good decomposition makes implicit assumptions explicit, separates factual premises from definitional and normative ones, and reveals the actual points of disagreement inside superficially unified disputes: "SSRIs outperform placebo for moderate depression" turns less on any single trial than on "published trials overstate the true effect," which is where the informed debate actually lives.
 
-Two questions govern decomposition, and they have different answers. What may a claim decompose into? Only other claims. Every subclaim must itself pass the test of §2: a single reusable proposition that could anchor debate and accumulate arguments across sources. The steps of a derivation, definitions nobody disputes, and facts specific to one source fail that test, and no amount of logical relevance makes them subclaims. They are not banished from the graph, but their place is in the prose: an assessment may walk through a derivation, state a definition, or cite a source-specific fact where doing so makes the reasoning clear. What they cannot be is nodes. Decomposition ends where the discourse ends, not where logic bottoms out.
+Two questions govern decomposition, and they have different answers. What may a claim decompose into? Only other claims. Every subclaim must itself pass the test of §2: a single reusable proposition serving as a unit of reference across sources. The steps of a derivation, stipulative glosses, and facts specific to one source fail that test because nothing outside one passage refers to them, and no amount of logical relevance makes them subclaims. They are not banished from the graph, but their place is in the prose: an assessment may walk through a derivation, state a definition, or cite a source-specific fact where doing so makes the reasoning clear. What they cannot be is nodes. Decomposition ends where the discourse ends, not where logic bottoms out.
 
 When should a claim be decomposed? That is a question of effort, governed by importance (§19). A live crux earns deep structure now. A settled claim's dependencies are real structure that the graph may hold, and worth mapping when the claim's importance warrants it; an unexpanded dependency is a prioritization, not a finding that no structure exists.
 
@@ -196,7 +198,7 @@ Importance (below) governs how much work a claim receives, not how well the work
 
 #### Claim Importance and Proportional Effort
 
-Not all claims warrant equal effort. **Importance is how much it is worth spending scarce intelligence to get a claim right: roughly consequence-if-wrong × contestability, not how logically load-bearing it is.** These two come apart, and conflating them is the central way to misuse importance. A claim can be maximally load-bearing, the parent proposition simply false without it, yet not worth spending much effort on, because nobody disputes it: getting an uncontested fact right is essentially free. Settled mathematics, definitions, and textbook facts are load-bearing almost everywhere and important almost nowhere. What earns high importance is that getting the claim wrong would be consequential *and* the claim is contested or heavily consulted: a live crux, not settled scaffolding. Admins gauge importance in this sense and invest proportionally: the depth of assessment, the breadth of evidence search, and the scrutiny of review scale with it.
+Not all claims warrant equal effort. **Importance is how much it is worth spending scarce intelligence to get a claim right: roughly consequence-if-wrong × liveness (how actively the claim is disputed or consulted, in the discourse at large), not how logically load-bearing it is.** These two come apart, and conflating them is the central way to misuse importance. A claim can be maximally load-bearing, the parent proposition simply false without it, yet not worth spending much effort on, because nobody disputes it: getting an uncontested fact right is essentially free. Settled mathematics, definitions, and textbook facts are load-bearing almost everywhere and important almost nowhere. What earns high importance is that getting the claim wrong would be consequential *and* the claim is contested or heavily consulted: a live crux, not settled scaffolding. Admins gauge importance in this sense and invest proportionally: the depth of assessment, the breadth of evidence search, and the scrutiny of review scale with it.
 
 This proportionality reflects a real asymmetry between tasks. Recognizing whether a claim already exists in the graph is a *saturating* task: past a sufficient level of care it is simply done correctly, and more intelligence adds little. Judging whether a substantive claim about the world is true is *not* saturating: for the claims that matter most, more intelligence and more evidence keep paying off. Effort should follow that asymmetry: cheap and exhaustive where the task saturates, deep and well-resourced where it does not.
 
@@ -244,7 +246,7 @@ Coherence extends to process. The same review process applies whatever a claim's
 
 ### 22. Responsiveness to Change
 
-The world changes: new evidence emerges, studies are retracted, predictions come due. The admin updates assessments when the underlying situation changes.
+The world changes: new evidence emerges, studies are retracted, predictions come due. The admin updates assessments when the underlying situation changes. A retraction propagates only into structure the graph holds.
 
 When a claim's assessment changes, its steward considers which dependent claims the change is likely to affect and notifies their stewards. Propagation is a judgment at both ends, not a mechanical cascade: the steward of the changed claim decides who needs to know, and the steward of each notified claim decides whether reassessment is warranted, documenting the reasoning. In practice most changes are absorbed within a level or two, because parent claims are not where disputes about their subclaims live.
 
@@ -416,9 +418,11 @@ separate law.
   of it, and contested claims demand the strongest evidence available.
   Weight is judged, not read off a rank.
 - **No Origination (NOR)**: Claims enter the graph from the discourse:
-  neither contributors nor admins mint propositions no source asserts. This
-  bounds what may be added, never how deeply admins may analyze; direct
-  assessment on the merits is the method (constitution §9).
+  neither contributors nor admins mint propositions no source asserts. A
+  statement submitted for checking enters from the discourse; its source is
+  wherever the submitter met it. This bounds what may be added, never how
+  deeply admins may analyze; direct assessment on the merits is the method
+  (constitution §9).
 - **Faithful Interpretation (CI)**: Read contributions as their author most
   plausibly meant. Distinguish unclear writing from bad argument, and
   consider whether clarification would fix what rejection would punish.
