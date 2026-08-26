@@ -182,6 +182,9 @@ describe("evidenceRecordToTrig", () => {
   it("pins the assessment version and attribution in pubinfo", () => {
     const trig = evidenceRecordToTrig(record(), opts);
     expect(trig).toContain('dct:creator "Minerval"');
+    expect(trig).toContain(
+      "dct:license <https://creativecommons.org/publicdomain/zero/1.0/>"
+    );
     expect(trig).toContain('mv:assessmentVersion "3"^^xsd:integer');
     expect(trig).toContain('mv:assessedAt "2026-07-30T00:00:00.000Z"^^xsd:dateTime');
     expect(trig).toContain(

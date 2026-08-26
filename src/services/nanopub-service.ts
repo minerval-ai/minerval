@@ -24,6 +24,14 @@ import {
  *  survive any future domain move; docs/vocab.md documents the terms. */
 export const MINERVAL_VOCAB = "https://w3id.org/minerval/vocab#";
 
+/** Graph content (claims, assessments, arguments — not the codebase, which is
+ *  MIT) is dedicated to the public domain under CC0 1.0. Each nanopub carries
+ *  the dedication as a dct:license triple so every publication permanently
+ *  records the terms it went out under, even if the content license ever
+ *  changes for later publications. */
+export const CONTENT_LICENSE_IRI =
+  "https://creativecommons.org/publicdomain/zero/1.0/";
+
 const PREFIXES: Record<string, string> = {
   np: "http://www.nanopub.org/nschema#",
   mv: MINERVAL_VOCAB,
@@ -230,6 +238,7 @@ function buildGraphs(
   // --- publication info: attribution and the pinned version ---
   const pubinfo: Triple[] = [
     { s: npUri, p: "dct:creator", o: lit(CITATION_AUTHOR) },
+    { s: npUri, p: "dct:license", o: iri(CONTENT_LICENSE_IRI) },
     { s: npUri, p: "dct:source", o: iri(pageUrl) },
     {
       s: npUri,

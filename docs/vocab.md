@@ -11,8 +11,11 @@ Established ontologies are reused where they fit; `mv:` covers only what is
 ours. PROV-O carries provenance (`prov:wasDerivedFrom`, `prov:wasQuotedFrom`,
 `prov:generatedAtTime`), CiTO carries a source's stance toward a claim
 (`cito:supports` / `cito:disputes`), Dublin Core carries publication info
-(`dct:creator`, `dct:title`, `dct:source`), and the nanopub schema (`np:`)
-carries the graph structure.
+(`dct:creator`, `dct:title`, `dct:source`, `dct:license`), and the nanopub
+schema (`np:`) carries the graph structure. Every nanopub's publication-info
+graph declares the content license — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+— via `dct:license`, so each publication permanently records the terms it went
+out under.
 
 ## Classes
 

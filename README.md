@@ -195,7 +195,14 @@ the codebase, issues and pull requests are welcome — start with
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The code is MIT — see [LICENSE](LICENSE).
+
+The claim graph content — claims, assessments, arguments, and the
+nanopublication exports built from them — is dedicated to the public domain
+under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Each
+nanopub records the dedication in its publication-info graph via
+`dct:license`. Contributions to the knowledge graph are accepted under the
+same CC0 dedication.
 
 ---
 
