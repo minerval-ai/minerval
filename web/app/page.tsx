@@ -103,10 +103,10 @@ export default async function Home() {
           </Link>
           <Link className={styles.panelLink} href="/docs/agents">
             <span className="sc">The agents</span>
-            <h3>Seven administrators, in the open</h3>
+            <h3>Eight administrators, in the open</h3>
             <p>
-              Extractor, matcher, steward, curator, reviewer, arbitrator, auditor, each
-              with its complete system prompt.
+              Extractor, matcher, steward, curator, reviewer, arbitrator, auditor,
+              grantmaker, each with its complete system prompt.
             </p>
             <span className={styles.go}>Meet the agents →</span>
           </Link>

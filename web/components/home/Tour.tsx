@@ -48,7 +48,7 @@ const STEPS: { target: string; title: string; body: string }[] = [
     target: "docs",
     title: "Who keeps it honest",
     body:
-      "Seven LLM administrators maintain the graph under a public constitution, " +
+      "Eight LLM administrators maintain the graph under a public constitution, " +
       "and every verdict keeps its reasoning open to challenge. These pages " +
       "explain how; the claims themselves are the best place to start.",
   },
