@@ -71,7 +71,7 @@ describe("isTransientApiError", () => {
   });
 
   it("does not treat a refusal as transient (it is a real, non-retryable stop)", () => {
-    expect(isTransientApiError(new LlmRefusalError("claude-fable-5", "some_policy"))).toBe(
+    expect(isTransientApiError(new LlmRefusalError("claude-fable-5-1", "some_policy"))).toBe(
       false
     );
   });

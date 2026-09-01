@@ -18,10 +18,10 @@ describe("meterLlmUsage (raw cost, no markup)", () => {
     mocks.values.mockClear();
   });
 
-  // claude-fable-5 list price: $10/Mtok in, $50/Mtok out → 1000 tokens each
+  // claude-fable-5-1 list price: $10/Mtok in, $50/Mtok out → 1000 tokens each
   // way = 10_000 + 50_000 = 60_000 micro-USD raw.
   const call = {
-    model: "claude-fable-5",
+    model: "claude-fable-5-1",
     inputTokens: 1000,
     outputTokens: 1000,
   };

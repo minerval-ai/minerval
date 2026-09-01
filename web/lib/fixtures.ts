@@ -67,7 +67,7 @@ const FLAGSHIP: ClaimDetail = {
     subclaim_summary: {},
     assessed_at: "2026-03-18T09:12:00Z",
     // The model behind the verdict (#294), shown next to the date.
-    model: "claude-fable-5",
+    model: "claude-fable-5-1",
   },
   trajectory: {
     current: { status: "supported", confidence: 0.78, assessed_at: "2026-03-18T09:12:00Z", is_current: true, trigger: "contribution_accepted" },

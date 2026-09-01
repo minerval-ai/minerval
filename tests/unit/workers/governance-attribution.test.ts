@@ -62,7 +62,7 @@ vi.mock("../../../src/config.js", () => ({
     sqsArbitrationQueue: "",
     sqsCuratorQueue: "",
     curatorMaxRuns: 0,
-    curatorModel: "claude-fable-5",
+    curatorModel: "claude-fable-5-1",
   }),
 }));
 

@@ -13,13 +13,20 @@
  */
 export const MODELS = {
   /**
-   * Fable 5 — the load-bearing agents (Steward, Curator, Audit, Arbitration)
+   * Fable 5.1 — the load-bearing agents (Steward, Curator, Audit, Arbitration)
    * run on it in production (issue #77). Thinking is always on (never send a
    * `thinking` config), and its safety classifiers can refuse benign-adjacent
    * requests, so the client opts into the server-side Opus fallback for it —
    * see modelNeedsRefusalFallback and client.ts.
+   *
+   * Successor to Fable 5 in the same tier at the same per-token price. Three
+   * differences matter to this codebase: forced tool use (`tool_choice` "any"
+   * or "tool") 400s — the Anthropic adapter never sends one, and must not
+   * start; thinking blocks are bound to the model that produced them; and
+   * editing an earlier turn invalidates the thinking blocks after it, so an
+   * agent loop replaying `rawContent` has to stay append-only (client.ts is).
    */
-  fable: "claude-fable-5",
+  fable: "claude-fable-5-1",
   opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
@@ -38,7 +45,7 @@ export function isAnthropicModelId(id: string): boolean {
 
 /**
  * Whether a model accepts the `temperature` request parameter. The Claude 5
- * family (Fable 5, Sonnet 5) and Opus 4.7+ reject non-default sampling params
+ * family (Fable 5.1, Sonnet 5) and Opus 4.7+ reject non-default sampling params
  * with a 400 — and the client sends `temperature: 0`, which counts as
  * non-default — so this is an ALLOWLIST of families known to accept it
  * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. The version is

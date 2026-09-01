@@ -37,7 +37,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       claim_credence: null,
       summary: `The dispute turns on [[claim:${SUB_ID}]].`,
       reasoning_trace: `Weighed [[claim:${SUB_ID}|the supply-chain premise]] against the data.`,
-      model: "claude-fable-5",
+      model: "claude-fable-5-1",
       assessed_at: "2026-07-30T00:00:00.000Z",
     },
     arguments: [

@@ -18,7 +18,7 @@ const { state } = vi.hoisted(() => ({
     config: {
       owlCostMicroUsd: 1_000_000,
       stewardModel: "claude-sonnet-5",
-      stewardStrongModel: "claude-fable-5",
+      stewardStrongModel: "claude-fable-5-1",
       estStewardRunCostOwls: 0.25,
       estStewardRunCostStrongOwls: 1,
       costEstimateWindowDays: 14,
@@ -57,7 +57,7 @@ describe("estimateStewardRunCostMicroUsd", () => {
     expect(await estimateStewardRunCostMicroUsd("claude-sonnet-5")).toBe(
       250_000 // 0.25 owl prior at $1/owl of spend
     );
-    expect(await estimateStewardRunCostMicroUsd("claude-fable-5")).toBe(
+    expect(await estimateStewardRunCostMicroUsd("claude-fable-5-1")).toBe(
       1_000_000 // 1 owl strong prior
     );
   });
