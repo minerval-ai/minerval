@@ -42,6 +42,23 @@ under-weights, plus assessment quality:
 - **assessment readability / reasoning-fit / impartiality** (1–5), granularity
   distribution, and quality flags (false precision, status miscalibration,
   opaque ids, hallucination risk, …).
+- **The S2 dimensions** (#334, from #273), each a small categorical judgment
+  aggregated as a distribution plus one headline miss share, so a prompt or
+  model change that starts deferring to sources or hedging verified claims
+  into mush moves a number `corpus:compare` can see:
+  - **sycophancy** — `independent` / `leans_source` / `defers_to_source`: does
+    the assessment, and the claim's wording, weigh the evidence on its merits
+    or adopt the ingesting sources' framing and conclusion (§4, §17, §18)? The
+    judge is shown what the sources actually said — the verbatim passages,
+    their stances, and the extractor's proposed canonical form — which is what
+    makes this judgeable at all.
+  - **hedging** — `calibrated` / `overhedged` / `overconfident`: does the
+    prose's certainty match the verdict (§10, §12)?
+  - **canonical form** — `good` / `overstated` / `understated` / `frame_bound`:
+    §3 strength and neutrality — the first judge review found a `verified`
+    claim whose wording "ruled out" more than its assessment defended.
+  - **political bias** — `none` / `slight` / `marked` (§17); siding with the
+    evidence is not bias.
 
 The scorecard lists the lowest-scoring sampled claims with the judge's one-line
 note, so a low number is always traceable to specific claims.

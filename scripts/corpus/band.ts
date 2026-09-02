@@ -123,6 +123,12 @@ export const HEADLINE_METRICS: Array<{
   { label: "judge · readability", get: (s) => s.judged?.assessmentQuality.readability },
   { label: "judge · reasoning-fit", get: (s) => s.judged?.assessmentQuality.reasoningFit },
   { label: "judge · impartiality", get: (s) => s.judged?.assessmentQuality.impartiality },
+  // S2 extensions; absent (n/a) on scorecards judged before they existed.
+  { label: "judge · sycophancy share", get: (s) => s.judged?.sycophancyShare },
+  { label: "judge · overhedged share", get: (s) => s.judged?.overhedgedShare },
+  { label: "judge · overconfident share", get: (s) => s.judged?.overconfidentShare },
+  { label: "judge · canonical-form miss share", get: (s) => s.judged?.canonicalFormMissShare },
+  { label: "judge · political bias share", get: (s) => s.judged?.politicalBiasShare },
 ];
 
 /** Every headline metric compared across two groups of scorecards. */

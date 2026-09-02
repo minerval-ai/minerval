@@ -30,6 +30,7 @@ import { loadConfig } from "../../src/config.js";
 import { computeStructuralMetrics, type GraphSnapshot, type StructuralMetrics } from "./metrics.js";
 import { judgeClaim, type JudgeInput, type JudgeVerdict } from "./judge.js";
 import { judgeConflict, type ScorecardConfig } from "./fingerprint.js";
+import { summarizeJudged, type JudgedSummary } from "./judged-summary.js";
 
 export type { ScorecardConfig } from "./fingerprint.js";
 
@@ -95,17 +96,6 @@ async function resolveFingerprint(
   };
 }
 
-interface JudgedSummary {
-  model: string;
-  sampleSize: number;
-  claimBarPassRate: number;
-  importanceAlignment: { meanStored: number; meanJudged: number; overratedShare: number };
-  assessmentQuality: { readability: number; reasoningFit: number; impartiality: number };
-  granularity: Record<string, number>;
-  flags: Record<string, number>;
-  items: JudgeVerdict[];
-}
-
 export interface Scorecard {
   generatedAt: string;
   cluster: string;
@@ -139,8 +129,15 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
      FROM assessments WHERE is_current`
   );
 
-  const instances = await rawQuery<{ claimId: string }>(
-    `SELECT claim_id AS "claimId" FROM claim_instances`
+  const instances = await rawQuery<{
+    claimId: string;
+    originalText: string;
+    stance: string;
+    proposedCanonicalForm: string | null;
+  }>(
+    `SELECT claim_id AS "claimId", original_text AS "originalText", stance,
+            proposed_canonical_form AS "proposedCanonicalForm"
+       FROM claim_instances ORDER BY created_at`
   );
 
   const [words] = await rawQuery<{ n: number }>(
@@ -181,6 +178,14 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
   const textOf = new Map(g.claims.map((c) => [c.id, c.text]));
   const currentAssessment = new Map(g.assessments.map((a) => [a.claimId, a]));
   const statusOf = new Map(g.assessments.map((a) => [a.claimId, a.status]));
+  const instancesOf = new Map<string, JudgeInput["instances"]>();
+  for (const i of g.instances) {
+    (instancesOf.get(i.claimId) ?? instancesOf.set(i.claimId, []).get(i.claimId)!).push({
+      originalText: i.originalText ?? "",
+      stance: i.stance ?? "affirms",
+      proposedCanonicalForm: i.proposedCanonicalForm ?? null,
+    });
+  }
 
   const toInput = (c: GraphSnapshot["claims"][number]): JudgeInput => {
     const a = currentAssessment.get(c.id);
@@ -198,6 +203,7 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
         text: textOf.get(k.child) ?? "(unknown)",
         status: statusOf.get(k.child) ?? null,
       })),
+      instances: instancesOf.get(c.id) ?? [],
     };
   };
 
@@ -238,43 +244,6 @@ async function judgeSample(inputs: JudgeInput[], concurrency = 3): Promise<Judge
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, inputs.length) }, worker));
   return out;
-}
-
-function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary {
-  const n = verdicts.length || 1;
-  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-  const round = (x: number) => Math.round(x * 100) / 100;
-
-  const passed = verdicts.filter((v) => v.claim_bar === "yes").length;
-  const stored = verdicts.map((v) => v.importanceStored);
-  const judged = verdicts.map((v) => v.importance_judged);
-  const overrated = verdicts.filter((v) => v.importanceStored - v.importance_judged > 0.2).length;
-
-  const granularity: Record<string, number> = {};
-  const flags: Record<string, number> = {};
-  for (const v of verdicts) {
-    granularity[v.decomposition_granularity] = (granularity[v.decomposition_granularity] ?? 0) + 1;
-    for (const f of v.flags) flags[f] = (flags[f] ?? 0) + 1;
-  }
-
-  return {
-    model,
-    sampleSize: verdicts.length,
-    claimBarPassRate: round(passed / n),
-    importanceAlignment: {
-      meanStored: round(mean(stored)),
-      meanJudged: round(mean(judged)),
-      overratedShare: round(overrated / n),
-    },
-    assessmentQuality: {
-      readability: round(mean(verdicts.map((v) => v.readability))),
-      reasoningFit: round(mean(verdicts.map((v) => v.reasoning_fit))),
-      impartiality: round(mean(verdicts.map((v) => v.impartiality))),
-    },
-    granularity,
-    flags,
-    items: verdicts,
-  };
 }
 
 export async function scoreRun(
@@ -374,6 +343,7 @@ export async function scoreRun(
 }
 
 function renderMarkdown(s: Scorecard): string {
+  const pct = (x: number | undefined) => (x === undefined ? "n/a" : `${(x * 100).toFixed(0)}%`);
   const o: string[] = [];
   const w = (l = "") => o.push(l);
   const st = s.structural;
@@ -446,6 +416,12 @@ function renderMarkdown(s: Scorecard): string {
     w(`| assessment reasoning-fit | ${j.assessmentQuality.reasoningFit}/5 | does the trace justify the status |`);
     w(`| assessment impartiality | ${j.assessmentQuality.impartiality}/5 | even-handedness |`);
     w(`| granularity | ${Object.entries(j.granularity).map(([k, v]) => `${k} ${v}`).join(", ")} | |`);
+    const dist = (d: Record<string, number> | undefined) =>
+      d ? Object.entries(d).map(([k, v]) => `${k} ${v}`).join(", ") : "n/a";
+    w(`| **sycophancy** | ${pct(j.sycophancyShare)} lean on or defer to the source | ${dist(j.dimensions?.sycophancy)} (§4/§17: independence from the ingesting source) |`);
+    w(`| **hedging** | ${pct(j.overhedgedShare)} overhedged · ${pct(j.overconfidentShare)} overconfident | ${dist(j.dimensions?.hedging)} (§10/§12: certainty of language) |`);
+    w(`| **canonical form** | ${pct(j.canonicalFormMissShare)} miss §3 | ${dist(j.dimensions?.canonicalForm)} (overstated / understated / frame-bound) |`);
+    w(`| political bias | ${pct(j.politicalBiasShare)} | ${dist(j.dimensions?.politicalBias)} (§17) |`);
     w(`| flags | ${Object.entries(j.flags).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} | |`);
     w();
     if (s.cost) w(`_judge cost: ${s.cost.calls} calls, $${s.cost.usd} (metered)._`);

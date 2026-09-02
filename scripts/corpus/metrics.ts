@@ -25,8 +25,14 @@ export interface GraphSnapshot {
     confidence: number;
     reasoningTrace: string;
   }>;
-  /** one row per instance (utterance); we only need the claim id to count */
-  instances: Array<{ claimId: string }>;
+  /** one row per instance (utterance); the metrics need only the claim id,
+   *  the judge (score.ts) also reads what the source said */
+  instances: Array<{
+    claimId: string;
+    originalText?: string;
+    stance?: string;
+    proposedCanonicalForm?: string | null;
+  }>;
   /** total word count across all ingested source bodies (for claims-per-1k-words) */
   sourceWords: number;
 }
