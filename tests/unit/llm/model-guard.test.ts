@@ -9,9 +9,15 @@
  * the system is actually configured to reach:
  *
  *   - the model registry defaults (src/llm/models.ts — every per-agent
- *     *_MODEL default in src/config.ts resolves to one of these), and
+ *     *_MODEL default in src/config.ts resolves to one of these, Anthropic in
+ *     MODELS and non-Anthropic in OPENROUTER_MODELS), and
  *   - the production pins in infra/lib/api-stack.ts (read from the source, so
  *     a new pin is guarded the moment it lands in the task definition).
+ *
+ * It also asserts the Matcher's config DEFAULT equals its production pin. That
+ * pair silently diverged once — default Haiku, production DeepSeek — and every
+ * corpus run scored, and every scorecard recorded, a Matcher production had
+ * already moved off (#257).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   MODELS,
+  OPENROUTER_MODELS,
   isAnthropicModelId,
   modelAcceptsTemperature,
   modelNeedsRefusalFallback,
@@ -50,6 +57,10 @@ function reachableModels(): Array<{ source: string; model: string }> {
   return [
     ...Object.entries(MODELS).map(([tier, model]) => ({
       source: `MODELS.${tier}`,
+      model,
+    })),
+    ...Object.entries(OPENROUTER_MODELS).map(([tier, model]) => ({
+      source: `OPENROUTER_MODELS.${tier}`,
       model,
     })),
     ...productionPins().map((p) => ({
@@ -96,6 +107,24 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
       });
     });
   }
+
+  it("defaults the Matcher to the model production pins", async () => {
+    // The default and the pin are the same ID on purpose: anything that does
+    // not go through the ECS task definition — corpus runs, the golden matcher
+    // suite, local dev — must match on the model production matches on, or its
+    // numbers describe a Matcher nobody runs (#257).
+    const saved = process.env.MATCHER_MODEL;
+    delete process.env.MATCHER_MODEL;
+    try {
+      const { loadConfig } = await import("../../../src/config.js");
+      const pin = productionPins().find((p) => p.envVar === "MATCHER_MODEL");
+      expect(pin?.model).toBe(OPENROUTER_MODELS.deepseekFlash);
+      expect(loadConfig().matcherModel).toBe(pin?.model);
+    } finally {
+      if (saved === undefined) delete process.env.MATCHER_MODEL;
+      else process.env.MATCHER_MODEL = saved;
+    }
+  });
 
   it("prices dated snapshot IDs through their family prefix", () => {
     // The registry's dated Haiku snapshot must resolve to Haiku rates, not the

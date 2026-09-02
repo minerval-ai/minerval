@@ -118,11 +118,11 @@ each bound by the constitution, each with a bounded domain:
   It never writes to the graph.
 
 Model choice follows the value of the judgment: matching is a saturating task
-and runs on Claude Haiku; the load-bearing epistemic work — stewardship,
-structural adjudication, arbitration, audit, grantmaking — runs on the
-strongest available Claude models, and background assessments choose between
-a standard and a strong pass by marginal return on compute. Model ids are
-centralized in [`src/llm/models.ts`](src/llm/models.ts).
+and runs on DeepSeek V4 Flash via OpenRouter; the load-bearing epistemic work
+— stewardship, structural adjudication, arbitration, audit, grantmaking — runs
+on the strongest available Claude models, and background assessments choose
+between a standard and a strong pass by marginal return on compute. Model ids
+are centralized in [`src/llm/models.ts`](src/llm/models.ts).
 
 The full picture — domain model, assessment semantics, workers and failure
 handling, persistence, serving surfaces — is in
