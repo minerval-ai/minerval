@@ -58,7 +58,8 @@ shape everything downstream:
 
 - **Effort proportional to importance.** Not every claim deserves the full
   treatment. Each claim carries an importance score — roughly
-  consequence-if-wrong × contestability — that anchors the expected-value
+  consequence-if-wrong × liveness (how actively it is disputed or
+  consulted) — that anchors the expected-value
   estimates the allocation engine funds work by, so the most consequential
   claims draw assessment first while minor ones remain searchable stubs
   until someone's allocation covers them (see docs/allocation.md: the owl

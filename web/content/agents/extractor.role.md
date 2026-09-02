@@ -9,12 +9,15 @@ whether something is a claim at all.
 
 ## The claim bar
 
-The constitution defines a claim (§2): a single reusable proposition that
-informed people could dispute with evidence or reasons, the kind that could
-anchor a long-running debate. Claims are scarce relative to text: most
-sentences are instances of, arguments for, or setup around a handful of
-underlying propositions, and a typical essay turns on very few. When unsure
-whether something clears the bar, leave it out.
+The constitution defines a claim (§2): a single reusable proposition about
+the world, one a source can affirm or deny and a reasoner can weigh with
+evidence and reasons, serving as a unit of reference in discourse. Claims
+worth minting are scarce relative to text: most sentences are instances of,
+arguments for, or setup around a handful of underlying propositions, and a
+typical essay turns on very few. Extract the propositions the document turns
+on; background facts it merely leans on score near §19's 0.15 anchor when
+worth minting at all, and can otherwise enter the graph later through
+demand. When unsure, leave it out.
 
 Good claims:
 - "The 'great man' theory of history is correct."
@@ -32,13 +35,13 @@ Not claims:
     suggesting individual cognitive capacity is not negligible."
   - Right: "Individual cognitive capacity can materially redirect the course
     of civilization."
-- **Uncontested definitions.** A gloss on what the author means by a term is
-  setup. A definition is a claim only when the definition itself is disputed:
-  "'High inflation' should be defined as CPI growth above 4%" qualifies; a
-  stipulative gloss nobody would argue with does not.
+- **Stipulative definitions.** A gloss on what the author means by a term is
+  adopted, not asserted; there is nothing to affirm or deny. Propositions
+  about definitions are claims like any other: "'High inflation' should be
+  defined as CPI growth above 4%" qualifies.
 - **Source attributions.** "Smith asserts X": the claim is X, stated plainly.
-  Extract the attribution itself only when the live dispute is about what
-  was said or who said it.
+  Extract the attribution itself only when what was said, or who said it, is
+  itself disputed or consulted.
 - **Questions, commands, meta-text** ("in this post I argue..."), rhetoric,
   and hedged non-assertions ("some might say...").
 
@@ -83,7 +86,7 @@ fifteen words, rarely more than twenty-five.
 
 ## The importance and contestation priors
 
-Importance, consequence-if-wrong times contestability, is the Steward's
+Importance, consequence-if-wrong times liveness, is the Steward's
 judgment to make with graph-wide context (§19). Seeing one document, you
 supply the prior the allocation engine's value estimates start from until a
 Steward judges. Estimate it from the claim's salience here (thesis or aside?),
@@ -94,12 +97,13 @@ rule bears repeating: a settled, uncontested fact scores low even when the
 document's whole logic leans on it. And importance is not confidence: a
 claim can be certainly well-formed and still minor.
 
-Also record contestation on its own: how live the dispute around the
-proposition is in the discourse, regardless of its stakes. A settled fact
-stated in passing sits near 0 even when everything leans on it; an actively
-argued crux with credible parties on both sides sits near 1. You have
-already weighed this inside importance; here you state it unfused, so the
-two ingredients of the importance formula stay separately visible.
+Also record contestation on its own: how live the proposition is in the
+discourse at large, disputed or actively consulted, regardless of its
+stakes. A settled fact stated in passing sits near 0 even when everything
+leans on it; an actively argued crux with credible parties on both sides
+sits near 1. You have already weighed this inside importance; here you
+state it unfused, so the two ingredients of the importance formula stay
+separately visible.
 
 Emit only claims that pass the bar. A short list is the expected result; do
 not pad.

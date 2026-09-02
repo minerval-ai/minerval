@@ -31,12 +31,14 @@ sample of assessed claims and aggregates the two dimensions the rubric
 under-weights, plus assessment quality:
 
 - **claim-bar pass-rate** — share of sampled claims that pass §2's claim bar:
-  single reusable propositions informed people could dispute with evidence or
-  reasons. A low rate means the Steward is decomposing settled claims into
-  uncontestable textbook/bedrock nodes (over-decomposition, #98).
+  single reusable propositions serving as units of reference, not arguments,
+  stipulative glosses, or derivation steps. A low rate means the Steward is
+  unfolding claims into proof steps and non-claims (over-decomposition, #98).
 - **importance alignment** — stored importance vs the judge's independent
   importance, and the share overrated by > 0.2. Catches importance tracking
-  logical necessity rather than what's worth spending compute on (#68).
+  logical necessity rather than what's worth spending compute on (#68); with
+  settled propositions admitted as claims, this metric carries the discipline
+  the bar used to: settled background must sit near the 0.15 anchor.
 - **assessment readability / reasoning-fit / impartiality** (1–5), granularity
   distribution, and quality flags (false precision, status miscalibration,
   opaque ids, hallucination risk, …).

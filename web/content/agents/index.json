@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 5544,
-    "fullChars": 52414
+    "roleChars": 5767,
+    "fullChars": 53333
   },
   {
     "key": "matcher",
@@ -21,7 +21,7 @@
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
     "roleChars": 3870,
-    "fullChars": 50740
+    "fullChars": 51436
   },
   {
     "key": "contribution-reviewer",
@@ -32,8 +32,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 10085,
-    "fullChars": 56955
+    "roleChars": 10213,
+    "fullChars": 57779
   },
   {
     "key": "claim-steward",
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19013,
-    "fullChars": 65883
+    "roleChars": 19222,
+    "fullChars": 66788
   },
   {
     "key": "curator",
@@ -57,7 +57,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 3511,
-    "fullChars": 50381
+    "fullChars": 51077
   },
   {
     "key": "dispute-arbitrator",
@@ -68,8 +68,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 8767,
-    "fullChars": 55637
+    "roleChars": 8878,
+    "fullChars": 56444
   },
   {
     "key": "audit-agent",
@@ -80,8 +80,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 7213,
-    "fullChars": 54083
+    "roleChars": 7324,
+    "fullChars": 54890
   },
   {
     "key": "grantmaker",
@@ -93,6 +93,6 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 6658,
-    "fullChars": 53528
+    "fullChars": 54224
   }
 ]

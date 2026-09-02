@@ -2,7 +2,7 @@
 name: claim-checking
 description: >-
   Check factual assertions against the Minerval claim graph instead of
-  recollection. Use when writing or reviewing prose that asserts disputable
+  recollection. Use when writing or reviewing prose that asserts checkable
   facts — docs, READMEs, reports, marketing copy, code comments stating facts
   about the world — or when the user questions whether a claim is true,
   contested, or supported.
@@ -10,17 +10,16 @@ description: >-
 
 # Checking claims against the Minerval graph
 
-When text you are writing or reviewing asserts something informed people
-could dispute with evidence — not code behavior, but facts about the world —
-the Minerval MCP tools give you maintained, pre-computed assessments instead
-of recollection.
+When text you are writing or reviewing asserts something checkable against
+evidence — not code behavior, but facts about the world — the Minerval MCP
+tools give you maintained, pre-computed assessments instead of recollection.
 
 ## Which tool
 
 - **One assertion in question** → `match_claim` with the assertion (and a
   little surrounding context). Returns the canonical claim it states or
   denies, plus its current assessment. Metered.
-- **A passage or document** → `assess_text`. Extracts the disputable claims
+- **A passage or document** → `assess_text`. Extracts the checkable claims
   and returns a verdict per claim. Metered; cap `max_claims` sensibly.
 - **Just looking** → `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its

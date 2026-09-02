@@ -97,7 +97,7 @@ deleted), counters for how many of its children have been assessed, an
 `embedding` (a 1536-dimension vector) and a `text_search` column for retrieval,
 and an `importance` score.
 
-Importance is a 0 to 1 judgment of consequence-if-wrong times contestability.
+Importance is a 0 to 1 judgment of consequence-if-wrong times liveness, how actively the claim is disputed or consulted.
 It is explicitly not a count of dependents: a settled fact cited everywhere
 scores low, a load-bearing contested premise scores high. The Extractor supplies
 a prior at ingestion; the claim's Steward sets the authoritative value once it

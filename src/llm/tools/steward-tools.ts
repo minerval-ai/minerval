@@ -442,7 +442,7 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "number",
             description:
               "How much it is worth spending scarce intelligence to get this " +
-              "subclaim right, 0..1: roughly consequence-if-wrong × contestability, " +
+              "subclaim right, 0..1: roughly consequence-if-wrong × liveness, " +
               "NOT logical necessity. A dependency can be maximally load-bearing " +
               "(the parent is false without it) yet LOW importance because nobody " +
               "disputes it: getting an uncontested fact right is free. Reserve " +
@@ -455,10 +455,11 @@ export function getStewardToolDefinitions(): Tool[] {
           contestation: {
             type: "number",
             description:
-              "How live the dispute around this subclaim is (0.0-1.0), recorded " +
-              "separately from importance: ~0 for settled bedrock nobody " +
-              "disputes, ~1 for an actively argued crux. This is the " +
-              "contestability half of the importance formula stated on its own; " +
+              "How live this subclaim is in the discourse at large (0.0-1.0), " +
+              "disputed or actively consulted, recorded separately from " +
+              "importance: ~0 for settled bedrock nobody disputes or consults, " +
+              "~1 for an actively argued crux. This is the " +
+              "liveness half of the importance formula stated on its own; " +
               "it multiplies importance in the expected-value estimate the " +
               "allocation engine funds work by, so a live dispute genuinely " +
               "draws attention sooner.",
@@ -494,7 +495,7 @@ export function getStewardToolDefinitions(): Tool[] {
       description:
         "Set a claim's importance (0..1): how much it is worth spending scarce " +
         "intelligence to get it right (roughly consequence-if-wrong × " +
-        "contestability), NOT mere logical load-bearing-ness. A revisable judgment " +
+        "liveness), NOT mere logical load-bearing-ness. A revisable judgment " +
         "that scales effort and feeds the value estimates funding decisions read. " +
         "Local dependents are only a " +
         "local signal: a claim central to a niche subfield is still low-importance " +
@@ -514,11 +515,12 @@ export function getStewardToolDefinitions(): Tool[] {
           contestation: {
             type: "number",
             description:
-              "How live the dispute around the claim is (0.0-1.0), recorded " +
-              "separately from importance: ~0 for a settled fact no informed " +
-              "person disputes (even a foundational one), ~1 for an actively " +
+              "How live the claim is in the discourse at large (0.0-1.0), " +
+              "disputed or actively consulted, recorded separately from " +
+              "importance: ~0 for a settled fact nobody disputes or consults " +
+              "(even a foundational one), ~1 for an actively " +
               "argued crux with credible parties on both sides. This is the " +
-              "contestability half of the importance formula stated on its own; " +
+              "liveness half of the importance formula stated on its own; " +
               "it multiplies importance in the expected-value estimate the " +
               "allocation engine funds work by, so a live dispute genuinely " +
               "draws attention sooner.",

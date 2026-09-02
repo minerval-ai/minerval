@@ -247,7 +247,7 @@ async function processUrlExtraction(
         // aware judgment (#67).
         const importance = clampUnit(claim.importance);
         // Contestation prior recorded alongside (#172 phase 1): the
-        // contestability half of the importance formula, stored unfused so the
+        // liveness half of the importance formula, stored unfused so the
         // eventual stakes/yield split has data. Read by nothing yet.
         const contestation = clampUnit(claim.contestation);
 
