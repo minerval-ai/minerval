@@ -16,6 +16,7 @@ import {
 } from "../tools/arbitrator-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -37,9 +38,13 @@ async function runArbitrationImpl(input: {
   // reviewer and auditor. Production sets this to Opus 4.8.
   const model = input.model ?? config.arbitrationModel;
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getArbitratorToolDefinitions(),
+    ...reportTools.definitions,
   ];
 
   let userMessage = `You have been called to arbitrate a dispute.
@@ -76,6 +81,9 @@ Please:
     maxTokens: 16384,
     maxIterations: 12,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

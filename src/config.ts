@@ -548,6 +548,17 @@ const configSchema = z.object({
   // A suspension that has stood unexamined this many days gets a
   // contributor_review audit asking whether it should still hold.
   auditStaleSuspensionDays: z.coerce.number().default(14),
+  // Agent reports (#366). The most raise_issue calls one agent run may
+  // record; past the cap the tool acknowledges without writing, so a chatty
+  // run cannot flood the table. 0 = unlimited.
+  agentReportsPerRun: z.coerce.number().default(3),
+  // Hourly cap on raise_issue calls per external (MCP) contributor. 0 =
+  // unlimited.
+  reportRateLimitPerHour: z.coerce.number().default(5),
+  // Triage cadence: at most one report_triage audit per this many hours,
+  // skipped when no new reports arrived. 0 disables triage sweeps (reports
+  // still record; the /reports API still serves them).
+  reportTriageIntervalHours: z.coerce.number().default(24),
 
   // SQS governance queues
   sqsContributionQueue: z.string().default(""),
@@ -670,6 +681,9 @@ export function loadConfig(): Config {
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,
+    agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
+    reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
+    reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,

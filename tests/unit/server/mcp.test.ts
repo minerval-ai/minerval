@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   checkSpend: vi.fn(),
   chargeOwls: vi.fn(async () => ({ charged: true, entryId: "entry-1" })),
   refundOwls: vi.fn(async () => {}),
+  raiseIssue: vi.fn(),
   usageContexts: [] as unknown[],
 }));
 
@@ -104,6 +105,12 @@ vi.mock("../../../src/services/queue-service.js", () => ({
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
+}));
+vi.mock("../../../src/services/report-service.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../src/services/report-service.js")
+  >()),
+  raiseIssue: mocks.raiseIssue,
 }));
 vi.mock("../../../src/services/oauth-service.js", async (importOriginal) => ({
   ...(await importOriginal<
@@ -255,6 +262,16 @@ beforeEach(async () => {
     "../../../src/services/reputation-service.js"
   );
   resetContributionRateLimiter();
+  const { resetReportRateLimiter } = await import(
+    "../../../src/services/report-service.js"
+  );
+  resetReportRateLimiter();
+  mocks.raiseIssue.mockReset().mockResolvedValue({
+    acknowledged: true,
+    reportId: OTHER_ID,
+    occurrenceCount: 1,
+    deduplicated: false,
+  });
   mocks.enqueueContribution.mockReset().mockResolvedValue(undefined);
   mocks.resolveApiKey.mockReset().mockResolvedValue(null);
   mocks.checkSpend.mockReset().mockResolvedValue({
@@ -349,6 +366,7 @@ describe("MCP tools", () => {
       "get_decomposition",
       "get_dependents",
       "match_claim",
+      "raise_issue",
       "search_claims",
       "submit_contribution",
     ]);
@@ -690,6 +708,83 @@ describe("MCP tools", () => {
       code: "CONTRIBUTOR_SUSPENDED",
     });
     expect(mocks.createContribution).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("raise_issue records an attributed external report (#366)", async () => {
+    const result = await client.callTool({
+      name: "raise_issue",
+      arguments: {
+        kind: "tool_gap",
+        severity: "degraded",
+        title: "get_claim omits the assessment's reasoning",
+        body: "Needed the reasoning to judge a contested verdict; only the label came back.",
+        surface: "get_claim",
+        context_refs: { claim_id: CLAIM_ID },
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(parseText(result).report).toMatchObject({
+      id: OTHER_ID,
+      status: "new",
+      occurrence_count: 1,
+    });
+    expect(mocks.raiseIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "tool_gap",
+        origin: "external",
+        agent: "mcp",
+        reporterContributorId: "contrib-1",
+        surface: "get_claim",
+        contextRefs: { claim_id: CLAIM_ID },
+      })
+    );
+    await client.close();
+  });
+
+  it("raise_issue requires a contributor identity and rejects suspended accounts", async () => {
+    const anonymous = await connect({ Authorization: "Bearer freekey" });
+    const anon = await anonymous.callTool({
+      name: "raise_issue",
+      arguments: { kind: "tool_gap", severity: "idea", title: "t", body: "b" },
+    });
+    expect(anon.isError).toBe(true);
+    expect(parseText(anon).error.code).toBe("NO_CONTRIBUTOR_IDENTITY");
+    await anonymous.close();
+
+    mocks.getOrCreateContributor.mockResolvedValueOnce({
+      id: "contrib-1",
+      externalId: "mcp:tester",
+      displayName: "mcp:tester",
+      isSuspended: true,
+      suspensionReason: "bad faith",
+      contributionStanding: "good",
+      reputationScore: 40,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    const suspended = await client.callTool({
+      name: "raise_issue",
+      arguments: { kind: "tool_gap", severity: "idea", title: "t", body: "b" },
+    });
+    expect(suspended.isError).toBe(true);
+    expect(parseText(suspended).error.code).toBe("CONTRIBUTOR_SUSPENDED");
+    expect(mocks.raiseIssue).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("raise_issue is rate-limited per contributor", async () => {
+    const { loadConfig } = await import("../../../src/config.js");
+    const limit = loadConfig().reportRateLimitPerHour;
+    let last;
+    for (let i = 0; i <= limit; i++) {
+      last = await client.callTool({
+        name: "raise_issue",
+        arguments: { kind: "improvement", severity: "idea", title: `idea ${i}`, body: "b" },
+      });
+    }
+    expect(last!.isError).toBe(true);
+    expect(parseText(last!).error.code).toBe("REPORT_RATE_LIMITED");
+    expect(mocks.raiseIssue).toHaveBeenCalledTimes(limit);
     await client.close();
   });
 

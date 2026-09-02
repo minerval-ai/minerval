@@ -6,6 +6,7 @@ import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims } from "../../services/search-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 export interface MatchDecision {
   is_match: boolean;
@@ -95,15 +96,21 @@ async function matchClaimImpl(input: {
   };
 
   let finalResult: MatchDecision | null = null;
+  const model = input.model ?? config.matcherModel;
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
 
   await toolUseLoop({
     initialMessages: [{ role: "user", content: userPrompt }],
-    tools: [searchTool, submitTool],
+    tools: [searchTool, submitTool, ...reportTools.definitions],
     system: getMatcherSystemPrompt(),
-    model: input.model ?? config.matcherModel,
+    model,
     maxTokens: 4096,
     maxIterations: 8,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       if (name === "submit_match_decision") {
         finalResult = toolInput as unknown as MatchDecision;
         return JSON.stringify({ success: true });

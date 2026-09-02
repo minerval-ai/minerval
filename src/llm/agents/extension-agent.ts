@@ -12,6 +12,7 @@ import {
   executeGraphTool,
 } from "../tools/graph-tools.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 /**
  * The Extension Agent (issue #72) — lives with the browser extension, never
@@ -173,14 +174,22 @@ async function extensionChatImpl(input: {
       i === first ? `${contextBlock}\n\n---\n\n${m.content}` : m.content,
   }));
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model: input.model });
+
   const result = await toolUseLoop({
     initialMessages,
-    tools: getGraphToolDefinitions(),
+    tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
     system: getChatSystemPrompt(),
     maxTokens: 4096,
     maxIterations: 8,
     model: input.model,
-    executeTool: (name, toolInput) => executeGraphTool(name, toolInput),
+    executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
+      return executeGraphTool(name, toolInput);
+    },
   });
 
   return { reply: result.content };

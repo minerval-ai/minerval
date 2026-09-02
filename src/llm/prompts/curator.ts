@@ -1,4 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
+import { RAISING_ISSUES_POLICIES } from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Curator
 
@@ -69,7 +70,9 @@ overwrite each other.
 
 Concluding that nothing needs to change is a legitimate outcome (Working
 Together). Whatever you do, say why in the reasoning fields; the tools handle
-the bookkeeping.`;
+the bookkeeping.
+
+${RAISING_ISSUES_POLICIES}`;
 
 export function getCuratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

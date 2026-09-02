@@ -28,6 +28,10 @@ to fill.
   for the full picture.
 - `assess_text` and `match_claim` run models and are metered to the user's
   account; don't loop them redundantly over the same text.
+- If a Minerval tool errors, returns a shape its description does not
+  promise, or cannot express what you needed, file it with `raise_issue`
+  (free; about the server, never about a claim) and then finish the check
+  with what you still have. Cite claim ids, never paste the checked text.
 
 ## Rubric
 

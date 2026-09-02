@@ -1,5 +1,9 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { CORE_POLICIES, ARBITRATION_POLICIES } from "./policies.js";
+import {
+  CORE_POLICIES,
+  ARBITRATION_POLICIES,
+  RAISING_ISSUES_POLICIES,
+} from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Dispute Arbitrator
 
@@ -84,7 +88,9 @@ and why the outcome follows, in the register of §12.
 
 ${CORE_POLICIES}
 
-${ARBITRATION_POLICIES}`;
+${ARBITRATION_POLICIES}
+
+${RAISING_ISSUES_POLICIES}`;
 
 export function getDisputeArbitratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

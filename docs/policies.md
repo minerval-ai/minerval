@@ -64,6 +64,8 @@ Two of these deserve a note on what they do not say, because both descend from W
 - **NOR is a contribution gate, not an analysis limit.** Wikipedia's no-original-research policy makes its editors summarizers; the graph's admins are trusted with substance (constitution, Preamble and §9). They open primary sources, run their own analysis, and record verdicts on the merits. What NOR forbids is minting propositions that no source asserts, by contributors and admins alike; it says nothing about how deeply an admitted claim may be assessed.
 - **SH weighs authority as evidence, not as rank.** There is no tier ladder in which a source's type settles its weight. Credentials, peer review, and institutional backing raise the likelihood that sound methods were used, and a large convergent literature is among the strongest forms of evidence there is; the admin weighs all of this for what it indicates without deferring to it absolutely (§9).
 
+One further shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
+
 ---
 
 ## Role Policies

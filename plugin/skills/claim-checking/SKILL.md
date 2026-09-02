@@ -27,6 +27,11 @@ tools give you maintained, pre-computed assessments instead of recollection.
 - **A whole document or diff to clear before shipping** → prefer delegating
   to the `fact-checker` subagent, or point the user at `/minerval:check` and
   `/minerval:factcheck-diff`.
+- **Something is wrong with the tools themselves** → `raise_issue` (free).
+  A tool errored, returned a shape its description does not promise, or could
+  not say what you needed; or you see a concrete way the graph should
+  improve. It reports to Minerval's maintainers and never touches a claim;
+  `/minerval:report` walks the user through it. Cite ids, never paste text.
 
 ## Reading results
 

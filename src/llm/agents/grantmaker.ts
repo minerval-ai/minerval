@@ -22,6 +22,7 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
 import {
   executeGraphReadTool,
@@ -444,8 +445,12 @@ async function runGrantmakerTurnImpl(input: {
   let declined: { reason: string } | undefined;
 
   const managed = !!input.grantId;
+  const model = input.model ?? config.grantmakerModel;
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
   const tools: Tool[] = [
     ...graphReadTools,
+    ...reportTools.definitions,
     surveyTool,
     costTool,
     ...(managed
@@ -486,10 +491,13 @@ async function runGrantmakerTurnImpl(input: {
     })),
     tools,
     system,
-    model: input.model ?? config.grantmakerModel,
+    model,
     maxTokens: 4096,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       // Shared graph reads first; returns null for anything it doesn't own,
       // so the mandate-specific handlers below still get their turn.
       const graphRead = await executeGraphReadTool(name, toolInput);

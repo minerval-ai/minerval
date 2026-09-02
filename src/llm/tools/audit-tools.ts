@@ -20,6 +20,12 @@ import {
   neutralizeReviewOutcome,
   AUDIT_SUSPENSION_PREFIX,
 } from "../../services/reputation-service.js";
+import {
+  formatAgentReport,
+  listAgentReports,
+  triageAgentReport,
+  REPORT_STATUSES,
+} from "../../services/report-service.js";
 
 /** Everything a run's tool executions need to know about the run itself. */
 export interface AuditToolContext {
@@ -28,6 +34,79 @@ export interface AuditToolContext {
 
 export function getAuditToolDefinitions(): Tool[] {
   return [
+    // Report triage (#366): the agents' own reports about the machinery.
+    // Adjacent to audit, not the same thing — audit judges decisions, these
+    // describe the tools the decisions were made through — but the sweep
+    // shape is identical, and repeated reports about one tool are exactly
+    // the signal a pattern audit wants.
+    {
+      name: "get_agent_reports",
+      description:
+        "List reports the agents (and external MCP callers) have raised " +
+        "about the system itself: failures, tool gaps, improvement ideas. " +
+        "Each carries an occurrence count (the same report collapses across " +
+        "runs) and a status. Filter by status, kind, severity, origin " +
+        "(internal | external), agent, or surface. Ordered most recently " +
+        "seen first.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          status: {
+            type: "string",
+            enum: [...REPORT_STATUSES],
+            description: "Filter by triage status (default: all)",
+          },
+          kind: {
+            type: "string",
+            enum: ["system_failure", "tool_gap", "improvement"],
+          },
+          severity: {
+            type: "string",
+            enum: ["blocking", "degraded", "annoyance", "idea"],
+          },
+          origin: { type: "string", enum: ["internal", "external"] },
+          agent: { type: "string", description: "Filter by reporting agent" },
+          surface: { type: "string", description: "Filter by surface" },
+          limit: {
+            type: "integer",
+            description: "Maximum number of results (default 25, max 100)",
+          },
+          offset: { type: "integer" },
+        },
+      },
+    },
+    {
+      name: "triage_report",
+      description:
+        "Set an agent report's triage status with a note explaining why: " +
+        "triaged (real and worth a maintainer's attention — say what the " +
+        "underlying gap is and how many reports point at it), duplicate " +
+        "(names the report it repeats via duplicate_of_id), actioned (the " +
+        "gap is closed), or wontfix (not a defect, or not worth it — say " +
+        "why). Triage is a reading of the reports, never a change to the " +
+        "tools: the maintainers act on your note.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          report_id: { type: "string", description: "UUID of the report" },
+          status: {
+            type: "string",
+            enum: ["triaged", "duplicate", "actioned", "wontfix"],
+          },
+          note: {
+            type: "string",
+            description:
+              "Why this status; for triaged, the underlying gap in one or " +
+              "two sentences and the reports that share it.",
+          },
+          duplicate_of_id: {
+            type: "string",
+            description: "For status duplicate: the report this one repeats",
+          },
+        },
+        required: ["report_id", "status", "note"],
+      },
+    },
     {
       name: "flag_issue",
       description:
@@ -267,6 +346,55 @@ export async function executeAuditTool(
 ): Promise<string> {
   try {
     switch (toolName) {
+      case "get_agent_reports": {
+        const rows = await listAgentReports({
+          status: input.status as string | undefined,
+          kind: input.kind as string | undefined,
+          severity: input.severity as string | undefined,
+          origin: input.origin as string | undefined,
+          agent: input.agent as string | undefined,
+          surface: input.surface as string | undefined,
+          limit: Number(input.limit ?? 25),
+          offset: Number(input.offset ?? 0),
+        });
+        return JSON.stringify({
+          count: rows.length,
+          reports: rows.map(formatAgentReport),
+        });
+      }
+
+      case "triage_report": {
+        const reportId = String(input.report_id ?? "");
+        const status = String(input.status ?? "");
+        if (!["triaged", "duplicate", "actioned", "wontfix"].includes(status)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `status must be one of triaged, duplicate, actioned, wontfix ` +
+              `(got ${JSON.stringify(status)}).`,
+          });
+        }
+        const updated = await triageAgentReport(reportId, {
+          status: status as "triaged" | "duplicate" | "actioned" | "wontfix",
+          triageNote: String(input.note ?? ""),
+          duplicateOfId:
+            typeof input.duplicate_of_id === "string"
+              ? input.duplicate_of_id
+              : null,
+          triagedBy: context.runId ? `audit:${context.runId}` : "audit",
+        });
+        if (!updated) {
+          return JSON.stringify({
+            success: false,
+            message: `Report ${reportId} not found.`,
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          report: formatAgentReport(updated),
+        });
+      }
+
       case "flag_issue": {
         const severity = input.severity as string;
         const category = input.category as string;
