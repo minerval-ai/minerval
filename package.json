@@ -27,6 +27,7 @@
     "corpus:snapshot": "tsx scripts/corpus/snapshot.ts",
     "corpus:golden": "tsx scripts/corpus/golden-matcher.ts",
     "corpus:calibrate": "tsx scripts/corpus/calibration.ts",
+    "corpus:contributions": "tsx scripts/corpus/contributions.ts",
     "corpus:agreement": "tsx scripts/corpus/agreement.ts",
     "corpus:swap": "tsx scripts/corpus/swap.ts",
     "predictions": "tsx scripts/predictions.ts",

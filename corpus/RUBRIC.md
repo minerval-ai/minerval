@@ -10,10 +10,11 @@ anticipated. Section H exists to capture those. When a new failure mode recurs, 
 item here so the next reviewer looks for it.
 
 Scope: a corpus run drives the agent organization to a stable state — Extract → Match → Decompose →
-Assess, plus the **stewardship propagation** those assessments trigger (section G). It does **not** yet
-exercise community **contributions, conflict review, escalation, or arbitration**: those are driven by
-contributions submitted through the API, which a corpus ingest does not generate. A separate contributions
-scenario is needed to test that half of the organization (see section G and the README).
+Assess, plus the **stewardship propagation** those assessments trigger (section G). Community
+**contributions, conflict review, escalation, and arbitration** are driven by contributions submitted
+against existing claims, which an ingest does not generate; they are exercised by the contribution
+scenarios (`corpus:contributions`, `corpus/contributions/README.md`), whose report is read against
+section G below.
 
 How to use it: read the run report top to bottom with these dimensions in mind. Each dimension gives the
 **standard** (with citations), the **failure modes** to watch for, and **where in the report** to look.
@@ -214,8 +215,12 @@ fired, whether it `CAPPED`); the assessment-status distribution (section 7); cla
 canonical form changed after their instances were first created.
 
 > **Conflict, escalation, arbitration** are part of this organization but are **not exercised by ingestion**
-> — they require contributions submitted via the API. Until a contributions scenario exists, treat their
-> absence in a run as expected, not as a pass. The **audit** agent (#180) runs in production via
+> — they require contributions submitted against existing claims. Run a contribution scenario
+> (`corpus:contributions`) after the ingest and read its report here: is a good-faith, well-sourced
+> challenge accepted or escalated rather than rejected; is spam rejected without engaging it; does an
+> appeal with a real case reach arbitration and get reasoned about; do bad-faith findings land on the
+> right persona's standing; does an accepted edit or argument actually change the claim. Their absence in
+> an ingest-only run is expected, not a pass. The **audit** agent (#180) runs in production via
 > `requestAudit` — scheduled sweeps, arbitration overturns, bad-faith flags, suspension reviews — but none
 > of those triggers fire during a corpus ingest (the sweep scheduler starts only with the full server), so
 > an empty audit queue in a run is likewise expected.
