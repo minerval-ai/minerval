@@ -37,11 +37,11 @@ async function buildTestApp(
   if (environment === "production") {
     // Production config now asserts the load-bearing model envs are set
     // (#100); satisfy the invariant so this suite tests auth, not that guard.
-    process.env.STEWARD_MODEL = "claude-fable-5";
-    process.env.CURATOR_MODEL = "claude-fable-5";
-    process.env.AUDIT_MODEL = "claude-fable-5";
-    process.env.ARBITRATION_MODEL = "claude-fable-5";
-    process.env.EXTRACTOR_MODEL = "claude-fable-5";
+    process.env.STEWARD_MODEL = "claude-fable-5-1";
+    process.env.CURATOR_MODEL = "claude-fable-5-1";
+    process.env.AUDIT_MODEL = "claude-fable-5-1";
+    process.env.ARBITRATION_MODEL = "claude-fable-5-1";
+    process.env.EXTRACTOR_MODEL = "claude-fable-5-1";
   }
   vi.resetModules();
   const { registerAuth } = await import("../../../src/server/plugins/auth.js");

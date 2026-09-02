@@ -237,7 +237,7 @@ export const assessments = pgTable(
     // as maximal by convention.
     marginalYield: real("marginal_yield"),
     // Raw API id of the model that produced this assessment (#294), e.g.
-    // "claude-fable-5" — a verdict is only as trustworthy as its assessor, so
+    // "claude-fable-5-1" — a verdict is only as trustworthy as its assessor, so
     // the assessor is recorded on the verdict, not just in llm_usage. Nullable:
     // legacy rows predate the column and degrade gracefully (date only in UI).
     model: text("model"),

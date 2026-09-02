@@ -38,7 +38,8 @@ const OPENAI_FREE_CACHE_WRITES = { cacheWriteMultiplier: 0 } as const;
 // Keyed by model-ID prefix so dated snapshots ("claude-haiku-4-5-20251001",
 // "gpt-5-nano-2025-08-07") resolve to their family. Longest prefix wins.
 const MODEL_RATES: Record<string, ModelRates> = {
-  // Fable/Mythos 5 share pricing.
+  // The Fable/Mythos line shares one price across 5 and 5.1 — and these are
+  // PREFIXES, so "claude-fable-5-1" resolves here without its own entry.
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50 },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50 },
   // Opus 5 and the 4.x line share pricing. All three 4.x entries are listed

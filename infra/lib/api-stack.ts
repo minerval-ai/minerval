@@ -90,20 +90,20 @@ export class ApiStack extends cdk.Stack {
         // the registered namespace 302s to the claim page, and stays valid
         // across any future domain move.
         CITATION_URL_BASE: "https://w3id.org/minerval/claim",
-        // The Steward assesses/decomposes the main claims — use Fable 5 there
+        // The Steward assesses/decomposes the main claims — use Fable 5.1 there
         // (issue #77). The importance-priority drain means Fable only ever runs
         // on the top of the queue; the rest stay embedded stubs until budget
         // allows.
-        STEWARD_MODEL: "claude-fable-5",
+        STEWARD_MODEL: "claude-fable-5-1",
         // The other load-bearing governance agents also run on Fable: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations
         // and appeals. The Contribution Reviewer stays on the Sonnet default
         // (governanceModel). Refusal false-positives degrade to Opus 4.8 via
         // the server-side fallback in src/llm/client.ts.
-        CURATOR_MODEL: "claude-fable-5",
-        AUDIT_MODEL: "claude-fable-5",
-        ARBITRATION_MODEL: "claude-fable-5",
+        CURATOR_MODEL: "claude-fable-5-1",
+        AUDIT_MODEL: "claude-fable-5-1",
+        ARBITRATION_MODEL: "claude-fable-5-1",
         // The Extractor authors the graph's canonical language from arbitrary,
         // wholly untrusted documents whose framing it must not adopt, and
         // everything downstream inherits its wording. It also runs once per
@@ -117,7 +117,7 @@ export class ApiStack extends cdk.Stack {
         // server-side Opus fallback refuses with it, so extraction retries on
         // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
         // document.
-        EXTRACTOR_MODEL: "claude-fable-5",
+        EXTRACTOR_MODEL: "claude-fable-5-1",
         // The Matcher's judgment is narrow (same proposition?) over candidates
         // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
         // quality and price (#257). First agent routed off Anthropic; the rest

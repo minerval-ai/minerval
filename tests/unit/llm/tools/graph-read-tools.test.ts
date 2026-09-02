@@ -173,7 +173,7 @@ describe("graph-read-tools", () => {
         summary: "Reader-facing body",
         reasoningTrace: "The audit trail",
         assessedAt: new Date("2026-01-01T00:00:00Z"),
-        model: "claude-fable-5",
+        model: "claude-fable-5-1",
       } as never);
 
       const out = JSON.parse(
