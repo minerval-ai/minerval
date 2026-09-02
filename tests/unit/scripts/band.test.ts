@@ -71,9 +71,11 @@ describe("compareScorecards over the committed baseline", () => {
   const baseline = JSON.parse(readFileSync(BASELINE, "utf-8")) as Scorecard;
 
   it("reads every headline metric off a real scorecard", () => {
+    // The committed baseline predates the S2 dimensions, which read as
+    // absent (undefined) there and become n/a rows in a comparison.
     for (const m of HEADLINE_METRICS) {
       const v = m.get(baseline);
-      expect(v === null || typeof v === "number").toBe(true);
+      expect(v == null || typeof v === "number").toBe(true);
     }
     expect(HEADLINE_METRICS.find((m) => m.label.includes("claim-bar"))!.get(baseline)).toBe(0.69);
   });

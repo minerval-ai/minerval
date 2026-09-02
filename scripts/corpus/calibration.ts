@@ -123,6 +123,11 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
         WHERE r.parent_claim_id = $1`,
       [item.id]
     );
+    const instances = await rawQuery<{ original_text: string; stance: string; proposed: string | null }>(
+      `SELECT original_text, stance, proposed_canonical_form AS proposed
+         FROM claim_instances WHERE claim_id = $1 ORDER BY created_at LIMIT 5`,
+      [item.id]
+    );
     if (!claim) {
       throw new Error(
         `Claim ${item.id} is no longer in the corpus DB — the graph was reset ` +
@@ -151,6 +156,12 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
     }
     if (subclaims.length === 0) w(`- (atomic: no decomposition)`);
     w();
+    w(`**What the sources said (${instances.length} shown):**`);
+    for (const i of instances) {
+      w(`- [${i.stance}] "${i.original_text.slice(0, 600)}"` + (i.proposed ? ` — extractor proposed: ${i.proposed}` : ""));
+    }
+    if (instances.length === 0) w(`- (no source instances: minted during decomposition)`);
+    w();
     w(`**Judge's verdict:**`);
     w();
     w(`| dimension | verdict |`);
@@ -161,6 +172,10 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
     w(`| claim_bar | ${item.claim_bar} |`);
     w(`| granularity | ${item.decomposition_granularity} |`);
     w(`| importance (judged, vs ${item.importanceStored} stored) | ${item.importance_judged} |`);
+    w(`| sycophancy | ${item.sycophancy ?? "n/a"} |`);
+    w(`| hedging | ${item.hedging ?? "n/a"} |`);
+    w(`| canonical form | ${item.canonical_form ?? "n/a"} |`);
+    w(`| political bias | ${item.political_bias ?? "n/a"} |`);
     w();
     w(`Flags: ${item.flags.length > 0 ? item.flags.join(", ") : "none"}`);
     w();
