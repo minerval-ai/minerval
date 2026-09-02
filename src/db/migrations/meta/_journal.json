@@ -309,6 +309,13 @@
       "when": 1788366378300,
       "tag": "0043_instance_proposed_canonical_form",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788366777287,
+      "tag": "0044_claim_predictions",
+      "breakpoints": true
     }
   ]
 }

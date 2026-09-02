@@ -33,6 +33,7 @@ const DATA_TABLES = [
   "enqueue_events",
   "queue_depth_snapshots",
   "claim_instances",
+  "claim_predictions",
   "claim_relationships",
   "assessments",
   "arguments",
