@@ -219,10 +219,16 @@ const configSchema = z.object({
 
   // Agent trace persistence (#334 L0): "full" records agent_runs +
   // agent_steps, "off" records nothing. Unset defaults are resolved in
-  // trace-service.ts: off in production (until a retention job exists) and
-  // under vitest, full everywhere else — so dev and the corpus harness trace
-  // by default.
+  // trace-service.ts: off under vitest (unit tests must not attempt DB
+  // writes), full everywhere else, production included — the retention
+  // sweep below bounds what production keeps.
   traceLevel: z.enum(["off", "full"]).optional(),
+  // How long agent_runs (and, by cascade, agent_steps) are kept before the
+  // retention sweep (workers/trace-retention.ts) deletes them. Traces are
+  // big — a Steward run is tens of KB of transcript — so production keeps a
+  // window, not history; llm_usage rows keep their run_id and cost forever.
+  // 0 disables the sweep (keep everything; the corpus harness wants that).
+  traceRetentionDays: z.coerce.number().default(30),
   // Enqueue-event telemetry (#334 L0, #217): one tiny row per enqueue through
   // the queue-service chokepoint. Unset resolves in enqueue-events-service.ts:
   // off under vitest, ON everywhere else including production — fan-out data
@@ -596,6 +602,7 @@ export function loadConfig(): Config {
     llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
     llmDailyCallLimit: process.env.LLM_DAILY_CALL_LIMIT,
     traceLevel: process.env.TRACE_LEVEL,
+    traceRetentionDays: process.env.TRACE_RETENTION_DAYS,
     enqueueEvents: process.env.ENQUEUE_EVENTS,
     queueDepthSampleIntervalHours: process.env.QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS,
     llmHourlyTokenLimit: process.env.LLM_HOURLY_TOKEN_LIMIT,

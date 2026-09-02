@@ -54,6 +54,20 @@ describe("traceLevel resolution", () => {
     mocks.config.traceLevel = undefined;
     expect(traceLevel()).toBe("off");
   });
+
+  it("defaults full everywhere else, production included (retention bounds it)", () => {
+    mocks.config.traceLevel = undefined;
+    const saved = process.env.VITEST;
+    delete process.env.VITEST;
+    try {
+      mocks.config.env = "production";
+      expect(traceLevel()).toBe("full");
+      mocks.config.env = "development";
+      expect(traceLevel()).toBe("full");
+    } finally {
+      process.env.VITEST = saved;
+    }
+  });
 });
 
 describe("startAgentRun", () => {

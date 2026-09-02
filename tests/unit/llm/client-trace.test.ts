@@ -5,11 +5,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // present on the usage context (#334 L0).
 const mocks = vi.hoisted(() => ({
   completeWithTools: vi.fn(),
+  complete: vi.fn(),
+  completeStructured: vi.fn(),
   recordAgentStep: vi.fn(),
 }));
 
 vi.mock("../../../src/llm/providers/index.js", () => ({
-  getAdapter: () => ({ completeWithTools: mocks.completeWithTools }),
+  getAdapter: () => ({
+    completeWithTools: mocks.completeWithTools,
+    complete: mocks.complete,
+    completeStructured: mocks.completeStructured,
+  }),
 }));
 
 vi.mock("../../../src/services/trace-service.js", () => ({
@@ -22,7 +28,7 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
   checkBudget: vi.fn(),
 }));
 
-import { toolUseLoop } from "../../../src/llm/client.js";
+import { complete, completeStructured, toolUseLoop } from "../../../src/llm/client.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 const usage = { inputTokens: 1, outputTokens: 1 };
@@ -47,7 +53,61 @@ const finalTurn = {
 
 beforeEach(() => {
   mocks.completeWithTools.mockReset();
+  mocks.complete.mockReset();
+  mocks.completeStructured.mockReset();
   mocks.recordAgentStep.mockReset();
+});
+
+// Single-shot completions are whole agent turns for the agents that never
+// enter a tool-use loop (the Extractor, the judge), so they are recorded as
+// one "completion" step — prompt and output, system prompt by size only.
+describe("single-shot completion step recording", () => {
+  it("records a structured completion with its prompt, schema and output", async () => {
+    mocks.completeStructured.mockResolvedValueOnce({ items: [{ text: "a claim" }] });
+    const trace = { runId: "run-2", seq: { n: 0 } };
+    const messages = [{ role: "user" as const, content: "extract" }];
+
+    const out = await runWithUsageContext({ trace }, () =>
+      completeStructured<{ items: unknown[] }>({
+        messages,
+        schema: { type: "object" },
+        schemaName: "Claims",
+        system: "the constitution",
+        model: "m",
+      })
+    );
+
+    expect(out.items).toHaveLength(1);
+    expect(mocks.recordAgentStep).toHaveBeenCalledOnce();
+    const [t, kind, content] = mocks.recordAgentStep.mock.calls[0]!;
+    expect(t).toBe(trace);
+    expect(kind).toBe("completion");
+    expect(content).toEqual({
+      model: "m",
+      schemaName: "Claims",
+      systemChars: "the constitution".length,
+      messages,
+      output: { items: [{ text: "a claim" }] },
+      stopReason: null,
+    });
+  });
+
+  it("records a plain completion with its text and stop reason", async () => {
+    mocks.complete.mockResolvedValueOnce({ content: "hello", model: "m", usage, stopReason: "end_turn" });
+    const trace = { runId: "run-3", seq: { n: 0 } };
+    await runWithUsageContext({ trace }, () =>
+      complete({ messages: [{ role: "user", content: "hi" }], model: "m" })
+    );
+    const [, kind, content] = mocks.recordAgentStep.mock.calls[0]!;
+    expect(kind).toBe("completion");
+    expect(content).toMatchObject({ output: "hello", stopReason: "end_turn", systemChars: 0 });
+  });
+
+  it("records nothing without a trace on the context", async () => {
+    mocks.completeStructured.mockResolvedValueOnce({});
+    await completeStructured({ messages: [], schema: {}, schemaName: "X", model: "m" });
+    expect(mocks.recordAgentStep).not.toHaveBeenCalled();
+  });
 });
 
 describe("toolUseLoop step recording", () => {

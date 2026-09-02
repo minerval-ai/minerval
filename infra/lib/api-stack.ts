@@ -150,6 +150,14 @@ export class ApiStack extends cdk.Stack {
         // and the fan-out cost it stood in for is now bounded by the mandate
         // ledger instead of by a count. See src/config.ts.
         EXTENSION_MAX_CLAIMS: "10",
+        // Agent traces (#334 L0): the full tool-use transcript of every agent
+        // run, persisted for the eval harness, debugging and the production
+        // monitors. On by default now; this pin makes the choice visible.
+        // Kept for 30 days by the retention sweep — a Steward run is tens of
+        // KB of transcript, so this is a window, not history. llm_usage keeps
+        // run_id and cost indefinitely.
+        TRACE_LEVEL: "full",
+        TRACE_RETENTION_DAYS: "30",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
