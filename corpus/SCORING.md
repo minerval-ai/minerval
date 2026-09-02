@@ -64,9 +64,14 @@ note, so a low number is always traceable to specific claims.
   standards are pinned into the judge prompt so the bar is explicit and stable.
 - **Evidence, not just a number** — every verdict carries a note and the specific
   claim, so scores are spot-checkable and actionable.
-- **Nondeterminism is designed in.** One run is one sample. Treat a delta as real
-  only if it repeats across N≈3 runs or exceeds run-to-run noise — `corpus:compare`
-  prints the deltas but does not pretend a single diff is significant.
+- **Nondeterminism is designed in.** One run is one sample. A configuration's
+  value for a metric is the mean over its runs and its noise is their spread, so
+  each side of `corpus:compare` is a *group* of runs (`refA1,refA2,refA3 refB1,…`),
+  and a delta of means counts only when it exceeds the combined sample spread
+  (`scripts/corpus/band.ts`: `|Δ mean| > sdA + sdB`, N≈3 per side). A side with
+  one run gets its delta printed and **no verdict** — the tool refuses to call a
+  single diff significant. A verdict computed against one side's spread alone
+  is marked one-sided; it is weaker evidence.
 
 - **Vetted by review, not blind-calibrated.** Judge verdicts are checked by a
   human READING them against the pinned standards (`corpus:calibrate review`),
