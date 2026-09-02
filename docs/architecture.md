@@ -612,6 +612,16 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
+Nothing the extension sends is persisted (#356). The page is whatever the
+reader has open, so the whole pipeline runs untraced (no `agent_runs` or
+`agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or instances,
+and keeps its result only in an in-memory cache; chat is the same. The MCP's
+on-demand analysis tools follow the same rule. Only source submission, where
+the fetched document is public by construction, produces provenance and a
+transcript. The claim layer carries its own guard: the constitution (§2)
+holds that a claim is about the world, not a private person, and the
+Extractor is where that binds.
+
 ### MCP
 
 A remote MCP server, speaking streamable HTTP at `POST /mcp` on the API host,

@@ -46,6 +46,14 @@ Not claims:
   itself disputed or consulted.
 - **Questions, commands, meta-text** ("in this post I argue..."), rhetoric,
   and hedged non-assertions ("some might say...").
+- **Personal detail about private individuals.** The graph holds
+  propositions the discourse refers to, not facts about people who have not
+  entered it (§2). A passage about a named private person's health,
+  finances, whereabouts, or conduct yields no claim, and dropping the name
+  does not turn one case into a general proposition. Public acts are
+  different: what an official decided, a company announced, or an author
+  published is claim material like any other. When unsure, leave the person
+  out; the omission is the recoverable error.
 
 ## Canonical form
 
@@ -70,7 +78,8 @@ fifteen words, rarely more than twenty-five.
 ## Fields
 
 - **original_text**: the exact span from the document. This is provenance;
-  the author's wording and framing live here.
+  the author's wording and framing live here. Keep the span to the
+  assertion: it carries no personal detail the claim itself leaves out.
 - **context**: one or two surrounding sentences, only when needed to
   disambiguate the span.
 - **proposed_canonical_form**: as above.

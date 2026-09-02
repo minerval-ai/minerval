@@ -51,6 +51,13 @@ extraction. Because of that, **nothing is sent automatically by default**:
 you trigger analysis from the popup, or opt a site (or everything) into
 automatic analysis in settings. Any site can be disabled entirely.
 
+What is sent is transient. Page text and chat questions are analyzed and
+discarded: they are never written to Minerval's database or to its agent
+transcripts, and no claim enters the graph from them. Results are cached in
+server memory for about an hour so re-opening a page is instant; only a
+metering record (agent, model, token counts, cost) is kept. The site's
+[privacy policy](https://minerval.ai/privacy) states this in full.
+
 ## Metering
 
 All analysis and chat calls authenticate with your API key and are metered

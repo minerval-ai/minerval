@@ -31,6 +31,7 @@ import {
   finishAgentRun,
   recordAgentStep,
   traceLevel,
+  traceable,
 } from "../../../src/services/trace-service.js";
 
 beforeEach(() => {
@@ -67,6 +68,25 @@ describe("traceLevel resolution", () => {
     } finally {
       process.env.VITEST = saved;
     }
+  });
+});
+
+// Per-agent policy (#356): the extension agent only ever sees a reader's own
+// page and conversation, so it is never traced, whoever calls it.
+describe("per-agent trace policy", () => {
+  it("never records the extension agent, even at TRACE_LEVEL=full", () => {
+    expect(traceable("extension")).toBe(false);
+    expect(
+      startAgentRun("extension", { userId: "33333333-3333-3333-3333-333333333333" })
+    ).toBeNull();
+    expect(mocks.insertValues).not.toHaveBeenCalled();
+  });
+
+  it("records every other agent at full, and none when off", () => {
+    expect(traceable("steward")).toBe(true);
+    expect(traceable("extractor")).toBe(true);
+    mocks.config.traceLevel = "off";
+    expect(traceable("steward")).toBe(false);
   });
 });
 

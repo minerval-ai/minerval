@@ -30,7 +30,7 @@ import {
   type QuotaDecision,
 } from "../server/plugins/quota.js";
 import type { PricedOp } from "../services/owl.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, untraced } from "../llm/usage-context.js";
 import { hybridSearch } from "../services/search-service.js";
 import {
   getClaimById,
@@ -115,6 +115,13 @@ function formatAssessment(
  * (refunded if it throws — the user shouldn't pay for our failure), and run
  * the work inside a usage context so the metering chokepoint (llm/client.ts)
  * attributes every token to the calling account and key.
+ *
+ * The work runs untraced (#356): these tools analyze text the caller hands
+ * over on demand — a draft, a memo, a passage from wherever they are reading
+ * — which is theirs, not the graph's. Metering keeps counts and cost; no
+ * transcript of the text is kept. Text meant to become provenance goes
+ * through source submission, where the fetched document is public by
+ * construction and its transcript is part of the record.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
@@ -138,7 +145,7 @@ async function agentic<T>(
         apiKeyId: ctx.auth.apiKeyId,
         requestId: ctx.requestId,
       },
-      fn
+      () => untraced(fn)
     )
   );
   if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
