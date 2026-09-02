@@ -23,6 +23,7 @@ corpus/
   RUBRIC.md              qualitative review rubric, distilled from the constitution
   SCORING.md             scorecard design (corpus:score / corpus:compare)
   scorecards/            committed scorecard history (see its README)
+  predictions/           resolvable predictions + README (S6 calibration track)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
@@ -199,6 +200,14 @@ item (every dimension, flags, and note), and closes with the `## Overall`
 block — the feedback that actually matters. Commit the filled sheet as the
 record of the review. Generate it before resetting the graph (or restore the
 snapshot).
+
+**Predictions** (#334 S6) — the one class of claim reality grades:
+[`predictions/`](./predictions/README.md) holds a pinned set of resolvable
+questions with criteria and resolution dates; `npm run predictions -- seed
+--corpus` seeds them as claims, `resolve` records outcomes as the world settles
+them, and `score` reports Brier, log score, calibration curve and ECE over the
+credences the Steward held before resolution. Seeded early because the signal
+accrues only as questions resolve.
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
