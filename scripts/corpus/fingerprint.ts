@@ -36,6 +36,8 @@ export interface ScorecardConfig {
   modelsSource?: ModelsSource;
   /** `--profile=<name>` in force for the run, if any. */
   profile?: string | null;
+  /** `--swap=<agent>:<model>` in force for the run, if any (the model-swap runner's B arm). */
+  swap?: { agent: string; model: string } | null;
   /**
    * Models actually observed in llm_usage during the run window, per agent,
    * most-called first. Normally one per agent; a second entry means a

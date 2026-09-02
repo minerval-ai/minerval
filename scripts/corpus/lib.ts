@@ -62,6 +62,37 @@ if (CORPUS_PROFILE === "production") {
 }
 
 /**
+ * Model swap (#334 L1, the model-swap runner): `--swap=<agent>:<model>` puts
+ * ONE agent on another model for this run, applied after the profile so a
+ * swap on top of production means "production, except this agent". The
+ * fingerprint records it. Swappable agents: extractor, matcher, steward,
+ * curator (their *_MODEL env vars).
+ */
+export const CORPUS_SWAP: { agent: string; envVar: string; model: string } | null = (() => {
+  const raw = argFlag("swap");
+  if (!raw) return null;
+  const i = raw.indexOf(":");
+  if (i <= 0 || i === raw.length - 1) {
+    throw new Error(`--swap must be <agent>:<model>, got "${raw}"`);
+  }
+  const agent = raw.slice(0, i);
+  const model = raw.slice(i + 1);
+  const envVars: Record<string, string> = {
+    extractor: "EXTRACTOR_MODEL",
+    matcher: "MATCHER_MODEL",
+    steward: "STEWARD_MODEL",
+    curator: "CURATOR_MODEL",
+  };
+  const envVar = envVars[agent];
+  if (!envVar) {
+    throw new Error(`--swap: unknown agent "${agent}" (extractor | matcher | steward | curator)`);
+  }
+  process.env[envVar] = model;
+  console.log(`swap: ${agent} → ${model} (${envVar})`);
+  return { agent, envVar, model };
+})();
+
+/**
  * Fail loudly if the DB the app actually resolved is not the isolated corpus DB.
  * This is the runtime backstop for the import-ordering contract above: if any
  * src module ever causes loadConfig() to cache before DATABASE_URL was pinned,
