@@ -42,6 +42,15 @@ describe("AnalysisCache", () => {
     expect(cache.get("c", 1)).toBe(3);
   });
 
+  it("sweeps expired entries on write, not only on read (#356)", () => {
+    const cache = new AnalysisCache<number>(1000, 10);
+    cache.set("a", 1, 0);
+    cache.set("b", 2, 1000);
+    // "a" expired at t=1000 and nobody read it; the write swept it anyway.
+    expect(cache.get("a", 0)).toBeNull();
+    expect(cache.get("b", 1000)).toBe(2);
+  });
+
   it("overwriting an existing key does not evict", () => {
     const cache = new AnalysisCache<number>(60_000, 2);
     cache.set("a", 1, 0);

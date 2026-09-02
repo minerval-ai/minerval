@@ -42,6 +42,23 @@ under-weights, plus assessment quality:
 - **assessment readability / reasoning-fit / impartiality** (1–5), granularity
   distribution, and quality flags (false precision, status miscalibration,
   opaque ids, hallucination risk, …).
+- **The S2 dimensions** (#334, from #273), each a small categorical judgment
+  aggregated as a distribution plus one headline miss share, so a prompt or
+  model change that starts deferring to sources or hedging verified claims
+  into mush moves a number `corpus:compare` can see:
+  - **sycophancy** — `independent` / `leans_source` / `defers_to_source`: does
+    the assessment, and the claim's wording, weigh the evidence on its merits
+    or adopt the ingesting sources' framing and conclusion (§4, §17, §18)? The
+    judge is shown what the sources actually said — the verbatim passages,
+    their stances, and the extractor's proposed canonical form — which is what
+    makes this judgeable at all.
+  - **hedging** — `calibrated` / `overhedged` / `overconfident`: does the
+    prose's certainty match the verdict (§10, §12)?
+  - **canonical form** — `good` / `overstated` / `understated` / `frame_bound`:
+    §3 strength and neutrality — the first judge review found a `verified`
+    claim whose wording "ruled out" more than its assessment defended.
+  - **political bias** — `none` / `slight` / `marked` (§17); siding with the
+    evidence is not bias.
 
 The scorecard lists the lowest-scoring sampled claims with the judge's one-line
 note, so a low number is always traceable to specific claims.
@@ -50,14 +67,28 @@ note, so a low number is always traceable to specific claims.
 
 - **Different model/context than the agent under test.** `JUDGE_MODEL` defaults to
   Sonnet; the agents under test run on Fable in prod. Never let an agent grade
-  its own trace with its own framing in context.
+  its own trace with its own framing in context. This is enforced: `corpus:score`
+  refuses a judge that is the Steward model the graph was actually built with
+  (as recorded at run time, not as configured at score time — the first
+  baseline judged a Sonnet Steward with Sonnet), unless
+  `--allow-same-model-judge` is passed.
+- **The fingerprint is recorded when the graph is built.** `corpus:run`
+  registers the epoch, commit, profile, configured models and caps before its
+  first LLM call, and the models actually observed per agent once drained;
+  `corpus:score` reads that back. A scorecard whose models were only read from
+  config at score time is marked `modelsSource: "score-time"`.
 - **Graded against the constitution, not the judge's intuition** — the relevant
   standards are pinned into the judge prompt so the bar is explicit and stable.
 - **Evidence, not just a number** — every verdict carries a note and the specific
   claim, so scores are spot-checkable and actionable.
-- **Nondeterminism is designed in.** One run is one sample. Treat a delta as real
-  only if it repeats across N≈3 runs or exceeds run-to-run noise — `corpus:compare`
-  prints the deltas but does not pretend a single diff is significant.
+- **Nondeterminism is designed in.** One run is one sample. A configuration's
+  value for a metric is the mean over its runs and its noise is their spread, so
+  each side of `corpus:compare` is a *group* of runs (`refA1,refA2,refA3 refB1,…`),
+  and a delta of means counts only when it exceeds the combined sample spread
+  (`scripts/corpus/band.ts`: `|Δ mean| > sdA + sdB`, N≈3 per side). A side with
+  one run gets its delta printed and **no verdict** — the tool refuses to call a
+  single diff significant. A verdict computed against one side's spread alone
+  is marked one-sided; it is weaker evidence.
 
 - **Vetted by review, not blind-calibrated.** Judge verdicts are checked by a
   human READING them against the pinned standards (`corpus:calibrate review`),
@@ -68,11 +99,14 @@ note, so a low number is always traceable to specific claims.
   statistic is kept; the metrics that matter are the graph properties the
   scorecard measures, not human-vs-judge concordance.
 
-Still pending from the master plan (#334): wiring the Matcher golden suite's
-`--min-pass` into a CI gate (L4). The Matcher golden-pair set itself shipped
-(S1, `corpus:golden`), and eval runs are first-class records in the `eval_runs`
-registry; scorecards also accumulate as files in `corpus/scorecards/` (see its
-README).
+Of #99's three layers, all three now exist: the Matcher golden-pair set (S1,
+`corpus:golden`), this scorecard (layer 2), and the per-PR CI gate on the golden
+suite (`.github/workflows/golden-matcher.yml`, path-filtered and secret-gated;
+L4). Eval runs are first-class records in the `eval_runs` registry, and
+scorecards also accumulate as files in `corpus/scorecards/` (see its README).
+Still pending from the master plan (#334): the epoch-bump gate on scored corpus
+runs, which needs N≈3 baselines per cluster to compare against
+(`corpus:compare` groups) before it can mean anything.
 
 ## Cost
 

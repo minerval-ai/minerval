@@ -19,9 +19,6 @@
  * corpus run scored, and every scorecard recorded, a Matcher production had
  * already moved off (#257).
  */
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   MODELS,
@@ -36,21 +33,10 @@ import {
   hasExplicitRates,
   ratesForModel,
 } from "../../../src/llm/pricing.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
-
-/** Model IDs pinned as *_MODEL env vars on the ECS task definition. */
-function productionPins(): Array<{ envVar: string; model: string }> {
-  const stack = readFileSync(
-    join(here, "../../../infra/lib/api-stack.ts"),
-    "utf8"
-  );
-  const pins: Array<{ envVar: string; model: string }> = [];
-  for (const m of stack.matchAll(/([A-Z][A-Z_]*_MODEL):\s*"([^"]+)"/g)) {
-    pins.push({ envVar: m[1]!, model: m[2]! });
-  }
-  return pins;
-}
+// The pin parser is shared with the corpus harness's --profile=production
+// (scripts/corpus/production-pins.ts), so the models this guard covers are
+// exactly the models a production-profile baseline runs on.
+import { productionPins } from "../../../scripts/corpus/production-pins.js";
 
 /** Every model the system is configured to reach, with where it's configured. */
 function reachableModels(): Array<{ source: string; model: string }> {
@@ -72,7 +58,7 @@ function reachableModels(): Array<{ source: string; model: string }> {
 
 describe("model guard: every reachable model resolves, prices, and behaves", () => {
   it("finds the production model pins in the ECS task definition", () => {
-    // If the pin format in api-stack.ts changes, fix productionPins() rather
+    // If the pin format in api-stack.ts changes, fix parseModelPins() rather
     // than losing guard coverage of production models.
     const pins = productionPins();
     expect(pins.length).toBeGreaterThan(0);

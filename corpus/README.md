@@ -7,11 +7,13 @@ assessments trigger — so you can see whether the agents fit together and settl
 correctly as more overlapping claims are ingested. The focus is disambiguation,
 canonicalization, related-claim handling, and propagation behavior.
 
-**Not yet exercised:** community contributions, conflict review, escalation, and
-arbitration. Those are driven by contributions submitted through the API, which a
-corpus ingest doesn't generate — testing them needs a separate contributions
-scenario (a planned follow-up). The harness drains those queues too, so they'll
-run as soon as something enqueues them.
+Community contributions, conflict review, escalation, and arbitration are
+driven by contributions submitted against existing claims, which an ingest
+never generates — so they are exercised separately, by
+[`corpus:contributions`](./contributions/README.md): a scenario of
+contributions and appeals submitted against the graph a run produced,
+through the real Reviewer and Arbitrator pipelines, with a report of every
+decision and its reasoning.
 
 It runs against an **isolated database** (`episteme_corpus` by default), never
 the main graph, so you can wipe and re-run freely.
@@ -23,6 +25,8 @@ corpus/
   RUBRIC.md              qualitative review rubric, distilled from the constitution
   SCORING.md             scorecard design (corpus:score / corpus:compare)
   scorecards/            committed scorecard history (see its README)
+  predictions/           resolvable predictions + README (S6 calibration track)
+  contributions/         contribution scenarios + README (review / escalation / arbitration)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
@@ -94,15 +98,44 @@ npm run corpus:report -- lethalities             # re-render a report from curre
 # Scored, diffable scorecard (#99) — the automated counterpart to report.md
 npm run corpus:score -- lethalities --no-judge   # structural metrics only (free)
 npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
-npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
+npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards (no verdict: one sample each)
+npm run corpus:compare -- runs/<A1>,runs/<A2>,runs/<A3> runs/<B1>,runs/<B2>,runs/<B3>
+                                                 # groups: mean ± sd per side, delta vs the noise band
 ```
 
+**Run on the production models.** The config defaults are the cheap dev
+tiers (Sonnet Steward, Haiku Matcher); production pins other models in the
+CDK task definition (`infra/lib/api-stack.ts`). A baseline that should say
+something about production has to run on those pins:
+
+```bash
+npm run corpus:run -- blackholes --profile=production --score
+npm run corpus:golden -- --profile=production
+```
+
+`--profile=production` (or `CORPUS_PROFILE=production`) applies every
+`*_MODEL` pin from the stack source before config loads, overriding any
+`*_MODEL` in your `.env` — a profile means "as production". The first epoch
+baseline was cut on the Sonnet default Steward while production ran Fable,
+which is what this exists to prevent. It needs a key for every provider the
+pins route to (the preflight names any that are missing).
+
+**Every run records its fingerprint at run time.** `corpus:run` registers an
+`ingest` row in the eval-run registry (`eval_runs`, which `corpus:reset`
+deliberately does not truncate) before its first LLM call: epoch, commit,
+profile, the model each agent was configured with, and the spend caps in
+force. When the drain finishes it adds the models actually observed in
+`llm_usage` per agent (a second model under an agent means a fallback fired)
+and writes the same record to `runs/<run>/run.json`. `corpus:score` reads that
+row back rather than re-deriving models from config at score time — the
+first baseline recorded the Matcher as Haiku that way while ingestion had run
+on DeepSeek. A scorecard with no ingest row behind it says so
+(`modelsSource: "score-time"`); trust those models only if nothing changed
+between the run and the score.
+
 Every `corpus:score` also files its `scorecard.json` into the committed history
-at `corpus/scorecards/<cluster>/` (with the epoch/models/commit fingerprint
-embedded) — commit the ones that matter as baselines. See
-[`scorecards/README.md`](./scorecards/README.md). It also registers the run in
-the **eval-run registry** (`eval_runs`, which `corpus:reset` deliberately does
-not truncate):
+at `corpus/scorecards/<cluster>/` (with that fingerprint embedded) — commit the
+ones that matter as baselines. See [`scorecards/README.md`](./scorecards/README.md).
 
 ```bash
 npm run corpus:runs                              # list registered runs + headline metrics
@@ -124,6 +157,49 @@ Snapshot operations force-terminate other connections on the databases they
 touch (Postgres template semantics) — never run one mid-drain. The main
 `episteme` database is refused by name.
 
+**Graph agreement** (#334 L2) — how far apart are two graphs built from the
+same sources? The instrument every property test reads: idempotency and path
+independence (re-run the same cluster), model fidelity (one agent's model
+swapped), displacement under attack. Compare the live corpus DB with a
+snapshot, or any two disposable databases:
+
+```bash
+npm run corpus:snapshot -- save run1              # after one drained run
+npm run corpus:run -- blackholes                  # run it again
+npm run corpus:agreement -- snap:run1 db          # three axes, printed + registered
+npm run corpus:agreement -- snap:run1 db --confirm   # judge the ambiguous pairs (LLM, cents)
+```
+
+Claims are matched one-to-one by exact text, then by stored embedding above
+`--threshold` (0.85); pairs below `--sure` (0.95) are the ambiguous band,
+kept and reported unless `--confirm` sends them to a pair judge on
+`JUDGE_MODEL` under §2's same-considerations test. The report gives
+**claim-set** precision / recall / F1 (with the unmatched claims attributed
+to the agent that minted them), **credence** divergence and status agreement
+over matched claims, and **structural** edge precision / recall and edit
+distance mapped through the matching. Pure library in
+`scripts/corpus/graph-agreement.ts`, unit-tested; results register in the
+eval-run registry (kind `agreement`).
+
+**Model swap** (#334 L1; S7's instrument) — the same cluster twice, with
+ONE agent's model changed, and the two graphs compared:
+
+```bash
+npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production
+npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5 --baseline=<snapshot>   # reuse arm A
+```
+
+Arm A is the reference (with `--profile=production`, what production runs);
+arm B is identical except for `--swap=<agent>:<model>`, which `corpus:run`
+honours after the profile and records in the fingerprint. Each arm is a
+child run in its own process, each is snapshotted (`swap_<stamp>_a` / `_b`,
+kept as the evidence), and `corpus:agreement` compares them. The summary is
+fidelity — claim-set F1, credence divergence, status agreement, edge edit
+distance — with each arm's exact cost, which is the quality-per-dollar
+question in one line. Two full drains of the cluster: budget accordingly,
+and repeat before reading a difference as the model's rather than the run's.
+Registered as kind `swap`; `--dry-run` prints the arm commands.
+
 **Matcher golden pairs** (#99 layer 1) — the per-PR regression net for the one
 agent whose task saturates enough for exact-match grading. 30 pinned pairs in
 [`golden/matcher-pairs.json`](./golden/matcher-pairs.json) (paraphrase /
@@ -139,6 +215,16 @@ npm run corpus:golden -- --min-pass=0.9      # exit 1 below the bar (CI gate)
 Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
+
+**In CI** (`.github/workflows/golden-matcher.yml`): every PR that touches
+something that can move a match decision — the Matcher or its prompt, the
+constitution, the LLM client or a provider adapter, retrieval, the fixture or
+runner, the production pins — runs the suite on the production Matcher
+(`--profile=production`) against a throwaway corpus DB and fails below
+`--min-pass=0.95` (29 of 30). It needs the `OPENAI_API_KEY` and
+`OPENROUTER_API_KEY` repository secrets; a run without them (a fork PR)
+reports that it skipped rather than failing. Cents per run; the report is
+uploaded as a workflow artifact.
 
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
 gate until a human has read its verdicts and reasoning. The judge is presumed
@@ -161,14 +247,37 @@ block — the feedback that actually matters. Commit the filled sheet as the
 record of the review. Generate it before resetting the graph (or restore the
 snapshot).
 
+**Contributions** (#334 L1) — the half of the organization an ingest never
+reaches. After a corpus run, `npm run corpus:contributions -- blackholes`
+submits the scenario in `contributions/blackholes.json` (four personas, ten
+contributions across every type, appeals on the rejections that carry one)
+through the real review, escalation and arbitration pipelines and writes a
+report of every decision with its reasoning, the bad-faith findings, the
+appeal outcomes, the reputation deltas and the cost. `--dry-run` resolves
+the targets and prints the plan. Rubric section G finally has something to
+read.
+
+**Predictions** (#334 S6) — the one class of claim reality grades:
+[`predictions/`](./predictions/README.md) holds a pinned set of resolvable
+questions with criteria and resolution dates; `npm run predictions -- seed
+--corpus` seeds them as claims, `resolve` records outcomes as the world settles
+them, and `score` reports Brier, log score, calibration curve and ECE over the
+credences the Steward held before resolution. Seeded early because the signal
+accrues only as questions resolve.
+
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
-into the run dir; `--score=0` is structural-only).
+into the run dir; `--score=0` is structural-only), `--profile=production`,
+`--swap=<agent>:<model>` (one agent on another model, on top of the profile).
 
 `corpus:score` flags: `--sample=N` (claims to LLM-judge; default 15, `0` =
-structural-only), `--no-judge`, `--out=DIR`. The judge runs on `JUDGE_MODEL`
-(default Sonnet — deliberately a different model/context than the agents under
-test). See [`SCORING.md`](./SCORING.md).
+structural-only), `--no-judge`, `--out=DIR`, `--allow-same-model-judge`. The
+judge runs on `JUDGE_MODEL` (default Sonnet — deliberately a different
+model/context than the agents under test). Scoring **refuses** a judge that
+is the Steward model the graph was built with, unless overridden: on the
+config defaults that means set `JUDGE_MODEL` to something other than Sonnet,
+or use `--profile=production`, where the Steward is Fable. See
+[`SCORING.md`](./SCORING.md).
 
 ## Reading the results
 
@@ -207,7 +316,8 @@ dump for deeper digging.
   (`--limit=2`/`3`) → **full**. Check the printed cost at each step.
 - LLM output is nondeterministic. Treat a single run as one sample: run 2–3×
   and watch whether the metrics and failure modes are **stable**, not whether
-  any one number matches.
+  any one number matches. `corpus:compare` takes groups of runs per side for
+  exactly this reason, and gives no verdict on a single-sample side.
 
 ## Notes for maintainers
 

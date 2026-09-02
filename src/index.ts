@@ -10,6 +10,7 @@ import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
+import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
@@ -119,6 +120,11 @@ async function main() {
   // steward lane + action ledger. Period-keyed, so every task can run it and
   // exactly one snapshot lands per period.
   pollers.push(startQueueDepthSampler({ logger }));
+
+  // The trace retention sweep (#334 L0) deletes agent runs older than
+  // TRACE_RETENTION_DAYS, steps cascading, so production can trace by default
+  // without the tables growing without bound. Idempotent; every task may run it.
+  pollers.push(startTraceRetention({ logger }));
 
   // The recovery sweep (#218) re-enqueues review/arbitration work whose
   // in-memory message was lost (restart, dropped on error). The pipeline

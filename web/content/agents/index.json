@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 5767,
-    "fullChars": 53333
+    "roleChars": 6408,
+    "fullChars": 54906
   },
   {
     "key": "matcher",
@@ -20,8 +20,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
-    "roleChars": 3870,
-    "fullChars": 51436
+    "roleChars": 5643,
+    "fullChars": 54141
   },
   {
     "key": "contribution-reviewer",
@@ -32,8 +32,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 10213,
-    "fullChars": 57779
+    "roleChars": 11986,
+    "fullChars": 60484
   },
   {
     "key": "claim-steward",
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19222,
-    "fullChars": 66788
+    "roleChars": 21205,
+    "fullChars": 69703
   },
   {
     "key": "curator",
@@ -56,8 +56,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 3511,
-    "fullChars": 51077
+    "roleChars": 5284,
+    "fullChars": 53782
   },
   {
     "key": "dispute-arbitrator",
@@ -68,8 +68,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 8878,
-    "fullChars": 56444
+    "roleChars": 10651,
+    "fullChars": 59149
   },
   {
     "key": "audit-agent",
@@ -80,8 +80,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 7324,
-    "fullChars": 54890
+    "roleChars": 10255,
+    "fullChars": 58753
   },
   {
     "key": "grantmaker",
@@ -92,7 +92,7 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 6658,
-    "fullChars": 54224
+    "roleChars": 8431,
+    "fullChars": 56929
   }
 ]

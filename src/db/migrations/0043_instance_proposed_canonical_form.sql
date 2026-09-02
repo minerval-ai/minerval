@@ -1,0 +1,1 @@
+ALTER TABLE "claim_instances" ADD COLUMN "proposed_canonical_form" text;

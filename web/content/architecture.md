@@ -404,6 +404,22 @@ These act through tools over the life of a claim and the graph:
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
 
+Every one of these agents, the Matcher and the Extension Agent's chat
+included, also carries a **`raise_issue`** tool: one channel, in the agent's
+own words, for a system failure, a gap in its own tools, or a concrete
+improvement idea arrived at from having just done the work. It is
+fire-and-forget (it always acknowledges and can never fail a run) and the
+policies say it is never a substitute for acting. Reports land in
+`agent_reports`, not `audit_log`: they are about the machinery, not the
+graph, so they carry ids rather than content, collapse repeats into one row
+with an occurrence count, and are retained and purged separately. External
+agents on the MCP surface get the same tool, attributed and rate-limited, and
+their reports triage as testimony rather than findings. The audit scheduler
+requests a `report_triage` audit for each period that saw new reports; the
+Audit Agent clusters them by underlying gap, ranks by frequency and
+severity, and records a reading through `triage_report` that the
+service-scoped `/reports` API exposes to maintainers.
+
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
 live web page against graph state (verdicts range from "egregious" to "fine")
@@ -611,6 +627,16 @@ with a chat popup grounded in the same graph. Analysis answers immediately when
 the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
+
+Nothing the extension sends is persisted (#356). The page is whatever the
+reader has open, so the whole pipeline runs untraced (no `agent_runs` or
+`agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or instances,
+and keeps its result only in an in-memory cache; chat is the same. The MCP's
+on-demand analysis tools follow the same rule. Only source submission, where
+the fetched document is public by construction, produces provenance and a
+transcript. The claim layer carries its own guard: the constitution (§2)
+holds that a claim is about the world, not a private person, and the
+Extractor is where that binds.
 
 ### MCP
 

@@ -10,6 +10,18 @@
  * only when their content actually changes, and concurrent requests for the
  * same page share one pipeline run. Most claims on most pages are already in
  * the graph — the cache exploits that redundancy at the page level.
+ *
+ * Nothing derived from a page is persisted (#356). The page the extension
+ * sends is whatever the reader has open — an inbox, a patient portal, a
+ * private thread as readily as an essay — and the reader has volunteered it
+ * for annotation, not for the record. So this pipeline writes no sources, no
+ * claim instances, no agent runs or steps: the analysis lives in the
+ * in-memory cache and dies with the process, and every agent it invokes runs
+ * untraced, whatever TRACE_LEVEL says. The same holds for the chat, whose
+ * questions are the reader's own. What does persist is metering: one
+ * llm_usage row per call with counts and cost, never content. Ingesting a
+ * page-derived claim into the graph, if it ever happens, is a separate and
+ * deliberate path with its own rules, not a relaxation of this one.
  */
 import crypto from "crypto";
 import { loadConfig } from "../config.js";
@@ -24,6 +36,7 @@ import { extensionChat, type ChatTurn } from "../llm/agents/extension-agent.js";
 import { getClaimById } from "./claim-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import { rawQuery } from "../db/client.js";
+import { untraced } from "../llm/usage-context.js";
 
 /** Verdict the client can filter on; "unknown" = claim not in the graph. */
 export type AnnotationVerdict =
@@ -99,6 +112,11 @@ export class AnalysisCache<T> {
   }
 
   set(key: string, value: T, now = Date.now()): void {
+    // Sweep expired entries on every write, so a page's text does not linger
+    // in memory past its TTL merely because nobody asked for it again (#356).
+    for (const [k, e] of this.entries) {
+      if (e.expiresAt <= now) this.entries.delete(k);
+    }
     if (this.entries.size >= this.maxEntries && !this.entries.has(key)) {
       const oldest = this.entries.keys().next().value;
       if (oldest !== undefined) this.entries.delete(oldest);
@@ -182,8 +200,9 @@ export function buildAnnotations(input: {
   return input.claims.map((c, i) => {
     if (!c.matched) {
       // New/unknown to the graph: nothing to judge against. The extension
-      // renders no markup for these (graceful degradation; ingestion from the
-      // extension is a follow-up).
+      // renders no markup for these (graceful degradation). Minting them
+      // from here would persist page-derived text; see the module comment
+      // (#356) before adding such a path.
       return {
         original_text: c.original_text,
         context: c.context,
@@ -247,13 +266,16 @@ export async function chatAboutPage(input: {
   };
 }): Promise<{ reply: string; citations: ChatCitation[] }> {
   const config = loadConfig();
-  const result = await extensionChat({
-    messages: input.messages,
-    pageUrl: input.page.url,
-    pageTitle: input.page.title,
-    pageClaims: input.page.claims,
-    model: config.extensionModel,
-  });
+  // The conversation is the reader's own: no transcript of it is kept.
+  const result = await untraced(() =>
+    extensionChat({
+      messages: input.messages,
+      pageUrl: input.page.url,
+      pageTitle: input.page.title,
+      pageClaims: input.page.claims,
+      model: config.extensionModel,
+    })
+  );
 
   // Hydrate every cited id that resolves in the graph. An id fabricated from
   // thin air virtually never resolves, so it is still dropped; an id the
@@ -341,7 +363,8 @@ function launchRun(
   input: { url: string; title?: string; content: string },
   key: string
 ): Promise<PageAnalysis> {
-  const run = analyzePageUncached(input, key)
+  // Page text is transient: no agent run in this pipeline leaves a trace.
+  const run = untraced(() => analyzePageUncached(input, key))
     .then((analysis) => {
       cache.set(key, analysis);
       return analysis;

@@ -1,0 +1,16 @@
+{
+  // Typecheck-only project for the operational scripts (scripts/**), which
+  // tsconfig.json deliberately leaves out of the build (rootDir src). They
+  // run through tsx, which strips types without checking them, so without
+  // this a type error in the corpus harness surfaces only at run time.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["scripts/**/*", "src/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "infra", "web"]
+}

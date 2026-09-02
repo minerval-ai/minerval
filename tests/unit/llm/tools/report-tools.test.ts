@@ -21,8 +21,12 @@ vi.mock("../../../../src/config.js", () => ({
 import {
   createReportTools,
   getReportToolDefinitions,
+  UNTRACED_BODY_NOTE,
 } from "../../../../src/llm/tools/report-tools.js";
-import { runWithUsageContext } from "../../../../src/llm/usage-context.js";
+import {
+  runWithUsageContext,
+  untraced,
+} from "../../../../src/llm/usage-context.js";
 
 const REPORT_ID = "a1a1a1a1-1111-4111-8111-111111111111";
 const RUN_ID = "c3c3c3c3-3333-4333-8333-333333333333";
@@ -88,6 +92,27 @@ describe("raise_issue tool", () => {
       })
     );
     expect(tools.raisedCount).toBe(1);
+  });
+
+  it("withholds the body inside an untraced context (#356) but keeps the rest", async () => {
+    const tools = createReportTools();
+    const out = await untraced(() =>
+      runWithUsageContext({ agent: "extension" }, () =>
+        tools.execute("raise_issue", GOOD_INPUT)
+      )
+    );
+    expect(JSON.parse(out!).success).toBe(true);
+    expect(mocks.raiseIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: "extension",
+        title: GOOD_INPUT.title,
+        surface: GOOD_INPUT.surface,
+        contextRefs: GOOD_INPUT.context_refs,
+        body: UNTRACED_BODY_NOTE,
+        runId: null,
+      })
+    );
+    expect(mocks.raiseIssue.mock.calls[0]![0].body).not.toContain("counterparts under");
   });
 
   it("falls back to 'unknown' as the agent outside any usage context", async () => {

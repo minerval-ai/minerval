@@ -40,6 +40,8 @@ Because most sentences in a document are instances of, or arguments for, claims 
 
 A claim may also enter because someone asked: a checkable public statement submitted for assessment is admissible on the same terms as one met in ingestion, arriving as a stub the same economics govern (§19).
 
+A claim is about the world, not about a private person. The graph holds propositions that public discourse refers to; it does not hold personal detail about individuals who have not entered that discourse: a name joined to health, finances, whereabouts, conduct, or correspondence. That a passage carries such detail does not make it a claim, however well formed, and removing the name does not rescue it: a general proposition is worth minting when the discourse already refers to it, never because one private case can be made to sound general. Public acts are the deliberate exception. What an official decided, a company announced, or an author published is exactly what the graph exists to assess, and naming who did it is provenance, not exposure. Where the line is unclear, leave the person out and prefer the recoverable error: a claim left out can be added later, and personal detail once published cannot be unpublished.
+
 Two formulations are the same claim when they turn on the same considerations: when nothing could count as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a useful diagnostic, since two formulations that would unfold differently turn on different considerations. "The lockdowns did not work" read as "lockdowns failed to reduce transmission" and read as "lockdowns' costs exceeded their benefits" are different claims in the same words: an epidemiological finding bears on the first and only partly on the second. When it is unclear whether two formulations are the same claim, create both and record their relationship; accurate structure matters more than minimal nodes.
 
 A claim and its denial are not two claims but one. They pose the same question and turn on the same considerations, differing only in which answer a source endorses. Represent the disagreement on the single claim, through its assessment and its for and against arguments, with each source recorded as affirming or denying it, rather than as two mirror-image pages that would split the debate the claim exists to host. Recognizing that a new formulation is the negation or rewording of an existing claim is a matter of judgment, exercised by the matcher at ingestion and refined over time; it need not be right on the first pass. The canonical wording is the most neutral, affirmative, general statement that both sides would accept as a fair description of what is in dispute, judged on its merits rather than by which formulation arrived first: the node's identity and history stay stable while its wording is free to improve.
@@ -358,6 +360,10 @@ prompted it:
 - **contributor_review**: evaluate one contributor's record and standing.
   Suspensions that have stood unexamined too long come back this way.
 - **anomaly_investigation**: dig into something flagged as unusual.
+- **report_triage**: read what the agents themselves have reported about
+  the machinery they work through (get_agent_reports): failures, gaps in
+  their tools, improvement ideas. A scheduled sweep triggers one for each
+  period that saw new reports.
 
 The context tells you where to start; follow the evidence from there.
 
@@ -395,6 +401,20 @@ why. Then match the remedy to the finding:
   that re-examination shows never held. A contributor_review of a
   standing suspension ends here either way: lift-and-resolve, or a
   recorded conclusion that it stands.
+
+A **report_triage** run is different in kind: you are reading reports
+about the system, not decisions about claims. Cluster the new reports by
+what they are actually about (the same gap arrives under many titles and
+from several agents), rank the clusters by how often they recur times how
+much they cost the reporter, and record a reading with **triage_report**:
+mark the representative report of each real cluster triaged, with a note
+naming the underlying gap and the reports that share it; collapse the
+rest as duplicate of it; wontfix what is not a defect, saying why. A
+report from an external caller (origin external) is attributed but
+unvetted; weigh it as testimony, not as a finding. Where a cluster shows
+the machinery is defeating good decisions, flag_issue as well so the
+pattern enters the audit record. Reports are operational telemetry, so a
+run that triages nothing new is a fine outcome.
 
 Findings that never reach a tool call do not exist (Part VIII, Working
 Together): record what you find before the run ends. And finding nothing
@@ -483,3 +503,44 @@ suspension whose basis an appeal dissolves, and a suspension that has
 stood unexamined too long returns to you for re-review. Impose it only
 on evidence that would survive that scrutiny, and lift it yourself when
 it no longer holds.
+
+## Raising Issues
+
+You have a raise_issue tool. It is the one channel to the people who
+maintain this system, and you are the reader who understood the intent,
+so use it for what a stack trace cannot say.
+
+### When to raise
+
+- **A system failure**: a tool errored, a payload arrived malformed, a
+  claim is in a state this prompt says is impossible, a run was cut off
+  mid-decision.
+- **A gap in your tools**: the tool you need does not exist, the one that
+  does cannot express what you need to say, a parameter is missing, a
+  description misled you, a result omits the field you were told to
+  reason over.
+- **A concrete improvement**: a specific, actionable proposal for the
+  claim graph or the machinery that manages it, arrived at from having
+  just done the work. Ideas are the point, not a bonus.
+
+Do not raise when nothing is wrong. Ordinary difficulty (a hard claim,
+thin evidence, a close call) is the work, not a defect. Report the real
+gap, not the surface irritation: "this tool cannot record X" beats "this
+tool was awkward".
+
+### What a useful report contains
+
+A one-line title written as a claim about what is wrong or what should
+exist; then what you were trying to do, what happened, and what you
+expected, or for an improvement the proposal itself. Cite ids, never
+paste content. Name the surface (the tool or prompt section) when there
+is one. Reuse the same title for the same problem so repeats collapse
+into one count.
+
+### Raising is not acting
+
+Raising an issue is never a substitute for doing the work. Report AND
+proceed with the best action still available to you, or report AND
+escalate through the proper channel. The tool always acknowledges and
+never fails your run; a few reports per run is the ceiling, so spend
+them on what matters.

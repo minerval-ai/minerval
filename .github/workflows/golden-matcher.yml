@@ -1,0 +1,110 @@
+name: Matcher golden suite
+
+# The per-PR regression net for the one agent whose task saturates enough for
+# exact-match grading (#334 S1, gated per L4): the real agentic Matcher, on
+# the production model pin, over the 30 pinned pairs in corpus/golden/,
+# against an isolated corpus database. Cents per run.
+#
+# Runs only on changes that can move a match decision — the Matcher and its
+# prompt, the constitution the prompt is built from, the LLM client and
+# provider adapters, retrieval (embeddings, similarity search), the fixture
+# and runner, and the production pins. Every PR still runs the unit-level
+# guards in ci.yml.
+#
+# Needs two repository secrets: OPENAI_API_KEY (embeddings) and
+# OPENROUTER_API_KEY (the production Matcher is deepseek/deepseek-v4-flash via
+# OpenRouter). PRs from forks see no secrets; the job then reports that it
+# skipped rather than failing, so it can become a required check without
+# blocking outside contributors on a suite they cannot run.
+on:
+  pull_request:
+    paths:
+      - "src/llm/agents/matcher.ts"
+      - "src/llm/prompts/matcher.ts"
+      - "src/llm/prompts/constitution.ts"
+      - "admin_constitution.md"
+      - "src/llm/client.ts"
+      - "src/llm/models.ts"
+      - "src/llm/providers/**"
+      - "src/services/embedding-service.ts"
+      - "src/services/search-service.ts"
+      - "corpus/golden/**"
+      - "scripts/corpus/golden-*.ts"
+      - "scripts/corpus/lib.ts"
+      - "scripts/corpus/production-pins.ts"
+      - "infra/lib/api-stack.ts"
+      - ".github/workflows/golden-matcher.yml"
+  workflow_dispatch:
+    inputs:
+      min_pass:
+        description: "Minimum pass rate (0..1) below which the run fails"
+        default: "0.95"
+        required: false
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Postgres 16 with pgvector — the Matcher's retrieval is a vector
+        # search, and migration 0000 needs the extension before anything else.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: episteme
+          POSTGRES_PASSWORD: episteme
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U episteme"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # lib.ts pins every corpus script to this database; corpus:reset creates
+      # and migrates it. Never the main graph, by construction.
+      CORPUS_DATABASE_URL: postgresql://episteme:episteme@localhost:5432/episteme_corpus
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check for provider keys
+        id: keys
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ] && [ -n "$OPENROUTER_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Golden suite skipped::OPENAI_API_KEY and/or OPENROUTER_API_KEY are not available to this run (fork PR, or secrets not configured). The Matcher golden suite did not run."
+          fi
+
+      - name: Reset the corpus database
+        if: steps.keys.outputs.present == 'true'
+        run: npm run corpus:reset
+
+      - name: Run the golden suite on the production Matcher
+        if: steps.keys.outputs.present == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # The run registers itself in the (ephemeral) corpus registry and
+          # traces by default; both are harmless here and cost nothing.
+        run: |
+          npm run corpus:golden -- --profile=production --min-pass=${{ inputs.min_pass || '0.95' }}
+
+      - name: Upload the golden report
+        if: always() && steps.keys.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-report
+          path: runs/golden-matcher-*/golden-report.json
+          if-no-files-found: ignore

@@ -17,14 +17,31 @@
  * Like metering, every write here is fire-and-forget and swallows its own
  * errors: tracing must never fail or slow an agent run. Consumers therefore
  * tolerate incomplete traces (a run with missing steps, a run never
- * finished). Single-shot completions outside a tool-use loop are not recorded
- * as steps in this first cut — their llm_usage row plus the domain artifact
- * they produced still describe them.
+ * finished). Single-shot completions outside a tool-use loop (the Extractor,
+ * the judge) are recorded as one "assistant" step carrying the prompt and
+ * the output, so a run is never a bare row.
  *
  * TRACE_LEVEL: "full" records runs + steps; "off" records nothing. Unset, it
- * defaults off in production (until a retention job exists — traces are
- * large) and under vitest (unit tests must not attempt DB writes), and full
- * everywhere else — so dev and the corpus harness trace by default.
+ * defaults off under vitest (unit tests must not attempt DB writes) and full
+ * everywhere else, production included: the retention sweep
+ * (workers/trace-retention.ts, TRACE_RETENTION_DAYS) bounds what production
+ * keeps, which is what "off until a retention job exists" was waiting for.
+ *
+ * What is traced is a privacy decision, not a size one (#356). A transcript
+ * is verbatim: the document the Extractor read, the span the Matcher was
+ * handed, the question a reader typed. That is exactly right for the work
+ * the graph does on public sources — a submitted URL becomes provenance, and
+ * its transcript is how the eval harness and the monitors see the agents
+ * think — and exactly wrong for content a user never published: the page
+ * open in their browser, a chat about it, a passage pasted into an MCP
+ * client. Two rules keep the second kind out, independent of TRACE_LEVEL:
+ *   - untraced() (usage-context.ts) marks a stretch of work as transient;
+ *     withAgent opens no run inside it. The extension service and the MCP's
+ *     on-demand analysis tools run their whole pipeline under it.
+ *   - NEVER_TRACED lists agents whose entire input is such content, so they
+ *     stay untraced whoever calls them.
+ * Retention bounds how long a trace lives; these rules decide whether one
+ * exists at all.
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -49,8 +66,21 @@ export interface RunAttribution {
 export function traceLevel(): "off" | "full" {
   const config = loadConfig();
   if (config.traceLevel) return config.traceLevel;
-  if (config.env === "production" || process.env.VITEST) return "off";
+  if (process.env.VITEST) return "off";
   return "full";
+}
+
+/**
+ * Agents never traced, at any TRACE_LEVEL: everything they are given is a
+ * reader's own page or conversation (#356). The extension agent judges the
+ * phrasings on whatever page is open in the browser and answers questions
+ * typed about it; neither is the graph's to keep.
+ */
+const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
+
+/** Whether a run of `agent` may be recorded at all. */
+export function traceable(agent: string): boolean {
+  return !NEVER_TRACED.has(agent) && traceLevel() !== "off";
 }
 
 // A step's content is capped so a pathological tool output can't bloat the
@@ -65,7 +95,7 @@ export function startAgentRun(
   agent: string,
   attribution: RunAttribution
 ): AgentTrace | null {
-  if (traceLevel() === "off") return null;
+  if (!traceable(agent)) return null;
   const runId = randomUUID();
   void (async () => {
     try {
@@ -119,7 +149,7 @@ export function finishAgentRun(
 /** Append one step to the run. Sequence is claimed synchronously. */
 export function recordAgentStep(
   trace: AgentTrace,
-  kind: "assistant" | "tool_results",
+  kind: "assistant" | "tool_results" | "completion",
   content: unknown
 ): void {
   const seq = trace.seq.n++;

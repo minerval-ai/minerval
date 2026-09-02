@@ -48,10 +48,46 @@ export async function complete(options: {
   // Sonnet 5 runs adaptive thinking by default and thinking spend counts
   // against max_tokens, so the old 4096 default left too little room for the
   // actual answer — 8192 keeps headroom without changing agent call sites.
-  return getAdapter(model).complete({
+  const result = await getAdapter(model).complete({
     ...options,
     model,
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+  });
+  recordCompletionStep({
+    model,
+    messages: options.messages,
+    system: options.system,
+    output: result.content,
+    stopReason: result.stopReason,
+  });
+  return result;
+}
+
+/**
+ * A single-shot completion is a whole agent turn for the agents that never
+ * enter a tool-use loop (the Extractor, the scorecard judge), so when a trace
+ * is active it is recorded as one "completion" step: the prompt, the output,
+ * and the size of the system prompt (not its text — it is the constitution,
+ * large and static). Without this an Extractor run was a bare agent_runs
+ * row with no steps (#334 L0).
+ */
+function recordCompletionStep(step: {
+  model: string;
+  messages: MessageParam[];
+  system?: string;
+  schemaName?: string;
+  output: unknown;
+  stopReason?: string | null;
+}): void {
+  const trace = getUsageContext().trace;
+  if (!trace) return;
+  recordAgentStep(trace, "completion", {
+    model: step.model,
+    schemaName: step.schemaName ?? null,
+    systemChars: step.system?.length ?? 0,
+    messages: step.messages,
+    output: step.output,
+    stopReason: step.stopReason ?? null,
   });
 }
 
@@ -94,11 +130,19 @@ export async function completeStructured<T>(options: {
 }): Promise<T> {
   checkBudget();
   const model = options.model ?? DEFAULT_MODEL;
-  return getAdapter(model).completeStructured<T>({
+  const result = await getAdapter(model).completeStructured<T>({
     ...options,
     model,
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
   });
+  recordCompletionStep({
+    model,
+    messages: options.messages,
+    system: options.system,
+    schemaName: options.schemaName,
+    output: result,
+  });
+  return result;
 }
 
 /**

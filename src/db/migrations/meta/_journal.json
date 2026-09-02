@@ -306,8 +306,22 @@
     {
       "idx": 43,
       "version": "7",
-      "when": 1788380559336,
-      "tag": "0043_agent_reports",
+      "when": 1788366378300,
+      "tag": "0043_instance_proposed_canonical_form",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788366777287,
+      "tag": "0044_claim_predictions",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788392789487,
+      "tag": "0045_agent_reports",
       "breakpoints": true
     }
   ]

@@ -12,12 +12,16 @@
  *
  * Usage:
  *   tsx scripts/corpus/score.ts [cluster] [--sample=N] [--no-judge] [--out=DIR]
+ *                               [--allow-same-model-judge]
+ *
+ * The scorecard's config fingerprint (epoch, commit, models, caps) is read
+ * from the ingest run that built the graph (corpus:run registers one), not
+ * from config at score time — see fingerprint.ts for why.
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
-import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertCorpusDb, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
+import { assertCorpusDb, CORPUS_PROFILE, gitCommit, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
 import { closeDb, getDb, rawQuery } from "../../src/db/client.js";
 import { evalRuns } from "../../src/db/schema.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
@@ -25,41 +29,71 @@ import { withCostMeter } from "../../src/llm/usage-context.js";
 import { loadConfig } from "../../src/config.js";
 import { computeStructuralMetrics, type GraphSnapshot, type StructuralMetrics } from "./metrics.js";
 import { judgeClaim, type JudgeInput, type JudgeVerdict } from "./judge.js";
+import { judgeConflict, type ScorecardConfig } from "./fingerprint.js";
+import { summarizeJudged, type JudgedSummary } from "./judged-summary.js";
+
+export type { ScorecardConfig } from "./fingerprint.js";
 
 const DEFAULT_SAMPLE = 15;
 
 /**
- * The run's configuration fingerprint, embedded so a scorecard in the
- * committed history (corpus/scorecards/) stays interpretable on its own: which
- * epoch and prompts produced this graph, which models ran the agents, which
- * commit of the repo. Comparisons only mean something within a fingerprint —
- * across epochs they are cross-cohort comparisons (docs/graph-epochs.md).
+ * The fingerprint an ingest run recorded in the registry (corpus:run writes
+ * one row of kind 'ingest' per run, with the models it was configured with
+ * and, once finished, the models it actually observed). The judge is chosen
+ * at score time and is not part of it.
  */
-interface ScorecardConfig {
-  pipelineEpoch: string;
-  gitCommit: string | null;
-  models: { steward: string; curator: string; matcher: string; judge: string };
-}
+export type RunFingerprint = Omit<ScorecardConfig, "models"> & {
+  models: Omit<ScorecardConfig["models"], "judge">;
+};
 
-function gitCommit(): string | null {
-  try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
-      .toString()
-      .trim();
-  } catch {
-    return null;
+/**
+ * Resolve the fingerprint for the graph being scored, most trustworthy source
+ * first: the run that produced it (passed in by corpus:run --score), the
+ * registry row that run left behind (a later standalone corpus:score), and
+ * only then config at score time — which is right only if nothing changed in
+ * between, and is how the first baseline came to record the wrong Matcher.
+ */
+async function resolveFingerprint(
+  cluster: string,
+  judgeModel: string,
+  provided?: RunFingerprint
+): Promise<ScorecardConfig> {
+  if (provided) {
+    return { ...provided, models: { ...provided.models, judge: judgeModel }, modelsSource: "run" };
   }
-}
-
-interface JudgedSummary {
-  model: string;
-  sampleSize: number;
-  claimBarPassRate: number;
-  importanceAlignment: { meanStored: number; meanJudged: number; overratedShare: number };
-  assessmentQuality: { readability: number; reasoningFit: number; impartiality: number };
-  granularity: Record<string, number>;
-  flags: Record<string, number>;
-  items: JudgeVerdict[];
+  const rows = await rawQuery<{ config: RunFingerprint }>(
+    `SELECT config FROM eval_runs
+      WHERE cluster = $1 AND kind = 'ingest'
+      ORDER BY created_at DESC LIMIT 1`,
+    [cluster]
+  );
+  const fromRegistry = rows[0]?.config;
+  if (fromRegistry) {
+    return {
+      ...fromRegistry,
+      models: { ...fromRegistry.models, judge: judgeModel },
+      modelsSource: "registry",
+    };
+  }
+  const cfg = loadConfig();
+  console.warn(
+    `  warning: no ingest run registered for "${cluster}" — recording the models ` +
+      `from config at score time, which is only right if the graph was built under ` +
+      `this same environment. Prefer corpus:run (it records the fingerprint at run time).`
+  );
+  return {
+    pipelineEpoch: cfg.pipelineEpoch,
+    gitCommit: gitCommit(),
+    profile: CORPUS_PROFILE,
+    models: {
+      extractor: cfg.extractorModel,
+      matcher: cfg.matcherModel,
+      steward: cfg.stewardModel,
+      curator: cfg.curatorModel,
+      judge: judgeModel,
+    },
+    modelsSource: "score-time",
+  };
 }
 
 export interface Scorecard {
@@ -95,8 +129,15 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
      FROM assessments WHERE is_current`
   );
 
-  const instances = await rawQuery<{ claimId: string }>(
-    `SELECT claim_id AS "claimId" FROM claim_instances`
+  const instances = await rawQuery<{
+    claimId: string;
+    originalText: string;
+    stance: string;
+    proposedCanonicalForm: string | null;
+  }>(
+    `SELECT claim_id AS "claimId", original_text AS "originalText", stance,
+            proposed_canonical_form AS "proposedCanonicalForm"
+       FROM claim_instances ORDER BY created_at`
   );
 
   const [words] = await rawQuery<{ n: number }>(
@@ -137,6 +178,14 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
   const textOf = new Map(g.claims.map((c) => [c.id, c.text]));
   const currentAssessment = new Map(g.assessments.map((a) => [a.claimId, a]));
   const statusOf = new Map(g.assessments.map((a) => [a.claimId, a.status]));
+  const instancesOf = new Map<string, JudgeInput["instances"]>();
+  for (const i of g.instances) {
+    (instancesOf.get(i.claimId) ?? instancesOf.set(i.claimId, []).get(i.claimId)!).push({
+      originalText: i.originalText ?? "",
+      stance: i.stance ?? "affirms",
+      proposedCanonicalForm: i.proposedCanonicalForm ?? null,
+    });
+  }
 
   const toInput = (c: GraphSnapshot["claims"][number]): JudgeInput => {
     const a = currentAssessment.get(c.id);
@@ -154,6 +203,7 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
         text: textOf.get(k.child) ?? "(unknown)",
         status: statusOf.get(k.child) ?? null,
       })),
+      instances: instancesOf.get(c.id) ?? [],
     };
   };
 
@@ -196,51 +246,23 @@ async function judgeSample(inputs: JudgeInput[], concurrency = 3): Promise<Judge
   return out;
 }
 
-function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary {
-  const n = verdicts.length || 1;
-  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-  const round = (x: number) => Math.round(x * 100) / 100;
-
-  const passed = verdicts.filter((v) => v.claim_bar === "yes").length;
-  const stored = verdicts.map((v) => v.importanceStored);
-  const judged = verdicts.map((v) => v.importance_judged);
-  const overrated = verdicts.filter((v) => v.importanceStored - v.importance_judged > 0.2).length;
-
-  const granularity: Record<string, number> = {};
-  const flags: Record<string, number> = {};
-  for (const v of verdicts) {
-    granularity[v.decomposition_granularity] = (granularity[v.decomposition_granularity] ?? 0) + 1;
-    for (const f of v.flags) flags[f] = (flags[f] ?? 0) + 1;
-  }
-
-  return {
-    model,
-    sampleSize: verdicts.length,
-    claimBarPassRate: round(passed / n),
-    importanceAlignment: {
-      meanStored: round(mean(stored)),
-      meanJudged: round(mean(judged)),
-      overratedShare: round(overrated / n),
-    },
-    assessmentQuality: {
-      readability: round(mean(verdicts.map((v) => v.readability))),
-      reasoningFit: round(mean(verdicts.map((v) => v.reasoning_fit))),
-      impartiality: round(mean(verdicts.map((v) => v.impartiality))),
-    },
-    granularity,
-    flags,
-    items: verdicts,
-  };
-}
-
 export async function scoreRun(
   cluster: string,
-  opts: { sample?: number; judge?: boolean; outDir?: string } = {}
+  opts: {
+    sample?: number;
+    judge?: boolean;
+    outDir?: string;
+    /** The fingerprint corpus:run recorded for this graph, when scoring from a run. */
+    fingerprint?: RunFingerprint;
+    /** Override the rule that the judge must not share the Steward's model. */
+    allowSameModelJudge?: boolean;
+  } = {}
 ): Promise<{ scorecard: Scorecard; dir: string; judgeCostMicroUsd: number }> {
   assertCorpusDb();
   const sample = opts.sample ?? DEFAULT_SAMPLE;
   const doJudge = opts.judge ?? true;
   const cfg = loadConfig();
+  const config = await resolveFingerprint(cluster, cfg.judgeModel, opts.fingerprint);
 
   const snapshot = await loadSnapshot();
   const structural = computeStructuralMetrics(snapshot);
@@ -249,6 +271,11 @@ export async function scoreRun(
   let cost: Scorecard["cost"] = null;
   let judgeCostMicroUsd = 0;
   if (doJudge && sample > 0) {
+    // The judge never grades a graph its own model built (corpus/SCORING.md);
+    // the first baseline did exactly that, silently. Refuse unless overridden.
+    const conflict = judgeConflict(config, cfg.judgeModel);
+    if (conflict && !opts.allowSameModelJudge) throw new Error(conflict);
+    if (conflict) console.warn(`  warning (overridden): ${conflict}`);
     const before = getSessionUsage();
     const inputs = pickSample(snapshot, sample);
     console.log(`  judging ${inputs.length} claims with ${cfg.judgeModel}…`);
@@ -268,16 +295,7 @@ export async function scoreRun(
     generatedAt: new Date().toISOString(),
     cluster,
     database: new URL(process.env.DATABASE_URL!).pathname.slice(1),
-    config: {
-      pipelineEpoch: cfg.pipelineEpoch,
-      gitCommit: gitCommit(),
-      models: {
-        steward: cfg.stewardModel,
-        curator: cfg.curatorModel,
-        matcher: cfg.matcherModel,
-        judge: cfg.judgeModel,
-      },
-    },
+    config,
     structural,
     judged,
     cost,
@@ -325,17 +343,42 @@ export async function scoreRun(
 }
 
 function renderMarkdown(s: Scorecard): string {
+  const pct = (x: number | undefined) => (x === undefined ? "n/a" : `${(x * 100).toFixed(0)}%`);
   const o: string[] = [];
   const w = (l = "") => o.push(l);
   const st = s.structural;
   w(`# Corpus run scorecard — ${s.cluster}`);
   w();
   w(`_generated ${s.generatedAt} · database \`${s.database}\`_`);
+  const observed = (agent: string, configured: string | undefined) => {
+    const seen = s.config.observed?.[agent];
+    if (!seen || seen.length === 0) return configured ?? "?";
+    return seen.length === 1 ? seen[0] : `${seen[0]} (+ ${seen.slice(1).join(", ")})`;
+  };
   w(
-    `_epoch \`${s.config.pipelineEpoch}\` · commit \`${s.config.gitCommit ?? "?"}\` · ` +
-      `steward \`${s.config.models.steward}\` · matcher \`${s.config.models.matcher}\` · ` +
-      `judge \`${s.config.models.judge}\`_`
+    `_epoch \`${s.config.pipelineEpoch}\` · commit \`${s.config.gitCommit ?? "?"}\`` +
+      (s.config.profile ? ` · profile \`${s.config.profile}\`` : "") +
+      ` · extractor \`${observed("extractor", s.config.models.extractor)}\`` +
+      ` · matcher \`${observed("matcher", s.config.models.matcher)}\`` +
+      ` · steward \`${observed("steward", s.config.models.steward)}\`` +
+      ` · judge \`${s.config.models.judge}\`_`
   );
+  if (s.config.modelsSource && s.config.modelsSource !== "run") {
+    w();
+    w(
+      s.config.modelsSource === "registry"
+        ? `_agent models read back from the run's registry row._`
+        : `_agent models are config at SCORE time, not recorded at run time — trust them only if nothing changed in between._`
+    );
+  }
+  if (s.config.caps && Object.keys(s.config.caps).length > 0) {
+    w();
+    w(
+      `_caps in force: ${Object.entries(s.config.caps)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")} — a capped run is a partial baseline._`
+    );
+  }
   w();
   w(`Scored, diffable counterpart to \`report.md\`. Structural metrics are free;`);
   w(`the judged block is a bounded LLM-judge sample (#99). Compare two runs with`);
@@ -373,6 +416,12 @@ function renderMarkdown(s: Scorecard): string {
     w(`| assessment reasoning-fit | ${j.assessmentQuality.reasoningFit}/5 | does the trace justify the status |`);
     w(`| assessment impartiality | ${j.assessmentQuality.impartiality}/5 | even-handedness |`);
     w(`| granularity | ${Object.entries(j.granularity).map(([k, v]) => `${k} ${v}`).join(", ")} | |`);
+    const dist = (d: Record<string, number> | undefined) =>
+      d ? Object.entries(d).map(([k, v]) => `${k} ${v}`).join(", ") : "n/a";
+    w(`| **sycophancy** | ${pct(j.sycophancyShare)} lean on or defer to the source | ${dist(j.dimensions?.sycophancy)} (§4/§17: independence from the ingesting source) |`);
+    w(`| **hedging** | ${pct(j.overhedgedShare)} overhedged · ${pct(j.overconfidentShare)} overconfident | ${dist(j.dimensions?.hedging)} (§10/§12: certainty of language) |`);
+    w(`| **canonical form** | ${pct(j.canonicalFormMissShare)} miss §3 | ${dist(j.dimensions?.canonicalForm)} (overstated / understated / frame-bound) |`);
+    w(`| political bias | ${pct(j.politicalBiasShare)} | ${dist(j.dimensions?.politicalBias)} (§17) |`);
     w(`| flags | ${Object.entries(j.flags).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} | |`);
     w();
     if (s.cost) w(`_judge cost: ${s.cost.calls} calls, $${s.cost.usd} (metered)._`);
@@ -403,8 +452,9 @@ if ((process.argv[1] ?? "").endsWith("score.ts")) {
   const outArg = args.find((a) => a.startsWith("--out="));
   const sample = sampleArg ? Number(sampleArg.split("=")[1]) : DEFAULT_SAMPLE;
   const judge = !args.includes("--no-judge");
+  const allowSameModelJudge = args.includes("--allow-same-model-judge");
 
-  scoreRun(cluster, { sample, judge, outDir: outArg?.split("=")[1] })
+  scoreRun(cluster, { sample, judge, outDir: outArg?.split("=")[1], allowSameModelJudge })
     .then(async ({ dir }) => {
       console.log(`Scorecard: ${join(dir, "scorecard.md")}`);
       await closeDb();

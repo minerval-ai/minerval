@@ -6,6 +6,7 @@ import {
   integer,
   bigint,
   boolean,
+  date,
   timestamp,
   jsonb,
   uniqueIndex,
@@ -361,6 +362,15 @@ export const claimInstances = pgTable(
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
     originalText: text("original_text").notNull(),
+    // The canonical form the EXTRACTOR proposed for this passage (§3), kept
+    // next to the verbatim text it was proposed for. The Matcher has the
+    // last word on a new claim's wording (url-extraction.ts stores its
+    // rewrite as claims.text), and until this column existed the proposal
+    // was discarded — so who authored the graph's language, and whether the
+    // second author improved it, was unmeasurable (#334, 2026-08-11). Null
+    // for instances recorded without a proposal (a Steward sighting of an
+    // existing claim).
+    proposedCanonicalForm: text("proposed_canonical_form"),
     context: text("context"),
     summaryContext: text("summary_context"),
     // Whether this source asserts the canonical claim ("affirms") or its
@@ -774,6 +784,56 @@ export const evalRuns = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_eval_runs_cluster_time").on(table.cluster, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
+// claim_predictions (#334 S6, from #296)
+//
+// A prediction is an ordinary claim with a lifecycle the rest of the graph
+// lacks: it RESOLVES, and reality — not a judge, not consensus — grades the
+// credence the Steward assigned. This is the one objective calibration
+// handle the project has, so predictions carry, one row per claim, what
+// makes them resolvable: the criterion, the date by which the world settles
+// it, and the source of truth that settles it. Credence is not frozen here;
+// assessment history already keeps every verdict with its timestamp, and the
+// scorer reads the last credence stated before resolution (scripts/corpus/
+// prediction-score.ts) — the contemporaneous belief, never a later revision.
+// A market or community probability captured at seeding is the baseline the
+// Minerval-vs-crowd comparative needs. A resolved row keeps its outcome and a
+// note on how it was settled; scoring only ever reads resolved rows.
+// ---------------------------------------------------------------------------
+export const claimPredictions = pgTable(
+  "claim_predictions",
+  {
+    claimId: uuid("claim_id")
+      .primaryKey()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // The fixture entry this row was seeded from (corpus/predictions/), so
+    // seeding is idempotent and a resolution can name the question by id.
+    // Null for predictions that arrive by other paths.
+    fixtureId: text("fixture_id"),
+    resolutionCriterion: text("resolution_criterion").notNull(),
+    // The date by which the outcome is knowable; the scorer uses it (or the
+    // earlier actual resolution) as the cutoff for the credence it grades.
+    resolutionDate: date("resolution_date").notNull(),
+    operationalization: text("operationalization").notNull(),
+    domain: text("domain"),
+    baselineProbability: real("baseline_probability"),
+    baselineSource: text("baseline_source"),
+    baselineAt: timestamp("baseline_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // true = the claim as stated came true; false = it did not. Null = open.
+    outcome: boolean("outcome"),
+    resolutionNote: text("resolution_note"),
+    resolvedBy: text("resolved_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_claim_predictions_fixture").on(table.fixtureId),
+    index("idx_claim_predictions_due").on(table.resolutionDate),
+  ]
 );
 
 // ---------------------------------------------------------------------------

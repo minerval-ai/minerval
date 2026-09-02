@@ -17,7 +17,12 @@
  * wires it with one spread and one early return at the top of executeTool.
  *
  * Attribution comes from the ambient usage context (agent name, run, job,
- * claim), so no agent signature changes to carry it.
+ * claim), so no agent signature changes to carry it. The same context
+ * carries the privacy seam (#356): inside untraced() work — the extension's
+ * page analysis and chat, the MCP's on-demand analysis — nothing derived
+ * from the reader's content may be persisted, so the report keeps its
+ * kind, severity, title, surface, and id refs but the free-text body is
+ * withheld. The title is the report there; the prompts say so.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -30,6 +35,11 @@ import {
 import { getUsageContext } from "../usage-context.js";
 
 export const RAISE_ISSUE_TOOL_NAME = "raise_issue";
+
+/** What an untraced context's report carries in place of its body (#356). */
+export const UNTRACED_BODY_NOTE =
+  "(body withheld: raised from an untraced context, where nothing derived " +
+  "from the reader's content is persisted — see the title and context_refs)";
 
 export interface ReportTools {
   definitions: Tool[];
@@ -142,11 +152,14 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
       }
 
       const ctx = getUsageContext();
+      const body = ctx.untraced
+        ? UNTRACED_BODY_NOTE
+        : String(input.body ?? "");
       const result = await raiseIssue({
         kind: String(input.kind ?? ""),
         severity: String(input.severity ?? ""),
         title: String(input.title ?? ""),
-        body: String(input.body ?? ""),
+        body,
         surface: typeof input.surface === "string" ? input.surface : null,
         contextRefs:
           input.context_refs && typeof input.context_refs === "object"
