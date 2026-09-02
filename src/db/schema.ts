@@ -361,6 +361,15 @@ export const claimInstances = pgTable(
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
     originalText: text("original_text").notNull(),
+    // The canonical form the EXTRACTOR proposed for this passage (§3), kept
+    // next to the verbatim text it was proposed for. The Matcher has the
+    // last word on a new claim's wording (url-extraction.ts stores its
+    // rewrite as claims.text), and until this column existed the proposal
+    // was discarded — so who authored the graph's language, and whether the
+    // second author improved it, was unmeasurable (#334, 2026-08-11). Null
+    // for instances recorded without a proposal (a Steward sighting of an
+    // existing claim).
+    proposedCanonicalForm: text("proposed_canonical_form"),
     context: text("context"),
     summaryContext: text("summary_context"),
     // Whether this source asserts the canonical claim ("affirms") or its

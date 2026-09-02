@@ -17,14 +17,15 @@
  * Like metering, every write here is fire-and-forget and swallows its own
  * errors: tracing must never fail or slow an agent run. Consumers therefore
  * tolerate incomplete traces (a run with missing steps, a run never
- * finished). Single-shot completions outside a tool-use loop are not recorded
- * as steps in this first cut — their llm_usage row plus the domain artifact
- * they produced still describe them.
+ * finished). Single-shot completions outside a tool-use loop (the Extractor,
+ * the judge) are recorded as one "assistant" step carrying the prompt and
+ * the output, so a run is never a bare row.
  *
  * TRACE_LEVEL: "full" records runs + steps; "off" records nothing. Unset, it
- * defaults off in production (until a retention job exists — traces are
- * large) and under vitest (unit tests must not attempt DB writes), and full
- * everywhere else — so dev and the corpus harness trace by default.
+ * defaults off under vitest (unit tests must not attempt DB writes) and full
+ * everywhere else, production included: the retention sweep
+ * (workers/trace-retention.ts, TRACE_RETENTION_DAYS) bounds what production
+ * keeps, which is what "off until a retention job exists" was waiting for.
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -49,7 +50,7 @@ export interface RunAttribution {
 export function traceLevel(): "off" | "full" {
   const config = loadConfig();
   if (config.traceLevel) return config.traceLevel;
-  if (config.env === "production" || process.env.VITEST) return "off";
+  if (process.env.VITEST) return "off";
   return "full";
 }
 
@@ -119,7 +120,7 @@ export function finishAgentRun(
 /** Append one step to the run. Sequence is claimed synchronously. */
 export function recordAgentStep(
   trace: AgentTrace,
-  kind: "assistant" | "tool_results",
+  kind: "assistant" | "tool_results" | "completion",
   content: unknown
 ): void {
   const seq = trace.seq.n++;
