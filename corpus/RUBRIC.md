@@ -23,7 +23,7 @@ How to use it: read the run report top to bottom with these dimensions in mind. 
 ## A. Extraction — what got pulled out of the document
 
 **Standard.** Extract *all* substantive claims, faithfully and charitably, across every claim type.
-Questions, commands, meta-text, pure definitions, and hedged non-assertions are not claims.
+Questions, commands, meta-text, stipulative definitions, and hedged non-assertions are not claims.
 (Constitution §2, §4, §8; Policy 2, 3; Extractor prompt.)
 
 **Failure modes.**
@@ -31,7 +31,8 @@ Questions, commands, meta-text, pure definitions, and hedged non-assertions are 
   claims the author treats as given. Claims are scarce relative to text (§2), but the propositions the
   document actually turns on must still surface; a missed central contested proposition is a red flag.
 - **Over-extraction** — pulls meta-text ("in this post I'll argue…"), rhetorical questions, or hedged
-  non-assertions as if they were claims.
+  non-assertions as if they were claims; or inventories background facts the document merely leans on
+  rather than the propositions it turns on.
 - **Type skew** — extracts only empirical claims and drops normative/evaluative/causal ones. This violates
   uniform treatment (§8) and quietly biases the whole graph toward "facts."
 - **Fidelity loss** — `original_text` is paraphrased rather than an exact quote, breaking provenance (§4).

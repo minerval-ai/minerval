@@ -96,7 +96,7 @@ export interface Assessment {
   subclaim_summary: Record<string, number>;
   assessed_at: string;
   // Raw API id of the model that produced the assessment (#294), e.g.
-  // "claude-fable-5". Null/absent for assessments written before the model
+  // "claude-fable-5-1". Null/absent for assessments written before the model
   // was recorded — render the date alone, no dangling separator. Optional
   // while API deploys race the frontend.
   model?: string | null;

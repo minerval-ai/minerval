@@ -37,7 +37,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       claim_credence: null,
       summary: `The dispute turns on [[claim:${SUB_ID}]].`,
       reasoning_trace: `Weighed [[claim:${SUB_ID}|the supply-chain premise]] against the data.`,
-      model: "claude-fable-5",
+      model: "claude-fable-5-1",
       assessed_at: "2026-07-30T00:00:00.000Z",
     },
     arguments: [
@@ -182,6 +182,9 @@ describe("evidenceRecordToTrig", () => {
   it("pins the assessment version and attribution in pubinfo", () => {
     const trig = evidenceRecordToTrig(record(), opts);
     expect(trig).toContain('dct:creator "Minerval"');
+    expect(trig).toContain(
+      "dct:license <https://creativecommons.org/publicdomain/zero/1.0/>"
+    );
     expect(trig).toContain('mv:assessmentVersion "3"^^xsd:integer');
     expect(trig).toContain('mv:assessedAt "2026-07-30T00:00:00.000Z"^^xsd:dateTime');
     expect(trig).toContain(

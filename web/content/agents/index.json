@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 5544,
-    "fullChars": 52414
+    "roleChars": 5767,
+    "fullChars": 53333
   },
   {
     "key": "matcher",
@@ -21,7 +21,7 @@
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
     "roleChars": 3870,
-    "fullChars": 50740
+    "fullChars": 51436
   },
   {
     "key": "contribution-reviewer",
@@ -32,8 +32,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 10085,
-    "fullChars": 56955
+    "roleChars": 10213,
+    "fullChars": 57779
   },
   {
     "key": "claim-steward",
@@ -42,10 +42,10 @@
     "group": "governance",
     "tagline": "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
-    "model": "Claude Fable 5",
+    "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19013,
-    "fullChars": 65883
+    "roleChars": 19222,
+    "fullChars": 66788
   },
   {
     "key": "curator",
@@ -54,10 +54,10 @@
     "group": "governance",
     "tagline": "The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.",
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
-    "model": "Claude Fable 5",
+    "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 3511,
-    "fullChars": 50381
+    "fullChars": 51077
   },
   {
     "key": "dispute-arbitrator",
@@ -66,10 +66,10 @@
     "group": "governance",
     "tagline": "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
-    "model": "Claude Fable 5",
+    "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 8767,
-    "fullChars": 55637
+    "roleChars": 8878,
+    "fullChars": 56444
   },
   {
     "key": "audit-agent",
@@ -78,10 +78,10 @@
     "group": "governance",
     "tagline": "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
-    "model": "Claude Fable 5",
+    "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 7213,
-    "fullChars": 54083
+    "roleChars": 7324,
+    "fullChars": 54890
   },
   {
     "key": "grantmaker",
@@ -90,9 +90,9 @@
     "group": "governance",
     "tagline": "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
-    "model": "Claude Fable 5",
+    "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 6658,
-    "fullChars": 53528
+    "fullChars": 54224
   }
 ]

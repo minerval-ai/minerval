@@ -24,7 +24,7 @@ const { state } = vi.hoisted(() => ({
     calls: [] as Array<string | undefined>,
     // Per-call behaviour: return claims, or throw the given error.
     throwOn: null as null | ((model: string | undefined) => Error | null),
-    extractorModel: "claude-fable-5",
+    extractorModel: "claude-fable-5-1",
     extractorFallbackModel: "claude-sonnet-5",
   },
 }));
@@ -67,14 +67,14 @@ import { LlmRefusalError } from "../../../src/llm/errors.js";
 beforeEach(() => {
   state.calls = [];
   state.throwOn = null;
-  state.extractorModel = "claude-fable-5";
+  state.extractorModel = "claude-fable-5-1";
   state.extractorFallbackModel = "claude-sonnet-5";
 });
 
 describe("extractor tier selection", () => {
   it("runs on the configured tier rather than the client default", async () => {
     await extractClaims({ content: "doc" });
-    expect(state.calls).toEqual(["claude-fable-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1"]);
   });
 
   it("lets an explicit caller model win over config", async () => {
@@ -85,12 +85,12 @@ describe("extractor tier selection", () => {
 
 describe("extractor refusal fallback", () => {
   const refuse = (model: string | undefined) =>
-    model === "claude-fable-5" ? new LlmRefusalError(model, "bio") : null;
+    model === "claude-fable-5-1" ? new LlmRefusalError(model, "bio") : null;
 
   it("retries on the fallback model when the chosen tier refuses", async () => {
     state.throwOn = refuse;
     const claims = await extractClaims({ content: "a pathogen paper" });
-    expect(state.calls).toEqual(["claude-fable-5", "claude-sonnet-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1", "claude-sonnet-5"]);
     // The document is not lost: the fallback's claims come back.
     expect(claims[0]!.original_text).toBe("from claude-sonnet-5");
   });
@@ -106,16 +106,16 @@ describe("extractor refusal fallback", () => {
     // retrying it on a weaker model would just spend twice to fail twice.
     state.throwOn = () => new Error("upstream 500");
     await expect(extractClaims({ content: "doc" })).rejects.toThrow("upstream 500");
-    expect(state.calls).toEqual(["claude-fable-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1"]);
   });
 
   it("does not retry when the fallback is the same model", async () => {
-    state.extractorFallbackModel = "claude-fable-5";
+    state.extractorFallbackModel = "claude-fable-5-1";
     state.throwOn = refuse;
     await expect(extractClaims({ content: "doc" })).rejects.toBeInstanceOf(
       LlmRefusalError
     );
-    expect(state.calls).toEqual(["claude-fable-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1"]);
   });
 
   it("rethrows the refusal when no fallback is configured", async () => {
@@ -124,7 +124,7 @@ describe("extractor refusal fallback", () => {
     await expect(extractClaims({ content: "doc" })).rejects.toBeInstanceOf(
       LlmRefusalError
     );
-    expect(state.calls).toEqual(["claude-fable-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1"]);
   });
 
   it("surfaces the refusal when the fallback refuses too", async () => {
@@ -133,7 +133,7 @@ describe("extractor refusal fallback", () => {
       LlmRefusalError
     );
     // Both were tried, and the caller learns the document is genuinely refused.
-    expect(state.calls).toEqual(["claude-fable-5", "claude-sonnet-5"]);
+    expect(state.calls).toEqual(["claude-fable-5-1", "claude-sonnet-5"]);
   });
 });
 

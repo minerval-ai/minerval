@@ -157,7 +157,7 @@ You OWN this claim: its structure (decomposition) and its assessment. Proceed:
    and its current assessment if any.
 ${structureStep}
 3. Gauge the claim's importance: how much it is worth getting right
-   (consequence-if-wrong × contestability), NOT mere dependency count.
+   (consequence-if-wrong × liveness), NOT mere dependency count.
    get_claim_dependents is only a local signal; an uncontested or niche claim is
    low importance even with many local dependents. Scale effort accordingly:
    consequential, contested claims warrant deeper search and a second, adversarial

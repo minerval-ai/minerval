@@ -72,11 +72,11 @@ export const claims = pgTable(
     // important claims are processed first under a run budget (§"Claim Importance
     // and Proportional Effort"). 0.5 = default/medium until judged.
     importance: real("importance").notNull().default(0.5),
-    // How live the dispute around the claim is (0..1), recorded separately from
-    // importance (#172 phase 1). Today importance fuses consequence-if-wrong
-    // with contestability; splitting the contestability half out is the first
-    // step toward scheduling on stakes × expected-yield instead of one fused
-    // score. Recorded by the Extractor (prior) and the Steward (authoritative),
+    // How live the claim is in the discourse (0..1), disputed or actively
+    // consulted, recorded separately from importance (#172 phase 1). Today
+    // importance fuses consequence-if-wrong with liveness; splitting the
+    // liveness half out is the first step toward scheduling on stakes ×
+    // expected-yield instead of one fused score. Recorded by the Extractor (prior) and the Steward (authoritative),
     // and read by the composite queue priority below.
     contestation: real("contestation"),
     // Composite BACKGROUND-QUEUE priority (the allocation core): the drain's
@@ -237,7 +237,7 @@ export const assessments = pgTable(
     // as maximal by convention.
     marginalYield: real("marginal_yield"),
     // Raw API id of the model that produced this assessment (#294), e.g.
-    // "claude-fable-5" — a verdict is only as trustworthy as its assessor, so
+    // "claude-fable-5-1" — a verdict is only as trustworthy as its assessor, so
     // the assessor is recorded on the verdict, not just in llm_usage. Nullable:
     // legacy rows predate the column and degrade gracefully (date only in UI).
     model: text("model"),

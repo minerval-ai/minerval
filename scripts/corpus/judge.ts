@@ -16,13 +16,13 @@ import { loadConfig } from "../../src/config.js";
 // Exported for the calibration sheet (calibration.ts): the human labeler
 // grades against the SAME pinned standard as the judge.
 export const CONSTITUTION_STANDARDS = `Standards, from the Minerval constitution (cited by section):
-- Claim bar (§2): a claim is a single reusable proposition that informed people could dispute with evidence or reasons, the kind that could anchor a long-running debate. Arguments ("X therefore Y"), one author's framing, uncontested definitions, and settled textbook or bedrock facts are not claims.
+- Claim bar (§2): a claim is a single reusable proposition about the world, one a source can affirm or deny and a reasoner can weigh with evidence and reasons, serving as a unit of reference across sources. Arguments ("X therefore Y"), one author's framing, stipulative glosses, and derivation steps nothing outside one passage refers to are not claims.
 - Canonical form (§3): the shortest neutral statement of the proposition as actually debated, about fifteen words and rarely more than twenty-five, acceptable to either side as a fair statement of what is in dispute.
-- Decomposition (§6): subclaims must themselves pass the claim bar; the steps of a derivation, undisputed definitions, and facts specific to one source belong in prose, not nodes. Decomposition ends where the discourse ends, not where logic bottoms out. Depth is an effort decision governed by importance (§19): an unexpanded dependency on a minor claim is a prioritization, not a gap, and marking a simple claim atomic is correct.
+- Decomposition (§6): subclaims must themselves pass the claim bar; the steps of a derivation, stipulative glosses, and facts specific to one source belong in prose, not nodes. Decomposition ends where the discourse ends, not where logic bottoms out. Depth is an effort decision governed by importance (§19): an unexpanded dependency on a minor claim is a prioritization, not a gap, and marking a simple claim atomic is correct.
 - Statuses (§10): verified / supported / contested / unsupported / contradicted / unknown. Contested requires credible evidence or argument on multiple sides of the live discourse, not merely that someone could quibble. Never round a contested claim up to verified or down to contradicted.
 - Reasoning (§11, §12): every verdict shows its work: what evidence was considered, how competing evidence was weighed, what uncertainties remain, and what would change the conclusion. A reader should be able to follow why the status was chosen. Referring to subclaims by opaque id rather than by what they say is a failure.
 - Neutrality (§17, §18): claims are mapped faithfully whichever way the answer cuts, with the strongest form of each major position represented. Even-handedness is not false parity: when the evidence overwhelmingly favors one side, the assessment says so.
-- Importance (§19): consequence-if-wrong × contestability, recorded 0..1 against anchors: ≈0.9 central (widely consequential and live), ≈0.6 major within a domain, ≈0.35 a notable contested point inside a larger debate, ≈0.15 minor or settled. Load-bearing is not important: an uncontested claim is low importance even when much depends on it, so settled textbook material must never outrank the live questions users consult the graph for.`;
+- Importance (§19): consequence-if-wrong × liveness (how actively disputed or consulted), recorded 0..1 against anchors: ≈0.9 central (widely consequential and live), ≈0.6 major within a domain, ≈0.35 a notable contested point inside a larger debate, ≈0.15 minor or settled. Load-bearing is not important: an uncontested claim is low importance even when much depends on it, so settled textbook material must never outrank the live questions users consult the graph for.`;
 
 export interface JudgeInput {
   id: string;
@@ -56,7 +56,7 @@ const SCHEMA = {
     readability: { type: "number", description: "1-5: can a reader follow, from the reasoning alone, why this status was chosen?" },
     reasoning_fit: { type: "number", description: "1-5: does the content of the reasoning justify the chosen status and confidence?" },
     impartiality: { type: "number", description: "1-5: even-handed weighing of counter-evidence, no rounding, no one-sided framing; false parity also fails." },
-    claim_bar: { type: "string", enum: ["yes", "no"], description: "Does the text pass the claim bar of §2: a disputable, reusable proposition, not an argument, definition, or settled textbook fact?" },
+    claim_bar: { type: "string", enum: ["yes", "no"], description: "Does the text pass the claim bar of §2: a single reusable proposition serving as a unit of reference, not an argument, stipulative gloss, or derivation step?" },
     decomposition_granularity: {
       type: "string",
       enum: ["good", "too_granular", "too_shallow", "n_a"],

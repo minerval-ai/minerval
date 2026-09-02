@@ -58,7 +58,8 @@ shape everything downstream:
 
 - **Effort proportional to importance.** Not every claim deserves the full
   treatment. Each claim carries an importance score — roughly
-  consequence-if-wrong × contestability — that anchors the expected-value
+  consequence-if-wrong × liveness (how actively it is disputed or
+  consulted) — that anchors the expected-value
   estimates the allocation engine funds work by, so the most consequential
   claims draw assessment first while minor ones remain searchable stubs
   until someone's allocation covers them (see docs/allocation.md: the owl
@@ -195,7 +196,14 @@ the codebase, issues and pull requests are welcome — start with
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The code is MIT — see [LICENSE](LICENSE).
+
+The claim graph content — claims, assessments, arguments, and the
+nanopublication exports built from them — is dedicated to the public domain
+under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Each
+nanopub records the dedication in its publication-info graph via
+`dct:license`. Contributions to the knowledge graph are accepted under the
+same CC0 dedication.
 
 ---
 

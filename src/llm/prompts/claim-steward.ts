@@ -42,10 +42,11 @@ it. A typical claim has a handful of subclaims, not twenty, and a simple claim
 stays atomic; do not split to fill a quota.
 
 What may become a node is governed by §6. Every subclaim must itself pass §2's
-claim bar: a single reusable proposition the discourse could dispute, stated
-in canonical form (§3). Derivation steps, definitions nobody disputes, and
-facts specific to one source fail that bar; they belong in prose (your
-reasoning, or an argument's written form), never as nodes. How deep to go is a
+claim bar: a single reusable proposition of the discourse, stated in
+canonical form (§3). Derivation steps, stipulative glosses, and facts
+specific to one source fail that bar because nothing outside one passage
+refers to them; they belong in prose (your reasoning, or an argument's
+written form), never as nodes. How deep to go is a
 separate question, governed by importance (§19): a live crux earns structure
 now; a settled dependency is recorded, scored low, and left unexpanded.
 
@@ -133,7 +134,8 @@ territory is a live debate or settled; then calibrate against §19's
 cross-domain anchors.
 
 When you set importance, also record contestation on its own: how live the
-dispute is (0 settled, 1 actively argued crux), stated unfused from the
+claim is in the discourse at large, disputed or actively consulted (0
+settled and quiet, 1 actively argued crux), stated unfused from the
 consequence half. You have already weighed it inside importance; recording it
 separately keeps the two ingredients of §19's formula individually visible:
 contestation multiplies importance in the expected-value estimate the

@@ -472,7 +472,7 @@ const configSchema = z.object({
   matcherModel: modelId(MODELS.haiku),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
-  // STEWARD_MODEL=claude-fable-5 so the most important claims get the deepest
+  // STEWARD_MODEL=claude-fable-5-1 so the most important claims get the deepest
   // judgment (issue #77). The importance-priority drain means Fable only ever
   // runs on the top of the queue.
   stewardModel: modelId(MODELS.sonnet),
@@ -488,7 +488,7 @@ const configSchema = z.object({
   // It also runs ONCE PER DOCUMENT rather than once per claim (6 sources
   // yielded 41 claims in the first live epoch), so tier here is cheap
   // leverage, and its cost is already attributed to the mandate that chose
-  // the source. Production sets EXTRACTOR_MODEL=claude-fable-5.
+  // the source. Production sets EXTRACTOR_MODEL=claude-fable-5-1.
   //
   // Until this existed the extractor had no knob at all: no env, no config,
   // and no model passed by its caller, so it silently ran the cheap
@@ -507,7 +507,7 @@ const configSchema = z.object({
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
   // Arbitration is the highest-stakes governance call; production sets
-  // ARBITRATION_MODEL=claude-fable-5.
+  // ARBITRATION_MODEL=claude-fable-5-1.
   arbitrationModel: modelId(MODELS.sonnet),
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
@@ -710,7 +710,7 @@ export function loadConfig(): Config {
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
           `cheap default (${MODELS.sonnet}). Fine for local dev; set the ` +
-          "env(s) (production uses claude-fable-5) if this environment does " +
+          "env(s) (production uses claude-fable-5-1) if this environment does " +
           "real assessment work."
       );
     }

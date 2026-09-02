@@ -9,13 +9,13 @@ import {
 describe("model helpers", () => {
   it("recognizes Anthropic API ids and rejects Bedrock-prefixed ones", () => {
     expect(isAnthropicModelId("claude-sonnet-5")).toBe(true);
-    expect(isAnthropicModelId("claude-fable-5")).toBe(true);
+    expect(isAnthropicModelId("claude-fable-5-1")).toBe(true);
     expect(isAnthropicModelId("claude-opus-4-8")).toBe(true);
     expect(isAnthropicModelId("us.anthropic.claude-sonnet-5")).toBe(false);
   });
 
   it("allows temperature only for families known to accept it", () => {
-    // Fable 5, Sonnet 5, and Opus 4.7+ reject non-default sampling params with
+    // Fable 5.1, Sonnet 5, and Opus 4.7+ reject non-default sampling params with
     // a 400 — and the client sends temperature: 0, which is non-default.
     expect(modelAcceptsTemperature(MODELS.fable)).toBe(false);
     expect(modelAcceptsTemperature(MODELS.sonnet)).toBe(false);
