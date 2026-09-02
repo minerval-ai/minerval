@@ -154,6 +154,30 @@ Snapshot operations force-terminate other connections on the databases they
 touch (Postgres template semantics) — never run one mid-drain. The main
 `episteme` database is refused by name.
 
+**Graph agreement** (#334 L2) — how far apart are two graphs built from the
+same sources? The instrument every property test reads: idempotency and path
+independence (re-run the same cluster), model fidelity (one agent's model
+swapped), displacement under attack. Compare the live corpus DB with a
+snapshot, or any two disposable databases:
+
+```bash
+npm run corpus:snapshot -- save run1              # after one drained run
+npm run corpus:run -- blackholes                  # run it again
+npm run corpus:agreement -- snap:run1 db          # three axes, printed + registered
+npm run corpus:agreement -- snap:run1 db --confirm   # judge the ambiguous pairs (LLM, cents)
+```
+
+Claims are matched one-to-one by exact text, then by stored embedding above
+`--threshold` (0.85); pairs below `--sure` (0.95) are the ambiguous band,
+kept and reported unless `--confirm` sends them to a pair judge on
+`JUDGE_MODEL` under §2's same-considerations test. The report gives
+**claim-set** precision / recall / F1 (with the unmatched claims attributed
+to the agent that minted them), **credence** divergence and status agreement
+over matched claims, and **structural** edge precision / recall and edit
+distance mapped through the matching. Pure library in
+`scripts/corpus/graph-agreement.ts`, unit-tested; results register in the
+eval-run registry (kind `agreement`).
+
 **Matcher golden pairs** (#99 layer 1) — the per-PR regression net for the one
 agent whose task saturates enough for exact-match grading. 30 pinned pairs in
 [`golden/matcher-pairs.json`](./golden/matcher-pairs.json) (paraphrase /
