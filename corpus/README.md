@@ -169,6 +169,16 @@ Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
+**In CI** (`.github/workflows/golden-matcher.yml`): every PR that touches
+something that can move a match decision — the Matcher or its prompt, the
+constitution, the LLM client or a provider adapter, retrieval, the fixture or
+runner, the production pins — runs the suite on the production Matcher
+(`--profile=production`) against a throwaway corpus DB and fails below
+`--min-pass=0.95` (29 of 30). It needs the `OPENAI_API_KEY` and
+`OPENROUTER_API_KEY` repository secrets; a run without them (a fork PR)
+reports that it skipped rather than failing. Cents per run; the report is
+uploaded as a workflow artifact.
+
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
 gate until a human has read its verdicts and reasoning. The judge is presumed
 good-faith and competent at its assigned task — its judgment is as good as

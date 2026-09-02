@@ -86,9 +86,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const [{ n: preexisting }] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM claims WHERE state = 'active'`
-  );
+  const preexisting =
+    (
+      await rawQuery<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM claims WHERE state = 'active'`
+      )
+    )[0]?.n ?? 0;
   if (preexisting > 0) {
     console.log(
       `note: ${preexisting} claims already in the corpus graph will be in the ` +
