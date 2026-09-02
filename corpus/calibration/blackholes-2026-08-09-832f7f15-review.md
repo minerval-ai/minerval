@@ -17,6 +17,9 @@ record; no agreement statistic is computed (#334 §2.8 as amended).
 
 ## Standards
 
+(As pinned into the judge at run time, 2026-08-09 — before #372 rebased the claim bar
+on reference rather than contestation. Reviewed 2026-09-02 against both.)
+
 ```
 Standards, from the Minerval constitution (cited by section):
 - Claim bar (§2): a claim is a single reusable proposition that informed people could dispute with evidence or reasons, the kind that could anchor a long-running debate. Arguments ("X therefore Y"), one author's framing, uncontested definitions, and settled textbook or bedrock facts are not claims.
@@ -66,7 +69,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: claim_bar 'no' was correct under the standard pinned at run time and is wrong under #372: under the reference-based bar this is a claim (a unit of reference in the accretion literature; Giddings-Mangano and their critics both assert it). The old §2 wording and §19's settled-stub license conflicted, and the judge resolved it toward §2 — a task defect, resolved constitutionally. Importance 0.15 endorsed.
 ```
 
 ---
@@ -151,7 +154,7 @@ Flags: false_precision
 
 ```review
 claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Same family as item 1: claim_bar 'no' reflects the pre-#372 bar; under the reference-based bar this observational fact is a claim (asserted by LSAG, Giddings-Mangano, Peter's critique all refer to it). It is also a shared dependency (child of item 12) — exactly the cross-source structure the graph exists to hold. Importance 0.15 endorsed.
 ```
 
 ---
@@ -195,7 +198,7 @@ Flags: status_miscalibrated, hallucination_risk
 
 ```review
 claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Endorse the substantive catch: the charge/capture-cross-section evidence bears on the CAPTURE subclaim, yet the Steward used it to lower the ACCRETION subclaim's seed while leaving capture at 0.9. The second point misses: a child at status 'none' is a deferred stub, not an inconsistency with the parent's 'supported' (constitution allows assessing before children; judge prompt now says so).
 ```
 
 ---
@@ -235,7 +238,7 @@ Flags: other
 
 ```review
 claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Pre-#372 claim-bar reading; under the reference-based bar this is a claim (the LSAG report's own premise, referred to across every safety source), and it is shared by items 8 and 12. Importance 0.2 endorsed.
 ```
 
 ---
@@ -280,7 +283,7 @@ Flags: status_miscalibrated, false_precision
 
 ```review
 claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: The false_precision flag is wrong on the judge's own terms: confidence 0.75 (that CONTESTED is the right status) vs credence 0.4 (that the claim is true) is §10's two-number design working exactly as intended on a contested claim. Task defect — the two-number semantics were never pinned into the judge; now they are. The 'none' children are deferral, not thinness. Readability 3 is fair; the trace is dense.
 ```
 
 ---
@@ -327,7 +330,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Endorse: the trace surfaces live peer-reviewed remnant literature against the 'eventually evaporate' half and still lands on verified; under §10's definitions (verified = examined directly, establishes) this is supported.
 ```
 
 ---
@@ -412,7 +415,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: 74137053-82a6-477e-8842-45a1639d9f17
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Pre-#372 claim-bar reading; a settled theoretical attribution referred to by every source in the discourse is a claim under the reference-based bar. Importance 0.15 endorsed. too_granular on the TeV-Planck-scale subclaim is arguable either way.
 ```
 
 ---
@@ -497,7 +500,7 @@ Flags: status_miscalibrated, other
 
 ```review
 claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: The 'oddly tagged contradicts' point is shallow: a VERIFIED child can legitimately cut against its parent — WD accretion being much slower is exactly the evidence that narrows 'fast enough' for the white-dwarf leg. Prose-not-node is superseded by #372 (the node is also the Matcher's dedup target for a neutron-star reformulation). Importance 0.2 endorsed.
 ```
 
 ---
@@ -540,7 +543,7 @@ Flags: status_miscalibrated
 
 ```review
 claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
-notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+notes: Endorse on status: verified at 0.88 while the trace concedes the inference is 'not logically airtight' reads as supported under §10. Adds a point no dimension grades: the canonical form says 'rules out', a strength the assessment does not defend — a §3 form problem (see #360), not an assessment problem.
 ```
 
 ---
@@ -596,6 +599,50 @@ notes:            # only where the verdict misses — what it got wrong; leave a
 The output that matters: feedback on the task, not scores on the judge.
 
 ```overall
-# Free-form: misunderstandings in the task ("slight misunderstanding about X"),
-# things not measured ("we forgot Y"), or redesigns ("what if we did Z instead").
+Reviewed 2026-09-02 (Claude pass, discussed with Jackson; see #334 comment of that date).
+
+The judge is consistent and mostly defensible on its own terms. Its most frequent
+findings trace to four gaps in the TASK it was given, not to judge error:
+
+1. Claim bar vs §19 stubs (items 1, 3, 5, 9). The pre-#372 §2 said settled facts
+   are not claims; §19 said settled dependencies are recorded as low-importance
+   stubs. The Steward followed §19, the judge enforced §2. Resolved by #372:
+   the bar is now reference, not contestation — a settled proposition many
+   sources refer to is a claim. Under the new bar all four verdicts flip to
+   'yes', and the shared-child structure they anchor (item 5 under both 8 and
+   12) is exactly what the graph exists to hold.
+
+2. Unassessed children read as defects (items 4, 6). Status 'none' is a deferred
+   stub or an un-run steward — an allocation outcome, invisible to a judge
+   grading one claim in isolation. Fixed: the judge prompt now says so.
+
+3. Confidence vs credence (item 6). §10's two numbers answer different questions
+   and are expected to diverge on contested claims; the judge, never told this,
+   flagged a textbook-correct pair as false precision. Fixed: semantics pinned.
+
+4. verified vs supported (7 of 13 status_miscalibrated flags). §10 already
+   defines the boundary (examined directly and establishes, vs incomplete or
+   indirect) but the judge was pinned only the status NAMES. Fixed: definitions
+   pinned. Note the definitions lean the judge's way — items 8, 9, 12 rest on
+   indirect evidence about an unobserved hypothetical — so expect the Steward
+   side to move once its own outputs are re-judged.
+
+Where the judge was simply right: item 4's misattributed capture evidence;
+item 7's rounding up over live remnant literature; the importance deflation
+(judge lower on 10 of 13), which matches #68's known failure mode.
+
+Not measured that should be: canonical-form strength (item 12's 'rules out'
+outruns its assessment) — a §3 dimension; and reasoning anchored to ingestion
+context (#360 and the blinding question raised on #334). On this sheet the
+parent-claim references are mostly benign scope demarcation.
+
+Scales: readability / reasoning_fit / impartiality sat in a 3–5 band and
+carried nothing the flags and notes did not. Left in place for now; the
+evidence is on record for the next reviewer to weigh.
+
+What is good: the trans-Planckian triangle (items 2, 6, 13) is shared across
+parents, correctly polarized, and coherent as a joint state; item 3's instance
+stance bookkeeping (Peter's critique routed to the parent's inference, not
+recorded as denying the observation) is §9 done right. The near-settled control
+cluster behaves like one.
 ```
