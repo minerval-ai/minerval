@@ -38,6 +38,14 @@ export interface UsageContext {
    *  when tracing is enabled; absent = don't record steps. */
   trace?: AgentTrace;
   /**
+   * Set by untraced(): the work in progress handles content that must stay
+   * transient — a reader's page text, a chat question, a passage handed to
+   * the MCP for on-demand analysis (#356). withAgent opens no run inside it
+   * and no step is recorded, whatever TRACE_LEVEL says. Metering is
+   * unaffected: llm_usage rows carry counts and cost, never content.
+   */
+  untraced?: true;
+  /**
    * Live cost accumulator for the enclosing metered operation. The metering
    * chokepoint adds each call's REAL cost here synchronously — the same raw,
    * per-model figure it writes to llm_usage; the platform's margin lives in
@@ -74,7 +82,8 @@ export function runWithUsageContext<T>(
  * agent invoked another agent".
  */
 export function withAgent<T>(agent: string, fn: () => T): T {
-  const trace = startAgentRun(agent, getUsageContext());
+  const context = getUsageContext();
+  const trace = context.untraced ? null : startAgentRun(agent, context);
   if (!trace) return runWithUsageContext({ agent }, fn);
   return runWithUsageContext({ agent, runId: trace.runId, trace }, () => {
     let result: T;
@@ -99,6 +108,23 @@ export function withAgent<T>(agent: string, fn: () => T): T {
     finishAgentRun(trace, "ok");
     return result;
   });
+}
+
+/**
+ * Run `fn` with tracing suppressed, whatever TRACE_LEVEL says. This is the
+ * privacy seam of the trace substrate (#356): the transcript of an agent
+ * run is verbatim — the page it read, the question it was asked — so work
+ * over content a user never published runs inside this wrapper, and nothing
+ * derived from that content reaches agent_runs or agent_steps. Any trace
+ * handle from an enclosing run is dropped too, so a nested agent cannot
+ * append its steps to an outer run. Independent of the metering context,
+ * which keeps attributing tokens and cost as usual.
+ */
+export function untraced<T>(fn: () => T): T {
+  return runWithUsageContext(
+    { untraced: true, trace: undefined, runId: null },
+    fn
+  );
 }
 
 /**
