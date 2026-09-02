@@ -16,8 +16,14 @@ Delete scorecards freely if a run was aborted or misconfigured — this is a
 history of runs worth comparing against, not a log of every invocation.
 
 Each scorecard embeds its configuration fingerprint (`pipelineEpoch`, git
-commit, agent + judge models), so a file stays interpretable on its own.
-Compare any two with:
+commit, `profile`, agent + judge models, the spend `caps` in force, and the
+models `observed` per agent during the run), so a file stays interpretable on
+its own. `modelsSource` says where the agent models came from: `run` (recorded
+by `corpus:run` when the graph was built), `registry` (read back from that
+run's row by a later `corpus:score`), or `score-time` (config when scored —
+right only if nothing changed in between; the one pre-existing baseline,
+`blackholes/2026-08-09…`, is of this kind and records the Matcher wrongly for
+exactly that reason). Compare any two with:
 
 ```bash
 npm run corpus:compare -- corpus/scorecards/<cluster>/<A>.json corpus/scorecards/<cluster>/<B>.json

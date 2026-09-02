@@ -97,12 +97,39 @@ npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
 npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
 ```
 
+**Run on the production models.** The config defaults are the cheap dev
+tiers (Sonnet Steward, Haiku Matcher); production pins other models in the
+CDK task definition (`infra/lib/api-stack.ts`). A baseline that should say
+something about production has to run on those pins:
+
+```bash
+npm run corpus:run -- blackholes --profile=production --score
+npm run corpus:golden -- --profile=production
+```
+
+`--profile=production` (or `CORPUS_PROFILE=production`) applies every
+`*_MODEL` pin from the stack source before config loads, overriding any
+`*_MODEL` in your `.env` — a profile means "as production". The first epoch
+baseline was cut on the Sonnet default Steward while production ran Fable,
+which is what this exists to prevent. It needs a key for every provider the
+pins route to (the preflight names any that are missing).
+
+**Every run records its fingerprint at run time.** `corpus:run` registers an
+`ingest` row in the eval-run registry (`eval_runs`, which `corpus:reset`
+deliberately does not truncate) before its first LLM call: epoch, commit,
+profile, the model each agent was configured with, and the spend caps in
+force. When the drain finishes it adds the models actually observed in
+`llm_usage` per agent (a second model under an agent means a fallback fired)
+and writes the same record to `runs/<run>/run.json`. `corpus:score` reads that
+row back rather than re-deriving models from config at score time — the
+first baseline recorded the Matcher as Haiku that way while ingestion had run
+on DeepSeek. A scorecard with no ingest row behind it says so
+(`modelsSource: "score-time"`); trust those models only if nothing changed
+between the run and the score.
+
 Every `corpus:score` also files its `scorecard.json` into the committed history
-at `corpus/scorecards/<cluster>/` (with the epoch/models/commit fingerprint
-embedded) — commit the ones that matter as baselines. See
-[`scorecards/README.md`](./scorecards/README.md). It also registers the run in
-the **eval-run registry** (`eval_runs`, which `corpus:reset` deliberately does
-not truncate):
+at `corpus/scorecards/<cluster>/` (with that fingerprint embedded) — commit the
+ones that matter as baselines. See [`scorecards/README.md`](./scorecards/README.md).
 
 ```bash
 npm run corpus:runs                              # list registered runs + headline metrics
@@ -166,9 +193,13 @@ of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only).
 
 `corpus:score` flags: `--sample=N` (claims to LLM-judge; default 15, `0` =
-structural-only), `--no-judge`, `--out=DIR`. The judge runs on `JUDGE_MODEL`
-(default Sonnet — deliberately a different model/context than the agents under
-test). See [`SCORING.md`](./SCORING.md).
+structural-only), `--no-judge`, `--out=DIR`, `--allow-same-model-judge`. The
+judge runs on `JUDGE_MODEL` (default Sonnet — deliberately a different
+model/context than the agents under test). Scoring **refuses** a judge that
+is the Steward model the graph was built with, unless overridden: on the
+config defaults that means set `JUDGE_MODEL` to something other than Sonnet,
+or use `--profile=production`, where the Steward is Fable. See
+[`SCORING.md`](./SCORING.md).
 
 ## Reading the results
 

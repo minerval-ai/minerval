@@ -12,20 +12,33 @@
  *   tsx scripts/corpus/run.ts [cluster] [flags]
  *
  * Flags:
- *   --no-reset        keep the existing graph (ingest on top of it)
- *   --limit=N         only the first N posts (cheap smoke test)
- *   --posts=id1,id2   only these post IDs
+ *   --no-reset             keep the existing graph (ingest on top of it)
+ *   --limit=N              only the first N posts (cheap smoke test)
+ *   --posts=id1,id2        only these post IDs
+ *   --profile=production   run on the production model pins (lib.ts)
+ *   --score[=N]            emit a scorecard afterwards (judge sample N)
  *
  * Examples:
  *   npm run corpus:run -- lethalities --limit=2     # quick, cheap
  *   npm run corpus:run -- lethalities               # full cluster
+ *   npm run corpus:run -- blackholes --profile=production --score   # a baseline
+ *
+ * Every run registers itself in the eval-run registry (eval_runs, kind
+ * 'ingest') with its configuration fingerprint — epoch, commit, profile, the
+ * models each agent was configured with, the spend caps — and, once drained,
+ * the models actually observed in llm_usage. corpus:score reads that row
+ * back, so a scorecard describes the run that built the graph rather than
+ * whatever config happens to be loaded at score time (#334 L1).
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import {
   argFlag,
   assertCorpusDb,
+  CORPUS_PROFILE,
+  gitCommit,
   hasFlag,
   loadManifest,
   positional,
@@ -34,16 +47,20 @@ import {
   RUNS_ROOT,
 } from "./lib.js";
 import type { ManifestPost } from "./lib.js";
-import { closeDb, rawQuery } from "../../src/db/client.js";
+import { closeDb, getDb, rawQuery } from "../../src/db/client.js";
+import { evalRuns } from "../../src/db/schema.js";
+import { loadConfig } from "../../src/config.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
 import { formatMicroUsd } from "../../src/llm/pricing.js";
+import { resolveProvider } from "../../src/llm/providers/routing.js";
 import { getJobById } from "../../src/services/job-service.js";
 import { buildApp } from "../../src/server/app.js";
 import { drainLocalQueues } from "../../src/workers/local-runner.js";
 import type { DrainStats, RunnerEvent } from "../../src/workers/local-runner.js";
 import { resetCorpusDb } from "./reset.js";
 import { generateReport } from "./report.js";
-import { scoreRun } from "./score.js";
+import { scoreRun, type RunFingerprint } from "./score.js";
+import { observedModels } from "./fingerprint.js";
 
 function formatActivity(stats: DrainStats): string {
   const acts = Object.entries(stats.processed).map(([q, n]) => `${q} ${n}`);
@@ -64,6 +81,59 @@ function formatActivity(stats: DrainStats): string {
 // The window opens at process start; llm_usage is deliberately NOT truncated
 // by corpus:reset, so timestamps are the right filter.
 const RUN_STARTED_AT = new Date();
+
+/** The fingerprint as configured, recorded before the first LLM call. */
+function configuredFingerprint(): RunFingerprint {
+  const cfg = loadConfig();
+  return {
+    pipelineEpoch: cfg.pipelineEpoch,
+    gitCommit: gitCommit(),
+    profile: CORPUS_PROFILE,
+    models: {
+      extractor: cfg.extractorModel,
+      matcher: cfg.matcherModel,
+      steward: cfg.stewardModel,
+      curator: cfg.curatorModel,
+    },
+    caps: {
+      stewardMaxRuns: cfg.stewardMaxRuns,
+      stewardMaxIterations: cfg.stewardMaxIterations,
+      curatorMaxRuns: cfg.curatorMaxRuns,
+      curatorSweepRate: cfg.curatorSweepRate,
+      llmDailyTokenLimit: cfg.llmDailyTokenLimit,
+      llmHourlyTokenLimit: cfg.llmHourlyTokenLimit,
+    },
+  };
+}
+
+/** Per-agent models actually seen in llm_usage since the run window opened. */
+async function observedSinceStart(): Promise<Record<string, string[]>> {
+  const rows = await rawQuery<{ agent: string; model: string; calls: number }>(
+    `SELECT agent, model, COUNT(*)::int AS calls
+       FROM llm_usage WHERE created_at >= $1
+      GROUP BY agent, model`,
+    [RUN_STARTED_AT]
+  );
+  return observedModels(rows);
+}
+
+/**
+ * The API keys this run's configured models need, by provider: every agent's
+ * model routes somewhere (routing.ts), and embeddings always need OpenAI. A
+ * production-profile run puts the Matcher on OpenRouter, so a fixed
+ * "Anthropic + OpenAI" preflight would let it start and fail on the first
+ * match.
+ */
+function missingKeys(): string[] {
+  const cfg = loadConfig();
+  const keyFor = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" } as const;
+  const needed = new Set<string>(["OPENAI_API_KEY"]);
+  for (const model of [cfg.extractorModel, cfg.matcherModel, cfg.stewardModel, cfg.curatorModel]) {
+    const provider = resolveProvider(model);
+    if (provider) needed.add(keyFor[provider]);
+  }
+  return [...needed].filter((k) => !process.env[k]);
+}
 
 async function printUsage(label: string): Promise<void> {
   const u = getSessionUsage();
@@ -125,8 +195,9 @@ async function main(): Promise<void> {
   const manifest = loadManifest(cluster);
   const posts = selectPosts(manifest.posts);
 
-  // Preflight: the pipeline needs both an LLM key and an embeddings key.
-  const missing = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"].filter((k) => !process.env[k]);
+  // Preflight: an embeddings key plus a key for every provider the configured
+  // agent models route to.
+  const missing = missingKeys();
   if (missing.length) {
     console.error(`Missing required env: ${missing.join(", ")}. Set them in .env.`);
     process.exit(1);
@@ -142,7 +213,14 @@ async function main(): Promise<void> {
   // before we reset or write anything.
   assertCorpusDb();
 
+  const fingerprint = configuredFingerprint();
   console.log(`\n=== corpus run: ${cluster} — ${posts.length} post(s) ===`);
+  console.log(
+    `  epoch ${fingerprint.pipelineEpoch} · commit ${fingerprint.gitCommit ?? "?"}` +
+      (fingerprint.profile ? ` · profile ${fingerprint.profile}` : "") +
+      `\n  extractor ${fingerprint.models.extractor} · matcher ${fingerprint.models.matcher}` +
+      ` · steward ${fingerprint.models.steward} · curator ${fingerprint.models.curator}`
+  );
 
   if (!hasFlag("no-reset")) {
     console.log("Resetting corpus DB…");
@@ -155,9 +233,32 @@ async function main(): Promise<void> {
   mkdirSync(runDir, { recursive: true });
   const trace: RunnerEvent[] = [];
 
+  // Register the run before the first LLM call, so even an aborted run leaves
+  // its fingerprint behind. Best-effort: the registry must never block a run.
+  let registryId: string | null = null;
+  try {
+    const [row] = await getDb()
+      .insert(evalRuns)
+      .values({
+        cluster,
+        kind: "ingest",
+        config: { ...fingerprint, posts: posts.map((p) => p.id), noReset: hasFlag("no-reset") },
+        runDir,
+      })
+      .returning({ id: evalRuns.id });
+    registryId = row?.id ?? null;
+    if (registryId) console.log(`  registered ingest run ${registryId.slice(0, 8)}`);
+  } catch (err) {
+    console.warn(
+      "[run] eval-run registry write failed (the run proceeds unregistered):",
+      err instanceof Error ? err.message : err
+    );
+  }
+
   // The actual production app, pointed at the corpus DB.
   const app = await buildApp();
   let succeeded = 0;
+  let anyCapped = false;
 
   try {
     for (const [i, p] of posts.entries()) {
@@ -189,6 +290,8 @@ async function main(): Promise<void> {
         const before = trace.length;
         const stats = await drainLocalQueues({ onEvent: (e) => trace.push(e) });
 
+        if (stats.capped) anyCapped = true;
+
         const finished = await getJobById(job_id);
         const r = (finished?.result ?? {}) as Record<string, number>;
         const secs = ((Date.now() - started) / 1000).toFixed(0);
@@ -217,6 +320,42 @@ async function main(): Promise<void> {
   // Observability artifact: the full ordered stream of agent activity.
   writeFileSync(join(runDir, "trace.jsonl"), trace.map((e) => JSON.stringify(e)).join("\n"));
 
+  // Close the fingerprint with what actually ran: the models llm_usage saw
+  // per agent (a second model under an agent means a fallback fired), and
+  // whether any drain hit its cap. run.json is the file-side copy; the
+  // registry row is what corpus:score reads.
+  const observed = await observedSinceStart().catch(() => ({}) as Record<string, string[]>);
+  const finished: RunFingerprint = { ...fingerprint, observed };
+  const runRecord = {
+    ...finished,
+    cluster,
+    registryId,
+    startedAt: RUN_STARTED_AT.toISOString(),
+    finishedAt: new Date().toISOString(),
+    posts: posts.map((p) => p.id),
+    postsIngested: succeeded,
+    capped: anyCapped,
+  };
+  writeFileSync(join(runDir, "run.json"), JSON.stringify(runRecord, null, 2));
+  if (registryId) {
+    try {
+      await getDb()
+        .update(evalRuns)
+        .set({ config: runRecord })
+        .where(eq(evalRuns.id, registryId));
+    } catch (err) {
+      console.warn(
+        "[run] eval-run registry update failed (run.json is intact):",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  for (const [agent, models] of Object.entries(observed)) {
+    if (models.length > 1) {
+      console.log(`  note: ${agent} ran on more than one model (${models.join(", ")}) — a fallback fired.`);
+    }
+  }
+
   console.log(`\n${succeeded}/${posts.length} posts ingested. Generating report…`);
   const reportPath = await generateReport(cluster, runDir);
   console.log(`\nReport: ${reportPath}`);
@@ -226,7 +365,7 @@ async function main(): Promise<void> {
   // Optional scored scorecard (#99). --score emits structural metrics + a
   // bounded LLM-judge sample into the same run dir; --score=N sets the sample
   // size; --score=0 is structural-only (free). Off by default so a plain run
-  // stays cheap.
+  // stays cheap. The scorecard carries THIS run's fingerprint.
   const scoreFlag = argFlag("score");
   if (scoreFlag !== undefined) {
     const sample = scoreFlag === "" ? undefined : Number(scoreFlag);
@@ -235,6 +374,8 @@ async function main(): Promise<void> {
       sample: Number.isFinite(sample) ? sample : undefined,
       judge: sample !== 0,
       outDir: runDir,
+      fingerprint: finished,
+      allowSameModelJudge: hasFlag("allow-same-model-judge"),
     });
     console.log(`Scorecard: ${join(dir, "scorecard.md")}`);
   }
