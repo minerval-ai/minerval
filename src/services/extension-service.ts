@@ -410,9 +410,9 @@ async function analyzePageUncached(
   // Low-confidence extractions aren't worth a Matcher run from a live page.
   const candidates = extracted.filter((c) => c.confidence >= 0.5);
 
-  // Matching dominates analyze wall-clock: one multi-turn Haiku loop per
-  // claim. Haiku tolerates this parallelism comfortably; 8 roughly halves
-  // page-analysis latency vs 4 (#92).
+  // Matching dominates analyze wall-clock: one multi-turn Matcher loop per
+  // claim on the small tier (DeepSeek V4 Flash), which tolerates this
+  // parallelism comfortably; 8 roughly halves page-analysis latency vs 4 (#92).
   const matchStages = await mapWithConcurrency(candidates, 8, async (c) => {
     const decision = await matchClaim({
       extractedText: c.original_text,
