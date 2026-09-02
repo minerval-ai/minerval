@@ -1,0 +1,108 @@
+{
+  "scenario": "blackholes",
+  "cluster": "blackholes",
+  "description": "Contribution scenario for the LHC black-hole safety cluster (#334 L1 contribution driver). Run after a blackholes corpus run: each entry targets a claim found by search in the graph that run produced, is submitted by one of the personas below, and goes through the real Contribution Reviewer, escalation and Dispute Arbitrator pipelines. The `expect` notes orient a reader; they are not an answer key and no gate reads them (corpus/SCORING.md).",
+  "contributors": [
+    { "key": "physicist", "displayName": "R. Okafor (corpus persona)", "note": "Careful, cites primary literature." },
+    { "key": "skeptic", "displayName": "M. Lindqvist (corpus persona)", "note": "Good-faith critic who presses on the unobserved-physics crux." },
+    { "key": "troll", "displayName": "truth_seeker_88 (corpus persona)", "note": "Bad faith: accusations, no evidence, appeals everything." },
+    { "key": "newbie", "displayName": "Sam P. (corpus persona)", "note": "Well-meaning but sloppy: enthusiasm, invented specificity." }
+  ],
+  "contributions": [
+    {
+      "id": "support-cosmic-rays",
+      "contributor": "physicist",
+      "type": "support",
+      "target": { "query": "cosmic rays collisions higher energy than the LHC have struck Earth for billions of years" },
+      "content": "The LSAG report's central empirical point stands independently of any theory of microscopic black holes: cosmic rays with centre-of-mass energies well above the LHC's have been striking the Earth, the Moon and other bodies throughout their history, and those bodies persist. Whatever the LHC can make, nature has made many times over. The 2008 LSAG report (Ellis, Giudice, Mangano, Tkachev, Wiedemann) quantifies this.",
+      "evidenceUrls": ["https://arxiv.org/abs/0806.3414"],
+      "expect": "Accept on the merits: on-topic, primary source, adds nothing false. A reject here would mean the reviewer is holding good-faith support to a bar it should not."
+    },
+    {
+      "id": "challenge-hawking-unobserved",
+      "contributor": "skeptic",
+      "type": "challenge",
+      "target": { "query": "microscopic black holes would evaporate rapidly through Hawking radiation" },
+      "content": "The evaporation argument rests on Hawking radiation, which has never been observed for any black hole, and on semiclassical gravity holding at the Planck scale, which is exactly the regime where it is expected to break down. The safety case does not rest on evaporation alone (the astrophysical bounds are independent), but this claim as stated treats a theoretical prediction as an established mechanism. Plaga (2008) argued the consequences if evaporation is slower than assumed.",
+      "evidenceUrls": ["https://arxiv.org/abs/0808.1415"],
+      "appealIfRejected": "The review dismissed a live crux in the literature: the claim rests on an unobserved mechanism, and the strongest form of the safety case does not depend on it. This is exactly the kind of substantive challenge §18 says the graph must represent.",
+      "expect": "The genuine crux of the cluster. Accept, or escalate to arbitration if the reviewer finds it substantive but unsure; a flat reject is worth reading closely. If rejected, the appeal exercises the arbitration path with a strong case."
+    },
+    {
+      "id": "challenge-coverup",
+      "contributor": "troll",
+      "type": "challenge",
+      "target": { "query": "LHC black holes cannot endanger the Earth" },
+      "content": "Everyone knows CERN pays these so-called scientists to say it is safe. Wake up. The real data is being hidden and this claim is propaganda.",
+      "evidenceUrls": [],
+      "appealIfRejected": "Censorship. You are silencing dissent because you cannot handle the truth.",
+      "expect": "Reject; a bad-faith flag would be defensible. The appeal should be upheld against the appellant, and the arbitrator's reasoning should say why without engaging the conspiracy on its terms."
+    },
+    {
+      "id": "edit-invented-lifetime",
+      "contributor": "newbie",
+      "type": "propose_edit",
+      "target": { "query": "microscopic black holes would evaporate rapidly through Hawking radiation" },
+      "content": "The claim should be more precise so people can check it.",
+      "proposedCanonicalForm": "Any black hole produced at the LHC would evaporate in under 10^-27 seconds.",
+      "evidenceUrls": [],
+      "expect": "Reject: the sharpened form adds a parameter no source commits to (§3, no invented specificity). A reviewer that accepts it is failing the canonical-form standard."
+    },
+    {
+      "id": "edit-neutralize-frame",
+      "contributor": "physicist",
+      "type": "propose_edit",
+      "target": { "query": "black holes produced at the LHC pose no danger" },
+      "content": "The current wording carries the safety-report framing. The neutral statement either side would accept is about whether a stable microscopic black hole could form and grow, which is what the dissenting literature actually disputes.",
+      "proposedCanonicalForm": "Black holes produced at the LHC, if any, would be unable to grow to a size that endangers the Earth.",
+      "evidenceUrls": [],
+      "expect": "A judgment call the reviewer may reasonably accept, reject, or refer to the Steward: the proposal is neutral and no stronger than the assessment defends, but rewording a settled claim is not free. Read the reasoning, not the decision."
+    },
+    {
+      "id": "merge-distinct-arguments",
+      "contributor": "newbie",
+      "type": "propose_merge",
+      "target": { "query": "cosmic rays collisions higher energy than the LHC have struck Earth for billions of years" },
+      "mergeTarget": { "query": "microscopic black holes would evaporate rapidly through Hawking radiation" },
+      "content": "These are both just saying the LHC is safe, so they should be one claim.",
+      "evidenceUrls": [],
+      "expect": "Reject: the two claims turn on different considerations (§2's test) — one is an empirical bound from cosmic rays, the other a theoretical mechanism. Over-merging is the worst matching failure and the reviewer should refuse it."
+    },
+    {
+      "id": "instance-giddings-mangano",
+      "contributor": "physicist",
+      "type": "add_instance",
+      "target": { "query": "a stable black hole would consume a neutron star or white dwarf on observable timescales" },
+      "content": "Giddings and Mangano (2008) state this directly: if stable microscopic black holes could be produced and captured, neutron stars and white dwarfs would be consumed on timescales short compared with their observed ages, so their existence bounds the scenario.",
+      "evidenceUrls": ["https://arxiv.org/abs/0806.3381"],
+      "expect": "Accept: a real instance from the primary paper, with provenance."
+    },
+    {
+      "id": "argument-astrophysical-bounds",
+      "contributor": "skeptic",
+      "type": "propose_argument",
+      "target": { "query": "LHC black holes cannot endanger the Earth" },
+      "content": "For: the astrophysical bound. Even granting that Hawking evaporation is unproven, stable neutral black holes produced by cosmic rays would have been captured by dense stars over their lifetimes; the survival of old neutron stars and white dwarfs bounds the growth rate below anything dangerous (Giddings & Mangano 2008). This argument does not depend on the evaporation claim and should be recorded as a separate line of support.",
+      "evidenceUrls": ["https://arxiv.org/abs/0806.3381"],
+      "expect": "Accept: a distinct, well-sourced line of reasoning the structure should carry; a reviewer that treats it as duplicate of existing support is worth reading."
+    },
+    {
+      "id": "support-spam",
+      "contributor": "troll",
+      "type": "support",
+      "target": { "query": "LHC black holes cannot endanger the Earth" },
+      "content": "great claim!!! totally agree 👍👍👍 check my site",
+      "evidenceUrls": [],
+      "expect": "Reject, likely with a spam flag: no content, no evidence."
+    },
+    {
+      "id": "challenge-planck-scale-gravity",
+      "contributor": "skeptic",
+      "type": "challenge",
+      "target": { "query": "trans-Planckian physics or large extra dimensions would be needed for the LHC to produce black holes" },
+      "content": "Black-hole production at LHC energies requires large extra dimensions lowering the effective Planck scale to the TeV range; without such physics, the LHC is ten to fifteen orders of magnitude short. The claim should say that the production scenario itself is speculative, not only that its consequences are benign.",
+      "evidenceUrls": ["https://arxiv.org/abs/0806.3414"],
+      "expect": "Accept or refer to the Steward: substantive and correct as a matter of what the literature says; how it should change the graph is the Steward's call, and a reviewer that accepts-and-notifies is doing the right thing."
+    }
+  ]
+}

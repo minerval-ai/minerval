@@ -7,11 +7,13 @@ assessments trigger — so you can see whether the agents fit together and settl
 correctly as more overlapping claims are ingested. The focus is disambiguation,
 canonicalization, related-claim handling, and propagation behavior.
 
-**Not yet exercised:** community contributions, conflict review, escalation, and
-arbitration. Those are driven by contributions submitted through the API, which a
-corpus ingest doesn't generate — testing them needs a separate contributions
-scenario (a planned follow-up). The harness drains those queues too, so they'll
-run as soon as something enqueues them.
+Community contributions, conflict review, escalation, and arbitration are
+driven by contributions submitted against existing claims, which an ingest
+never generates — so they are exercised separately, by
+[`corpus:contributions`](./contributions/README.md): a scenario of
+contributions and appeals submitted against the graph a run produced,
+through the real Reviewer and Arbitrator pipelines, with a report of every
+decision and its reasoning.
 
 It runs against an **isolated database** (`episteme_corpus` by default), never
 the main graph, so you can wipe and re-run freely.
@@ -24,6 +26,7 @@ corpus/
   SCORING.md             scorecard design (corpus:score / corpus:compare)
   scorecards/            committed scorecard history (see its README)
   predictions/           resolvable predictions + README (S6 calibration track)
+  contributions/         contribution scenarios + README (review / escalation / arbitration)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
@@ -200,6 +203,16 @@ item (every dimension, flags, and note), and closes with the `## Overall`
 block — the feedback that actually matters. Commit the filled sheet as the
 record of the review. Generate it before resetting the graph (or restore the
 snapshot).
+
+**Contributions** (#334 L1) — the half of the organization an ingest never
+reaches. After a corpus run, `npm run corpus:contributions -- blackholes`
+submits the scenario in `contributions/blackholes.json` (four personas, ten
+contributions across every type, appeals on the rejections that carry one)
+through the real review, escalation and arbitration pipelines and writes a
+report of every decision with its reasoning, the bad-faith findings, the
+appeal outcomes, the reputation deltas and the cost. `--dry-run` resolves
+the targets and prints the plan. Rubric section G finally has something to
+read.
 
 **Predictions** (#334 S6) — the one class of claim reality grades:
 [`predictions/`](./predictions/README.md) holds a pinned set of resolvable
