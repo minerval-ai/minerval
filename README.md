@@ -128,7 +128,9 @@ The full picture — domain model, assessment semantics, workers and failure
 handling, persistence, serving surfaces — is in
 [docs/architecture.md](docs/architecture.md); the resource-allocation stack
 (owls, mandates, the action ledger) is in
-[docs/allocation.md](docs/allocation.md).
+[docs/allocation.md](docs/allocation.md); the design for mathematics as the
+flagship domain (formal statements, the Lean checker, the solver, prizes) is in
+[docs/mathematics.md](docs/mathematics.md).
 
 ## Surfaces
 
