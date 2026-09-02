@@ -71,7 +71,10 @@ production seed set, and all three are built.
 ## Prerequisites
 
 - Postgres running (`docker compose up -d`).
-- `.env` with `ANTHROPIC_API_KEY` (claims) and `OPENAI_API_KEY` (embeddings).
+- `.env` with `ANTHROPIC_API_KEY` (claims), `OPENAI_API_KEY` (embeddings) and
+  `OPENROUTER_API_KEY` (the Matcher, which defaults to DeepSeek V4 Flash — set
+  `MATCHER_MODEL=claude-haiku-4-5-20251001` to run a cluster Anthropic-only,
+  but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
   pipeline's circuit breaker will stop a run cleanly when hit.
 
@@ -92,15 +95,44 @@ npm run corpus:report -- lethalities             # re-render a report from curre
 # Scored, diffable scorecard (#99) — the automated counterpart to report.md
 npm run corpus:score -- lethalities --no-judge   # structural metrics only (free)
 npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
-npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
+npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards (no verdict: one sample each)
+npm run corpus:compare -- runs/<A1>,runs/<A2>,runs/<A3> runs/<B1>,runs/<B2>,runs/<B3>
+                                                 # groups: mean ± sd per side, delta vs the noise band
 ```
 
+**Run on the production models.** The config defaults are the cheap dev
+tiers (Sonnet Steward, Haiku Matcher); production pins other models in the
+CDK task definition (`infra/lib/api-stack.ts`). A baseline that should say
+something about production has to run on those pins:
+
+```bash
+npm run corpus:run -- blackholes --profile=production --score
+npm run corpus:golden -- --profile=production
+```
+
+`--profile=production` (or `CORPUS_PROFILE=production`) applies every
+`*_MODEL` pin from the stack source before config loads, overriding any
+`*_MODEL` in your `.env` — a profile means "as production". The first epoch
+baseline was cut on the Sonnet default Steward while production ran Fable,
+which is what this exists to prevent. It needs a key for every provider the
+pins route to (the preflight names any that are missing).
+
+**Every run records its fingerprint at run time.** `corpus:run` registers an
+`ingest` row in the eval-run registry (`eval_runs`, which `corpus:reset`
+deliberately does not truncate) before its first LLM call: epoch, commit,
+profile, the model each agent was configured with, and the spend caps in
+force. When the drain finishes it adds the models actually observed in
+`llm_usage` per agent (a second model under an agent means a fallback fired)
+and writes the same record to `runs/<run>/run.json`. `corpus:score` reads that
+row back rather than re-deriving models from config at score time — the
+first baseline recorded the Matcher as Haiku that way while ingestion had run
+on DeepSeek. A scorecard with no ingest row behind it says so
+(`modelsSource: "score-time"`); trust those models only if nothing changed
+between the run and the score.
+
 Every `corpus:score` also files its `scorecard.json` into the committed history
-at `corpus/scorecards/<cluster>/` (with the epoch/models/commit fingerprint
-embedded) — commit the ones that matter as baselines. See
-[`scorecards/README.md`](./scorecards/README.md). It also registers the run in
-the **eval-run registry** (`eval_runs`, which `corpus:reset` deliberately does
-not truncate):
+at `corpus/scorecards/<cluster>/` (with that fingerprint embedded) — commit the
+ones that matter as baselines. See [`scorecards/README.md`](./scorecards/README.md).
 
 ```bash
 npm run corpus:runs                              # list registered runs + headline metrics
@@ -138,6 +170,16 @@ Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
+**In CI** (`.github/workflows/golden-matcher.yml`): every PR that touches
+something that can move a match decision — the Matcher or its prompt, the
+constitution, the LLM client or a provider adapter, retrieval, the fixture or
+runner, the production pins — runs the suite on the production Matcher
+(`--profile=production`) against a throwaway corpus DB and fails below
+`--min-pass=0.95` (29 of 30). It needs the `OPENAI_API_KEY` and
+`OPENROUTER_API_KEY` repository secrets; a run without them (a fork PR)
+reports that it skipped rather than failing. Cents per run; the report is
+uploaded as a workflow artifact.
+
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
 gate until a human has read its verdicts and reasoning. The judge is presumed
 good-faith and competent at its assigned task — its judgment is as good as
@@ -172,9 +214,13 @@ of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only).
 
 `corpus:score` flags: `--sample=N` (claims to LLM-judge; default 15, `0` =
-structural-only), `--no-judge`, `--out=DIR`. The judge runs on `JUDGE_MODEL`
-(default Sonnet — deliberately a different model/context than the agents under
-test). See [`SCORING.md`](./SCORING.md).
+structural-only), `--no-judge`, `--out=DIR`, `--allow-same-model-judge`. The
+judge runs on `JUDGE_MODEL` (default Sonnet — deliberately a different
+model/context than the agents under test). Scoring **refuses** a judge that
+is the Steward model the graph was built with, unless overridden: on the
+config defaults that means set `JUDGE_MODEL` to something other than Sonnet,
+or use `--profile=production`, where the Steward is Fable. See
+[`SCORING.md`](./SCORING.md).
 
 ## Reading the results
 
@@ -213,7 +259,8 @@ dump for deeper digging.
   (`--limit=2`/`3`) → **full**. Check the printed cost at each step.
 - LLM output is nondeterministic. Treat a single run as one sample: run 2–3×
   and watch whether the metrics and failure modes are **stable**, not whether
-  any one number matches.
+  any one number matches. `corpus:compare` takes groups of runs per side for
+  exactly this reason, and gives no verdict on a single-sample side.
 
 ## Notes for maintainers
 
@@ -245,5 +292,6 @@ dump for deeper digging.
   `MATCHING_TOP_K` candidates (default 20) above a deliberately low 0.4 cosine
   floor, and the Matcher LLM makes the final match-vs-new call after searching
   multiple framings (including the negation). The disambiguation knobs are
-  `MATCHING_TOP_K` and `MATCHER_MODEL` (default Haiku); the 0.4 retrieval floor
+  `MATCHING_TOP_K` and `MATCHER_MODEL` (default DeepSeek V4 Flash, the model
+  production runs — it routes to OpenRouter); the 0.4 retrieval floor
   is hardcoded in `matcher.ts`, so changing it means editing that file.

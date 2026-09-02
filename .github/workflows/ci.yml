@@ -22,6 +22,11 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # scripts/ is outside the build's rootDir and runs through tsx, which
+      # never checks types — so the corpus harness is checked here explicitly.
+      - name: Typecheck scripts
+        run: npm run typecheck:scripts
+
       - name: Test
         run: npx vitest run
 

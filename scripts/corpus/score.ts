@@ -12,12 +12,16 @@
  *
  * Usage:
  *   tsx scripts/corpus/score.ts [cluster] [--sample=N] [--no-judge] [--out=DIR]
+ *                               [--allow-same-model-judge]
+ *
+ * The scorecard's config fingerprint (epoch, commit, models, caps) is read
+ * from the ingest run that built the graph (corpus:run registers one), not
+ * from config at score time — see fingerprint.ts for why.
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
-import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertCorpusDb, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
+import { assertCorpusDb, CORPUS_PROFILE, gitCommit, RUNS_ROOT, SCORECARDS_ROOT } from "./lib.js";
 import { closeDb, getDb, rawQuery } from "../../src/db/client.js";
 import { evalRuns } from "../../src/db/schema.js";
 import { getSessionUsage } from "../../src/llm/budget-tracker.js";
@@ -25,30 +29,70 @@ import { withCostMeter } from "../../src/llm/usage-context.js";
 import { loadConfig } from "../../src/config.js";
 import { computeStructuralMetrics, type GraphSnapshot, type StructuralMetrics } from "./metrics.js";
 import { judgeClaim, type JudgeInput, type JudgeVerdict } from "./judge.js";
+import { judgeConflict, type ScorecardConfig } from "./fingerprint.js";
+
+export type { ScorecardConfig } from "./fingerprint.js";
 
 const DEFAULT_SAMPLE = 15;
 
 /**
- * The run's configuration fingerprint, embedded so a scorecard in the
- * committed history (corpus/scorecards/) stays interpretable on its own: which
- * epoch and prompts produced this graph, which models ran the agents, which
- * commit of the repo. Comparisons only mean something within a fingerprint —
- * across epochs they are cross-cohort comparisons (docs/graph-epochs.md).
+ * The fingerprint an ingest run recorded in the registry (corpus:run writes
+ * one row of kind 'ingest' per run, with the models it was configured with
+ * and, once finished, the models it actually observed). The judge is chosen
+ * at score time and is not part of it.
  */
-interface ScorecardConfig {
-  pipelineEpoch: string;
-  gitCommit: string | null;
-  models: { steward: string; curator: string; matcher: string; judge: string };
-}
+export type RunFingerprint = Omit<ScorecardConfig, "models"> & {
+  models: Omit<ScorecardConfig["models"], "judge">;
+};
 
-function gitCommit(): string | null {
-  try {
-    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
-      .toString()
-      .trim();
-  } catch {
-    return null;
+/**
+ * Resolve the fingerprint for the graph being scored, most trustworthy source
+ * first: the run that produced it (passed in by corpus:run --score), the
+ * registry row that run left behind (a later standalone corpus:score), and
+ * only then config at score time — which is right only if nothing changed in
+ * between, and is how the first baseline came to record the wrong Matcher.
+ */
+async function resolveFingerprint(
+  cluster: string,
+  judgeModel: string,
+  provided?: RunFingerprint
+): Promise<ScorecardConfig> {
+  if (provided) {
+    return { ...provided, models: { ...provided.models, judge: judgeModel }, modelsSource: "run" };
   }
+  const rows = await rawQuery<{ config: RunFingerprint }>(
+    `SELECT config FROM eval_runs
+      WHERE cluster = $1 AND kind = 'ingest'
+      ORDER BY created_at DESC LIMIT 1`,
+    [cluster]
+  );
+  const fromRegistry = rows[0]?.config;
+  if (fromRegistry) {
+    return {
+      ...fromRegistry,
+      models: { ...fromRegistry.models, judge: judgeModel },
+      modelsSource: "registry",
+    };
+  }
+  const cfg = loadConfig();
+  console.warn(
+    `  warning: no ingest run registered for "${cluster}" — recording the models ` +
+      `from config at score time, which is only right if the graph was built under ` +
+      `this same environment. Prefer corpus:run (it records the fingerprint at run time).`
+  );
+  return {
+    pipelineEpoch: cfg.pipelineEpoch,
+    gitCommit: gitCommit(),
+    profile: CORPUS_PROFILE,
+    models: {
+      extractor: cfg.extractorModel,
+      matcher: cfg.matcherModel,
+      steward: cfg.stewardModel,
+      curator: cfg.curatorModel,
+      judge: judgeModel,
+    },
+    modelsSource: "score-time",
+  };
 }
 
 interface JudgedSummary {
@@ -235,12 +279,21 @@ function summarizeJudged(model: string, verdicts: JudgeVerdict[]): JudgedSummary
 
 export async function scoreRun(
   cluster: string,
-  opts: { sample?: number; judge?: boolean; outDir?: string } = {}
+  opts: {
+    sample?: number;
+    judge?: boolean;
+    outDir?: string;
+    /** The fingerprint corpus:run recorded for this graph, when scoring from a run. */
+    fingerprint?: RunFingerprint;
+    /** Override the rule that the judge must not share the Steward's model. */
+    allowSameModelJudge?: boolean;
+  } = {}
 ): Promise<{ scorecard: Scorecard; dir: string; judgeCostMicroUsd: number }> {
   assertCorpusDb();
   const sample = opts.sample ?? DEFAULT_SAMPLE;
   const doJudge = opts.judge ?? true;
   const cfg = loadConfig();
+  const config = await resolveFingerprint(cluster, cfg.judgeModel, opts.fingerprint);
 
   const snapshot = await loadSnapshot();
   const structural = computeStructuralMetrics(snapshot);
@@ -249,6 +302,11 @@ export async function scoreRun(
   let cost: Scorecard["cost"] = null;
   let judgeCostMicroUsd = 0;
   if (doJudge && sample > 0) {
+    // The judge never grades a graph its own model built (corpus/SCORING.md);
+    // the first baseline did exactly that, silently. Refuse unless overridden.
+    const conflict = judgeConflict(config, cfg.judgeModel);
+    if (conflict && !opts.allowSameModelJudge) throw new Error(conflict);
+    if (conflict) console.warn(`  warning (overridden): ${conflict}`);
     const before = getSessionUsage();
     const inputs = pickSample(snapshot, sample);
     console.log(`  judging ${inputs.length} claims with ${cfg.judgeModel}…`);
@@ -268,16 +326,7 @@ export async function scoreRun(
     generatedAt: new Date().toISOString(),
     cluster,
     database: new URL(process.env.DATABASE_URL!).pathname.slice(1),
-    config: {
-      pipelineEpoch: cfg.pipelineEpoch,
-      gitCommit: gitCommit(),
-      models: {
-        steward: cfg.stewardModel,
-        curator: cfg.curatorModel,
-        matcher: cfg.matcherModel,
-        judge: cfg.judgeModel,
-      },
-    },
+    config,
     structural,
     judged,
     cost,
@@ -331,11 +380,35 @@ function renderMarkdown(s: Scorecard): string {
   w(`# Corpus run scorecard — ${s.cluster}`);
   w();
   w(`_generated ${s.generatedAt} · database \`${s.database}\`_`);
+  const observed = (agent: string, configured: string | undefined) => {
+    const seen = s.config.observed?.[agent];
+    if (!seen || seen.length === 0) return configured ?? "?";
+    return seen.length === 1 ? seen[0] : `${seen[0]} (+ ${seen.slice(1).join(", ")})`;
+  };
   w(
-    `_epoch \`${s.config.pipelineEpoch}\` · commit \`${s.config.gitCommit ?? "?"}\` · ` +
-      `steward \`${s.config.models.steward}\` · matcher \`${s.config.models.matcher}\` · ` +
-      `judge \`${s.config.models.judge}\`_`
+    `_epoch \`${s.config.pipelineEpoch}\` · commit \`${s.config.gitCommit ?? "?"}\`` +
+      (s.config.profile ? ` · profile \`${s.config.profile}\`` : "") +
+      ` · extractor \`${observed("extractor", s.config.models.extractor)}\`` +
+      ` · matcher \`${observed("matcher", s.config.models.matcher)}\`` +
+      ` · steward \`${observed("steward", s.config.models.steward)}\`` +
+      ` · judge \`${s.config.models.judge}\`_`
   );
+  if (s.config.modelsSource && s.config.modelsSource !== "run") {
+    w();
+    w(
+      s.config.modelsSource === "registry"
+        ? `_agent models read back from the run's registry row._`
+        : `_agent models are config at SCORE time, not recorded at run time — trust them only if nothing changed in between._`
+    );
+  }
+  if (s.config.caps && Object.keys(s.config.caps).length > 0) {
+    w();
+    w(
+      `_caps in force: ${Object.entries(s.config.caps)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")} — a capped run is a partial baseline._`
+    );
+  }
   w();
   w(`Scored, diffable counterpart to \`report.md\`. Structural metrics are free;`);
   w(`the judged block is a bounded LLM-judge sample (#99). Compare two runs with`);
@@ -403,8 +476,9 @@ if ((process.argv[1] ?? "").endsWith("score.ts")) {
   const outArg = args.find((a) => a.startsWith("--out="));
   const sample = sampleArg ? Number(sampleArg.split("=")[1]) : DEFAULT_SAMPLE;
   const judge = !args.includes("--no-judge");
+  const allowSameModelJudge = args.includes("--allow-same-model-judge");
 
-  scoreRun(cluster, { sample, judge, outDir: outArg?.split("=")[1] })
+  scoreRun(cluster, { sample, judge, outDir: outArg?.split("=")[1], allowSameModelJudge })
     .then(async ({ dir }) => {
       console.log(`Scorecard: ${join(dir, "scorecard.md")}`);
       await closeDb();

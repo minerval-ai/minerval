@@ -16,15 +16,27 @@ Delete scorecards freely if a run was aborted or misconfigured — this is a
 history of runs worth comparing against, not a log of every invocation.
 
 Each scorecard embeds its configuration fingerprint (`pipelineEpoch`, git
-commit, agent + judge models), so a file stays interpretable on its own.
-Compare any two with:
+commit, `profile`, agent + judge models, the spend `caps` in force, and the
+models `observed` per agent during the run), so a file stays interpretable on
+its own. `modelsSource` says where the agent models came from: `run` (recorded
+by `corpus:run` when the graph was built), `registry` (read back from that
+run's row by a later `corpus:score`), or `score-time` (config when scored —
+right only if nothing changed in between; the one pre-existing baseline,
+`blackholes/2026-08-09…`, is of this kind and records the Matcher wrongly for
+exactly that reason). Compare any two with:
 
 ```bash
+# two single runs: deltas printed, no verdict (one sample each)
 npm run corpus:compare -- corpus/scorecards/<cluster>/<A>.json corpus/scorecards/<cluster>/<B>.json
+# two configurations, three runs each: mean ± sd per side, and whether the
+# delta clears the combined spread
+npm run corpus:compare -- <A1>.json,<A2>.json,<A3>.json <B1>.json,<B2>.json,<B3>.json
 ```
 
-One run is one nondeterministic sample: a delta is real only if it repeats
-across N≈3 runs or exceeds run-to-run noise (`corpus/SCORING.md`).
+One run is one nondeterministic sample: a delta is real only when it exceeds
+the run-to-run spread, which takes N≈3 runs per side to measure
+(`corpus/SCORING.md`). The committed baseline for each cluster should
+therefore be the N≈3 set, not one file.
 
 This file-based history is the phase-0 form of #334's eval-run registry (L1);
 when runs become first-class database records, this directory becomes an

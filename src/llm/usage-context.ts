@@ -39,10 +39,12 @@ export interface UsageContext {
   trace?: AgentTrace;
   /**
    * Live cost accumulator for the enclosing metered operation. The metering
-   * chokepoint adds each call's BILLED (marked-up) cost here synchronously,
-   * so cap-and-settle charging (owl-ledger-service.settleMeteredCharge) can
-   * read the operation's real cost the moment the work finishes, without
-   * waiting on the async llm_usage insert.
+   * chokepoint adds each call's REAL cost here synchronously — the same raw,
+   * per-model figure it writes to llm_usage; the platform's margin lives in
+   * the owl's purchase price, never here — so cap-and-settle charging
+   * (owl-ledger-service.settleMeteredCharge) can read the operation's cost
+   * the moment the work finishes, without waiting on the async llm_usage
+   * insert. The field keeps its historical name.
    */
   meter?: { billedMicroUsd: number };
 }

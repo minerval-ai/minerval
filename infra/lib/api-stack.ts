@@ -122,7 +122,9 @@ export class ApiStack extends cdk.Stack {
         // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
         // quality and price (#257). First agent routed off Anthropic; the rest
         // keep their defaults until the eval apparatus (#273/#297) can rank
-        // candidates.
+        // candidates. Pinned here AND as the config default
+        // (OPENROUTER_MODELS.deepseekFlash) so corpus and dev runs match on the
+        // model production matches on; the model guard asserts the two agree.
         MATCHER_MODEL: "deepseek/deepseek-v4-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
