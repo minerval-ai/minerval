@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `  ${"id".padEnd(8)} ${"when".padEnd(16)} ${"kind".padEnd(6)} ${"cluster".padEnd(12)} ` +
+    `  ${"id".padEnd(8)} ${"when".padEnd(16)} ${"kind".padEnd(10)} ${"cluster".padEnd(12)} ` +
       `${"epoch".padEnd(22)} ${"commit".padEnd(8)} ${"steward".padEnd(22)} ${"claims".padStart(6)} ` +
       `${"dedup".padStart(6)} ${"bar%".padStart(5)} ${"read".padStart(5)}`
   );
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     console.log(
       `  ${row.id.slice(0, 8)} ` +
         `${new Date(row.created_at).toISOString().slice(0, 16).padEnd(16)} ` +
-        `${row.kind.padEnd(6)} ` +
+        `${row.kind.padEnd(10)} ` +
         `${row.cluster.padEnd(12)} ` +
         `${(row.config?.pipelineEpoch ?? "?").padEnd(22)} ` +
         `${(row.config?.gitCommit ?? "?").padEnd(8)} ` +
