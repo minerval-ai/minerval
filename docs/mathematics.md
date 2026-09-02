@@ -91,9 +91,9 @@ properties.
 4. **Payout is mechanical after judgment, and judgment is slow where money
    is at stake.** The checker issues the verdict; the Contribution Reviewer
    screens form, identity, and good faith; the Steward judges statement
-   fidelity and records an assessment; a public challenge window runs; the
-   Audit agent reviews every acceptance; a human signs off above a threshold;
-   only then does the ledger pay. Every stage is public and appealable, and
+   fidelity and records a provisional assessment; a public challenge window
+   runs, and inside it the Audit agent reviews every acceptance; a human
+   signs off above a threshold; only then does the ledger pay. Every stage is public and appealable, and
    no single agent, person, or injected web page can move money alone.
 
 ### 1.2 What ships first, and why
@@ -119,8 +119,8 @@ must never advertise an offer it cannot honor.
 - **Phase 3: prizes payable in owls.** The prize fund, the Grantmaker's
   `post_bounty`, the display on page, map, list, and mandate page, the rules
   page, and the full claim-prize flow with its window and audit, paying in
-  owls only. Counsel's first four items (section 9.3) are done before this
-  phase opens.
+  owls only, with identity, tax form, and screening collected by hand.
+  Counsel's first five items (section 9.3) are done before this phase opens.
 - **Phase 4: cash.** The approved payout rail, tax forms, withholding,
   sanctions screening, the privacy policy update, and the international
   policy.
@@ -140,7 +140,7 @@ each:
 | Can owls fund a bounty? | No. Bounties are cash only, from a platform prize fund. Owl pledges are not built; third-party money enters at the fund level as sponsorship, after counsel. | 8.1 |
 | Does a bounty enter the attempt's valuation? | Never. Demand moves scheduling only through allocations on the attempt action. | 7.3, 10.5 |
 | What selects a skill? | `claims.domains`, set by admin judgment. `claim_type = mathematical` is the proposition-kind facet. Neither the funding mandate nor importance gates the Lean tools. | 3.4 |
-| In what order is a prize claim reviewed? | Route gate, checker, Contribution Reviewer, Steward, challenge window, audit, sign-off, payout. The checker runs before any agent so a failed proof costs no judgment. | 8.4 |
+| In what order is a prize claim reviewed? | Route gate, checker, Contribution Reviewer, Steward, challenge window with the audit inside it, sign-off, payout. The checker runs before any agent so a failed proof costs no judgment. | 8.4 |
 | Which payout rail? | An adapter. Stripe Global Payouts if Stripe approves the program in writing; Tremendous otherwise. Nothing touches the account that sells owls without that approval. | 8.8, 9.2 |
 | Who verifies a solver result? | The kernel, for Lean-checked outcomes; the Steward judges fidelity. Anything the kernel cannot check is a lead, never a result. | 7.6 |
 | May attempts start before the statement's public review period ends? | Yes; the attempt doubles as a vacuity probe. Bounties wait for the period. | 5.6 |
@@ -153,9 +153,9 @@ each:
 | Caps and sign-off in v1? | $5,000 per claim; human sign-off at $1,000 or importance 0.6; every posting confirmed by a human in v1 (autonomy threshold configurable, default $0). | 8.1, 8.5 |
 | Are funders named on claim surfaces? | No. Minerval is named because the rules require a named sponsor. | 8.3 |
 | Does a failed check touch reputation? | No. A kernel result is a mechanism. | 8.4 |
-| Which model runs the money decisions? | The strong tier, forced for `formalize`, `prize_claim`, and `attempt_completed`; a fallback-served acceptance is an audit send-back. | 6.4 |
+| Which model runs the money decisions? | The strong tier, forced for the six money triggers of section 6.4, which are invoked directly rather than through the steward queue; a fallback-served acceptance is an audit send-back. | 6.4 |
 | Where does the skill sit in the prompt? | A separate cached block after the role block; documented as Layer 3 of four, below the role in authority. | 3.3 |
-| Does the constitution change? | Three minimal amendments, proposed for adoption before prizes open. | Appendix F |
+| Does the constitution change? | Three minimal amendments: one before the solver first runs, two before prizes open. | Appendix F |
 
 ### 1.4 What is deferred, and what it costs to add later
 
@@ -173,6 +173,7 @@ each:
 | Second-opinion checker | Optional insurance; Minerval's checker is the arbiter. | One day, following the Elicit adapter. |
 | Multi-payee, entity, and minor claimants | Counsel items. | Two days each. |
 | Skill `reference/` files and a `read_skill_reference` tool | The Mathematics skill fits in one file. | Half a day. |
+| The `load_skill` fallback tool | Every claim the mandate targets is tagged by the Steward that formalizes it. | Half a day; the text sits uncached in messages. |
 
 ---
 
@@ -514,11 +515,11 @@ where the judgment naturally lives.
 2. **Mandate-scoped runs read `grants.skills`.** The Grantmaker conversation
    for a mandate and its review pass load the mandate's skills;
    `propose_mandate` gains a `skills` field; the platform seed sets `skills:
-   ["mathematics"]` on the Mathematics mandate. Ingest actions the mandate
-   funds pass its skills to the Extractor as a hint. This is the one place
-   funding influences a prompt, and it influences only which domain gloss
-   the Extractor sees for a source the mandate chose, never a standard
-   applied to a claim.
+   ["mathematics"]` on the Mathematics mandate. The mandate's skills select the
+   Grantmaker's view and nothing else: ingest actions the mandate funds do
+   not pass its skills to the Extractor, which carries every skill's gloss
+   regardless (below), so funding never selects a prompt for any agent that
+   writes to the graph.
 3. **`load_skill` is the fallback** for the Steward on an untagged claim, for
    Audit pattern analyses, and for the Grantmaker before a mandate exists.
    The tool returns the role's view plus the instruction to record the domain
@@ -697,7 +698,8 @@ The skill's complete text is Appendix A, ready to become
   and the stopping rules; this section is the skill half of the solver's
   system prompt (Appendix C is the whole).
 - **Standards for judging** and **Failure modes**, spliced into the corpus
-  judge and the rubric, never into agent prompts except the Audit view.
+  judge and the rubric; the Audit view carries `Standards for judging` and
+  no other agent prompt carries either.
 
 Prizes are discussed only in this skill for now. When a second domain gets a
 prize program, the prize paragraphs of "For every administrator" move to a
@@ -717,7 +719,7 @@ provenance needs columns of its own.
 ```sql
 CREATE TABLE claim_formalizations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+  claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
   version integer NOT NULL,
   language text NOT NULL DEFAULT 'lean4',
   pin_id text NOT NULL,                 -- e.g. 'mathlib-v4.33.1'
@@ -833,7 +835,8 @@ Two lanes, and the distinction is the security model:
   serving `POST /v1/elaborate` (statement publication and vacuity signals),
   `POST /v1/scratch` (the Steward's and the solver's iterative work), and
   `POST /v1/search` (a proxy to a self-hosted Loogle mirror pinned to the
-  same Mathlib, with a hosted natural-language backend optional).
+  same Mathlib, with a hosted natural-language backend optional), and `GET
+  /v1/pins` (the live pins and their image digests).
   Semi-trusted input only: Steward- and solver-generated code, never a
   claimant's file. Restarted on a schedule and after any crash,
   memory-capped, no network, read-only Mathlib. Warm-lane results are never
@@ -846,11 +849,14 @@ Two lanes, and the distinction is the security model:
   the image or the environment. `POST /v1/check` in `prize` mode queues a job
   and returns `202 {check_id}`; `GET /v1/checks/:id` returns the record.
 
-**No callback.** The cold lane runs in the isolated subnets, the VPC has no
-NAT gateway (`infra/lib/network-stack.ts:14-29`), and the API sits in public
-subnets behind a public load balancer (`infra/lib/api-stack.ts:190-197`), so
-the checker cannot call the API back. The API polls `GET /v1/checks/:id`
-from the prize-check worker and a recovery sweep. The service is reachable
+**No callback.** The checker never calls the API. The missing NAT gateway
+(`infra/lib/network-stack.ts:14-29`) blocks the internet, not the load
+balancer's private addresses, so the rule is a security-group rule: the
+checker's group allows no egress to the load balancer's group or the API's
+group, and the API polls `GET /v1/checks/:id` from the prize-check worker
+and a recovery sweep. A callback design would also have to survive the
+checker being compromised by a submission, which polling does by
+construction. The service is reachable
 from the API over the VPC's private addressing with a bearer token from
 Secrets Manager, following the Elicit key plumbing
 (`infra/lib/api-stack.ts:172-176`).
@@ -869,7 +875,7 @@ The statement file is checker-owned and the submission cannot alter it:
 import Mathlib
 set_option autoImplicit false
 namespace Minerval.S9f2a_v1
-/-- <canonical form, verbatim> -/
+/-- Statement 1 of claim 9f2a. The canonical form is in the correspondence note. -/
 def Statement : Prop :=
   ∀ n : ℕ, 2 < n → ¬ ∃ a b c : ℕ, 0 < a ∧ 0 < b ∧ 0 < c ∧ a ^ n + b ^ n = c ^ n
 /-- Witness that the hypotheses are satisfiable. -/
@@ -880,7 +886,9 @@ end Minerval.S9f2a_v1
 A submission is `theorem Minerval.S9f2a_v1.proof : Minerval.S9f2a_v1.Statement
 := by ...` or `theorem Minerval.S9f2a_v1.disproof : ¬ Minerval.S9f2a_v1.Statement
 := ...`, appended after a checker-supplied header that is the only `import`.
-The classic tricks fail against this pattern: the submission cannot redefine
+The canonical form is never interpolated into the file: a `-/` inside it
+would end the docstring and turn the rest into source. The classic tricks
+fail against this pattern: the submission cannot redefine
 `Statement` (name clash), `open` and `local notation` cannot change which
 constant the theorem's type names, `autoImplicit` is forced off, universe
 parameters are rejected, and a false helper lemma still needs an axiom or a
@@ -934,7 +942,13 @@ tokens rejected anywhere in a submission are `sorry`, `admit`,
 allowlist (`maxHeartbeats` up to 4,000,000 and `maxRecDepth` up to 8192;
 every `debug.*` option rejected). Custom metaprogramming is banned in v1;
 Mathlib's tactic library suffices for prize proofs, and a claimant who needs
-a custom tactic can inline what it would have produced.
+a custom tactic can inline what it would have produced. The route gate
+applies the policy as a word-boundary scan and refuses only the unambiguous
+tokens (`sorry`, `admit`, `axiom`, `native_decide`, `import`, `unsafe`, and
+`partial` as whole words); `PartialOrder` is not `partial`, and "important"
+in a comment is not `import`. The checker applies the policy on parsed
+syntax (declarations, attributes, options) and is the authority; the gate
+exists to turn away spam cheaply.
 
 **Pins.** Each statement records `{pin_id, lean_toolchain, mathlib_rev,
 image_digest}`. The platform maintains at most three live pins: the platform
@@ -943,9 +957,12 @@ by an open bounty. A submission is checked under the statement's pin, never
 a newer one; the prize terms name the pin.
 
 **Migration.** When the platform pin advances, a job re-elaborates every open
-statement under the new pin. If the pretty-printed type and referenced
-constants are unchanged, the statement gains the new pin without a new
-version. If a Mathlib name was renamed or deprecated, the Steward republishes
+statement under the new pin. If the elaborated bodies of the statement and of
+the transitive closure of the constants it references hash the same under
+the new pin, the statement gains the new pin without a new version; a name
+that survives with a changed definition is caught by the closure hash. A
+statement with a live bounty never changes pin without a new version and
+the 30-day amendment notice the rules require, whatever the hash says. If a Mathlib name was renamed or deprecated, the Steward republishes
 (new version, same claim, a migration note in the correspondence), and the
 old pin stays accepted for a 30-day grace window. If the statement no longer
 elaborates and cannot be migrated mechanically, the Steward decides; Part
@@ -961,9 +978,11 @@ correspondence note, and its witness are public on the claim page, and
 anyone may file an ordinary `challenge` contribution against the claim that
 names the formalization (a new column
 `contributions.challenged_formalization_id`); an upheld challenge returns the
-statement to `reviewed` and restarts the period on republication. The period
-exists because a bounty on a mis-stated proposition rewards proving the wrong
-thing.
+statement to `reviewed`, restarts the period on republication, and earns the
+challenger a fixed review award (`FORMALIZATION_REVIEW_AWARD_USD`, $100)
+from the prize fund, so exposing a defect early pays better than sitting on
+it until a bounty opens. The period exists because a bounty on a mis-stated
+proposition rewards proving the wrong thing.
 
 The solver may attempt a statement as soon as it is published. The statement
 has by then had two Steward reviews in fresh contexts, and an attempt is
@@ -977,8 +996,9 @@ claim's status does not depend on the outcome.
 
 `update_canonical_form` gains a mechanical consequence: a canonical-form
 change on a claim with a published formalization moves the formalization to
-`reviewed` pending re-publication, and the Steward is told in the tool
-result. A merge keeps the survivor's published statement and retires the
+`reviewed` pending re-publication, moves any `open` bounty bound to it to
+`rebinding` in the same transaction (section 8.1), and tells the Steward in
+the tool result. A merge keeps the survivor's published statement and retires the
 absorbed claim's; the survivor's Steward records the equivalence in the
 correspondence note. A bounty bound to a retired statement follows section
 8.5. A split retires the statement, and the Steward of each new claim starts
@@ -1113,11 +1133,24 @@ silently escape all of them. So:
 the action variant is `strong`; a `prize_claim` or `attempt_completed`
 trigger would otherwise run on `config.stewardModel`, Sonnet by default
 (`src/config.ts:478`). A fidelity judgment on a prize must not depend on
-which variant won an auction. The pipeline forces `STEWARD_STRONG_MODEL`
-(refusing to run a money trigger at all in production without it) for the
-triggers `formalize`, `formalization_review`, `prize_claim`,
-`prize_claim_voided`, `prize_window_closed`, and `attempt_completed`,
-independent of variant, and a unit test pins it.
+which variant won an auction. The six money triggers (`formalize`,
+`formalization_review`, `prize_claim`, `prize_claim_voided`,
+`prize_window_closed`, and `attempt_completed`) therefore never go through
+`enqueueSteward` at all: it coalesces into the claim's single pending slot
+and keeps an existing trigger over a new one
+(`src/services/queue-service.ts:253-259`), so a `prize_claim` arriving on a
+claim already pending for reassessment would run as a reassessment on the
+standard tier. Instead each is invoked directly, by the worker that owns
+the event, as `runClaimSteward({trigger, claimId, context, model:
+config.stewardStrongModel})` inside a usage context whose job id is the
+funding job: the engine executor for `formalize` and `formalization_review`
+from their action rows, the prize-check worker for `prize_claim`, the
+window closer for `prize_window_closed` and `prize_claim_voided`, and the
+solver worker for `attempt_completed`. Production refuses to run any of them
+without `STEWARD_STRONG_MODEL`, the trigger is recorded on the run, and a
+unit test pins both the model and the bypass of the queue. Direct
+invocation also removes the latency question: a prize review never waits
+behind the drain.
 
 The Steward keeps the server-side refusal fallback
 (`src/llm/providers/anthropic.ts:118-122`), and a fallback is sticky for
@@ -1129,8 +1162,9 @@ exposes both fields on `ToolCompletionResult` (section 7.8).
 ### 6.5 Lean on the ledger
 
 Lean checks warrant no ledger variant of their own in the first epoch: the
-per-check cost is cents and the per-run cap bounds it. `docs/allocation.md`
-anticipates variants such as `strong+elicit`; a `strong+lean` variant is the
+per-check cost is cents and the per-run cap bounds it. the schema's comment on
+`actions.variant` (`src/db/schema.ts:919`) anticipates variants such as
+`strong+elicit`; a `strong+lean` variant is the
 consistent future path if metering shows Lean calls deserve a separate row.
 The decision waits for the checker's real per-call cost.
 
@@ -1198,16 +1232,20 @@ so the marginal-return rule has meaning and the cost estimator gets two live
 series. The 48-hour campaign variant and cross-day accumulation are deferred
 until the live series exists.
 
-Preconditions to open a group: the claim has a `published` formalization (or
-is a calibration control); the claim's lifetime attempt spend is under its
+Preconditions to open a group: the claim has a `published` formalization
+(calibration controls are formalized too; only the review period is waived
+for them); the claim's lifetime attempt spend is under its
 cap; no attempt on the formalization is `running`; the previous attempt
 closed at least `ATTEMPT_COOLDOWN_DAYS` (30) ago unless the Grantmaker states
 a reason (a new lemma in the subtree was formalized; a prior report names a
 route it could not pursue for budget). `reconcileActions` opens rows from
 plan items of action `attempt_proof`, cancels rows whose formalization was
-superseded, and gains a third reopen clause, `kind = 'attempt_proof' AND
-updated_at < now() - interval '3 hours'`, because the 60-minute rule at
-`action-service.ts:257-262` would otherwise duplicate a multi-hour attempt.
+superseded, and changes its reopen rule: the 60-minute clause at
+`action-service.ts:257-262` becomes `kind NOT IN ('ingest','attempt_proof')`
+and a third clause reopens `attempt_proof` rows untouched for three hours.
+A live attempt updates `actions.updated_at` every turn (section 7.9), so
+only a dead worker trips the clause, and the attempt it abandoned is marked
+`orphaned`.
 
 Cost priors, as policy keys on the Mathematics mandate
 (`est_attempt_standard_cost_owls` 60, `est_attempt_max_cost_owls` 150): one
@@ -1236,9 +1274,10 @@ select.
   `ATTEMPT_MAX_WALL_HOURS` (6), iteration cap `ATTEMPT_MAX_ITERATIONS`
   (500). No live dollar countdown is shown to the model.
 - **Per-claim lifetime cap.** `attempt_claim_lifetime_cap_owls` (500, a
-  policy key the Mathematics Grantmaker may raise for a named claim within
-  `POLICY_BOUNDS`; nobody else can), checked at group opening and again
-  before a run: `SUM(llm_usage.cost_micro_usd WHERE claim_id AND agent =
+  per-mandate policy key within `POLICY_BOUNDS`), which the Grantmaker may
+  exceed for a named claim only through a `lifetime_cap_owls` field on that
+  claim's `attempt_proof` plan item, bounded at twice the policy key;
+  checked at group opening and again before a run: `SUM(llm_usage.cost_micro_usd WHERE claim_id AND agent =
   'math_solver')`.
 - **Mandate daily rate.** Attempts count against the funding mandate's day
   room like any allocation (`allocation-service.ts:376-382` skips an
@@ -1254,8 +1293,8 @@ select.
   calls (`src/llm/budget-tracker.ts:83-93`) and is per process. The steward
   drain's consecutive-failure breaker (`steward-pipeline.ts:69`) is copied.
 - **Kill switches.** `SOLVER_ENABLED` (the worker exits its loop when
-  false); a `platform_flags` row `solver_paused` polled by the `beforeTurn`
-  hook so an operator halts mid-run without a deploy; `POST
+  false); a row `solver_paused` in a new `platform_flags` table, polled by the
+  `beforeTurn` hook so an operator halts mid-run without a deploy; `POST
   /admin/attempts/:id/cancel` (service key) setting `proof_attempts.status
   = 'cancelling'`, also polled per turn. A halted attempt completes its
   action with the metered amount, keeps its notebook and transcript, and
@@ -1306,9 +1345,8 @@ for a result.
 
 ### 7.6 The Steward on `attempt_completed`
 
-The worker enqueues the Steward with trigger `attempt_completed` and a short
-context (attempt id, outcome, one line), because contexts coalesce and
-truncate (`src/services/queue-service.ts:261-270`). The Steward fetches the
+The worker invokes the Steward directly with trigger `attempt_completed`
+(section 6.4) and a short context (attempt id, outcome, one line). The Steward fetches the
 rest with `get_proof_attempt {attempt_id, include_transcript_tail?: n}`: the
 report, the notebook sections, the `lean_checks` rows, and the formalization,
 never the raw transcript by default.
@@ -1325,10 +1363,14 @@ sound rather than vacuous; (4) record an argument (`add_argument`,
 (typically `verified` for a faithful compiled proof, `contradicted` for a
 faithful compiled disproof), `log_stewardship_decision`, and
 `notify_dependent_stewards`; (5) if a bounty is bound to the formalization,
-call `mark_problem_solved_by_platform {formalization_id, attempt_id,
-lean_check_id}`, a mechanical tool that moves the bounty to
-`resolved_internally` (section 8.1). The Steward never calls it for a
-partial result.
+the worker has already moved it to `house_result_pending` (section 8.1); the
+Steward either calls `mark_problem_solved_by_platform {formalization_id,
+attempt_id, lean_check_id}`, a mechanical tool that moves the bounty to
+`resolved_internally` and publishes the report, or, on finding a statement
+defect, retires the statement, which sends the bounty to `rebinding`. The
+Steward never calls the tool for a partial result, and a
+`house_result_pending` bounty older than seven days without a decision is
+surfaced on the operator page.
 
 For Lean-checked outcomes the kernel is the verifier and the Steward judges
 fidelity; no second agent is needed. Outcomes the kernel cannot check (a
@@ -1372,8 +1414,11 @@ after the first ten attempts.
 page shows the date, the variant, the metered cost, and the outcome; the
 attempt report (approaches tried, the obstruction, what would help) and the
 notebook are published as CC0 material on the attempt's page
-(`/claims/:id/attempts/:attempt_id`) before any bounty opens on the
-statement. This is the honest form of "what has been tried," it removes the
+(`/claims/:id/attempts/:attempt_id`) once the Steward has acted on
+`attempt_completed`, and before any bounty opens on the statement. An
+attempt that produced an accepted check on a bounty-bearing statement
+publishes nothing, not even its outcome, until the Steward's decision, so a
+house proof cannot be copied into a prize claim in the gap. This is the honest form of "what has been tried," it removes the
 information asymmetry between the platform and outside claimants, and the
 prize rules require it. The transcript is retained but not published by
 default; it is available to auditors and to the Arbitrator on request.
@@ -1391,12 +1436,12 @@ the provider-neutral contract every other agent depends on
 | `providers/types.ts` (`CompleteRequest`) | Add `effort?: "low" \| "medium" \| "high" \| "xhigh" \| "max"`. This is also the hook the strong Steward variant can use later. |
 | `providers/types.ts` | Add `LongRunRequest extends ToolCompleteRequest` with `effort`, `taskBudgetTokens?`, `compaction?`, `fallbacks: "none" \| "server"`, `betas?`. |
 | `providers/types.ts` (`ToolCompletionResult`) | Add `servedModel`, `fallbackRan`, `usage.cacheReadTokens`, `usage.cacheCreationTokens`, `compacted`. |
-| `providers/types.ts` (`ProviderAdapter`) | Optional `completeWithToolsStreaming(req: LongRunRequest)`; only the Anthropic adapter implements it; `client.ts` fails with a capability message when absent, as server tools do today. |
+| `providers/types.ts` (`ProviderAdapter`) | Optional `completeWithToolsStreaming(req: LongRunRequest)`; only the Anthropic adapter implements it; the other adapters reject the request with a capability message, as they reject server tools today (`src/llm/providers/openai.ts:16`). |
 | `providers/anthropic.ts:38-55` | Add `getLongRunClient()` memoizing a second client with `timeout` from `LLM_LONG_RUN_TIMEOUT_MS` (3,600,000) and `maxRetries` 2. The 180-second default with four retries would abort and re-issue a fifteen-minute turn up to five times, each billable server-side; this may already be re-issuing long Steward turns and should be measured before the solver lands. |
 | `providers/anthropic.ts:113-126` | Add `createMessageStreaming` using the beta streaming call and `finalMessage()`, assembling betas from the request (task budgets, compaction, context management, and the server-side fallback beta only when `fallbacks === "server"`). |
 | `providers/anthropic.ts` (`complete`, `completeWithTools`, `completeStructured`) | Spread `output_config.effort` into each request. |
 | `providers/anthropic.ts:80-100` and the message path | Widen `system` to blocks; add a moving `cache_control` breakpoint on the last user message so a 100-turn loop pays cache-read rates for history rather than the full input price every turn. This is the single largest cost lever and precedes any multi-hour run. |
-| `providers/anthropic.ts:141-155` | Return cache tokens; keep pricing on `response.model` (the served model). |
+| `providers/types.ts:25-28` (`TokenUsage`) | Add `cacheReadTokens` and `cacheCreationTokens`; the Anthropic adapter already normalizes them (`anthropic.ts:141-148`) and keeps pricing on `response.model`, the served model. |
 | `client.ts` | `longRunToolLoop` with per-turn hooks (`beforeTurn`, `afterTurn`, `reminder`), streaming, `max_tokens` up to 128,000 (streaming is required at that size), `pause_turn` and `refusal` handling, append-only history, `max_tokens` non-terminal with one continuation turn, and stops on `end_turn`, the final tool, a hook stop, the iteration cap, or the wall cap. Update the header comment from five functions to six. |
 | `models.ts` | `modelSupportsLongRun(id)` true for the strong-tier families, so a deployment pointing `SOLVER_MODEL` elsewhere fails early. |
 | `pricing.ts:43` | The cache-read entry of section 6.3. |
@@ -1421,7 +1466,10 @@ runner's other lanes. Per tick: `checkSolverBudget()`,
 current formalization and prior notebooks, `largestActionFunder`,
 `runWithUsageContext({userId, jobId, claimId})`,
 `withCostMeter(runMathSolver(...))`, `completeAction(action.id,
-billedMicroUsd)`, then `enqueueSteward({trigger: "attempt_completed"})`. Each
+billedMicroUsd)`, then the direct Steward invocation on `attempt_completed`
+under the same job (section 6.4). An attempt whose worker died is found by
+the reopen sweep (section 7.2) and marked `orphaned`; its spend to that
+point is already on the meter. Each
 turn updates `proof_attempts.heartbeat_at` and `actions.updated_at`. On a
 transient error before any spend, `releaseAction`; after spend,
 `completeAction` with the metered amount and a `failed` or `budget` status,
@@ -1506,8 +1554,9 @@ not.
 and management chat, one implementation in `executeManagementTool`).
 Mechanical bounds: the claim must carry a `published` formalization whose
 review period has ended and which the solver has attempted without settling
-(section 10.4); cash is bounded per pass and per day as fractions of the fund
-(`BOUNTY_POOL_FRACTION_PER_PASS` 0.1, per day 0.25) and per claim by
+(section 10.4); cash is bounded by the fund's `available` balance, per pass and per day as
+fractions of the fund (`BOUNTY_POOL_FRACTION_PER_PASS` 0.1, per day 0.25),
+and per claim by
 `MAX_BOUNTY_PER_CLAIM_USD` ($5,000 in v1, raised only by configuration after
 counsel's items); at most one live bounty per claim.
 
@@ -1522,14 +1571,29 @@ on the two-pass alone. The reason is that a public reward offer is a
 unilateral contract binding until revoked with equal publicity (section
 9.1), and the review pass reads the open web in the same context as the tool
 (`mandate-review.ts:404-416, 456-464` name injection as the reason for the
-money caps). Every opened bounty at or above `PRIZE_HUMAN_SIGNOFF_USD` also
-triggers an audit (`requestAudit({triggeredBy: "bounty_posted"})`) whose
-finding, if adverse, withdraws it before any claim can be filed against it.
+money caps). This is not the human bottleneck §19 forbids: the work
+(assessments, formalizations, attempts) proceeds without anyone's
+signature; only an offer that binds the company to pay waits, and amendment
+F.1 says so. Every opened bounty at or above `PRIZE_HUMAN_SIGNOFF_USD` also
+triggers an audit (`requestAudit`, whose `triggeredBy` union gains
+`bounty_posted`, `prize_acceptance`, and `prize_check_error`, with the
+required `auditType` and `context` supplied) whose finding, if adverse,
+withdraws it before any claim can be filed against it.
 
 **Lifecycle.** `requested` → `confirm_pending` → `open` → `claim_pending` (a
-prize claim is past the checker) → `paid` | `resolved_internally` |
-`expired` | `withdrawn`, plus `rebinding` (section 8.5). Withdrawal is
-prospective only, with 30 days' notice on the claim page and the prize
+prize claim is past the checker; the gate closes to new filings) → `paid` |
+`resolved_unpaid` | `open` again (the claim was rejected and no other claim
+filed before the verdict passed). From `open` a bounty can also go to
+`house_result_pending` (the solver produced an accepted check; the worker
+sets it in the same transaction that closes the attempt, and the gate
+refuses claims filed after the attempt's `finished_at`) → `resolved_internally`
+| `open` | `rebinding`; to `expired`; to `withdrawn`; or to `rebinding`
+(section 8.5). `expires_at` and `withdraw_effective_at` are suspended while
+any prize claim on the bounty is non-terminal, so a live claim never loses
+its reservation. Any transition of the bound statement out of `published`
+(a canonical-form change, an upheld formalization challenge, a merge or a
+split) moves an `open` bounty to `rebinding` in the same transaction.
+Withdrawal is prospective only, with 30 days' notice on the claim page and the prize
 listing; submissions received before the effective time are judged under the
 prior terms. Expiry (`expires_at`, default 365 days, renewable by the
 Grantmaker) releases the reservation. A house solve (section 7.6) moves the
@@ -1542,7 +1606,10 @@ fund-level product is the right shape.
 **Priority.** If a human prize claim and a platform attempt land at the same
 time, a claim filed before the attempt completed is judged first and, if
 accepted, wins; a platform result never blocks a pending human claim filed
-earlier.
+earlier. A claim filed after the attempt's `finished_at` is refused at the
+gate, and a submission whose source hash matches an attempt-mode
+`lean_checks` row is rejected at stage `check` as a copy of the platform's
+own work.
 
 ```sql
 CREATE TABLE prize_pools (
@@ -1554,20 +1621,20 @@ CREATE TABLE prize_pool_entries (          -- balance = SUM(amount_micro_usd)
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   pool_id uuid NOT NULL REFERENCES prize_pools(id),
   amount_micro_usd bigint NOT NULL,
-  reason text NOT NULL,                    -- platform_deposit | sponsorship | bounty_post | bounty_release | owl_election_retained | payout | withholding_remitted | defect_award | admin_adjust
+  reason text NOT NULL,                    -- platform_deposit | sponsorship | payout | owl_election | withholding_remitted | defect_award | review_award | admin_adjust
   bounty_id uuid, prize_claim_id uuid, bank_reference text, stripe_event_id text,
   idempotency_key text UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE bounties (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
-  formalization_id uuid NOT NULL REFERENCES claim_formalizations(id),
+  claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
+  formalization_id uuid NOT NULL REFERENCES claim_formalizations(id) ON DELETE RESTRICT,
   pool_id uuid NOT NULL REFERENCES prize_pools(id),
   condition_type text NOT NULL DEFAULT 'lean_statement',   -- reserved: steward_judgment | external_resolution
   resolution text NOT NULL DEFAULT 'either',               -- proof | disproof | either
   amount_micro_usd bigint NOT NULL CHECK (amount_micro_usd > 0),
-  status text NOT NULL DEFAULT 'requested',                 -- requested | confirm_pending | open | claim_pending | rebinding | paid | resolved_internally | expired | withdrawn
+  status text NOT NULL DEFAULT 'requested',                 -- requested | confirm_pending | open | claim_pending | house_result_pending | rebinding | paid | resolved_internally | resolved_unpaid | expired | withdrawn
   rules_version text NOT NULL,
   posted_by_grant_id uuid REFERENCES grants(id), rationale text NOT NULL,
   requested_at timestamptz NOT NULL DEFAULT now(), opened_at timestamptz, expires_at timestamptz,
@@ -1576,12 +1643,22 @@ CREATE TABLE bounties (
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX uq_bounty_live_per_claim ON bounties (claim_id)
-  WHERE status IN ('requested','confirm_pending','open','claim_pending','rebinding');
+  WHERE status IN ('requested','confirm_pending','open','claim_pending','house_result_pending','rebinding');
 ```
 
-A `bounty_post` entry debits the fund when the bounty opens and a
-`bounty_release` credits it back on expiry, withdrawal, or a house solve, so
-the fund's spendable balance never promises the same dollar twice.
+Three numbers, and only the first is stored. `balance` is the sum of the
+entries. `reserved` is derived: the sum of `amount_micro_usd` over live
+bounties (`open`, `claim_pending`, `house_result_pending`, `rebinding`).
+`available` is `balance` minus `reserved`, and a bounty opens only when
+`available` covers it. Nothing is posted when a bounty opens or closes. The
+only debits are `payout` (cash sent), `owl_election` (owls granted, at the
+cash amount, so the fund's balance is what remains to be offered and the
+dollars back the owl liability like every owl outstanding),
+`withholding_remitted`, `defect_award`, and `review_award`; each consumes
+the bounty's reservation where one exists, and a defect award reduces the
+rebound bounty by its amount unless the Grantmaker tops it up under the
+ordinary caps. A dollar is promised once, in `reserved`, and spent once, in
+an entry.
 
 ### 8.2 The condition, and what is not built
 
@@ -1634,7 +1711,7 @@ graph:
 > mechanically against the pinned Lean and Mathlib versions, then reviewed
 > by the claim's steward for whether the statement proved is the statement
 > posted. An accepted submission is announced here and becomes payable after
-> a public challenge window of 14 days. Entry is free; purchasing owls
+> a public challenge window of 30 days. Entry is free; purchasing owls
 > confers no advantage. The first complete submission that passes, by time
 > of receipt, is the one paid; later independent proofs are credited on this
 > page. Prizes are taxable income; the winner may take cash, or owls at one
@@ -1644,7 +1721,8 @@ Below the button: the state sentence (a submission is being checked; a
 submission passed the checker and awaits review; accepted on DATE and
 payable after DATE unless a challenge succeeds; settled by a checked proof
 submitted by NAME on DATE, prize of $X paid; closed without a payout when
-Minerval's own solver produced a checked proof; the formal statement was
+Minerval's own solver produced a checked proof; closed without a payout
+because no eligible claimant earned it; the formal statement was
 revised after this prize was posted and the prize is held until the revised
 statement is confirmed), the submissions list (credit name, date, direction,
 state, link to the record, rejected and superseded ones included), the
@@ -1701,11 +1779,14 @@ A prize claim is an ordinary contribution of a new type, `claim_prize`, so it
 inherits the identity gate, the review pipeline, the public contribution
 record, appeals, arbitration, and audit without a parallel governance
 system; its money and verification state live on a linked `prize_claims` row
-(one per contribution, `contribution_id NOT NULL UNIQUE`). The type joins
-`contributionTypeEnum` (`src/schemas/common.ts:83-91`) for filters and
-display but is created only by its own route, because it carries files and a
-different gate; `POST /contributions` and the MCP tool refuse it with a
-pointer.
+(one per contribution, `contribution_id NOT NULL UNIQUE`). The type is not added to
+`contributionTypeEnum` (`src/schemas/common.ts:83-91`), which
+`POST /contributions` validates against; it joins a new
+`prizeContributionTypeEnum` folded into `anyContributionTypeEnum` the way
+the intake types are (`common.ts:93-106`), so filters and display know it
+and only its own route creates it, because it carries files and a
+different gate. No existing switch keys on contribution type except the
+intake branches, so nothing else changes.
 
 **The form** (`web/components/claim/PrizeClaimForm.tsx` at
 `/claims/:id/prize/claim`, one component for every domain; the bounty's
@@ -1737,10 +1818,13 @@ sanitized; the Lean file must be valid UTF-8 with no NUL bytes; zips are
 inspected and nested archives refused; nothing is executed or parsed except
 the Lean file inside the checker's sandbox; downloads are served with
 `Content-Disposition: attachment`, `nosniff`, and a sandboxing CSP.
-Attachment bodies are `restricted` at submission and become `public` when
-the checker records a verdict, so a failed attempt's reasons become the next
-claimant's information without exposing an unchecked proof to copying. The
-written account is public at once, like any contribution.
+Attachment bodies are `restricted` at submission. The checker's gate
+summary is public at the verdict, in plain words, so the next claimant
+learns what failed without seeing the source. A Lean source becomes
+`public` when the Steward accepts the claim, because the challenge window
+needs it; a rejected source, at any stage, stays restricted until the
+bounty closes, so a near-miss cannot be patched by a second account and
+refiled. The written account is public at once, like any contribution.
 
 **Transport.** Multipart end to end (`@fastify/multipart` registered on the
 prize route only; a `FormData`-forwarding BFF route in `web/app/api/`; an
@@ -1750,17 +1834,25 @@ independently of the BFF.
 **The route gate** (`POST /claims/:claim_id/prize-claims`, free of any owl
 charge; `requireAgenticQuota` is not applied, and `gateContributor`'s
 `must_pay` refusal stays as it is): the claim is active; a bounty is `open`
-or `claim_pending` (`409 NO_OPEN_BOUNTY`); the body's `formalization_id` is
+(`409 NO_OPEN_BOUNTY`; `claim_pending` and `house_result_pending` close the
+gate, and a filing after a completed attempt's `finished_at` is refused with
+the same code); the body's `formalization_id` is
 the current published one (`409 STATEMENT_NOT_CURRENT`); the claimant is not
-the platform account and is at least probationary (`403 INELIGIBLE`); no
+the platform account, is not flagged `prize_ineligible` (mandate funders and
+program contractors, set by the operator), and is at least probationary
+(`403 INELIGIBLE`); no
 live claim by this claimant on this statement version (`409
 DUPLICATE_LIVE_CLAIM`); cooldown and rate limits (`429
 PRIZE_CLAIM_RATE_LIMITED`); attachment policy and the static Lean policy of
 section 5.5 (`422 INVALID_SUBMISSION` naming the first violation, a text scan
 that turns away most spam before anything runs); declarations and rules
 version (`422 DECLARATIONS_REQUIRED`). On success one transaction inserts
-the contribution (`review_status = 'pending'`), the attachments, and the
-prize claim (`status = 'submitted'`), and enqueues the check.
+the contribution with `review_status = 'checking'`, a status the review
+pipeline and its recovery sweep ignore (both select `pending`,
+`src/workers/contribution-pipeline.ts:50-58`, `src/workers/recovery-sweep.ts:63-73`,
+so a `pending` insert would put an unchecked proof in front of the
+Reviewer), the attachments, the prize claim (`status = 'queued'`), and a
+`prize_review` action row funded from the bounty's reserve (section 8.6).
 `contributions.submitted_at` is the priority timestamp.
 
 **No deposit.** Several states are reported not to allow consideration in a
@@ -1771,7 +1863,8 @@ platform-wide and one per day for accounts under 50 reputation or under 24
 hours old (the sandbox rule at `src/services/reputation-service.ts:881-906`,
 moved from process memory to a query so it holds across the API's tasks); a
 cooldown after a failed check on the same statement of 24 hours doubling to
-a cap of seven days; the static policy; a global checker concurrency cap and
+a cap of seven days, waived for one resubmission by the same account within
+72 hours so a near-miss can be fixed by its author; the static policy; a global checker concurrency cap and
 a per-day check budget; and the existing bad-faith flag, whose `must_pay`
 consequence blocks further prize claims until an appeal succeeds.
 
@@ -1782,23 +1875,39 @@ pipeline's crash-reclaim window (`src/workers/contribution-pipeline.ts:43`;
 the check would be lost with the process. Running the kernel before the
 Reviewer means a proof that fails costs no judgment at all, and the Reviewer
 and the Steward only ever see submissions that passed. A new worker,
-`src/workers/prize-check-pipeline.ts`, selects with `FOR UPDATE SKIP LOCKED`
-the oldest `queued` claim per statement version whose statement has no other
-claim in `checking`, `checked`, `in_review`, or `in_challenge_window` (strict
-per-statement serialization), under `PRIZE_CHECK_MAX_CONCURRENT` (2) and
+`src/workers/prize-check-pipeline.ts`, claims the `prize_review` action and
+selects with `FOR UPDATE SKIP LOCKED` the oldest `queued` claim per
+statement version whose statement has no other
+claim in `checking`, `check_error`, `checked`, `in_review`, or
+`in_challenge_window` (strict per-statement serialization), under `PRIZE_CHECK_MAX_CONCURRENT` (2) and
 `PRIZE_CHECKS_PER_DAY` (50); posts to `/v1/check` in `prize` mode; and polls
 `GET /v1/checks/:id`, with a recovery sweep for rows `checking` longer than
 `PRIZE_CHECK_RECLAIM_MINUTES` (30). Transitions: `accepted` → `checked`,
-attachments public, bounty `claim_pending`, Reviewer enqueued; `rejected` →
-`rejected` at stage `check`, a review row with `reviewed_by = 'lean_checker'`
-whose reasoning is the `checks` summary in plain words, attachments public,
-cooldown started, and no reputation event (a kernel result is a mechanism,
-not a judgment); `error` → `queued` again up to `PRIZE_CHECK_MAX_ATTEMPTS`
-(3), then `check_error` and an audit request. The alternative order,
+bounty `claim_pending`, `review_status = 'pending'`, Reviewer run;
+`rejected` → `rejected` at stage `check`: the gate result is recorded on
+the prize claim, not as a `contribution_reviews` row (the checker is an
+instrument and writes no review), the contribution shows the `checks`
+summary in plain words, the cooldown starts, and there is no reputation
+event (a kernel result is a mechanism, not a judgment); a `check`
+rejection is appealable on the ordinary route, where the Reviewer engages
+with the claimant's dispute of the gate and may re-run the check with
+`force`; a source whose hash
+matches an attempt-mode check is rejected as a copy of the platform's own
+work; `error` → `queued` again up to `PRIZE_CHECK_MAX_ATTEMPTS` (3), then
+`check_error`, which holds the statement's queue (no later claim is checked)
+until an operator resolves it from the operator page, so an infrastructure
+failure never costs a claimant their priority. The alternative order,
 Reviewer before checker, screens identity and good faith before any compute
 is spent on a submission; it was not chosen because a cold-lane check costs
 cents, the route gate already turns away spam, and a Reviewer run costs more
 than a check.
+
+**Proofs that arrive by another door.** A contribution of any other type
+(an `argument`, a `support`) carrying a proof of a statement with a live
+bounty is not checked by the Steward and changes no status; the Reviewer
+redirects it to the prize route, and a prize claim filed within 72 hours of
+the redirect keeps the contribution's `submitted_at` as its priority
+timestamp. The skill says the same to both agents (Appendix A).
 
 **The Contribution Reviewer** then runs on the standard tier, judging form,
 good faith, identity, and duplicates, never the proof, with the verdict in
@@ -1806,12 +1915,18 @@ hand. `get_contribution_details` gains a `prize_claim` block (bounty,
 statement version and pretty type, direction, disclosure, declarations,
 attachments with sizes and hashes, the checker record, a bounded
 4,000-character excerpt of the Lean source, and `duplicate_of` references
-when the same sha256 was submitted before by another account). Its accept
-calls `prizeClaimService.admit`, which sets `in_review`, writes the review
-row, applies no reputation credit yet, and enqueues the Steward with trigger
-`prize_claim`; its reject is the ordinary path (`rejected`, stage `review`,
-the ordinary reputation consequence, appealable); its escalate goes to the
-Arbitrator, whose overturn calls `admit`. The Reviewer never calls
+when the same sha256 was submitted before by another account). The prize-check worker runs the
+Reviewer itself, inside a usage context whose job is the bounty's reserve
+(the ordinary pipeline attributes a review to the contributor,
+`contribution-pipeline.ts:65-68`, which a prize review must not do).
+`submit_review_decision` branches before `applyReviewOutcome`
+(`src/llm/tools/reviewer-tools.ts:229-247`) for `claim_prize`: accept calls
+`prizeClaimService.admit`, which sets `in_review`, writes the review row,
+applies no credit, and invokes the Steward directly on `prize_claim`
+(section 6.4); the accepted-contribution award is applied later by
+`decide_prize_claim accept`. Reject is the ordinary path (`rejected`, stage
+`review`, the ordinary reputation consequence, appealable); escalate goes
+to the Arbitrator, whose overturn calls `admit`. The Reviewer never calls
 `notify_claim_steward` for a prize claim. The policy paragraph is in the
 skill's Reviewer section (Appendix A).
 
@@ -1830,9 +1945,14 @@ decision, reason, result_category?: "new_result" |
 "formalization_of_known_proof" | "reference_to_prior_work" |
 "statement_defect", statement_defect?}`. Accept opens the challenge window;
 reject states the defect and, for `statement_defect`, retires the statement,
-republishes a corrected one, and records a defect award
+drafts a corrected one, and records a defect award
 (`PRIZE_DEFECT_AWARD_FRACTION` 0.10 of the bounty, capped at
-`PRIZE_DEFECT_AWARD_CAP_USD` $500), which follows the normal payout path. A
+`PRIZE_DEFECT_AWARD_CAP_USD` $500) on the claim, which moves to
+`defect_award_pending`, is audited like an acceptance, skips the window, and
+then follows the election and payout steps, drawn from the bounty's
+reservation. The corrected statement follows the full publication path
+(draft, the fresh-context second pass, the review period), never a
+republication inside the same run. A
 `formalization_of_known_proof` outcome is judged by the rules in force (the
 sketch in Appendix D pays it, because a checked formalization of a proof the
 discourse accepts is exactly what the bounty asked for); a
@@ -1841,20 +1961,25 @@ the page. The Steward records a fresh assessment weighing the checked proof
 as evidence of the highest grade, provisional until the window closes, and
 says so in the reasoning trace.
 
-**States of `prize_claims.status`**: `submitted`, `queued`, `checking`,
+**States of `prize_claims.status`**: `queued`, `checking`,
 `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`,
-`payout_pending`, `paid`, `rejected` (with `rejected_stage` in `check |
-review | steward`), `voided`, `withdrawn`, `superseded`, `forfeited`.
+`defect_award_pending`, `payout_pending`, `paid`, `rejected` (with
+`rejected_stage` in `check | review | steward`), `voided`, `withdrawn`,
+`superseded`, `forfeited`.
 `contributions.review_status` is the projection the existing pipeline
-understands (`pending` until the Reviewer, then `accepted`, `rejected`,
-`escalated`, or `human_review`); the prize outcome is the prize claim's own.
+understands (`checking` until the verdict, `pending` until the Reviewer,
+then `accepted`, `rejected`, `escalated`, or `human_review`); the prize
+outcome is the prize claim's own, and `window_ends_at` on the prize claim
+is set at acceptance.
 Every transition writes an `audit_log` row and a `prize_claim` event in the
 claim's history.
 
 **Priority and ties.** First valid by `(submitted_at, id)` among claims on
 one statement version; the queue never checks a later claim while an earlier
 one is live; when a claim reaches `paid`, later non-terminal claims on that
-version become `superseded` in the same transaction with the record line "an
+version outside its tie group become `superseded` in the same transaction,
+and the bounty becomes `paid` only when every member of the tie group is
+terminal, with the record line "an
 earlier submission was accepted and paid; this submission is credited on the
 claim page and no prize is owed." Two claims with equal `submitted_at` to
 the microsecond form a tie group, both are checked in id order, and if both
@@ -1863,12 +1988,14 @@ anywhere (section 9.1). Identical source from two accounts: the earlier keeps
 priority and the later is surfaced to the Reviewer as `duplicate_of`.
 
 **Human review has an exit.** `flag_for_human_review` sets `review_status =
-'human_review'` (`src/llm/tools/arbitrator-tools.ts:458-472`) and nothing in
-`src/` moves a contribution out of it. Prize claims need an operator path
+'human_review'` (`src/llm/tools/arbitrator-tools.ts:458-472`), and the only
+exit today is the Audit agent's `recommend_re_review`
+(`src/llm/tools/audit-tools.ts:414-420`); no operator path exists. Prize claims need an operator path
 from day one: `POST /prize-claims/:id/sign-off {note}` and `POST
-/prize-claims/:id/void {ground, note}` (service key), and an operator page
-on the account dashboard for the founder listing claims awaiting sign-off
-with the full record. Two service routes without a page are not enough once
+/prize-claims/:id/void {ground, note}` (operator key, section 8.11), and an
+operator page on the account dashboard for the founder listing claims
+awaiting sign-off with the full record. A void is appealable on the
+ordinary route like any rejection, and its note is public. Two service routes without a page are not enough once
 money waits on them.
 
 ### 8.5 The challenge window, audit, and sign-off
@@ -1884,9 +2011,10 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
 
 - **Length.** `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL` 14 below
   `PRIZE_WINDOW_TIER_USD` $1,000; `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE` 30 at
-  or above; never below 14. The window pauses while a challenge is open, so
-  a challenge filed on the last day extends it by however long the decision
-  takes.
+  or above; never below 14. The window pauses only while a challenge the Reviewer has admitted is
+  open; a challenge on a ground already decided is answered by reference
+  without a pause; and the total pause is capped at twice the window, beyond
+  which only a human sign-off may hold payment.
 - **Challenges.** `POST /prize-claims/:id/challenge {ground, content,
   evidence_urls}` creates an ordinary `challenge` contribution on the claim
   with `challenged_prize_claim_id` set, through `gateContributor`. The
@@ -1897,9 +2025,18 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   Reviewer accepts is escalated to the Arbitrator mechanically (accepting
   the case is not upholding it); `overturn` voids the prize claim with the
   ground, `uphold_original` closes the challenge and the window continues.
+  When the upheld ground is the claimant rather than the statement
+  (ineligibility, sanctions, theft), the bounty considers only claims filed
+  before the verdict, in order, and if none passes it closes as
+  `resolved_unpaid` with the proof public; where the upheld challenge
+  identified the true author, the Arbitrator's finding admits that person's
+  prize claim with the challenge's filing time.
 - **Audit.** `decide_prize_claim accept` calls `requestAudit({auditType:
   "decision_audit", triggeredBy: "prize_acceptance", dedupeKey:
-  prize_claim_id})` (`src/services/queue-service.ts:369`); the Audit agent
+  "prize_claim:<id>:<decision_id>"})` (`src/services/queue-service.ts:369`);
+  the key carries the decision id because `requestAudit` drops a duplicate
+  key silently, and a re-acceptance after a send-back must be audited
+  again or the claim could never become payable; the Audit agent
   has `get_prize_claim` and `get_proof_attempt` and a send-back tool;
   `promotePayable` requires an audit outcome without a send-back. Every
   acceptance is reviewed fully, not sampled, against the checklist in the
@@ -1919,26 +2056,39 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   statement defect succeeds, the prize claim is `voided`, the statement is
   retired and republished, the defect award applies to whichever claim
   exposed the defect, and the bounty enters `rebinding`: it re-binds to the
-  corrected statement mechanically after a 14-day notice period, during
-  which the founder may withdraw it on the ordinary terms. Funders confirm
-  nothing.
-- **Status during the window.** The claim's assessment stands as the
-  Steward recorded it, marked provisional in its own text; the page says
-  "accepted; prize payable after DATE unless a challenge succeeds." A
-  prediction market that resolves on a Minerval status is one more reason
-  the status change waits.
+  corrected statement mechanically at the later of a 14-day notice and the
+  corrected statement's own review period end, at the amount less any
+  defect award; the Grantmaker decides whether a fresh solver attempt runs
+  first, the default when the correction changes the mathematical content;
+  the founder may instead give the ordinary 30 days' withdrawal notice,
+  in which case the bounty does not rebind. Funders confirm nothing.
+- **Status during the window.** The Steward records the assessment at
+  acceptance, `verified` or `contradicted` as the proof warrants, marked
+  provisional in its own reasoning, which is the provisional update §16
+  allows; the page says "accepted; prize payable after DATE unless a
+  challenge succeeds." A successful challenge on the statement retires it
+  and the Steward reassesses; a prediction market that resolves on a
+  Minerval status should read the provisional marker, which the API
+  exposes.
 
 ### 8.6 Who pays for the review
 
-A self-funded action kind `prize_review` on the Mathematics mandate, funded
-like `mandate_review` in `fundGrantSelfActions`
-(`src/services/allocation-service.ts:434`), covers the cold-lane check, the
+A self-funded action kind `prize_review` covers the cold-lane check, the
 Reviewer run, the Steward's `prize_claim` run, the audit, and any `fresh`
-replay, so the cost is metered, attributed, and visible on the mandate page
-and never touches the claimant. A configurable reserve fraction of each
-posted bounty (`PRIZE_REVIEW_RESERVE_FRACTION` 0.10) is minted into the
-mandate's escrow at cost when the bounty opens, so a $1,000 prize cannot
-leave the mandate unable to fund the review that makes it payable. The
+replay, so the cost is metered, attributed, and visible and never touches
+the claimant. It is funded not from the mandate's escrow, which can be
+paused, exhausted, or closed while a claim waits, but from a platform-owned
+prize-review budget job, funded the way `fundGrantSelfActions` funds
+`mandate_review` (`src/services/allocation-service.ts:434`) but outside any
+mandate's day room: when a bounty opens, owls worth `PRIZE_REVIEW_RESERVE_FRACTION`
+(0.10) of its amount are minted by the platform at cost into that job (an
+`admin_adjust` mint like the seed's, never a draw on the prize fund, which
+the ledger cannot see) as a hold releasable only to `prize_review` actions
+on that bounty's claims, and the unspent remainder returns when the bounty
+closes. The prize-check worker is the executor of `prize_review`: it claims
+the row, runs the check, the Reviewer, and the Steward under the job, and
+completes the action with the metered amount. The mandate page shows the
+reserve and its spend beside the bounty. The
 `prize_claim` trigger gets a `queue_priority` boost at enqueue so a review on
 a 0.3-importance problem does not wait days behind higher-importance work
 inside a window measured in days; target: the Steward's run starts within 24
@@ -1953,26 +2103,37 @@ The screen asks "How do you want to be rewarded?" and shows: the cash option
 with the amount after any required withholding and the provider's steps
 (identity, tax form, screening); the owl option at one owl per dollar with
 the sentences that owls buy metered work on the graph (assessments, deeper
-passes, mandates the winner directs), that their sale price is four times
-the cash amount, that they are non-transferable, non-refundable, and never
-redeemable for cash, and that the taxable value may exceed the cash amount;
+passes, mandates the winner directs), that they are non-transferable,
+non-refundable, and never redeemable for cash, and that the prize is
+reported for tax at its cash amount whichever option is chosen;
 the irrevocability of the election; the tax notice; the 90-day election
 period (`PRIZE_ELECTION_DAYS`), after which the offer lapses and the
 bounty's draw returns to the fund (`forfeited`); and a link to the privacy
 policy's prizes section.
 
+**Both options run the same steps first.** Identity, residency, a tax form
+(W-9 or W-8BEN), the withholding computation, and sanctions screening happen
+before any `prize_award` or `prize_payouts` row is written, whichever option
+the winner chose; the owl path is not a way around them. In Phase 3, before
+a rail exists, the forms are uploaded as restricted attachments of kind
+`tax_form`, the operator records the screening result on the payout row from
+OFAC's search, and the sign-off checklist requires both.
+
 **Owls.** `payPrize` writes a `prize_payouts` row first, then one
 `owl_ledger` row with reason `prize_award` (the ledger says "award" because
-the legal posture depends on prize owls being promotional credit), positive,
-`claim_id` and `prize_claim_id` set, idempotency key
-`prize:<prize_claim_id>:owls`, and increments a new
+the legal posture depends on prize owls being promotional credit), positive and
+net of any required withholding, `claim_id` and `prize_claim_id` set,
+idempotency key `prize:<prize_claim_id>:owls`, and increments a new
 `contributors.owls_prized_micro_usd`, kept separate from
 `owls_earned_micro_usd` (`src/db/schema.ts:456`) so the leaderboard keeps
 its meaning; prize owls are excluded from the leaderboard sum. Prize owls
 never expire, and no ledger path ever converts them to cash, so
-`src/services/owl.ts:9` stays true. The pledged cash stays in the prize fund
-as `owl_election_retained` unless the founder prefers general funds (section
-15), and the fund's public page states the rule either way.
+`src/services/owl.ts:9` stays true. A grant above $2,000 is written in daily
+tranches of at most `PRIZE_OWL_TRANCHE_USD` ($2,000), so no single day loads
+more than the closed-loop threshold section 9.1 relies on. The fund posts an
+`owl_election` debit at the cash amount, so its balance is what remains to
+be offered; the dollars back the owl liability like every owl outstanding,
+and the fund's public page says so.
 
 The accounting truth, stated in `docs/allocation.md` when this ships: a
 prize of N dollars paid in owls mints N owls; when spent they cover about N
@@ -1984,9 +2145,12 @@ platform, an owl prize is never dearer than cash and cheaper by whatever
 fraction is never spent. Both readings are shown.
 
 **Cash** waits on the rail (section 8.8). `prize_claims` moves to
-`payout_pending` until the provider confirms, then `paid`. A claimant
-without a completed provider account may elect owls at any time; a cash
-election waits within the 90 days.
+`payout_pending` until the provider confirms, then `paid`. A claimant may
+elect owls without a provider account, after the steps above; a cash
+election waits within the 90 days. A cash election whose payout has
+`failed` three times, or has sat in `payout_pending` for 90 days, may be
+re-elected to owls by the claimant or converted by the operator with a
+note: the one exception to irrevocability, so money never waits on nobody.
 
 **Reversal.** A `reversed` payout (a provider reversal, or a post-payout
 voiding after fraud) is recorded on the payout row; for owls, a clawback is
@@ -2032,7 +2196,8 @@ Manager entry, never a widening of the Checkout key.
 
 ### 8.9 Tax and sanctions
 
-Prizes are ordinary income. U.S. winners provide a W-9 before payout;
+Prizes are ordinary income, and every step here applies to the owl election
+as much as to cash (section 8.7). U.S. winners provide a W-9 before payout;
 Minerval files 1099-MISC box 3 at the statutory threshold ($2,000 for
 payments made in 2026 and after, indexed thereafter) and applies 24 percent
 backup withholding without a valid TIN. Non-U.S. winners provide a W-8BEN;
@@ -2074,14 +2239,29 @@ names the founder and New York but no corporate name or address today
 
 The claim page publishes the winner's name or chosen pseudonym, the proof,
 and the checker record as a matter of record. Failed submissions are listed
-too (§14 makes every outcome part of the record, and a public failed
-attempt with the checker's reasons is what the next claimant needs), under
-the pseudonym the claimant chose. An erasure request against a public
+too, with the checker's gate summary, under the pseudonym the claimant
+chose (§14 makes every outcome part of the record); their sources become
+public when the bounty closes (section 8.4). An erasure request against a public
 submission is answered by pseudonymization (the credit name becomes "a
 contributor") and never by deleting the record, which the constitution makes
 permanent (§5); the privacy policy says so. Use of a winner's name or
 likeness in marketing needs separate written consent, never a condition of
 payment.
+
+### 8.11 Who can move money
+
+The service key (`MINERVAL_API_KEY`) is deployed to the web tier and acts
+for any user through the acting-user header, so it cannot be the credential
+that moves money. Four routes require an operator key
+(`MINERVAL_OPERATOR_KEY`), a credential held outside the web deployment and
+used only from the operator's own session: the fund deposit, the bounty
+confirmation, the prize-claim sign-off, and the void. Two routes act for a
+winner and require both the dashboard session and a one-time code sent to
+the account's verified email: the election and the withdrawal, so a leaked
+consumer key or service key alone can neither choose a payout nor abandon a
+winning claim. Every call to these six routes is written to `audit_log`
+with the credential kind and the acting person. The service key alone moves
+no money, which is what section 1.1's fourth property promises.
 
 ---
 
@@ -2101,8 +2281,9 @@ advice.
    keeps the program outside the chance-based registration and bonding
    regimes (New York, Florida, Rhode Island) and outside the states reported
    to forbid consideration in skill contests. The v1 per-claim cap of $5,000
-   keeps every state threshold irrelevant even if a regulator
-   recharacterized the program.
+   keeps single prizes small; the program's standing rests on the
+   skill-contest characterization and on counsel item 11, not on the cap,
+   since some registration regimes key on aggregate prize value.
 2. **The bounty is a unilateral contract.** A public reward offer binds
    until revoked with publicity equal to the offer (Restatement (Second) of
    Contracts §46; Shuey v. United States). Hence prospective withdrawal only,
@@ -2138,7 +2319,8 @@ advice.
    FinCEN's closed-loop prepaid-access exclusion is capped at $2,000 of value
    associated per day, and the largest pack today is $1,000,
    `src/config.ts:191`); a per-account daily purchase cap under $2,000 is a
-   cheap safeguard pending counsel.
+   cheap safeguard pending counsel, prize loads are tranched by day the
+   same way (section 8.7), and both are part of counsel item 8.
 5. **Tax reporting is mechanical for U.S. winners and unresolved for foreign
    winners** (section 8.9). Until counsel answers the source question, the
    default is 30 percent withholding on non-U.S. winners, with the owl
@@ -2153,7 +2335,7 @@ advice.
    results), collected from the winner only, after acceptance, under
    contract and legal-obligation bases; EU and UK winners need a transfer
    mechanism; the privacy policy (`web/app/privacy/page.tsx`) gains a prizes
-   section before Phase 4.
+   section before Phase 3, since the owl path collects the same data.
 8. **Intellectual property.** The claimant dedicates the submission to the
    public domain under CC0 1.0, consistent with the graph's license
    (`README.md`, "License"), with a fallback license and an originality
@@ -2218,24 +2400,25 @@ Before Phase 3 (prizes payable in owls):
 4. Whether an agent-posted offer needs any different treatment than a
    human-posted one, and whether the two-pass and confirmation mechanism is
    an adequate control.
+5. Privacy: the prizes section of the policy, a transfer mechanism for EU
+   and UK winners, retention periods, the erasure-request answer for public
+   submissions, and whether an EU representative is needed once EU winners
+   are more than occasional. Needed before Phase 3 because the owl election
+   collects identity and tax data too.
 
 Before Phase 4 (cash):
 
-5. Stripe's written confirmation (section 9.2), or the fallback provider's
+6. Stripe's written confirmation (section 9.2), or the fallback provider's
    terms and whether it screens recipients against OFAC.
-6. Foreign-winner source and withholding: a written opinion on Treas. Reg.
+7. Foreign-winner source and withholding: a written opinion on Treas. Reg.
    §1.863-1(d) and treaty "other income" articles for likely winner
    countries; and the treatment of an owl election by a nonresident alien
    (net of withholding, gross-up, or U.S. persons only).
-7. Money transmission and prepaid access: confirmation from New York
+8. Money transmission and prepaid access: confirmation from New York
    counsel that the fund-level sponsorship structure is outside Banking Law
-   §641 and the federal definition, and a review of purchased owls against
-   the closed-loop prepaid-access exclusion and state gift-card and escheat
-   rules.
-8. Privacy: the prizes section of the policy, a transfer mechanism for EU
-   and UK winners, retention periods, the erasure-request answer for public
-   submissions, and whether an EU representative is needed once EU winners
-   are more than occasional.
+   §641 and the federal definition, and a review of purchased owls and of
+   prize-granted owls loaded in tranches against the closed-loop
+   prepaid-access exclusion and state gift-card and escheat rules.
 
 Before third-party sponsorship or larger prizes:
 
@@ -2257,14 +2440,14 @@ Before third-party sponsorship or larger prizes:
 Everything above is a question about scale. The v1 program (free entry,
 owls-only payout, prizes at or below $5,000, tax forms collected before any
 payout, a named sponsor, a versioned rules page, a 14- to 30-day window,
-human sign-off at $1,000) can open on items 1 to 4; cash needs 5 to 8;
+human sign-off at $1,000) can open on items 1 to 5; cash needs 6 to 8;
 growth needs the rest.
 
 ---
 
 ## 10. The Mathematics mandate
 
-The seeded mandate today is four sentences of objective, a keyword scope
+The seeded mandate today is two sentences of objective, a keyword scope
 query, 100 owls of escrow, and 10 owls a day
 (`scripts/seed-platform-mandates.ts:68-90`), policy `cover`, so a judgment
 mandate valued by its Grantmaker rather than by the General formula. That is
@@ -2442,9 +2625,13 @@ mandate reaches a live deployment only through a new path. Add
 `--update-mandate <key>` to the seed: it updates `grants.mandate`
 (objective, strategy, prize policy, attempt policy, the disclosure
 paragraph), `grants.skills`, `grants.prize_pool_id`, and the allocation
-policy keys, and it never changes the budget, the escrow, or the daily rate,
-which change only through `set_daily_rate` in a review pass or a
-contribution. The update is recorded on the mandate's page as a note ("the
+policy keys. Two explicit flags change money, because the platform is the
+funder of its own mandates and no review pass can raise an escrow:
+`--daily-owls N` sets the rate, and `--top-up-owls N` mints and escrows
+more platform owls under a batch-keyed idempotency key, exactly as the seed
+does on creation. Before Phase 2 the operator runs it once with the
+environment's figures, so the live row reaches the 200 owls a day that
+section 10.7 requires; both flags are recorded on the mandate page. The update is recorded on the mandate's page as a note ("the
 mandate text was revised on DATE by the platform"), and the Grantmaker's
 next review pass reads the new text in its briefing. A management
 conversation with the mandate's Grantmaker is the other path and is the one
@@ -2481,19 +2668,20 @@ Bounties and prizes:
   paged, with the same read model; also as an Atom feed at `GET /prizes.atom`.
 - `GET /prizes/rules` and `GET /prizes/rules/:version` (public).
 - `GET /prize-pools/:domain` (public): balance and entries by reason.
-- `POST /prize-pools/:domain/deposit` (service key): `{amount_cents,
+- `POST /prize-pools/:domain/deposit` (operator key): `{amount_cents,
   bank_reference, batch_key}`.
-- `POST /bounties/:id/confirm` (service key): the human confirmation.
+- `POST /bounties/:id/confirm` (operator key): the human confirmation.
 - `POST /claims/:id/prize-claims` (multipart; `authenticate` +
   `gateContributor`; no agentic quota).
 - `GET /claims/:id/prize-claims` (public), `GET
   /claims/:id/prize-claims/eligibility` (`requireUser`), `GET
   /prize-claims/:id` (public projection; owner and service callers also see
   `election`, `payout_status`, restricted attachment links).
-- `POST /prize-claims/:id/withdraw` (owner), `POST /prize-claims/:id/elect`
-  (`requireSession`), `POST /prize-claims/:id/challenge` (`authenticate` +
-  `gateContributor`), `POST /prize-claims/:id/sign-off` and `POST
-  /prize-claims/:id/void` (service key).
+- `POST /prize-claims/:id/withdraw` and `POST /prize-claims/:id/elect`
+  (dashboard session plus emailed one-time code), `POST
+  /prize-claims/:id/challenge` (`authenticate` + `gateContributor`), `POST
+  /prize-claims/:id/sign-off` and `POST /prize-claims/:id/void` (operator
+  key). Section 8.11 explains the credentials.
 - `GET /attachments/:id` (public once `visibility = 'public'`; owner or
   service before).
 
@@ -2673,8 +2861,13 @@ groups, supersession on paid, the cooldown ladder); the route gate's every
 refusal code and the one-transaction insert; the Reviewer's `claim_prize`
 branch admitting without credit; the checker worker's per-statement
 serialization, concurrency cap, poll transitions, retries, and reclaim;
-`post_bounty`'s two-pass, fraction caps, review-period and attempt
-preconditions, and human confirmation; bounties never entering
+`post_bounty`'s two-pass, fraction caps, `available` bound, review-period
+and attempt preconditions, and human confirmation; the gate closed at
+`claim_pending` and after an attempt's `finished_at`; a submission matching
+an attempt-mode check rejected; `check_error` holding the queue; the tie
+group surviving supersession; the owl election refused before identity,
+tax form, and screening are recorded; the audit dedupe key changing per
+decision; bounties never entering
 `mandate_valuations`; the prize write path never touching
 `claims.importance` or `contestation`; the frontend drift test; the claim
 page showing the prize section only while a bounty is open and the badge
@@ -2683,8 +2876,9 @@ only with a qualifying check.
 Database (real Postgres from migration zero, `tests/db/`): the new tables
 and CHECK constraints; the partial unique indexes (one published statement
 per claim, one live bounty per claim, one live prize claim per claimant per
-statement); prize-fund balance invariants (a `bounty_post` never exceeds
-the balance, a `bounty_release` never exceeds the post); payout idempotency
+statement); prize-fund invariants (a bounty never opens beyond `available`; the
+sum of debits against a bounty never exceeds its amount; `reserved` returns
+to zero when every bounty is terminal); payout idempotency
 (the same key twice yields one `owl_ledger` row or one payout row); prize
 owls excluded from the leaderboard sum; escrow headroom with `prize_review`
 reserves; two racing acceptances producing one accepted claim and two
@@ -2719,12 +2913,13 @@ job.
   worker:solver` with `desiredCount` 1, its own task definition (more memory
   than the API's 1 GiB, `infra/lib/api-stack.ts:40-43`), the same secrets,
   and `SOLVER_ENABLED` as an environment variable so the founder can stop
-  it with one deploy or the `platform_flags` row without one.
+  it with one deploy or the `platform_flags` row (a new table) without one.
 - **Attachments** in Postgres for v1; the S3 migration path (a bucket, a
   gateway endpoint, presigned PUT and GET) is documented in
   `docs/infrastructure.md` with its triggers (files over 10 MiB, attachment
   storage past about 5 GB, a second region).
-- **Secrets**: the checker token, a second Stripe key for payouts if Stripe
+- **Secrets**: the checker token, the operator key (never deployed to the
+  web tier), a second Stripe key for payouts if Stripe
   approves (never a widening of the Checkout key), the payout provider's
   key, and no secret of any kind in the checker image or environment.
 - **Queues**: prize checks and attempts are DB-backed jobs, never SQS
@@ -2747,11 +2942,10 @@ job.
 - **Retention**: prize records and their transcripts seven years; other
   solver transcripts per the operator's trace retention; retired checker
   images kept.
-- **Latency**: `prize_claim`, `prize_claim_voided`, `prize_window_closed`,
-  and `attempt_completed` triggers get a `queue_priority` boost at enqueue
-  (`src/services/queue-service.ts`, the `refreshQueuePriority` path), and
-  `docs/allocation.md` records that demand may buy queue position and this
-  is that channel.
+- **Latency**: the money triggers are invoked directly by the workers that
+  own them (section 6.4), so a prize review never waits behind the steward
+  drain; target: the Steward's `prize_claim` run starts within an hour of
+  `in_review`.
 - **The cold-start problem on the demand side**: the first bounties are
   small and deliberately tractable so the whole path is exercised end to
   end before anything large is posted, and the mandate page says so.
@@ -2778,7 +2972,7 @@ job.
   the existing clusters, then the mathematics cluster's first three
   sub-cases.
 - Day one, in parallel and off the engineering path: write to Stripe
-  (section 9.2); send counsel items 1 to 4 (section 9.3); decide the figures
+  (section 9.2); send counsel items 1 to 5 (section 9.3); decide the figures
   (section 15).
 
 **Phase 1: formal statements (about two weeks).**
@@ -2814,7 +3008,7 @@ job.
   disclosed; the Steward has handled `attempt_completed` for a negative, a
   partial, and a checked outcome (the control).
 
-**Phase 3: prizes payable in owls (about two weeks; counsel items 1 to 4
+**Phase 3: prizes payable in owls (about two weeks; counsel items 1 to 5
 done).**
 - `prize_pool_entries`, `bounties`, `prize_claims`, `prize_payouts`,
   `attachments`; the deposit route; `post_bounty` and `withdraw_bounty`
@@ -2828,20 +3022,22 @@ done).**
   prize-check worker; the Reviewer's `claim_prize` branch;
   `get_prize_claim` and `decide_prize_claim`; the window, the challenge
   route and grounds, the audit wiring, the sign-off and void routes and the
-  operator page; `prize_review` funding and the reserve; the election screen
-  and the owls path with `prize_award`; the end-to-end money-path test.
+  operator page; `prize_review` funding and the reserve; the election screen,
+  the identity and tax-form steps and the operator-recorded screening, and
+  the owls path with `prize_award`; the privacy policy's prizes section; the
+  end-to-end money-path test.
 - The first bounty, small and deliberately tractable, confirmed by the
   founder, announced as the exercise of the whole path.
 - Exit criterion: one prize claimed, checked, admitted, accepted, audited,
   through its window, elected in owls, and paid, with every ledger
   invariant holding.
 
-**Phase 4: cash (when the rail is approved; counsel items 5 to 8 done).**
+**Phase 4: cash (when the rail is approved; counsel items 6 to 8 done).**
 - The payout adapter bound to the approved rail; the second Stripe key or
-  the provider's key; identity, tax form, screening, and withholding in the
-  state machine; the 1099 and 1042-S records; the reconciliation job.
-- The privacy policy's prizes section; the international policy in the
-  rules; the erasure-request answer.
+  the provider's key; the provider's own identity and screening replacing
+  the operator's hand steps; withholding remittance; the 1099 and 1042-S
+  records; the reconciliation job.
+- The international policy in the rules; the erasure-request answer.
 - Later, after counsel item 9: the fund-level sponsorship product.
 
 ### 14.2 Dependencies
@@ -2889,10 +3085,11 @@ cited.
    confirmed by the founder in v1, then raise the autonomy threshold to
    $500 after the first three prizes are paid cleanly. Two-pass posting
    stays regardless.
-4. **Where the cash goes when a winner elects owls** (section 8.7).
-   Recommended: it stays in the prize fund, so the fund's public balance is
-   the truth about what has been offered and what remains. The alternative
-   returns it to general funds and shows the owl liability separately.
+4. **What the fund records when a winner elects owls** (section 8.7).
+   Recommended: a debit at the cash amount, so the fund's balance is what
+   remains to be offered and the dollars back the owl liability like every
+   owl outstanding. The alternative keeps the cash in the fund and shows the
+   owl liability beside it, which lets one dollar appear to back both.
 5. **The rail** (sections 8.8, 9.2). Recommended: write to Stripe now and
    set up the fallback provider in parallel, so the first cash prize does
    not wait on Stripe's answer. If Stripe approves, use Global Payouts; if
@@ -2910,8 +3107,10 @@ cited.
    the offer asked for; the alternative, a reduced award, invites the
    dispute the mechanical design exists to avoid. The Grantmaker's
    selection procedure is where this is prevented, not the payout.
-9. **The constitution amendments** (Appendix F). Recommended: adopt all
-   three before the first bounty, with a corpus run on the amended prompts.
+9. **The constitution amendments** (Appendix F). Recommended: adopt F.2
+   before the solver's first run in Phase 2, since Part VIII otherwise
+   binds every agent as an admin, and F.1 and F.3 before the first bounty,
+   with a corpus run on the amended prompts.
 10. **Problems carrying a third-party prize** (section 10.4). Recommended:
     no Minerval bounty on them until counsel item 13 is answered; attempts
     on them are fine, and a house solve of an Erdős problem is a good day.
@@ -3095,7 +3294,10 @@ project's proof. Do not spend a check to learn what an `accepted` row
 already says, and do not check a proof against a statement other than the
 one it was written for. A check that returns `error` is not a verdict;
 record that verification was unavailable and assess on the informal
-evidence.
+evidence. A proof of a statement with a live bounty that arrives by any door
+other than the prize pipeline (an argument contribution, a link in a
+support) is not checked and changes no status; the Reviewer redirects it to
+the prize route with its original filing time.
 
 **Assessing with formal evidence.** A checked proof of a faithful statement
 is `verified`, recorded as an argument named with "(machine-checked)",
@@ -3188,8 +3390,13 @@ this statement), and duplicates (the same source submitted earlier by
 another account is surfaced to you as `duplicate_of`; the earlier keeps
 priority). Accept admits the claim to the steward's review and awards no
 reputation; reject is the ordinary path and is appealable; escalate when
-identity or plagiarism is in real doubt. Never notify the steward
-yourself; admission does that.
+identity or plagiarism is in real doubt. An appeal against a checker
+rejection is yours to engage with: read the gate that failed, say plainly
+whether the claimant's objection is to the rules or to the run, and re-run
+the check when the objection is to the run. Never notify the steward
+yourself; admission does that. A contribution of another type that carries
+a proof of a bounty-bearing statement is redirected to the prize route,
+keeping its filing time; do not accept it as an argument.
 
 A challenge to an accepted prize claim must name one of the enumerated
 grounds (statement defect, ineligibility, disallowed axioms or tactics the
@@ -3210,7 +3417,9 @@ was the strong tier and no fallback ran; the claimant is not the platform
 and is not a funder of the mandate; the bounty was posted on a statement
 older than its review period; the submission's text contains nothing
 addressed to a reviewing agent; the priority order among submissions on
-this statement was respected. Send back for fresh review on any failure;
+this statement was respected; no submission's source matches one of the
+platform's own attempt-mode checks; identity, tax form, and screening were
+recorded before any payout row. Send back for fresh review on any failure;
 a fallback-served acceptance is always a send-back.
 
 ## For the Curator
@@ -3391,8 +3600,8 @@ says only that someone would like the question settled.
 `est_prize_review_cost_owls` 12; `attempt_cooldown_days` 30;
 `attempt_claim_lifetime_cap_owls` 500; the standard keys unchanged.
 
-**Budget.** Escrow [2,000] owls; daily rate [200] owls; policy `cover`;
-skills `["mathematics"]`; prize fund [$1,000] on first deposit.
+**Budget.** Escrow [2,500] owls; daily rate [200] owls; policy `cover`;
+skills `["mathematics"]`; prize fund [$2,500] on first deposit.
 
 **Plan.** Reassess the backfilled mathematics cohort under the skill;
 formalize the first-target claims as the Grantmaker's first review pass
@@ -3478,8 +3687,11 @@ corresponds to a mechanism in section 8.
    rules. If the statement is found not to say what the claim says, the
    prize is not owed for proving it; a claimant whose submission exposes
    the defect receives the defect award of ten percent of the prize, at most
-   $500, and the prize re-binds to the corrected statement after fourteen
-   days' notice.
+   $500, drawn from the prize; a person who exposes a defect during the
+   statement's public review period, before any prize is offered, receives
+   a fixed review award of $100; and the prize re-binds to the corrected
+   statement after fourteen days' notice and the corrected statement's own
+   review period, less any defect award paid.
 4. **Eligibility.** Natural persons aged 18 or over; one payee per
    submission; not Minerval, its contractors on this program, or funders of
    the Mathematics mandate; not residents of jurisdictions where the prize
@@ -3488,37 +3700,44 @@ corresponds to a mechanism in section 8.
    anything from Minerval confers no advantage.
 5. **Submissions.** Through the claim page's form, with a Lean file, a
    written account, a tools disclosure, and the declarations. AI assistance
-   is permitted and must be disclosed. Submissions are dedicated to the
-   public domain under CC0 1.0 on submission; for material without
+   is permitted and must be disclosed. A submission is confidential to
+   Minerval and its agents until it is accepted or the prize closes, and is
+   then dedicated to the public domain under CC0 1.0; for material without
    copyright the claimant grants the broadest license available and
    warrants that the submission is the claimant's own work or properly
-   attributed.
+   attributed. A submission that reproduces a proof Minerval's own solver
+   produced is not eligible.
 6. **Priority.** The first submission by time of receipt that passes the
    checker and the steward's review wins. Submissions with identical
-   receipt times that both pass share the prize equally. There is no
-   random selection at any stage.
+   receipt times that both pass share the prize equally. Once a submission
+   has passed the checker, no further submissions are accepted for that
+   prize unless it is later rejected. There is no random selection at any
+   stage.
 7. **Review.** The checker's verdict is mechanical and public. The steward
    judges only whether the statement proved is the statement posted. An
    accepted submission is announced on the claim page and becomes payable
    after a challenge window of fourteen days (thirty for prizes of $1,000
-   or more), extended while any challenge is open. Challenges may be filed
-   only on the listed grounds, with evidence. Every acceptance is audited.
+   or more), extended while an admitted challenge is open, up to twice the window.
+   Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited.
    Prizes of $1,000 or more, and prizes on claims of high importance,
    require a named person's sign-off.
 8. **Payment.** After the window, the winner elects once, within ninety
    days, cash or owls at one owl per dollar. Owls are credit for metered
    work on the site; they do not expire, cannot be transferred, and are
-   never redeemable for cash. Cash is paid through the payout provider
-   named on the site after identity verification, a tax form, and sanctions
-   screening; amounts may be reduced by required withholding. An election
-   not made within ninety days lapses.
+   never redeemable for cash. Both options require identity verification, a
+   tax form, and sanctions screening first; amounts, in cash or owls, may be
+   reduced by required withholding. Cash is paid through the payout provider
+   named on the site. An election not made within ninety days lapses; a
+   cash payment that cannot be delivered within ninety days may be taken in
+   owls instead.
 9. **Taxes.** Prizes are income to the winner. Minerval reports and
    withholds as United States law requires.
 10. **Withdrawal and change.** Minerval may withdraw or amend a prize with
     thirty days' notice on the claim page and the prize listing; submissions
     received before the effective time are judged under the prior terms. A
     prize closes without payment if Minerval's own solver produces a checked
-    proof first, in which case the proof is published.
+    proof first, in which case the proof is published, or if the only
+    passing submission came from a person who was not eligible.
 11. **Publicity.** The winner's chosen credit name, the proof, and the
     checker record are published as a matter of record. Use of a winner's
     name or likeness in promotion requires separate written consent.
@@ -3538,31 +3757,32 @@ docs, and the site agree.
 | Table | `claim_formalizations` | Formal statements; statuses `draft`, `reviewed`, `published`, `retired`; `superseded_by` links versions. |
 | Table | `lean_checks` | Every check the platform runs; verdicts `accepted`, `rejected`, `error`; modes `prize`, `attempt`, `steward`. |
 | Table | `proof_attempts` | Solver attempts; the notebook, the report, the ceiling and spend. |
-| Table | `prize_pools`, `prize_pool_entries` | The per-domain prize fund and its ledger. |
-| Table | `bounties` | An offer bound to a formalization; statuses `requested`, `confirm_pending`, `open`, `claim_pending`, `rebinding`, `paid`, `resolved_internally`, `expired`, `withdrawn`. |
-| Table | `prize_claims` | One per `claim_prize` contribution; the prize state machine. |
+| Table | `prize_pools`, `prize_pool_entries` | The per-domain prize fund and its ledger; `balance` is stored as entries, `reserved` is derived from live bounties, `available` is the difference. |
+| Table | `bounties` | An offer bound to a formalization; statuses `requested`, `confirm_pending`, `open`, `claim_pending`, `house_result_pending`, `rebinding`, `paid`, `resolved_internally`, `resolved_unpaid`, `expired`, `withdrawn`. |
+| Table | `prize_claims` | One per `claim_prize` contribution; the prize state machine (`queued`, `checking`, `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`, `defect_award_pending`, `payout_pending`, `paid`, `rejected`, `voided`, `withdrawn`, `superseded`, `forfeited`); `window_ends_at` set at acceptance. |
 | Table | `prize_payouts` | The discharge of a prize, in cash or owls. |
-| Table | `attachments` | Uploaded files on contributions; `bytea` bodies with a `storage` discriminator. |
+| Table | `attachments` | Uploaded files on contributions; `bytea` bodies with a `storage` discriminator; kinds `lean_source`, `document`, `dataset`, `code`, `tax_form`. |
 | Column | `claims.domains`, `claims.domains_source` | The domain tags that select skills and tools, and where they came from. |
 | Column | `contributors.owls_prized_micro_usd` | Prize owls, kept apart from earned owls. |
 | Claim type | `mathematical` | A proposition of mathematics. |
-| Contribution type | `claim_prize` | A prize claim. |
+| Contribution type | `claim_prize` | A prize claim; in `prizeContributionTypeEnum`, folded into `anyContributionTypeEnum`, never in `contributionTypeEnum`. |
 | Ledger reason | `prize_award` | Prize owls on `owl_ledger`. |
 | Action kinds | `formalize`, `attempt_proof`, `prize_review` | The three new kinds on the action ledger. |
 | Agent | `math_solver` | The solver; an instrument, not an admin. |
-| Steward tools | `lean_search`, `lean_elaborate`, `lean_check`, `publish_formalization`, `set_claim_domains`, `get_prize_claim`, `decide_prize_claim`, `get_proof_attempt`, `mark_problem_solved_by_platform` | |
+| Steward tools | `lean_search`, `lean_elaborate`, `lean_check`, `publish_formalization`, `set_claim_domains`, `get_prize_claim`, `decide_prize_claim`, `get_proof_attempt`, `mark_problem_solved_by_platform`; `load_skill` deferred | |
 | Grantmaker tools | `post_bounty`, `withdraw_bounty` | |
 | Solver tools | `lean_search`, `lean_elaborate`, `lean_check`, code execution, `notebook_write`, `notebook_read`, `report` | |
 | Triggers | `formalize`, `formalization_review`, `prize_claim`, `prize_claim_voided`, `prize_window_closed`, `attempt_completed` | Steward triggers that force the strong model. |
 | Checker endpoints | `/health`, `/v1/elaborate`, `/v1/scratch`, `/v1/search`, `/v1/check`, `/v1/checks/:id`, `/v1/pins` | |
 | Routes | `GET /claims/:id/bounty`, `GET /prizes`, `POST /claims/:id/prize-claims`, `POST /prize-claims/:id/elect`, `POST /prize-pools/:domain/deposit`, `POST /bounties/:id/confirm` | The load-bearing ones; section 11.1 has the rest. |
-| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MAX_BOUNTY_PER_CLAIM_USD`, `BOUNTY_AUTONOMY_THRESHOLD_USD`, `PRIZE_HUMAN_SIGNOFF_USD`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_USD`, `PRIZE_ELECTION_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD` | |
+| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MAX_BOUNTY_PER_CLAIM_USD`, `BOUNTY_AUTONOMY_THRESHOLD_USD`, `PRIZE_HUMAN_SIGNOFF_USD`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_USD`, `PRIZE_ELECTION_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `PRIZE_OWL_TRANCHE_USD`, `FORMALIZATION_REVIEW_AWARD_USD`, `MINERVAL_OPERATOR_KEY`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD` | |
 | Epoch | `2026-09-domain-skills` | The pipeline epoch the skill takes effect under. |
 | Words never used in prize text | escrow, deposit, held for you | The fund is "the mathematics prize fund." |
 
 ## Appendix F: Constitution amendments
 
-Three minimal amendments, proposed for adoption before prizes open. Each is
+Three minimal amendments: F.2 for adoption before the solver's first run,
+F.1 and F.3 before prizes open. Each is
 a sentence or two; each is needed because the program introduces something
 the founding text does not yet name, and a gloss in a skill is the wrong
 place for a founding commitment. The wording keeps the constitution's
@@ -3574,7 +3794,9 @@ register.
 > answer to a question it has posed precisely, paid only for a result the
 > graph can check and judge. A prize buys the answer, never the verdict: it
 > moves no claim's importance, enters no valuation, and changes no standard,
-> and the platform never pays itself.
+> and the platform never pays itself. An offer that binds the platform to
+> pay may wait on a person's confirmation; that is not a bottleneck on the
+> work, which proceeds without it.
 
 **F.2 Part VIII, "The Roles," after the Audit role.** Add:
 
