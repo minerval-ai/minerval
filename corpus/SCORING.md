@@ -77,11 +77,14 @@ note, so a low number is always traceable to specific claims.
   statistic is kept; the metrics that matter are the graph properties the
   scorecard measures, not human-vs-judge concordance.
 
-Still pending from the master plan (#334): wiring the Matcher golden suite's
-`--min-pass` into a CI gate (L4). The Matcher golden-pair set itself shipped
-(S1, `corpus:golden`), and eval runs are first-class records in the `eval_runs`
-registry; scorecards also accumulate as files in `corpus/scorecards/` (see its
-README).
+Of #99's three layers, all three now exist: the Matcher golden-pair set (S1,
+`corpus:golden`), this scorecard (layer 2), and the per-PR CI gate on the golden
+suite (`.github/workflows/golden-matcher.yml`, path-filtered and secret-gated;
+L4). Eval runs are first-class records in the `eval_runs` registry, and
+scorecards also accumulate as files in `corpus/scorecards/` (see its README).
+Still pending from the master plan (#334): the epoch-bump gate on scored corpus
+runs, which needs N≈3 baselines per cluster to compare against
+(`corpus:compare` groups) before it can mean anything.
 
 ## Cost
 
