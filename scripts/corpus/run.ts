@@ -16,6 +16,7 @@
  *   --limit=N              only the first N posts (cheap smoke test)
  *   --posts=id1,id2        only these post IDs
  *   --profile=production   run on the production model pins (lib.ts)
+ *   --swap=<agent>:<model> one agent on another model, on top of the profile
  *   --score[=N]            emit a scorecard afterwards (judge sample N)
  *
  * Examples:
@@ -38,6 +39,7 @@ import {
   argFlag,
   assertCorpusDb,
   CORPUS_PROFILE,
+  CORPUS_SWAP,
   gitCommit,
   hasFlag,
   loadManifest,
@@ -89,6 +91,7 @@ function configuredFingerprint(): RunFingerprint {
     pipelineEpoch: cfg.pipelineEpoch,
     gitCommit: gitCommit(),
     profile: CORPUS_PROFILE,
+    swap: CORPUS_SWAP ? { agent: CORPUS_SWAP.agent, model: CORPUS_SWAP.model } : null,
     models: {
       extractor: cfg.extractorModel,
       matcher: cfg.matcherModel,
@@ -104,6 +107,19 @@ function configuredFingerprint(): RunFingerprint {
       llmHourlyTokenLimit: cfg.llmHourlyTokenLimit,
     },
   };
+}
+
+/** Exact metered cost of the run window, in micro-USD (raw rates, per llm_usage). */
+async function meteredCostSinceStart(): Promise<number | null> {
+  try {
+    const [row] = await rawQuery<{ micro: string | null }>(
+      `SELECT SUM(cost_micro_usd) AS micro FROM llm_usage WHERE created_at >= $1`,
+      [RUN_STARTED_AT]
+    );
+    return Number(row?.micro ?? 0);
+  } catch {
+    return null;
+  }
 }
 
 /** Per-agent models actually seen in llm_usage since the run window opened. */
@@ -325,6 +341,7 @@ async function main(): Promise<void> {
   // whether any drain hit its cap. run.json is the file-side copy; the
   // registry row is what corpus:score reads.
   const observed = await observedSinceStart().catch(() => ({}) as Record<string, string[]>);
+  const costMicroUsd = await meteredCostSinceStart();
   const finished: RunFingerprint = { ...fingerprint, observed };
   const runRecord = {
     ...finished,
@@ -335,6 +352,7 @@ async function main(): Promise<void> {
     posts: posts.map((p) => p.id),
     postsIngested: succeeded,
     capped: anyCapped,
+    costMicroUsd,
   };
   writeFileSync(join(runDir, "run.json"), JSON.stringify(runRecord, null, 2));
   if (registryId) {

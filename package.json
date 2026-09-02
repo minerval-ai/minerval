@@ -28,6 +28,7 @@
     "corpus:golden": "tsx scripts/corpus/golden-matcher.ts",
     "corpus:calibrate": "tsx scripts/corpus/calibration.ts",
     "corpus:agreement": "tsx scripts/corpus/agreement.ts",
+    "corpus:swap": "tsx scripts/corpus/swap.ts",
     "predictions": "tsx scripts/predictions.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts"
   },

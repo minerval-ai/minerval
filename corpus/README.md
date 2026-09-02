@@ -178,6 +178,25 @@ distance mapped through the matching. Pure library in
 `scripts/corpus/graph-agreement.ts`, unit-tested; results register in the
 eval-run registry (kind `agreement`).
 
+**Model swap** (#334 L1; S7's instrument) — the same cluster twice, with
+ONE agent's model changed, and the two graphs compared:
+
+```bash
+npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production
+npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5 --baseline=<snapshot>   # reuse arm A
+```
+
+Arm A is the reference (with `--profile=production`, what production runs);
+arm B is identical except for `--swap=<agent>:<model>`, which `corpus:run`
+honours after the profile and records in the fingerprint. Each arm is a
+child run in its own process, each is snapshotted (`swap_<stamp>_a` / `_b`,
+kept as the evidence), and `corpus:agreement` compares them. The summary is
+fidelity — claim-set F1, credence divergence, status agreement, edge edit
+distance — with each arm's exact cost, which is the quality-per-dollar
+question in one line. Two full drains of the cluster: budget accordingly,
+and repeat before reading a difference as the model's rather than the run's.
+Registered as kind `swap`; `--dry-run` prints the arm commands.
+
 **Matcher golden pairs** (#99 layer 1) — the per-PR regression net for the one
 agent whose task saturates enough for exact-match grading. 30 pinned pairs in
 [`golden/matcher-pairs.json`](./golden/matcher-pairs.json) (paraphrase /
@@ -235,7 +254,8 @@ accrues only as questions resolve.
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
-into the run dir; `--score=0` is structural-only).
+into the run dir; `--score=0` is structural-only), `--profile=production`,
+`--swap=<agent>:<model>` (one agent on another model, on top of the profile).
 
 `corpus:score` flags: `--sample=N` (claims to LLM-judge; default 15, `0` =
 structural-only), `--no-judge`, `--out=DIR`, `--allow-same-model-judge`. The
