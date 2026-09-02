@@ -13,6 +13,7 @@
  *   npm run corpus:golden -- --category=negation
  *   npm run corpus:golden -- --pairs=neg-05,hard-03
  *   npm run corpus:golden -- --model=gpt-5-mini # override MATCHER_MODEL
+ *   npm run corpus:golden -- --profile=production  # the production Matcher pin
  *   npm run corpus:golden -- --min-pass=0.9     # exit 1 below this rate
  *
  * Needs OPENAI_API_KEY (embeddings) and a key for the Matcher's provider.
@@ -24,7 +25,7 @@
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { argFlag, assertCorpusDb, CORPUS_ROOT, RUNS_ROOT } from "./lib.js";
+import { argFlag, assertCorpusDb, CORPUS_PROFILE, CORPUS_ROOT, gitCommit, RUNS_ROOT } from "./lib.js";
 import { closeDb, getDb, rawQuery } from "../../src/db/client.js";
 import { claims, evalRuns } from "../../src/db/schema.js";
 import { inArray } from "drizzle-orm";
@@ -134,6 +135,8 @@ async function main(): Promise<void> {
   const report = {
     generatedAt: new Date().toISOString(),
     matcherModel,
+    gitCommit: gitCommit(),
+    profile: CORPUS_PROFILE,
     summary,
     costMicroUsd: runMeter.billedMicroUsd,
     results,
@@ -145,7 +148,8 @@ async function main(): Promise<void> {
       kind: "golden",
       config: {
         pipelineEpoch: config.pipelineEpoch,
-        gitCommit: null,
+        gitCommit: report.gitCommit,
+        profile: CORPUS_PROFILE,
         models: { matcher: matcherModel },
       },
       scorecard: report,

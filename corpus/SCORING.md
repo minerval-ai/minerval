@@ -50,7 +50,16 @@ note, so a low number is always traceable to specific claims.
 
 - **Different model/context than the agent under test.** `JUDGE_MODEL` defaults to
   Sonnet; the agents under test run on Fable in prod. Never let an agent grade
-  its own trace with its own framing in context.
+  its own trace with its own framing in context. This is enforced: `corpus:score`
+  refuses a judge that is the Steward model the graph was actually built with
+  (as recorded at run time, not as configured at score time — the first
+  baseline judged a Sonnet Steward with Sonnet), unless
+  `--allow-same-model-judge` is passed.
+- **The fingerprint is recorded when the graph is built.** `corpus:run`
+  registers the epoch, commit, profile, configured models and caps before its
+  first LLM call, and the models actually observed per agent once drained;
+  `corpus:score` reads that back. A scorecard whose models were only read from
+  config at score time is marked `modelsSource: "score-time"`.
 - **Graded against the constitution, not the judge's intuition** — the relevant
   standards are pinned into the judge prompt so the bar is explicit and stable.
 - **Evidence, not just a number** — every verdict carries a note and the specific
