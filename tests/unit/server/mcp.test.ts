@@ -745,6 +745,21 @@ describe("MCP identity & metering", () => {
     await client.close();
   });
 
+  it("runs on-demand analysis untraced: the caller's text leaves no transcript (#356)", async () => {
+    mocks.resolveApiKey.mockResolvedValue({
+      key: { id: "key-1", scope: "consumer" },
+      user: { id: "user-1", externalId: "auth0:jane", isSuspended: false },
+    });
+    const client = await connect({ "x-api-key": "ep_user_key" });
+    await client.callTool({
+      name: "match_claim",
+      arguments: { assertion: "a passage from a private memo" },
+    });
+    expect(mocks.usageContexts[0]).toMatchObject({ untraced: true, userId: "user-1" });
+    expect((mocks.usageContexts[0] as { trace?: unknown }).trace).toBeUndefined();
+    await client.close();
+  });
+
   it("denies agentic tools once the owl balance is empty", async () => {
     mocks.resolveApiKey.mockResolvedValue({
       key: { id: "key-1", scope: "consumer" },

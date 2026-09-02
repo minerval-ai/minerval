@@ -13,6 +13,7 @@ vi.mock("../../../src/services/trace-service.js", () => ({
 import {
   getUsageContext,
   runWithUsageContext,
+  untraced,
   withAgent,
 } from "../../../src/llm/usage-context.js";
 
@@ -84,5 +85,59 @@ describe("withAgent with tracing", () => {
     mocks.start.mockReturnValue(trace);
     expect(withAgent("steward", () => "done")).toBe("done");
     expect(mocks.finish).toHaveBeenCalledWith(trace, "ok");
+  });
+});
+
+// untraced() is the privacy seam (#356): content a user never published
+// (a page open in their browser, a chat question) must leave no transcript,
+// whatever TRACE_LEVEL says.
+describe("untraced", () => {
+  it("opens no run for agents inside it, even when tracing is on", async () => {
+    mocks.start.mockReturnValue(fakeTrace());
+    await untraced(() =>
+      withAgent("extractor", async () => {
+        expect(getUsageContext().agent).toBe("extractor");
+        expect(getUsageContext().untraced).toBe(true);
+        expect(getUsageContext().trace).toBeUndefined();
+        expect(getUsageContext().runId).toBeNull();
+      })
+    );
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.finish).not.toHaveBeenCalled();
+  });
+
+  it("drops an enclosing run's trace so nested agents cannot append to it", async () => {
+    const outer = fakeTrace();
+    mocks.start.mockReturnValue(outer);
+    await withAgent("steward", async () => {
+      expect(getUsageContext().trace).toBe(outer);
+      await untraced(async () => {
+        expect(getUsageContext().trace).toBeUndefined();
+        await withAgent("matcher", async () => {
+          expect(getUsageContext().trace).toBeUndefined();
+          expect(getUsageContext().runId).toBeNull();
+        });
+      });
+      // The outer run is intact once the untraced stretch ends.
+      expect(getUsageContext().trace).toBe(outer);
+      expect(getUsageContext().runId).toBe("run-1");
+    });
+    expect(mocks.start).toHaveBeenCalledTimes(1);
+    expect(mocks.finish).toHaveBeenCalledWith(outer, "ok");
+  });
+
+  it("leaves metering attribution untouched", async () => {
+    await runWithUsageContext({ userId: "user-1", apiKeyId: "key-1" }, () =>
+      untraced(() =>
+        withAgent("extension", async () => {
+          expect(getUsageContext()).toMatchObject({
+            userId: "user-1",
+            apiKeyId: "key-1",
+            agent: "extension",
+            untraced: true,
+          });
+        })
+      )
+    );
   });
 });

@@ -23,6 +23,7 @@ corpus/
   RUBRIC.md              qualitative review rubric, distilled from the constitution
   SCORING.md             scorecard design (corpus:score / corpus:compare)
   scorecards/            committed scorecard history (see its README)
+  predictions/           resolvable predictions + README (S6 calibration track)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
@@ -70,7 +71,10 @@ production seed set, and all three are built.
 ## Prerequisites
 
 - Postgres running (`docker compose up -d`).
-- `.env` with `ANTHROPIC_API_KEY` (claims) and `OPENAI_API_KEY` (embeddings).
+- `.env` with `ANTHROPIC_API_KEY` (claims), `OPENAI_API_KEY` (embeddings) and
+  `OPENROUTER_API_KEY` (the Matcher, which defaults to DeepSeek V4 Flash — set
+  `MATCHER_MODEL=claude-haiku-4-5-20251001` to run a cluster Anthropic-only,
+  but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
   pipeline's circuit breaker will stop a run cleanly when hit.
 
@@ -91,7 +95,9 @@ npm run corpus:report -- lethalities             # re-render a report from curre
 # Scored, diffable scorecard (#99) — the automated counterpart to report.md
 npm run corpus:score -- lethalities --no-judge   # structural metrics only (free)
 npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
-npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
+npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards (no verdict: one sample each)
+npm run corpus:compare -- runs/<A1>,runs/<A2>,runs/<A3> runs/<B1>,runs/<B2>,runs/<B3>
+                                                 # groups: mean ± sd per side, delta vs the noise band
 ```
 
 **Run on the production models.** The config defaults are the cheap dev
@@ -188,6 +194,16 @@ Results land in `runs/` and in the eval-run registry (`corpus:runs` lists
 them). Per the constitution (§2), a negation is expected to MATCH its
 counterpart with stance `denies` — a claim and its denial are one node.
 
+**In CI** (`.github/workflows/golden-matcher.yml`): every PR that touches
+something that can move a match decision — the Matcher or its prompt, the
+constitution, the LLM client or a provider adapter, retrieval, the fixture or
+runner, the production pins — runs the suite on the production Matcher
+(`--profile=production`) against a throwaway corpus DB and fails below
+`--min-pass=0.95` (29 of 30). It needs the `OPENAI_API_KEY` and
+`OPENROUTER_API_KEY` repository secrets; a run without them (a fork PR)
+reports that it skipped rather than failing. Cents per run; the report is
+uploaded as a workflow artifact.
+
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
 gate until a human has read its verdicts and reasoning. The judge is presumed
 good-faith and competent at its assigned task — its judgment is as good as
@@ -208,6 +224,14 @@ item (every dimension, flags, and note), and closes with the `## Overall`
 block — the feedback that actually matters. Commit the filled sheet as the
 record of the review. Generate it before resetting the graph (or restore the
 snapshot).
+
+**Predictions** (#334 S6) — the one class of claim reality grades:
+[`predictions/`](./predictions/README.md) holds a pinned set of resolvable
+questions with criteria and resolution dates; `npm run predictions -- seed
+--corpus` seeds them as claims, `resolve` records outcomes as the world settles
+them, and `score` reports Brier, log score, calibration curve and ECE over the
+credences the Steward held before resolution. Seeded early because the signal
+accrues only as questions resolve.
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
@@ -259,7 +283,8 @@ dump for deeper digging.
   (`--limit=2`/`3`) → **full**. Check the printed cost at each step.
 - LLM output is nondeterministic. Treat a single run as one sample: run 2–3×
   and watch whether the metrics and failure modes are **stable**, not whether
-  any one number matches.
+  any one number matches. `corpus:compare` takes groups of runs per side for
+  exactly this reason, and gives no verdict on a single-sample side.
 
 ## Notes for maintainers
 
@@ -291,5 +316,6 @@ dump for deeper digging.
   `MATCHING_TOP_K` candidates (default 20) above a deliberately low 0.4 cosine
   floor, and the Matcher LLM makes the final match-vs-new call after searching
   multiple framings (including the negation). The disambiguation knobs are
-  `MATCHING_TOP_K` and `MATCHER_MODEL` (default Haiku); the 0.4 retrieval floor
+  `MATCHING_TOP_K` and `MATCHER_MODEL` (default DeepSeek V4 Flash, the model
+  production runs — it routes to OpenRouter); the 0.4 retrieval floor
   is hardcoded in `matcher.ts`, so changing it means editing that file.

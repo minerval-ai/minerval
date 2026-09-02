@@ -6,7 +6,7 @@
  *
  * Re-run whenever the constitution, docs, or prompts change.
  */
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs";
+import { writeFileSync, mkdirSync, copyFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 

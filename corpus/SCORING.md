@@ -64,9 +64,14 @@ note, so a low number is always traceable to specific claims.
   standards are pinned into the judge prompt so the bar is explicit and stable.
 - **Evidence, not just a number** — every verdict carries a note and the specific
   claim, so scores are spot-checkable and actionable.
-- **Nondeterminism is designed in.** One run is one sample. Treat a delta as real
-  only if it repeats across N≈3 runs or exceeds run-to-run noise — `corpus:compare`
-  prints the deltas but does not pretend a single diff is significant.
+- **Nondeterminism is designed in.** One run is one sample. A configuration's
+  value for a metric is the mean over its runs and its noise is their spread, so
+  each side of `corpus:compare` is a *group* of runs (`refA1,refA2,refA3 refB1,…`),
+  and a delta of means counts only when it exceeds the combined sample spread
+  (`scripts/corpus/band.ts`: `|Δ mean| > sdA + sdB`, N≈3 per side). A side with
+  one run gets its delta printed and **no verdict** — the tool refuses to call a
+  single diff significant. A verdict computed against one side's spread alone
+  is marked one-sided; it is weaker evidence.
 
 - **Vetted by review, not blind-calibrated.** Judge verdicts are checked by a
   human READING them against the pinned standards (`corpus:calibrate review`),
@@ -77,11 +82,14 @@ note, so a low number is always traceable to specific claims.
   statistic is kept; the metrics that matter are the graph properties the
   scorecard measures, not human-vs-judge concordance.
 
-Still pending from the master plan (#334): wiring the Matcher golden suite's
-`--min-pass` into a CI gate (L4). The Matcher golden-pair set itself shipped
-(S1, `corpus:golden`), and eval runs are first-class records in the `eval_runs`
-registry; scorecards also accumulate as files in `corpus/scorecards/` (see its
-README).
+Of #99's three layers, all three now exist: the Matcher golden-pair set (S1,
+`corpus:golden`), this scorecard (layer 2), and the per-PR CI gate on the golden
+suite (`.github/workflows/golden-matcher.yml`, path-filtered and secret-gated;
+L4). Eval runs are first-class records in the `eval_runs` registry, and
+scorecards also accumulate as files in `corpus/scorecards/` (see its README).
+Still pending from the master plan (#334): the epoch-bump gate on scored corpus
+runs, which needs N≈3 baselines per cluster to compare against
+(`corpus:compare` groups) before it can mean anything.
 
 ## Cost
 

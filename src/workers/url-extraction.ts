@@ -294,11 +294,16 @@ async function processUrlExtraction(
 
       // Create instance linking claim to source. stance records whether this
       // source asserts the canonical claim or its negation, so a claim merged
-      // with its counterpart still shows which side each source takes.
+      // with its counterpart still shows which side each source takes. The
+      // extractor's proposed canonical form rides along: on a new claim the
+      // Matcher may have reworded it (claims.text is the Matcher's), on a
+      // match it is the wording this source would have given the existing
+      // claim — either way the authorship question becomes a query.
       await db.insert(claimInstances).values({
         claimId,
         sourceId: source.id,
         originalText: claim.original_text,
+        proposedCanonicalForm: claim.proposed_canonical_form,
         context: claim.context,
         stance: matchResult.instance_stance ?? "affirms",
         confidence: claim.confidence,
