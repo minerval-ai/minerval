@@ -1,20 +1,28 @@
 /**
- * Diff two corpus-run scorecards (#99) — the regression-tracking step.
+ * Compare corpus-run scorecards (#99, #334 L2) — the regression-tracking step.
  *
  * A single run is one nondeterministic sample, so a difference only matters if
- * it clears the noise. This prints the headline metric deltas between two
- * `scorecard.json` files so a prompt change can be judged as better/worse/noise
- * rather than eyeballed.
+ * it clears the noise. Each side of a comparison is therefore a GROUP of runs
+ * of one configuration (N≈3); this prints, per headline metric, each side's
+ * mean ± spread, the delta of means, and whether the delta clears the combined
+ * spread (band.ts). A side with one run gets its delta printed and no
+ * verdict: one sample cannot tell noise from change.
  *
- * Usage:  tsx scripts/corpus/compare.ts <refA> <refB>
+ * Usage:  tsx scripts/corpus/compare.ts <groupA> <groupB>
  *
- * A ref is a run directory (containing scorecard.json), a scorecard.json path
- * — including files from the committed history in corpus/scorecards/ — or
- * `db:<id-prefix>` for a run in the eval-run registry (see corpus:runs).
+ * A group is one ref or several joined by commas. A ref is a run directory
+ * (containing scorecard.json), a scorecard.json path — including files from
+ * the committed history in corpus/scorecards/ — or `db:<id-prefix>` for a
+ * run in the eval-run registry (see corpus:runs).
+ *
+ *   npm run corpus:compare -- runs/A runs/B
+ *   npm run corpus:compare -- db:1a2b,db:3c4d,db:5e6f db:7a8b,db:9c0d,db:1e2f
+ *   npm run corpus:compare -- corpus/scorecards/blackholes/2026-08-09*.json runs/B
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Scorecard } from "./score.js";
+import { compareScorecards, formatDelta, formatSide, formatVerdict } from "./band.js";
 
 async function load(ref: string): Promise<Scorecard> {
   if (ref.startsWith("db:")) return loadFromRegistry(ref.slice(3));
@@ -47,62 +55,80 @@ async function loadFromRegistry(idPrefix: string): Promise<Scorecard> {
   return rows[0]!.scorecard;
 }
 
-function delta(a: number | null | undefined, b: number | null | undefined): string {
-  if (a == null || b == null) return `${fmt(a)} → ${fmt(b)}`;
-  const d = b - a;
-  const sign = d > 0 ? "+" : "";
-  return `${fmt(a)} → ${fmt(b)}  (${sign}${Math.round(d * 100) / 100})`;
+function splitGroup(arg: string): string[] {
+  return arg
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
-function fmt(x: number | null | undefined): string {
-  return x == null ? "n/a" : String(Math.round(x * 100) / 100);
+
+/** One line per distinct fingerprint in a group, so a mixed group is visible. */
+function describeGroup(cards: Scorecard[]): string[] {
+  const seen = new Map<string, number>();
+  for (const s of cards) {
+    const steward = s.config.observed?.steward?.[0] ?? s.config.models.steward;
+    const key =
+      `epoch ${s.config.pipelineEpoch} · commit ${s.config.gitCommit ?? "?"} · ` +
+      `steward ${steward} · judge ${s.config.models.judge}` +
+      (s.config.modelsSource === "score-time" ? " · models at score-time" : "");
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  return [...seen.entries()].map(([k, n]) => (n > 1 ? `${n}× ${k}` : k));
 }
 
 async function main() {
-  const [aPath, bPath] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-  if (!aPath || !bPath) {
-    console.error("Usage: tsx scripts/corpus/compare.ts <refA> <refB>  (ref = dir | file.json | db:<id>)");
+  const [aArg, bArg] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  if (!aArg || !bArg) {
+    console.error(
+      "Usage: tsx scripts/corpus/compare.ts <groupA> <groupB>  " +
+        "(group = ref[,ref…]; ref = dir | file.json | db:<id>)"
+    );
     process.exit(1);
   }
-  const a = await load(aPath);
-  const b = await load(bPath);
+  const aRefs = splitGroup(aArg);
+  const bRefs = splitGroup(bArg);
+  const a = await Promise.all(aRefs.map(load));
+  const b = await Promise.all(bRefs.map(load));
 
-  const rows: Array<[string, string]> = [
-    ["A · claims per 1k words", delta(a.structural.extraction.claimsPer1kWords, b.structural.extraction.claimsPer1kWords)],
-    ["B · canonical p90 words", delta(a.structural.canonicalForm.wordCount.p90, b.structural.canonicalForm.wordCount.p90)],
-    ["B · share > 25 words", delta(a.structural.canonicalForm.overLongShare, b.structural.canonicalForm.overLongShare)],
-    ["C · dedup ratio", delta(a.structural.matching.dedupRatio, b.structural.matching.dedupRatio)],
-    ["D · max depth", delta(a.structural.decomposition.maxDepth, b.structural.decomposition.maxDepth)],
-    ["D · atomic share", delta(a.structural.decomposition.atomicShare, b.structural.decomposition.atomicShare)],
-    ["E · shared subclaims", delta(a.structural.crossDoc.sharedSubclaims, b.structural.crossDoc.sharedSubclaims)],
-    ["F · % with trace", delta(a.structural.assessment.pctWithTrace, b.structural.assessment.pctWithTrace)],
-    ["§21 · coherence violations", delta(a.structural.coherence?.violations, b.structural.coherence?.violations)],
-    ["imp · mean", delta(a.structural.importance.mean, b.structural.importance.mean)],
-    ["imp · atomic vs compound gap", delta(gap(a), gap(b))],
-  ];
-  if (a.judged && b.judged) {
-    rows.push(
-      ["judge · claim-bar pass-rate", delta(a.judged.claimBarPassRate, b.judged.claimBarPassRate)],
-      ["judge · importance overrated share", delta(a.judged.importanceAlignment.overratedShare, b.judged.importanceAlignment.overratedShare)],
-      ["judge · readability", delta(a.judged.assessmentQuality.readability, b.judged.assessmentQuality.readability)],
-      ["judge · reasoning-fit", delta(a.judged.assessmentQuality.reasoningFit, b.judged.assessmentQuality.reasoningFit)],
-      ["judge · impartiality", delta(a.judged.assessmentQuality.impartiality, b.judged.assessmentQuality.impartiality)]
+  const clusters = new Set([...a, ...b].map((s) => s.cluster));
+  console.log(`\nScorecard comparison — ${[...clusters].join(", ")}`);
+  if (clusters.size > 1) console.log("  warning: sides span different clusters");
+  console.log(`  A (n=${a.length}): ${aRefs.join(", ")}`);
+  for (const line of describeGroup(a)) console.log(`      ${line}`);
+  console.log(`  B (n=${b.length}): ${bRefs.join(", ")}`);
+  for (const line of describeGroup(b)) console.log(`      ${line}`);
+  console.log();
+
+  const rows = compareScorecards(a, b).filter((r) => r.verdict !== "n/a");
+  const wLabel = Math.max(...rows.map((r) => r.label.length));
+  const wSide = 16;
+  console.log(
+    `  ${"metric".padEnd(wLabel)}  ${"A".padStart(wSide)}  ${"B".padStart(wSide)}  ${"delta".padStart(7)}  verdict`
+  );
+  for (const r of rows) {
+    console.log(
+      `  ${r.label.padEnd(wLabel)}  ${formatSide(r.a).padStart(wSide)}  ` +
+        `${formatSide(r.b).padStart(wSide)}  ${formatDelta(r).padStart(7)}  ${formatVerdict(r)}`
     );
   }
 
-  console.log(`\nScorecard diff — ${a.cluster}`);
-  console.log(`  A: ${aPath}  (${a.generatedAt})`);
-  console.log(`  B: ${bPath}  (${b.generatedAt})\n`);
-  const wLabel = Math.max(...rows.map((r) => r[0].length));
-  for (const [label, val] of rows) console.log(`  ${label.padEnd(wLabel)}  ${val}`);
+  const single = rows.some((r) => r.verdict === "single-sample");
+  const oneSided = rows.some((r) => r.oneSided);
+  console.log();
   console.log(
-    `\n  Note: one run is one sample. Treat a delta as real only if it repeats across N≈3 runs / exceeds run-to-run noise.\n`
+    "  A delta CLEARS the band when |Δ mean| exceeds sdA + sdB (sample sd; N≈3 per side)."
   );
-}
-
-function gap(s: Scorecard): number | null {
-  const at = s.structural.importance.meanAtomic;
-  const co = s.structural.importance.meanCompound;
-  return at == null || co == null ? null : at - co;
+  if (single) {
+    console.log(
+      "  One run is one sample: rows marked single-sample carry no verdict. Run each side ≥2× (3 is the norm)."
+    );
+  }
+  if (oneSided) {
+    console.log(
+      "  One-sided verdicts lean on one side's spread alone — weaker evidence than a two-sided band."
+    );
+  }
+  console.log();
 }
 
 main()

@@ -91,7 +91,9 @@ npm run corpus:report -- lethalities             # re-render a report from curre
 # Scored, diffable scorecard (#99) — the automated counterpart to report.md
 npm run corpus:score -- lethalities --no-judge   # structural metrics only (free)
 npm run corpus:score -- lethalities --sample=15  # + a bounded LLM-judge sample
-npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards
+npm run corpus:compare -- runs/<A> runs/<B>      # diff two scorecards (no verdict: one sample each)
+npm run corpus:compare -- runs/<A1>,runs/<A2>,runs/<A3> runs/<B1>,runs/<B2>,runs/<B3>
+                                                 # groups: mean ± sd per side, delta vs the noise band
 ```
 
 **Run on the production models.** The config defaults are the cheap dev
@@ -235,7 +237,8 @@ dump for deeper digging.
   (`--limit=2`/`3`) → **full**. Check the printed cost at each step.
 - LLM output is nondeterministic. Treat a single run as one sample: run 2–3×
   and watch whether the metrics and failure modes are **stable**, not whether
-  any one number matches.
+  any one number matches. `corpus:compare` takes groups of runs per side for
+  exactly this reason, and gives no verdict on a single-sample side.
 
 ## Notes for maintainers
 

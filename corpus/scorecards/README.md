@@ -26,11 +26,17 @@ right only if nothing changed in between; the one pre-existing baseline,
 exactly that reason). Compare any two with:
 
 ```bash
+# two single runs: deltas printed, no verdict (one sample each)
 npm run corpus:compare -- corpus/scorecards/<cluster>/<A>.json corpus/scorecards/<cluster>/<B>.json
+# two configurations, three runs each: mean ± sd per side, and whether the
+# delta clears the combined spread
+npm run corpus:compare -- <A1>.json,<A2>.json,<A3>.json <B1>.json,<B2>.json,<B3>.json
 ```
 
-One run is one nondeterministic sample: a delta is real only if it repeats
-across N≈3 runs or exceeds run-to-run noise (`corpus/SCORING.md`).
+One run is one nondeterministic sample: a delta is real only when it exceeds
+the run-to-run spread, which takes N≈3 runs per side to measure
+(`corpus/SCORING.md`). The committed baseline for each cluster should
+therefore be the N≈3 set, not one file.
 
 This file-based history is the phase-0 form of #334's eval-run registry (L1);
 when runs become first-class database records, this directory becomes an
