@@ -24,6 +24,7 @@ out under.
 | `mv:Claim` | A canonicalized claim node. |
 | `mv:Instance` | One place a claim is actually made: a verbatim quote in a source. |
 | `mv:Argument` | A distinct line of reasoning for or against a claim. |
+| `mv:FormalStatement` | A published formal statement of a claim: the graph's rendering of the proposition in Lean 4, elaborated against a pinned Mathlib. |
 
 ## Claim properties (assertion graph)
 
@@ -64,6 +65,56 @@ undocumented predicate.
 | `mv:assessmentVersion` | 1-based ordinal in the claim's assessment history — with `mv:claimId`, the reproducible reference. |
 | `mv:assessedAt` | When the pinned assessment was made. |
 | `mv:assessmentModel` | The model that produced the assessment (#294). |
+
+## Formal statement properties (assertion graph)
+
+A claim with a published formal statement (docs/prizes.md) carries one
+`mv:FormalStatement` node. The statement is exported because it is
+epistemic content: it fixes, mechanically, what proposition the claim's
+machine-checked arguments are about, and an outside reader can recompute
+`mv:sourceHash` from `mv:formalSource` and `mv:formalPin`.
+
+| Term | Range | Meaning |
+| --- | --- | --- |
+| `mv:hasFormalStatement` | `mv:FormalStatement` | Claim → its published formal statement (at most one). |
+| `mv:formalLanguage` | string | `lean4`. |
+| `mv:formalVersion` | `xsd:integer` | The statement's version on the claim; a republished statement is a new version. |
+| `mv:formalSource` | string | The statement file, verbatim. |
+| `mv:formalPin` | string | The pin id (`mathlib-v4.33.0`): the Lean toolchain and Mathlib revision the statement was elaborated against. |
+| `mv:toolchain` | string | The Lean toolchain (`leanprover/lean4:v4.33.0`). |
+| `mv:mathlibRevision` | string | The full Mathlib commit. |
+| `mv:sourceHash` | string | sha256 over the normalized source and the pin, for the public record. |
+| `mv:exprHash` | string | The structural hash of the elaborated proposition, which the checker compares. |
+| `mv:correspondence` | string | The correspondence note, in the graph's voice: how the formal and informal statements relate and what the formal one leaves out. |
+
+## Machine-checked arguments (provenance graph)
+
+An argument whose evidence is a checker-accepted proof or disproof of the
+formal statement carries, beside `mv:stance`, `mv:verdict`, and
+`mv:evaluation`:
+
+| Term | Meaning |
+| --- | --- |
+| `mv:machineChecked` | `proof` or `disproof`: the checker accepted a Lean proof of the statement, or of its negation, under the allowed axioms. |
+| `mv:checkedUnder` | The pin the check ran under; a check is valid for that pin, never a newer one. |
+| `mv:checkRecord` | The IRI of the public check record (`/lean-checks/:id`), from which any verdict can be reproduced. |
+| `mv:checkedAt` | When the check finished. |
+| `mv:axiomsUsed` | The axiom closure of the proof, always within `propext`, `Classical.choice`, and `Quot.sound`. |
+
+`mv:machineChecked` says the proof checks against the statement. Whether
+the statement is faithful to the claim is the Steward's judgment, carried
+by `mv:status`, `mv:verdict`, and the reasoning as for any other argument.
+
+## What is not exported
+
+Prizes, bounties, and prize claims are not exported, and no `mv:` term
+names them. A nanopublication records epistemic content: the claim, its
+assessment, the evidence and arguments it rests on, and their provenance.
+A prize is an allocation fact, a liability of the platform to a future
+claimant that enters no assessment and no valuation (docs/allocation.md),
+and exporting it beside the assertion would suggest a bearing it does not
+have. A solver attempt likewise enters the export only through what it
+produced, a machine-checked argument, never as a fact of its own.
 
 ## Voice discipline (§12)
 

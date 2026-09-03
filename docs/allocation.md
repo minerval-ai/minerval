@@ -283,6 +283,121 @@ per-source claims, importance distributions) and the one write the
 framework allows — amending the unexecuted remainder of the plan — with
 the same refusal duties it had at mandate design time.
 
+## Prizes and attempts
+
+Mathematics brings three new kinds of action to the ledger and one thing
+that is not an action at all. Three things are kept apart, and confusing
+them is how the invariants below would break: an **allocation** is money
+placed on an action so it runs (spend, metered and settled); a **bounty**
+is money offered for an answer, held until earned, funding nothing on the
+ledger; a **prize payout** is the discharge of that liability, in owls.
+The reader-facing account is docs/prizes.md; the mechanism is
+docs/mathematics.md, sections 7 and 8.
+
+**The three action kinds.** `formalize` (the Steward drafts, elaborates,
+and publishes a formal statement, then a second Steward in a fresh context
+reviews it: two strong-model passes), `attempt_proof` (the platform's
+solver runs for hours against a published statement; variants `standard`
+and `max`, an exclusive set per attempt epoch, so a closed attempt never
+reopens and a later attempt is a new group), and `prize_review` (the
+cold-lane check, the Reviewer run, the Steward's fidelity judgment, the
+audit, and any fresh replay for one prize claim). The first two are
+ordinary ledger actions: the Mathematics mandate's Grantmaker values them
+(a formalization is cheap and enabling; an attempt is expected information,
+importance × tractability × an information multiplier of 1.0 to 2.0 for
+sub-results several open problems rest on, with the tractability stated in
+the rationale), its allocator funds them from the mandate's escrow inside
+its day room, and their metered cost, Lean compute included, lands on
+`llm_usage` under the funding job like any other spend. Cost priors are
+policy keys on the mandate (`est_formalize_cost_owls`,
+`est_attempt_standard_cost_owls`, `est_attempt_max_cost_owls`,
+`est_prize_review_cost_owls`) that yield to the live p80 once five runs
+exist. Because the allocator skips an increment larger than the day's room
+outright, the mandate's daily rate must exceed one attempt's estimate or
+attempts never fund.
+
+`prize_review` is funded differently, because a mandate's escrow can be
+paused, exhausted, or closed while a claim waits, and a claimant must never
+pay for the review of a submission. When a bounty opens, the platform
+mints owls worth `PRIZE_REVIEW_RESERVE_FRACTION` (0.10) of its amount, at
+cost, into a platform-owned prize-review reserve job, outside any mandate's
+day room, as a hold releasable only to `prize_review` actions on that
+bounty's claims. The prize-check worker is the executor: it claims each
+such action, runs the check, the Reviewer, and the Steward under that job,
+and completes the action with the metered amount; the unspent remainder
+returns when the bounty closes. The reserve is an `admin_adjust` mint like
+the seed's, never a draw on the prize fund, which the ledger cannot see.
+The mandate page shows the reserve and its spend beside each bounty.
+
+**A bounty is not an allocation.** It appears on no action, enters no
+`mandate_valuations` row, and reduces nothing that remains to be covered.
+The constitutional channel for demand to move scheduling is an allocation
+on the attempt action, which the Grantmaker may place and the mandate page
+discloses; a bounty moves nothing. Bounties are cash only, drawn from a
+per-domain prize fund (`prize_pools`, `mathematics` first) whose entries
+are the platform's deposits and, later and only after counsel, fund-level
+sponsorship with Minerval as sole obligor. Owls never fund a bounty: an owl
+that could become a winner's owl would be a transfer of owls between
+people, which nothing in the system permits and which the owl's standing
+as prepaid credit depends on. The mandate spends owls on `formalize`,
+`attempt_proof`, and `prize_review`, which is compute, not prize money.
+
+**The fund's three numbers.** Only the first is stored:
+
+    balance   = SUM(prize_pool_entries.amount_micro_usd)
+    reserved  = SUM(bounties.amount_micro_usd) over live bounties
+                (open, claim_pending, house_result_pending, rebinding)
+    available = balance - reserved
+
+A bounty opens only when `available` covers it; nothing is posted when a
+bounty opens or closes. The only debits are `owl_prize`, `defect_award`,
+`review_award`, `withholding_remitted`, and, only when a cash rail exists,
+`payout`; each consumes the bounty's reservation where one exists. A
+dollar is promised once, in `reserved`, and spent once, in an entry.
+
+**Posting is two-pass, and confirmed above a threshold.** The Grantmaker's
+`post_bounty` records an intent on the mandate in one review pass, and only
+a call from a later pass, a fresh context re-judging the mission, opens it.
+Below `BOUNTY_AUTONOMY_THRESHOLD_USD` (default $1,000) the two passes alone
+open the bounty, so the Grantmaker determines and funds ordinary prizes
+without anyone's signature; at or above it the posting waits for a human
+confirmation (`POST /bounties/:id/confirm`, operator key). A public reward
+offer binds the company until revoked with equal publicity, and the review
+pass reads the open web in the same context as the tool; that is why a
+binding offer, and only that, waits on a person. The work (assessments,
+formalizations, attempts) proceeds without anyone's signature, so this is
+not the human bottleneck §19 forbids. Mechanical bounds besides: a
+`published` statement past its review period that the solver has attempted
+without settling; cash within `available` and within per-pass and per-day
+fractions of the fund; at most `MAX_BOUNTY_PER_CLAIM_USD` ($5,000 in v1)
+per claim; one live bounty per claim.
+
+**The accounting truth of an owl prize.** A prize of N dollars paid in owls
+mints N owls with ledger reason `prize_award`, and the fund posts an
+`owl_prize` debit of N dollars in the same transaction. When spent, the
+owls cover about N dollars of metered cost, paid by the platform to its
+providers as they are spent; the liability is measured at cost, one dollar
+per owl, like every owl outstanding, and it is backed by the N dollars the
+fund debited. The fund's balance is therefore what remains to be offered,
+and since the fund never posts more in open bounties than its balance, no
+owl a prize can ever mint is unbacked. The sale margin forgone (owls at
+one per dollar are four times the purchase rate) is disclosed, never
+booked. For the platform an owl prize is never dearer than the dollars set
+aside and cheaper by whatever fraction is never spent; both readings are
+shown on the fund's page. Prize owls never expire, are never transferable,
+and never become cash; `owls_prized_micro_usd` is kept apart from
+`owls_earned_micro_usd` so the leaderboard keeps its meaning
+(docs/accounts.md).
+
+**The platform is never a claimant.** If the solver produces an accepted
+check on a bounty-bearing statement, the worker moves the bounty to
+`house_result_pending` in the transaction that closes the attempt, the
+Steward judges fidelity, and `mark_problem_solved_by_platform` closes the
+bounty `resolved_internally`: no prize is paid, the proof is published,
+and the reservation returns to the fund. A submission whose source matches
+an attempt-mode check is rejected as a copy of the platform's own work; a
+human claim filed before the attempt completed is judged first.
+
 ## Cold-start policy
 
 Until purchase volume exists, the platform subsidizes: signup grants
@@ -305,3 +420,13 @@ and legitimate — but the unit economics must stay visible
 5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
    sizes, per-run caps — no mechanism may cascade the candidate set.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
+7. A bounty is not an allocation: it funds nothing, enters no valuation,
+   and reduces nothing that remains to be covered.
+8. Prize money never enters a valuation, an importance, an assessment, or
+   a standard; assessments and their reasoning never mention money.
+9. Owls never fund a prize. Prize money is cash in a fund the ledger cannot
+   see, and every prize owl is backed by a dollar the fund debited when the
+   owl was granted.
+10. The platform is never a claimant. A house solve closes the bounty
+    unpaid and publishes the proof.
+

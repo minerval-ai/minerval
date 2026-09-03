@@ -83,8 +83,8 @@ epistemic core, where `──<` reads "has many":
 
 A **claim** is the atomic unit: a proposition that can be true or false.
 Empirical claims (directly verifiable or derived), definitional, evaluative,
-causal, and normative claims are all represented the same way and all decompose
-into subclaims. Two formulations are the *same* claim when they turn on the
+causal, normative, and mathematical claims are all represented the same way
+and all decompose into subclaims. Two formulations are the *same* claim when they turn on the
 same considerations: nothing could count as evidence or argument bearing on one
 without bearing equally on the other (identical decomposition is a useful
 diagnostic, not the definition). This is the basis for deduplication, and it
@@ -111,6 +111,22 @@ another, stronger pass would improve it. Both are live inputs to the
 expected-value estimate the allocation engine funds work by
 (docs/allocation.md): value = importance × contested-factor × expected
 quality gain, with cost on the other side of the ratio.
+
+Two of the claim's fields carry two different judgments about its kind.
+`claim_type` is the proposition-kind facet that the page eyebrow, the cards,
+the map's bedrock logic, and the territory listing read; its values include
+`mathematical`, a proposition of mathematics, true or false by proof rather
+than by observation, settled by a proof others can check and most firmly by
+one a machine has checked. `domains` is a separate tag list
+(`claims.domains`, with `domains_source` recording whether the tag came
+from the Extractor, the Matcher, inheritance from a parent subclaim, a
+Steward's `set_claim_domains`, or the backfill) that selects which domain
+skills and tools a run on the claim carries (docs/policies.md, "Skills").
+The two are independent on purpose: a claim about the economics of a
+theorem is `causal` in type and carries `mathematics` among its domains; a
+theorem is `mathematical` in type and `mathematics` in domain. The Steward
+sets both, and neither the funding mandate nor importance gates the tools a
+domain brings.
 
 ### Arguments
 
@@ -215,6 +231,46 @@ history: exactly one row per claim is flagged `is_current`, enforced by a
 partial unique index, so the timeline of *why* a claim's status changed is
 fully recoverable. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
+### Formal statements and machine-checked arguments
+
+A mathematical claim may carry a **formal statement**: the graph's own
+rendering of the proposition as a Lean 4 `def Statement : Prop`, elaborated
+against a pinned Mathlib revision and toolchain. It lives in its own table
+(`claim_formalizations`) rather than in columns on `claims`, because it has
+a lifecycle with more than one live row (a draft beside the published one),
+prizes and attempts pin it by id and hash, and its provenance needs columns
+of its own. Each row records the pin (`pin_id`, `lean_toolchain`,
+`mathlib_rev`, `image_digest`), the statement source verbatim, two hashes
+(`source_hash`, which anyone can recompute from the published text and the
+pin, and `expr_hash`, over the elaborated body, which the checker compares),
+the pretty-printed proposition, the Mathlib constants it references, whether
+a witness `example` for satisfiable hypotheses elaborated, a reader-facing
+correspondence note in the graph's voice saying how the formal and informal
+statements relate and what the formal one leaves out, and a status of
+`draft`, `reviewed`, `published`, or `retired`. A partial unique index
+allows one `published` statement per claim. Publication is two-pass: the
+`formalize` action runs the Steward once to draft, elaborate, and record
+`reviewed`, then a fresh-context Steward pass with trigger
+`formalization_review` either publishes or returns it to `draft`. This is
+the defense against a statement whose every line is correct and whose
+theorem is the wrong one. A published statement carries
+`review_period_ends_at`, and no bounty may bind to it before then; a
+canonical-form change on the claim returns the statement to `reviewed` in
+the same transaction and moves any open bounty to `rebinding`.
+
+A **machine-checked argument** is an ordinary argument with stance `for`
+(or `against`, for a disproof) whose evidence is a `lean_checks` row the
+checker accepted. `lean_checks` is the server-side record of every check
+the platform runs, in three modes (`prize`, `attempt`, `steward`), with the
+verdict, the per-gate record, diagnostics, resource use, the pin, the image
+digest, and the metered cost; repeated checks of the same statement,
+submission, checker version, and mode return the stored row. The claim page
+derives the machine-checked badge at read time from the argument, its
+evaluation, and the check. It is not a seventh status: the six statuses are
+constitutional and closed in code. The badge says the proof checks against
+the statement; the verdict beside it is still the Steward's judgment of the
+claim as worded.
+
 
 ### Instances and sources
 
@@ -250,6 +306,14 @@ review gate judges good faith and claim quality (is this a single, disputable,
 canonical-formable proposition?), never subject matter. Internal seeding by
 direct service callers (corpus runs, case studies) is the one path that
 writes without review.
+
+A third family, the **prize claim** (`claim_prize`), is the one contribution
+type that carries files. It is created only by its own multipart route,
+never by `POST /contributions`, and its verification and money state live on
+a linked `prize_claims` row; the contribution row gives it the identity
+gate, the public record, review, appeal, arbitration, and audit that every
+other contribution has, so prizes need no second governance system. The
+flow is described under [the prize-check worker](#the-prize-check-worker-and-the-money-triggers).
 
 **Contributors** are the account layer as well as the reputation layer; there
 is one account table, and everyone on it is a potential contributor. Reputation
@@ -365,7 +429,9 @@ These act through tools over the life of a claim and the graph:
   sets its authoritative importance, and **assesses** it, re-judging as
   evidence and depended-on claims change. Its triggers: first onboarding, a
   subclaim's assessment changing, an accepted contribution, a Curator change,
-  or a staleness check. Effort scales with importance; consequential or
+  a staleness check, and, on mathematical claims, a formal statement to
+  publish or review, a completed solver attempt, or a prize claim to judge
+  for fidelity. Effort scales with importance; consequential or
   contested claims get deeper search (including bounded web search) and an
   adversarial second pass, minor settled ones a light touch. Decomposition
   terminates without a depth cap because shared ancestors get linked, not
@@ -413,6 +479,196 @@ live web page against graph state (verdicts range from "egregious" to "fine")
 and powers the extension's chat, grounded in the same graph tools. It never
 writes to the graph.
 
+### The Lean checker
+
+The checker is a Minerval-owned HTTP service, `lean-checker`, one container
+image per pin (`lean-checker/`; the image, its contract, and its first
+measurements are in `lean-checker/README.md`). It is an instrument, not an
+admin: it answers one mechanical question about one formal statement, holds
+no standing, and writes nothing to the graph; the API writes the
+`lean_checks` row from what it returns.
+
+It runs in **two lanes**, and the distinction is the security model. The
+warm lane is a long-lived process with Mathlib imported, serving
+`POST /v1/elaborate` (statement publication and vacuity signals),
+`POST /v1/scratch` (the Steward's and the solver's iterative work), and
+`POST /v1/search` (a proxy to a Loogle mirror pinned to the same Mathlib);
+it takes semi-trusted input only, Steward- and solver-generated code, never
+a claimant's file, and its results are never a verdict. The cold lane is
+one fresh container per check from the pinned image: no network, read-only
+root, Mathlib read-only, a temporary work directory, memory and heartbeat
+limits inside Lean and a kill timeout outside, output capped and flagged
+`truncated`, no secrets in the image or the environment. `POST /v1/check`
+in `prize` mode queues a job and returns `202 {check_id}`;
+`GET /v1/checks/:id` returns the record.
+
+**The verdict rule**, in one paragraph. A submission is `accepted` when,
+under the statement's pin, it passes the static policy (no `sorry`,
+`axiom`, `native_decide`, `unsafe`, `partial`, extra `import`, custom
+metaprogramming, or disallowed `set_option`) and compiles with no errors;
+the target constant exists, is a `theorem` with no universe parameters,
+and has a type alpha-equivalent to the published `Statement` constant (or
+its negation, for a disproof), compared against the constant rather than
+an unfolded body so that no reduction is involved and nothing is arguable;
+its axiom closure lies within `propext`, `Classical.choice`, and
+`Quot.sound`, and the submission adds no axiom or opaque constant; no new
+constant is `unsafe`, `partial`, or externally implemented; and the new
+declarations replay through the kernel. It is `rejected` when any gate
+fails on the merits, and the failed gate is stated on the contribution page
+in plain words. It is `error` when the checker could not decide (timeout,
+memory, infrastructure), which is never evidence.
+
+**Pins.** Each statement records its pin, and a submission is checked under
+the statement's pin, never a newer one. The platform keeps at most three
+live pins: the current monthly Mathlib tag, the previous one, and any pin
+still referenced by an open bounty. When the pin advances, a migration job
+re-elaborates every open statement and carries it forward without a new
+version only if the elaborated body and the closure of the constants it
+references hash the same; a statement with a live bounty never changes pin
+without a new version and the notice the rules require, whatever the hash
+says. Retired images stay in the registry so any historical verdict can be
+re-run.
+
+**No callback.** The checker never calls the API. The API polls
+`GET /v1/checks/:id` from the prize-check worker and a recovery sweep, and
+the checker's security group allows it no egress to the API's or the load
+balancer's. A design in which the checker reported results back would have
+to survive the checker being compromised by a submission; polling survives
+it by construction. The API reaches the service over the VPC's private
+addressing with a bearer token from Secrets Manager. A second opinion from
+an outside hosted checker may be requested for a prize verdict and is
+recorded beside it, never decisive; disagreement between the two is an
+automatic human sign-off condition.
+
+The Steward reaches the checker through four skill tools (`lean_search`,
+`lean_elaborate`, `lean_check`, `publish_formalization`), present exactly
+when the run carries the Mathematics skill and `LEAN_CHECKER_URL` is set,
+with per-run caps as backstops and no importance gate; a checker
+unreachable at run start yields no Lean tools and a note in the task, and a
+failed call mid-run returns a structured error the Steward routes around.
+Every checker call is metered into `llm_usage` as external usage (provider
+`lean`, the pin as the model) so it lands in the escrow accounting of
+whichever action funded it.
+
+### The solver
+
+`math_solver` (`src/llm/agents/math-solver.ts`) is the platform's own
+prover: an agent over the same LLM seam, run as a ledger action of kind
+`attempt_proof`, metered through the same chokepoint, traced into
+`agent_runs` and `agent_steps` with tracing forced on, and published on the
+agents pages like every other prompt. It is **an instrument, not an
+admin**: it owns no claim, holds no standing, receives no constitution
+(only the skill's `For the solver` section and a harness block), and writes
+nothing to the graph. Its tools are fixed at run start: the three Lean
+tools, with `lean_check` bound to the attempt's statement so it cannot
+check against a different one; the provider's code-execution container as
+the computer-algebra toolkit (no network, and it cannot hold Mathlib, which
+is why Lean is a client tool); a notebook (`notebook_write`,
+`notebook_read`) backed by `proof_attempts.notebook`; and a terminal
+`report` with a strict schema. No web search: a proof found on the web is
+not the platform solving the problem.
+
+**What it may write:** `proof_attempts.notebook`, `lean_checks` rows through
+`lean_check`, and its final report. It may not write to `claims`,
+`assessments`, `arguments`, `argument_evaluations`, `claim_relationships`,
+`claim_instances`, `contributions`, or any money table, and a unit test
+asserts that no such write occurs under `withAgent("math_solver")`. The
+harness validates the report: a `proof` outcome without an accepted check
+from this attempt is downgraded to `partial`, and a computational
+counterexample without a Lean disproof is a lead, not a result. The
+solver's narrative is untrusted; the tool log is the record.
+
+**Budgets and kill switches.** Every attempt has a dollar ceiling (the cost
+estimate plus `ATTEMPT_OVERAGE_FRACTION`) read from the usage meter each
+turn, Lean and container time included; a wall cap and an iteration cap; a
+per-claim lifetime cap on attempt spend; and the mandate's day room like any
+allocation. Independent of any mandate, a durable **breaker**
+(`checkSolverBudget`, `src/llm/solver-budget.ts`) compares the day's solver
+spend across processes against `SOLVER_DAILY_CAP_OWLS` and stops new
+attempts when it is reached, because the in-memory tracker is per process
+and exempts attributed calls. Three kill switches: `SOLVER_ENABLED` (the
+worker exits its loop when false), a `solver_paused` row in
+`platform_flags` polled every turn so an operator halts a run without a
+deploy, and `POST /admin/attempts/:id/cancel`, also polled per turn. A
+halted attempt completes its action with the metered amount and keeps its
+notebook and transcript. The solver runs with server-side fallbacks off: a
+refusal records `refused` and stops, since a maximum-effort attempt
+silently continued on a different model would be a different product than
+the mandate funded.
+
+**Execution.** A dedicated worker (`src/workers/solver-executor.ts`, its own
+process, `npm run worker:solver`) claims `attempt_proof` actions, runs the
+attempt under a usage context whose job is the funding job, completes the
+action with the metered amount, and then invokes the Steward **directly**
+with trigger `attempt_completed` on the strong model, under the same job,
+rather than enqueueing it: the steward queue coalesces triggers into one
+pending slot per claim and would run the result as an ordinary reassessment
+on the standard tier. The Steward reads the check rows the server wrote,
+re-checks a prize-bearing result with a fresh replay, judges fidelity,
+records the argument and the assessment, and, where a bounty is bound to
+the statement, either closes it as solved by the platform or retires a
+defective statement. Each turn updates the attempt's heartbeat and the
+action's `updated_at`, so the reopen sweep reclaims only a dead worker's row
+and marks its attempt `orphaned`. Every attempt is disclosed on the claim
+page, and its report and notebook are published before any bounty opens on
+the statement.
+
+### The prize-check worker and the money triggers
+
+A prize claim is filed through `POST /claims/:id/prize-claims` (multipart,
+free of any owl charge), whose gate checks that the bounty is `open`, the
+statement version is current, the claimant is eligible, no live claim by
+the same claimant exists on this statement version, the rate limits and
+cooldowns hold, the attachment policy is met, and the static Lean policy
+passes as a word-boundary scan that turns away spam before anything runs.
+One transaction inserts the contribution with `review_status = 'checking'`,
+a status the ordinary review pipeline and its recovery sweep ignore, the
+attachments, the `prize_claims` row (`queued`), and a `prize_review` action
+funded from the bounty's reserve (docs/allocation.md, "Prizes and
+attempts"); `submitted_at` is the priority timestamp.
+
+**The check runs first**, before any agent, as a DB-backed job rather than
+inside a tool loop, because a prize check may run fifteen minutes and a
+strong-model run held idle for it would be lost with the process. The
+worker (`src/workers/prize-check-pipeline.ts`) claims the `prize_review`
+action, selects with `FOR UPDATE SKIP LOCKED` the oldest `queued` claim per
+statement version whose statement has no other claim in flight (strict
+per-statement serialization, so priority is never lost to a race), posts to
+the cold lane in `prize` mode, and polls the record, with a recovery sweep
+for rows `checking` past the reclaim window. `accepted` moves the claim to
+`checked`, the bounty to `claim_pending`, and the contribution to `pending`
+for the Reviewer; `rejected` closes the claim at stage `check` with the
+gate summary public, no review row, and no reputation event; `error`
+requeues up to a retry cap and then parks the claim in `check_error`, which
+holds the statement's queue until an operator resolves it, so an
+infrastructure failure never costs a claimant their priority. The worker
+then runs the Reviewer itself, under the bounty's reserve job, and on
+admission invokes the Steward directly on `prize_claim`.
+
+**Six money triggers are invoked directly, never queued.** `formalize`,
+`formalization_review`, `prize_claim`, `prize_claim_voided`,
+`prize_window_closed`, and `attempt_completed` each call `runClaimSteward`
+on `STEWARD_STRONG_MODEL` from the worker that owns the event (the engine
+executor for the first two, the prize-check worker, the window closer, and
+the solver worker), inside a usage context whose job is the funding job.
+The steward queue is bypassed on purpose: it coalesces into a claim's
+single pending slot and keeps an existing trigger over a new one, so a
+`prize_claim` arriving on a claim already pending reassessment would run as
+a reassessment on the standard tier, and a fidelity judgment on a prize
+must not depend on which variant won an auction. Production refuses to run
+any of them without `STEWARD_STRONG_MODEL`, the trigger is recorded on the
+run, and direct invocation means a prize review never waits behind the
+steward drain. The served model and whether a fallback ran are recorded on
+the decision; the Audit agent treats a fallback-served acceptance as a
+send-back.
+
+After the Steward accepts, `requestAudit` is called with a dedupe key that
+carries the decision id (a re-acceptance after a send-back must be audited
+again), the challenge window opens, and `promotePayable` requires the
+window to have closed, an audit outcome without a send-back, and, where the
+amount, the importance, or any anomaly requires it, a human sign-off. The
+payout itself is mechanical (docs/accounts.md, "Prizes paid in owls").
+
 ### Models
 
 Model choice follows the value of the judgment, not a single default:
@@ -422,6 +678,7 @@ Model choice follows the value of the judgment, not a single default:
 | Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
+| Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
@@ -432,7 +689,11 @@ gracefully instead of failing the job. Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and the
 upgrade is bought exactly when its marginal gain justifies its marginal cost
 (docs/allocation.md) — so the most capable model is spent where it buys the
-most; what goes unfunded is the tail.
+most; what goes unfunded is the tail. The exception is the Steward's six money
+triggers (`formalize`, `formalization_review`, `prize_claim`,
+`prize_claim_voided`, `prize_window_closed`, `attempt_completed`), which
+always run on the strong model whatever variant the ledger funded, because
+a fidelity judgment with money behind it must not depend on an auction.
 
 ### Providers
 
@@ -499,6 +760,24 @@ ever meters as free. Every usage row records which provider served it.
 Missing credentials fail as a clear configuration error at call time, not as an
 opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
 `OPENROUTER_API_KEY`.
+### The long-run loop
+
+The five functions above are the provider-neutral contract every agent
+depends on, and they do not change for the solver. The seam has a sixth,
+`longRunToolLoop`, which is Anthropic-only by design: streaming (required
+at the 128,000-token output ceiling), `effort` up to `max`, a moving cache
+breakpoint on the last user message so a hundred-turn loop pays cache-read
+rates for its history rather than the full input price every turn,
+per-turn hooks (`beforeTurn`, `afterTurn`, `reminder`) through which the
+solver's dollar ceiling, wrap-up notice, and kill switches act, and
+`fallbacks: "none"`. The history is append-only, which the
+preserved-thinking rule requires and a test pins. A second client with an
+hour-long timeout serves it, because the default 180-second timeout with
+retries would abort and re-issue a fifteen-minute turn several times, each
+billable. The adapter reports the served model, whether a fallback ran, and
+cache-read and cache-creation tokens on every result; the money decisions
+record the first two.
+
 
 ### Workers and failure handling
 
@@ -509,7 +788,10 @@ marks it a CANDIDATE (idempotently — a claim re-triggered while already
 pending coalesces into one run), the action ledger holds its priced
 assess/reassess actions, and the executor runs whatever the allocations on
 that ledger cover (docs/allocation.md), claiming work with
-`FOR UPDATE SKIP LOCKED` so concurrent workers never collide.
+`FOR UPDATE SKIP LOCKED` so concurrent workers never collide. Prize checks
+and solver attempts are DB-backed jobs with workers of their own, never SQS
+messages: a check can run fifteen minutes and an attempt six hours, far past
+the queues' visibility timeout.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
@@ -565,7 +847,33 @@ ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
 run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
-queued work.
+queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
+formal statements and every check), `proof_attempts` (the solver's runs),
+`prize_pools` and `prize_pool_entries` (the per-domain prize fund and its
+ledger), `bounties`, `prize_claims`, `prize_payouts`, `attachments`, and
+`platform_flags` (operator switches such as `solver_paused`).
+### Attachments
+
+Uploaded files (a prize claim's Lean source, documents, and data; a
+winner's tax form) live in Postgres, in `attachments`, with `bytea` bodies
+keyed by `contribution_id`: `kind` (`lean_source`, `document`, `dataset`,
+`code`, `tax_form`), the sanitized filename, a content type determined by
+magic bytes against an allowlist rather than from the client's header,
+`size_bytes`, `sha256`, `visibility`, and a `storage` discriminator, `db`
+today with `s3` and a `storage_key` reserved. Bodies are `restricted` at
+submission; a Lean source becomes `public` when the Steward accepts the
+claim, because the challenge window needs it, and a rejected source stays
+restricted until the bounty closes so a near-miss cannot be patched by a
+second account and refiled. Nothing is executed or parsed except the Lean
+file inside the checker's sandbox; downloads are served as attachments with
+`nosniff` and a sandboxing content-security policy. Postgres is the right
+store at v1 volumes because one transaction landing the contribution, the
+attachments, and the prize claim is what makes the priority timestamp
+meaningful; the S3 path (a bucket, a gateway endpoint, presigned PUT and
+GET, a backfill) needs no schema change and is triggered by files over
+10 MiB, attachment storage past about 5 GB, or a second region
+(docs/infrastructure.md).
+
 
 ### Search: vectors and full text
 
@@ -622,7 +930,8 @@ exposes the graph to agentic clients under the same accounts and quotas: tools
 for searching and reading claims (`search_claims`, `get_claim`,
 `get_decomposition`), for the pipeline's judgments (`match_claim`,
 `extract_claims`, `assess_text`), and for contributing
-(`submit_contribution`, `get_contribution_status`), plus claim resources and
+(`submit_contribution`, `get_contribution_status`), for the machine-readable
+terms of a prize (`get_bounty_terms`), plus claim resources and
 fact-checking prompts. Clients authenticate with an API key or via the OAuth
 2.1 authorization flow — the API acts as an authorization server for the
 `/mcp` resource, handing sign-in and consent to the web app — which is what
@@ -648,6 +957,20 @@ signup and monthly grants keep the entry free, and Stripe Checkout sells owl
 packs. Rate limits at the API boundary are a runaway backstop; the real
 spend guardrail is the owl balance and the escrowed budgets behind mandates.
 
+Three credentials, not two, once money can move. The service key
+(`MINERVAL_API_KEY`) is deployed to the web tier and acts for any user
+through the acting-user header, so it cannot be the credential that moves
+money. Four routes require an **operator key** (`MINERVAL_OPERATOR_KEY`),
+held outside the web deployment and used only from the operator's own
+session: the prize-fund deposit, the bounty confirmation, the prize-claim
+sign-off, and the void. Two routes act for a winner and require both the
+dashboard session and a one-time code sent to the account's verified email,
+the payee step and the withdrawal of a claim, so a leaked consumer or
+service key alone can neither redirect a prize nor abandon a winning claim.
+Every call to these six routes is written to `audit_log` with the
+credential kind and the acting person. The service key alone moves no
+money.
+
 ---
 
 ## Deployment
@@ -657,7 +980,10 @@ at `api.claimgraph.io`, with RDS PostgreSQL (pgvector) and SQS, all provisioned
 by CDK; a push to main deploys after typecheck and tests, and migrations run at
 container start. The web app deploys separately to Vercel at `minerval.ai`.
 Local development uses docker-compose Postgres and the in-memory queue runner,
-so the whole pipeline runs on a laptop with no AWS dependencies.
+so the whole pipeline runs on a laptop with no AWS dependencies. The Lean
+checker is a separate stack with a security group that reaches nothing, and
+the solver worker is a second ECS service; both are described in
+docs/infrastructure.md.
 
 ---
 

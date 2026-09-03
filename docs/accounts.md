@@ -70,8 +70,26 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
+| `requireOperator` | the operator key, held outside the web deployment | the prize-fund deposit, bounty confirmation, prize-claim sign-off and void (below) |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
+
+**The operator key.** The service key is deployed to the web tier and acts
+for any user through the acting-user header, so it cannot be the
+credential that moves money. Four routes require a separate operator key
+(`MINERVAL_OPERATOR_KEY`), held outside the web deployment and used only
+from the operator's own session: the prize-fund deposit
+(`POST /prize-pools/:domain/deposit`), the bounty confirmation
+(`POST /bounties/:id/confirm`), the prize-claim sign-off
+(`POST /prize-claims/:id/sign-off`), and the void
+(`POST /prize-claims/:id/void`). Two further routes act for a winner and
+require both the dashboard session and a one-time code sent to the
+account's verified email: the payee step (`POST /prize-claims/:id/payee`)
+and the withdrawal of a claim (`POST /prize-claims/:id/withdraw`), so a
+leaked consumer key or service key alone can neither redirect a prize nor
+abandon a winning claim. Every call to these six routes is written to
+`audit_log` with the credential kind and the acting person. The service
+key alone moves no money.
 
 ## The per-token meter
 
@@ -249,7 +267,8 @@ balance = SUM(owl_ledger.amount_micro_usd)
 Reasons: `purchase`, `signup_grant`, `monthly_grant`, `contribution_award`,
 `charge`, `meter_settlement` (the unused fraction of a charged cap,
 returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
-(budgeted jobs), `admin_adjust`. Charges carry the operation (`op`) and
+(budgeted jobs), `admin_adjust`, and `prize_award` (a prize paid in owls,
+below). Charges carry the operation (`op`) and
 link to the claim or contribution they paid for, so the account history
 reads as "up to 1 owl held for the assessment of claim X, 0.6 returned".
 Charges are balance-guarded single-statement inserts; two racing requests
@@ -261,7 +280,74 @@ points (1–5, the old kudos rule) × `CONTRIBUTION_AWARD_OWL_PER_POINT`
 (default 0.25 owl), with a +2-point bonus for acceptances that survive appeal
 scrutiny. The leaderboard (`GET /contributors`) ranks **lifetime owls
 earned** (`contributors.owls_earned_micro_usd`) — purchases never move it and
-spending never lowers it. Audit supersession claws awards back.
+spending never lowers it. Audit supersession claws awards back. Prize owls
+are a separate total, `owls_prized_micro_usd`, and never enter the
+leaderboard (below).
+
+## Prizes paid in owls
+
+A prize (docs/prizes.md; the mechanism in docs/mathematics.md, section 8)
+is paid in owls at one owl per dollar of the prize, and it reaches the
+ledger through one path only: `payPrize`, run after the challenge window
+has closed, the audit has passed, any required sign-off is recorded, and
+the winner's steps below are complete.
+
+- **The `prize_award` reason.** The grant is one `owl_ledger` row with
+  reason `prize_award`, positive, net of any required withholding, with
+  `claim_id` and `prize_claim_id` set and idempotency key
+  `prize:<prize_claim_id>:owls`, written in the same transaction as the
+  `prize_payouts` row (`kind = 'owls'`, `provider = 'internal'`) and the
+  prize fund's `owl_prize` debit at the cash amount, so every prize owl is
+  backed by a dollar already deposited. The ledger says "award" because
+  the legal posture depends on prize owls being promotional credit: issued
+  without payment, never expiring, never transferable, never redeemable
+  for cash, never converted later. A post-payout voiding after fraud is a
+  negative `prize_award` row that mirrors `clawbackContributionOwls` and
+  may push a balance negative; the payout row is marked `reversed`.
+- **`owls_prized_micro_usd`** on `contributors` sits beside
+  `owls_earned_micro_usd` and is kept apart from it. Earned owls are the
+  importance-scaled award for accepted contributions and are what the
+  leaderboard ranks; a prize is a payment for one result, fixed in
+  advance, and folding it into the earned total would let a single $2,500
+  prize outrank years of accepted work. Prize owls are excluded from the
+  leaderboard sum, spend like any other owl, and appear on the profile as
+  "Prizes" beside, not inside, "owls earned". `GET /contributors/:id` and
+  `/users/me` expose `owls_prized` and `open_prize_claims`.
+- **The winner's steps.** After the prize claim becomes `payable` the
+  winner sees "Your prize" on the account page: the amount; what owls are
+  (metered work on the graph: assessments, deeper passes, mandates the
+  winner directs); that they are non-transferable, non-refundable, and
+  never redeemable for cash; that the prize is reported for tax at its
+  dollar value; and three steps to complete within `PRIZE_PAYEE_STEPS_DAYS`
+  (90). The steps are identity and residency (`POST /prize-claims/:id/payee`,
+  dashboard session plus an emailed one-time code, because a leaked
+  consumer key must not redirect a prize); a tax form, W-9 for U.S. persons
+  or W-8BEN otherwise, uploaded as an attachment of kind `tax_form` with
+  visibility `restricted`; and sanctions screening against the OFAC SDN
+  and consolidated lists, which the operator records on the payout row.
+  The sign-off checklist requires all three before any `prize_award` row
+  is written; the owl path is not a way around them. A winner who does not
+  complete the steps within the period forfeits (`forfeited`), and the
+  reservation returns to the fund.
+- **Tax and screening records.** Prizes are ordinary income at the dollar
+  value of the prize. `prize_payouts` records `withholding_micro_usd`,
+  `tax_form_kind` (`w9` | `w8ben`), `payee_country`, and
+  `screening_result`. A W-9 with a valid TIN means no withholding and a
+  1099-MISC at the statutory threshold; a missing TIN means 24 percent
+  backup withholding; a W-8BEN means 30 percent withholding by default,
+  the withheld amount remitted from the fund (`withholding_remitted`) and
+  a 1042-S record, pending counsel's view on the source of prize income.
+  Persons in comprehensively sanctioned jurisdictions are ineligible by
+  rule, and a screening result other than clear is a human sign-off
+  condition. Payee details, provider ids, tax forms, and screening results
+  never serialize on any public route, and the records are kept at least
+  seven years.
+- **The daily tranche rule.** A grant above `PRIZE_OWL_TRANCHE_USD`
+  ($2,000) is written in daily tranches of at most that amount, one
+  `prize_award` row per day under a per-tranche idempotency key, so no
+  single day loads more owls onto one account than the closed-loop
+  prepaid-access threshold the owl's legal posture relies on. The largest
+  purchase pack (Parliament, $1,000) sits under the same figure.
 
 ## Buying owls (Stripe)
 
@@ -269,8 +355,9 @@ Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` or a
 restricted `rk_…` — `stripeConfigured()`); a placeholder keeps the deployment
 on free grants only. Production should use a restricted key scoped to
 Checkout Sessions: Write, the only Stripe API call the integration makes. Owls are sold in fixed packs with bulk discounts (`OWL_PACKS`,
-default `5:2000,15:5500,40:14000,125:40000` as owls:cents — $20 face value
-up to 20% off at 125 owls):
+default `5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament`
+as owls:cents:name: Clutch at the $4 face value, Perch 10% off, Wisdom
+25% off, and Parliament 50% off, the mandate-scale pack):
 
 1. `GET /billing/packs` (public) lists the packs.
 2. `POST /billing/checkout` (dashboard-session trust, like key minting)
@@ -325,3 +412,8 @@ owls earned. `/signin` lists whichever providers are configured.
 - Metering never fails a call: `meterLlmUsage` catches and logs. The
   in-memory budget tracker (process circuit breaker) is unchanged and
   independent.
+- `MINERVAL_OPERATOR_KEY` is never set on the Vercel project or on the API
+  task's environment for the web tier's benefit; it is held by the operator
+  and presented only on the four money routes above. The Lean checker's
+  bearer token is a Secrets Manager entry created by the checker stack and
+  read by the API task alone (docs/infrastructure.md).

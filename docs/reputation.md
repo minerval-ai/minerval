@@ -110,6 +110,48 @@ cheapest ungameable option; the `awarded_by` column leaves room for peer
 signal or "did this change the assessment?" detection to join as additional
 sources later.
 
+## Prizes
+
+A prize claim (`claim_prize`, docs/prizes.md) runs through the same review
+pipeline as every other contribution, and its reputation effects are
+deliberately narrow, because the checker and the prize fund do the work
+that reputation does elsewhere:
+
+- **A checker rejection is not an event.** A submission that fails the
+  cold-lane check is rejected at stage `check` with no
+  `contribution_reviews` row, no reputation delta, and no kudos: a kernel
+  result is a mechanism, not a judgment. A cooldown on the same statement
+  is the only consequence, and the rejection is appealable, where the
+  Reviewer engages with the objection and may re-run the check.
+- **Admission earns nothing.** When the Contribution Reviewer admits a
+  prize claim to the Steward's review, it writes the review row and applies
+  no credit: no reputation delta, no kudos, no owls. The Reviewer judged
+  form, good faith, identity, and duplicates, not the work, and a claim can
+  still be rejected at the Steward's stage or voided in the window. A
+  Reviewer rejection (stage `review`) is the ordinary sincere rejection
+  (−1) and appealable like any other.
+- **Acceptance earns the ordinary credit.** When the Steward accepts the
+  claim with `decide_prize_claim`, the accepted-contribution consequences
+  apply as for any other accepted contribution: +2 reputation, the
+  importance-scaled kudos, and the contribution award in owls where the
+  award rate is on. The prize itself is separate (`prize_award`,
+  docs/accounts.md) and never touches reputation or kudos. A claim voided
+  after acceptance has that credit reversed, as an audit supersession
+  reverses any other decision's consequences.
+- **Prize-specific bad faith.** Beside `spam`, `vandalism`, `sybil`, and
+  `misinformation`, the Reviewer and the Arbitrator may flag, on a prize
+  claim or on a challenge to one: submitting another's proof as one's own,
+  sock-puppet submissions filed to defeat priority, and challenges whose
+  only ground is dislike of the result. The consequences are the ordinary
+  ones (−15 and must-pay standing), and must-pay standing blocks further
+  prize claims until an appeal succeeds.
+- **`prize_ineligible`.** A flag on the contributor row, set by the
+  operator, marks accounts that may never file a prize claim whatever their
+  standing: the platform account, funders of the Mathematics mandate, and
+  contractors on the program. It is not a reputation event and not a
+  penalty; the route gate refuses with `403 INELIGIBLE`. Accounts below
+  probationary standing are refused at the same gate.
+
 ## Surfaces
 
 | surface | what |

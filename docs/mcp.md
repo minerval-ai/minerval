@@ -84,7 +84,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `get_claim`, `get_decomposition`, `get_contribution_status` | never metered |
+| Free reads | `search_claims`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | LLM tokens metered per account; rate-limited and gated on the monthly free-tier grant (402 `QUOTA_EXCEEDED` when exhausted) |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — new/low-reputation accounts get a tighter hourly cap (`CONTRIBUTION_RATE_LIMITED`), and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 
@@ -93,9 +93,24 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 - **`search_claims`** `{query, limit?, assessed?, min_importance?}` — hybrid
   vector + keyword search over canonical claims. Each result carries its
   current assessment status/confidence and a `minerval.ai` page link.
+  Each result also carries `prize_micro_usd` (the live bounty on the claim,
+  or null) and `checked` (`proof`, `disproof`, or null: whether a
+  machine-checked argument stands on the claim, the same derivation as the
+  badge on the claim page), and the input accepts `with_prizes: true` to
+  restrict results to claims with an open bounty.
 - **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
   — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link.
+  source instances, arguments, dependents, page link. `formalization` is
+  returned beside `assessment`: the published Lean 4 statement, its pin
+  (toolchain and Mathlib revision), both hashes, the correspondence note,
+  and the review-period end, or null when the claim has none. A formal
+  statement is the graph's own rendering of the proposition and is what
+  prizes, solver attempts, and machine-checked arguments bind to; the
+  assessment beside it remains the Steward's judgment of the claim as
+  worded. `include` also accepts `"proofs"`, which adds, to each argument
+  that carries one, the public check record (verdict, gates, pin, hashes,
+  and the submission source once public) behind a machine-checked proof or
+  disproof.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: contested-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?}` — run a free-text assertion
@@ -118,6 +133,26 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   Reviewer pipeline and is subject to suspension and reputation policy (#71).
 - **`get_contribution_status`** `{contribution_id}` — review decision,
   reasoning, and policy citations once the reviewer has ruled.
+- **`get_bounty_terms`** `{claim_id}` returns the machine-readable terms of
+  the live bounty on a claim, the same `terms` object `GET /claims/:id/bounty`
+  serves: the amount and status, the formal statement's id, version, pin,
+  and both hashes, the resolution sought (`proof`, `disproof`, or either),
+  the allowed axioms and a summary of the static policy a submission must
+  pass, the state of any challenge window, the rules version in force with
+  its link, open-since and expiry dates, the count of submissions so far,
+  and the platform's own attempt disclosure. Returns `bounty: null` when
+  the claim carries no live bounty. An outside solver needs nothing else
+  to know what would count as a solution; the statement file itself is at
+  `GET /claims/:id/formalization.lean`.
+
+Claiming a prize over MCP (`claim_prize`) is deferred until the first prize
+has been paid. The tool is thin once the JSON route exists (Lean source as
+a string; documents would not be accepted over MCP), but a prize claim
+carries declarations, a residency statement, and a rules version that a
+person must read and make, and the first claims should go through the
+form, where those are shown, before a headless path is offered. Until
+then, `get_bounty_terms` tells an agent what a solution must be and the
+claim page's form (`/claims/:id/prize/claim`) is where one is filed.
 
 ## Resources
 
