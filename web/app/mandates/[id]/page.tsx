@@ -7,7 +7,11 @@ import {
   fetchMandateView,
   type MandateDetailView,
   type MandatePipelineRow,
+  type MandatePrizesView,
 } from "../../../lib/account-api";
+import type { AttemptSummary } from "../../../lib/types";
+import { formatUsd } from "../../../lib/format";
+import { ATTEMPT_VARIANT_LABEL, BOUNTY_STATUS_LABEL, attemptOutcomeLabel } from "../../../lib/prizes";
 import { OwlMark } from "../../../components/OwlMark";
 import { AllocationSection } from "./AllocationView";
 import { ContributeBox } from "./ContributeBox";
@@ -109,6 +113,132 @@ function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
   );
 }
 
+// The prizes section (docs/mathematics.md §8.3): the fund this mandate draws
+// on, the house solver's attempts, and the claims with a bounty. Prize spend
+// is never counted against the mandate's escrow meter; the sentence under the
+// heading says why.
+function PrizesSection({
+  prizes, attempts,
+}: {
+  prizes: MandatePrizesView;
+  attempts: AttemptSummary[];
+}) {
+  const sorted = [...attempts].sort((a, b) =>
+    (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at),
+  );
+  return (
+    <section>
+      <h2>Prizes</h2>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
+        Prizes are paid from a separate fund, not from this mandate&rsquo;s
+        compute budget. They reward proofs and disproofs of formal statements
+        the steward has published, and they buy no influence over any
+        assessment.
+      </p>
+      <div className="alloc-tiles">
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">fund balance</span>
+          <span className="alloc-tile-big">{formatUsd(prizes.pool_balance_micro_usd)}</span>
+          <span className="alloc-tile-sub">what remains to be offered</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">reserved</span>
+          <span className="alloc-tile-big">{formatUsd(prizes.reserved_micro_usd)}</span>
+          <span className="alloc-tile-sub">held against open prizes</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">prizes posted</span>
+          <span className="alloc-tile-big">{prizes.bounties_posted.toLocaleString("en-US")}</span>
+          <span className="alloc-tile-sub">{formatUsd(prizes.bounties_total_micro_usd)} in all</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">prizes paid</span>
+          <span className="alloc-tile-big">{prizes.prizes_paid.toLocaleString("en-US")}</span>
+          <span className="alloc-tile-sub">
+            <OwlMark size={12} className="owl-mark" />
+            {owls(prizes.owls_paid)} owls granted, one per dollar
+          </span>
+        </div>
+      </div>
+
+      {sorted.length > 0 && (
+        <>
+          <h3>Attempts</h3>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem", maxWidth: "44rem" }}>
+            The house solver&rsquo;s runs against published statements, each
+            public with its cost and its report.
+          </p>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>claim</th>
+                <th>finished</th>
+                <th>variant</th>
+                <th>cost</th>
+                <th>outcome</th>
+                <th aria-label="report" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <Link href={`/claims/${a.claim_id}`}>view claim</Link>
+                    {a.is_calibration && <> <span className="tag">calibration</span></>}
+                  </td>
+                  <td>{dateish(a.finished_at ?? a.started_at)}</td>
+                  <td>{ATTEMPT_VARIANT_LABEL[a.variant] ?? a.variant}</td>
+                  <td>{formatUsd(a.spent_micro_usd)}</td>
+                  <td>{attemptOutcomeLabel(a)}</td>
+                  <td>
+                    {a.published_at ? (
+                      <Link href={`/claims/${a.claim_id}/attempts/${a.id}`}>report</Link>
+                    ) : (
+                      <span style={{ color: "var(--faint)" }}>not yet published</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {prizes.bounties.length > 0 && (
+        <>
+          <h3>Claims with a prize</h3>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>claim</th>
+                <th>amount</th>
+                <th>status</th>
+                <th>open since</th>
+                <th>submissions</th>
+                <th>outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prizes.bounties.map((b) => (
+                <tr key={`${b.claim_id}-${b.opened_at ?? ""}`}>
+                  <td className="alloc-label">
+                    <Link href={`/claims/${b.claim_id}`}>{b.text}</Link>
+                  </td>
+                  <td>{formatUsd(b.amount_micro_usd)}</td>
+                  <td>{BOUNTY_STATUS_LABEL[b.status] ?? String(b.status).replace(/_/g, " ")}</td>
+                  <td>{dateish(b.opened_at)}</td>
+                  <td>{b.submissions}</td>
+                  <td>{b.outcome ? b.outcome.replace(/_/g, " ") : "·"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default async function MandatePage({
   params,
 }: {
@@ -141,6 +271,7 @@ export default async function MandatePage({
   const hasPlan = mandate.plan_items.length > 0;
   const hasPipeline = mandate.pipeline.length > 0;
   const open = mandate.status === "active";
+  const prizes = mandate.prizes ?? null;
 
   return (
     <div className="col-wide account">
@@ -184,6 +315,11 @@ export default async function MandatePage({
           <span className="summary-chip">
             {mandate.pipeline.length} source
             {mandate.pipeline.length === 1 ? "" : "s"} ingested
+          </span>
+        )}
+        {prizes && prizes.bounties_posted > 0 && (
+          <span className="summary-chip">
+            {prizes.bounties_posted} prize{prizes.bounties_posted === 1 ? "" : "s"} posted
           </span>
         )}
       </div>
@@ -295,6 +431,8 @@ export default async function MandatePage({
           </table>
         </section>
       )}
+
+      {prizes && <PrizesSection prizes={prizes} attempts={mandate.attempts ?? []} />}
 
       {mandate.is_manager && mandate.conversation_id && (
         <section>

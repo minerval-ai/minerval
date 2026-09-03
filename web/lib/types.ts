@@ -7,7 +7,11 @@ export type AssessmentStatus =
 
 export type ClaimType =
   | "empirical_verifiable" | "empirical_derived" | "definitional"
-  | "evaluative" | "causal" | "normative";
+  | "evaluative" | "causal" | "normative" | "mathematical";
+
+// The two things a Lean checker can confirm about a published formal
+// statement. "proof" establishes it; "disproof" refutes it.
+export type CheckKind = "proof" | "disproof";
 
 export type ClaimState =
   | "active" | "merged" | "deprecated" | "archived";
@@ -64,6 +68,18 @@ export interface TreeNode {
   // optional while API deploys race the frontend.
   argument_verdict?: ArgumentVerdict | string | null;
   argument_evaluation?: string | null;
+  // The checker record behind a machine-checked argument (mathematics): the
+  // argument's evidence is a lean_checks row the checker accepted. Threaded
+  // onto each of the argument's edges like the other argument_* fields.
+  argument_lean_check?: LeanCheckSummary | null;
+  // Mathematics, for the map and the tree (docs/mathematics.md §8.3): the
+  // amount of a live bounty on this claim, whether a machine-checked proof or
+  // disproof of its published statement exists, and whether a published
+  // formal statement exists at all. Optional so a tree served by an API that
+  // predates the fields degrades to unmarked nodes.
+  bounty_micro_usd?: number | null;
+  checked?: CheckKind | null;
+  formal?: boolean;
   children: TreeNode[];
   // A repeated occurrence of a shared subclaim: its children are rendered at
   // the node's first occurrence in the response, not duplicated here.
@@ -119,6 +135,10 @@ export interface ClaimCore {
   // has never reached "done" (and has no assessment) is an unprocessed stub, not
   // an irreducible atom.
   steward_state?: string;
+  // The domain tags that select skills and tools (docs/mathematics.md §2.1):
+  // a theorem is `mathematical` in type and carries "mathematics" here. Empty
+  // when the API omits the column.
+  domains?: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -135,6 +155,9 @@ export interface ArgumentItem {
   // Steward evaluation of the inference (issue #173); null until judged.
   verdict?: ArgumentVerdict | string | null;
   evaluation?: string | null;
+  // The checker record when this argument is a machine-checked proof or
+  // disproof (docs/mathematics.md §2.3); null or absent otherwise.
+  lean_check?: LeanCheckSummary | null;
 }
 
 export interface Instance {
@@ -174,6 +197,10 @@ export interface DependentClaim {
   assessment_confidence: number | null;
   // Credence for the dependent claim (#238); same optionality as above.
   assessment_credence?: number | null;
+  // Mathematics marks for the map's dependents band; see TreeNode.
+  bounty_micro_usd?: number | null;
+  checked?: CheckKind | null;
+  formal?: boolean;
 }
 
 // --- contribution record (#171) ---------------------------------------------
@@ -254,6 +281,17 @@ export interface ClaimDetail {
   // The public contribution record (#171); absent when the API predates the
   // /claims/:id/record endpoint or the fetch fails.
   record?: ContributionExchange[];
+  // --- mathematics (docs/mathematics.md §11.1) ------------------------------
+  // The published formal statement, the derived machine-checked badge, the
+  // bounty pinned to the statement, the house solver's attempts, and the
+  // prize claims filed. The API loader defaults each to null or empty when
+  // the route omits it, so every section renders nothing before the API
+  // serves the field.
+  formalization: FormalizationSummary | null;
+  verification: VerificationSummary | null;
+  bounty: BountySummary | null;
+  attempts: AttemptSummary[];
+  prize_claims: PrizeClaimSummary[];
 }
 
 export interface SearchResultItem {
@@ -265,6 +303,11 @@ export interface SearchResultItem {
   importance?: number;
   assessment_status: AssessmentStatus | null;
   assessment_confidence: number | null;
+  // Mathematics (docs/mathematics.md §8.3): the amount of a live bounty on the
+  // claim, and whether a machine-checked proof or disproof exists. Null when
+  // there is none or the API omits the fields.
+  prize_micro_usd: number | null;
+  checked: CheckKind | null;
 }
 
 export type AssessedFilter = "all" | "assessed" | "unassessed";
@@ -273,6 +316,11 @@ export type AssessedFilter = "all" | "assessed" | "unassessed";
 export interface ClaimFilters {
   assessed?: AssessedFilter;
   minImportance?: number;
+  // Only claims with a live prize (API: with_prizes).
+  withPrizes?: boolean;
+  // Restrict to one claim type (API: claim_type); the listing-backed
+  // Mathematics territory reads through this.
+  claimType?: ClaimType;
 }
 
 // --- claim event history (#175) ----------------------------------------------
@@ -460,4 +508,146 @@ export interface ClaimCitation {
 export interface ClaimCitationPayload {
   citation: ClaimCitation;
   evidence_record: Record<string, unknown>;
+}
+
+// --- mathematics: formal statements, checks, prizes, attempts ----------------
+// Read models served beside the claim (docs/mathematics.md §11.1). Amounts are
+// micro-USD integers like every money column; they render through formatUsd
+// and never with owl marks.
+
+// One check the Lean checker ran, summarised for a reading surface.
+export interface LeanCheckSummary {
+  id: string;
+  kind: CheckKind;
+  verdict: "accepted" | "rejected" | "error";
+  checked_at: string;
+  pin_id: string;
+  submission_sha256: string | null;
+  submitted_by: string | null;
+}
+
+export interface FormalizationSummary {
+  id: string;
+  version: number;
+  status: "published" | "reviewed" | "draft" | "retired";
+  pin_id: string;
+  lean_toolchain: string;
+  mathlib_rev: string;
+  mathlib_tag: string | null;
+  namespace: string;
+  statement_source: string;
+  pp_type: string;
+  source_hash: string;
+  expr_hash: string;
+  correspondence: string | null;
+  published_at: string | null;
+  review_period_ends_at: string | null;
+}
+
+// The derived machine-checked badge (§2.3, §2.4): not a status, a fact about
+// the artifacts on the page. Null when no accepted check exists.
+export interface VerificationSummary {
+  kind: CheckKind;
+  lean_check_id: string;
+  checked_at: string;
+  formalization_id: string;
+  pin_id: string;
+}
+
+export type BountyStatus =
+  | "requested" | "confirm_pending" | "open" | "claim_pending"
+  | "house_result_pending" | "rebinding" | "paid" | "resolved_internally"
+  | "resolved_unpaid" | "expired" | "withdrawn";
+
+export interface BountySummary {
+  id: string;
+  amount_micro_usd: number;
+  status: BountyStatus;
+  resolution: "proof" | "disproof" | "either";
+  formalization_id: string;
+  source_hash: string;
+  expr_hash: string;
+  pin_id: string;
+  opened_at: string | null;
+  expires_at: string | null;
+  withdraw_effective_at: string | null;
+  rules_version: string;
+  submissions: number;
+  attempts: Array<{
+    id: string;
+    finished_at: string;
+    variant: "standard" | "max";
+    cost_micro_usd: number;
+    outcome: "proof" | "disproof" | "partial" | "reduction" | "negative" | "none";
+  }>;
+  awarded: { credit_name: string; paid_at: string; amount_micro_usd: number } | null;
+  // The state sentence, rendered by the server in the graph's voice.
+  state_sentence: string;
+  terms_url: string;
+}
+
+export type PrizeClaimStatus =
+  | "queued" | "checking" | "check_error" | "checked" | "in_review"
+  | "in_challenge_window" | "payable" | "defect_award_pending" | "paid"
+  | "rejected" | "voided" | "withdrawn" | "superseded" | "forfeited";
+
+export interface PrizeClaimSummary {
+  id: string;
+  credit_name: string;
+  direction: CheckKind;
+  submitted_at: string;
+  status: PrizeClaimStatus;
+  rejected_stage: "check" | "review" | "steward" | null;
+  contribution_id: string;
+}
+
+export type AttemptOutcome = "proof" | "disproof" | "partial" | "reduction" | "negative" | "none";
+
+export interface AttemptSummary {
+  id: string;
+  claim_id: string;
+  variant: "standard" | "max";
+  effort: string;
+  status: string;
+  outcome: AttemptOutcome | null;
+  is_calibration: boolean;
+  spent_micro_usd: number;
+  turns: number;
+  started_at: string;
+  finished_at: string | null;
+  published_at: string | null;
+  report: {
+    informal_argument: string;
+    approaches_tried: string[];
+    obstruction: string;
+    what_would_help: string;
+    confidence: number;
+  } | null;
+  notebook: Record<string, string> | null;
+}
+
+// One row of GET /prizes: an open bounty with the claim it is pinned to.
+export interface PrizeListItem {
+  claim_id: string;
+  text: string;
+  claim_type: ClaimType;
+  assessment_status: AssessmentStatus | null;
+  importance?: number;
+  checked: CheckKind | null;
+  bounty: BountySummary;
+}
+
+// A signed-in claimant's own prize claim, as /users/me lists it (§8.7): the
+// public summary plus the claim it is on, the amount, and where the winner's
+// steps stand. Payee details, provider ids, and tax data never serialize.
+export interface OpenPrizeClaim extends PrizeClaimSummary {
+  claim_id: string;
+  claim_text: string;
+  amount_micro_usd: number;
+  window_ends_at: string | null;
+  payee_deadline_at: string | null;
+  payee_status: "pending" | "submitted" | "verified" | null;
+  tax_form_status: "pending" | "received" | null;
+  screening_status: "pending" | "cleared" | "blocked" | null;
+  paid_at: string | null;
 }

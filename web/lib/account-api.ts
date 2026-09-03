@@ -1,4 +1,7 @@
 import "server-only";
+import type {
+  AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimSummary,
+} from "./types";
 
 // Server-only client for the account/keys/usage half of the API (#70).
 // Authenticates with the frontend's service key and acts on behalf of the
@@ -72,6 +75,50 @@ async function accountFetch<T>(
   return (await res.json()) as T;
 }
 
+// The multipart sibling of accountFetch (docs/mathematics.md §8.4): a
+// FormData body is forwarded as received, files included, with the same
+// service key and acting-user header. No content-type is set by hand; fetch
+// writes the multipart boundary itself. The API validates independently of
+// the BFF.
+async function accountFetchForm<T>(
+  path: string,
+  form: FormData,
+  options: { method?: string; actingUser?: string } = {}
+): Promise<T> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const res = await fetch(`${BASE}${path}`, {
+    method: options.method ?? "POST",
+    headers: {
+      ...(KEY ? { "x-api-key": KEY } : {}),
+      ...(options.actingUser ? { "x-acting-user": options.actingUser } : {}),
+    },
+    body: form,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let code: string | undefined;
+    let message = `Minerval API ${res.status} for ${path}`;
+    try {
+      const payload = (await res.json()) as {
+        error?: string | { code?: string; message?: string };
+        code?: string;
+      };
+      if (typeof payload.error === "string") {
+        code = payload.code;
+        message = payload.error;
+      } else if (payload.error) {
+        code = payload.error.code ?? payload.code;
+        if (payload.error.message) message = payload.error.message;
+      }
+    } catch {
+      // non-JSON error body; keep the generic message
+    }
+    throw new AccountApiError(message, res.status, code);
+  }
+  return (await res.json()) as T;
+}
+export { accountFetchForm };
+
 // --- shapes (the API speaks snake_case) -------------------------------------
 
 export interface AccountUser {
@@ -92,6 +139,11 @@ export interface AccountUser {
   is_suspended: boolean;
   created_at: string;
   last_active_at: string;
+  // Owls granted as prizes (docs/mathematics.md §8.7), kept apart from
+  // owls_earned so the leaderboard keeps its meaning. Absent before the
+  // mathematics API ships.
+  owls_prized?: number;
+  open_prize_claims?: OpenPrizeClaim[];
 }
 
 export interface Entitlement {
@@ -176,10 +228,22 @@ export async function provisionUser(input: {
   return r.user;
 }
 
-export async function fetchAccount(
-  externalId: string
-): Promise<{ user: AccountUser; entitlement: Entitlement; packs: OwlPack[] }> {
-  return accountFetch("/users/me", { actingUser: externalId });
+export async function fetchAccount(externalId: string): Promise<{
+  user: AccountUser;
+  entitlement: Entitlement;
+  packs: OwlPack[];
+  // The signed-in claimant's prize claims (§8.7), live and settled; empty
+  // until the mathematics API serves them, at either level of the payload.
+  open_prize_claims: OpenPrizeClaim[];
+}> {
+  const r = await accountFetch<{
+    user: AccountUser;
+    entitlement: Entitlement;
+    packs: OwlPack[];
+    open_prize_claims?: OpenPrizeClaim[];
+  }>("/users/me", { actingUser: externalId });
+  const claims = r.open_prize_claims ?? r.user?.open_prize_claims ?? [];
+  return { ...r, open_prize_claims: Array.isArray(claims) ? claims : [] };
 }
 
 export async function fetchUsage(
@@ -741,6 +805,29 @@ export interface MandateDetailView extends MandateSummaryView {
   pipeline: MandatePipelineRow[];
   conversation_id?: string;
   is_manager?: boolean;
+  // Mathematics (docs/mathematics.md §8.3): the prize fund this mandate
+  // draws on, and the house solver's attempts under it. Null and empty for
+  // every other mandate, and until the API serves them.
+  prizes: MandatePrizesView | null;
+  attempts: AttemptSummary[];
+}
+
+export interface MandatePrizesView {
+  pool_balance_micro_usd: number;
+  reserved_micro_usd: number;
+  bounties_posted: number;
+  bounties_total_micro_usd: number;
+  prizes_paid: number;
+  owls_paid: number;
+  bounties: Array<{
+    claim_id: string;
+    text: string;
+    amount_micro_usd: number;
+    status: BountyStatus;
+    opened_at: string | null;
+    submissions: number;
+    outcome: string | null;
+  }>;
 }
 
 export async function listMandates(): Promise<MandateSummaryView[]> {
@@ -756,7 +843,11 @@ export async function fetchMandateView(
     `/mandates/${mandateId}`,
     externalId ? { actingUser: externalId } : {}
   );
-  return r.mandate;
+  return {
+    ...r.mandate,
+    prizes: r.mandate.prizes ?? null,
+    attempts: Array.isArray(r.mandate.attempts) ? r.mandate.attempts : [],
+  };
 }
 
 export async function contributeToMandateApi(
@@ -787,6 +878,62 @@ export async function allocateToClaim(
   return accountFetch(`/claims/${claimId}/contribute`, {
     method: "POST",
     body: { owls },
+    actingUser: externalId,
+  });
+}
+
+// --- prize claims (docs/mathematics.md §8.4, §8.7) ---------------------------
+
+export interface SubmittedPrizeClaim {
+  prize_claim: PrizeClaimSummary;
+  contribution: { id: string; review_status: string } | null;
+}
+
+/** File a prize claim: multipart, forwarded as received. No owl charge. */
+export async function submitPrizeClaim(
+  externalId: string,
+  claimId: string,
+  form: FormData
+): Promise<SubmittedPrizeClaim> {
+  const r = await accountFetchForm<{
+    prize_claim?: PrizeClaimSummary;
+    contribution?: { id: string; review_status: string };
+  }>(`/claims/${claimId}/prize-claims`, form, { actingUser: externalId });
+  return {
+    prize_claim: r.prize_claim as PrizeClaimSummary,
+    contribution: r.contribution ?? null,
+  };
+}
+
+export interface PrizePayeeInput {
+  legal_name: string;
+  address: string;
+  country: string;
+  us_person: boolean;
+  // The emailed one-time code: a leaked consumer key must not redirect a prize.
+  code: string;
+}
+
+/** The winner's identity and residency step (POST /prize-claims/:id/payee). */
+export async function submitPrizePayee(
+  externalId: string,
+  prizeClaimId: string,
+  input: PrizePayeeInput
+): Promise<{ payee_status: string }> {
+  return accountFetch(`/prize-claims/${prizeClaimId}/payee`, {
+    method: "POST",
+    body: input,
+    actingUser: externalId,
+  });
+}
+
+/** The tax form (W-9 or W-8BEN), stored as a restricted attachment of kind tax_form. */
+export async function uploadPrizeTaxForm(
+  externalId: string,
+  prizeClaimId: string,
+  form: FormData
+): Promise<{ attachment: { id: string; kind: string } }> {
+  return accountFetchForm(`/prize-claims/${prizeClaimId}/attachments`, form, {
     actingUser: externalId,
   });
 }

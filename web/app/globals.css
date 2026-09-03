@@ -1169,3 +1169,170 @@ textarea.contribute-field { resize: vertical; line-height: 1.45; }
   color: var(--ink-soft); font-size: 0.9rem; max-width: 42rem;
   white-space: pre-wrap;
 }
+
+/* ==========================================================================
+   Mathematics (docs/mathematics.md) — the formal statement, the derived
+   machine-checked badge, the prize section, the attempt log, the prize form,
+   and the rules page. Same paper-and-hairline voice; the only new colour is
+   verified green on the badge, which is where it already means something.
+   ========================================================================== */
+
+/* ----- the machine-checked badge: verified-green ink, a double border where
+   every status badge wears a single one (§11.4). Derived, never a status. */
+.badge.checked {
+  color: var(--st-verified);
+  background: var(--st-verified-tint);
+  border: 3px double currentColor;
+  padding: 0.12rem 0.46rem 0.1rem;
+}
+.badge.checked.lg { padding: 0.26rem 0.66rem; }
+.badge.checked .badge-glyph { font-family: var(--serif); font-weight: 700; }
+
+/* ----- the prize chip on cards: the amount in mono, double-ruled like the
+   map's prize ring, in ink rather than any status colour. */
+.tag.prize {
+  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0;
+  color: var(--ink-soft); border: 3px double var(--faint);
+  padding: 0.02rem 0.4rem;
+}
+
+/* ----- formal statement (§8.3) ----- */
+.formal-block { position: relative; max-width: 46rem; }
+.formal-src {
+  font-family: var(--mono); font-size: 0.78rem; line-height: 1.55;
+  background: var(--paper-sunk); border: 1px solid var(--rule); border-radius: 4px;
+  padding: 0.9rem 1rem; margin: 0; overflow-x: auto; white-space: pre;
+  color: var(--ink-soft); tab-size: 2;
+}
+.formal-copy {
+  position: absolute; top: 0.45rem; right: 0.5rem;
+  font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.04em;
+  padding: 0.14rem 0.45rem; border: 1px solid var(--rule); border-radius: 3px;
+  background: var(--paper-card); color: var(--muted); cursor: pointer;
+}
+.formal-copy:hover { color: var(--ink); border-color: var(--faint); }
+.formal-meta {
+  font-family: var(--sans); font-size: 0.72rem; color: var(--muted);
+  margin: 0.5rem 0 0.7rem; letter-spacing: 0.01em;
+}
+.formal-meta .mono { font-size: 0.72rem; }
+/* the correspondence note: the graph's voice, set like an argument's
+   evaluation, with the same quiet left rule */
+.formal-note {
+  margin: 0 0 0.6rem; padding-left: 0.7rem; border-left: 2px solid var(--rule);
+  font-size: 0.92rem; line-height: 1.5; color: var(--ink-soft); max-width: 36rem;
+}
+
+/* ----- the check record under a machine-checked argument (§11.4) ----- */
+.argcheck {
+  margin: -0.3rem 0 0.8rem; padding-left: 0.7rem;
+  font-family: var(--sans); font-size: 0.74rem; line-height: 1.5; color: var(--muted);
+}
+.argcheck .mono { font-size: 0.72rem; }
+.argcheck-glyph { font-family: var(--serif); font-weight: 700; margin-right: 0.35rem; color: var(--faint); }
+.argcheck.accepted .argcheck-glyph { color: var(--st-verified); }
+
+/* ----- the prize section (§8.3): below the verdict, never in the band ----- */
+.prize-lead { font-size: 1.02rem; line-height: 1.58; color: var(--ink); max-width: 36rem; }
+.prize-cta { margin: 0.2rem 0 1rem; }
+.prize-button { display: inline-block; text-decoration: none; }
+.prize-button:hover { text-decoration: none; }
+.prize-terms {
+  font-family: var(--sans); font-size: 0.84rem; line-height: 1.55; color: var(--ink-soft);
+  max-width: 36rem;
+}
+/* the state sentence: the graph's report of where the prize stands */
+.prize-state {
+  font-family: var(--sans); font-size: 0.84rem; line-height: 1.5; color: var(--ink-soft);
+  border-left: 2px solid var(--rule); padding-left: 0.8rem; max-width: 36rem;
+  margin: 0 0 1rem;
+}
+.prize-state .sc { display: block; margin-bottom: 0.2rem; }
+/* submissions and house attempts, every outcome on the record */
+.prize-subs { margin: 0 0 1rem; max-width: 36rem; }
+.prize-subs > .sc { display: block; margin-bottom: 0.35rem; }
+.prize-subs ul { list-style: none; margin: 0; padding: 0; }
+.prize-subs li {
+  display: flex; gap: 0.7rem; align-items: baseline; flex-wrap: wrap;
+  padding: 0.32rem 0; border-top: 1px solid var(--rule-soft);
+  font-family: var(--sans); font-size: 0.8rem;
+}
+.prize-subs li:last-child { border-bottom: 1px solid var(--rule-soft); }
+.prize-sub-who { color: var(--ink); font-weight: 600; min-width: 8rem; }
+.prize-sub-meta { color: var(--muted); }
+.prize-fine {
+  font-family: var(--sans); font-size: 0.74rem; line-height: 1.5; color: var(--faint);
+  max-width: 36rem; margin: 0 0 0.6rem;
+}
+.prize-fine .mono { font-size: 0.72rem; }
+
+/* ----- the attempt log (§7.7) ----- */
+.attempt-log { list-style: none; margin: 0; padding: 0; max-width: 36rem; }
+.attempt-row {
+  display: flex; gap: 0.8rem; align-items: baseline;
+  padding: 0.4rem 0; border-top: 1px solid var(--rule-soft);
+  font-family: var(--sans); font-size: 0.84rem; line-height: 1.5; color: var(--ink-soft);
+}
+.attempt-row:last-child { border-bottom: 1px solid var(--rule-soft); }
+.attempt-row > .sc { flex: none; min-width: 6.4rem; }
+.attempt-body .mono { font-size: 0.8rem; }
+.attempt-approaches { padding-left: 1.3rem; margin: 0 0 1.05rem; }
+.attempt-approaches li { margin-bottom: 0.4rem; }
+.attempt-file > summary .mono { color: var(--ink-soft); }
+.attempt-file .prompt-pre { margin-top: 0.5rem; }
+
+/* ----- the prize listing cards (/prizes) ----- */
+.prize-card-offer {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--muted); margin: -0.2rem 0 0.4rem;
+}
+.prize-card-amount { font-family: var(--mono); font-size: 0.96rem; color: var(--ink); }
+.prize-card-attempt {
+  font-family: var(--sans); font-size: 0.76rem; line-height: 1.5; color: var(--faint);
+  margin: 0 0 0.55rem; max-width: 36rem;
+}
+
+/* ----- the prize-claim form (§8.4) and the winner's steps (§8.7) ----- */
+.prize-form { max-width: 40rem; }
+.prize-form-radios {
+  display: flex; gap: 1.2rem; flex-wrap: wrap;
+  font-family: var(--sans); font-size: 0.86rem; margin: 0.2rem 0 0.3rem;
+}
+.prize-form-radios label { display: inline-flex; gap: 0.35rem; align-items: baseline; cursor: pointer; }
+.prize-form-checks { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.84rem; line-height: 1.45; }
+.prize-form-checks label { display: flex; gap: 0.5rem; align-items: baseline; cursor: pointer; }
+.prize-form-checks input { flex: none; }
+.prize-form-pay {
+  margin-top: 1.1rem; padding: 0.7rem 0.9rem;
+  border: 1px solid var(--rule-soft); border-radius: 3px; background: var(--paper-sunk);
+  font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft);
+}
+.prize-form-pay .sc { display: block; margin-bottom: 0.3rem; }
+.prize-form-pay p { margin: 0 0 0.5rem; }
+.prize-form-pay p:last-child { margin-bottom: 0; }
+textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(--mono); font-size: 0.82rem; }
+
+.prize-award {
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-card);
+  padding: 1rem 1.2rem 0.9rem; margin: 0.8rem 0 1.2rem; max-width: 44rem;
+}
+.prize-award > .sc { display: block; margin-bottom: 0.3rem; }
+.prize-award-lead { font-size: 1.08rem; line-height: 1.5; }
+.prize-award p { font-size: 0.9rem; }
+.prize-steps { padding-left: 1.3rem; margin: 0.4rem 0 0.8rem; }
+.prize-steps > li { margin-bottom: 0.9rem; }
+.prize-step-title { display: block; font-family: var(--sans); font-weight: 600; font-size: 0.86rem; margin-bottom: 0.25rem; }
+.prize-step-form { max-width: 30rem; font-family: var(--sans); font-size: 0.86rem; }
+.prize-step-form .contribute-label:first-child { margin-top: 0; }
+.prize-step-done { font-family: var(--sans); font-size: 0.84rem; color: var(--st-verified); margin: 0; }
+.prize-step-note { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin: 0; }
+
+/* ----- the rules page (§8.10) ----- */
+.rules-meta {
+  font-family: var(--sans); font-size: 0.78rem; color: var(--muted);
+  margin: -1.2rem 0 1.6rem; overflow-wrap: anywhere;
+}
+.rules-meta .mono { font-size: 0.74rem; }
+.rules-list { list-style: none; padding: 0; margin: 0; }
+.rules-list > li { margin-bottom: 0.4rem; }
+.rules-list h2 { font-size: 1.15rem; margin-top: 1.6rem; border-bottom: none; padding-bottom: 0; }
+.rules-num { color: var(--faint); font-weight: 500; margin-right: 0.2rem; }

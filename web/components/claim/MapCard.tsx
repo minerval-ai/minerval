@@ -6,7 +6,8 @@ import styles from "./margins.module.css";
 // case with the outline beside it; the invitation is now a figure: a sketch of
 // this claim's own first-level decomposition, drawn from the real tree, that
 // opens the map view. Statuses colour the subclaim dots the same way the map
-// colours its glyphs; an unassessed subclaim stays a hollow dashed dot.
+// colours its glyphs; an unassessed subclaim stays a hollow dashed dot, and a
+// subclaim with a live prize wears the map's double ring.
 const W = 208;
 const H = 88;
 
@@ -45,6 +46,12 @@ export function MapCard({ claimId, tree }: { claimId: string; tree?: TreeNode })
         {/* text-line hints inside the focus card */}
         <line x1={focusX + 9} y1={focusY + 9.5} x2={focusX + focusW - 9} y2={focusY + 9.5} stroke="var(--rule)" strokeWidth="1.6" />
         <line x1={focusX + 9} y1={focusY + 15.5} x2={focusX + focusW - 26} y2={focusY + 15.5} stroke="var(--rule)" strokeWidth="1.6" />
+        {children.map((c) => c.bounty_micro_usd != null ? (
+          <circle
+            key={`ring-${c.id}`} cx={xs[children.indexOf(c)]} cy={rowY} r={dotR + 3}
+            fill="none" stroke="var(--ink-soft)" strokeWidth="1"
+          />
+        ) : null)}
         {children.map((c, i) =>
           c.assessment_status ? (
             <circle

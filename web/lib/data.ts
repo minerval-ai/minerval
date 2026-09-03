@@ -1,7 +1,17 @@
-import { apiConfigured, fetchClaimDetail, fetchClaimEvents, fetchClaimTree, fetchSearch, fetchList } from "./api";
-import { getClaim, getClaimEvents, listClaims } from "./fixtures";
-import type { ClaimDetail, ClaimEventsPage, ClaimFilters, SearchResultItem } from "./types";
-import { TERRITORIES, computeTerritoryStats, type Territory } from "./territories";
+import {
+  apiConfigured, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
+  fetchList, fetchOpenPrizes, fetchSearch,
+} from "./api";
+import {
+  getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizes,
+} from "./fixtures";
+import type {
+  AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem,
+  SearchResultItem,
+} from "./types";
+import {
+  TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
+} from "./territories";
 
 // The same filter predicate the API applies, used for the fixture fallback so
 // the controls behave identically offline. "unassessed" keys off a missing
@@ -12,6 +22,8 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
     if (filters.assessed === "assessed" && !c.assessment_status) return false;
     if (filters.assessed === "unassessed" && c.assessment_status) return false;
     if (filters.minImportance && (c.importance ?? 0) < filters.minImportance) return false;
+    if (filters.withPrizes && c.prize_micro_usd == null) return false;
+    if (filters.claimType && c.claim_type !== filters.claimType) return false;
     return true;
   });
 }
@@ -50,10 +62,12 @@ export async function loadClaimEvents(
 }
 
 // The curated territories for the pre-search /claims overview (#206), each with
-// counts and a verdict mix derived from its anchor's subtree. Anchors are fetched
-// in parallel; a failed anchor degrades to a stats-less card (name + question +
-// core claim + map link) rather than dropping the territory or failing the page.
-// Offline (no API) the whole set degrades to curated config.
+// counts and a verdict mix derived from its anchor's subtree — or, for a
+// listing-backed territory, from the list endpoint filtered by claim type.
+// Anchors are fetched in parallel; a failed anchor degrades to a stats-less
+// card (name + question + core claim + map link) rather than dropping the
+// territory or failing the page. Offline (no API) the whole set degrades to
+// curated config.
 export async function loadTerritories(): Promise<Territory[]> {
   if (!apiConfigured()) {
     return TERRITORIES.map((t) => ({ ...t, stats: null }));
@@ -61,6 +75,10 @@ export async function loadTerritories(): Promise<Territory[]> {
   return Promise.all(
     TERRITORIES.map(async (t) => {
       try {
+        if (t.listing) {
+          const items = await fetchList(200, { assessed: "all", claimType: t.listing.claimType });
+          return { ...t, stats: computeListingStats(items) };
+        }
         const detail = await fetchClaimTree(t.anchorId);
         return { ...t, stats: computeTerritoryStats(detail) };
       } catch (err) {
@@ -88,4 +106,29 @@ export async function loadClaims(
     console.error("[minerval] live claim list failed, using fixture:", err);
     return { results: applyFilters(listClaims(), filters), source: "fixture" };
   }
+}
+
+// Open bounties, largest first (docs/mathematics.md §8.3): the /prizes page
+// and the strip under the territories. Live, an API without the route yields
+// an empty strip; offline, the sample theorem's bounty.
+export async function loadOpenPrizes(
+  limit = 50,
+): Promise<{ prizes: PrizeListItem[]; source: DataSource }> {
+  if (!apiConfigured()) return { prizes: listOpenPrizes().slice(0, limit), source: "fixture" };
+  return { prizes: await fetchOpenPrizes(limit), source: "live" };
+}
+
+// One house attempt with its report and notebook (§7.7). The claim id is a
+// guard: an attempt is addressed under the claim it ran on, so an id that
+// belongs to another claim renders as not found rather than out of place.
+export async function loadAttempt(
+  claimId: string,
+  attemptId: string,
+): Promise<{ attempt: AttemptSummary | null; source: DataSource }> {
+  if (!apiConfigured()) {
+    const a = getAttempt(attemptId);
+    return { attempt: a && a.claim_id === claimId ? a : null, source: "fixture" };
+  }
+  const a = await fetchAttempt(attemptId);
+  return { attempt: a && a.claim_id === claimId ? a : null, source: "live" };
 }

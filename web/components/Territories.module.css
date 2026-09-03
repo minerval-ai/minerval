@@ -206,3 +206,17 @@ a.open:hover {
   flex: none;
 }
 
+
+/* Open prizes — the amount at the row's end, in mono like every figure. */
+.prizeAmount {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.prizeState {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  color: var(--faint);
+}

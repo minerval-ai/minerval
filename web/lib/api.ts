@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  AttemptSummary,
   ClaimCitationPayload,
   ClaimDetail,
   ClaimEventsPage,
@@ -8,6 +9,7 @@ import type {
   ContributionExchange,
   ContributorProfile,
   LeaderboardContributor,
+  PrizeListItem,
   SearchResultItem,
   TrajectoryPoint,
 } from "./types";
@@ -27,6 +29,12 @@ export function apiConfigured(): boolean {
   return Boolean(BASE);
 }
 
+class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, {
@@ -35,9 +43,41 @@ async function apiGet<T>(path: string): Promise<T> {
     next: { revalidate: 30 },
   });
   if (!res.ok) {
-    throw new Error(`Minerval API ${res.status} ${res.statusText} for ${path}`);
+    throw new ApiError(`Minerval API ${res.status} ${res.statusText} for ${path}`, res.status);
   }
   return (await res.json()) as T;
+}
+
+// --- mathematics: field defaults ---------------------------------------------
+// The formal statement, the derived badge, the bounty, the attempts, and the
+// prize claims (docs/mathematics.md §11.1) arrive on the same routes the
+// loaders already read. Each defaults here when the API omits it, so every
+// section renders nothing rather than throwing before the API serves it.
+
+type RawDetail = ClaimDetail & { domains?: string[] };
+
+function withMathDefaults(raw: RawDetail): ClaimDetail {
+  return {
+    ...raw,
+    claim: {
+      ...raw.claim,
+      // The domains tag rides on the claim row; accept it at either level.
+      domains: raw.claim?.domains ?? raw.domains ?? [],
+    },
+    formalization: raw.formalization ?? null,
+    verification: raw.verification ?? null,
+    bounty: raw.bounty ?? null,
+    attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
+    prize_claims: Array.isArray(raw.prize_claims) ? raw.prize_claims : [],
+  };
+}
+
+function withListDefaults(items: SearchResultItem[]): SearchResultItem[] {
+  return items.map((c) => ({
+    ...c,
+    prize_micro_usd: c.prize_micro_usd ?? null,
+    checked: c.checked ?? null,
+  }));
 }
 
 interface TrajectoryResponse {
@@ -52,12 +92,12 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
   const [detail, trajectory, record] = await Promise.all([
-    apiGet<ClaimDetail>(`/claims/${id}?information_depth=deep`),
+    apiGet<RawDetail>(`/claims/${id}?information_depth=deep`),
     apiGet<TrajectoryResponse>(`/claims/${id}/assessments/trajectory`).catch(() => null),
     apiGet<{ record: ContributionExchange[] }>(`/claims/${id}/record`).catch(() => null),
   ]);
   return {
-    ...detail,
+    ...withMathDefaults(detail),
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
   };
@@ -81,7 +121,9 @@ export async function fetchClaimEvents(id: string): Promise<ClaimEventsPage> {
 // independent of agent-context tuning. 8 is inside both the new cap and the
 // old one, so it is safe whichever of Vercel and the API deploys first.
 export async function fetchClaimTree(id: string): Promise<ClaimDetail> {
-  return apiGet<ClaimDetail>(`/claims/${id}?information_depth=standard&depth=8`);
+  return withMathDefaults(
+    await apiGet<RawDetail>(`/claims/${id}?information_depth=standard&depth=8`),
+  );
 }
 
 // Serialize the active filters into API query params. Defaults (all / 0) are
@@ -92,6 +134,8 @@ function filterParams(filters?: ClaimFilters): URLSearchParams {
   if (filters?.minImportance && filters.minImportance > 0) {
     p.set("min_importance", String(filters.minImportance));
   }
+  if (filters?.withPrizes) p.set("with_prizes", "true");
+  if (filters?.claimType) p.set("claim_type", filters.claimType);
   return p;
 }
 
@@ -103,7 +147,7 @@ export async function fetchSearch(
   const r = await apiGet<{ results: SearchResultItem[]; total: number }>(
     `/claims/search/${encodeURIComponent(query)}${qs ? `?${qs}` : ""}`,
   );
-  return r.results;
+  return withListDefaults(r.results);
 }
 
 export async function fetchList(
@@ -115,7 +159,43 @@ export async function fetchList(
   const r = await apiGet<{ results: SearchResultItem[]; total: number }>(
     `/claims?${p.toString()}`,
   );
-  return r.results;
+  return withListDefaults(r.results);
+}
+
+// --- mathematics: prizes and attempts ----------------------------------------
+
+// Open bounties across the graph, largest first (GET /prizes). The route
+// ships with the mathematics API; until it does, a 404 is an empty listing
+// rather than a failed page, and any other failure degrades the same way.
+export async function fetchOpenPrizes(limit = 50): Promise<PrizeListItem[]> {
+  try {
+    const r = await apiGet<
+      { prizes?: PrizeListItem[]; results?: PrizeListItem[] } | PrizeListItem[]
+    >(`/prizes?limit=${limit}`);
+    const items = Array.isArray(r) ? r : (r.prizes ?? r.results ?? []);
+    return items
+      .filter((p) => p && p.bounty)
+      .map((p) => ({ ...p, checked: p.checked ?? null }))
+      .sort((a, b) => b.bounty.amount_micro_usd - a.bounty.amount_micro_usd);
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 404)) {
+      console.error("[minerval] prizes fetch failed:", err);
+    }
+    return [];
+  }
+}
+
+// One house attempt with its report and notebook once published
+// (GET /attempts/:id). Null for an unknown id or an API that predates it.
+export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
+  try {
+    const r = await apiGet<{ attempt?: AttemptSummary } | AttemptSummary>(`/attempts/${id}`);
+    const a = "attempt" in r && r.attempt ? r.attempt : (r as AttemptSummary);
+    if (!a || typeof a.id !== "string") return null;
+    return { ...a, report: a.report ?? null, notebook: a.notebook ?? null };
+  } catch {
+    return null;
+  }
 }
 
 // "Cite this claim" (#290): the citation in every format plus the evidence

@@ -1,5 +1,6 @@
 import type {
-  ArgumentVerdict, AssessmentStatus, ClaimType, RelationType, Stance, TreeNode,
+  ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
+  RelationType, Stance, TreeNode,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -17,7 +18,14 @@ export const DEFINED_IN = {
   argument: "/docs/constitution#7-arguments",
   importance: "/docs/constitution#claim-importance-and-proportional-effort",
   effect: "/docs/constitution#6-decomposition",
+  // The prize vocabulary is defined by the official rules, not the
+  // constitution (docs/mathematics.md §8.10).
+  prize: "/prizes/rules",
+  machineChecked: "/prizes/rules#review",
 } as const;
+
+// Terms defined by the prize rules carry this source label in their popover.
+export const RULES_SOURCE = "prize rules";
 
 // The relation source is the steward's instructions, not the constitution;
 // terms show this label next to the link so the reader knows where they land.
@@ -133,6 +141,10 @@ export const CLAIM_TYPE: Record<ClaimType, { label: string; gloss: string }> = {
     label: "normative",
     gloss: "A claim about what should be done or how things ought to be, settled by argument rather than evidence alone.",
   },
+  mathematical: {
+    label: "mathematical",
+    gloss: "A proposition of mathematics: true or false by proof rather than by observation. Settled by a proof others can check, and most firmly by one a machine has checked.",
+  },
 };
 
 export const CLAIM_TYPE_LABEL = Object.fromEntries(
@@ -202,6 +214,26 @@ export function isArgumentVerdict(v: unknown): v is ArgumentVerdict {
 export function argumentVerdictMeta(v: unknown) {
   return isArgumentVerdict(v) ? ARGUMENT_VERDICT[v] : null;
 }
+
+// The machine-checked badge (docs/mathematics.md §2.3, §11.4): derived at
+// read time from an argument whose evidence is a check the Lean checker
+// accepted. Not a seventh status; the six statuses are closed. The gloss says
+// what the checker settles and what it does not.
+export const MACHINE_CHECKED: Record<
+  CheckKind,
+  { label: string; glyph: string; gloss: string }
+> = {
+  proof: {
+    label: "machine-checked proof", glyph: "⊢",
+    gloss:
+      "A Lean 4 proof of this claim's published formal statement has been checked by a machine against Mathlib at the pinned revision. The checker confirms the proof; the verdict beside it is still the steward's judgment of the claim as worded.",
+  },
+  disproof: {
+    label: "machine-checked disproof", glyph: "⊢",
+    gloss:
+      "A Lean 4 disproof of this claim's published formal statement has been checked by a machine against Mathlib at the pinned revision. The checker confirms the disproof; the verdict beside it is still the steward's judgment of the claim as worded.",
+  },
+};
 
 export function confidenceLabel(c: number): string {
   return c.toFixed(2).replace(/^0/, "·");
@@ -539,6 +571,9 @@ export interface ArgumentGroup {
   // naming the load-bearing premises. Null until the argument is evaluated.
   verdict: string | null;
   evaluation: string | null;
+  // The checker record when the argument is machine-checked (mathematics);
+  // null for every other argument.
+  leanCheck: LeanCheckSummary | null;
   named: boolean;
   nodes: ScoredNode[];
   counts: Record<Effect, number>;
@@ -563,6 +598,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         content: s.node.argument_content ?? null,
         verdict: s.node.argument_verdict ?? null,
         evaluation: s.node.argument_evaluation ?? null,
+        leanCheck: s.node.argument_lean_check ?? null,
         named: Boolean(s.node.argument_name),
         nodes: [],
         counts: { supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0 },

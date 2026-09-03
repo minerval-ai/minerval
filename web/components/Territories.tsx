@@ -1,7 +1,8 @@
 import Link from "next/link";
-import type { Territory } from "@/lib/territories";
-import type { SearchResultItem } from "@/lib/types";
+import { territoryHref, type Territory } from "@/lib/territories";
+import type { PrizeListItem, SearchResultItem } from "@/lib/types";
 import { STATUS } from "@/lib/ontology";
+import { formatUsd } from "@/lib/format";
 import { StatusBadge, Unassessed } from "./Assessment";
 import styles from "./Territories.module.css";
 
@@ -19,11 +20,14 @@ function TerritoryCard({ t }: { t: Territory }) {
   const s = t.stats;
   const coreText = s?.coreText ?? t.coreText;
   const assessed = s?.assessedCount ?? 0;
-  const mapHref = `/claims/${t.anchorId}/map`;
+  // A listing-backed territory fronts its lead claim and opens the filtered
+  // list; an anchored one fronts its anchor and opens the map.
+  const claimId = s?.leadId ?? t.anchorId;
+  const mapHref = territoryHref(t);
 
   return (
     <article className={styles.card}>
-      <div className={styles.kicker}>Investigation</div>
+      <div className={styles.kicker}>{t.kicker ?? "Investigation"}</div>
       <h3 className={styles.name}>{t.name}</h3>
       <p className={styles.question}>{t.question}</p>
       <p className={styles.core}>
@@ -36,7 +40,7 @@ function TerritoryCard({ t }: { t: Territory }) {
             <StatusBadge status={s.coreStatus} linkTo={mapHref} />
           </>
         )}{" "}
-        <Link className={styles.open} href={`/claims/${t.anchorId}`} title="open this claim">
+        <Link className={styles.open} href={`/claims/${claimId}`} title="open this claim">
           ↗&#xFE0E;
         </Link>
       </p>
@@ -74,7 +78,7 @@ function TerritoryCard({ t }: { t: Territory }) {
           <span className={styles.count} />
         )}
         <Link className={styles.walk} href={mapHref}>
-          Walk the map →
+          {t.listing ? "Browse the claims →" : "Walk the map →"}
         </Link>
       </div>
     </article>
@@ -86,7 +90,7 @@ export function Territories({ territories }: { territories: Territory[] }) {
     <section className={styles.section}>
       <div className={styles.head}>
         <h2>What&rsquo;s mapped so far</h2>
-        <span className={styles.aside}>each card opens on its core claim&rsquo;s map</span>
+        <span className={styles.aside}>each card opens on its core claim&rsquo;s map, or its domain&rsquo;s list</span>
       </div>
       <div className={styles.grid}>
         {territories.map((t) => (
@@ -116,6 +120,37 @@ export function RecentClaims({ items }: { items: SearchResultItem[] }) {
             </Link>
             <span className={styles.recentBadge}>
               {c.assessment_status ? <StatusBadge status={c.assessment_status} /> : <Unassessed />}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// Open prizes (docs/mathematics.md §8.3): up to eight bounties, largest first,
+// under the territories. A strip like the newest claims, not a feed: the
+// amount, the state, and the claim, with the full listing one click away.
+export function OpenPrizes({ items }: { items: PrizeListItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className={styles.recent}>
+      <div className={styles.head}>
+        <h2 className={styles.recentTitle}>Open prizes</h2>
+        <span className={styles.aside}>
+          for machine-checked proofs and disproofs · largest first ·{" "}
+          <Link href="/prizes">all prizes →</Link>
+        </span>
+      </div>
+      <ul className={styles.recentList}>
+        {items.map((p) => (
+          <li key={p.claim_id} className={styles.recentItem}>
+            <Link href={`/claims/${p.claim_id}`} className={styles.recentText}>
+              {p.text}
+            </Link>
+            <span className={styles.prizeAmount}>
+              {formatUsd(p.bounty.amount_micro_usd)}
+              <span className={styles.prizeState}> · {p.bounty.status.replace(/_/g, " ")}</span>
             </span>
           </li>
         ))}

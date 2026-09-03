@@ -12,12 +12,15 @@ import {
   CLAIM_TYPE_LABEL, RELATION, STATUS, STATUS_ORDER,
   claimTypeMeta, decompositionNote, statusMeta,
   nodeStatusMeta, UNASSESSED_META, VERDICT_CONFIDENCE_GLOSS, CREDENCE_GLOSS,
-  DEFINED_IN, STEWARD_SOURCE, isAssumesRelation,
+  DEFINED_IN, STEWARD_SOURCE, RULES_SOURCE, isAssumesRelation,
   seedVerity, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
+import { formatUsd } from "@/lib/format";
+import { liveBountyMicro } from "@/lib/prizes";
 import { ArgumentText } from "@/components/ArgumentText";
 import { Term } from "@/components/Term";
+import { MachineChecked } from "@/components/claim/MachineChecked";
 import {
   BEDROCK, bedrockOf, computeLayout, defaultExpanded,
   type ClaimBits, type LEdge, type LNode, type Layout,
@@ -84,6 +87,13 @@ function partialFrom(bits: ClaimBits, node?: TreeNode): ClaimDetail {
     tree: node,
     dependents: undefined, // unknown until the fetch lands
     arguments: undefined,
+    // The mathematics read models arrive with the fetch; the ring, ⊢ mark and
+    // statement flag are carried as focus marks meanwhile (View.marks).
+    formalization: null,
+    verification: null,
+    bounty: null,
+    attempts: [],
+    prize_claims: [],
   };
 }
 
@@ -97,7 +107,13 @@ function findInTree(root: TreeNode | undefined, id: string): TreeNode | null {
   return null;
 }
 
-interface View { detail: ClaimDetail; partial: boolean }
+interface View {
+  detail: ClaimDetail;
+  partial: boolean;
+  // The clicked node's prize, check, and statement marks, held while the
+  // optimistic partial lacks the read models they derive from.
+  marks?: Pick<ClaimBits, "prizeMicroUsd" | "checked" | "formal"> | null;
+}
 
 interface PreviewState {
   kind: "claim" | "pill";
@@ -116,6 +132,8 @@ interface PreviewState {
 const MAP_KEY = {
   claim: "A box is a claim: a single proposition the graph assesses, with its own page and map. Click any claim to centre the map on it.",
   argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Arguments are not destinations; click their claims to explore.",
+  prize: "A double ring marks a claim with a live prize: an amount offered for a machine-checked proof or disproof of its published formal statement. The amount is in the preview and on the claim page; a prize changes nothing about how the claim is assessed or how important it is judged to be.",
+  checked: "⊢ marks a claim whose published formal statement has a machine-checked proof or disproof. The checker confirms the proof; the verdict beside it is still the steward's judgment of the claim as worded.",
 } as const;
 
 // Which status-colour family an unassessed node borrows when the parent
@@ -152,8 +170,24 @@ function edgePath(e: LEdge, ox: number, oy: number): string {
 }
 
 const BED_CLS: Record<string, string> = {
-  fact: styles.bedFact, open: styles.bedOpen, value: styles.bedValue,
+  fact: styles.bedFact, open: styles.bedOpen, value: styles.bedValue, theorem: styles.bedTheorem,
 };
+
+// The two mathematics marks after a chip's status glyph (docs/mathematics.md
+// §8.3): $ for a live prize, ⊢ for a machine-checked statement. Text, not
+// colour, so the meaning survives the tier-3 minims' size and any palette.
+function Marks({ bits }: { bits: ClaimBits }) {
+  return (
+    <>
+      {bits.prizeMicroUsd != null && (
+        <span className={styles.prizeMark} aria-label={`prize ${formatUsd(bits.prizeMicroUsd)}`}>$</span>
+      )}
+      {bits.checked && (
+        <span className={styles.checkMark} aria-label={`machine-checked ${bits.checked}`}>⊢</span>
+      )}
+    </>
+  );
+}
 
 function Glyph({
   status, size, seedCredence,
@@ -288,7 +322,11 @@ export function GraphView({
                 node.claim_type,
                 node.assessment_status,
                 node.children.length === 0 && !node.subtree_collapsed && !node.children_truncated,
+                node.checked ?? null,
               ),
+              prizeMicroUsd: node.bounty_micro_usd ?? null,
+              checked: node.checked ?? null,
+              formal: !!node.formal,
               up: false,
               collapsed: !!node.subtree_collapsed,
               truncated: !!node.children_truncated,
@@ -301,10 +339,20 @@ export function GraphView({
                 credence: d.assessment_credence ?? null,
                 relation: d.relation_type, reasoning: null,
                 argumentId: null, argumentName: null, argumentStance: null,
-                childCount: 0, bedrock: null, up: true,
+                childCount: 0, bedrock: null,
+                prizeMicroUsd: d.bounty_micro_usd ?? null,
+                checked: d.checked ?? null,
+                formal: !!d.formal,
+                up: true,
               }))[0];
         if (!bits) return;
         const partial = partialFrom(bits, node);
+        // The old focus keeps its own marks as it steps into context.
+        const currentMarks = {
+          bounty_micro_usd: liveBountyMicro(current.bounty),
+          checked: current.verification?.kind ?? null,
+          formal: !!current.formalization,
+        };
         // Seed the optimistic view with what we already know of the new
         // neighbourhood, so the old focus stays on the map as context while the
         // fetch completes — recentring never blanks the mental map.
@@ -316,6 +364,7 @@ export function GraphView({
             relation_type: node.relation_type ?? "requires",
             assessment_status: current.assessment?.status ?? null,
             assessment_confidence: current.assessment?.confidence ?? null,
+            ...currentMarks,
           }];
         } else if (bits.up && current.tree) {
           partial.tree = {
@@ -327,13 +376,17 @@ export function GraphView({
             argument_id: null, argument_name: null, argument_stance: null,
             children: [{
               ...current.tree,
+              ...currentMarks,
               relation_type: bits.relation ?? "requires",
               reasoning: null,
               argument_id: null, argument_name: null, argument_stance: null,
             }],
           };
         }
-        setView({ detail: partial, partial: true });
+        setView({
+          detail: partial, partial: true,
+          marks: { prizeMicroUsd: bits.prizeMicroUsd, checked: bits.checked, formal: bits.formal },
+        });
         setExpanded(defaultExpanded(partial, compact));
         void fetchDetail(id).then((full) => {
           if (full) {
@@ -400,7 +453,10 @@ export function GraphView({
     if (view.partial) return "Loading decomposition…";
     // A childless root is only bedrock when the cap didn't drop its children.
     const rootTruncated = !!d.tree?.children_truncated;
-    const bed = bedrockOf(d.claim.claim_type, d.assessment?.status ?? null, !rootTruncated);
+    const bed = bedrockOf(
+      d.claim.claim_type, d.assessment?.status ?? null, !rootTruncated,
+      view.marks ? view.marks.checked : d.verification?.kind ?? null,
+    );
     if (bed && (d.tree?.children.length ?? 0) === 0) return BEDROCK[bed].note;
     if (rootTruncated && (d.tree?.children.length ?? 0) === 0) {
       return "This view is size-capped; open the claim page to see the full decomposition.";
@@ -417,6 +473,7 @@ export function GraphView({
       computeLayout(view.detail, {
         expanded, moreOpen, depsOpen, compact, plinthNote,
         depsPending: view.partial,
+        focusMarks: view.partial ? view.marks ?? null : null,
       }),
     [view, expanded, moreOpen, depsOpen, compact, plinthNote],
   );
@@ -535,6 +592,10 @@ export function GraphView({
   const d = view.detail;
   const focusStatus = d.assessment?.status ?? null;
   const focusMeta = statusMeta(focusStatus);
+  // The focus's prize and check, from the full detail or the carried marks.
+  const focusMarks = view.partial && view.marks
+    ? view.marks
+    : { prizeMicroUsd: liveBountyMicro(d.bounty), checked: d.verification?.kind ?? null, formal: !!d.formalization };
   const argDesc = (argId: string | null): string | null =>
     (d.arguments ?? []).find((a) => a.id === argId)?.content ?? null;
   // Canonical text for every claim in the focus tree, so a written form's
@@ -595,6 +656,18 @@ export function GraphView({
                   preliminary credence {d.seed.credence.toFixed(2)}
                 </Term>
               )}
+              {/* Mathematics (§8.3): the small machine-checked badge beside
+                  the status, and the prize amount at the band's far end.
+                  Not in the eyebrow: a prize next to the importance figure
+                  would read as importance. */}
+              {focusMarks.checked && (
+                <MachineChecked kind={focusMarks.checked} size="sm" align="start" />
+              )}
+              {focusMarks.prizeMicroUsd != null && (
+                <span className={styles.focusPrize} title={MAP_KEY.prize}>
+                  Prize: {formatUsd(focusMarks.prizeMicroUsd)} · open
+                </span>
+              )}
             </div>
           </>
         );
@@ -604,6 +677,7 @@ export function GraphView({
           <>
             <div className={styles.chipHead}>
               <Glyph status={c.status} seedCredence={c.seedCredence} />
+              <Marks bits={c} />
             </div>
             <div className={styles.t1Text}>{c.text}</div>
             <div className={styles.chipFoot}>
@@ -638,7 +712,10 @@ export function GraphView({
         const c = n.claim!;
         return (
           <>
-            <div className={styles.chipHead}><Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} /></div>
+            <div className={styles.chipHead}>
+              <Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} />
+              <Marks bits={c} />
+            </div>
             <div className={styles.t2Text}>{c.text}</div>
             <BedStrip bed={c.bedrock} />
           </>
@@ -652,6 +729,7 @@ export function GraphView({
           <>
             <div className={styles.chipHead}>
               <Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} />
+              <Marks bits={c} />
               <span className={styles.atomicTag}>assumed</span>
             </div>
             <div className={styles.sideText}>{c.text}</div>
@@ -666,6 +744,7 @@ export function GraphView({
           <>
             <div className={styles.chipHead}>
               <Glyph status={c.status} size="0.58rem" />
+              <Marks bits={c} />
             </div>
             <div className={styles.depText}>{c.text}</div>
           </>
@@ -786,6 +865,10 @@ export function GraphView({
                     (n.kind === "t1" || n.kind === "side")
                       && nudgeArgId != null && n.claim?.argumentId === nudgeArgId
                       ? styles.nudged : "",
+                    // a live prize: the double ring, on every tier including
+                    // the focus, distinct from the nudge ring and from every
+                    // status colour (§8.3)
+                    n.claim?.prizeMicroUsd != null ? styles.prized : "",
                   ].join(" ").trim()}
                   data-enter={fresh ? "1" : undefined}
                   style={{
@@ -967,7 +1050,16 @@ export function GraphView({
                           preliminary credence {c.seedCredence.toFixed(2)}
                         </span>
                       )}
+                      {/* the machine-checked badge at small size (§8.3);
+                          plain, because the panel clips overflow and a
+                          popover would be cut */}
+                      {c.checked && <MachineChecked kind={c.checked} size="sm" plain />}
                     </div>
+                    {c.prizeMicroUsd != null && (
+                      <div className={styles.previewPrize} title={MAP_KEY.prize}>
+                        Prize: {formatUsd(c.prizeMicroUsd)} · open
+                      </div>
+                    )}
                     {/* Verdict confidence is meta ("is the badge right?"), so
                         it steps back to a quiet line of its own (#238). */}
                     {c.confidence != null && (
@@ -1059,6 +1151,17 @@ export function GraphView({
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedFact}`} />verified fact</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedOpen}`} />open question</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedValue}`} />value premise</span>
+          <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedTheorem}`} />theorem</span>
+        </span>
+        <span className={styles.legendRule} />
+        {/* mathematics (§8.3): the prize ring and the check glyph */}
+        <span className={styles.legendGroup}>
+          <Term gloss={MAP_KEY.prize} href={DEFINED_IN.prize} source={RULES_SOURCE} className={styles.legendItem}>
+            <span className={`${styles.legendClaim} ${styles.prized}`} aria-hidden />prize
+          </Term>
+          <Term gloss={MAP_KEY.checked} href={DEFINED_IN.machineChecked} source={RULES_SOURCE} className={styles.legendItem}>
+            <span className={`${styles.legendGlyph} ${styles.checkMark}`}>⊢</span>machine-checked
+          </Term>
         </span>
         <span className={styles.legendRule} />
         <span className={styles.legendGroup}>
