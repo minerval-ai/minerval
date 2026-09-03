@@ -68,3 +68,13 @@ export function modelAcceptsTemperature(id: string): boolean {
 export function modelNeedsRefusalFallback(id: string): boolean {
   return /^claude-(fable|mythos)-/.test(id);
 }
+
+/**
+ * Whether the model is one the long-run path (client.ts longRunToolLoop) may
+ * run on: the strong-tier families that take `output_config.effort`, stream
+ * 128K-token turns, and carry the long-run betas. A deployment that points the
+ * solver's *_MODEL elsewhere should fail at config load, not hours into a run.
+ */
+export function modelSupportsLongRun(id: string): boolean {
+  return /^claude-(fable|mythos|opus-5)/.test(id);
+}

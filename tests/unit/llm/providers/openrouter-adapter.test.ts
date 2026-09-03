@@ -275,3 +275,29 @@ describe("openrouter adapter — configuration", () => {
     vi.resetModules();
   });
 });
+
+describe("openrouter adapter — system blocks", () => {
+  it("joins a system array into one leading system message", async () => {
+    respondWith(completion());
+    await openrouterAdapter.complete({
+      messages,
+      model: MODEL,
+      maxTokens: 64,
+      system: ["constitution and role", "domain skill"],
+    });
+    const sent = sentBody().messages as Array<{ role: string; content: string }>;
+    expect(sent[0]).toEqual({
+      role: "system",
+      content: "constitution and role\n\ndomain skill",
+    });
+    expect(sent.filter((m) => m.role === "system")).toHaveLength(1);
+    expect(sent[1]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("ignores effort, which is Anthropic-only", async () => {
+    respondWith(completion());
+    await openrouterAdapter.complete({ messages, model: MODEL, maxTokens: 64, effort: "max" });
+    expect(sentBody()).not.toHaveProperty("effort");
+    expect(sentBody()).not.toHaveProperty("output_config");
+  });
+});

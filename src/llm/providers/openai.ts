@@ -25,6 +25,7 @@ import { getUsageContext } from "../usage-context.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
   assertAnthropicOnlyCapabilitiesUnused,
+  joinSystemBlocks,
   sanitizeSchemaName,
   toStrictJsonSchema,
 } from "./openai-dialect.js";
@@ -40,6 +41,7 @@ import type {
   CompletionResult,
   ProviderAdapter,
   StructuredRequest,
+  SystemPrompt,
   ToolCompleteRequest,
   ToolCompletionResult,
 } from "./types.js";
@@ -105,9 +107,12 @@ function baseParams(req: {
   model: string;
   maxTokens: number;
   temperature?: number;
-  system?: string;
+  system?: SystemPrompt;
 }): ResponseCreateParams {
   const cacheKey = promptCacheKey();
+  // The seam's system blocks collapse into the one `instructions` string
+  // Responses has; OpenAI's prefix cache covers it as a whole either way.
+  const instructions = joinSystemBlocks(req.system);
   return {
     model: req.model,
     // Reasoning tokens count against this. `max_tokens` is a Chat Completions
@@ -116,7 +121,7 @@ function baseParams(req: {
     // Stateless: we resend full history every call, so there is nothing for
     // OpenAI to retain and no `previous_response_id` to chase.
     store: false,
-    ...(req.system ? { instructions: req.system } : {}),
+    ...(instructions ? { instructions } : {}),
     ...(openaiAcceptsTemperature(req.model)
       ? { temperature: req.temperature ?? 0 }
       : {}),

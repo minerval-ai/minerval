@@ -4,6 +4,7 @@ import {
   isAnthropicModelId,
   modelAcceptsTemperature,
   modelNeedsRefusalFallback,
+  modelSupportsLongRun,
 } from "../../../src/llm/models.js";
 
 describe("model helpers", () => {
@@ -38,5 +39,20 @@ describe("model helpers", () => {
     expect(modelNeedsRefusalFallback(MODELS.opus)).toBe(false);
     expect(modelNeedsRefusalFallback(MODELS.sonnet)).toBe(false);
     expect(modelNeedsRefusalFallback(MODELS.haiku)).toBe(false);
+  });
+});
+
+describe("modelSupportsLongRun", () => {
+  it("admits the strong-tier families only", () => {
+    expect(modelSupportsLongRun(MODELS.fable)).toBe(true);
+    expect(modelSupportsLongRun("claude-fable-5")).toBe(true);
+    expect(modelSupportsLongRun("claude-mythos-5-1")).toBe(true);
+    expect(modelSupportsLongRun("claude-opus-5")).toBe(true);
+    expect(modelSupportsLongRun(MODELS.opus)).toBe(false);
+    expect(modelSupportsLongRun("claude-opus-4-7")).toBe(false);
+    expect(modelSupportsLongRun(MODELS.sonnet)).toBe(false);
+    expect(modelSupportsLongRun(MODELS.haiku)).toBe(false);
+    expect(modelSupportsLongRun("gpt-5")).toBe(false);
+    expect(modelSupportsLongRun("qwen/qwen3-235b-a22b")).toBe(false);
   });
 });

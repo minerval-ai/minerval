@@ -117,3 +117,36 @@ describe("provider-reported cost override", () => {
     expect(micro).toBe(0);
   });
 });
+
+describe("Fable 5.1 cache reads", () => {
+  it("meters cache reads at 0.025× input ($0.25 per MTok), not the 0.1× default", () => {
+    expect(ratesForModel("claude-fable-5-1").cacheReadMultiplier).toBe(0.025);
+    const micro = costMicroUsd("claude-fable-5-1", {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 1_000_000,
+    });
+    expect(micro).toBe(250_000);
+  });
+
+  it("keeps the older Fable 5 id on the default cache-read rate", () => {
+    expect(ratesForModel("claude-fable-5").cacheReadMultiplier).toBeUndefined();
+    const micro = costMicroUsd("claude-fable-5", {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 1_000_000,
+    });
+    expect(micro).toBe(1_000_000);
+  });
+
+  it("prices Fable 5.1 per-token like Fable 5, with cache writes at 1.25×", () => {
+    const micro = costMicroUsd("claude-fable-5-1", {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+    });
+    // 10 + 50 + 0.25 + 12.5 = 72.75 USD
+    expect(micro).toBe(72_750_000);
+  });
+});
