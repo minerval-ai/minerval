@@ -6,7 +6,23 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
+/**
+ * What the API needs to talk to the Lean checker (docs/mathematics.md 5.3):
+ * the warm lane's private URL and bearer token, and enough to launch and
+ * poll cold-lane tasks with RunTask. All optional: without it the API
+ * deploys with no LEAN_CHECKER_URL and the Steward's lean_* tools stay off.
+ */
+export interface LeanCheckerWiring {
+  url: string;
+  tokenSecret: secretsmanager.ISecret;
+  cluster: ecs.ICluster;
+  coldTaskDefinition: ecs.FargateTaskDefinition;
+  securityGroup: ec2.ISecurityGroup;
+  subnetIds: string[];
+}
 
 export interface ApiStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -23,6 +39,7 @@ export interface ApiStackProps extends cdk.StackProps {
   elicitApiKeySecret: secretsmanager.Secret;
   stripeSecretKeySecret: secretsmanager.Secret;
   stripeWebhookSecretSecret: secretsmanager.Secret;
+  leanChecker?: LeanCheckerWiring;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -55,6 +72,48 @@ export class ApiStack extends cdk.Stack {
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
+
+    // Lean checker (docs/mathematics.md 5.3): the API polls the warm lane over
+    // private DNS and launches one cold-lane task per prize check. RunTask
+    // needs the task definition, the cluster, and PassRole on the task's two
+    // roles; DescribeTasks and StopTask cover polling for the task's private
+    // address and cancelling a runaway. The checker never calls back.
+    const leanCheckerEnvironment: Record<string, string> = {};
+    if (props.leanChecker) {
+      const lc = props.leanChecker;
+      lc.tokenSecret.grantRead(taskDef.taskRole);
+      Object.assign(leanCheckerEnvironment, {
+        LEAN_CHECKER_URL: lc.url,
+        LEAN_CHECKER_COLD_CLUSTER_ARN: lc.cluster.clusterArn,
+        LEAN_CHECKER_COLD_TASK_DEFINITION_ARN: lc.coldTaskDefinition.taskDefinitionArn,
+        LEAN_CHECKER_COLD_SUBNET_IDS: lc.subnetIds.join(","),
+        LEAN_CHECKER_COLD_SECURITY_GROUP_ID: lc.securityGroup.securityGroupId,
+      });
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["ecs:RunTask"],
+          resources: [lc.coldTaskDefinition.taskDefinitionArn],
+          conditions: { ArnEquals: { "ecs:cluster": lc.cluster.clusterArn } },
+        })
+      );
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["ecs:DescribeTasks", "ecs:StopTask"],
+          resources: ["*"],
+          conditions: { ArnEquals: { "ecs:cluster": lc.cluster.clusterArn } },
+        })
+      );
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["iam:PassRole"],
+          resources: [
+            lc.coldTaskDefinition.taskRole.roleArn,
+            lc.coldTaskDefinition.obtainExecutionRole().roleArn,
+          ],
+          conditions: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } },
+        })
+      );
+    }
 
     const container = taskDef.addContainer("api", {
       image: ecs.ContainerImage.fromAsset("..", {
@@ -150,6 +209,7 @@ export class ApiStack extends cdk.Stack {
         // and the fan-out cost it stood in for is now bounded by the mandate
         // ledger instead of by a count. See src/config.ts.
         EXTENSION_MAX_CLAIMS: "10",
+        ...leanCheckerEnvironment,
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
@@ -182,6 +242,11 @@ export class ApiStack extends cdk.Stack {
         STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
           props.stripeWebhookSecretSecret
         ),
+        // Lean checker bearer token (docs/mathematics.md 5.3), generated in
+        // LeanCheckerStack and shared with the checker tasks.
+        ...(props.leanChecker
+          ? { LEAN_CHECKER_TOKEN: ecs.Secret.fromSecretsManager(props.leanChecker.tokenSecret) }
+          : {}),
       },
     });
 

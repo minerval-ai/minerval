@@ -1,0 +1,8 @@
+# The build context is lean-checker/ itself. Keep host-side build products
+# and test-only files out of the image: the server is rebuilt inside the
+# image from its lockfile, and tests never run in the checker container.
+server/node_modules
+server/dist
+server/coverage
+.lake
+**/*.test.ts
