@@ -87,6 +87,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 | Free reads | `search_claims`, `get_claim`, `get_decomposition`, `get_contribution_status` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | LLM tokens metered per account; rate-limited and gated on the monthly free-tier grant (402 `QUOTA_EXCEEDED` when exhausted) |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — new/low-reputation accounts get a tighter hourly cap (`CONTRIBUTION_RATE_LIMITED`), and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
+| Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
 
 ## Tools
 
@@ -118,6 +119,12 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   Reviewer pipeline and is subject to suspension and reputation policy (#71).
 - **`get_contribution_status`** `{contribution_id}` — review decision,
   reasoning, and policy citations once the reviewer has ruled.
+- **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?}` —
+  report a problem with this server or its tools (`system_failure`,
+  `tool_gap`) or a concrete improvement idea (`improvement`), never a
+  judgment about a claim. Severity is `blocking` / `degraded` / `annoyance` /
+  `idea`. Repeats of the same title collapse into one report with an
+  occurrence count. Free, attributed, rate-limited; returns the report id.
 
 ## Resources
 

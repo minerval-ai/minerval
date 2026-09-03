@@ -7,9 +7,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
   requestAudit: vi.fn(async (): Promise<string | null> => "run-1"),
+  countNewReportsSince: vi.fn(async (): Promise<number> => 0),
   config: {
     auditSweepIntervalHours: 24,
     auditStaleSuspensionDays: 14,
+    reportTriageIntervalHours: 24,
   },
 }));
 
@@ -18,6 +20,9 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   requestAudit: mocks.requestAudit,
+}));
+vi.mock("../../../src/services/report-service.js", () => ({
+  countNewReportsSince: mocks.countNewReportsSince,
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => mocks.config,
@@ -47,8 +52,10 @@ function route(opts: {
 beforeEach(() => {
   mocks.rawQuery.mockReset();
   mocks.requestAudit.mockReset().mockResolvedValue("run-1");
+  mocks.countNewReportsSince.mockReset().mockResolvedValue(0);
   mocks.config.auditSweepIntervalHours = 24;
   mocks.config.auditStaleSuspensionDays = 14;
+  mocks.config.reportTriageIntervalHours = 24;
 });
 
 describe("auditSchedulerTick", () => {
@@ -110,7 +117,49 @@ describe("auditSchedulerTick", () => {
     expect(result).toEqual({
       sweepRequested: false,
       suspensionReviewsRequested: 0,
+      reportTriageRequested: false,
     });
+    expect(mocks.rawQuery).not.toHaveBeenCalled();
+  });
+
+  it("requests one report_triage per period when new reports arrived (#366)", async () => {
+    route({ decidedCount: 0 });
+    mocks.countNewReportsSince.mockResolvedValue(4);
+
+    const result = await auditSchedulerTick(NOW);
+
+    expect(result.reportTriageRequested).toBe(true);
+    expect(mocks.countNewReportsSince).toHaveBeenCalledWith(new Date(NOW - DAY_MS));
+    expect(mocks.requestAudit).toHaveBeenCalledTimes(1);
+    expect(mocks.requestAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auditType: "report_triage",
+        triggeredBy: "report_triage",
+        dedupeKey: `report-triage:${Math.floor(NOW / DAY_MS)}`,
+        context: expect.stringContaining("4 report(s)"),
+      })
+    );
+  });
+
+  it("skips triage when nothing new was reported, and when disabled", async () => {
+    route({ decidedCount: 0 });
+    mocks.countNewReportsSince.mockResolvedValue(0);
+    expect((await auditSchedulerTick(NOW)).reportTriageRequested).toBe(false);
+
+    mocks.countNewReportsSince.mockResolvedValue(9);
+    mocks.config.reportTriageIntervalHours = 0;
+    expect((await auditSchedulerTick(NOW)).reportTriageRequested).toBe(false);
+    expect(mocks.requestAudit).not.toHaveBeenCalled();
+  });
+
+  it("triage runs on its own cadence even when audit sweeps are disabled", async () => {
+    mocks.config.auditSweepIntervalHours = 0;
+    mocks.countNewReportsSince.mockResolvedValue(1);
+
+    const result = await auditSchedulerTick(NOW);
+
+    expect(result.reportTriageRequested).toBe(true);
+    expect(result.sweepRequested).toBe(false);
     expect(mocks.rawQuery).not.toHaveBeenCalled();
   });
 });

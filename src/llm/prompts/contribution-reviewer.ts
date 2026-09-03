@@ -1,5 +1,9 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { CORE_POLICIES, CONTRIBUTION_REVIEW_POLICIES } from "./policies.js";
+import {
+  CORE_POLICIES,
+  CONTRIBUTION_REVIEW_POLICIES,
+  RAISING_ISSUES_POLICIES,
+} from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Contribution Reviewer
 
@@ -58,7 +62,9 @@ admins' judgment.
 
 ${CORE_POLICIES}
 
-${CONTRIBUTION_REVIEW_POLICIES}`;
+${CONTRIBUTION_REVIEW_POLICIES}
+
+${RAISING_ISSUES_POLICIES}`;
 
 export function getContributionReviewerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

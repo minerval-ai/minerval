@@ -36,6 +36,7 @@ import {
 import { getClaimById } from "../../services/claim-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, runWithUsageContext } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70), and
 // attribute it to the claim being stewarded (#217) so per-claim cost — the
@@ -92,12 +93,16 @@ async function runClaimStewardImpl(input: {
     ? await getElicitToolDefinitions(config)
     : [];
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
+    ...reportTools.definitions,
     webSearchTool,
   ];
 
@@ -201,6 +206,9 @@ ${structureStep}
         `log_stewardship_decision, do so on your next turn so your work is saved.`,
     },
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput);
       }

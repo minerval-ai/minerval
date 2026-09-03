@@ -1840,6 +1840,95 @@ export const auditFindings = pgTable(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// agent_reports
+//
+// The agents' own bug tracker (#366): what raise_issue writes. Every agent
+// (and every external agent on the MCP surface) can report, in its own
+// words, a system failure, a gap in its tools, or a concrete improvement
+// idea. Deliberately NOT audit_log, which is claim-scoped and belongs to the
+// claim's history: a report is about the machinery, not the graph, so it
+// carries attribution as plain columns (no FKs into agent_runs, which is
+// empty when tracing is off, and none into claims, whose history this is
+// not part of). Operational telemetry: separately retained, safe to prune by
+// last_seen_at.
+//
+// The same failure recurs across thousands of runs, so the row is an
+// upsert: dedupe_key collapses repeats into one row with an occurrence
+// count and a last-seen stamp — frequency × severity is the triage signal.
+// Reports quote whatever the agent was working on (source text, contribution
+// bodies), so body is capped at write time and context_refs holds ids, not
+// content.
+// ---------------------------------------------------------------------------
+export const agentReports = pgTable(
+  "agent_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // 'system_failure' | 'tool_gap' | 'improvement' — reportKindEnum in
+    // src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    // 'blocking' | 'degraded' | 'annoyance' | 'idea' — reportSeverityEnum.
+    severity: text("severity").notNull(),
+    // One line, written as a claim about what is wrong or what should exist.
+    title: text("title").notNull(),
+    // What the agent was trying to do, what happened, what it expected, and
+    // for improvements the concrete proposal.
+    body: text("body").notNull().default(""),
+    // The tool / prompt / pipeline the report is about, when there is one.
+    surface: text("surface"),
+    // 'internal' (our own agents) | 'external' (MCP callers). External
+    // reports triage in their own queue: a report is cheap to file and "the
+    // reviewer's tool is broken" is a convenient thing for a rejected
+    // contributor's agent to claim.
+    origin: text("origin").notNull().default("internal"),
+    // The reporting agent (steward | curator | matcher | ... | mcp).
+    agent: text("agent").notNull(),
+    // The model that wrote the report, when known.
+    model: text("model"),
+    // External reports are attributed to the contributor whose key filed
+    // them; null for internal agents.
+    reporterContributorId: uuid("reporter_contributor_id").references(
+      () => contributors.id,
+      { onDelete: "set null" }
+    ),
+    // Optional pointers (claim id, contribution id, source url, job id) as
+    // ids only — never quoted content.
+    contextRefs: jsonb("context_refs").notNull().default({}),
+    // Attribution snapshotted from the usage context at write time. Plain
+    // columns, no FKs: run identity only exists when tracing is on.
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    claimId: uuid("claim_id"),
+    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' —
+    // reportStatusEnum.
+    status: text("status").notNull().default("new"),
+    triageNote: text("triage_note"),
+    // Who moved the status last: an audit run id, a service caller, a name.
+    triagedBy: text("triaged_by"),
+    triagedAt: timestamp("triaged_at", { withTimezone: true }),
+    // For status 'duplicate': the report this one collapses into. Not a
+    // self-FK so a triager can point at a row that later gets pruned.
+    duplicateOfId: uuid("duplicate_of_id"),
+    // Collapses the same report across runs: hash of origin, agent, kind,
+    // surface, and the normalized title. Computed server-side, never by
+    // the reporter.
+    dedupeKey: text("dedupe_key").notNull(),
+    occurrenceCount: integer("occurrence_count").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_agent_reports_dedupe_key").on(table.dedupeKey),
+    index("idx_agent_reports_status_seen").on(table.status, table.lastSeenAt),
+    index("idx_agent_reports_agent_seen").on(table.agent, table.lastSeenAt),
+    index("idx_agent_reports_origin_status").on(table.origin, table.status),
+  ]
+);
+
 // Type exports
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
@@ -1897,3 +1986,5 @@ export type NewBudgetJob = typeof budgetJobs.$inferInsert;
 export type Grant = typeof grants.$inferSelect;
 export type NewGrant = typeof grants.$inferInsert;
 export type NewAuditFinding = typeof auditFindings.$inferInsert;
+export type AgentReport = typeof agentReports.$inferSelect;
+export type NewAgentReport = typeof agentReports.$inferInsert;

@@ -16,6 +16,7 @@ import {
 } from "../tools/reviewer-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -32,9 +33,13 @@ async function runContributionReviewImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.governanceModel;
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
+    ...reportTools.definitions,
   ];
 
   const userMessage = `A new contribution has been submitted for review.
@@ -58,6 +63,9 @@ Please review this contribution:
     maxTokens: 8192,
     maxIterations: 8,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

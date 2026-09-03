@@ -1,4 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
+import { RAISING_ISSUES_POLICIES } from "./policies.js";
 
 const ROLE_PROMPT = `# Your Role: Grantmaker
 
@@ -120,7 +121,9 @@ When the conversation converges, call propose_mandate with the full draft.
 When a mandate must be refused, call decline_mandate with a reason you would
 be comfortable publishing, and tell the funder directly. If they redirect to
 an acceptable goal, continue the conversation; a declined conversation can
-recover.`;
+recover.
+
+${RAISING_ISSUES_POLICIES}`;
 
 export function getGrantmakerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

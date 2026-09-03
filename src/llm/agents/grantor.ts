@@ -22,6 +22,8 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
+import { RAISING_ISSUES_POLICIES } from "../prompts/policies.js";
 import type { PlanItem } from "../../services/grant-service.js";
 
 export interface GrantorPlan {
@@ -88,7 +90,9 @@ What buys epistemic value (in rough order):
 What does NOT: settled scaffolding (low importance, uncontested), claims
 already freshly assessed with low marginal_yield, duplicates of the same
 crux. Do not exceed the budget: plan roughly one owl per 'assess' item and
-three per 'deepen' item, and stop below the budget rather than padding.`;
+three per 'deepen' item, and stop below the budget rather than padding.
+
+${RAISING_ISSUES_POLICIES}`;
 }
 
 /** One row of the survey the agent sees per claim in scope. */
@@ -192,6 +196,9 @@ async function runGrantorImpl(input: {
 
   let plan: GrantorPlan | null = null;
   const maxItems = Math.max(1, Math.min(25, Math.floor(input.budgetOwls)));
+  const model = input.model ?? config.governanceModel;
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
 
   await toolUseLoop({
     initialMessages: [
@@ -212,12 +219,15 @@ async function runGrantorImpl(input: {
           `results — never invent ids.`,
       },
     ],
-    tools: [surveyTool, submitTool],
+    tools: [surveyTool, submitTool, ...reportTools.definitions],
     system: getGrantorSystemPrompt(),
-    model: input.model ?? config.governanceModel,
+    model,
     maxTokens: 8192,
     maxIterations: 12,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       if (name === "submit_allocation_plan") {
         const raw = toolInput as unknown as GrantorPlan;
         // Mechanical validation: only real, in-scope-shaped items survive.
