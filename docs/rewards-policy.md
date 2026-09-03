@@ -5,7 +5,8 @@ reward ledger and its state machine) exists and this policy has an effective
 date. Points counsel should settle before launch:
 
 - Terms of Service: this policy is written as part of a Terms of Service
-  (governing law, dispute forum, contribution license) that does not exist yet.
+  (governing law, dispute forum) that does not exist yet. The contribution
+  license is the Contributor Terms (docs/contributor-terms.md).
 - Section 5.2 relies on Offers being invitations to treat rather than
   unilateral offers; confirm the wording holds in the governing jurisdiction.
 - Section 6.5 (forfeiture of unclaimed Payable Rewards after twelve months):
@@ -78,7 +79,7 @@ constitution and policies published on this site.
 3.1 **Payer and payee.** Every Reward is paid by Minerval, Inc. from
 Minerval's own funds, to the contributor whose Contribution Minerval
 accepted. The Contribution is made to Minerval and becomes part of the public
-graph under the terms that govern all contributions. A Reward is
+graph under the Contributor Terms, which dedicate it to the public domain. A Reward is
 consideration for services rendered to Minerval and accepted to Minerval's
 satisfaction, and for nothing else.
 
@@ -328,8 +329,8 @@ all of the following are true:
   not suspended or restricted, not in a standing that requires a deposit to
   contribute, and with no unresolved bad-faith finding;
 - the Contribution is your own work, or work you have the right to submit,
-  and neither submitting it nor Minerval's use of it under the terms that
-  govern contributions violates anyone's rights;
+  and neither submitting it nor Minerval's use of it under the Contributor
+  Terms violates anyone's rights;
 - you are not located in, ordinarily resident in, or a national of a country
   or region to which Minerval or the Payout Provider cannot lawfully send
   payment, and you are not on any sanctions or restricted-party list;

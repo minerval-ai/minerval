@@ -98,7 +98,7 @@ the provider reference on the reward row.
 
 - Stripe: confirm Global Payouts covers 1099 filing for its recipients;
   read the preview terms; decide NEC vs MISC with counsel.
-- Terms of Service and the contribution license do not exist yet; the
-  policy assumes both.
+- Terms of Service does not exist yet; the policy assumes it. The
+  contribution license is docs/contributor-terms.md (CC0 in, CC0 out).
 - Whether rewarded contributions should be marked on the public record
   (the policy says yes, for transparency) and how.

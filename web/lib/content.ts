@@ -19,7 +19,7 @@ export interface AgentMeta {
 }
 
 export function getDoc(
-  name: "constitution" | "architecture" | "policies" | "rewards-policy"
+  name: "constitution" | "architecture" | "policies" | "rewards-policy" | "contributor-terms"
 ): string {
   return readFileSync(resolve(CONTENT, `${name}.md`), "utf-8");
 }
