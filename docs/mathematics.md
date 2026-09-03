@@ -60,7 +60,8 @@ evidence it weighed (§9, §11, Part VIII). The founder's instructions add six
 things: a Mathematics skill and the general skills framework it is the first
 instance of; a posted prize on the claim page and the map; a claim-prize
 button leading to an evidence form with uploads; mechanical prize
-adjudication through a Lean checker, paid in cash or in owls; the platform's
+adjudication through a Lean checker, paid in owls (cash payouts are kept out
+of v1 by the founder's decision); the platform's
 own solver, run at maximum settings on the high-value problems before any
 prize is offered; and a Mathematics mandate thorough enough to carry real
 money.
@@ -82,12 +83,14 @@ properties.
    prize fund the allocation ledger cannot see. The solver's compute is
    ordinary metered spend on the action ledger. Prizes are payouts, never
    spend.
-3. **Owls stay one-way.** Cash in pays cash or owls out; owls never fund a
-   prize and never become cash. A winner's election of owls at one owl per
-   dollar is a promotional grant, labeled as such in the ledger, valued at
-   the cash amount for tax, never expiring, never transferable, never
-   redeemable. Nothing here gives an owl a property a regulator could read
-   as stored value.
+3. **Owls stay one-way, and every prize owl is backed by a dollar.** Cash
+   in pays owls out; owls never fund a prize and never become cash. A prize
+   is paid in owls at one owl per dollar as a promotional grant, labeled as
+   such in the ledger, valued at the cash amount for tax, never expiring,
+   never transferable, never redeemable, and the fund debits the cash
+   amount the moment the owls are granted. Cash payouts are out of v1; a
+   rail is designed for later behind an adapter. Nothing here gives an owl
+   a property a regulator could read as stored value.
 4. **Payout is mechanical after judgment, and judgment is slow where money
    is at stake.** The checker issues the verdict; the Contribution Reviewer
    screens form, identity, and good faith; the Steward judges statement
@@ -98,7 +101,7 @@ properties.
 
 ### 1.2 What ships first, and why
 
-The visible items (a prize on the page, a claim button, cash or owls) come
+The visible items (a prize on the page, a claim button, a winner paid in owls) come
 last, because they depend on everything before them being right, and the site
 must never advertise an offer it cannot honor.
 
@@ -119,15 +122,16 @@ must never advertise an offer it cannot honor.
 - **Phase 3: prizes payable in owls.** The prize fund, the Grantmaker's
   `post_bounty`, the display on page, map, list, and mandate page, the rules
   page, and the full claim-prize flow with its window and audit, paying in
-  owls only, with identity, tax form, and screening collected by hand.
-  Counsel's first five items (section 9.3) are done before this phase opens.
-- **Phase 4: cash.** The approved payout rail, tax forms, withholding,
-  sanctions screening, the privacy policy update, and the international
-  policy.
+  owls, fully backed by the fund, with identity, tax form, and screening
+  collected by hand. Counsel's first items (section 9.3) are done before
+  this phase opens. v1 ends here.
+- **Later: cash.** A payout rail behind an adapter, the Stripe conversation,
+  provider screening, and withholding remittance. Designed here so v1 does
+  not foreclose it; not built in v1, by the founder's decision.
 
 Section 14 gives the dependency graph and estimates. With one engineer and
 the founder's attention, Phases 0 and 1 are about three weeks, Phase 2 two
-more, Phase 3 two more, and Phase 4 whenever the rail is approved.
+more, and Phase 3 two more; cash has no date.
 
 ### 1.3 The positions this document takes
 
@@ -141,16 +145,16 @@ each:
 | Does a bounty enter the attempt's valuation? | Never. Demand moves scheduling only through allocations on the attempt action. | 7.3, 10.5 |
 | What selects a skill? | `claims.domains`, set by admin judgment. `claim_type = mathematical` is the proposition-kind facet. Neither the funding mandate nor importance gates the Lean tools. | 3.4 |
 | In what order is a prize claim reviewed? | Route gate, checker, Contribution Reviewer, Steward, challenge window with the audit inside it, sign-off, payout. The checker runs before any agent so a failed proof costs no judgment. | 8.4 |
-| Which payout rail? | An adapter. Stripe Global Payouts if Stripe approves the program in writing; Tremendous otherwise. Nothing touches the account that sells owls without that approval. | 8.8, 9.2 |
+| Cash payouts? | Not in v1. Every prize is paid in owls, one per dollar, and the fund debits the dollars when the owls are granted, so every prize owl is backed. A rail is designed behind an adapter for later; the Stripe question waits until then. | 8.7, 8.8, 9.2 |
 | Who verifies a solver result? | The kernel, for Lean-checked outcomes; the Steward judges fidelity. Anything the kernel cannot check is a lead, never a result. | 7.6 |
 | May attempts start before the statement's public review period ends? | Yes; the attempt doubles as a vacuity probe. Bounties wait for the period. | 5.6 |
 | Is the platform ever a claimant? | Never. A house solve closes the bounty unpaid and publishes the proof. | 7.6, 8.1 |
 | Written proofs? | Not in v1. Lean only; where Mathlib lacks the definitions, no bounty. | 8.2 |
 | Who pays for prize review? | A self-funded `prize_review` action on the Mathematics mandate, never the claimant. | 8.6 |
 | Challenge window? | 14 days below $1,000; 30 at or above; paused while a challenge is open. | 8.5 |
-| When is cash-or-owls chosen? | Once, after `payable`, irrevocably, within 90 days. | 8.7 |
+| What must a winner do to be paid? | Complete identity, residency, tax form, and screening within 90 days of `payable`; then the owls are granted. | 8.7 |
 | Any deposit to claim? | None. Abuse control is non-monetary. | 8.4 |
-| Caps and sign-off in v1? | $5,000 per claim; human sign-off at $1,000 or importance 0.6; every posting confirmed by a human in v1 (autonomy threshold configurable, default $0). | 8.1, 8.5 |
+| Caps and sign-off in v1? | $5,000 per claim; human sign-off at $1,000 or importance 0.6; postings below $1,000 open on the Grantmaker's two-pass alone; at or above, founder confirmation (`BOUNTY_AUTONOMY_THRESHOLD_USD`). | 8.1, 8.5 |
 | Are funders named on claim surfaces? | No. Minerval is named because the rules require a named sponsor. | 8.3 |
 | Does a failed check touch reputation? | No. A kernel result is a mechanism. | 8.4 |
 | Which model runs the money decisions? | The strong tier, forced for the six money triggers of section 6.4, which are invoked directly rather than through the steward queue; a fallback-served acceptance is an audit send-back. | 6.4 |
@@ -161,6 +165,7 @@ each:
 
 | Deferred | Why not now | Later cost |
 |---|---|---|
+| Cash payouts | Out of v1 by the founder's decision; the adapter, the Stripe approval, and provider screening are designed in sections 8.8 and 9.2. | Two to three days once a rail is approved; the state machine already has the states. |
 | Owl pledges to bounties | Makes owls transferable between people, the property the owl's legal posture rests on. Counsel first. | Two to three days: a pledge table, a hold reason, a fifth committed-money term in the escrow queries. |
 | Per-claim third-party cash pledges | Chargebacks and money-transmission questions the fund-level product avoids. | Four days after counsel. |
 | Written-proof prize track | The Steward cannot referee a research proof at prize standard. | A human panel; not an engineering item. |
@@ -1508,7 +1513,7 @@ kept apart, and confusing them is how the invariants would break: an
 **allocation** is money placed on an action so it runs (spend, metered and
 settled); a **bounty** is money offered for an answer, held until earned,
 funding nothing on the ledger; a **prize payout** is the discharge of that
-liability, in cash or in owls.
+liability, in owls in v1 and in cash only when a rail exists.
 
 ### 8.1 Bounty model and funding sources
 
@@ -1563,11 +1568,12 @@ counsel's items); at most one live bounty per claim.
 Every posting is **two-pass**: the first call records the intent on the
 mandate (as `complete_mandate`'s closure request does,
 `src/llm/agents/mandate-review.ts:677-716`), and only a call from a later
-pass, a fresh context re-judging the mission, opens it. In v1 every posting
-also waits for a human confirmation (`POST /bounties/:id/confirm`, service
-key, or the founder in the management chat): `BOUNTY_AUTONOMY_THRESHOLD_USD`
-defaults to $0, and when the founder raises it, postings at or below it open
-on the two-pass alone. The reason is that a public reward offer is a
+pass, a fresh context re-judging the mission, opens it. A posting below
+`BOUNTY_AUTONOMY_THRESHOLD_USD` (default $1,000) opens on the two-pass
+alone, so the Grantmaker determines and funds ordinary prizes without
+anyone's signature; at or above it, the posting waits for a human
+confirmation (`POST /bounties/:id/confirm`, operator key, or the founder in
+the management chat). The reason is that a public reward offer is a
 unilateral contract binding until revoked with equal publicity (section
 9.1), and the review pass reads the open web in the same context as the tool
 (`mandate-review.ts:404-416, 456-464` name injection as the reason for the
@@ -1621,7 +1627,7 @@ CREATE TABLE prize_pool_entries (          -- balance = SUM(amount_micro_usd)
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   pool_id uuid NOT NULL REFERENCES prize_pools(id),
   amount_micro_usd bigint NOT NULL,
-  reason text NOT NULL,                    -- platform_deposit | sponsorship | payout | owl_election | withholding_remitted | defect_award | review_award | admin_adjust
+  reason text NOT NULL,                    -- platform_deposit | sponsorship | owl_prize | withholding_remitted | defect_award | review_award | admin_adjust | payout (reserved for a cash rail)
   bounty_id uuid, prize_claim_id uuid, bank_reference text, stripe_event_id text,
   idempotency_key text UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -1651,10 +1657,11 @@ entries. `reserved` is derived: the sum of `amount_micro_usd` over live
 bounties (`open`, `claim_pending`, `house_result_pending`, `rebinding`).
 `available` is `balance` minus `reserved`, and a bounty opens only when
 `available` covers it. Nothing is posted when a bounty opens or closes. The
-only debits are `payout` (cash sent), `owl_election` (owls granted, at the
-cash amount, so the fund's balance is what remains to be offered and the
-dollars back the owl liability like every owl outstanding),
-`withholding_remitted`, `defect_award`, and `review_award`; each consumes
+only debits are `owl_prize` (owls granted, at the cash amount, so the
+fund's balance is what remains to be offered and the dollars back the owl
+liability like every owl outstanding: this is what makes every owl prize
+fully funded), `withholding_remitted`, `defect_award`, `review_award`, and,
+only when a rail exists, `payout`; each consumes
 the bounty's reservation where one exists, and a defect award reduces the
 rebound bounty by its amount unless the Grantmaker tops it up under the
 ordinary caps. A dollar is promised once, in `reserved`, and spent once, in
@@ -1714,8 +1721,9 @@ graph:
 > a public challenge window of 30 days. Entry is free; purchasing owls
 > confers no advantage. The first complete submission that passes, by time
 > of receipt, is the one paid; later independent proofs are credited on this
-> page. Prizes are taxable income; the winner may take cash, or owls at one
-> owl per dollar (owls are never redeemable for cash). Rules →
+> page. Prizes are paid in owls, one owl per dollar, which buy metered work
+> on the graph and are never redeemable for cash; a prize is taxable income
+> at its dollar value. Rules →
 
 Below the button: the state sentence (a submission is being checked; a
 submission passed the checker and awaits review; accepted on DATE and
@@ -1763,8 +1771,7 @@ judgment.
 
 **Mandate page.** A "Prizes" section after "Assessments this mandate funded"
 (`web/app/mandates/[id]/page.tsx:273-296`): tiles for the fund balance and
-reserved amount, bounties posted (count, total), prizes paid (count, cash,
-owls); the attempt log (each attempt with claim, variant, cost, outcome, and
+reserved amount, bounties posted (count, total), prizes paid (count, owls); the attempt log (each attempt with claim, variant, cost, outcome, and
 the link to its report); a table of claims with a bounty (text, amount,
 status, open since, submissions, outcome). The sentence under the heading:
 "Prizes are paid from a separate fund, not from this mandate's compute
@@ -1949,7 +1956,7 @@ drafts a corrected one, and records a defect award
 (`PRIZE_DEFECT_AWARD_FRACTION` 0.10 of the bounty, capped at
 `PRIZE_DEFECT_AWARD_CAP_USD` $500) on the claim, which moves to
 `defect_award_pending`, is audited like an acceptance, skips the window, and
-then follows the election and payout steps, drawn from the bounty's
+then follows the winner's steps and the grant, drawn from the bounty's
 reservation. The corrected statement follows the full publication path
 (draft, the fresh-context second pass, the review period), never a
 republication inside the same run. A
@@ -1963,7 +1970,8 @@ says so in the reasoning trace.
 
 **States of `prize_claims.status`**: `queued`, `checking`,
 `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`,
-`defect_award_pending`, `payout_pending`, `paid`, `rejected` (with
+`defect_award_pending`, `paid` (`payout_pending` is reserved for a cash
+rail), `rejected` (with
 `rejected_stage` in `check | review | steward`), `voided`, `withdrawn`,
 `superseded`, `forfeited`.
 `contributions.review_status` is the projection the existing pipeline
@@ -2094,35 +2102,38 @@ a 0.3-importance problem does not wait days behind higher-importance work
 inside a window measured in days; target: the Steward's run starts within 24
 hours of `in_review`.
 
-### 8.7 The cash-or-owls election
+### 8.7 Paying the prize in owls
 
-After `payable`, the claimant elects once, irrevocably, on the account page
-(`PrizeElection.tsx`; `POST /prize-claims/:id/elect`, dashboard-session trust
-like key minting, because a leaked consumer key must not choose a payout).
-The screen asks "How do you want to be rewarded?" and shows: the cash option
-with the amount after any required withholding and the provider's steps
-(identity, tax form, screening); the owl option at one owl per dollar with
-the sentences that owls buy metered work on the graph (assessments, deeper
-passes, mandates the winner directs), that they are non-transferable,
-non-refundable, and never redeemable for cash, and that the prize is
-reported for tax at its cash amount whichever option is chosen;
-the irrevocability of the election; the tax notice; the 90-day election
-period (`PRIZE_ELECTION_DAYS`), after which the offer lapses and the
-bounty's draw returns to the fund (`forfeited`); and a link to the privacy
-policy's prizes section.
+Cash payouts are out of v1 by the founder's decision. Every prize is paid
+in owls, one owl per dollar of the bounty, and every owl prize is fully
+funded: the fund debits the cash amount the moment the owls are granted,
+and the fund never posts more in open bounties than its balance (section
+8.1), so every owl a prize can ever mint is backed by a dollar already
+deposited. The amounts are the Grantmaker's (section 10.4); below the
+confirmation threshold nobody else decides them, and the grant after
+`payable` is mechanical.
 
-**Both options run the same steps first.** Identity, residency, a tax form
-(W-9 or W-8BEN), the withholding computation, and sanctions screening happen
-before any `prize_award` or `prize_payouts` row is written, whichever option
-the winner chose; the owl path is not a way around them. In Phase 3, before
-a rail exists, the forms are uploaded as restricted attachments of kind
-`tax_form`, the operator records the screening result on the payout row from
-OFAC's search, and the sign-off checklist requires both.
+**The winner's steps.** After `payable` the winner sees "Your prize" on the
+account page (`PrizeAward.tsx`): the amount; what owls are (metered work on
+the graph: assessments, deeper passes, mandates the winner directs); that
+they are non-transferable, non-refundable, and never redeemable for cash;
+that the prize is reported for tax at its dollar value; and the steps to
+complete within `PRIZE_PAYEE_STEPS_DAYS` (90). The steps are identity and
+residency (`POST /prize-claims/:id/payee`, dashboard session plus an emailed
+one-time code, because a leaked consumer key must not redirect a prize), a
+tax form (W-9 or W-8BEN) uploaded as a restricted attachment of kind
+`tax_form`, and sanctions screening, which the operator records on the
+payout row from OFAC's search. The sign-off checklist requires all three
+before any `prize_award` row is written; the owl path is not a way around
+them. A winner who does not complete the steps within the period forfeits
+(`forfeited`), and the reservation returns to the fund.
 
-**Owls.** `payPrize` writes a `prize_payouts` row first, then one
-`owl_ledger` row with reason `prize_award` (the ledger says "award" because
-the legal posture depends on prize owls being promotional credit), positive and
-net of any required withholding, `claim_id` and `prize_claim_id` set,
+**The grant.** `payPrize` writes a `prize_payouts` row first (`kind =
+'owls'`, `provider = 'internal'`, with `withholding_micro_usd`,
+`tax_form_kind`, and `screening_result` filled), then one `owl_ledger` row
+with reason `prize_award` (the ledger says "award" because the legal
+posture depends on prize owls being promotional credit), positive and net
+of any required withholding, `claim_id` and `prize_claim_id` set,
 idempotency key `prize:<prize_claim_id>:owls`, and increments a new
 `contributors.owls_prized_micro_usd`, kept separate from
 `owls_earned_micro_usd` (`src/db/schema.ts:456`) so the leaderboard keeps
@@ -2131,82 +2142,76 @@ never expire, and no ledger path ever converts them to cash, so
 `src/services/owl.ts:9` stays true. A grant above $2,000 is written in daily
 tranches of at most `PRIZE_OWL_TRANCHE_USD` ($2,000), so no single day loads
 more than the closed-loop threshold section 9.1 relies on. The fund posts an
-`owl_election` debit at the cash amount, so its balance is what remains to
-be offered; the dollars back the owl liability like every owl outstanding,
-and the fund's public page says so.
+`owl_prize` debit at the cash amount in the same transaction, so its
+balance is what remains to be offered; the dollars back the owl liability
+like every owl outstanding, and the fund's public page says so.
 
 The accounting truth, stated in `docs/allocation.md` when this ships: a
 prize of N dollars paid in owls mints N owls; when spent they cover about N
 dollars of metered cost, paid by the platform to its providers as they are
 spent; the liability is measured at cost, one dollar per owl, like every owl
-outstanding; the sale margin forgone is disclosed, never booked. For the
-winner, owls at one per dollar are four times the purchase rate; for the
-platform, an owl prize is never dearer than cash and cheaper by whatever
-fraction is never spent. Both readings are shown.
+outstanding, and it is backed by the N dollars the fund debited; the sale
+margin forgone is disclosed, never booked. For the winner, owls at one per
+dollar are four times the purchase rate; for the platform, an owl prize is
+never dearer than the dollars set aside and cheaper by whatever fraction is
+never spent. Both readings are shown.
 
-**Cash** waits on the rail (section 8.8). `prize_claims` moves to
-`payout_pending` until the provider confirms, then `paid`. A claimant may
-elect owls without a provider account, after the steps above; a cash
-election waits within the 90 days. A cash election whose payout has
-`failed` three times, or has sat in `payout_pending` for 90 days, may be
-re-elected to owls by the claimant or converted by the operator with a
-note: the one exception to irrevocability, so money never waits on nobody.
+**Reversal.** A post-payout voiding after fraud is recorded on the payout
+row (`reversed`); the clawback is a negative `prize_award` row mirroring
+`clawbackContributionOwls`, which may push a balance negative. The graph is
+corrected immediately (§24).
 
-**Reversal.** A `reversed` payout (a provider reversal, or a post-payout
-voiding after fraud) is recorded on the payout row; for owls, a clawback is
-a negative `prize_award` row mirroring `clawbackContributionOwls`, which may
-push a balance negative. The graph is corrected immediately (§24); recovery
-of cash is a matter for the rules.
+### 8.8 Cash payouts, designed for later
 
-### 8.8 Payout rails
+Nothing here is built in v1 beyond the `prize_payouts` table, which the owl
+grant already writes. It is recorded so that v1 forecloses nothing and so
+the day cash returns is a bounded piece of work.
 
 The rail sits behind one adapter (`src/services/payout-provider.ts`:
 `createPayee`, `collectTaxForm`, `screen`, `pay`, `status`), with the state
-machine unchanged across providers. `prize_payouts` records `kind`,
+machine unchanged across providers: `payable` → `payout_pending` → `paid`,
+with `failed` and `reversed`. `prize_payouts` already records `kind`,
 `amount_micro_usd`, `withholding_micro_usd`, `currency`, `payee_country`,
 `tax_form_kind` (`w9 | w8ben`), `screening_result`, `provider`,
 `provider_payee_id`, `provider_payout_id`, an idempotency key
 `prize:<prize_claim_id>:cash` sent as the provider's idempotency key, and
-`status` (`pending | sent | paid | failed | reversed`). A reconciliation job
-compares `prize_pool_entries` with the provider's ledger and the operating
-account monthly and writes a report the founder reads.
+`status` (`pending | sent | paid | failed | reversed`). A cash option, when
+it exists, is elected once after `payable` and irrevocably, with one exit:
+a payout that has failed three times or sat in `payout_pending` for 90 days
+may be converted to owls. A reconciliation job would compare
+`prize_pool_entries` with the provider's ledger and the operating account
+monthly.
 
-The founder asked for Stripe payouts. Stripe's published restricted-business
-list names contests and games of skill with a monetary prize as categories
-that need Stripe's prior written approval, and Stripe Global Payouts (the
-product for paying people who are not sellers on a marketplace) is the
-right product if that approval is given. Connect Express or Custom, which
-model payees as sellers, are the wrong shape and are not built. The order is
-therefore: build the payout ledger and the adapter now; write to Stripe
-describing a scientific prize with mechanical verification and free entry
-and ask in writing whether Global Payouts may be used; bind the first cash
-payout to whichever rail is approved, Stripe Global Payouts if Stripe
-approves, otherwise a payouts provider built for prizes and rewards
-(Tremendous is the reference: ACH, PayPal, or international bank transfer at
-the winner's choice, W-9 collection and 1099 preparation automated, a fee of
-a few percent that is trivial at v1 volumes, and its own sanctions
-screening). An unapproved launch on Stripe risks the account that sells
-owls, which is the one account the platform cannot lose. Section 9.2 lists
-what to say to Stripe.
-
-The Stripe restricted key today is scoped to Checkout Sessions: Write
-(`docs/accounts.md`; `src/services/stripe-service.ts`). Any Stripe payout
-product needs a second key with its own scope, kept in its own Secrets
-Manager entry, never a widening of the Checkout key.
+Which rail: Stripe's published restricted-business list names contests and
+games of skill with a monetary prize as categories that need Stripe's prior
+written approval, and Stripe Global Payouts (the product for paying people
+who are not sellers on a marketplace) is the right product if that approval
+is given. Connect Express or Custom, which model payees as sellers, are the
+wrong shape. Without approval, a payouts provider built for prizes and
+rewards (Tremendous is the reference: ACH, PayPal, or international bank
+transfer at the winner's choice, W-9 collection and 1099 preparation
+automated, a fee of a few percent, its own sanctions screening) is the rail.
+An unapproved launch on Stripe would risk the account that sells owls, which
+is the one account the platform cannot lose. Section 9.2 records the
+conversation. The Stripe restricted key today is scoped to Checkout
+Sessions: Write (`docs/accounts.md`; `src/services/stripe-service.ts`); any
+Stripe payout product needs a second key with its own scope, in its own
+Secrets Manager entry, never a widening of the Checkout key.
 
 ### 8.9 Tax and sanctions
 
-Prizes are ordinary income, and every step here applies to the owl election
-as much as to cash (section 8.7). U.S. winners provide a W-9 before payout;
+Prizes are ordinary income whether paid in owls or in cash, and every step
+here applies to the owl grant (section 8.7). U.S. winners provide a W-9
+before the grant;
 Minerval files 1099-MISC box 3 at the statutory threshold ($2,000 for
 payments made in 2026 and after, indexed thereafter) and applies 24 percent
 backup withholding without a valid TIN. Non-U.S. winners provide a W-8BEN;
 the default is 30 percent withholding with Form 1042-S and Form 1042 filing,
 unless counsel's memo on the source of prize income (Treas. Reg. §1.863-1(d))
-supports a foreign-source position. A non-U.S. winner who elects owls
+supports a foreign-source position. A non-U.S. winner
 receives owls equal to the prize net of required withholding, and Minerval
 remits the withheld amount from the fund (`withholding_remitted`), pending
-counsel's view on whether gross-up or a U.S.-persons-only election is
+counsel's view on whether gross-up or a U.S.-persons-only eligibility rule is
 preferable. An owl prize is reported at the cash-equivalent fair market
 value with a documented methodology the accountant confirms.
 
@@ -2222,7 +2227,7 @@ the mechanics (screening step, withholding computation, 1042-S record) are in
 the state machine, not in a policy document alone.
 
 Records per prize (submission and hashes, checker record, timestamps,
-screening, tax forms, election, payout confirmation, rules version) are kept
+screening, tax forms, the grant, rules version) are kept
 at least seven years.
 
 ### 8.10 The rules page and publicity
@@ -2257,9 +2262,9 @@ that moves money. Four routes require an operator key
 used only from the operator's own session: the fund deposit, the bounty
 confirmation, the prize-claim sign-off, and the void. Two routes act for a
 winner and require both the dashboard session and a one-time code sent to
-the account's verified email: the election and the withdrawal, so a leaked
-consumer key or service key alone can neither choose a payout nor abandon a
-winning claim. Every call to these six routes is written to `audit_log`
+the account's verified email: the payee step and the withdrawal, so a
+leaked consumer key or service key alone can neither redirect a prize nor
+abandon a winning claim. Every call to these six routes is written to `audit_log`
 with the credential kind and the acting person. The service key alone moves
 no money, which is what section 1.1's fourth property promises.
 
@@ -2268,8 +2273,8 @@ no money, which is what section 1.1's fourth property promises.
 ## 9. Legal considerations, and the Stripe conversation
 
 This section summarizes the legal posture the design assumes, answers the
-founder's question about cash-or-owls prizes, sets out the conversation to
-have with Stripe, and lists what goes to counsel and when. It is not legal
+founder's question about owl prizes, records the Stripe conversation for
+the day cash returns, and lists what goes to counsel and when. It is not legal
 advice.
 
 ### 9.1 The posture
@@ -2302,7 +2307,7 @@ advice.
    not built, and why "escrow," "deposit," and "held for you" leave
    user-facing prize text.
 4. **Owls as prizes are promotional credit.** This is the founder's
-   question, and the short answer is that the owl election creates no new
+   question, and the short answer is that paying prizes in owls creates no new
    legal problem provided owls remain one-way and promotional. Prize owls
    are issued without payment, labeled `prize_award`, never expiring, never
    transferable, never redeemable for cash, and never the subject of any
@@ -2320,11 +2325,11 @@ advice.
    associated per day, and the largest pack today is $1,000,
    `src/config.ts:191`); a per-account daily purchase cap under $2,000 is a
    cheap safeguard pending counsel, prize loads are tranched by day the
-   same way (section 8.7), and both are part of counsel item 8.
+   same way (section 8.7), and both are part of counsel item 7.
 5. **Tax reporting is mechanical for U.S. winners and unresolved for foreign
    winners** (section 8.9). Until counsel answers the source question, the
    default is 30 percent withholding on non-U.S. winners, with the owl
-   election paid net of withholding.
+   grant paid net of withholding.
 6. **Sanctions compliance is strict liability.** Screen every payee, refuse
    comprehensively sanctioned jurisdictions, record the screening. Published
    mathematics is outside export controls (the fundamental-research and
@@ -2345,11 +2350,11 @@ advice.
    submission, co-authors named on the page; the guardian-payee path and
    multi-payee splits are v2 and go to counsel first.
 
-### 9.2 The Stripe conversation
+### 9.2 The Stripe conversation, for when cash returns
 
-The founder's instinct to use Stripe for payouts is right about the
-integration cost and wrong about the sequencing unless one thing happens
-first. Points for the conversation, in order:
+Cash payouts are out of v1, so this conversation has no date. It is
+recorded because the founder raised it and because the answer shapes the
+adapter of section 8.8. Points, in order:
 
 - **Ask before building.** Stripe's restricted-business list includes
   contests and games of skill with monetary prizes among the categories
@@ -2375,9 +2380,9 @@ first. Points for the conversation, in order:
   W-9s, prepares 1099s, screens recipients, and pays by ACH, PayPal, or
   international transfer, for a fee of a few percent. The adapter makes the
   choice reversible, and the first cash prize does not wait on Stripe.
-- **Either way, owls first.** Phase 3 pays in owls only, which needs no
-  rail, and the first cash payout is Phase 4. Nothing about the prize
-  display, the claim flow, or the window waits on the rail.
+- **Owls need none of this.** v1 pays in owls, which needs no rail, and
+  nothing about the prize display, the claim flow, or the window waits on
+  Stripe.
 
 ### 9.3 The counsel list
 
@@ -2403,22 +2408,24 @@ Before Phase 3 (prizes payable in owls):
 5. Privacy: the prizes section of the policy, a transfer mechanism for EU
    and UK winners, retention periods, the erasure-request answer for public
    submissions, and whether an EU representative is needed once EU winners
-   are more than occasional. Needed before Phase 3 because the owl election
+   are more than occasional. Needed before Phase 3 because the owl grant
    collects identity and tax data too.
 
-Before Phase 4 (cash):
-
-6. Stripe's written confirmation (section 9.2), or the fallback provider's
-   terms and whether it screens recipients against OFAC.
-7. Foreign-winner source and withholding: a written opinion on Treas. Reg.
+6. Foreign-winner source and withholding: a written opinion on Treas. Reg.
    §1.863-1(d) and treaty "other income" articles for likely winner
-   countries; and the treatment of an owl election by a nonresident alien
-   (net of withholding, gross-up, or U.S. persons only).
-8. Money transmission and prepaid access: confirmation from New York
+   countries; and the treatment of an owl prize to a nonresident alien (net
+   of withholding, gross-up, or U.S. persons only). Needed before Phase 3
+   if non-U.S. winners are eligible in v1 (section 15).
+7. Money transmission and prepaid access: confirmation from New York
    counsel that the fund-level sponsorship structure is outside Banking Law
    §641 and the federal definition, and a review of purchased owls and of
    prize-granted owls loaded in tranches against the closed-loop
    prepaid-access exclusion and state gift-card and escheat rules.
+
+When cash returns:
+
+8. Stripe's written confirmation (section 9.2), or the fallback provider's
+   terms and whether it screens recipients against OFAC.
 
 Before third-party sponsorship or larger prizes:
 
@@ -2440,8 +2447,8 @@ Before third-party sponsorship or larger prizes:
 Everything above is a question about scale. The v1 program (free entry,
 owls-only payout, prizes at or below $5,000, tax forms collected before any
 payout, a named sponsor, a versioned rules page, a 14- to 30-day window,
-human sign-off at $1,000) can open on items 1 to 5; cash needs 6 to 8;
-growth needs the rest.
+human sign-off at $1,000) can open on items 1 to 7; cash, when it returns,
+needs 8; growth needs the rest.
 
 ---
 
@@ -2676,8 +2683,8 @@ Bounties and prizes:
 - `GET /claims/:id/prize-claims` (public), `GET
   /claims/:id/prize-claims/eligibility` (`requireUser`), `GET
   /prize-claims/:id` (public projection; owner and service callers also see
-  `election`, `payout_status`, restricted attachment links).
-- `POST /prize-claims/:id/withdraw` and `POST /prize-claims/:id/elect`
+  `payee_status`, `payout_status`, restricted attachment links).
+- `POST /prize-claims/:id/withdraw` and `POST /prize-claims/:id/payee`
   (dashboard session plus emailed one-time code), `POST
   /prize-claims/:id/challenge` (`authenticate` + `gateContributor`), `POST
   /prize-claims/:id/sign-off` and `POST /prize-claims/:id/void` (operator
@@ -2702,7 +2709,7 @@ Existing routes that change: `GET /claims/:id` gains `formalization`,
 the list and search endpoints gain `prize_micro_usd`, `checked`, and the
 `with_prizes` and `claim_type` filters; `GET /claims/:id/record` gains the
 prize block with the checker result as a public summary and the steward
-decision's public fields, while `election`, provider ids, and tax data never
+decision's public fields, while payee details, provider ids, and tax data never
 serialize; `GET /claims/:id/events` gains `formalization`, `lean_check`,
 `prize`, and `attempt` event kinds; `GET /mandates/:id` gains `prizes` and
 `attempts`; `GET /contributors/:id` and `/users/me` gain `owls_prized` and
@@ -2758,7 +2765,7 @@ ink, a double border rather than the single border every status badge
 wears, the glyph ⊢, label "machine-checked proof" or "machine-checked
 disproof," with the gloss that the checker confirms the proof and the
 verdict beside it is still the steward's judgment of the claim as worded),
-`AttemptLog.tsx`, `PrizeElection.tsx` (account page), an operator page for
+`AttemptLog.tsx`, `PrizeAward.tsx` (account page), an operator page for
 sign-off and void, and `web/app/prizes/page.tsx`,
 `web/app/prizes/rules/page.tsx`,
 `web/app/claims/[id]/attempts/[attemptId]/page.tsx`. Changed:
@@ -2865,7 +2872,7 @@ serialization, concurrency cap, poll transitions, retries, and reclaim;
 and attempt preconditions, and human confirmation; the gate closed at
 `claim_pending` and after an attempt's `finished_at`; a submission matching
 an attempt-mode check rejected; `check_error` holding the queue; the tie
-group surviving supersession; the owl election refused before identity,
+group surviving supersession; the owl grant refused before identity,
 tax form, and screening are recorded; the audit dedupe key changing per
 decision; bounties never entering
 `mandate_valuations`; the prize write path never touching
@@ -2884,7 +2891,7 @@ owls excluded from the leaderboard sum; escrow headroom with `prize_review`
 reserves; two racing acceptances producing one accepted claim and two
 racing payouts producing one; the corpus reset list including every new
 table; and an end-to-end money-path test (deposit, bounty, claim, mocked
-check, admit, accept, audit, window, election, mocked payout, ledger
+check, admit, accept, audit, window, payee steps, owl grant, ledger
 invariants at every step).
 
 ### 12.5 Continuous integration
@@ -2919,9 +2926,8 @@ job.
   `docs/infrastructure.md` with its triggers (files over 10 MiB, attachment
   storage past about 5 GB, a second region).
 - **Secrets**: the checker token, the operator key (never deployed to the
-  web tier), a second Stripe key for payouts if Stripe
-  approves (never a widening of the Checkout key), the payout provider's
-  key, and no secret of any kind in the checker image or environment.
+  web tier), and no secret of any kind in the checker image or
+  environment. A payout provider's key arrives only with cash.
 - **Queues**: prize checks and attempts are DB-backed jobs, never SQS
   messages; the two SQS queues' 120-second visibility timeout
   (`infra/lib/queue-stack.ts:17-24`) is unsuitable for either.
@@ -2937,8 +2943,8 @@ job.
   daily spend against its cap; attempts `running` past their heartbeat;
   prize claims in `checking` past the reclaim window; claims in
   `in_challenge_window` approaching `window_ends_at` without an audit
-  outcome; `payout_pending` older than 30 days; fund balance versus open
-  bounties.
+  outcome; winners whose payee steps are incomplete past 60 days; fund
+  balance versus open bounties.
 - **Retention**: prize records and their transcripts seven years; other
   solver transcripts per the operator's trace retention; retired checker
   images kept.
@@ -3008,8 +3014,8 @@ job.
   disclosed; the Steward has handled `attempt_completed` for a negative, a
   partial, and a checked outcome (the control).
 
-**Phase 3: prizes payable in owls (about two weeks; counsel items 1 to 5
-done).**
+**Phase 3: prizes payable in owls (about two weeks; counsel items 1 to 7
+done). v1 ends here.**
 - `prize_pool_entries`, `bounties`, `prize_claims`, `prize_payouts`,
   `attachments`; the deposit route; `post_bounty` and `withdraw_bounty`
   with two-pass, caps, and human confirmation; the confirm route.
@@ -3022,23 +3028,22 @@ done).**
   prize-check worker; the Reviewer's `claim_prize` branch;
   `get_prize_claim` and `decide_prize_claim`; the window, the challenge
   route and grounds, the audit wiring, the sign-off and void routes and the
-  operator page; `prize_review` funding and the reserve; the election screen,
-  the identity and tax-form steps and the operator-recorded screening, and
-  the owls path with `prize_award`; the privacy policy's prizes section; the
+  operator page; `prize_review` funding and the reserve; the "Your prize"
+  screen, the identity and tax-form steps and the operator-recorded
+  screening, and the owls grant with `prize_award`; the privacy policy's prizes section; the
   end-to-end money-path test.
 - The first bounty, small and deliberately tractable, confirmed by the
   founder, announced as the exercise of the whole path.
 - Exit criterion: one prize claimed, checked, admitted, accepted, audited,
-  through its window, elected in owls, and paid, with every ledger
-  invariant holding.
+  through its window and its payee steps, and paid in owls, with every
+  ledger invariant holding.
 
-**Phase 4: cash (when the rail is approved; counsel items 6 to 8 done).**
-- The payout adapter bound to the approved rail; the second Stripe key or
-  the provider's key; the provider's own identity and screening replacing
-  the operator's hand steps; withholding remittance; the 1099 and 1042-S
-  records; the reconciliation job.
-- The international policy in the rules; the erasure-request answer.
-- Later, after counsel item 9: the fund-level sponsorship product.
+**Later: cash (no date; counsel item 8 done).**
+- The payout adapter bound to an approved rail; the provider's own identity
+  and screening replacing the operator's hand steps; withholding remittance
+  through the provider; the reconciliation job. The state machine already
+  has `payout_pending`, `failed`, and `reversed` for it.
+- Later still, after counsel item 9: the fund-level sponsorship product.
 
 ### 14.2 Dependencies
 
@@ -3051,8 +3056,8 @@ after. Metering of external usage precedes the solver's first real run,
 because the ceiling reads the meter. The mandate rewrite precedes the first
 open-problem attempt, because the attempt policy and the caps live on it.
 Calibration precedes targets. Attempts precede bounties on the same
-statement. The rules page precedes the first bounty. The owls path precedes
-the cash path, and the cash path waits on the rail and on counsel.
+statement. The rules page precedes the first bounty. The owls path is v1; a
+cash path, if it comes, waits on a rail and on counsel.
 
 ### 14.3 What the founder sees, and when
 
@@ -3062,7 +3067,7 @@ machine-checked badge. At the end of Phase 2: the platform's own attempts,
 with their costs and reports, on the mandate page and the claim pages, and
 the first compute money accounted for. At the end of Phase 3: a prize on a
 claim page and on the map, a claim button that works end to end, and a
-winner paid in owls. Phase 4: a winner paid in cash.
+winner paid in owls, fully backed by the fund.
 
 ---
 
@@ -3081,19 +3086,23 @@ cited.
    proof consumes no judgment. The alternative, Reviewer first, screens
    identity and good faith before any compute is spent; it costs a Reviewer
    run per spam submission the gate let through.
-3. **Autonomy of bounty posting** (section 8.1). Recommended: every posting
-   confirmed by the founder in v1, then raise the autonomy threshold to
-   $500 after the first three prizes are paid cleanly. Two-pass posting
-   stays regardless.
-4. **What the fund records when a winner elects owls** (section 8.7).
-   Recommended: a debit at the cash amount, so the fund's balance is what
-   remains to be offered and the dollars back the owl liability like every
-   owl outstanding. The alternative keeps the cash in the fund and shows the
-   owl liability beside it, which lets one dollar appear to back both.
-5. **The rail** (sections 8.8, 9.2). Recommended: write to Stripe now and
-   set up the fallback provider in parallel, so the first cash prize does
-   not wait on Stripe's answer. If Stripe approves, use Global Payouts; if
-   not, the fallback is permanent until Stripe's position changes.
+3. **Autonomy of bounty posting** (section 8.1). Recommended: postings
+   below $1,000 open on the Grantmaker's two-pass alone, so the Grantmaker
+   determines and funds ordinary prizes; at or above, the founder confirms.
+   The threshold is configuration; two-pass posting stays regardless.
+4. **What the fund records when a prize is paid in owls** (section 8.7).
+   Recommended: a debit at the cash amount when the owls are granted, so
+   the fund's balance is what remains to be offered and every owl prize is
+   fully funded by a dollar already deposited. The alternative keeps the
+   cash in the fund and shows the owl liability beside it, which lets one
+   dollar appear to back both.
+5. **International winners in v1** (section 8.9). Recommended: open to
+   non-U.S. winners from the start, with the owl grant reduced by the 30
+   percent withholding and the withheld amount remitted from the fund, once
+   counsel item 6 is answered. The alternative restricts v1 prizes to U.S.
+   persons, which removes the Form 1042 mechanics and most of the claimant
+   pool. Cash payouts are out of v1 by the founder's decision, so the rail
+   question (sections 8.8, 9.2) has no date.
 6. **Attempts during the statement's review period** (section 5.6).
    Recommended: allowed, because two Steward reviews precede publication and
    the attempt is the best vacuity probe. The alternative waits 14 days per
@@ -3239,7 +3248,7 @@ never a reputation event.
 from a prize fund the allocation ledger cannot see, for a Lean proof or
 disproof of one published statement under one pin, judged by the checker
 and then by the steward for fidelity, exposed to a public challenge window,
-audited, and paid in cash or owls at the winner's election. A bounty is not
+audited, and paid in owls, one per dollar, backed by the fund. A bounty is not
 an allocation: it funds nothing, it enters no valuation, and it changes no
 standard. The platform is never a claimant; if its own solver settles a
 statement, the bounty closes unpaid and the proof is published. Every
@@ -3365,8 +3374,8 @@ Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. Set the
 amount from what the discourse would gain, what the problem appears to
 require of a capable claimant, and the fund's balance; state the reasoning
-publicly. Every posting is two-pass and, until the founder raises the
-autonomy threshold, confirmed by a human. Never post on a problem carrying a
+publicly. Every posting is two-pass; at or above the confirmation threshold it
+waits for a human. Never post on a problem carrying a
 third-party prize in the discourse until the double-payment question is
 settled. Refuse any request whose purpose is to move an assessment or an
 importance, any bounty on a statement you cannot show is faithful, and any
@@ -3563,8 +3572,9 @@ claimant, and the fund's balance and the number of open bounties; amounts
 never feed back into importance, and the reasoning is stated publicly with
 each posting. Bounds: [$250] to [$5,000] per claim; at most one live bounty
 per claim; the total of open bounties never above the fund's balance; every
-posting made in two passes and, until the founder raises the autonomy
-threshold, confirmed by a human. A trivial resolution of a mis-stated
+posting made in two passes and, at or above [$1,000], confirmed by a human.
+Prizes are paid in owls, one owl per dollar, and every owl prize is backed
+by a dollar in the fund the moment it is granted. A trivial resolution of a mis-stated
 problem earns the defect award, not the prize; a rediscovery of a published
 proof earns credit on the page, not the prize; the platform is never a
 claimant. No bounty is posted on a problem carrying a third-party prize in
@@ -3721,15 +3731,12 @@ corresponds to a mechanism in section 8.
    Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited.
    Prizes of $1,000 or more, and prizes on claims of high importance,
    require a named person's sign-off.
-8. **Payment.** After the window, the winner elects once, within ninety
-   days, cash or owls at one owl per dollar. Owls are credit for metered
-   work on the site; they do not expire, cannot be transferred, and are
-   never redeemable for cash. Both options require identity verification, a
-   tax form, and sanctions screening first; amounts, in cash or owls, may be
-   reduced by required withholding. Cash is paid through the payout provider
-   named on the site. An election not made within ninety days lapses; a
-   cash payment that cannot be delivered within ninety days may be taken in
-   owls instead.
+8. **Payment.** Prizes are paid in owls, one owl per dollar of the prize.
+   Owls are credit for metered work on the site; they do not expire, cannot
+   be transferred, and are never redeemable for cash. Payment requires
+   identity verification, a tax form, and sanctions screening first, to be
+   completed within ninety days of the prize becoming payable, after which
+   the prize lapses; the amount may be reduced by required withholding.
 9. **Taxes.** Prizes are income to the winner. Minerval reports and
    withholds as United States law requires.
 10. **Withdrawal and change.** Minerval may withdraw or amend a prize with
@@ -3759,8 +3766,8 @@ docs, and the site agree.
 | Table | `proof_attempts` | Solver attempts; the notebook, the report, the ceiling and spend. |
 | Table | `prize_pools`, `prize_pool_entries` | The per-domain prize fund and its ledger; `balance` is stored as entries, `reserved` is derived from live bounties, `available` is the difference. |
 | Table | `bounties` | An offer bound to a formalization; statuses `requested`, `confirm_pending`, `open`, `claim_pending`, `house_result_pending`, `rebinding`, `paid`, `resolved_internally`, `resolved_unpaid`, `expired`, `withdrawn`. |
-| Table | `prize_claims` | One per `claim_prize` contribution; the prize state machine (`queued`, `checking`, `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`, `defect_award_pending`, `payout_pending`, `paid`, `rejected`, `voided`, `withdrawn`, `superseded`, `forfeited`); `window_ends_at` set at acceptance. |
-| Table | `prize_payouts` | The discharge of a prize, in cash or owls. |
+| Table | `prize_claims` | One per `claim_prize` contribution; the prize state machine (`queued`, `checking`, `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`, `defect_award_pending`, `paid`, `rejected`, `voided`, `withdrawn`, `superseded`, `forfeited`); `window_ends_at` set at acceptance. |
+| Table | `prize_payouts` | The discharge of a prize; `kind = 'owls'` in v1, `cash` reserved for a rail. |
 | Table | `attachments` | Uploaded files on contributions; `bytea` bodies with a `storage` discriminator; kinds `lean_source`, `document`, `dataset`, `code`, `tax_form`. |
 | Column | `claims.domains`, `claims.domains_source` | The domain tags that select skills and tools, and where they came from. |
 | Column | `contributors.owls_prized_micro_usd` | Prize owls, kept apart from earned owls. |
@@ -3774,8 +3781,8 @@ docs, and the site agree.
 | Solver tools | `lean_search`, `lean_elaborate`, `lean_check`, code execution, `notebook_write`, `notebook_read`, `report` | |
 | Triggers | `formalize`, `formalization_review`, `prize_claim`, `prize_claim_voided`, `prize_window_closed`, `attempt_completed` | Steward triggers that force the strong model. |
 | Checker endpoints | `/health`, `/v1/elaborate`, `/v1/scratch`, `/v1/search`, `/v1/check`, `/v1/checks/:id`, `/v1/pins` | |
-| Routes | `GET /claims/:id/bounty`, `GET /prizes`, `POST /claims/:id/prize-claims`, `POST /prize-claims/:id/elect`, `POST /prize-pools/:domain/deposit`, `POST /bounties/:id/confirm` | The load-bearing ones; section 11.1 has the rest. |
-| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MAX_BOUNTY_PER_CLAIM_USD`, `BOUNTY_AUTONOMY_THRESHOLD_USD`, `PRIZE_HUMAN_SIGNOFF_USD`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_USD`, `PRIZE_ELECTION_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `PRIZE_OWL_TRANCHE_USD`, `FORMALIZATION_REVIEW_AWARD_USD`, `MINERVAL_OPERATOR_KEY`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD` | |
+| Routes | `GET /claims/:id/bounty`, `GET /prizes`, `POST /claims/:id/prize-claims`, `POST /prize-claims/:id/payee`, `POST /prize-pools/:domain/deposit`, `POST /bounties/:id/confirm` | The load-bearing ones; section 11.1 has the rest. |
+| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MAX_BOUNTY_PER_CLAIM_USD`, `BOUNTY_AUTONOMY_THRESHOLD_USD`, `PRIZE_HUMAN_SIGNOFF_USD`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_USD`, `PRIZE_PAYEE_STEPS_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `PRIZE_OWL_TRANCHE_USD`, `FORMALIZATION_REVIEW_AWARD_USD`, `MINERVAL_OPERATOR_KEY`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD` | |
 | Epoch | `2026-09-domain-skills` | The pipeline epoch the skill takes effect under. |
 | Words never used in prize text | escrow, deposit, held for you | The fund is "the mathematics prize fund." |
 
