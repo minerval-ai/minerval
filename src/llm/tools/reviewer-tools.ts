@@ -27,6 +27,11 @@ import {
   type IntakeMaterializationResult,
 } from "../../services/intake-service.js";
 import { getContributionById } from "../../services/contribution-service.js";
+import {
+  admitPrizeClaim,
+  prizeClaimReviewBlock,
+  rejectPrizeClaimAtReview,
+} from "../../services/prize-claim-service.js";
 
 export function getReviewerToolDefinitions(): Tool[] {
   return [
@@ -91,6 +96,31 @@ export function getReviewerToolDefinitions(): Tool[] {
           "confidence",
           "policy_citations",
         ],
+      },
+    },
+    {
+      name: "get_prize_claim_details",
+      description:
+        "The prize_claim block for a claim_prize contribution (docs/" +
+        "mathematics.md §8.4): the bounty, the statement version and its " +
+        "pretty type, the direction, the tools disclosure, the declarations, " +
+        "the attachments with sizes and hashes, the checker record, a " +
+        "bounded comment-stripped excerpt of the Lean source, and " +
+        "duplicate_of references when the same bytes were submitted earlier " +
+        "by another account. Read it beside get_contribution_details before " +
+        "deciding. You judge form, good faith, identity, and duplicates, " +
+        "never the proof: the checker's verdict is already in hand. Never " +
+        "call notify_claim_steward for a prize claim; admission itself " +
+        "brings the Steward.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          contribution_id: {
+            type: "string",
+            description: "The UUID of the claim_prize contribution",
+          },
+        },
+        required: ["contribution_id"],
       },
     },
     {
@@ -189,6 +219,66 @@ export async function executeReviewerTool(
 
         const db = getDb();
 
+        // A prize claim (docs/mathematics.md §8.4) branches before the
+        // ordinary outcome: accept ADMITS it — the review row is written,
+        // the prize claim moves to in_review, and no credit is applied (the
+        // accepted-contribution award waits for the Steward's accept);
+        // reject is the ordinary path with the prize claim marked rejected
+        // at stage review; escalate goes to the Arbitrator, whose overturn
+        // admits. A challenge against an accepted prize claim that the
+        // Reviewer accepts is escalated mechanically: accepting the case is
+        // not upholding it, and the admission pauses the window.
+        const reviewed = await getContributionById(contributionId);
+        if (reviewed?.contributionType === "claim_prize" && decision === "accept") {
+          const admitted = await admitPrizeClaim({
+            contributionId,
+            review: { reasoning, confidence, policyCitations },
+            actor: "contribution_reviewer",
+          });
+          if (!admitted.ok) {
+            return JSON.stringify({ success: false, error: admitted.message });
+          }
+          return JSON.stringify({
+            success: true,
+            message:
+              `Prize claim ${admitted.prize_claim_id} admitted (in_review); no credit applied. ` +
+              `The Claim Steward now judges fidelity directly; do not call notify_claim_steward.`,
+            prize_claim_id: admitted.prize_claim_id,
+          });
+        }
+        const challengedPrizeClaimId =
+          (reviewed as { challengedPrizeClaimId?: string | null } | null)?.challengedPrizeClaimId ?? null;
+        if (
+          reviewed?.contributionType === "challenge" &&
+          challengedPrizeClaimId &&
+          decision === "accept"
+        ) {
+          const [review] = await db
+            .insert(contributionReviews)
+            .values({
+              contributionId,
+              decision: "accept",
+              reasoning,
+              confidence,
+              policyCitations,
+              suspectedBadFaith: false,
+              badFaithCategory: null,
+              reviewedBy: "contribution_reviewer",
+            })
+            .returning();
+          await db
+            .update(contributions)
+            .set({ reviewStatus: "escalated", escalationReason: `admitted challenge against prize claim ${challengedPrizeClaimId}: ${reasoning.slice(0, 500)}`, reviewClaimedAt: null, reviewAttempts: 0 })
+            .where(eq(contributions.id, contributionId));
+          await enqueueArbitration({ contributionId, trigger: "escalated_review" });
+          return JSON.stringify({
+            success: true,
+            message:
+              `Challenge ${contributionId} admitted and escalated to the Dispute Arbitrator; ` +
+              `the prize claim's window is paused while the case is open (review ${review?.id}).`,
+          });
+        }
+
         // Intake contributions (#157): an accept is what admits the content
         // into the graph, so materialize FIRST — the Matcher decides identity
         // (dedup/canonicalization), then the claim goes live or the source is
@@ -234,6 +324,10 @@ export async function executeReviewerTool(
             reviewAttempts: 0,
           })
           .where(eq(contributions.id, contributionId));
+
+        if (reviewed?.contributionType === "claim_prize" && decision === "reject") {
+          await rejectPrizeClaimAtReview(contributionId, "contribution_reviewer", reasoning.slice(0, 500));
+        }
 
         // Counters, reputation ledger, standing, and owl awards — one write path
         // in the reputation service (#71).
@@ -290,6 +384,17 @@ export async function executeReviewerTool(
               }
             : {}),
         });
+      }
+
+      case "get_prize_claim_details": {
+        const block = await prizeClaimReviewBlock(input.contribution_id as string);
+        if (!block) {
+          return JSON.stringify({
+            success: false,
+            message: `Contribution ${input.contribution_id} is not a prize claim`,
+          });
+        }
+        return JSON.stringify({ success: true, prize_claim: block }, null, 2);
       }
 
       case "escalate_to_arbitrator": {

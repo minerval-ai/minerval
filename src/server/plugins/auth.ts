@@ -28,6 +28,7 @@
  * request.contributorExternalId is kept in sync for existing routes.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { loadConfig } from "../../config.js";
 import { resolveApiKey } from "../../services/api-key-service.js";
 import {
@@ -60,6 +61,22 @@ export interface RequestAuth {
 }
 
 export const DEV_EXTERNAL_ID = "dev:local";
+
+/**
+ * Constant-time comparison of a presented operator key against the
+ * configured one. False whenever no key is configured, whatever is
+ * presented: the operator routes are closed, not open, by default.
+ */
+export function operatorKeyMatches(
+  configured: string,
+  presented: string | undefined
+): boolean {
+  if (!configured || !presented) return false;
+  const a = Buffer.from(configured, "utf8");
+  const b = Buffer.from(presented, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 /**
  * Direct trusted first-party caller: service scope with no acting-user
@@ -256,6 +273,30 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // Route guard: the operator key (docs/mathematics.md §8.11). The four
+  // routes that move prize money — the fund deposit, the bounty
+  // confirmation, the prize-claim sign-off, and the void — require a
+  // credential held outside the web deployment, presented as
+  // x-operator-key, because the service key acts for any user through the
+  // acting-user header and so cannot be the credential that moves money.
+  // Runs on its own (the operator need not also present an API key); an
+  // empty MINERVAL_OPERATOR_KEY keeps the routes closed. Compared in
+  // constant time so the key's length and prefix never leak by timing.
+  app.decorate(
+    "requireOperator",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const config = loadConfig();
+      const presented = request.headers["x-operator-key"];
+      const key = Array.isArray(presented) ? presented[0] : presented;
+      if (!operatorKeyMatches(config.minervalOperatorKey, key)) {
+        return reply.code(403).send({
+          error: "This endpoint requires the operator key",
+          code: "OPERATOR_KEY_REQUIRED",
+        });
+      }
+    }
+  );
+
   // Route guard: dashboard-session trust — a service caller acting for a
   // signed-in user. API-key management requires this so a leaked consumer key
   // cannot mint new keys. Dev bypass counts as a session for local DX.
@@ -277,6 +318,10 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
 
 declare module "fastify" {
   interface FastifyInstance {
+    requireOperator: (
+      request: FastifyRequest,
+      reply: FastifyReply
+    ) => Promise<void>;
     authenticate: (
       request: FastifyRequest,
       reply: FastifyReply

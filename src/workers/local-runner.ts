@@ -27,6 +27,8 @@ import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
 import { processNextGrantTask } from "./grant-pipeline.js";
 import { processNextEngineAction } from "./engine-executor.js";
+import { processNextPrizeCheck } from "./prize-check-pipeline.js";
+import { runPrizeWindowCloser } from "./prize-window-closer.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
@@ -53,7 +55,15 @@ const HANDLERS: Array<[LocalQueueName, (m: never) => Promise<void>]> = [
 /** One processed message — the unit of the observability trace. */
 export interface RunnerEvent {
   seq: number;
-  queue: LocalQueueName | "steward" | "order" | "budgetJob" | "grant" | "engine";
+  queue:
+    | LocalQueueName
+    | "steward"
+    | "order"
+    | "budgetJob"
+    | "grant"
+    | "engine"
+    | "prizeCheck"
+    | "prizeWindow";
   message: unknown;
   ok: boolean;
   error?: string;
@@ -81,6 +91,15 @@ export interface DrainOptions {
    * claims are left as embedded stubs — the intended under-budget steady state.
    */
   maxStewardTasks?: number;
+}
+
+/** The window closer's work is dated in days; once a minute per process is plenty. */
+export const PRIZE_WINDOW_CLOSER_INTERVAL_MS = 60_000;
+let lastWindowCloserAt = 0;
+
+/** Test hook: let the next drain run the window closer at once. */
+export function resetPrizeWindowCloserThrottle(): void {
+  lastWindowCloserAt = 0;
 }
 
 function inMemoryPending(): boolean {
@@ -112,6 +131,12 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
   const errors: Record<string, number> = {};
   let stewardProcessed = 0;
   let seq = 0;
+  let windowClosed = false;
+  // The prize lanes run only where a checker is configured: without one no
+  // statement publishes and no bounty binds (docs/mathematics.md §5.3).
+  const config = loadConfig();
+  const prizeLanesOn =
+    typeof config.leanCheckerUrl === "string" && config.leanCheckerUrl.trim().length > 0;
 
   while (seq < cap) {
     // 1. Drain a ready in-memory message if any.
@@ -243,6 +268,67 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         continue;
       }
       // 'empty' — fall through to the grant lane.
+    }
+
+    // 4b. The prize-check lane (docs/mathematics.md §8.4): one cold-lane
+    //     check per pass, run before any agent sees the submission, then
+    //     the Reviewer and the Steward under the bounty's reserve. Counts
+    //     toward the Steward cap because an accepted check runs one.
+    if (prizeLanesOn) {
+      const startedAt = now();
+      let p: Awaited<ReturnType<typeof processNextPrizeCheck>>;
+      try {
+        p = await processNextPrizeCheck({ model: opts.stewardModel });
+      } catch (err) {
+        if (err instanceof LlmBudgetExceededError) throw err;
+        // A lane failure is counted, never fatal to the drain.
+        p = { status: "empty", error: err instanceof Error ? err.message : String(err) };
+        errors.prizeCheck = (errors.prizeCheck ?? 0) + 1;
+      }
+      if (p.status === "processed") {
+        seq++;
+        stewardProcessed++;
+        if (!p.error) processed.prizeCheck = (processed.prizeCheck ?? 0) + 1;
+        else errors.prizeCheck = (errors.prizeCheck ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "prizeCheck",
+          message: { prizeClaimId: p.prizeClaimId, verdict: p.verdict, outcome: p.outcome },
+          ok: !p.error,
+          error: p.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
+      // 'empty', 'capped', or 'no_checker' — fall through.
+    }
+
+    // 4c. The window closer (§8.5): promotions, voids, forfeits, expiries,
+    //     rebinds, and tranches, once per drain, dated work only.
+    if (prizeLanesOn && !windowClosed && now() - lastWindowCloserAt >= PRIZE_WINDOW_CLOSER_INTERVAL_MS) {
+      windowClosed = true;
+      lastWindowCloserAt = now();
+      const startedAt = now();
+      try {
+        const w = await runPrizeWindowCloser({ model: opts.stewardModel });
+        const moved = w.promoted + w.voided + w.forfeited + w.expired + w.withdrawn + w.rebound + w.tranches;
+        if (moved > 0) {
+          seq++;
+          processed.prizeWindow = (processed.prizeWindow ?? 0) + moved;
+          opts.onEvent?.({ seq, queue: "prizeWindow", message: w, ok: true, durationMs: now() - startedAt });
+          continue;
+        }
+      } catch (err) {
+        errors.prizeWindow = (errors.prizeWindow ?? 0) + 1;
+        opts.onEvent?.({
+          seq: ++seq,
+          queue: "prizeWindow",
+          message: {},
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          durationMs: now() - startedAt,
+        });
+      }
     }
 
     // 5. Grantmaker mandates: funded steward passes over plan claim items,

@@ -20,6 +20,7 @@ import {
   getMandateAllocationView,
   contributeToMandate,
 } from "../services/mandate-service.js";
+import { mandatePrizesBlock } from "../services/bounty-service.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
@@ -74,7 +75,14 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Mandate not found", code: "NOT_FOUND" });
       }
-      return reply.send({ mandate });
+      // The Prizes section (docs/mathematics.md §8.3): the fund's balance
+      // and reservation, bounties posted, prizes paid, and the bounty
+      // table. Prizes are paid from a separate fund, never from this
+      // mandate's compute budget; a failure here must not hide the page.
+      const prizes = await mandatePrizesBlock(request.params.id).catch(
+        () => null
+      );
+      return reply.send({ mandate: { ...mandate, prizes } });
     },
   });
 

@@ -43,6 +43,7 @@ import {
   validateMandate,
   executeManagementTool,
   type GrantMandate,
+  getBountyToolDefinitions,
 } from "./grantmaker.js";
 import type { PlanItem } from "../../services/grant-service.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
@@ -404,6 +405,9 @@ async function runMandateReviewImpl(input: {
       },
     },
  
+    // The bounty tools (docs/mathematics.md §8.1): the same implementation
+    // as the management chat, two-pass by construction.
+    ...getBountyToolDefinitions(),
     {
       name: "complete_mandate",
       description:
@@ -583,7 +587,12 @@ async function runMandateReviewImpl(input: {
       // The management tools this pass shares with the owner-driven chat
       // (grant_overview, update_allocation_policy) run the same
       // implementation, honesty guard included. Null means "not mine".
-      const management = await executeManagementTool(grant.id, name, toolInput);
+      const management = await executeManagementTool(grant.id, name, toolInput, {
+        passStartedAt,
+        // No person is present on the autonomous pass: a posting at or
+        // above the autonomy threshold parks at confirm_pending.
+        confirmedBy: null,
+      });
       if (management !== null) return management;
       if (name === "estimate_costs") {
         const tiers = await stewardTierCostEstimates();

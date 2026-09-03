@@ -32,6 +32,13 @@ export const OWL_REASONS = {
   escrowHold: "escrow_hold",
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",
+  /**
+   * A prize paid in owls (docs/mathematics.md §8.7): promotional credit
+   * granted at one owl per dollar, net of withholding, never expiring and
+   * never convertible to cash. Kept apart from contribution_award so the
+   * leaderboard's lifetime-earned sum never counts it.
+   */
+  prizeAward: "prize_award",
 } as const;
 
 /** Spendable balance in face-value micro-USD. Can be 0, never negative in
