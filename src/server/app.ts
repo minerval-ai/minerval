@@ -9,6 +9,9 @@ import { registerQuota } from "./plugins/quota.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
+import { formalizationsRoutes } from "../routes/formalizations.js";
+import { attemptsRoutes } from "../routes/attempts.js";
+import { prizesRoutes } from "../routes/prizes.js";
 import { sourceRoutes } from "../routes/sources.js";
 import { jobRoutes } from "../routes/jobs.js";
 import { contributionRoutes } from "../routes/contributions.js";
@@ -76,6 +79,12 @@ export async function buildApp() {
   });
   await app.register(mandateRoutes, { prefix: "/mandates" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
+  // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,
+  // /prize-claims, /bounties, /prize-pools, /lean-checks, and /attachments,
+  // so they register without a prefix (docs/mathematics.md §11.1).
+  await app.register(formalizationsRoutes);
+  await app.register(attemptsRoutes);
+  await app.register(prizesRoutes);
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);
   await app.register(extensionRoutes, { prefix: "/extension" });

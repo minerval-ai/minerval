@@ -36,6 +36,9 @@ import { getArbitratorToolDefinitions } from "./arbitrator-tools.js";
 import { getAuditToolDefinitions } from "./audit-tools.js";
 import { getGraphReadToolDefinitions } from "./graph-read-tools.js";
 import { ELICIT_TOOL_PREFIX } from "./elicit-tools.js";
+import { registerLeanTools } from "./lean-tools.js";
+import { registerAttemptTools } from "./attempt-tools.js";
+import { registerPrizeTools } from "./prize-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -73,6 +76,14 @@ const LEAN_NOT_CONFIGURED = JSON.stringify({
 for (const name of ["lean_search", "lean_elaborate", "lean_check", "publish_formalization"]) {
   registerSkillTool(name, async () => LEAN_NOT_CONFIGURED);
 }
+
+// The executors live in their own modules, one per slice of the
+// mathematics build (docs/mathematics.md §6.1, §7.6, §8.4). Each module
+// registers its tools here at load; a module whose service is not yet
+// configured registers placeholders that say so.
+registerLeanTools(registerSkillTool);
+registerAttemptTools(registerSkillTool);
+registerPrizeTools(registerSkillTool);
 
 /** Every tool name declared by any skill's tools.json. */
 export function declaredSkillToolNames(): Set<string> {
