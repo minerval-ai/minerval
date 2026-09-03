@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { buildApp } from "./server/app.js";
 import { loadConfig } from "./config.js";
+import { assertSkillToolsRegistered } from "./llm/tools/skill-tools.js";
 import { getDb, closeDb } from "./db/client.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
@@ -28,6 +29,10 @@ import type {
 
 async function main() {
   const config = loadConfig();
+  // Every tool a domain skill declares must have an executor and a name
+  // that collides with nothing; a defective skill fails the process here,
+  // not mid-run inside a Steward's toolset.
+  assertSkillToolsRegistered();
 
   if (config.env === "production") {
     console.log("Running database migrations...");

@@ -48,8 +48,33 @@ export default async function AgentPage({ params }: { params: Promise<{ key: str
           Every agent&rsquo;s prompt is layered: <strong>(1)</strong> the full{" "}
           <Link href="/docs/constitution">Constitution</Link> (identical for all agents),{" "}
           <strong>(2)</strong> the role-specific instructions below, including this
-          agent&rsquo;s policies, and <strong>(3)</strong> the task context, supplied at
-          runtime. What follows is layer 2, verbatim.
+          agent&rsquo;s policies, <strong>(3)</strong> the{" "}
+          <Link href="/docs/skills">domain skills</Link> active for the run, one block each
+          after the role, and <strong>(4)</strong> the task context, supplied at runtime.
+          Authority runs in that order: a skill may sharpen a role&rsquo;s obligations and
+          never loosen them. What follows is layer 2, verbatim.
+        </p>
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)", maxWidth: "34rem" }}>
+          <strong style={{ color: "var(--ink-soft)" }}>Domain skills:</strong>{" "}
+          {agent.skills.length === 0 ? (
+            <>none can be spliced into this agent.</>
+          ) : (
+            <>
+              {agent.skills.map((s, i) => (
+                <span key={s.name}>
+                  {i > 0 ? "; " : ""}
+                  <Link href={`/docs/skills/${s.name}`}>{s.name}</Link> ({s.sections.join(", ")})
+                </span>
+              ))}
+              . A skill is spliced in when the claim the run serves carries its domain tag
+              {agent.key === "grantmaker"
+                ? " (for the Grantmaker, when its mandate names the skill)"
+                : agent.key === "extractor"
+                  ? " (the Extractor always carries its section, since it tags claims)"
+                  : ""}
+              ; funding never selects it.
+            </>
+          )}
         </p>
       </div>
 

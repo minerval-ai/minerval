@@ -244,10 +244,17 @@ const configSchema = z.object({
   // behavior) — that makes "which claims predate fix X" a query instead of
   // archaeology, and lets scripts/archive-legacy-claims.ts retire a cohort
   // wholesale. NULL pipeline_epoch = legacy claims from before stamping existed.
-  // Current epoch: the owl-economy allocation core (§19 amendment — composite
-  // queue priority with stakes/yield/staleness as ordering inputs distinct
-  // from importance, express lane for paid orders, cadence reassessment).
-  pipelineEpoch: z.string().default("2026-08-owl-economy"),
+  // Current epoch: domain skills (docs/mathematics.md §3). The Mathematics
+  // skill changes what gets minted in its domain (proof steps stop being
+  // subclaims, conjectures are tagged and re-anchored), so claims minted
+  // before it form a distinct cohort. The previous epoch was
+  // 2026-08-owl-economy (the allocation core).
+  pipelineEpoch: z.string().default("2026-09-domain-skills"),
+  // Prompt cache lifetime for the cached system blocks ("5m" or "1h"). The
+  // five-minute cache is the default; the one-hour cache is a metering
+  // question for the skilled Steward population once a domain mandate's run
+  // frequency is known. Read by the provider seam once it takes a TTL.
+  promptCacheTtl: z.enum(["5m", "1h"]).default("5m"),
   matchingTopK: z.coerce.number().default(20),
   // There is deliberately no per-source claim cap here any more.
   // EXTRACTION_MAX_CLAIMS (8 in production) truncated every source to the same
@@ -456,6 +463,14 @@ const configSchema = z.object({
   // judgment about whether to call at all stays with the Steward, but one
   // run cannot burn unbounded provider spend. 0 disables the cap.
   stewardElicitMaxCallsPerRun: z.coerce.number().default(3),
+  // Per-run backstops on the Lean tools the Mathematics skill brings to the
+  // Steward (docs/mathematics.md §6.2). There is no importance gate on these:
+  // the skill text carries the judgment about when a check is worth its
+  // cost, and the caps are the backstop. A "fresh" replay of lean_check
+  // counts double. 0 disables a cap.
+  stewardLeanMaxSearchesPerRun: z.coerce.number().default(12),
+  stewardLeanMaxElaborationsPerRun: z.coerce.number().default(10),
+  stewardLeanMaxChecksPerRun: z.coerce.number().default(3),
   // Cap the total number of Curator invocations per process (0 = unlimited),
   // mirroring stewardMaxRuns for predictable test/deploy spend.
   curatorMaxRuns: z.coerce.number().default(0),
@@ -603,6 +618,7 @@ export function loadConfig(): Config {
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
+    promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
     proposedClaimImportancePrior:
@@ -640,6 +656,10 @@ export function loadConfig(): Config {
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
     stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,
     stewardElicitMaxCallsPerRun: process.env.STEWARD_ELICIT_MAX_CALLS_PER_RUN,
+    stewardLeanMaxSearchesPerRun: process.env.STEWARD_LEAN_MAX_SEARCHES_PER_RUN,
+    stewardLeanMaxElaborationsPerRun:
+      process.env.STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN,
+    stewardLeanMaxChecksPerRun: process.env.STEWARD_LEAN_MAX_CHECKS_PER_RUN,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
     curatorSweepRate: process.env.CURATOR_SWEEP_RATE,
     matcherModel: process.env.MATCHER_MODEL,

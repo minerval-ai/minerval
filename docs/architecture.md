@@ -311,10 +311,13 @@ dispute about one of its subclaims.
 
 Each agent is a model with a system prompt assembled in layers: the full
 constitution first, then the agent's specific role (governance roles also
-splice in the relevant operational policies). The assembled prompt is sent as a
-single cached block, so the constitution is paid for once per agent rather than
-once per call. The prompts live in `src/llm/prompts/` and are vendored verbatim
-into this site (see the [agents](/docs/agents) page).
+splice in the relevant operational policies), then the domain skills active
+for the run, then the task. The constitution-plus-role prompt is sent as one
+cached block, plus one per active domain skill, so the constitution is paid
+for once per agent rather than once per call. The prompts live in
+`src/llm/prompts/`, the skills in `skills/`, and both are vendored verbatim
+into this site (see the [agents](/docs/agents) and [skills](/docs/skills)
+pages).
 
 ### Processing stage
 

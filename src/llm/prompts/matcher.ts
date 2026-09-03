@@ -1,4 +1,10 @@
 import { buildAdminPrompt } from "./constitution.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Claim Matcher
 
@@ -76,10 +82,22 @@ asserts, so the new instance's stance is "affirms".
 - \`alternative_matches\` and \`relationship_notes\`: the near-misses you
   weighed and how they relate (specification, generalization, counterpart).
   The calling agent, Steward or Curator, uses these to decide whether to
-  link or escalate; they are not decoration.`;
+  link or escalate; they are not decoration.
+
+${domainSkillsSection("matcher")}`;
 
 export function getMatcherSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (matcher's view of each), in that order.
+ */
+export function getMatcherSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "matcher"));
 }
 
 export function getMatchingPrompt(

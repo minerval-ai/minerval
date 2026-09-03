@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { CORE_POLICIES, CONTRIBUTION_REVIEW_POLICIES } from "./policies.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Contribution Reviewer
 
@@ -56,10 +62,22 @@ guarantees a hearing, not admission: your accept admits a contribution to
 the graph's process, and what changes on the page stays the owning
 admins' judgment.
 
+${domainSkillsSection("contribution-reviewer")}
+
 ${CORE_POLICIES}
 
 ${CONTRIBUTION_REVIEW_POLICIES}`;
 
 export function getContributionReviewerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (contribution-reviewer's view of each), in that order.
+ */
+export function getContributionReviewerSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "contribution-reviewer"));
 }

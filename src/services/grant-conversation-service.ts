@@ -339,6 +339,9 @@ export async function fundConversationMandate(input: {
       planCursor: 0,
       // The public dashboard's text: the agent-authored mandate, verbatim.
       mandate,
+      // The domain skills the mandate's Grantmaker carries on its review
+      // passes (docs/mathematics.md §3.4); proposed by the Grantmaker itself.
+      skills: mandate.skills ?? [],
     })
     .returning();
 

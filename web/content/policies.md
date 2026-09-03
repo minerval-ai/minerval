@@ -30,19 +30,32 @@ Every admin agent's prompt follows this structure:
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│ LAYER 3: Task Context                       │
+│ LAYER 3: Domain Skills (cached, per skill)  │
+│ - One block per skill active for the run    │
+│ - The role's sections of skills/<name>/     │
+│   SKILL.md, spliced by the loader           │
+│ - Selected by the claim's recorded domains  │
+│   (the mandate's, for the Grantmaker)       │
+│ - Brings the domain's tools                 │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│ LAYER 4: Task Context                       │
 │ - The specific claim/contribution/dispute   │
 │ - Relevant graph context                    │
 │ - Conversation history (if applicable)      │
 └─────────────────────────────────────────────┘
 ```
 
-The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The assembled prompt is sent as a single cached block, so the constitution is paid for once per agent rather than once per call.
+The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The constitution-plus-role prompt is sent as one cached block, plus one cached block per active domain skill, so the constitution is paid for once per agent rather than once per call and a skilled run leaves the shared block's cache entry untouched.
+
+Authority runs in layer order: the constitution, then the role and its policies, then the skill. A skill may sharpen how a role's obligations apply and add procedures and tools; it never loosens an obligation.
 
 This architecture ensures:
 
 - Consistent application of epistemic principles across all agents
-- Clear separation between "how to think" (constitution) and "what to do" (role)
+- Clear separation between "how to think" (constitution), "what to do" (role), and "how that applies here" (skill)
 - Efficient caching of the constitution text across agent invocations
 
 ---
@@ -109,6 +122,21 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 
 ---
 
+## Skills
+
+A domain skill is the layer between a role and its task: how the constitution's standards apply in one domain, what the domain's characteristic objects are in the claim schema, what counts as evidence of which grade there, and what tools and procedures the domain brings. It is distinct from the constitution (domain-neutral, always wins), from the policies above (per role, domain-neutral), from the role prompt (per role), and from the task context (per run).
+
+One document per domain, `skills/<name>/SKILL.md`, serves every role, in sections addressed to each ("For every administrator", "For the Claim Steward", "For the Matcher", and so on). The loader in `src/llm/prompts/skills.ts` splices each role's sections into a block headed `# Domain skill: <Name> (version N)` that follows the role in the system prompt. The [skills](/docs/skills) pages show every skill verbatim, the composition table, and the exact block each role receives. `skills/<name>/tools.json` declares the tools a skill brings (the Mathematics skill's Lean tools); they join a run's toolset exactly when the skill is active, and their executors live in code with a startup check that every declared tool has one.
+
+**Selection** is a recorded judgment, not a filter:
+
+- Claim-scoped runs (Steward, Curator, Reviewer, Arbitrator, Audit) read the claim's `domains`: the Extractor emits a prior, a new subclaim inherits its parent's tags, and the Steward's `set_claim_domains` is the authoritative call. The Reviewer and Arbitrator reach the claim through the contribution; Audit takes the union over the claims in the decisions under review. The Matcher receives the domains its caller knows, and the Extractor always carries every skill's Extractor section so it can tag.
+- Mandate-scoped runs (the Grantmaker's conversation and review passes) read the mandate's `skills`. A mandate's skills select the Grantmaker's view and nothing else: funding never selects a prompt for any agent that writes to the graph (§19).
+
+**Precedence** follows the rule stated for policies: where a skill appears to diverge from the constitution, the constitution wins and the skill is defective. A skill may refine how a role's obligations apply and may add procedures and tools; it may never remove an obligation. Two skills active at once are both spliced, in alphabetical order, and a conflict between them is a defect to fix in the texts. Assessments and agent runs record the skills they were made under, so the standards applied to any verdict are a query.
+
+---
+
 ## Reasoning and Its Audiences
 
 Every admin judgment is accompanied by its reasoning: what evidence was considered, how competing evidence was weighed, what assumptions were made, what uncertainties remain, and what new evidence would change the conclusion (§11). No agent says "this claim is verified" without showing why. There is no fixed template; the obligation is to the content, not a format.
@@ -136,7 +164,7 @@ Constitution and role prompts are versioned together. When the constitution chan
 
 ### Vendoring
 
-`scripts/sync-frontend-content.ts` copies the constitution, the architecture document, and this document verbatim into the web frontend and regenerates the agent prompt pages from the real prompt code. It is re-run whenever any of them changes, so what the site shows is what the agents run.
+`scripts/sync-frontend-content.ts` copies the constitution, the architecture document, and this document verbatim into the web frontend and regenerates the agent prompt pages and the skill pages from the real prompt code and the skill files. It is re-run whenever any of them changes, so what the site shows is what the agents run; a unit test regenerates the content and fails when the vendored copy has drifted.
 
 ---
 

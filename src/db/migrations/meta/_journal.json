@@ -302,6 +302,13 @@
       "when": 1786131797936,
       "tag": "0042_eval_run_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788397023305,
+      "tag": "0043_domain_skills",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,8 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
-import { getClaimStewardSystemPrompt } from "../prompts/claim-steward.js";
+import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
+import { skillsForDomains } from "../prompts/skills.js";
 import {
   getGraphToolDefinitions,
   executeGraphTool,
@@ -33,9 +34,15 @@ import {
   executeElicitTool,
   isElicitTool,
 } from "../tools/elicit-tools.js";
+import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
+import { sanitizeDomains } from "./skill-selection.js";
 import { getClaimById } from "../../services/claim-service.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, runWithUsageContext } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70), and
 // attribute it to the claim being stewarded (#217) so per-claim cost — the
@@ -92,12 +99,24 @@ async function runClaimStewardImpl(input: {
     ? await getElicitToolDefinitions(config)
     : [];
 
+  // Domain skills (docs/mathematics.md §3.4): selected by the claim's
+  // recorded domains, never by who funds the run. Their tools sit in a fixed
+  // position after the Elicit tools and before web_search, so the cache
+  // breakpoint on the last tool is deterministic per skill variant. There is
+  // no importance gate on them: the skill text carries the judgment about
+  // when a check is worth its cost, and the per-run caps below are the
+  // backstop.
+  const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
+  const skills = skillsForDomains(claimDomains);
+  const skillTools = getActiveSkillToolDefinitions(skills, "claim-steward");
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
+    ...skillTools,
     webSearchTool,
   ];
 
@@ -122,6 +141,9 @@ async function runClaimStewardImpl(input: {
   let newSubclaimsThisRun = 0;
   let instancesRecordedThisRun = 0;
   let elicitCallsThisRun = 0;
+  let leanSearchesThisRun = 0;
+  let leanElaborationsThisRun = 0;
+  let leanChecksThisRun = 0;
 
   const elicitNote =
     elicitTools.length > 0
@@ -135,6 +157,19 @@ elicit_* tools are in your toolset (up to ${
         } calls this run). They are
 likely overkill even here — reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
+      : "";
+
+  const skillsNote =
+    skills.length > 0
+      ? `
+
+Domain skills active for this run: ${skills
+          .map((s) => `${s.name} (version ${s.version})`)
+          .join(", ")}. Each follows your role in the system prompt${
+          skillTools.length > 0
+            ? `, and the tools it brings (${skillTools.map((t) => t.name).join(", ")}) are in your toolset`
+            : ""
+        }.`
       : "";
 
   const userMessage = `You have been triggered to steward a claim.
@@ -175,12 +210,64 @@ ${structureStep}
 6. If the canonical form needs improving, use update_canonical_form.
 7. Log your decision with log_stewardship_decision.
 8. If you established or changed a material assessment, use
-   notify_dependent_stewards so claims that depend on this one are re-judged.${elicitNote}`;
+   notify_dependent_stewards so claims that depend on this one are re-judged.${elicitNote}${skillsNote}`;
 
-  await toolUseLoop({
+  // One cached block for the constitution and role, plus one per active skill,
+  // so the shared block's cache entry is the same for skilled and unskilled runs.
+  const system = getClaimStewardSystemPromptBlocks({ skills });
+
+  // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
+  // the Elicit cap: each refusal tells the agent what to do instead. A
+  // "fresh" replay of lean_check counts double.
+  const leanCapRefusal = (name: string, toolInput: Record<string, unknown>): string | null => {
+    if (name === "lean_search") {
+      const cap = config.stewardLeanMaxSearchesPerRun;
+      if (cap > 0 && leanSearchesThisRun >= cap) {
+        return JSON.stringify({
+          success: false,
+          message:
+            `This run has already made ${leanSearchesThisRun} Mathlib searches, ` +
+            `the per-run backstop (${cap}). Work with the declarations you have ` +
+            `found, confirm the ones you intend to use with lean_elaborate, and ` +
+            `record what you could not find in your reasoning.`,
+        });
+      }
+      leanSearchesThisRun++;
+    } else if (name === "lean_elaborate") {
+      const cap = config.stewardLeanMaxElaborationsPerRun;
+      if (cap > 0 && leanElaborationsThisRun >= cap) {
+        return JSON.stringify({
+          success: false,
+          message:
+            `This run has already elaborated ${leanElaborationsThisRun} drafts, ` +
+            `the per-run backstop (${cap}). Do not draft further in this pass: ` +
+            `record the best draft and its errors in your reasoning, assess on ` +
+            `the informal evidence, and leave the formal statement to a later pass.`,
+        });
+      }
+      leanElaborationsThisRun++;
+    } else if (name === "lean_check") {
+      const cap = config.stewardLeanMaxChecksPerRun;
+      const weight = toolInput.replay === "fresh" ? 2 : 1;
+      if (cap > 0 && leanChecksThisRun + weight > cap) {
+        return JSON.stringify({
+          success: false,
+          message:
+            `This run has used ${leanChecksThisRun} of its ${cap} proof checks ` +
+            `(a fresh replay counts double). Do not check further in this pass: ` +
+            `assess on the checks already recorded and the informal evidence, ` +
+            `say so in your reasoning, and set marginal_yield honestly.`,
+        });
+      }
+      leanChecksThisRun += weight;
+    }
+    return null;
+  };
+
+  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
-    system: getClaimStewardSystemPrompt(),
+    system,
     model,
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -202,7 +289,19 @@ ${structureStep}
     },
     executeTool: async (name, toolInput) => {
       if (name === "match_claim") {
-        return executeMatcherTool(name, toolInput);
+        // The Matcher receives the domains its caller knows.
+        return executeMatcherTool(name, toolInput, { domains: claimDomains });
+      }
+      // Skill tools (docs/mathematics.md §3.5): present exactly when the
+      // skill is active for this claim, capped per run beside the Elicit cap.
+      if (isSkillTool(name)) {
+        const refusal = leanCapRefusal(name, toolInput);
+        if (refusal) return refusal;
+        return executeSkillTool(name, toolInput, {
+          role: "claim-steward",
+          claimId: input.claimId,
+          run: { trigger: input.trigger, context: input.context, model },
+        });
       }
       // Elicit calls cost real money, not just tokens (#299/#300): a per-run
       // backstop mirrors web_search's max_uses. The judgment about whether
@@ -273,5 +372,5 @@ ${structureStep}
         model,
       });
     },
-  });
+  }));
 }

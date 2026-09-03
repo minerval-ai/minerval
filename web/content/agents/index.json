@@ -8,8 +8,16 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 5767,
-    "fullChars": 53333
+    "roleChars": 6533,
+    "fullChars": 54099,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For the Extractor"
+        ]
+      }
+    ]
   },
   {
     "key": "matcher",
@@ -20,8 +28,16 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
-    "roleChars": 3870,
-    "fullChars": 51436
+    "roleChars": 4319,
+    "fullChars": 51885,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For the Matcher"
+        ]
+      }
+    ]
   },
   {
     "key": "contribution-reviewer",
@@ -32,8 +48,17 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 10213,
-    "fullChars": 57779
+    "roleChars": 10728,
+    "fullChars": 58294,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Contribution Reviewer and the Dispute Arbitrator"
+        ]
+      }
+    ]
   },
   {
     "key": "claim-steward",
@@ -44,8 +69,23 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19222,
-    "fullChars": 66788
+    "roleChars": 19854,
+    "fullChars": 67420,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Claim Steward",
+          "For the Grantmaker",
+          "For the Contribution Reviewer and the Dispute Arbitrator",
+          "For the Audit Agent",
+          "For the Curator",
+          "For the Matcher",
+          "For the Extractor"
+        ]
+      }
+    ]
   },
   {
     "key": "curator",
@@ -56,8 +96,18 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 3511,
-    "fullChars": 51077
+    "roleChars": 4002,
+    "fullChars": 51568,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Curator",
+          "For the Matcher"
+        ]
+      }
+    ]
   },
   {
     "key": "dispute-arbitrator",
@@ -68,8 +118,17 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 8878,
-    "fullChars": 56444
+    "roleChars": 9393,
+    "fullChars": 56959,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Contribution Reviewer and the Dispute Arbitrator"
+        ]
+      }
+    ]
   },
   {
     "key": "audit-agent",
@@ -80,8 +139,24 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 7324,
-    "fullChars": 54890
+    "roleChars": 7979,
+    "fullChars": 55545,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Claim Steward",
+          "For the Grantmaker",
+          "For the Contribution Reviewer and the Dispute Arbitrator",
+          "For the Audit Agent",
+          "For the Curator",
+          "For the Matcher",
+          "For the Extractor",
+          "Standards for judging"
+        ]
+      }
+    ]
   },
   {
     "key": "grantmaker",
@@ -92,7 +167,16 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 6658,
-    "fullChars": 54224
+    "roleChars": 7135,
+    "fullChars": 54701,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Grantmaker"
+        ]
+      }
+    ]
   }
 ]

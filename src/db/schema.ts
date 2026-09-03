@@ -128,6 +128,16 @@ export const claims = pgTable(
       (): any => claims.id,
       { onDelete: "set null" }
     ),
+    // Domain tags (docs/mathematics.md §2.1, §3.4): the skill names whose
+    // domain skills (skills/<name>/SKILL.md) and tools a run on this claim
+    // carries. A recorded admin judgment, never a filter: the Extractor emits
+    // a prior, a new subclaim inherits its parent's tags, the Steward's
+    // set_claim_domains is authoritative, and the backfill script tags the
+    // pre-skills cohort by embedding centroid. Empty = no domain skill.
+    domains: text("domains").array().notNull().default([]),
+    // Which path wrote `domains`: extractor | matcher | inherited | steward |
+    // backfill. NULL = never tagged.
+    domainsSource: text("domains_source"),
     embedding: vector("embedding"),
     textSearch: tsvector("text_search").generatedAlwaysAs(
       (): SQL => sql`to_tsvector('english', ${claims.text})`
@@ -158,6 +168,9 @@ export const claims = pgTable(
     // Keyword search (`text_search @@ websearch_to_tsquery(...)`) scans this,
     // not the heap, as the graph grows.
     index("idx_claims_text_search").using("gin", table.textSearch),
+    // "Every claim tagged mathematics" is a query the skilled mandates and the
+    // backfill run; GIN serves the array-overlap operators.
+    index("idx_claims_domains").using("gin", table.domains),
   ]
 );
 
@@ -247,6 +260,11 @@ export const assessments = pgTable(
     // from the usage context (never by the agent), so "who funded this
     // verdict" is always answerable. NULL = ordinary system work.
     fundedByJobId: uuid("funded_by_job_id"),
+    // The domain skills the writing run carried (skill names), stamped from
+    // the usage context by update_claim_assessment, so "which assessments
+    // were made under the Mathematics skill" is a query. NULL = legacy rows
+    // from before skills existed; [] = an unskilled run.
+    skills: text("skills").array(),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -632,6 +650,9 @@ export const agentRuns = pgTable(
     // Step count at finish — a cheap completeness check against agent_steps
     // (fire-and-forget step inserts can individually fail).
     steps: integer("steps").notNull().default(0),
+    // The domain skills the run carried (skill names), recorded once the
+    // agent has resolved them; NULL until then or for runs that carry none.
+    skills: text("skills").array(),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -1200,6 +1221,11 @@ export const grants = pgTable(
     // entirely by the agent; a mandate-scale mission is impossible
     // without durable working state between passes.
     workspace: text("workspace"),
+    // The domain skills this mandate's Grantmaker carries (skill names): its
+    // conversation and review passes splice these views in. They select the
+    // Grantmaker's view and nothing else; the agents that write to the graph
+    // take their skills from the claim, never from the funder.
+    skills: text("skills").array().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

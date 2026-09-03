@@ -149,6 +149,14 @@ export default function DocsPage() {
               system prompt.
             </p>
           </Link>
+          <Link href="/docs/skills" className="card">
+            <div className="card-claim" style={{ fontWeight: 600 }}>The skills</div>
+            <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
+              The domain skills: how the constitution applies in one domain, spliced into
+              an agent&rsquo;s prompt when the claim it serves carries the domain&rsquo;s tag,
+              with the tools each brings.
+            </p>
+          </Link>
         </div>
 
         <h2 id="built-on-the-graph">Built on the graph</h2>

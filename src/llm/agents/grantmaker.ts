@@ -21,8 +21,10 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
-import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import { withAgent, withSkills } from "../usage-context.js";
+import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
+import { listSkills } from "../prompts/skills.js";
+import { skillsForGrant } from "./skill-selection.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -46,6 +48,12 @@ export interface GrantMandate {
   plan: { strategy: string; items: PlanItem[] };
   expected_cost_owls: number;
   notes?: string;
+  /**
+   * The domain skills this mandate's Grantmaker carries on its review passes
+   * (skill names). Selects the Grantmaker's own view and nothing else: the
+   * agents that write to the graph take their skills from the claim.
+   */
+  skills?: string[];
 }
 
 export interface GrantmakerTurnResult {
@@ -126,6 +134,15 @@ const MANDATE_SCHEMA = {
         "Anything the funder should know: uncertainties in the estimate, " +
         "what you deliberately left out, what a top-up would buy next.",
     },
+    skills: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Optional: the domain skills you will carry on this mandate's review " +
+        "passes, from the closed list in your Domain skills section. Only " +
+        "your own view changes; the claims' administrators take their skills " +
+        "from each claim's recorded domains, never from the mandate.",
+    },
   },
   required: ["title", "objective", "plan", "expected_cost_owls"],
 };
@@ -135,6 +152,14 @@ const UUID_RE =
 
 /** Mechanical mandate validation; exported for tests. */
 export function validateMandate(raw: GrantMandate): string | null {
+  if (raw.skills !== undefined) {
+    if (!Array.isArray(raw.skills)) return "skills must be an array of skill names";
+    const known = new Set(listSkills().map((s) => s.name));
+    const unknown = raw.skills.filter((s) => !known.has(String(s)));
+    if (unknown.length > 0) {
+      return `unknown skills: ${unknown.join(", ")} (known: ${[...known].join(", ") || "none"})`;
+    }
+  }
   if (!raw.title?.trim()) return "title is required";
   if (!raw.objective?.trim()) return "objective is required";
   if (!raw.plan?.items?.length) return "the plan needs at least one item";
@@ -465,8 +490,14 @@ async function runGrantmakerTurnImpl(input: {
       : [proposeTool, declineTool]),
   ];
 
-  const system = managed
-    ? getGrantmakerSystemPrompt() +
+  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): a
+  // funded mandate's Grantmaker carries its skills; a conversation with no
+  // mandate yet carries none (load_skill, the fallback, is deferred).
+  const skills = input.grantId ? await skillsForGrant(input.grantId) : [];
+  const blocks = getGrantmakerSystemPromptBlocks({ skills });
+  if (managed) {
+    blocks[0] =
+      blocks[0] +
       `\n\n## Management mode\n\n` +
       `This conversation's mandate is funded and live. You have full ` +
       `visibility into its execution through your grant tools and ` +
@@ -476,10 +507,13 @@ async function runGrantmakerTurnImpl(input: {
       `govern new mandates govern adjustments equally. Answer data ` +
       `questions from tool results, never from memory; give real numbers. ` +
       `Discuss the technical setup as deeply as the funder wants: you can ` +
-      `see the pipeline, the sources, the claims, and the spend.`
-    : getGrantmakerSystemPrompt();
+      `see the pipeline, the sources, the claims, and the spend.`;
+  }
+  // One cached block for the constitution and role (management mode appended
+  // to it), plus one per skill the mandate carries.
+  const system = blocks;
 
-  const result = await toolUseLoop({
+  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: input.transcript.map((m) => ({
       role: m.role,
       content: m.content,
@@ -552,6 +586,9 @@ async function runGrantmakerTurnImpl(input: {
           plan: raw.plan,
           expected_cost_owls: raw.expected_cost_owls,
           ...(raw.notes ? { notes: String(raw.notes) } : {}),
+          ...(raw.skills && raw.skills.length > 0
+            ? { skills: [...new Set(raw.skills.map(String))].sort() }
+            : {}),
         };
         return JSON.stringify({
           success: true,
@@ -568,7 +605,7 @@ async function runGrantmakerTurnImpl(input: {
       }
       return `Unknown tool: ${name}`;
     },
-  });
+  }));
 
   const reply = (result?.content ?? "").trim();
   return {

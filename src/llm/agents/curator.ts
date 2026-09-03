@@ -7,7 +7,9 @@
  * acts through tools, no structured return value.
  */
 import { toolUseLoop } from "../client.js";
-import { getCuratorSystemPrompt } from "../prompts/curator.js";
+import { getCuratorSystemPromptBlocks } from "../prompts/curator.js";
+import { skillsForDomains } from "../prompts/skills.js";
+import { domainsForClaim } from "./skill-selection.js";
 import {
   getGraphToolDefinitions,
   executeGraphTool,
@@ -25,7 +27,7 @@ import {
   executeCuratorTool,
 } from "../tools/curator-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -60,6 +62,13 @@ async function runCuratorImpl(input: {
     ...curatorTools,
   ];
 
+  // Domain skills come from the anchor claim's recorded domains (docs/
+  // mathematics.md §3.4).
+  const claimDomains = await domainsForClaim(input.claimId);
+  const skills = skillsForDomains(claimDomains);
+  // One cached block for the constitution and role, plus one per active skill.
+  const system = getCuratorSystemPromptBlocks({ skills });
+
   const userMessage = `You have been triggered to curate the graph around a claim.
 
 Trigger: ${input.trigger}
@@ -77,10 +86,10 @@ Proceed:
 4. Be conservative: act only when the structure is clearly wrong. Doing
    nothing is a fine outcome.`;
 
-  await toolUseLoop({
+  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
-    system: getCuratorSystemPrompt(),
+    system,
     model,
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -92,10 +101,13 @@ Proceed:
     // is bounded by curatorMaxRuns + the LLM budget tracker.
     maxIterations: 40,
     executeTool: async (name, toolInput) => {
-      if (name === "match_claim") return executeMatcherTool(name, toolInput);
+      // The Matcher receives the domains its caller knows.
+      if (name === "match_claim") {
+        return executeMatcherTool(name, toolInput, { domains: claimDomains });
+      }
       if (graphNames.has(name)) return executeGraphTool(name, toolInput);
       if (claimContextNames.has(name)) return executeGovernanceTool(name, toolInput);
       return executeCuratorTool(name, toolInput);
     },
-  });
+  }));
 }

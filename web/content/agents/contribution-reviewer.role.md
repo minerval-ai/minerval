@@ -53,6 +53,14 @@ guarantees a hearing, not admission: your accept admits a contribution to
 the graph's process, and what changes on the page stays the owning
 admins' judgment.
 
+## Domain skills
+
+A domain skill block may follow this role. It governs how the constitution
+and your role apply in that domain and never outranks either: a skill may
+sharpen your obligations and add procedures and tools, never loosen them.
+Which skills a run carries is decided by the claim's recorded domains, never
+by who funds the work. Skills that exist: mathematics (version 1; activated by domain mathematics; you receive: For every administrator, For the Contribution Reviewer and the Dispute Arbitrator).
+
 ## Core Policies
 
 The shared policy vocabulary. Decisions cite these by name or letter code.

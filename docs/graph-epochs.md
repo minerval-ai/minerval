@@ -34,6 +34,18 @@ compiler fix — nothing of record is lost, provided we snapshot first.
 - **`scripts/archive-legacy-claims.ts`** — archives a cohort (`pipeline_epoch
   IS NULL` by default, or `--epoch=<tag>`). Dry-run by default; `--confirm` to
   write; `--restore --confirm` to undo.
+- **Domain skills version with epochs.** A skill (`skills/<name>/SKILL.md`)
+  carries `metadata.minerval.version`, bumped on any change to its text or
+  tools, and `since_epoch`, the pipeline epoch its current version took
+  effect under. Skills live in the same repository and land in the same pull
+  request as the code, so a material skill change is an epoch change like any
+  prompt change. `assessments.skills` and `agent_runs.skills` record which
+  skills a verdict or run was made under, so "assessed under Mathematics skill
+  v1" is a `WHERE` clause. `claims.domains` (with `domains_source`) is what
+  selects a skill; `scripts/backfill-claim-domains.ts` tags a pre-skills
+  cohort by embedding centroid (dry-run by default, `--write` to apply), and
+  a domain mandate's Grantmaker re-drives tagged claims through their
+  Stewards by valuing reassess actions, the compatible-but-better path below.
 
 ## The norm: corpus-harness first
 
@@ -98,8 +110,11 @@ fixtures instead of prod claims.
 
 Bump the epoch when the change alters **what gets minted or how it is valued**:
 the claim bar, the decomposition stop rule, the importance standard, canonical
-form policy. Don't bump for changes that only affect operations (retry logic,
-logging, cost caps) — those don't invalidate existing claims.
+form policy, or a domain skill that changes what its domain mints (the
+Mathematics skill's introduction, `2026-09-domain-skills`, stopped proof steps
+from becoming subclaims and re-anchored conjectures). Don't bump for changes
+that only affect operations (retry logic, logging, cost caps) — those don't
+invalidate existing claims.
 
 Not every epoch requires archiving the previous one. Archive when the old
 cohort actively misleads (wrong claims, wrong importance ordering); leave it

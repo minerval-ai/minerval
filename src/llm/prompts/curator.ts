@@ -1,4 +1,10 @@
 import { buildAdminPrompt } from "./constitution.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Curator
 
@@ -69,8 +75,20 @@ overwrite each other.
 
 Concluding that nothing needs to change is a legitimate outcome (Working
 Together). Whatever you do, say why in the reasoning fields; the tools handle
-the bookkeeping.`;
+the bookkeeping.
+
+${domainSkillsSection("curator")}`;
 
 export function getCuratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (curator's view of each), in that order.
+ */
+export function getCuratorSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "curator"));
 }

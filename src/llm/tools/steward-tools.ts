@@ -29,7 +29,12 @@ import {
   setArgumentEvaluation,
 } from "../../services/argument-service.js";
 import { loadConfig } from "../../config.js";
-import { RELATION_TYPES, RELATION_GUIDANCE } from "../../schemas/common.js";
+import {
+  RELATION_TYPES,
+  RELATION_GUIDANCE,
+  claimTypeEnum,
+} from "../../schemas/common.js";
+import { knownDomains } from "../prompts/skills.js";
 import {
   enqueueSteward,
   enqueueClaimPipeline,
@@ -43,6 +48,38 @@ function clampUnit(value: unknown): number | undefined {
   const n = Number(value);
   if (!Number.isFinite(n)) return undefined;
   return Math.min(1, Math.max(0, n));
+}
+
+// The claim_type values update_canonical_form accepts: the shared enum plus
+// `mathematical`, the type the Mathematics skill assigns to propositions of
+// mathematics (docs/mathematics.md §2.1). The column is unconstrained text;
+// the enum, the web mirror, and the ontology glosses gain the value with the
+// claim-kind slice.
+const CLAIM_TYPE_VALUES: readonly string[] = [...claimTypeEnum.options, "mathematical"];
+
+/**
+ * Validate a `domains` tool argument against the closed list of domains the
+ * skills define. Returns the cleaned list, or a message naming what was
+ * rejected so the agent can correct the call.
+ */
+function parseDomains(value: unknown): { domains: string[] } | { error: string } {
+  if (!Array.isArray(value)) {
+    return { error: "domains must be an array of domain names." };
+  }
+  const known = knownDomains();
+  const cleaned = [
+    ...new Set(value.map((d) => String(d).trim().toLowerCase()).filter(Boolean)),
+  ].sort();
+  const unknown = cleaned.filter((d) => !known.includes(d));
+  if (unknown.length > 0) {
+    return {
+      error:
+        `Unknown domain(s): ${unknown.join(", ")}. The domains that exist are: ` +
+        `${known.join(", ") || "(none)"}. Pass an empty array for a claim that ` +
+        `belongs to no domain with a skill.`,
+    };
+  }
+  return { domains: cleaned };
 }
 
 export function getStewardToolDefinitions(): Tool[] {
@@ -245,6 +282,14 @@ export function getStewardToolDefinitions(): Tool[] {
           new_text: {
             type: "string",
             description: "The new canonical form text",
+          },
+          claim_type: {
+            type: "string",
+            enum: [...CLAIM_TYPE_VALUES],
+            description:
+              "Optional: also correct the claim's type when the recorded one " +
+              "is a category error (a theorem recorded as empirical_derived " +
+              "becomes mathematical). Omit to leave the type as it is.",
           },
           reasoning: {
             type: "string",
@@ -486,6 +531,16 @@ export function getStewardToolDefinitions(): Tool[] {
               "is preliminary' yourself; the page labels the note preliminary " +
               "and names you (the parent claim's Steward) automatically.",
           },
+          domains: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "The subclaim's domain tags, from the closed list of domains " +
+              "that have a skill. Omit to inherit the parent's tags, which is " +
+              "right for most dependencies; pass your own (possibly empty) " +
+              "list when the subclaim belongs to a different domain than its " +
+              "parent, as when a mathematical claim rests on an empirical one.",
+          },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
       },
@@ -531,6 +586,39 @@ export function getStewardToolDefinitions(): Tool[] {
           },
         },
         required: ["claim_id", "importance", "reasoning"],
+      },
+    },
+    {
+      name: "set_claim_domains",
+      description:
+        "Record the claim's domain tags: which domain skills (and their " +
+        "tools) every administrator's run on this claim carries from now on. " +
+        "This is the authoritative judgment; it supersedes the Extractor's " +
+        "prior, an inherited tag, and the backfill. Tools cannot join a run " +
+        "that has already started, so a tag you set now takes effect on the " +
+        "claim's next pass: assess this pass with what you have and set " +
+        "marginal_yield honestly. Pass an empty list for a claim that belongs " +
+        "to no domain with a skill.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim to tag",
+          },
+          domains: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "The domain tags, from the closed list of domains that have a " +
+              "skill (see the Domain skills section of your role).",
+          },
+          reasoning: {
+            type: "string",
+            description: "Why these tags are right for this claim",
+          },
+        },
+        required: ["claim_id", "domains", "reasoning"],
       },
     },
     {
@@ -720,6 +808,11 @@ export async function executeStewardTool(
           // order or a grant's budget job), the usage context carries the
           // payer's job id — stamped mechanically, never by the agent.
           fundedByJobId: getUsageContext().jobId ?? null,
+          // Provenance of the standards applied: the domain skills the run
+          // carried, stamped from the usage context the agent set once it
+          // resolved them (never by the agent's own hand). [] = an unskilled
+          // run; null only for legacy call sites outside an agent.
+          skills: getUsageContext().skills ?? null,
         });
 
         // Argument evaluations are derived within the assessment (issue #173),
@@ -881,6 +974,21 @@ export async function executeStewardTool(
       case "update_canonical_form": {
         const claimId = input.claim_id as string;
         const newText = input.new_text as string;
+        // Optional type correction (docs/mathematics.md §2.1): the type is a
+        // facet the page, the cards, and the map read, so a theorem left as
+        // "empirical, derived" is a category error the Steward can fix here.
+        const claimType =
+          typeof input.claim_type === "string" && input.claim_type.trim()
+            ? input.claim_type.trim().toLowerCase()
+            : undefined;
+        if (claimType !== undefined && !CLAIM_TYPE_VALUES.includes(claimType)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown claim_type "${claimType}". Use one of: ` +
+              `${CLAIM_TYPE_VALUES.join(", ")}.`,
+          });
+        }
 
         const db = getDb();
 
@@ -897,13 +1005,41 @@ export async function executeStewardTool(
           .set({
             text: newText,
             ...(embedding ? { embedding } : {}),
+            ...(claimType !== undefined ? { claimType } : {}),
             updatedAt: new Date(),
           })
           .where(eq(claims.id, claimId));
 
         return JSON.stringify({
           success: true,
-          message: `Canonical form updated for claim ${claimId}`,
+          message:
+            `Canonical form updated for claim ${claimId}` +
+            (claimType !== undefined ? `; claim_type set to ${claimType}` : ""),
+        });
+      }
+
+      case "set_claim_domains": {
+        const claimId = input.claim_id as string;
+        const parsed = parseDomains(input.domains);
+        if ("error" in parsed) {
+          return JSON.stringify({ success: false, message: parsed.error });
+        }
+        const db = getDb();
+        await db
+          .update(claims)
+          .set({
+            domains: parsed.domains,
+            domainsSource: "steward",
+            updatedAt: new Date(),
+          })
+          .where(eq(claims.id, claimId));
+        return JSON.stringify({
+          success: true,
+          message:
+            `Domains of claim ${claimId} set to [${parsed.domains.join(", ")}]. ` +
+            `The matching skills and their tools join every run on this claim ` +
+            `from its next pass; this run continues with the toolset it started with.`,
+          domains: parsed.domains,
         });
       }
 
@@ -1231,7 +1367,32 @@ export async function executeStewardTool(
           });
         }
 
+        // Domain tags (docs/mathematics.md §3.4): the Steward's own list when
+        // it passes one, else the parent's tags, so a subclaim of a tagged
+        // claim carries the same skill to its own Steward.
+        let domains: string[] = [];
+        let domainsSource: "steward" | "inherited" | null = null;
+        if (input.domains !== undefined) {
+          const parsed = parseDomains(input.domains);
+          if ("error" in parsed) {
+            return JSON.stringify({ success: false, message: parsed.error });
+          }
+          domains = parsed.domains;
+          domainsSource = "steward";
+        }
+
         const db = getDb();
+
+        if (domainsSource === null) {
+          const [parent] = await db
+            .select({ domains: claims.domains })
+            .from(claims)
+            .where(eq(claims.id, parentId))
+            .limit(1);
+          const inherited = parseDomains(parent?.domains ?? []);
+          domains = "domains" in inherited ? inherited.domains : [];
+          domainsSource = domains.length > 0 ? "inherited" : null;
+        }
 
         // Create the subclaim
         let embedding: number[] | undefined;
@@ -1274,6 +1435,7 @@ export async function executeStewardTool(
               ? { seedSourceClaimId: parentId }
               : {}),
             ...(gated ? { stewardState: "deferred" } : {}),
+            ...(domainsSource !== null ? { domains, domainsSource } : {}),
             pipelineEpoch,
             createdBy: "claim_steward",
           })
@@ -1323,6 +1485,9 @@ export async function executeStewardTool(
               ? `; kept as a deferred embedded stub (importance ` +
                 `${effectiveImportance} below the decomposition threshold ` +
                 `${stewardEnqueueMinImportance}); not recursively decomposed.`
+              : "") +
+            (domainsSource !== null
+              ? `; domains [${domains.join(", ")}] (${domainsSource})`
               : ""),
           child_claim_id: newClaim!.id,
         });

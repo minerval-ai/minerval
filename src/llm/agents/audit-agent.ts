@@ -6,7 +6,9 @@
  * correctly. Acts through tools -- no structured return value.
  */
 import { toolUseLoop } from "../client.js";
-import { getAuditAgentSystemPrompt } from "../prompts/audit-agent.js";
+import { getAuditAgentSystemPromptBlocks } from "../prompts/audit-agent.js";
+import { skillsForDomains } from "../prompts/skills.js";
+import { domainsForAuditContext } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
   executeGovernanceTool,
@@ -16,7 +18,7 @@ import {
   executeAuditTool,
 } from "../tools/audit-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -41,6 +43,13 @@ async function runAuditImpl(input: {
     ...getAuditToolDefinitions(),
   ];
 
+  // Domain skills: the union over the claims in the decisions under review
+  // (docs/mathematics.md §3.4), found through the claims and contributions
+  // the context names. A pattern analysis names none and runs unskilled.
+  const skills = skillsForDomains(await domainsForAuditContext(input.context));
+  // One cached block for the constitution and role, plus one per active skill.
+  const system = getAuditAgentSystemPromptBlocks({ skills });
+
   const userMessage = `You have been triggered to perform an audit.
 
 Audit Type: ${input.auditType}
@@ -51,10 +60,10 @@ that bear on this ground, and record what you conclude: flag_issue for each
 issue found (its finding_id is what the consequence tools require), or nothing
 when the decisions under review hold up.`;
 
-  await toolUseLoop({
+  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
-    system: getAuditAgentSystemPrompt(),
+    system,
     model,
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -70,5 +79,5 @@ when the decisions under review hold up.`;
       }
       return executeAuditTool(name, toolInput, { runId: input.runId });
     },
-  });
+  }));
 }

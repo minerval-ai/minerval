@@ -31,8 +31,9 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { resolveProvider } from "../providers/routing.js";
-import { withAgent } from "../usage-context.js";
-import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import { withAgent, withSkills } from "../usage-context.js";
+import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
+import { skillsByName } from "../prompts/skills.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -96,15 +97,21 @@ async function runMandateReviewImpl(input: {
     budget_micro_usd: number;
     workspace: string | null;
     funder_user_id: string;
+    skills: string[] | null;
   }>(
     `SELECT g.id, g.name, g.policy, g.mandate, g.plan, g.plan_cursor,
             g.daily_budget_micro_usd, g.budget_job_id, j.budget_micro_usd,
-            g.workspace, g.funder_user_id
+            g.workspace, g.funder_user_id, g.skills
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
     [input.grantId]
   );
   if (!grant) throw new Error(`mandate ${input.grantId} not found or not active`);
+
+  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): one
+  // cached block for the constitution and role, plus one per skill.
+  const skills = skillsByName(grant.skills ?? []);
+  const system = getGrantmakerSystemPromptBlocks({ skills });
 
   const committed = await grantCommittedMicroUsd({
     id: grant.id,
@@ -509,12 +516,12 @@ async function runMandateReviewImpl(input: {
       : t.name !== "update_allocation_policy"
   );
 
-  const result = await toolUseLoop({
+  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
     tools: webSearchAvailable
       ? [webSearchTool, ...availableTools]
       : availableTools,
-    system: getGrantmakerSystemPrompt(),
+    system,
     model,
     maxTokens: 4096,
     maxIterations: 24,
@@ -739,7 +746,7 @@ async function runMandateReviewImpl(input: {
       }
       return JSON.stringify({ error: `unknown tool ${name}` });
     },
-  });
+  }));
 
   const note = (result.content ?? "").trim().slice(0, 2000);
   // The review note is part of the mandate's public record.

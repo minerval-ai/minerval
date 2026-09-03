@@ -1,0 +1,125 @@
+[
+  {
+    "name": "lean_search",
+    "description": "Search Mathlib for declarations. The default backend is the platform's own Loogle mirror pinned to the platform's Mathlib: patterns use ?a metavariables and a ⊢ conclusion, for example \"?a + ?b = ?b + ?a\" or \"Nat.Prime, ⊢ Infinite\". When configured, a natural-language backend accepts a sentence instead. A hosted index may run ahead of the pin, so confirm any name you intend to use with lean_elaborate before relying on it. Returns matching declarations with their types and module paths.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search: a Loogle pattern (backend \"pattern\") or a sentence (backend \"natural\")."
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["pattern", "natural"],
+          "description": "Which index to search. Defaults to \"pattern\"."
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum results to return. Defaults to 10."
+        }
+      },
+      "required": ["query"]
+    },
+    "roles": ["claim-steward", "math-solver"]
+  },
+  {
+    "name": "lean_elaborate",
+    "description": "Type-check a candidate Lean 4 statement file against the pinned Mathlib on the warm lane. Returns either the errors with positions, or the elaborated form (pp_type, expr_hash, constants, definitions_axioms, witness_present) plus any vacuity warnings. The intended loop is draft, elaborate, fix, repeat, then publish. Elaboration checks that the statement is well-typed; it says nothing about whether it is faithful to the canonical form, which is your judgment.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "statement": {
+          "type": "string",
+          "description": "The Lean 4 source to elaborate: imports, the theorem or definition statement, and any local definitions it needs."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note recorded with the elaboration, for your own trace: what this draft changed and why."
+        }
+      },
+      "required": ["statement"]
+    },
+    "roles": ["claim-steward", "math-solver"]
+  },
+  {
+    "name": "lean_check",
+    "description": "Check a proof against a stored formal statement on the cold lane. Pass the proof text, or a reference to an existing lean_checks row or a solver attempt, so an artifact can be re-checked without pasting it. Repeated checks of an identical (formalization_id, sha256, checker_version, mode) return the stored row unless force is set. A timeout is a result (verdict \"error\"), not an exception. The verdict is about the proof compiling against the statement; fidelity of the statement to the claim remains your judgment.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "formalization_id": {
+          "type": "string",
+          "description": "The claim_formalizations row the proof is checked against."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["proof", "disproof"],
+          "description": "Whether the artifact claims to prove the statement or its negation."
+        },
+        "proof": {
+          "type": "string",
+          "description": "The proof text. Omit when passing lean_check_id or attempt_id."
+        },
+        "lean_check_id": {
+          "type": "string",
+          "description": "An existing lean_checks row to re-check."
+        },
+        "attempt_id": {
+          "type": "string",
+          "description": "A solver attempt whose artifact should be checked."
+        },
+        "replay": {
+          "type": "string",
+          "enum": ["module", "fresh"],
+          "description": "\"module\" replays against the compiled module; \"fresh\" rebuilds from the pinned toolchain and counts double against the per-run cap."
+        },
+        "second_opinion": {
+          "type": "boolean",
+          "description": "Run the check a second time on a different node before returning."
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Re-run even when a stored result for the identical check exists."
+        }
+      },
+      "required": ["formalization_id", "kind"]
+    },
+    "roles": ["claim-steward", "math-solver"]
+  },
+  {
+    "name": "publish_formalization",
+    "description": "Record a formal statement for a claim. The server re-runs elaboration itself: a statement that does not elaborate is refused, so nothing unchecked can be recorded. On the first call it stores the hashes and pin from that elaboration with your correspondence note and review notes, and writes a reviewed row. Publication happens in a second, fresh-context pass that calls this tool with confirm: true and the reviewed row's formalization_id; a returned-to-draft outcome carries the reviewer's notes. Publishing opens the statement's review period.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "description": "The claim the statement formalizes."
+        },
+        "statement_source": {
+          "type": "string",
+          "description": "The full Lean 4 source of the statement, as elaborated."
+        },
+        "correspondence": {
+          "type": "string",
+          "description": "The reader-facing note saying how the formal and informal statements relate and what the formal one leaves out."
+        },
+        "review_notes": {
+          "type": "string",
+          "description": "Your vacuity and fidelity review: what you checked and what you found."
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Set on the second, fresh-context pass to publish a reviewed row (or return it to draft)."
+        },
+        "formalization_id": {
+          "type": "string",
+          "description": "The reviewed row being confirmed or returned to draft. Required with confirm."
+        }
+      },
+      "required": ["claim_id", "statement_source", "correspondence", "review_notes"]
+    },
+    "roles": ["claim-steward"]
+  }
+]

@@ -87,6 +87,31 @@ export function startAgentRun(
   return { runId, seq: { n: 0 } };
 }
 
+/**
+ * Record the domain skills a run carried (skill names) once the agent has
+ * resolved them, which is after the run opened. Fire-and-forget like the
+ * rest; an empty list is recorded as [] so an unskilled run reads as such
+ * rather than as "unknown".
+ */
+export function recordAgentRunSkills(
+  trace: AgentTrace,
+  skills: readonly string[]
+): void {
+  void (async () => {
+    try {
+      await getDb()
+        .update(agentRuns)
+        .set({ skills: [...skills] })
+        .where(eq(agentRuns.id, trace.runId));
+    } catch (err) {
+      console.error(
+        "[trace] failed to record agent run skills:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  })();
+}
+
 /** Stamp the run finished. Fire-and-forget; safe to call exactly once. */
 export function finishAgentRun(
   trace: AgentTrace,

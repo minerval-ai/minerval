@@ -5,7 +5,9 @@
  * deeper analysis. Acts through tools -- no structured return value.
  */
 import { toolUseLoop } from "../client.js";
-import { getDisputeArbitratorSystemPrompt } from "../prompts/dispute-arbitrator.js";
+import { getDisputeArbitratorSystemPromptBlocks } from "../prompts/dispute-arbitrator.js";
+import { skillsForDomains } from "../prompts/skills.js";
+import { domainsForContribution } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
   executeGovernanceTool,
@@ -15,7 +17,7 @@ import {
   executeArbitratorTool,
 } from "../tools/arbitrator-tools.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -42,6 +44,12 @@ async function runArbitrationImpl(input: {
     ...getArbitratorToolDefinitions(),
   ];
 
+  // Domain skills come from the contribution's target claim (docs/
+  // mathematics.md §3.4); an intake proposal with no claim yet carries none.
+  const skills = skillsForDomains(await domainsForContribution(input.contributionId));
+  // One cached block for the constitution and role, plus one per active skill.
+  const system = getDisputeArbitratorSystemPromptBlocks({ skills });
+
   let userMessage = `You have been called to arbitrate a dispute.
 
 Trigger: ${input.trigger}
@@ -63,10 +71,10 @@ Please:
 7. Use notify_claim_steward if the outcome affects the claim.
 8. Use flag_for_human_review if the situation exceeds automated capacity.`;
 
-  await toolUseLoop({
+  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
-    system: getDisputeArbitratorSystemPrompt(),
+    system,
     model,
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -82,5 +90,5 @@ Please:
       }
       return executeArbitratorTool(name, toolInput);
     },
-  });
+  }));
 }

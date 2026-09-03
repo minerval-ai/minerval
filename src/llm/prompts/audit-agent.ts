@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { CORE_POLICIES, AUDIT_POLICIES } from "./policies.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Audit Agent
 
@@ -65,10 +71,22 @@ Together): record what you find before the run ends. And finding nothing
 wrong is a legitimate conclusion; never manufacture an issue to have
 something to show.
 
+${domainSkillsSection("audit-agent")}
+
 ${CORE_POLICIES}
 
 ${AUDIT_POLICIES}`;
 
 export function getAuditAgentSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (audit-agent's view of each), in that order.
+ */
+export function getAuditAgentSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "audit-agent"));
 }

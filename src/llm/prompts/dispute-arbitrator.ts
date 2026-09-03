@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { CORE_POLICIES, ARBITRATION_POLICIES } from "./policies.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Dispute Arbitrator
 
@@ -82,10 +88,22 @@ Your written reasoning is the contributor's hearing (§14) and the record
 an auditor will check (§11): say what was disputed, what you examined,
 and why the outcome follows, in the register of §12.
 
+${domainSkillsSection("dispute-arbitrator")}
+
 ${CORE_POLICIES}
 
 ${ARBITRATION_POLICIES}`;
 
 export function getDisputeArbitratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (dispute-arbitrator's view of each), in that order.
+ */
+export function getDisputeArbitratorSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "dispute-arbitrator"));
 }
