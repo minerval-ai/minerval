@@ -14,6 +14,10 @@ export const claimTypeEnum = z.enum([
   "evaluative",
   "causal",
   "normative",
+  // A proposition of mathematics (docs/mathematics.md §2.1): settled by
+  // proof rather than observation, and the type the Mathematics skill
+  // assigns; a formal statement and a prize can bind only to one of these.
+  "mathematical",
 ]);
 
 // The states the system actually writes (see claims.state in src/db/schema.ts):
@@ -99,10 +103,19 @@ export const intakeContributionTypeEnum = z.enum([
   "propose_source",
 ]);
 
+// The prize claim (docs/mathematics.md §8.4): an ordinary contribution so it
+// inherits the identity gate, the review pipeline, appeals, arbitration, and
+// audit — but created only by its own route (POST /claims/:id/prize-claims),
+// because it carries files and a different gate. Deliberately NOT in
+// contributionTypeEnum, which POST /contributions validates against and
+// must keep refusing it.
+export const prizeContributionTypeEnum = z.enum(["claim_prize"]);
+
 // Every type a contribution row can carry — for list filters and display.
 export const anyContributionTypeEnum = z.enum([
   ...contributionTypeEnum.options,
   ...intakeContributionTypeEnum.options,
+  ...prizeContributionTypeEnum.options,
 ]);
 
 export const reviewDecisionEnum = z.enum([

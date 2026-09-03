@@ -46,6 +46,41 @@ describe("validateMandate", () => {
     ).toBeNull();
   });
 
+  it("accepts formalize and attempt_proof items, which carry a claim_id (docs/mathematics.md §10.8)", () => {
+    expect(
+      validateMandate(
+        mandate({
+          plan: {
+            strategy: "Formalize the first target, then attempt it.",
+            items: [
+              { action: "formalize", claim_id: CLAIM_ID, rationale: "target" },
+              {
+                action: "attempt_proof",
+                claim_id: CLAIM_ID,
+                variant: "max",
+                is_calibration: true,
+                lifetime_cap_owls: 800,
+                rationale: "calibration control",
+              },
+            ],
+          },
+        })
+      )
+    ).toBeNull();
+  });
+
+  it("rejects formalize and attempt_proof items without a real claim id", () => {
+    for (const action of ["formalize", "attempt_proof"] as const) {
+      const bad = mandate({
+        plan: {
+          strategy: "s",
+          items: [{ action, rationale: "r" }],
+        },
+      });
+      expect(validateMandate(bad)).toContain("claim_id");
+    }
+  });
+
   it("rejects claim actions without a real claim id (no invented ids)", () => {
     const bad = mandate({
       plan: {

@@ -34,7 +34,25 @@ export type ActionKind =
   // territory (the graph and the open web), valuing the open ledger,
   // growing its own plan, and moving money (regrants). Bounded by its
   // metered cap and the mandate's escrow, never by narrowed affordances.
-  | "mandate_review";
+  | "mandate_review"
+  // Write a claim's formal statement (docs/mathematics.md §5.4): the Steward
+  // drafts, elaborates against the checker, and records `reviewed`; a
+  // fresh-context Steward pass on the strong model then publishes or sends
+  // it back. Two passes per statement, because "every line correct, wrong
+  // theorem" is the failure no checker catches.
+  | "formalize"
+  // A solver attempt on a published statement (§7.2): group
+  // `attempt:<formalization_id>:<n>`, variants `standard` and `max`. A
+  // closed attempt never reopens; a later attempt is a new group. Bounded
+  // by its dollar ceiling, the claim's lifetime cap, and the solver's daily
+  // breaker, never selected by them.
+  | "attempt_proof"
+  // The review of one prize claim (§8.6): the cold-lane check, the Reviewer
+  // run, the Steward's `prize_claim` run, and the audit — self-funded from
+  // the platform-owned prize-review reserve minted when the bounty opened,
+  // outside any mandate's day room, so a claim never waits on a paused
+  // escrow and the claimant is never charged.
+  | "prize_review";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;

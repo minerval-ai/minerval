@@ -30,16 +30,34 @@ export type GrantPolicy = (typeof GRANT_POLICIES)[number];
 
 export interface PlanItem {
   /**
-   * assess    — one Steward pass on a claim (first assessment).
-   * reassess  — a fresh pass on an already-assessed claim.
-   * deepen    — the claim plus its pending/deferred subtree.
-   * ingest    — extract + match one source URL into the graph, metered to
-   *             the grant's escrow (the ingestion-pipeline primitive).
+   * assess        — one Steward pass on a claim (first assessment).
+   * reassess      — a fresh pass on an already-assessed claim.
+   * deepen        — the claim plus its pending/deferred subtree.
+   * ingest        — extract + match one source URL into the graph, metered
+   *                 to the grant's escrow (the ingestion-pipeline primitive).
+   * formalize     — write and publish the claim's formal statement
+   *                 (docs/mathematics.md §5.4): two Steward passes, the
+   *                 second in a fresh context.
+   * attempt_proof — a solver attempt on the claim's published statement
+   *                 (§7.2), `variant` standard or max; `is_calibration`
+   *                 marks a run on a settled problem (§7.5), and
+   *                 `lifetime_cap_owls` lets the Grantmaker raise this one
+   *                 claim's lifetime attempt spend above the policy key,
+   *                 bounded at twice it (§7.3).
    */
-  action: "assess" | "reassess" | "deepen" | "ingest";
+  action:
+    | "assess"
+    | "reassess"
+    | "deepen"
+    | "ingest"
+    | "formalize"
+    | "attempt_proof";
   claim_id?: string;
   url?: string;
   rationale: string;
+  variant?: "standard" | "max";
+  is_calibration?: boolean;
+  lifetime_cap_owls?: number;
 }
 
 export type CreateGrantResult =

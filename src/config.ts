@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODELS } from "./llm/models.js";
+import { MODELS, modelSupportsLongRun } from "./llm/models.js";
 import {
   isSupportedModelId,
   unresolvableModelIdMessage,
@@ -471,6 +471,171 @@ const configSchema = z.object({
   stewardLeanMaxSearchesPerRun: z.coerce.number().default(12),
   stewardLeanMaxElaborationsPerRun: z.coerce.number().default(10),
   stewardLeanMaxChecksPerRun: z.coerce.number().default(3),
+
+  // --- Mathematics: the Lean checker (docs/mathematics.md §5) ---
+  // The lean-checker service's private base URL and bearer token. Empty
+  // URL = no checker: the Lean tools are absent from every toolset, no
+  // statement can be published, and no prize can be checked. The token
+  // comes from Secrets Manager in production, never the image.
+  leanCheckerUrl: z.string().default(""),
+  leanCheckerToken: z.string().default(""),
+  // Metering real money (§6.3): a check is billed from the checker's
+  // wall_ms at this per-CPU-hour price plus a fixed per-job overhead, into
+  // llm_usage like any token spend so escrow and cost estimates see it.
+  // The default is one hour of a 4 vCPU / 8 GiB Fargate task in us-east-1
+  // (about $0.20); set from the deployment's actual compute price.
+  leanCpuHourCostMicroUsd: z.coerce.number().min(0).default(200_000),
+  leanCheckOverheadMicroUsd: z.coerce.number().min(0).default(20_000),
+  // A published statement is public for this long before any bounty may
+  // bind to it (§5.6): a bounty on a mis-stated proposition rewards
+  // proving the wrong thing. A `challenge` upheld during the period earns
+  // the fixed review award, in USD, from the prize fund.
+  formalizationReviewPeriodDays: z.coerce.number().min(0).default(14),
+  formalizationReviewAwardUsd: z.coerce.number().min(0).default(100),
+
+  // --- Mathematics: the solver (§7) ---
+  // The solver runs only on the strong tier: the long-run loop needs a
+  // family that takes `effort`, streams 128K-token turns, and carries the
+  // long-run betas, so a deployment pointing it elsewhere fails at config
+  // load rather than hours into an attempt (§7.8). Joins the production
+  // model-env guard below.
+  solverModel: z
+    .string()
+    .superRefine((id, ctx) => {
+      if (!isSupportedModelId(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: unresolvableModelIdMessage(id),
+        });
+      } else if (!modelSupportsLongRun(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            `SOLVER_MODEL "${id}" is not a strong-tier model the long-run ` +
+            "loop can drive (claude-fable, claude-mythos, claude-opus-5 " +
+            "families); the solver needs effort, streaming, and the " +
+            "long-run betas.",
+        });
+      }
+    })
+    .default(MODELS.fable),
+  // The solver's own kill switch: the worker exits its loop when false.
+  // Off by default so no deployment runs multi-hour attempts without
+  // someone choosing that. Same string convention as enableContributions
+  // (z.coerce.boolean() would read "false" as true).
+  solverEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .default("false"),
+  // The solver breaker (§7.3): a durable daily cap on math_solver spend
+  // (llm_usage plus Lean rows) independent of any mandate, in owls; the
+  // in-memory budget tracker exempts attributed calls and is per process,
+  // so this one is a query. Calibration runs (§7.5) get the lower cap.
+  solverDailyCapOwls: z.coerce.number().min(0).default(400),
+  solverCalibrationDailyCapOwls: z.coerce.number().min(0).default(100),
+  // Per-attempt caps on the solver's Lean tool calls (§7.1); 0 = uncapped.
+  solverLeanMaxChecks: z.coerce.number().min(0).default(60),
+  solverLeanMaxElaborations: z.coerce.number().min(0).default(200),
+  // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
+  // the beforeTurn hook stops at, on top of which the wall and iteration
+  // caps guarantee termination whatever the model does.
+  attemptOverageFraction: z.coerce.number().min(0).default(0.25),
+  attemptMaxWallHours: z.coerce.number().positive().default(6),
+  attemptMaxIterations: z.coerce.number().int().positive().default(500),
+  // Agents whose transcripts are always traced regardless of TRACE_LEVEL
+  // (comma-separated). The solver's transcript is the evidence a prize
+  // review may rely on, and traceLevel() defaults off in production.
+  traceAlwaysAgents: z
+    .string()
+    .transform((s) =>
+      s
+        .split(",")
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0)
+    )
+    .default("math_solver"),
+
+  // --- Mathematics: bounties (§8.1) ---
+  // Per-claim bounds in USD. The maximum is the v1 ceiling raised only by
+  // configuration after counsel's items; the minimum keeps the fund from
+  // fragmenting into offers too small to move anyone.
+  maxBountyPerClaimUsd: z.coerce.number().min(0).default(5000),
+  minBountyPerClaimUsd: z.coerce.number().min(0).default(250),
+  // How much of the fund the Grantmaker may commit per review pass and per
+  // UTC day, as fractions of the fund's balance — the same shape as the
+  // mandate move caps, so the mandate scales with the money.
+  bountyPoolFractionPerPass: z.coerce.number().min(0).max(1).default(0.1),
+  bountyPoolFractionPerDay: z.coerce.number().min(0).max(1).default(0.25),
+  // A posting below this opens on the two-pass alone; at or above it, a
+  // public offer that binds the company to pay waits for a person's
+  // confirmation (operator key or the founder in the management chat).
+  bountyAutonomyThresholdUsd: z.coerce.number().min(0).default(1000),
+  // Withdrawal is prospective only, with this much public notice; a bounty
+  // expires after this many days unless the Grantmaker renews it.
+  bountyNoticeDays: z.coerce.number().min(0).default(30),
+  bountyDefaultExpiryDays: z.coerce.number().min(1).default(365),
+
+  // --- Mathematics: prize claims (§8.4–§8.7) ---
+  // A prize needs a human sign-off before `payable` when the bounty is at
+  // or above this amount or the claim's importance at or above this level
+  // (plus the other conditions in §8.5, which are not configurable).
+  prizeHumanSignoffUsd: z.coerce.number().min(0).default(1000),
+  prizeHumanSignoffImportance: z.coerce.number().min(0).max(1).default(0.6),
+  // The challenge window between acceptance and payment (§8.5): the small
+  // window below the tier, the large one at or above it, never under 14
+  // days — which the bounds enforce, because "never below 14" is a rule
+  // the constitution's §16 rests on, not a tuning knob.
+  prizeChallengeWindowDaysSmall: z.coerce.number().min(14).default(14),
+  prizeChallengeWindowDaysLarge: z.coerce.number().min(14).default(30),
+  prizeWindowTierUsd: z.coerce.number().min(0).default(1000),
+  // The winner's steps (identity, tax form, screening) must complete within
+  // this many days of `payable`, or the claim forfeits and the reservation
+  // returns to the fund.
+  prizePayeeStepsDays: z.coerce.number().min(1).default(90),
+  // When a bounty opens, owls worth this fraction of it are minted at cost
+  // into the platform's prize-review job as a hold releasable only to
+  // prize_review actions on that bounty's claims (§8.6).
+  prizeReviewReserveFraction: z.coerce.number().min(0).max(1).default(0.1),
+  // A statement defect exposed by a claimant earns this fraction of the
+  // bounty, capped, from the bounty's reservation (§8.4).
+  prizeDefectAwardFraction: z.coerce.number().min(0).max(1).default(0.1),
+  prizeDefectAwardCapUsd: z.coerce.number().min(0).default(500),
+  // An owl prize above this is granted in daily tranches of at most this
+  // much, so no single day loads more than the closed-loop threshold §9.1
+  // relies on.
+  prizeOwlTrancheUsd: z.coerce.number().positive().default(2000),
+  // The prize-check worker's bounds (§8.4): concurrent cold-lane checks,
+  // checks per UTC day, the reclaim window for a `checking` row whose
+  // worker died, and the checker-error retries before `check_error` holds
+  // the statement's queue for an operator.
+  prizeCheckMaxConcurrent: z.coerce.number().int().min(1).default(2),
+  prizeChecksPerDay: z.coerce.number().int().min(0).default(50),
+  prizeCheckReclaimMinutes: z.coerce.number().positive().default(30),
+  prizeCheckMaxAttempts: z.coerce.number().int().min(1).default(3),
+  // Non-monetary abuse control on filings (§8.4, "No deposit"): at most
+  // this many submissions per statement in 30 days, and this many per day
+  // platform-wide.
+  prizeClaimsPerStatementPer30Days: z.coerce.number().int().min(0).default(3),
+  prizeClaimsPerDayPlatform: z.coerce.number().int().min(0).default(5),
+
+  // --- Mathematics: who can move money (§8.11) ---
+  // The operator key: the fund deposit, the bounty confirmation, the
+  // prize-claim sign-off, and the void require it. Held outside the web
+  // deployment and used only from the operator's own session, because the
+  // service key acts for any user through the acting-user header and so
+  // cannot be the credential that moves money. Empty = those four routes
+  // are closed.
+  minervalOperatorKey: z.string().default(""),
+
+  // --- Mathematics: the mandate's sizing (§10.7) ---
+  // Read from the environment rather than written as literals in the seed,
+  // so the mandate is robust to far more money without a code change: the
+  // escrow (owls at cost), the daily rate (must exceed one max attempt's
+  // prior plus a day of passes, or attempts never fund), and the first
+  // prize-fund deposit in USD.
+  mathMandateEscrowOwls: z.coerce.number().min(0).default(2500),
+  mathMandateDailyOwls: z.coerce.number().min(0).default(200),
+  mathPrizePoolUsd: z.coerce.number().min(0).default(2500),
   // Cap the total number of Curator invocations per process (0 = unlimited),
   // mirroring stewardMaxRuns for predictable test/deploy spend.
   curatorMaxRuns: z.coerce.number().default(0),
@@ -660,6 +825,50 @@ export function loadConfig(): Config {
     stewardLeanMaxElaborationsPerRun:
       process.env.STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN,
     stewardLeanMaxChecksPerRun: process.env.STEWARD_LEAN_MAX_CHECKS_PER_RUN,
+    leanCheckerUrl: process.env.LEAN_CHECKER_URL,
+    leanCheckerToken: process.env.LEAN_CHECKER_TOKEN,
+    leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,
+    leanCheckOverheadMicroUsd: process.env.LEAN_CHECK_OVERHEAD_MICRO_USD,
+    formalizationReviewPeriodDays: process.env.FORMALIZATION_REVIEW_PERIOD_DAYS,
+    formalizationReviewAwardUsd: process.env.FORMALIZATION_REVIEW_AWARD_USD,
+    solverModel: process.env.SOLVER_MODEL,
+    solverEnabled: process.env.SOLVER_ENABLED,
+    solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
+    solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
+    solverLeanMaxChecks: process.env.SOLVER_LEAN_MAX_CHECKS,
+    solverLeanMaxElaborations: process.env.SOLVER_LEAN_MAX_ELABORATIONS,
+    attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
+    attemptMaxWallHours: process.env.ATTEMPT_MAX_WALL_HOURS,
+    attemptMaxIterations: process.env.ATTEMPT_MAX_ITERATIONS,
+    traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
+    maxBountyPerClaimUsd: process.env.MAX_BOUNTY_PER_CLAIM_USD,
+    minBountyPerClaimUsd: process.env.MIN_BOUNTY_PER_CLAIM_USD,
+    bountyPoolFractionPerPass: process.env.BOUNTY_POOL_FRACTION_PER_PASS,
+    bountyPoolFractionPerDay: process.env.BOUNTY_POOL_FRACTION_PER_DAY,
+    bountyAutonomyThresholdUsd: process.env.BOUNTY_AUTONOMY_THRESHOLD_USD,
+    bountyNoticeDays: process.env.BOUNTY_NOTICE_DAYS,
+    bountyDefaultExpiryDays: process.env.BOUNTY_DEFAULT_EXPIRY_DAYS,
+    prizeHumanSignoffUsd: process.env.PRIZE_HUMAN_SIGNOFF_USD,
+    prizeHumanSignoffImportance: process.env.PRIZE_HUMAN_SIGNOFF_IMPORTANCE,
+    prizeChallengeWindowDaysSmall: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_SMALL,
+    prizeChallengeWindowDaysLarge: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_LARGE,
+    prizeWindowTierUsd: process.env.PRIZE_WINDOW_TIER_USD,
+    prizePayeeStepsDays: process.env.PRIZE_PAYEE_STEPS_DAYS,
+    prizeReviewReserveFraction: process.env.PRIZE_REVIEW_RESERVE_FRACTION,
+    prizeDefectAwardFraction: process.env.PRIZE_DEFECT_AWARD_FRACTION,
+    prizeDefectAwardCapUsd: process.env.PRIZE_DEFECT_AWARD_CAP_USD,
+    prizeOwlTrancheUsd: process.env.PRIZE_OWL_TRANCHE_USD,
+    prizeCheckMaxConcurrent: process.env.PRIZE_CHECK_MAX_CONCURRENT,
+    prizeChecksPerDay: process.env.PRIZE_CHECKS_PER_DAY,
+    prizeCheckReclaimMinutes: process.env.PRIZE_CHECK_RECLAIM_MINUTES,
+    prizeCheckMaxAttempts: process.env.PRIZE_CHECK_MAX_ATTEMPTS,
+    prizeClaimsPerStatementPer30Days:
+      process.env.PRIZE_CLAIMS_PER_STATEMENT_PER_30_DAYS,
+    prizeClaimsPerDayPlatform: process.env.PRIZE_CLAIMS_PER_DAY_PLATFORM,
+    minervalOperatorKey: process.env.MINERVAL_OPERATOR_KEY,
+    mathMandateEscrowOwls: process.env.MATH_MANDATE_ESCROW_OWLS,
+    mathMandateDailyOwls: process.env.MATH_MANDATE_DAILY_OWLS,
+    mathPrizePoolUsd: process.env.MATH_PRIZE_POOL_USD,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
     curatorSweepRate: process.env.CURATOR_SWEEP_RATE,
     matcherModel: process.env.MATCHER_MODEL,
@@ -714,6 +923,10 @@ export function loadConfig(): Config {
     // epoch: the agent authoring the graph's canonical language was the one
     // load-bearing agent this guard did not cover.
     "EXTRACTOR_MODEL",
+    // The solver (docs/mathematics.md §7.8): a multi-hour attempt on a
+    // model nobody chose is a different product than the mandate funded,
+    // so production names it even while SOLVER_ENABLED is false.
+    "SOLVER_MODEL",
   ].filter((k) => !process.env[k]);
   if (defaultedModelEnvs.length > 0) {
     if (_config.env === "production") {
@@ -721,17 +934,18 @@ export function loadConfig(): Config {
       throw new Error(
         `Missing model env(s) in production: ${defaultedModelEnvs.join(", ")}. ` +
           "The load-bearing agents (Steward/Curator/Extractor/Audit/" +
-          "Arbitration) must run an explicitly chosen tier (issue #77) — set " +
-          "the env(s) rather than silently falling back to the cheap default."
+          "Arbitration/solver) must run an explicitly chosen tier (issue " +
+          "#77) — set the env(s) rather than silently falling back to the " +
+          "default."
       );
     }
     if (!process.env.VITEST) {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}). Fine for local dev; set the ` +
-          "env(s) (production uses claude-fable-5-1) if this environment does " +
-          "real assessment work."
+          `cheap default (${MODELS.sonnet}) and the solver on ${MODELS.fable}. ` +
+          "Fine for local dev; set the env(s) (production uses " +
+          "claude-fable-5-1) if this environment does real assessment work."
       );
     }
   }

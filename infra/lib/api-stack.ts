@@ -154,6 +154,9 @@ export class ApiStack extends cdk.Stack {
         // on the top of the queue; the rest stay embedded stubs until budget
         // allows.
         STEWARD_MODEL: "claude-fable-5-1",
+        // The solver runs on the strong tier; config refuses production
+        // without it (docs/mathematics.md §7.8).
+        SOLVER_MODEL: "claude-fable-5-1",
         // The other load-bearing governance agents also run on Fable: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations

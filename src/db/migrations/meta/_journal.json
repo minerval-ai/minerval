@@ -309,6 +309,13 @@
       "when": 1788397023305,
       "tag": "0043_domain_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788398522187,
+      "tag": "0044_mathematics",
+      "breakpoints": true
     }
   ]
 }

@@ -50,12 +50,10 @@ function clampUnit(value: unknown): number | undefined {
   return Math.min(1, Math.max(0, n));
 }
 
-// The claim_type values update_canonical_form accepts: the shared enum plus
-// `mathematical`, the type the Mathematics skill assigns to propositions of
-// mathematics (docs/mathematics.md §2.1). The column is unconstrained text;
-// the enum, the web mirror, and the ontology glosses gain the value with the
-// claim-kind slice.
-const CLAIM_TYPE_VALUES: readonly string[] = [...claimTypeEnum.options, "mathematical"];
+// The claim_type values update_canonical_form accepts: the shared enum,
+// which carries `mathematical`, the type the Mathematics skill assigns to
+// propositions of mathematics (docs/mathematics.md §2.1).
+const CLAIM_TYPE_VALUES: readonly string[] = [...claimTypeEnum.options];
 
 /**
  * Validate a `domains` tool argument against the closed list of domains the

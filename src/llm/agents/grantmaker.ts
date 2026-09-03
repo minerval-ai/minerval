@@ -67,17 +67,42 @@ const PLAN_ITEM_SCHEMA = {
   properties: {
     action: {
       type: "string",
-      enum: ["assess", "reassess", "deepen", "ingest"],
+      enum: [
+        "assess",
+        "reassess",
+        "deepen",
+        "ingest",
+        "formalize",
+        "attempt_proof",
+      ],
     },
     claim_id: {
       type: "string",
-      description: "Required for assess/reassess/deepen; omit for ingest.",
+      description:
+        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
+        "for ingest.",
     },
     url: {
       type: "string",
       description: "Required for ingest; the source URL to extract and match.",
     },
     rationale: { type: "string" },
+    variant: {
+      type: "string",
+      enum: ["standard", "max"],
+      description: "attempt_proof only: the solver's effort variant.",
+    },
+    is_calibration: {
+      type: "boolean",
+      description:
+        "attempt_proof only: a calibration run on a settled problem.",
+    },
+    lifetime_cap_owls: {
+      type: "number",
+      description:
+        "attempt_proof only: raise this claim's lifetime attempt spend " +
+        "above the policy key (bounded at twice it).",
+    },
   },
   required: ["action", "rationale"],
 };
