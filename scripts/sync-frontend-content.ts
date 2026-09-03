@@ -31,6 +31,7 @@ copyFileSync(resolve(root, "docs/architecture.md"), resolve(contentDir, "archite
 copyFileSync(resolve(root, "docs/policies.md"), resolve(contentDir, "policies.md"));
 copyFileSync(resolve(root, "docs/rewards-policy.md"), resolve(contentDir, "rewards-policy.md"));
 copyFileSync(resolve(root, "docs/contributor-terms.md"), resolve(contentDir, "contributor-terms.md"));
+copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
 
 // ---- split the assembled prompt into its constitution / role layers -------
 const ROLE_MARKER = "# Your Specific Role";
