@@ -45,6 +45,14 @@ import {
   listClaimDependents,
 } from "../services/tree-service.js";
 import { getArgumentsForClaim } from "../services/argument-service.js";
+import {
+  getBountyTerms,
+  getFormalizationSummary,
+  getVerificationSummary,
+  leanChecksByArgument,
+  listLeanChecksForClaim,
+} from "../services/formalization-service.js";
+import { claimTypeEnum } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import {
@@ -204,8 +212,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "each is stored once, under a neutral canonical " +
         "wording shared by the claim and its denial. Combined semantic and " +
         "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status and a link to its minerval.ai page. " +
-        "Free.",
+        "current assessment status, the amount of any live prize offered " +
+        "for a machine-checked proof or disproof of its formal statement " +
+        "(prize_micro_usd), whether such a check exists (checked), and a " +
+        "link to its minerval.ai page. Free.",
       inputSchema: {
         query: z.string().min(1).max(500).describe("Free-text search query"),
         limit: z.number().int().min(1).max(50).default(10),
@@ -214,13 +224,22 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .default("all")
           .describe("Filter on whether a claim carries a current assessment"),
         min_importance: z.number().min(0).max(1).default(0),
+        with_prizes: z
+          .boolean()
+          .default(false)
+          .describe("Only claims with a live prize on their formal statement"),
+        claim_type: claimTypeEnum
+          .optional()
+          .describe("Only claims of this type; `mathematical` for propositions of mathematics"),
       },
     },
-    async ({ query, limit, assessed, min_importance }) => {
+    async ({ query, limit, assessed, min_importance, with_prizes, claim_type }) => {
       const { results } = await hybridSearch(query, {
         limit,
         assessed,
         minImportance: min_importance,
+        withPrizes: with_prizes,
+        claimType: claim_type,
       });
       return jsonResult({
         results: results.map((r) => ({
@@ -232,6 +251,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           importance: r.importance,
           assessment_status: r.assessment_status,
           assessment_confidence: r.assessment_confidence,
+          prize_micro_usd: r.prize_micro_usd ?? null,
+          checked: r.checked ?? null,
           page_url: claimPageUrl(r.id),
         })),
       });
@@ -254,11 +275,16 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "honest summary (null where it would be false precision). " +
         "Dependents come back as the most load-bearing page by importance " +
         "with `dependents_total` beside them, since a hub claim has " +
-        "hundreds; page through the rest with `dependents_offset`. Free.",
+        "hundreds; page through the rest with `dependents_offset`. A " +
+        "mathematical claim may carry a published formal statement " +
+        "(`formalization`: Lean 4 against a pinned Mathlib, with a " +
+        "correspondence note) and a machine-checked argument whose evidence " +
+        "is a checker verdict (`verification`; `include: \"proofs\"` lists " +
+        "the check records). Free.",
       inputSchema: {
         claim_id: z.string().uuid(),
         include: z
-          .array(z.enum(["provenance", "arguments", "dependents"]))
+          .array(z.enum(["provenance", "arguments", "dependents", "proofs"]))
           .default(["provenance"])
           .describe("Optional detail sections to include"),
         dependents_limit: z.number().int().min(1).max(100).default(25),
@@ -270,6 +296,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       if (!claim) return errorResult("NOT_FOUND", "Claim not found");
 
       const assessment = await getCurrentAssessment(claim_id);
+      const [formalization, verification] = await Promise.all([
+        getFormalizationSummary(claim_id),
+        getVerificationSummary(claim_id),
+      ]);
       const payload: Record<string, unknown> = {
         claim: {
           id: claim.id,
@@ -278,11 +308,16 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           state: claim.state,
           decomposition_status: claim.decompositionStatus,
           importance: claim.importance,
+          domains: claim.domains,
           created_at: claim.createdAt.toISOString(),
           updated_at: claim.updatedAt.toISOString(),
           page_url: claimPageUrl(claim.id),
         },
         assessment: formatAssessment(assessment),
+        // The published formal statement and the derived machine-checked
+        // badge (docs/mathematics.md §11.2); null when the claim has none.
+        formalization,
+        verification,
         subclaim_count: await getSubclaimCount(claim_id),
       };
       if (include.includes("provenance")) {
@@ -290,13 +325,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       }
       if (include.includes("arguments")) {
         const args = await getArgumentsForClaim(claim_id);
+        const checks = await leanChecksByArgument(claim_id);
         payload.arguments = args.map((a) => ({
           id: a.id,
           name: a.name,
           stance: a.stance,
           content: a.content,
           evidence_urls: a.evidenceUrls,
+          lean_check: checks.get(a.id) ?? null,
         }));
+      }
+      if (include.includes("proofs")) {
+        // Every check the platform ran on any version of the statement:
+        // verdict, mode, kind, gate, pin, and hash, never the source.
+        payload.proofs = await listLeanChecksForClaim(claim_id);
       }
       if (include.includes("dependents")) {
         // Paginated: an unbounded list let one hub claim push hundreds of rows
@@ -375,6 +417,34 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         page_url: claimPageUrl(claim_id),
         ...walk,
       });
+    }
+  );
+
+  server.registerTool(
+    "get_bounty_terms",
+    {
+      title: "Get the terms of a claim's prize",
+      description:
+        "The machine-readable terms of the live prize on a claim, for an " +
+        "outside solver: the amount and status, the formal statement it is " +
+        "pinned to (id, namespace, source and expression hashes, the Lean " +
+        "toolchain and Mathlib revision, and the URL of the statement file), " +
+        "the axioms a proof may use, the static policy the checker applies, " +
+        "the rules version in force, and whether claims are being accepted " +
+        "now (the statement's review period must have ended). Offering a " +
+        "prize does not change how the claim is assessed. Free.",
+      inputSchema: { claim_id: z.string().uuid() },
+    },
+    async ({ claim_id }) => {
+      const claim = await getClaimById(claim_id);
+      if (!claim) return errorResult("NOT_FOUND", "Claim not found");
+      const terms = await getBountyTerms(claim_id);
+      if (!terms) {
+        return errorResult("NO_BOUNTY", "No live prize is offered on this claim", {
+          page_url: claimPageUrl(claim_id),
+        });
+      }
+      return jsonResult({ ...terms, page_url: claimPageUrl(claim_id) });
     }
   );
 

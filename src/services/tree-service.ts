@@ -1,7 +1,37 @@
 import { rawQuery } from "../db/client.js";
 import type { TreeNode } from "../schemas/claim.js";
+import {
+  argumentLeanCheckLateralSql,
+  checkedKindSql,
+  formalExistsSql,
+  leanCheckSummaryFromLateral,
+  liveBountySql,
+  type LeanCheckSummary,
+} from "./formalization-service.js";
 
-interface TreeRootRow {
+/**
+ * The mathematics fields every node carries (docs/mathematics.md §8.3): the
+ * amount of a live bounty, whether a machine-checked proof or disproof of
+ * the published statement exists, and whether a published statement exists
+ * at all. Optional on the shared TreeNode type so older payloads still parse.
+ */
+export interface TreeNodeMathFields {
+  bounty_micro_usd: number | null;
+  checked: "proof" | "disproof" | null;
+  formal: boolean;
+  /** The accepted check behind a machine-checked argument, on each of its edges. */
+  argument_lean_check: LeanCheckSummary | null;
+}
+
+export type MathTreeNode = TreeNode & TreeNodeMathFields;
+
+interface MathRowFields {
+  bounty_micro_usd?: number | string | null;
+  checked?: string | null;
+  formal?: boolean | null;
+}
+
+interface TreeRootRow extends MathRowFields {
   id: string;
   text: string;
   claim_type: string;
@@ -15,7 +45,7 @@ interface TreeRootRow {
   seed_credence: number | null;
 }
 
-interface TreeEdgeRow {
+interface TreeEdgeRow extends MathRowFields {
   parent_id: string;
   id: string;
   text: string;
@@ -34,6 +64,30 @@ interface TreeEdgeRow {
   assessment_confidence: number | null;
   assessment_credence: number | null;
   seed_credence: number | null;
+  lean_check_id?: string | null;
+  lean_check_kind?: string | null;
+  lean_check_verdict?: string | null;
+  lean_check_at?: Date | null;
+  lean_check_pin_id?: string | null;
+  lean_check_sha256?: string | null;
+  lean_check_submitted_by?: string | null;
+}
+
+/** The per-node mathematics columns, for any query whose claim alias is `c`. */
+const NODE_MATH_SELECT_SQL = `pb.amount_micro_usd AS bounty_micro_usd,
+            ${checkedKindSql("c.id")} AS checked,
+            ${formalExistsSql("c.id")} AS formal`;
+const NODE_MATH_JOIN_SQL = `LEFT JOIN bounties pb ON pb.claim_id = c.id AND ${liveBountySql("pb")}`;
+
+function mathFields(row: MathRowFields): Omit<TreeNodeMathFields, "argument_lean_check"> {
+  return {
+    bounty_micro_usd:
+      row.bounty_micro_usd === null || row.bounty_micro_usd === undefined
+        ? null
+        : Number(row.bounty_micro_usd),
+    checked: row.checked === "proof" || row.checked === "disproof" ? row.checked : null,
+    formal: row.formal === true,
+  };
 }
 
 /**
@@ -83,9 +137,11 @@ export async function getClaimTree(
     `SELECT c.id, c.text, c.claim_type, c.state,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
-            CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence
+            CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
+            ${NODE_MATH_SELECT_SQL}
        FROM claims c
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       ${NODE_MATH_JOIN_SQL}
       WHERE c.id = $1`,
     [claimId]
   );
@@ -110,13 +166,19 @@ export async function getClaimTree(
               ae.verdict AS argument_verdict, ae.content AS argument_evaluation,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
               a.claim_credence AS assessment_credence,
-              CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence
+              CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
+              ${NODE_MATH_SELECT_SQL},
+              alc.lean_check_id, alc.lean_check_kind, alc.lean_check_verdict,
+              alc.lean_check_at, alc.lean_check_pin_id, alc.lean_check_sha256,
+              alc.lean_check_submitted_by
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.child_claim_id
          LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
          LEFT JOIN arguments arg ON arg.id = cr.argument_id
          LEFT JOIN argument_evaluations ae
                 ON ae.argument_id = cr.argument_id AND ae.is_current = true
+         LEFT JOIN LATERAL ${argumentLeanCheckLateralSql("arg")} alc ON true
+         ${NODE_MATH_JOIN_SQL}
         WHERE cr.parent_claim_id = ANY($1)
           AND c.state = 'active'
         ORDER BY cr.created_at, cr.id`,
@@ -157,6 +219,14 @@ export interface DependentClaim {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
+  // Mathematics (docs/mathematics.md §8.3), see TreeNodeMathFields.
+  bounty_micro_usd: number | null;
+  checked: "proof" | "disproof" | null;
+  formal: boolean;
+}
+
+function dependentRow<T extends MathRowFields>(row: T): T & Omit<TreeNodeMathFields, "argument_lean_check"> {
+  return { ...row, ...mathFields(row) };
 }
 
 /**
@@ -169,18 +239,21 @@ export interface DependentClaim {
  * chips plus a count) surface the most load-bearing dependents first.
  */
 export async function getClaimDependents(claimId: string): Promise<DependentClaim[]> {
-  return rawQuery<DependentClaim>(
+  const rows = await rawQuery<DependentClaim>(
     `SELECT cr.parent_claim_id AS id, c.text, c.claim_type,
             cr.relation_type, cr.reasoning, c.importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
-            a.claim_credence AS assessment_credence
+            a.claim_credence AS assessment_credence,
+            ${NODE_MATH_SELECT_SQL}
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.parent_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+     ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
      ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text`,
     [claimId]
   );
+  return rows.map(dependentRow);
 }
 
 /** One claim reached by walking upward, with how many edges away it sits. */
@@ -224,11 +297,13 @@ export async function getTransitiveDependents(
               cr.parent_claim_id AS id, c.text, c.claim_type,
               cr.relation_type, cr.reasoning, c.importance,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
-              a.claim_credence AS assessment_credence
+              a.claim_credence AS assessment_credence,
+              ${NODE_MATH_SELECT_SQL}
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.parent_claim_id
          LEFT JOIN assessments a
                 ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+         ${NODE_MATH_JOIN_SQL}
         WHERE cr.child_claim_id = ANY($1) AND c.state = 'active'
         ORDER BY cr.parent_claim_id, c.importance DESC`,
       [frontier]
@@ -242,7 +317,7 @@ export async function getTransitiveDependents(
         continue;
       }
       visited.add(row.id);
-      found.push({ ...row, depth });
+      found.push({ ...dependentRow(row), depth });
       next.push(row.id);
     }
     frontier = next;
@@ -276,10 +351,12 @@ export async function listClaimDependents(
             cr.relation_type, cr.reasoning, c.importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
+            ${NODE_MATH_SELECT_SQL},
             COUNT(*) OVER ()::text AS total
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.parent_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.parent_claim_id AND a.is_current = true
+     ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
      ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text
      LIMIT $2 OFFSET $3`,
@@ -296,7 +373,7 @@ export async function listClaimDependents(
     return { dependents: [], total: parseInt(count?.count ?? "0", 10) };
   }
   return {
-    dependents: rows.map(({ total: _total, ...dep }) => dep),
+    dependents: rows.map(({ total: _total, ...dep }) => dependentRow(dep)),
     total: parseInt(rows[0]!.total, 10),
   };
 }
@@ -340,7 +417,7 @@ function assembleTree(
     if (first) expanded.add(node.id);
     const edges = childEdges.get(node.id) ?? [];
 
-    const treeNode: TreeNode = {
+    const treeNode: MathTreeNode = {
       id: node.id,
       text: node.text,
       claim_type: node.claim_type,
@@ -359,6 +436,8 @@ function assembleTree(
       argument_content: edge?.argument_content ?? null,
       argument_verdict: edge?.argument_verdict ?? null,
       argument_evaluation: edge?.argument_evaluation ?? null,
+      ...mathFields(node),
+      argument_lean_check: edge ? leanCheckSummaryFromLateral(edge) : null,
       children: first ? edges.map((e) => render(e, e, depth + 1)) : [],
     };
     if (!first && edges.length > 0) treeNode.subtree_collapsed = true;

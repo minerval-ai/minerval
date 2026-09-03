@@ -27,9 +27,13 @@ describe("skill tool registry", () => {
 
   it("knows the declared skill tools and nothing else", () => {
     expect([...declaredSkillToolNames()].sort()).toEqual([
+      "decide_prize_claim",
+      "get_prize_claim",
+      "get_proof_attempt",
       "lean_check",
       "lean_elaborate",
       "lean_search",
+      "mark_problem_solved_by_platform",
       "publish_formalization",
     ]);
     expect(isSkillTool("lean_search")).toBe(true);
@@ -111,6 +115,10 @@ describe("skill tool registry", () => {
       "lean_elaborate",
       "lean_check",
       "publish_formalization",
+      "get_proof_attempt",
+      "mark_problem_solved_by_platform",
+      "get_prize_claim",
+      "decide_prize_claim",
     ]);
     expect(getActiveSkillToolDefinitions([], "claim-steward")).toEqual([]);
     expect(getActiveSkillToolDefinitions([m], "curator")).toEqual([]);

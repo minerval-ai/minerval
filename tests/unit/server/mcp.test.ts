@@ -48,6 +48,11 @@ const mocks = vi.hoisted(() => ({
     truncated: false,
   })),
   getArgumentsForClaim: vi.fn(async () => []),
+  getFormalizationSummary: vi.fn(async () => null as unknown),
+  getVerificationSummary: vi.fn(async () => null as unknown),
+  leanChecksByArgument: vi.fn(async () => new Map()),
+  listLeanChecksForClaim: vi.fn(async () => [] as unknown[]),
+  getBountyTerms: vi.fn(async () => null as unknown),
   matchClaim: vi.fn(),
   extractClaims: vi.fn(),
   createContribution: vi.fn(),
@@ -83,6 +88,13 @@ vi.mock("../../../src/services/tree-service.js", () => ({
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,
+}));
+vi.mock("../../../src/services/formalization-service.js", () => ({
+  getFormalizationSummary: mocks.getFormalizationSummary,
+  getVerificationSummary: mocks.getVerificationSummary,
+  leanChecksByArgument: mocks.leanChecksByArgument,
+  listLeanChecksForClaim: mocks.listLeanChecksForClaim,
+  getBountyTerms: mocks.getBountyTerms,
 }));
 vi.mock("../../../src/llm/agents/matcher.js", () => ({
   matchClaim: mocks.matchClaim,
@@ -344,6 +356,7 @@ describe("MCP tools", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "assess_text",
       "extract_claims",
+      "get_bounty_terms",
       "get_claim",
       "get_contribution_status",
       "get_decomposition",
@@ -690,6 +703,130 @@ describe("MCP tools", () => {
       code: "CONTRIBUTOR_SUSPENDED",
     });
     expect(mocks.createContribution).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("get_claim carries the formal statement and the badge beside the assessment, and proofs on request", async () => {
+    const formalization = {
+      id: "f1111111-1111-4111-8111-111111111111",
+      version: 1,
+      status: "published",
+      pin_id: "mathlib-v4.33.0",
+      namespace: "Minerval.S11111111_v1",
+      statement_source: "import Mathlib\n",
+      pp_type: "True",
+      source_hash: "src",
+      expr_hash: "expr",
+      correspondence: "The statement is the claim as stated.",
+      published_at: "2026-02-02T00:00:00.000Z",
+      review_period_ends_at: "2026-02-16T00:00:00.000Z",
+    };
+    const verification = {
+      kind: "proof",
+      lean_check_id: "lc-1",
+      checked_at: "2026-03-01T00:00:00.000Z",
+      formalization_id: formalization.id,
+      pin_id: "mathlib-v4.33.0",
+    };
+    mocks.getFormalizationSummary.mockResolvedValueOnce(formalization);
+    mocks.getVerificationSummary.mockResolvedValueOnce(verification);
+    mocks.listLeanChecksForClaim.mockResolvedValueOnce([
+      { id: "lc-1", kind: "proof", verdict: "accepted", mode: "steward", formalization_id: formalization.id },
+    ]);
+    const result = await client.callTool({
+      name: "get_claim",
+      arguments: { claim_id: CLAIM_ID, include: ["proofs"] },
+    });
+    const payload = parseText(result);
+    expect(payload.assessment).toMatchObject({ status: "well_supported" });
+    expect(payload.formalization).toEqual(formalization);
+    expect(payload.verification).toEqual(verification);
+    expect(payload.proofs).toEqual([
+      { id: "lc-1", kind: "proof", verdict: "accepted", mode: "steward", formalization_id: formalization.id },
+    ]);
+    expect(payload.instances).toBeUndefined();
+
+    // Without a statement the fields are null, never absent.
+    const plain = parseText(
+      await client.callTool({ name: "get_claim", arguments: { claim_id: CLAIM_ID } })
+    );
+    expect(plain.formalization).toBeNull();
+    expect(plain.verification).toBeNull();
+    expect(plain.proofs).toBeUndefined();
+    await client.close();
+  });
+
+  it("search_claims carries prize_micro_usd and checked, and passes with_prizes and claim_type through", async () => {
+    mocks.hybridSearch.mockResolvedValueOnce({
+      results: [
+        {
+          id: CLAIM_ID,
+          text: "There are infinitely many twin primes",
+          claim_type: "mathematical",
+          state: "active",
+          similarity_score: 0.9,
+          importance: 0.5,
+          assessment_status: "unsupported",
+          assessment_confidence: 0.9,
+          prize_micro_usd: 2_500_000_000,
+          checked: null,
+        },
+      ],
+      total: 1,
+    });
+    const result = await client.callTool({
+      name: "search_claims",
+      arguments: { query: "twin primes", with_prizes: true, claim_type: "mathematical" },
+    });
+    const payload = parseText(result) as { results: Array<Record<string, unknown>> };
+    expect(payload.results[0]).toMatchObject({
+      id: CLAIM_ID,
+      prize_micro_usd: 2_500_000_000,
+      checked: null,
+    });
+    expect(mocks.hybridSearch).toHaveBeenLastCalledWith(
+      "twin primes",
+      expect.objectContaining({ withPrizes: true, claimType: "mathematical" })
+    );
+    // A result the service left unmarked still carries both fields as null.
+    const plain = parseText(
+      await client.callTool({ name: "search_claims", arguments: { query: "inflation" } })
+    ) as { results: Array<Record<string, unknown>> };
+    expect(plain.results[0]).toMatchObject({ prize_micro_usd: null, checked: null });
+    await client.close();
+  });
+
+  it("get_bounty_terms returns the live terms, or NO_BOUNTY", async () => {
+    const terms = {
+      claim_id: CLAIM_ID,
+      bounty_id: "b-1",
+      amount_micro_usd: 2_500_000_000,
+      status: "open",
+      allowed_axioms: ["propext", "Classical.choice", "Quot.sound"],
+      window: { state: "open", accepting_claims: true },
+    };
+    mocks.getBountyTerms.mockResolvedValueOnce(terms);
+    const result = await client.callTool({
+      name: "get_bounty_terms",
+      arguments: { claim_id: CLAIM_ID },
+    });
+    expect(parseText(result)).toMatchObject({
+      ...terms,
+      page_url: `https://minerval.ai/claims/${CLAIM_ID}`,
+    });
+
+    const none = await client.callTool({
+      name: "get_bounty_terms",
+      arguments: { claim_id: CLAIM_ID },
+    });
+    expect(none.isError).toBe(true);
+    expect(parseText(none).error).toMatchObject({ code: "NO_BOUNTY" });
+
+    const missing = await client.callTool({
+      name: "get_bounty_terms",
+      arguments: { claim_id: OTHER_ID },
+    });
+    expect(parseText(missing).error).toMatchObject({ code: "NOT_FOUND" });
     await client.close();
   });
 

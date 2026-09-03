@@ -22,6 +22,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
+import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
 
 export type ActionKind =
@@ -58,9 +59,27 @@ export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 export const INGEST_GROUP = (url: string) => `ingest:${url}`;
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
+/** One statement per claim at a time: one group, one variant (§5.4). */
+export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
+/** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
+export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
+  `attempt:${formalizationId}:${n}`;
+
+/** The two solver variants every attempt group carries as siblings (§7.2). */
+export const ATTEMPT_VARIANTS = ["standard", "max"] as const;
 
 /** How often a mandate's Grantmaker takes a review pass. */
 const REVIEW_CADENCE_HOURS = 24;
+
+/**
+ * A formalize item whose claim still has no published statement is wanted
+ * again after this long: the same pacing as the mandate's review pass, so
+ * a returned-to-draft statement is retried without a hot loop.
+ */
+const FORMALIZE_RETRY_HOURS = 24;
+
+/** A live attempt stamps updated_at every turn; only a dead worker trips this. */
+const ATTEMPT_REOPEN_HOURS = 3;
 
 /** Coverage subquery for one actions row `a` (SQL fragment). */
 export const COVERAGE_SQL = `
@@ -157,13 +176,24 @@ export async function reconcileActions(): Promise<{
     name: string;
     status: string;
     policy: string;
-    plan: { items?: Array<{ action: string; url?: string }> } | null;
+    plan: {
+      items?: Array<{ action: string; url?: string; claim_id?: string; variant?: string }>;
+    } | null;
     plan_cursor: number;
   }>(
     `SELECT id, name, status, policy, plan, plan_cursor FROM grants
       WHERE status IN ('active', 'planning')`
   );
   const ingestCost = capMicroUsd("source_ingest");
+  // The strong-tier estimate the formalize rows carry (two strong passes),
+  // computed once per sweep and only when some plan asks for one.
+  let strongPassMicroUsd: number | null = null;
+  const formalizeCostMicroUsd = async (): Promise<number> => {
+    if (strongPassMicroUsd === null) {
+      strongPassMicroUsd = (await stewardTierCostEstimates()).strongMicroUsd;
+    }
+    return Math.round(strongPassMicroUsd * 2);
+  };
   for (const g of grants) {
     if (g.status === "planning") {
       await rawQuery(
@@ -252,7 +282,54 @@ export async function reconcileActions(): Promise<{
         [INGEST_GROUP(item.url), item.url, `Ingest ${item.url}`, ingestCost]
       );
     }
+
+    // Formal statements and solver attempts from an active mandate's plan
+    // (docs/mathematics.md §5.4, §7.2). Both cost strong-tier money, so a
+    // plan still awaiting approval opens nothing.
+    if (g.status === "active") {
+      const formalizeClaims = new Set(
+        items
+          .filter((it) => it.action === "formalize" && it.claim_id)
+          .map((it) => it.claim_id!)
+      );
+      for (const claimId of formalizeClaims) {
+        await ensureFormalizeAction(claimId, await formalizeCostMicroUsd());
+      }
+      const attemptItems = new Map<string, number>();
+      for (const it of items) {
+        if (it.action !== "attempt_proof" || !it.claim_id) continue;
+        attemptItems.set(it.claim_id, (attemptItems.get(it.claim_id) ?? 0) + 1);
+      }
+      if (attemptItems.size > 0) {
+        const policy = await getMandateAllocationPolicy(g.id);
+        const owl = loadConfig().owlCostMicroUsd;
+        const costs = {
+          standard: Math.round(policy.est_attempt_standard_cost_owls * owl),
+          max: Math.round(policy.est_attempt_max_cost_owls * owl),
+        };
+        for (const [claimId, wanted] of attemptItems) {
+          await ensureAttemptActions(claimId, wanted, costs);
+        }
+      }
+    }
   }
+
+  // A formalize row is pointless once the claim carries a published
+  // statement (an ordinary pass may have published one); an attempt row is
+  // pointless once its statement is no longer published (§7.2).
+  await rawQuery(
+    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+      WHERE a.status = 'open' AND a.kind = 'formalize'
+        AND EXISTS (SELECT 1 FROM claim_formalizations f
+                     WHERE f.claim_id = a.claim_id AND f.status = 'published')`
+  );
+  await rawQuery(
+    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+      WHERE a.status = 'open' AND a.kind = 'attempt_proof'
+        AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
+                         WHERE f.id::text = split_part(a.exclusion_group, ':', 2)
+                           AND f.status = 'published')`
+  );
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
@@ -271,15 +348,98 @@ export async function reconcileActions(): Promise<{
   // longer window: they legitimately stay 'running' while the async
   // extraction worker holds them (which completes or cancels them itself),
   // and reopening one early re-submits the source — a second metered
-  // extraction charged to the same funders.
+  // extraction charged to the same funders. A solver attempt stamps
+  // updated_at every turn (§7.9), so three untouched hours means a dead
+  // worker, not a long proof.
   await rawQuery(
     `UPDATE actions SET status = 'open', updated_at = now()
       WHERE status = 'running'
-        AND ((kind <> 'ingest' AND updated_at < now() - interval '60 minutes')
-             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours'))`
+        AND ((kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes')
+             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours')
+             OR (kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length };
+}
+
+/**
+ * Open (or keep) the formalize row for a claim that has no published
+ * statement: group `formalize:<claim_id>`, one variant. A closed row is
+ * wanted again after FORMALIZE_RETRY_HOURS while the claim still lacks a
+ * published statement (a returned-to-draft statement retried on the
+ * review cadence); a claim with a published statement opens nothing.
+ */
+export async function ensureFormalizeAction(
+  claimId: string,
+  costEstMicroUsd: number
+): Promise<void> {
+  await rawQuery(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
+     SELECT 'formalize', $1, 'standard', c.id,
+            'Formalize: ' || left(c.text, 280), $3
+       FROM claims c
+      WHERE c.id = $2 AND c.state = 'active'
+        AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
+                         WHERE f.claim_id = c.id AND f.status = 'published')
+     ON CONFLICT (exclusion_group, variant) DO UPDATE
+       SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           status = 'open', updated_at = now()
+       WHERE actions.status IN ('done', 'cancelled', 'superseded')
+         AND actions.updated_at < now() - make_interval(hours => ${FORMALIZE_RETRY_HOURS})`,
+    [FORMALIZE_GROUP(claimId), claimId, Math.round(costEstMicroUsd)]
+  );
+}
+
+/**
+ * Open the next attempt group on a claim's published statement when the
+ * plan asks for more attempts than the ledger has opened: group
+ * `attempt:<formalization_id>:<n>` with `n` one more than the closed
+ * attempts on that statement, and the two variants as sibling rows. Each
+ * plan item entitles one group; a group still open or running blocks the
+ * next; a claim without a published statement opens nothing.
+ */
+export async function ensureAttemptActions(
+  claimId: string,
+  wantedGroups: number,
+  costs: { standard: number; max: number }
+): Promise<void> {
+  const [formalization] = await rawQuery<{ id: string }>(
+    `SELECT id FROM claim_formalizations
+      WHERE claim_id = $1 AND status = 'published'`,
+    [claimId]
+  );
+  if (!formalization) return;
+  const [state] = await rawQuery<{ groups: number; live: number }>(
+    `SELECT COUNT(DISTINCT exclusion_group)::int AS groups,
+            COUNT(*) FILTER (WHERE status IN ('open', 'running'))::int AS live
+       FROM actions
+      WHERE kind = 'attempt_proof' AND exclusion_group LIKE $1`,
+    [`attempt:${formalization.id}:%`]
+  );
+  const groups = Number(state?.groups ?? 0);
+  const live = Number(state?.live ?? 0);
+  if (live > 0 || groups >= wantedGroups) return;
+  const n = groups + 1;
+  for (const variant of ATTEMPT_VARIANTS) {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
+       SELECT 'attempt_proof', $1, $2, c.id, $3,
+              'Attempt ' || $4::text || ' (' || $2 || '): ' || left(c.text, 260), $5
+         FROM claims c
+        WHERE c.id = $6 AND c.state = 'active'
+       ON CONFLICT (exclusion_group, variant) DO NOTHING`,
+      [
+        ATTEMPT_GROUP(formalization.id, n),
+        variant,
+        formalization.id,
+        String(n),
+        Math.round(costs[variant]),
+        claimId,
+      ]
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

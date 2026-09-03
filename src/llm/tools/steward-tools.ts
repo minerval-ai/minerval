@@ -41,6 +41,7 @@ import {
   enqueueCurator,
 } from "../../services/queue-service.js";
 import { getUsageContext } from "../usage-context.js";
+import { demotePublishedFormalization } from "../../services/formalization-service.js";
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -1008,11 +1009,33 @@ export async function executeStewardTool(
           })
           .where(eq(claims.id, claimId));
 
+        // The mechanical consequence (docs/mathematics.md §5.7): a wording
+        // change may change the proposition, so a published formal
+        // statement returns to reviewed pending re-publication, and an open
+        // bounty bound to it moves to rebinding in the same transaction.
+        const reasoning = typeof input.reasoning === "string" ? input.reasoning : "";
+        const demotion = await demotePublishedFormalization(claimId, {
+          reason: `canonical form changed${reasoning ? ` (${reasoning.slice(0, 300)})` : ""}`,
+          runId: getUsageContext().runId ?? null,
+        });
+
         return JSON.stringify({
           success: true,
           message:
             `Canonical form updated for claim ${claimId}` +
-            (claimType !== undefined ? `; claim_type set to ${claimType}` : ""),
+            (claimType !== undefined ? `; claim_type set to ${claimType}` : "") +
+            (demotion.formalization
+              ? `. The published formal statement (version ${demotion.formalization.version}, ` +
+                `${demotion.formalization.id}) was returned to reviewed pending re-publication: a ` +
+                `canonical-form change may change the proposition, so a fresh-context review must ` +
+                `confirm the statement still matches before it is published again.`
+              : "") +
+            (demotion.bounties.length > 0
+              ? ` The open bounty bound to it (${demotion.bounties.join(", ")}) is now rebinding ` +
+                `and accepts no claim until the statement is re-published.`
+              : ""),
+          formalization_demoted: demotion.formalization?.id ?? null,
+          bounties_rebinding: demotion.bounties,
         });
       }
 

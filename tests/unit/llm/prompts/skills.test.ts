@@ -95,18 +95,24 @@ describe("the Mathematics skill", () => {
     for (const s of m.sections) expect(s.body.length).toBeGreaterThan(50);
   });
 
-  it("declares the four Lean tools with their roles", () => {
+  it("declares the eight tools with their roles", () => {
     const m = getSkill("mathematics");
     expect(m.tools.map((t) => t.name)).toEqual([
       "lean_search",
       "lean_elaborate",
       "lean_check",
       "publish_formalization",
+      "get_proof_attempt",
+      "mark_problem_solved_by_platform",
+      "get_prize_claim",
+      "decide_prize_claim",
     ]);
     for (const t of m.tools.slice(0, 3)) {
       expect(t.roles).toEqual(["claim-steward", "math-solver"]);
     }
     expect(m.tools[3]!.roles).toEqual(["claim-steward"]);
+    expect(m.tools[4]!.roles).toEqual(["claim-steward", "audit-agent"]);
+    expect(m.tools[6]!.roles).toEqual(["claim-steward", "audit-agent"]);
   });
 
   it("is the only skill and owns the only known domain", () => {
@@ -222,6 +228,10 @@ describe("views", () => {
       "lean_elaborate",
       "lean_check",
       "publish_formalization",
+      "get_proof_attempt",
+      "mark_problem_solved_by_platform",
+      "get_prize_claim",
+      "decide_prize_claim",
     ]);
     expect(Object.keys(steward[0]!).sort()).toEqual(["description", "input_schema", "name"]);
     expect(getSkillToolDefinitions(m, "math-solver").map((t) => t.name)).toEqual([

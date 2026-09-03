@@ -39,10 +39,137 @@ import {
   getActiveSkillToolDefinitions,
   isSkillTool,
 } from "../tools/skill-tools.js";
+import { isLeanTool } from "../tools/lean-tools.js";
 import { sanitizeDomains } from "./skill-selection.js";
 import { getClaimById } from "../../services/claim-service.js";
+import { leanCheckerConfigured } from "../../services/lean-checker-client.js";
+import {
+  getFormalizationById,
+  listFormalizations,
+} from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
+
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** The ordinary stewardship task: structure (or re-judge) and assess. */
+function defaultSteps(structureStep: string): string {
+  return `1. Use get_claim_with_context to understand the claim, its subclaims and their
+   assessments, its source instances (note each instance's affirm/deny stance),
+   and its current assessment if any.
+${structureStep}
+3. Gauge the claim's importance: how much it is worth getting right
+   (consequence-if-wrong × liveness), NOT mere dependency count.
+   get_claim_dependents is only a local signal; an uncontested or niche claim is
+   low importance even with many local dependents. Scale effort accordingly:
+   consequential, contested claims warrant deeper search and a second, adversarial
+   pass; minor or settled claims warrant a light touch.
+4. Reach a holistic assessment using your judgment (no mechanical aggregation).
+   Use web_search for external evidence where it would change the verdict.
+   Credible instances that BOTH affirm and deny the claim are a strong signal
+   toward CONTESTED. When a source you read itself asserts the claim (or its
+   negation) — not merely reports on the debate — record that sighting with
+   record_claim_instance as you go (see "Recording Instances").
+5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
+   **assessment** (an encyclopedia-style account of where the claim stands, no
+   internal machinery or bookkeeping) and the **reasoning_trace** (the audit
+   detail behind the verdict). See "Writing the Assessment: Two Audiences".
+6. If the canonical form needs improving, use update_canonical_form.
+7. Log your decision with log_stewardship_decision.
+8. If you established or changed a material assessment, use
+   notify_dependent_stewards so claims that depend on this one are re-judged.`;
+}
+
+/**
+ * The trigger-specific task for the two formalization triggers
+ * (docs/mathematics.md §5.4): the first pass drafts, elaborates, reviews,
+ * and records `reviewed`; the second, in a fresh context, publishes or
+ * returns the statement to draft. Each carries the record it needs inline,
+ * since the Steward has no tool that fetches a statement by id.
+ */
+async function formalizationTask(
+  trigger: string,
+  claimId: string,
+  context: string,
+  formalToolsPresent: boolean
+): Promise<string | null> {
+  if (trigger !== "formalize" && trigger !== "formalization_review") return null;
+  if (!formalToolsPresent) {
+    return `This run was triggered to ${
+      trigger === "formalize" ? "write" : "review"
+    } the claim's formal statement, but the formal tools are unavailable this run
+(no Lean checker is configured). Do not record or publish anything: log with
+log_stewardship_decision that the formalization could not proceed, and stop.`;
+  }
+  if (trigger === "formalize") {
+    const versions = await listFormalizations(claimId).catch(() => []);
+    const history =
+      versions.length > 0
+        ? `\nStatements already recorded for this claim (newest first):\n` +
+          versions
+            .map(
+              (v) =>
+                `- version ${v.version} (${v.status}, ${v.namespace}, pin ${v.pin_id})` +
+                (v.review_notes ? `\n  review notes: ${v.review_notes.slice(0, 600)}` : "") +
+                (v.status === "reviewed"
+                  ? `\n  This version awaits the fresh-context review; a new draft supersedes it only if it is wrong.`
+                  : "")
+            )
+            .join("\n") +
+          "\n"
+        : "\nNo formal statement has been recorded for this claim yet.\n";
+    return `You have been triggered to write this claim's formal statement.
+${history}
+Proceed:
+1. Use get_claim_with_context to read the claim, its canonical form, and its
+   instances; the statement must render the proposition as the discourse
+   states it.
+2. Draft the statement in the checker's convention (a \`def Statement : Prop\`
+   taking every definition from Mathlib), using lean_search for names and
+   lean_elaborate until it type-checks. Where hypotheses could be vacuous,
+   include a witness \`example\`.
+3. Read the elaborated statement as an adversary would, against the vacuity
+   checklist in the Mathematics skill. Where a community formalization
+   exists, start from it and cite it in your review notes.
+4. Record it once with publish_formalization (statement_source,
+   correspondence in the graph's voice, review_notes for the audit). The
+   server re-elaborates it and stores it as reviewed; a second Steward in a
+   fresh context decides publication. Do not pass confirm.
+5. Log your decision with log_stewardship_decision. Do not reassess the
+   claim in this run unless what you learned changes its assessment.`;
+  }
+  const id = context.match(UUID_RE)?.[0] ?? null;
+  const row = id ? await getFormalizationById(id).catch(() => null) : null;
+  const record = row
+    ? `Formalization ${row.id} (version ${row.version}, status ${row.status}, ${row.namespace}, pin ${row.pin_id}):
+
+Statement file (as elaborated; pp_type: ${row.pp_type}; witness present: ${row.witness_present}):
+${row.statement_source}
+
+Correspondence note: ${row.correspondence ?? "(none)"}
+
+Author's review notes: ${row.review_notes ?? "(none)"}`
+    : `The formalization named in the context (${context}) could not be loaded; if it does not exist, log that and stop.`;
+  return `You are the second, fresh-context reviewer of a formal statement another
+Steward pass drafted (Mathematics skill: "every line correct, wrong theorem" is
+the failure no checker catches).
+
+${record}
+
+Proceed:
+1. Use get_claim_with_context to read the claim as the discourse states it.
+2. Judge fidelity against the vacuity checklist: does the statement say
+   neither more nor less than the canonical form, are its hypotheses
+   satisfiable, are the trivial witnesses the informal problem excludes
+   excluded, do the definitions match Mathlib's and the literature's, and
+   does the correspondence note say what the formal statement leaves out?
+   Use lean_elaborate to probe anything you doubt.
+3. Decide with one call: publish_formalization with confirm: true and this
+   formalization_id to publish it, or confirm: false with review_notes
+   naming the defect to return it to draft. Pass the statement as recorded;
+   do not edit it in this pass.
+4. Log your decision with log_stewardship_decision.`;
+}
 
 // Tag every LLM call in this agent for the per-token meter (#70), and
 // attribute it to the claim being stewarded (#217) so per-claim cost — the
@@ -108,7 +235,16 @@ async function runClaimStewardImpl(input: {
   // backstop.
   const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
   const skills = skillsForDomains(claimDomains);
-  const skillTools = getActiveSkillToolDefinitions(skills, "claim-steward");
+  // The Lean tools are present exactly when the skill is active AND a
+  // checker is configured (docs/mathematics.md §6.2); without a checker the
+  // run is told the formal tools are unavailable and assesses on the
+  // informal evidence. The skill's other tools are not gated on the checker.
+  const checkerConfigured = leanCheckerConfigured(config);
+  const allSkillTools = getActiveSkillToolDefinitions(skills, "claim-steward");
+  const skillTools = checkerConfigured
+    ? allSkillTools
+    : allSkillTools.filter((t) => !isLeanTool(t.name));
+  const leanToolsWithheld = allSkillTools.some((t) => isLeanTool(t.name)) && !checkerConfigured;
 
   const tools = [
     ...graphTools,
@@ -169,8 +305,21 @@ Domain skills active for this run: ${skills
           skillTools.length > 0
             ? `, and the tools it brings (${skillTools.map((t) => t.name).join(", ")}) are in your toolset`
             : ""
-        }.`
+        }.${
+          leanToolsWithheld
+            ? ` The formal tools are unavailable this run: no Lean checker is configured, so the lean_* tools and publish_formalization are absent. Assess on the informal evidence, and record in your reasoning trace that formal verification was unavailable.`
+            : ""
+        }`
       : "";
+
+  const formalTask = await formalizationTask(
+    input.trigger,
+    input.claimId,
+    input.context,
+    skillTools.some((t) => isLeanTool(t.name))
+  );
+
+  const defaultTask = `You OWN this claim: its structure (decomposition) and its assessment. Proceed:`;
 
   const userMessage = `You have been triggered to steward a claim.
 
@@ -186,31 +335,8 @@ assessment (update_claim_assessment) and logged your decision
 mid-task. If you are warned that few iterations remain, stop exploring and record
 your conclusion immediately.
 
-You OWN this claim: its structure (decomposition) and its assessment. Proceed:
-1. Use get_claim_with_context to understand the claim, its subclaims and their
-   assessments, its source instances (note each instance's affirm/deny stance),
-   and its current assessment if any.
-${structureStep}
-3. Gauge the claim's importance: how much it is worth getting right
-   (consequence-if-wrong × liveness), NOT mere dependency count.
-   get_claim_dependents is only a local signal; an uncontested or niche claim is
-   low importance even with many local dependents. Scale effort accordingly:
-   consequential, contested claims warrant deeper search and a second, adversarial
-   pass; minor or settled claims warrant a light touch.
-4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   Use web_search for external evidence where it would change the verdict.
-   Credible instances that BOTH affirm and deny the claim are a strong signal
-   toward CONTESTED. When a source you read itself asserts the claim (or its
-   negation) — not merely reports on the debate — record that sighting with
-   record_claim_instance as you go (see "Recording Instances").
-5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
-   **assessment** (an encyclopedia-style account of where the claim stands, no
-   internal machinery or bookkeeping) and the **reasoning_trace** (the audit
-   detail behind the verdict). See "Writing the Assessment: Two Audiences".
-6. If the canonical form needs improving, use update_canonical_form.
-7. Log your decision with log_stewardship_decision.
-8. If you established or changed a material assessment, use
-   notify_dependent_stewards so claims that depend on this one are re-judged.${elicitNote}${skillsNote}`;
+${formalTask ?? `${defaultTask}
+${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
 
   // One cached block for the constitution and role, plus one per active skill,
   // so the shared block's cache entry is the same for skilled and unskilled runs.

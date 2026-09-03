@@ -81,7 +81,10 @@ fifteen words, rarely more than twenty-five.
   disambiguate the span.
 - **proposed_canonical_form**: as above.
 - **claim_type**: empirical_verifiable, empirical_derived, definitional
-  (contested definitions only), evaluative, causal, or normative.
+  (contested definitions only), evaluative, causal, normative, or
+  mathematical (a proposition of mathematics: true or false by proof rather
+  than by observation, settled by a proof others can check, and most firmly
+  by one a machine has checked).
 - **confidence**: 0 to 1, how sure you are that this is a well-formed,
   reusable claim. It scores form, not truth; the pipeline drops
   low-confidence extractions as a backstop against non-claims entering the

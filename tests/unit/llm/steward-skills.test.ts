@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     stewardLeanMaxElaborationsPerRun: 1,
     stewardLeanMaxChecksPerRun: 3,
     elicitApiKey: "",
+    leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
   },
 }));
@@ -53,6 +54,27 @@ vi.mock("../../../src/llm/tools/elicit-tools.js", () => ({
   ELICIT_TOOL_PREFIX: "elicit_",
 }));
 
+vi.mock("../../../src/llm/tools/lean-tools.js", () => {
+  const names = ["lean_search", "lean_elaborate", "lean_check", "publish_formalization"];
+  return {
+    LEAN_TOOL_NAMES: names,
+    isLeanTool: (name: string) => names.includes(name),
+    registerLeanTools: (register: (name: string, executor: () => Promise<string>) => void) => {
+      for (const name of names) {
+        register(name, async () =>
+          JSON.stringify({ success: false, message: `${name}: stub executor reached` })
+        );
+      }
+    },
+  };
+});
+
+vi.mock("../../../src/services/formalization-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/formalization-service.js")>()),
+  getFormalizationById: vi.fn(async () => null),
+  listFormalizations: vi.fn(async () => []),
+}));
+
 vi.mock("../../../src/llm/tools/matcher-tools.js", () => ({
   getMatcherToolDefinition: () => ({
     name: "match_claim",
@@ -74,6 +96,7 @@ vi.mock("../../../src/llm/client.js", async () => {
 });
 
 import { runClaimSteward } from "../../../src/llm/agents/claim-steward.js";
+import { getSkill } from "../../../src/llm/prompts/skills.js";
 
 const CLAIM_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 
@@ -128,15 +151,19 @@ describe("Steward toolset with the mathematics tag", () => {
   it("splices the skill block after the role and the Lean tools before web_search", async () => {
     const opts = await run(["mathematics"]);
     const names = opts.tools.map((t) => t.name);
-    expect(names.slice(-5)).toEqual([
+    // The skill's tools sit as one block after match_claim (and the Elicit
+    // tools, absent here) and before web_search, the Lean four first.
+    const first = names.indexOf("lean_search");
+    expect(names.indexOf("match_claim")).toBe(first - 1);
+    expect(names.slice(first, first + 4)).toEqual([
       "lean_search",
       "lean_elaborate",
       "lean_check",
       "publish_formalization",
-      "web_search",
     ]);
-    // Fixed position: after match_claim (and the Elicit tools, absent here).
-    expect(names.indexOf("match_claim")).toBe(names.indexOf("lean_search") - 1);
+    expect(names.at(-1)).toBe("web_search");
+    const skillTools = getSkill("mathematics").tools.map((t) => t.name);
+    expect(names.slice(first, -1).every((n) => skillTools.includes(n))).toBe(true);
 
     // Two cached blocks: the constitution-plus-role block, unchanged, then
     // the skill's Steward view as its own block.
@@ -171,12 +198,12 @@ describe("Steward toolset with the mathematics tag", () => {
     );
   });
 
-  it("routes skill tools to the registry, which reports them unconfigured", async () => {
+  it("routes skill tools to the registry's executors", async () => {
     const opts = await run(["mathematics"]);
     const out = JSON.parse(await opts.executeTool("lean_elaborate", { statement: "theorem t : True := trivial" }));
     expect(out).toEqual({
       success: false,
-      message: "Lean tools are not configured in this deployment.",
+      message: "lean_elaborate: stub executor reached",
     });
   });
 });
@@ -187,8 +214,8 @@ describe("per-run Lean caps", () => {
     const first = JSON.parse(await opts.executeTool("lean_search", { query: "a" }));
     const second = JSON.parse(await opts.executeTool("lean_search", { query: "b" }));
     const third = JSON.parse(await opts.executeTool("lean_search", { query: "c" }));
-    expect(first.message).toMatch(/not configured/);
-    expect(second.message).toMatch(/not configured/);
+    expect(first.message).toMatch(/stub executor reached/);
+    expect(second.message).toMatch(/stub executor reached/);
     expect(third.success).toBe(false);
     expect(third.message).toMatch(/already made 2 Mathlib searches, the per-run backstop \(2\)/);
   });
@@ -205,14 +232,14 @@ describe("per-run Lean caps", () => {
     const opts = await run(["mathematics"]);
     const base = { formalization_id: "f", kind: "proof" };
     const fresh = JSON.parse(await opts.executeTool("lean_check", { ...base, replay: "fresh" }));
-    expect(fresh.message).toMatch(/not configured/);
+    expect(fresh.message).toMatch(/stub executor reached/);
     // 2 of 3 used: another fresh replay would need 4.
     const secondFresh = JSON.parse(await opts.executeTool("lean_check", { ...base, replay: "fresh" }));
     expect(secondFresh.success).toBe(false);
     expect(secondFresh.message).toMatch(/used 2 of its 3 proof checks/);
     // A module replay still fits (3 of 3), then nothing does.
     const plain = JSON.parse(await opts.executeTool("lean_check", base));
-    expect(plain.message).toMatch(/not configured/);
+    expect(plain.message).toMatch(/stub executor reached/);
     const over = JSON.parse(await opts.executeTool("lean_check", base));
     expect(over.success).toBe(false);
     expect(over.message).toMatch(/used 3 of its 3 proof checks/);
@@ -224,7 +251,48 @@ describe("per-run Lean caps", () => {
       const out = JSON.parse(
         await opts.executeTool("publish_formalization", { claim_id: CLAIM_ID })
       );
-      expect(out.message).toMatch(/not configured/);
+      expect(out.message).toMatch(/stub executor reached/);
     }
+  });
+});
+
+describe("Steward toolset with the mathematics tag but no checker", () => {
+  const withoutChecker = async (domains: string[]) => {
+    const saved = mocks.config.leanCheckerUrl;
+    mocks.config.leanCheckerUrl = "";
+    try {
+      return await run(domains);
+    } finally {
+      mocks.config.leanCheckerUrl = saved;
+    }
+  };
+
+  it("keeps the skill block but withholds the Lean tools, and says so in the task", async () => {
+    const opts = await withoutChecker(["mathematics"]);
+    const names = opts.tools.map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("lean_"))).toEqual([]);
+    expect(names).not.toContain("publish_formalization");
+    expect(names.at(-1)).toBe("web_search");
+    // The skill itself is still active: its block and its name in the task.
+    expect(opts.system).toHaveLength(2);
+    expect(opts.system[1]!.startsWith("# Domain skill: Mathematics")).toBe(true);
+    const task = opts.initialMessages[0]!.content;
+    expect(task).toContain("Domain skills active for this run: mathematics (version 1)");
+    expect(task).toContain("formal tools are unavailable this run");
+    expect(task).toContain("formal verification was unavailable");
+    expect(mocks.loopSkills).toEqual([["mathematics"]]);
+  });
+
+  it("says nothing about formal tools on a claim outside the domain", async () => {
+    const opts = await withoutChecker([]);
+    expect(opts.initialMessages[0]!.content).not.toContain("formal tools are unavailable");
+  });
+
+  it("the ordinary toolset is unchanged by the checker being absent", async () => {
+    const withChecker = (await run(["mathematics"])).tools.map((t) => t.name);
+    const without = (await withoutChecker(["mathematics"])).tools.map((t) => t.name);
+    expect(without).toEqual(
+      withChecker.filter((n) => !n.startsWith("lean_") && n !== "publish_formalization")
+    );
   });
 });
