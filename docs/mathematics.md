@@ -2054,8 +2054,8 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   above `PRIZE_HUMAN_SIGNOFF_IMPORTANCE` (0.6), the contribution is in
   `human_review`, an Arbitrator outcome on a challenge was `human_review`,
   the second-opinion checker disagreed with the verdict, the Steward's
-  decision was served by a fallback model, or the payout provider's
-  screening returned anything but clear. In v1 the founder signs; a panel of
+  decision was served by a fallback model, or the sanctions screening
+  returned anything but clear. In v1 the founder signs; a panel of
   named mathematicians replaces one signer as prizes grow (at $2,500 one
   named mathematician, at $10,000 or importance 0.9 a panel of three with
   two subject experts), and the founder decides when to convene it (section
@@ -2977,9 +2977,8 @@ job.
 - The epoch bump to `2026-09-domain-skills` and the corpus baseline run on
   the existing clusters, then the mathematics cluster's first three
   sub-cases.
-- Day one, in parallel and off the engineering path: write to Stripe
-  (section 9.2); send counsel items 1 to 5 (section 9.3); decide the figures
-  (section 15).
+- Day one, in parallel and off the engineering path: send counsel items 1
+  to 7 (section 9.3); decide the figures (section 15).
 
 **Phase 1: formal statements (about two weeks).**
 - `claim_formalizations` and `lean_checks`; the checker v0 on one instance,
