@@ -46,8 +46,16 @@ export interface RunAttribution {
   requestId?: string | null;
 }
 
-export function traceLevel(): "off" | "full" {
+/**
+ * The trace level in force, optionally for one agent. TRACE_ALWAYS_AGENTS
+ * (docs/mathematics.md §7.4; `math_solver` by default) forces tracing on
+ * for the named agents whatever TRACE_LEVEL says, production included: the
+ * solver's transcript is the evidence a prize review relies on, and the
+ * production default is otherwise off.
+ */
+export function traceLevel(agent?: string): "off" | "full" {
   const config = loadConfig();
+  if (agent && (config.traceAlwaysAgents ?? []).includes(agent)) return "full";
   if (config.traceLevel) return config.traceLevel;
   if (config.env === "production" || process.env.VITEST) return "off";
   return "full";
@@ -65,7 +73,7 @@ export function startAgentRun(
   agent: string,
   attribution: RunAttribution
 ): AgentTrace | null {
-  if (traceLevel() === "off") return null;
+  if (traceLevel(agent) === "off") return null;
   const runId = randomUUID();
   void (async () => {
     try {

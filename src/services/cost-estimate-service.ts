@@ -20,7 +20,10 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
+import {
+  getEffectiveAllocationPolicy,
+  getMandateAllocationPolicy,
+} from "./allocation-policy-service.js";
 
 interface CacheEntry {
   value: number;
@@ -58,9 +61,17 @@ export function resetCostEstimateCache(): void {
  * further trades throughput for tightness — a bigger per-action estimate means
  * fewer actions clear the same daily rate.
  */
+/**
+ * The solver's series is keyed by `run_id`, not `claim_id`: several attempts
+ * may share a claim (docs/mathematics.md §7.2), and one attempt is one
+ * agent run. Every other agent keeps the per-claim approximation.
+ */
+export const SOLVER_AGENT = "math_solver";
+
 async function recentRunCostEstimateMicroUsd(
   agent: string,
-  model: string
+  model: string,
+  opts: { variant?: string } = {}
 ): Promise<number | null> {
   const config = loadConfig();
   const windowDays = config.costEstimateWindowDays ?? 14;
@@ -68,24 +79,69 @@ async function recentRunCostEstimateMicroUsd(
   if (windowDays <= 0 || minRuns <= 0) return null;
   const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
 
-  const key = `${agent}:${model}:${percentile}`;
+  const key = `${agent}:${model}:${opts.variant ?? ""}:${percentile}`;
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value || null;
 
-  const [row] = await rawQuery<{ runs: number; est_cost: number | null }>(
-    `SELECT COUNT(*)::int AS runs,
-            percentile_cont($4) WITHIN GROUP (ORDER BY run_cost)::bigint AS est_cost
-       FROM (SELECT claim_id, SUM(cost_micro_usd) AS run_cost
-               FROM llm_usage
-              WHERE agent = $1 AND model = $2 AND claim_id IS NOT NULL
-                AND created_at > now() - make_interval(days => $3)
-              GROUP BY claim_id) runs`,
-    [agent, model, windowDays, percentile]
-  );
+  const [row] =
+    agent === SOLVER_AGENT
+      ? await rawQuery<{ runs: number; est_cost: number | null }>(
+          // One attempt is one run, and the run's row on proof_attempts
+          // carries the variant, so the two variants are two live series
+          // (§7.2) even though they share a model. Lean and container rows
+          // carry the same run_id and are summed in.
+          `SELECT COUNT(*)::int AS runs,
+                  percentile_cont($4) WITHIN GROUP (ORDER BY run_cost)::bigint AS est_cost
+             FROM (SELECT u.run_id, SUM(u.cost_micro_usd) AS run_cost
+                     FROM llm_usage u
+                    WHERE u.agent = $1 AND u.run_id IS NOT NULL
+                      AND u.created_at > now() - make_interval(days => $3)
+                      AND EXISTS (SELECT 1 FROM proof_attempts p
+                                   WHERE p.run_id = u.run_id AND p.model = $2
+                                     AND ($5::text IS NULL OR p.variant = $5::text))
+                    GROUP BY u.run_id) runs`,
+          [agent, model, windowDays, percentile, opts.variant ?? null]
+        )
+      : await rawQuery<{ runs: number; est_cost: number | null }>(
+          `SELECT COUNT(*)::int AS runs,
+                  percentile_cont($4) WITHIN GROUP (ORDER BY run_cost)::bigint AS est_cost
+             FROM (SELECT claim_id, SUM(cost_micro_usd) AS run_cost
+                     FROM llm_usage
+                    WHERE agent = $1 AND model = $2 AND claim_id IS NOT NULL
+                      AND created_at > now() - make_interval(days => $3)
+                    GROUP BY claim_id) runs`,
+          [agent, model, windowDays, percentile]
+        );
   const enough = (row?.runs ?? 0) >= minRuns && row?.est_cost != null;
   const value = enough ? Number(row!.est_cost) : 0;
   cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   return enough ? value : null;
+}
+
+/**
+ * Expected cost of one solver attempt at a variant (§7.2): the live p80 of
+ * recent attempts at that variant once five exist, else the funding
+ * mandate's prior (`est_attempt_standard_cost_owls` or
+ * `est_attempt_max_cost_owls`), in micro-USD.
+ */
+export async function estimateSolverAttemptCostMicroUsd(input: {
+  model: string;
+  variant: "standard" | "max";
+  grantId?: string | null;
+}): Promise<number> {
+  const config = loadConfig();
+  const live = await recentRunCostEstimateMicroUsd(SOLVER_AGENT, input.model, {
+    variant: input.variant,
+  }).catch(() => null);
+  if (live != null && live > 0) return live;
+  const policy = input.grantId
+    ? await getMandateAllocationPolicy(input.grantId)
+    : await getEffectiveAllocationPolicy();
+  const priorOwls =
+    input.variant === "max"
+      ? policy.est_attempt_max_cost_owls
+      : policy.est_attempt_standard_cost_owls;
+  return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
 }
 
 /**

@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 6533,
-    "fullChars": 54099,
+    "roleChars": 6718,
+    "fullChars": 54284,
     "skills": [
       {
         "name": "mathematics",
@@ -175,6 +175,26 @@
         "sections": [
           "For every administrator",
           "For the Grantmaker"
+        ]
+      }
+    ]
+  },
+  {
+    "key": "math-solver",
+    "name": "Solver",
+    "stage": 9,
+    "group": "instruments",
+    "tagline": "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
+    "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
+    "model": "Claude Fable 5.1",
+    "hasConstitution": false,
+    "roleChars": 4583,
+    "fullChars": 4583,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For the solver"
         ]
       }
     ]

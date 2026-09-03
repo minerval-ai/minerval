@@ -26,13 +26,15 @@
     "corpus:snapshot": "tsx scripts/corpus/snapshot.ts",
     "corpus:golden": "tsx scripts/corpus/golden-matcher.ts",
     "corpus:calibrate": "tsx scripts/corpus/calibration.ts",
-    "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts"
+    "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts",
+    "worker:solver": "tsx src/workers/solver-executor.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@aws-sdk/client-sqs": "^3.500.0",
     "@fastify/cors": "^10.0.0",
     "@fastify/formbody": "^8.0.2",
+    "@fastify/multipart": "9.4.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
     "@modelcontextprotocol/sdk": "^1.29.0",

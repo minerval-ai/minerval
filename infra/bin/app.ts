@@ -7,6 +7,7 @@ import { QueueStack } from "../lib/queue-stack";
 import { SecretsStack } from "../lib/secrets-stack";
 import { ApiStack } from "../lib/api-stack";
 import { LeanCheckerStack } from "../lib/lean-checker-stack";
+import { SolverStack } from "../lib/solver-stack";
 
 const app = new cdk.App();
 
@@ -65,4 +66,25 @@ new ApiStack(app, "EpistemeApi", {
     securityGroup: leanChecker.checkerSg,
     subnetIds: leanChecker.coldSubnetIds,
   },
+});
+
+// The solver worker (docs/mathematics.md 7.9, 13.1): its own Fargate service
+// running `npm run worker:solver`, off unless the deploy says otherwise:
+//   cdk deploy -c solverEnabled=true [-c solverModel=claude-fable-5-1]
+new SolverStack(app, "EpistemeSolver", {
+  env,
+  vpc: network.vpc,
+  apiSg: network.apiSg,
+  dbInstance: database.dbInstance,
+  dbSecret: database.dbSecret,
+  openaiApiKeySecret: secrets.openaiApiKeySecret,
+  openrouterApiKeySecret: secrets.openrouterApiKeySecret,
+  anthropicApiKeySecret: secrets.anthropicApiKeySecret,
+  apiKeysSecret: secrets.apiKeysSecret,
+  elicitApiKeySecret: secrets.elicitApiKeySecret,
+  stripeSecretKeySecret: secrets.stripeSecretKeySecret,
+  stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
+  leanChecker: { url: leanChecker.serviceUrl, tokenSecret: leanChecker.tokenSecret },
+  solverEnabled: app.node.tryGetContext("solverEnabled"),
+  solverModel: app.node.tryGetContext("solverModel"),
 });

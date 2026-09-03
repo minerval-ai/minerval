@@ -22,6 +22,7 @@ import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
+import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -52,7 +53,7 @@ type AgentMeta = {
   key: string;
   name: string;
   stage: number;
-  group: "processing" | "governance";
+  group: "processing" | "governance" | "instruments";
   tagline: string;
   invokedWhen: string;
   model: string;
@@ -92,13 +93,21 @@ const AGENTS: AgentMeta[] = [
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
     invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     model: "Claude Fable 5.1", fn: getGrantmakerSystemPrompt },
+  // The solver (docs/mathematics.md §7.1): an instrument, not an
+  // administrator. It owns no claim, holds no standing, receives no
+  // constitution, and writes nothing to the graph; its prompt is the
+  // Mathematics skill's `For the solver` section plus the harness block.
+  { key: "math-solver", name: "Solver", stage: 9, group: "instruments",
+    tagline: "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
+    invokedWhen: "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
+    model: "Claude Fable 5.1", fn: getMathSolverSystemPrompt },
 ];
 
 export interface AgentIndexEntry {
   key: string;
   name: string;
   stage: number;
-  group: "processing" | "governance";
+  group: "processing" | "governance" | "instruments";
   tagline: string;
   invokedWhen: string;
   model: string;
