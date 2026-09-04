@@ -1,5 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES_POLICIES } from "./policies.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 
 const ROLE_PROMPT = `# Your Role: Grantmaker
 
@@ -123,7 +123,7 @@ be comfortable publishing, and tell the funder directly. If they redirect to
 an acceptable goal, continue the conversation; a declined conversation can
 recover.
 
-${RAISING_ISSUES_POLICIES}`;
+${RAISING_ISSUES}`;
 
 export function getGrantmakerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

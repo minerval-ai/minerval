@@ -700,7 +700,7 @@ the graph, not by how they read.
 
 ---
 
-The operational policies that follow turn the constitution's principles into
-concrete, per-agent rules: the shared policy vocabulary every governance
-decision cites, the acceptance criteria the Contribution Reviewer applies, and
-the reasoning obligations every agent carries.
+The role standards that follow turn the constitution's principles into
+concrete, per-agent rules: the acceptance criteria the Contribution Reviewer
+applies, the appeal and audit standards behind it, and the reasoning
+obligations every agent carries.
