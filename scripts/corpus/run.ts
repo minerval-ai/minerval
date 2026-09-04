@@ -17,6 +17,7 @@
  *   --posts=id1,id2        only these post IDs
  *   --profile=production   run on the production model pins (lib.ts)
  *   --swap=<agent>:<model> one agent on another model, on top of the profile
+ *   --order=reverse|shuffle:<seed>  ingest the selected posts in another order
  *   --score[=N]            emit a scorecard afterwards (judge sample N)
  *
  * Examples:
@@ -92,6 +93,7 @@ function configuredFingerprint(): RunFingerprint {
     gitCommit: gitCommit(),
     profile: CORPUS_PROFILE,
     swap: CORPUS_SWAP ? { agent: CORPUS_SWAP.agent, model: CORPUS_SWAP.model } : null,
+    order: argFlag("order") ?? null,
     models: {
       extractor: cfg.extractorModel,
       matcher: cfg.matcherModel,
@@ -203,7 +205,38 @@ function selectPosts(all: ManifestPost[]): ManifestPost[] {
   let posts = all;
   if (only?.length) posts = posts.filter((p) => only.includes(p.id));
   if (limit !== undefined) posts = posts.slice(0, limit);
-  return posts;
+  return orderPosts(posts, argFlag("order"));
+}
+
+/**
+ * Ingest order (#334 S3 tier 1, path independence): matching is stateful —
+ * the first phrasing ingested becomes the canonical node and later ones
+ * attach to it — so the same posts in another order can produce another
+ * graph. `reverse` and `shuffle:<seed>` (a seeded Fisher–Yates, so a
+ * permutation is reproducible) let the property runner build the second arm.
+ */
+export function orderPosts<T>(posts: T[], order: string | undefined): T[] {
+  if (!order) return posts;
+  if (order === "reverse") return [...posts].reverse();
+  const m = /^shuffle:(\d+)$/.exec(order);
+  if (m) {
+    let seed = Number(m[1]) >>> 0;
+    const next = () => {
+      // mulberry32
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const out = [...posts];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(next() * (i + 1));
+      [out[i], out[j]] = [out[j]!, out[i]!];
+    }
+    return out;
+  }
+  throw new Error(`--order must be "reverse" or "shuffle:<seed>", got "${order}"`);
 }
 
 async function main(): Promise<void> {
@@ -403,14 +436,17 @@ async function main(): Promise<void> {
   await closeDb();
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  // Still report what the run cost before it failed — a crash shouldn't hide spend.
-  try {
-    await printUsage("partial — run errored");
-  } catch {
-    /* usage reporting is best-effort */
-  }
-  await closeDb().catch(() => {});
-  process.exit(1);
-});
+// Run directly (not when imported for its pure helpers, e.g. by tests).
+if ((process.argv[1] ?? "").endsWith("run.ts")) {
+  main().catch(async (err) => {
+    console.error(err);
+    // Still report what the run cost before it failed — a crash shouldn't hide spend.
+    try {
+      await printUsage("partial — run errored");
+    } catch {
+      /* usage reporting is best-effort */
+    }
+    await closeDb().catch(() => {});
+    process.exit(1);
+  });
+}
