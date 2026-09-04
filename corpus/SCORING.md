@@ -16,7 +16,8 @@ is unit-tested with fixtures (`tests/unit/scripts/corpus-metrics.test.ts`):
 |---|---|
 | A extraction | top-level claims, instances, claims per 1k source words, type mix |
 | B canonical form | word-count p50/p90/max, share > 25 words |
-| C matching | dedup ratio (instances ÷ top-level claims) |
+| B authorship | how often the Matcher rewrote the Extractor's proposed form on new claims, the token-Jaccard magnitude of those rewrites, and the mean word delta (#334 addendum of 2026-08-11; needs the proposal persisted per instance, #379) |
+| C matching | dedup ratio (instances ÷ top-level claims); on matched instances, the share recorded as denying the canonical form (negations absorbed, §2) and the mean distance between the proposal and the claim it joined |
 | D decomposition | max depth, depth histogram, atomic share, mean children/parent |
 | E cross-doc | shared subclaims (> 1 parent) |
 | F assessment | status distribution, % with a substantive trace, mean trace length |

@@ -113,7 +113,8 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
     claim_type: string;
     importance: number;
     created_by: string;
-  }>(`SELECT id, text, claim_type, importance, created_by FROM claims`);
+    created_at: string;
+  }>(`SELECT id, text, claim_type, importance, created_by, created_at FROM claims`);
 
   const edges = await rawQuery<{ parent: string; child: string; rel: string }>(
     `SELECT parent_claim_id AS parent, child_claim_id AS child, relation_type AS rel FROM claim_relationships`
@@ -134,9 +135,10 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
     originalText: string;
     stance: string;
     proposedCanonicalForm: string | null;
+    createdAt: string;
   }>(
     `SELECT claim_id AS "claimId", original_text AS "originalText", stance,
-            proposed_canonical_form AS "proposedCanonicalForm"
+            proposed_canonical_form AS "proposedCanonicalForm", created_at AS "createdAt"
        FROM claim_instances ORDER BY created_at`
   );
 
@@ -153,6 +155,7 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
       claimType: c.claim_type,
       importance: c.importance,
       createdBy: c.created_by,
+      createdAt: c.created_at,
     })),
     edges,
     assessments,
@@ -400,6 +403,11 @@ function renderMarkdown(s: Scorecard): string {
   w(`| F assessment | status distribution | ${Object.entries(st.assessment.statusDistribution).map(([k, v]) => `${k} ${v}`).join(", ") || "none"} |`);
   w(`| F assessment | % with trace / mean trace len | ${(st.assessment.pctWithTrace * 100).toFixed(0)}% / ${st.assessment.meanTraceLength} |`);
   w(`| §21 coherence | violations / tensions | ${st.coherence.violations} / ${st.coherence.tensions} |`);
+  const ca = st.canonicalAuthorship;
+  const pctOrNa = (x: number | null) => (x === null ? "n/a" : `${(x * 100).toFixed(0)}%`);
+  const numOrNa = (x: number | null) => (x === null ? "n/a" : String(x));
+  w(`| B authorship | matcher rewrote the extractor's form | ${pctOrNa(ca.rewriteRate)} of ${ca.withProposal} proposals (magnitude ${numOrNa(ca.rewriteMagnitude)}, words ${ca.meanWordDelta === null ? "n/a" : (ca.meanWordDelta > 0 ? "+" : "") + ca.meanWordDelta}) |`);
+  w(`| C matching | matched instances: denies share / proposal distance | ${ca.matched.count}: ${pctOrNa(ca.matched.deniesShare)} / ${numOrNa(ca.matched.meanProposalDistance)} |`);
   w(`| importance | mean / atomic / compound | ${st.importance.mean} / ${st.importance.meanAtomic ?? "n/a"} / ${st.importance.meanCompound ?? "n/a"} |`);
   w(`| importance | histogram | ${Object.entries(st.importance.histogram).sort().map(([k, v]) => `${k}:${v}`).join(" ")} |`);
   w();

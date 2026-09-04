@@ -160,3 +160,57 @@ describe("§21 coherence rules", () => {
     expect(computeStructuralMetrics(h).coherence.items).toEqual([]);
   });
 });
+
+describe("canonical-form authorship (#334 addendum)", () => {
+  const base = fixture();
+
+  it("reports nulls, not zeros, when no instance carries a proposal", () => {
+    const m = computeStructuralMetrics(base);
+    expect(m.canonicalAuthorship.authoringInstances).toBe(2);
+    expect(m.canonicalAuthorship.withProposal).toBe(0);
+    expect(m.canonicalAuthorship.rewriteRate).toBeNull();
+    expect(m.canonicalAuthorship.matched.count).toBe(0);
+    expect(m.canonicalAuthorship.matched.deniesShare).toBeNull();
+  });
+
+  it("splits authoring from matched instances and measures the rewrite", () => {
+    const g: GraphSnapshot = {
+      ...base,
+      instances: [
+        // root's authoring instance: the Matcher kept the proposal verbatim (case/punctuation aside).
+        { claimId: "root", proposedCanonicalForm: "a genuinely contestable proposition about the world.", stance: "affirms", createdAt: "2026-09-01T00:00:00Z" },
+        // root's later instance: matched, as a denial, from a differently worded proposal.
+        { claimId: "root", proposedCanonicalForm: "This proposition about the world is not contestable at all", stance: "denies", createdAt: "2026-09-01T00:05:00Z" },
+        // root2's authoring instance: the Matcher rewrote the proposal and lengthened it by one word.
+        { claimId: "root2", proposedCanonicalForm: "Another claim here", stance: "affirms", createdAt: "2026-09-01T00:01:00Z" },
+        // A steward-minted claim's instance reached it by a match (no authoring path).
+        { claimId: "shared", proposedCanonicalForm: "A dependency two claims lean on", stance: "affirms", createdAt: "2026-09-01T00:02:00Z" },
+      ],
+    };
+    const ca = computeStructuralMetrics(g).canonicalAuthorship;
+    expect(ca.authoringInstances).toBe(2);
+    expect(ca.withProposal).toBe(2);
+    expect(ca.rewriteRate).toBe(0.5); // root kept, root2 rewritten
+    expect(ca.rewriteMagnitude).toBeGreaterThan(0);
+    expect(ca.rewriteMagnitude).toBeLessThan(1);
+    // "Another top-level claim here" tokenizes to 5 words (the hyphen splits) − "Another claim here" (3).
+    expect(ca.meanWordDelta).toBe(2);
+    expect(ca.matched.count).toBe(2); // root's denial + shared's instance
+    expect(ca.matched.deniesShare).toBe(0.5);
+    expect(ca.matched.meanProposalDistance).toBeGreaterThan(0); // root's denial differs; shared's is identical
+  });
+
+  it("orders by created_at when present, else by array order", () => {
+    const g: GraphSnapshot = {
+      ...base,
+      instances: [
+        { claimId: "root", proposedCanonicalForm: "later, but listed first", stance: "denies", createdAt: "2026-09-02T00:00:00Z" },
+        { claimId: "root", proposedCanonicalForm: "A genuinely contestable proposition about the world", stance: "affirms", createdAt: "2026-09-01T00:00:00Z" },
+      ],
+    };
+    const ca = computeStructuralMetrics(g).canonicalAuthorship;
+    expect(ca.rewriteRate).toBe(0); // the earlier one is the authoring instance and matches the text
+    expect(ca.matched.count).toBe(1);
+    expect(ca.matched.deniesShare).toBe(1);
+  });
+});
