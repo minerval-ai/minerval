@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-04T14:31:36.196Z",
-  "gitCommit": "c1056bb",
+  "syncedAt": "2026-09-04T15:33:35.592Z",
+  "gitCommit": "6e624a4",
   "pins": [
     {
       "agent": "steward",
@@ -255,7 +255,7 @@
       "similar_but_different": 7,
       "hard": 3
     },
-    "version": 1,
+    "version": "1",
     "description": "Matcher golden pairs (#334 S1, from #137/#99 layer 1). Each pair seeds `existing` claims into the corpus DB and asks the Matcher whether `candidate` is one of them. Expectations follow the constitution: same proposition under any wording matches (§3); a claim and its denial are ONE node, so a negation matches with stance 'denies' (§2); specification/generalization and different-considerations claims do NOT match (§2's 'same considerations' test). existing[0] is the expected counterpart on match pairs; later entries are distractors. Grading is exact-match on (is_match, matched id, stance) — the Matcher's judgment saturates (§19), so near-deterministic grading is appropriate here and nowhere else."
   },
   "predictions": {
@@ -308,5 +308,61 @@
   ],
   "goldenRuns": [
     "2026-08-08-deepseek-v4-flash.json"
+  ],
+  "rubric": [
+    {
+      "letter": "A",
+      "title": "A. Extraction — what got pulled out of the document",
+      "slug": "a-extraction-what-got-pulled-out-of-the-document",
+      "standard": "Extract all substantive claims, faithfully and charitably, across every claim type. Questions, commands, meta-text, stipulative definitions, and hedged non-assertions are not claims. (Constitution §2, §4, §8; Policy 2, 3; Extractor prompt.)"
+    },
+    {
+      "letter": "B",
+      "title": "B. Canonical form quality — how claims were normalized",
+      "slug": "b-canonical-form-quality-how-claims-were-normalized",
+      "standard": "The canonical form is the shortest neutral statement of the proposition as it is actually debated: about fifteen words, rarely more than twenty-five, terse and frame-independent, self-contained, and meaning-preserving. State the proposition at the precision the discourse debates it; do not sharpen it with parameters the author never committed to, and do not mint placeholders for missing ones — the vague proposition is the claim. (Constitution §3, §2; Policy 2; Extractor prompt.)"
+    },
+    {
+      "letter": "C",
+      "title": "C. Matching / canonicalization / dedup — the core test",
+      "slug": "c-matching-canonicalization-dedup-the-core-test",
+      "standard": "Two formulations are the same claim when they turn on the same considerations: nothing could count as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a useful diagnostic, not the definition. A claim and its denial are one node, with each source recorded as affirming or denying it. When unsure, create both and map the relationship — liberal creation, rigorous mapping, conservative merging. (Constitution §2, §3, §5; Policy 4; Matcher prompt.)"
+    },
+    {
+      "letter": "D",
+      "title": "D. Decomposition — the dependency structure",
+      "slug": "d-decomposition-the-dependency-structure",
+      "standard": "Neutral decomposition: identify what a claim depends on, don't evaluate it. Decompose until reaching genuine bedrock (bedrock fact / contested empirical / value premise). Surface definitional subclaims (DEFINES) and hidden assumptions (ASSUMES). Include both supporting and contradicting dependencies. Group distinct lines of reasoning into named arguments; don't manufacture arguments for simple claims. Don't add subclaims that aren't logically necessary. (Constitution §6, §7; Policy 2; Steward prompt — decomposition and assessment are one judgment owned by the Claim Steward, Part VIII.)"
+    },
+    {
+      "letter": "E",
+      "title": "E. Cross-document graph structure — the scaling test",
+      "slug": "e-cross-document-graph-structure-the-scaling-test",
+      "standard": "Redundancy should collapse and structure should be shared: claims that recur across posts become one node, common dependencies become shared subclaims, and related/opposing positions are connected, not siloed. The admin thinks at graph level — upstream, downstream, lateral. (README \"why this is tractable\"; Constitution §19, §21.)"
+    },
+    {
+      "letter": "F",
+      "title": "F. Assessment — status and reasoning",
+      "slug": "f-assessment-status-and-reasoning",
+      "standard": "Use the six statuses honestly (Verified, Supported, Contested, Unsupported, Contradicted, Unknown); never round a genuinely contested claim up to verified or down to contradicted; every assessment carries a substantive reasoning trace; assessment is holistic judgment, not mechanical aggregation. (Constitution §1, §9, §10, §11, §22; Policy 1, 7, 8; architecture doc, \"Judgment-based propagation\".)"
+    },
+    {
+      "letter": "G",
+      "title": "G. Stewardship & propagation — the organization settling",
+      "slug": "g-stewardship-propagation-the-organization-settling",
+      "standard": "Ingestion doesn't stop at the first assessment. When a parent claim is (re)assessed, the Claim Steward is invoked to decide — by judgment, not mechanical rule — whether the change is material enough to propagate to dependent claims, and to maintain canonical forms, arguments, and merge/split proposals. Propagation should be self-limiting: most changes absorb within one or two levels, because superior claims are not the locus for disputes about their subclaims. The run drains the steward queue (and anything it triggers) to quiescence; this dimension judges whether that settling behaves well. (Constitution §5, §19, §22; Policy: Claim Steward; architecture doc, \"Judgment-based propagation\".)"
+    },
+    {
+      "letter": "H",
+      "title": "H. Cross-cutting properties",
+      "slug": "h-cross-cutting-properties",
+      "standard": ""
+    },
+    {
+      "letter": "I",
+      "title": "I. Field notes — emergent and unforeseen behaviors",
+      "slug": "i-field-notes-emergent-and-unforeseen-behaviors",
+      "standard": ""
+    }
   ]
 }

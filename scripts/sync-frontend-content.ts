@@ -30,6 +30,8 @@ import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
+import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
+import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -191,6 +193,31 @@ try {
   gitCommit = null;
 }
 
+// The exact texts the evals run on, so the guide shows the artifact rather
+// than describing it: the judge's prompt (rendered with placeholders where a
+// claim's own fields go) and the questions it must answer; the pair judge's
+// prompt; the rubric and the scorecard design note, verbatim.
+const judgePromptSample = buildJudgePrompt({
+  id: "<claim id>",
+  text: "<the claim's canonical text>",
+  claimType: "<claim type>",
+  importance: 0.5,
+  status: "<status>",
+  confidence: 0.8,
+  reasoningTrace: "<the Steward's reasoning trace, verbatim>",
+  subclaims: [{ relation: "<relation>", text: "<a direct subclaim's text>", status: "<its status>" }],
+  instances: [{ originalText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
+});
+writeFileSync(resolve(evalsDir, "judge-prompt.md"), judgePromptSample + "\n");
+writeFileSync(resolve(evalsDir, "judge-standards.md"), CONSTITUTION_STANDARDS + "\n");
+writeFileSync(resolve(evalsDir, "judge-schema.json"), JSON.stringify(JUDGE_SCHEMA, null, 2) + "\n");
+writeFileSync(
+  resolve(evalsDir, "pair-judge.json"),
+  JSON.stringify({ prompt: pairJudgePrompt("<a claim from graph A>", "<a claim from graph B>"), schema: PAIR_JUDGE_SCHEMA }, null, 2) + "\n"
+);
+copyFileSync(resolve(corpusDir, "RUBRIC.md"), resolve(evalsDir, "rubric.md"));
+copyFileSync(resolve(corpusDir, "SCORING.md"), resolve(evalsDir, "scoring.md"));
+
 const evalsIndex = buildEvalsIndex({
   syncedAt: new Date().toISOString(),
   gitCommit,
@@ -205,6 +232,7 @@ const evalsIndex = buildEvalsIndex({
   reviews,
   scorecardFiles,
   goldenRunFiles,
+  rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
 });
 writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
 

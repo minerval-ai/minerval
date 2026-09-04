@@ -42,6 +42,8 @@ import {
   renderAgreement,
   type AgreementGraph,
   type MatchedPair,
+  PAIR_JUDGE_SCHEMA,
+  pairJudgePrompt,
 } from "./graph-agreement.js";
 
 function resolveRef(ref: string): { label: string; url: string } {
@@ -109,20 +111,6 @@ async function loadGraph(label: string, url: string): Promise<AgreementGraph> {
   }
 }
 
-const PAIR_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    same_proposition: {
-      type: "boolean",
-      description:
-        "true if the two texts state the same proposition under §2's test: nothing could count as evidence or argument bearing on one without bearing equally on the other. A claim and its negation count as the same node. A specification, a generalization, or a claim that turns on different considerations is NOT the same.",
-    },
-    reasoning: { type: "string", description: "One or two sentences." },
-  },
-  required: ["same_proposition", "reasoning"],
-  additionalProperties: false,
-};
-
 /** Ask the pair judge whether an ambiguous pair is one proposition. */
 async function confirmPairs(
   pairs: MatchedPair[],
@@ -138,19 +126,11 @@ async function confirmPairs(
     const verdict = await withAgent("agreement-judge", () =>
       completeStructured<{ same_proposition: boolean; reasoning: string }>({
         model,
-        schema: PAIR_SCHEMA,
+        schema: PAIR_JUDGE_SCHEMA,
         schemaName: "SameProposition",
         maxTokens: 2048,
         messages: [
-          {
-            role: "user",
-            content:
-              `Two claim graphs, built independently, each contain a claim. Decide whether they are the SAME proposition — a claim ` +
-              `is individuated by what bears on it (constitution §2): two formulations are the same claim when nothing could count ` +
-              `as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a diagnostic, ` +
-              `not the definition. A claim and its denial are one node. A specification, a generalization, or a claim that turns on ` +
-              `different considerations is a different claim.\n\nClaim 1: ${textA.get(p.a)}\nClaim 2: ${textB.get(p.b)}`,
-          },
+          { role: "user", content: pairJudgePrompt(textA.get(p.a) ?? "", textB.get(p.b) ?? "") },
         ],
       })
     );

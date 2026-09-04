@@ -51,6 +51,17 @@ export interface ContributionScenarioInput {
   contributions: Array<{ type: string; appealIfRejected?: string }>;
 }
 
+export interface RubricSection {
+  /** "A" … "I" */
+  letter: string;
+  /** The heading as the page's Markdown renderer sees it (markdown stripped). */
+  title: string;
+  /** Anchor id on the rendered rubric page; same algorithm as web/lib/toc.ts. */
+  slug: string;
+  /** The **Standard.** paragraph, markdown stripped. */
+  standard: string;
+}
+
 export interface ReviewSheetInput {
   file: string;
   text: string;
@@ -70,6 +81,8 @@ export interface EvalsIndexInput {
   reviews: ReviewSheetInput[];
   scorecardFiles: Array<{ cluster: string; file: string }>;
   goldenRunFiles: string[];
+  /** corpus/RUBRIC.md, verbatim. */
+  rubric: string;
 }
 
 export interface EvalsIndex {
@@ -108,6 +121,7 @@ export interface EvalsIndex {
   reviews: Array<{ file: string; cluster: string | null; evalRun: string | null; reviewedOn: string | null }>;
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
+  rubric: RubricSection[];
 }
 
 /** Display names for the model ids the system pins; anything else shows its id. */
@@ -145,6 +159,52 @@ function count<T>(items: T[], key: (t: T) => string): Record<string, number> {
   for (const it of items) {
     const k = key(it);
     out[k] = (out[k] ?? 0) + 1;
+  }
+  return out;
+}
+
+/** GitHub-style heading slug; must match web/lib/toc.ts so links land on the rendered heading. */
+export function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function stripMarkdown(s: string): string {
+  return s
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .trim();
+}
+
+/**
+ * The rubric's sections (## A. … ## I.) with the **Standard.** paragraph under
+ * each, so a metric on the page can carry the standard it serves and link to
+ * the section that states it in full.
+ */
+export function parseRubric(md: string): RubricSection[] {
+  const lines = md.split("\n");
+  const out: RubricSection[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const h = /^## ([A-Z])\. (.+?)\s*$/.exec(lines[i]!);
+    if (!h) continue;
+    const headingText = stripMarkdown(`${h[1]}. ${h[2]}`);
+    let standard = "";
+    for (let j = i + 1; j < lines.length && !/^## /.test(lines[j]!); j++) {
+      if (/^\*\*Standard\.\*\*/.test(lines[j]!)) {
+        const para: string[] = [];
+        for (let k = j; k < lines.length && lines[k]!.trim() !== ""; k++) para.push(lines[k]!);
+        standard = stripMarkdown(para.join(" ").replace(/^\*\*Standard\.\*\*\s*/, ""));
+        break;
+      }
+    }
+    out.push({ letter: h[1]!, title: headingText, slug: slugifyHeading(headingText), standard });
   }
   return out;
 }
@@ -213,5 +273,6 @@ export function buildEvalsIndex(input: EvalsIndexInput): EvalsIndex {
       a.cluster === b.cluster ? a.file.localeCompare(b.file) : a.cluster.localeCompare(b.cluster)
     ),
     goldenRuns: [...input.goldenRunFiles].sort(),
+    rubric: parseRubric(input.rubric),
   };
 }

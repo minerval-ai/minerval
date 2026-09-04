@@ -71,7 +71,7 @@ export interface JudgeVerdict {
   note: string;
 }
 
-const SCHEMA = {
+export const JUDGE_SCHEMA = {
   type: "object" as const,
   properties: {
     readability: { type: "number", description: "1-5: can a reader follow, from the reasoning alone, why this status was chosen?" },
@@ -120,7 +120,12 @@ const SCHEMA = {
 const MAX_INSTANCES_SHOWN = 5;
 const MAX_INSTANCE_CHARS = 600;
 
-export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
+/**
+ * The exact prompt a sampled claim is judged with. Pure, so the evals guide
+ * can render it verbatim (#368) with placeholders where the claim's own
+ * fields go.
+ */
+export function buildJudgePrompt(input: JudgeInput): string {
   const subs =
     input.subclaims.length > 0
       ? input.subclaims.map((s) => `- [${s.relation}] ${s.text} (status: ${s.status ?? "none"})`).join("\n")
@@ -141,7 +146,7 @@ export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
           : "")
       : "(no source instances: minted as a subclaim during decomposition)";
 
-  const prompt = `You are auditing one claim from a claim graph maintained by LLM agents. Grade it against the standards below. Be concretely critical: this is a quality audit, not a compliment, and a defect named is worth more than a rounded-up score.
+  return `You are auditing one claim from a claim graph maintained by LLM agents. Grade it against the standards below. Be concretely critical: this is a quality audit, not a compliment, and a defect named is worth more than a rounded-up score.
 
 ${CONSTITUTION_STANDARDS}
 
@@ -160,13 +165,18 @@ ${input.reasoningTrace ?? "(none)"}
 ## Direct subclaims (${input.subclaims.length})
 ${subs}`;
 
+}
+
+export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
+  const prompt = buildJudgePrompt(input);
+
   const model = loadConfig().judgeModel;
   // Tagged "judge" so its llm_usage rows are attributable and separable from
   // the agents under test — the judge is an agent like any other to the meter.
   const verdict = await withAgent("judge", () =>
     completeStructured<Omit<JudgeVerdict, "id" | "text" | "importanceStored" | "status">>({
       messages: [{ role: "user", content: prompt }],
-      schema: SCHEMA,
+      schema: JUDGE_SCHEMA,
       schemaName: "ClaimQualityVerdict",
       model,
       // Claude-5 judge models think before answering, and thinking counts against

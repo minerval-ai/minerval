@@ -48,6 +48,14 @@ export interface EvalsIndex {
   reviews: Array<{ file: string; cluster: string | null; evalRun: string | null; reviewedOn: string | null }>;
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
+  rubric: RubricSection[];
+}
+
+export interface RubricSection {
+  letter: string;
+  title: string;
+  slug: string;
+  standard: string;
 }
 
 function readJson<T>(path: string): T {
@@ -308,4 +316,61 @@ export function fmtUsd(usd: number | null | undefined, digits = 2): string {
 
 export function microToUsd(micro: number | null | undefined): number | null {
   return micro == null ? null : micro / 1_000_000;
+}
+
+// ---- everything the guide renders from, loaded once per page ---------------
+
+export interface JudgeSchemaProperty {
+  type?: string;
+  enum?: string[];
+  description?: string;
+  items?: { enum?: string[] };
+}
+
+/** The exact texts the evals run with, vendored by the sync so the guide shows them verbatim. */
+export interface EvalsArtifacts {
+  judgePrompt: string;
+  judgeStandards: string;
+  judgeSchema: { properties: Record<string, JudgeSchemaProperty>; required?: string[] };
+  pairJudge: { prompt: string; schema: unknown };
+  rubric: string;
+  scoring: string;
+  /** Filled review sheets, by file name. */
+  reviewSheets: Record<string, string>;
+}
+
+export interface EvalsData {
+  index: EvalsIndex;
+  artifacts: EvalsArtifacts;
+  scorecards: ScorecardRecord[];
+  goldenRuns: GoldenRun[];
+  goldenPairs: GoldenPair[];
+  reviews: ReviewSheet[];
+  predictions: Prediction[];
+  scenarios: ContributionScenario[];
+}
+
+export function loadEvalsData(): EvalsData {
+  const index = getEvalsIndex();
+  const text = (f: string) => readFileSync(resolve(EVALS, f), "utf-8");
+  const reviewSheets: Record<string, string> = {};
+  for (const r of index.reviews) reviewSheets[r.file] = text(`reviews/${r.file}`);
+  return {
+    index,
+    artifacts: {
+      judgePrompt: text("judge-prompt.md"),
+      judgeStandards: text("judge-standards.md"),
+      judgeSchema: readJson(resolve(EVALS, "judge-schema.json")),
+      pairJudge: readJson(resolve(EVALS, "pair-judge.json")),
+      rubric: text("rubric.md"),
+      scoring: text("scoring.md"),
+      reviewSheets,
+    },
+    scorecards: getScorecards(),
+    goldenRuns: getGoldenRuns(),
+    goldenPairs: getGoldenPairs().pairs,
+    reviews: getReviews(index),
+    predictions: getPredictions().predictions,
+    scenarios: getContributionScenarios(),
+  };
 }

@@ -17,7 +17,7 @@ const toc = [
   { depth: 2, text: "The model", slug: "the-model" },
   { depth: 2, text: "The pipeline", slug: "the-pipeline" },
   { depth: 2, text: "The full texts", slug: "the-full-texts" },
-  { depth: 2, text: "How we check the work", slug: "how-we-check-the-work" },
+  { depth: 2, text: "How we test the agents", slug: "how-we-check-the-work" },
   { depth: 2, text: "Built on the graph", slug: "built-on-the-graph" },
 ];
 
@@ -152,18 +152,18 @@ export default function DocsPage() {
           </Link>
         </div>
 
-        <h2 id="how-we-check-the-work">How we check the work</h2>
+        <h2 id="how-we-check-the-work">How we test the agents</h2>
         <p>
-          The same transparency applies to our own quality claims. Every eval we run on the
-          administrators is described in full, with its cost and its limits, and the results
-          are published as they exist, single samples marked as such.
+          The agents are tested, and the tests are public: what each one checks, how it works,
+          what it costs, and what it has found. Most are built and not yet run; each page says
+          which.
         </p>
         <div className="cards">
           <Link href="/docs/evals" className="card">
             <div className="card-claim" style={{ fontWeight: 600 }}>The evals</div>
             <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
-              What we measure, how each measurement works, what it costs, what the numbers say
-              so far, and what we do not measure yet. Enough to reproduce any of it.
+              Twelve tests, one page each, plus the documents they run on, what they cost, and
+              what is not tested yet.
             </p>
           </Link>
         </div>
