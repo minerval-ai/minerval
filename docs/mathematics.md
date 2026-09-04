@@ -3,19 +3,21 @@
 The living design document for mathematics on Minerval: how propositions and
 proofs fit the claim graph, the skills framework the Mathematics skill
 introduces, the Lean checker and the formal statements it verifies, the
-platform's own solver, the prize program, the payout rails, and the rewritten
-Mathematics mandate that pays for all of it. It implements GitHub issue #301
-and the founder's six further instructions, and it is written to be built
-from: every mechanism names its tables, tools, routes, and configuration
-keys, and every fact about the code cites the repository at commit `bc8ef18`.
-Nothing in it is built yet. It is a sibling of `docs/allocation.md` and
+platform's own solver, the prize program, the payout rails, and the two
+Mathematics mandates that pay for all of it. It implements GitHub issue #301,
+the founder's further instructions, and the founder's review of the first
+draft, and it is written to be built from: every mechanism names its tables,
+tools, routes, and configuration keys. The program is built on the branch
+this document lives on; where building changed the design, the document was
+revised to match, and citations of the code by line number date from the
+first draft at commit `bc8ef18`. It is a sibling of `docs/allocation.md` and
 follows that document's conventions: the constitution carries the doctrine,
 this document turns it into mechanism, and where the two seem to disagree the
 constitution wins and this document is defective.
 
 Reader-facing copy drafted here is in the voice of the graph (constitution
 §12). The appendices carry the texts that become files: the Mathematics skill
-(A), the mandate (B), the solver prompt (C), a sketch of the prize rules for
+(A), the mandates (B), the solver prompt (C), a sketch of the prize rules for
 counsel (D), the glossary of names used throughout (E), and three proposed
 constitution amendments (F).
 
