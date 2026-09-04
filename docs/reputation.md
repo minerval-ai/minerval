@@ -54,8 +54,9 @@ CONTRIBUTION_RATE_LIMITED`.
 
 The Contribution Reviewer's decision space is extended: alongside a
 `reject`, it may set `suspected_bad_faith` with a category — `spam`,
-`vandalism`, `sybil`, or `misinformation` — governed by the new **Good Faith
-and Bad Faith (GF)** policy (`src/llm/prompts/policies.ts`). The bar is
+`vandalism`, `sybil`, or `misinformation` — governed by the bad-faith
+standard in its role prompt (`src/llm/prompts/contribution-reviewer.ts`,
+categories rendered from `src/llm/prompts/bad-faith.ts`). The bar is
 deliberately high: sincere-but-wrong is a plain reject; ambiguous suspicion
 escalates. The flag is persisted on `contribution_reviews`
 (`suspected_bad_faith`, `bad_faith_category`).

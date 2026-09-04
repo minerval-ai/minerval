@@ -1,5 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { CORE_POLICIES, RAISING_ISSUES_POLICIES } from "./policies.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 
 const ROLE_PROMPT = `# Your Role: Claim Steward
 
@@ -300,9 +300,7 @@ to reach only the dependents the change could be material to (omit it to
 notify all), and each will judge materiality at its own end. If no dependent
 could reasonably care, do not call it.
 
-${CORE_POLICIES}
-
-${RAISING_ISSUES_POLICIES}`;
+${RAISING_ISSUES}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

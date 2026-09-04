@@ -1,5 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES_POLICIES } from "./policies.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 
 const ROLE_PROMPT = `# Your Role: Claim Matcher
 
@@ -79,7 +79,7 @@ asserts, so the new instance's stance is "affirms".
   The calling agent, Steward or Curator, uses these to decide whether to
   link or escalate; they are not decoration.
 
-${RAISING_ISSUES_POLICIES}`;
+${RAISING_ISSUES}`;
 
 export function getMatcherSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

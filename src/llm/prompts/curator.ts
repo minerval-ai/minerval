@@ -1,5 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { RAISING_ISSUES_POLICIES } from "./policies.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 
 const ROLE_PROMPT = `# Your Role: Curator
 
@@ -72,7 +72,7 @@ Concluding that nothing needs to change is a legitimate outcome (Working
 Together). Whatever you do, say why in the reasoning fields; the tools handle
 the bookkeeping.
 
-${RAISING_ISSUES_POLICIES}`;
+${RAISING_ISSUES}`;
 
 export function getCuratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

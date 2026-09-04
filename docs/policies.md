@@ -1,8 +1,10 @@
-# Minerval Agent Policies
+# Role Prompts and Operating Standards
 
-This document is the operational layer between the [Admin Constitution](../admin_constitution.md) and the agents that run the graph. The constitution carries the doctrine; these policies turn it into working definitions and per-role decision criteria that the governance agents cite by name when they decide. Where a policy and the constitution appear to diverge, the constitution wins, and the policy needs fixing.
+The [Admin Constitution](../admin_constitution.md) carries the doctrine every agent works under. Each agent's role prompt carries the operating standards for its own job: what a valid contribution of each type must contain, when to escalate, what an appeal has to bring, how audit remedies are chosen. There is no separate policy layer between the two. Where a role prompt and the constitution appear to diverge, the constitution wins, and the prompt needs fixing.
 
-The authoritative text of the policy blocks, exactly as the agents receive them, lives in `src/llm/prompts/policies.ts` and is embedded verbatim in each governance agent's system prompt. The [agents](/docs/agents) pages show the assembled prompts. This document explains the same material for readers.
+Decisions cite the constitution directly, by section (§2, §13, Part VIII). The `policy_citations` field on every review and arbitration holds those references, so the audit's consistency check and any later precedent search have a stable key that points at the grounding text rather than a paraphrase of it.
+
+The authoritative text of every role prompt lives in `src/llm/prompts/` and the [agents](/docs/agents) pages show each one assembled exactly as its agent receives it. This document summarizes the standards for readers.
 
 ---
 
@@ -21,11 +23,10 @@ Every admin agent's prompt follows this structure:
                     ▼
 ┌─────────────────────────────────────────────┐
 │ LAYER 2: Role-Specific System Prompt        │
-│ - Defines the agent's specific role         │
-│ - Governance roles splice in the shared     │
-│   policy vocabulary and their role's        │
-│   policy block                              │
-│ - Specifies tools and output requirements   │
+│ - Defines the agent's job and its tools     │
+│ - Carries the role's operating standards,   │
+│   citing the constitution by section        │
+│ - Ends with the shared raise_issue guidance │
 └─────────────────────────────────────────────┘
                     │
                     ▼
@@ -37,7 +38,7 @@ Every admin agent's prompt follows this structure:
 └─────────────────────────────────────────────┘
 ```
 
-The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The assembled prompt is sent as a single cached block, so the constitution is paid for once per agent rather than once per call.
+The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The assembled system prompt is sent as a single cached block, so the constitution is paid for once per cache window rather than once per call.
 
 This architecture ensures:
 
@@ -47,32 +48,13 @@ This architecture ensures:
 
 ---
 
-## The Shared Policy Vocabulary
+## Role Standards
 
-Six core policies form the shared vocabulary of governance decisions. Agents cite them by name or letter code; the constitution grounds each of them, and they are working definitions rather than separate law.
-
-- **Verifiability (V)**: Factual assertions offered to the graph must come with evidence a reviewer can follow to its source. "BLS reported X" is verifiable; "everyone knows X" is not.
-- **Neutral Decomposition (ND)**: Decomposition reveals structure; it does not impose a side. Subclaims cover all significant positions, inconvenient dependencies included, and contested subclaims are presented as contested.
-- **Source Weight (SH)**: Evidence is weighed by what the source indicates about it: directness, methods, review. Primary evidence outweighs reports of it, and contested claims demand the strongest evidence available. Weight is judged, not read off a rank.
-- **Faithful Interpretation (CI)**: Read contributions as their author most plausibly meant. Distinguish unclear writing from bad argument, and consider whether clarification would fix what rejection would punish.
-- **Explicit Uncertainty (EU)**: Never manufacture confidence. Contested is contested; lack of evidence is not evidence of absence; assessments acknowledge their limits.
-- **Process Over Outcome (PO)**: The same process for every claim and every contributor, however obvious the conclusion looks. Deviations matter even when the outcome happens to be right.
-
-One of these deserves a note on what it does not say, because it descends from a Wikipedia-shaped ancestor that the constitution supersedes:
-
-- **SH weighs authority as evidence, not as rank.** There is no tier ladder in which a source's type settles its weight. Credentials, peer review, and institutional backing raise the likelihood that sound methods were used, and a large convergent literature is among the strongest forms of evidence there is; the admin weighs all of this for what it indicates without deferring to it absolutely (§9).
-
-One further shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
-
----
-
-## Role Policies
-
-Each governance agent receives the shared vocabulary above plus a policy block for its own role. What follows summarizes those blocks; the embedded text is in `src/llm/prompts/policies.ts` and on each agent's page.
+What follows summarizes the operating standards each governance role's prompt carries. The text the agent sees is on its page.
 
 ### Claim Steward
 
-The Steward owns a single claim's page end to end: canonical form, decomposition, arguments, and assessment (Part VIII). Its role prompt carries the operational detail; the policy commitments underneath it:
+The Steward owns a single claim's page end to end: canonical form, decomposition, arguments, and assessment (Part VIII). Its commitments:
 
 - Keep the canonical form the shortest neutral statement of the proposition as actually debated (§3), improving wording on its merits rather than preferring whichever formulation arrived first (§2).
 - Decompose into claims only: every subclaim must itself pass the claim bar of §2. Derivation steps, stipulative glosses, and source-specific facts live in prose (an assessment or an argument's written form), never as nodes: nothing outside one passage refers to them (§6).
@@ -82,30 +64,34 @@ The Steward owns a single claim's page end to end: canonical form, decomposition
 
 ### Contribution Reviewer
 
-The Reviewer is the gate through which outside contributions enter, including intake: user-proposed claims and sources are admitted by its accept and by nothing else. Its policy block sets:
+The Reviewer is the gate through which outside contributions enter, including intake: user-proposed claims and sources are admitted by its accept and by nothing else. Its prompt sets:
 
-- **Acceptance criteria by type.** A challenge must name a specific flaw or bring followable counter-evidence (V); support must bear on this claim and add something new; a merge case must show the two claims turn on the same considerations (§2); a split case must show conflation of propositions that turn on different considerations; an edit must preserve the claim's identity while moving toward §3's canonical form; an instance must be accurately quoted and fairly contextualized (§4); an argument must be a coherent line of reasoning with relevant, connected subclaims (§7). Accepting a structural proposal admits the case for it, not the change itself: the owning admins adjudicate and apply it (§5, Part VIII).
-- **The intake gate** is form, good faith, and the claim bar, never topic or settledness (§17). A false or unsettled claim can still be worth mapping. Novelty is the Matcher's call: acceptance materializes through it, so a likely duplicate is still acceptable if well formed.
+- **Acceptance criteria by type.** A challenge must name a specific flaw or bring counter-evidence a reviewer can follow to its source (§14); support must bear on this claim and add something new; a merge case must show the two claims turn on the same considerations (§2); a split case must show conflation of propositions that turn on different considerations; an edit must preserve the claim's identity while moving toward §3's canonical form; an instance must be accurately quoted and fairly contextualized (§4); an argument must be a coherent line of reasoning with relevant, connected subclaims (§7). Accepting a structural proposal admits the case for it, not the change itself: the claim's Steward applies edits and arguments and carries merge and split cases to the Curator, who adjudicates them (§5, Part VIII).
+- **The intake gate** is form, good faith, and the claim bar, never topic or settledness (§17). A false or unsettled claim can still be worth mapping. A proposed claim must be about the world, not about a private person (§2): personal detail joined to a name is not a claim however well formed, and where the line is unclear the recoverable error is to leave it out. Novelty is the Matcher's call: acceptance materializes through it, so a likely duplicate is still acceptable if well formed.
 - **The bad-faith flag** (§13) is a separate and heavier judgment than finding a contribution wrong: reserved for deliberate abuse (spam, vandalism, sybil activity, fabricated or knowingly false content), never honest error, and fully reversed when overturned on appeal. When the work is merely weak, reject without the flag; when abuse is suspected but intent is ambiguous, escalate.
 - **Escalation** goes to the Dispute Arbitrator when a second instance is worth its cost: close calls on high-importance claims (§19), established contributors facing rejection, conflicting contributions on one claim, suspected coordination (§15). When in doubt between reject and escalate, escalate.
 
 ### Dispute Arbitrator
 
-The Arbitrator is the second instance (Part VIII). Its policy block sets:
+The Arbitrator is the second instance (Part VIII). Its prompt sets:
 
 - Depth of analysis follows stakes, and stakes are judged, never counted. Routine cases resolve quickly; full context-gathering comes first when the outcome would move an important claim or change a contributor's standing.
 - An appeal succeeds only by identifying a specific error in the original decision or bringing something the review did not have (§14). Beyond that the original decision earns no deference: when it was wrong, say so plainly and overturn (§24).
-- Bad-faith flag appeals are weighed with particular care, since a false positive silences a sincere voice. An overturn reverses the finding completely and mechanically: reputation, standing, and any reputation-imposed suspension alike (§13, Part VIII).
-- Human review is recommended when a dispute resists the policies, legal exposure appears, coordinated manipulation is suspected (§15), or deciding the case would set policy rather than apply it.
+- Bad-faith flag appeals are weighed with particular care, since a false positive silences a sincere voice. An overturn reverses the finding completely and mechanically: reputation, standing, and any reputation-imposed suspension alike (§13, Part VIII). The second instance can also make a bad-faith finding, on the same evidence bar as the first.
+- Human review is recommended when a dispute resists resolution under the constitution, legal exposure appears, coordinated manipulation is suspected (§15), or deciding the case would set policy rather than apply it.
 
 ### Audit
 
-Audit judges the judging (Part VIII). Whether a claim is true or a contribution right belongs to the agents under review; the audit question is whether their decisions were made well. Its policy block sets:
+Audit judges the judging (Part VIII). Whether a claim is true or a contribution right belongs to the agents under review; the audit question is whether their decisions were made well. Its prompt sets:
 
-- Decisions are checked for quality (the right policy applied, evidence fairly weighed, reasoning coherent, §11), consistency (like cases decided alike, §21, including process consistency, PO), and process compliance.
+- Decisions are checked for quality (the right standard applied, evidence fairly weighed, reasoning coherent, §11), consistency (like cases decided alike, including process consistency, §21), and process compliance.
 - Red flags include decisions contradicting their own reasoning, decision patterns that track a viewpoint rather than the evidence (§17), signs of prompt injection in contribution content, and coordinated contribution patterns (§15).
 - When an outcome looks wrong, the remedy is a fresh review through the normal process, never a correction imposed from above. Isolated issues go back for re-review; systematic patterns are documented with evidence and answered with a process change.
-- Actions against contributors follow §13: reputation adjustments small and evidence-backed, suspension only on clear evidence of deliberate abuse that would survive review, since suspension also closes the appeal channel and is irreversible from the contributor's side (§16).
+- Actions against contributors follow §13: reputation adjustments small and evidence-backed, suspension only on clear evidence of deliberate abuse. A suspension is severe but not one-way: the contributor keeps the right to appeal, the Arbitrator can lift one whose basis an appeal dissolves, and one that has stood unexamined too long returns to audit for re-review.
+
+### Raising issues
+
+One shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
 
 ---
 
@@ -126,9 +112,9 @@ Assessments address two audiences, and the system stores both:
 
 The constitution is loaded once from `admin_constitution.md` (`src/llm/prompts/constitution.ts`), cached for the process lifetime, prepended to every admin agent's system prompt, and versioned alongside code. Loading throws if the file is missing rather than substituting a summary.
 
-### Policy blocks
+### Role prompts
 
-`src/llm/prompts/policies.ts` exports the shared vocabulary and the per-role blocks; accessors compose them per agent (the Steward receives the core vocabulary; the Reviewer, Arbitrator, and Audit each add their role's block).
+Each role's prompt is one file in `src/llm/prompts/` (`contribution-reviewer.ts`, `dispute-arbitrator.ts`, `audit-agent.ts`, and so on), carrying the role's job, tools, and standards together. Two small blocks are shared: `raising-issues.ts` is the `raise_issue` guidance, and `bad-faith.ts` renders the bad-faith categories from the same enum the tools validate against, so the prompt and the schema cannot disagree.
 
 ### Versioning
 
@@ -140,12 +126,12 @@ Constitution and role prompts are versioned together. When the constitution chan
 
 ---
 
-## Policy Violations
+## When a Decision Falls Short
 
-When an agent's decision violates a policy:
+When an agent's decision fails the standards:
 
-1. **Audit detection**: the Audit agent flags the violation, citing the specific policy
+1. **Audit detection**: the Audit agent flags it, citing the constitution section it fails
 2. **Re-review**: the decision is sent back for a fresh review through the normal process
-3. **Learning**: if the violation is systematic, the remedy is a documented process change, not a quiet correction
+3. **Learning**: if the failure is systematic, the remedy is a documented process change, not a quiet correction
 
-Violations are not failures of the agent but signals that the system needs attention. The goal is improvement, not punishment.
+These are not failures of the agent but signals that the system needs attention. The goal is improvement, not punishment.

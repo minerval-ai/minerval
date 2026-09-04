@@ -32,8 +32,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 11460,
-    "fullChars": 59958
+    "roleChars": 10789,
+    "fullChars": 59287
   },
   {
     "key": "claim-steward",
@@ -44,8 +44,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 20815,
-    "fullChars": 69313
+    "roleChars": 19367,
+    "fullChars": 67865
   },
   {
     "key": "curator",
@@ -68,8 +68,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 10261,
-    "fullChars": 58759
+    "roleChars": 8737,
+    "fullChars": 57235
   },
   {
     "key": "audit-agent",
@@ -80,8 +80,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 9865,
-    "fullChars": 58363
+    "roleChars": 8428,
+    "fullChars": 56926
   },
   {
     "key": "grantmaker",

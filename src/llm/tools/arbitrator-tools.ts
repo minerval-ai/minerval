@@ -78,7 +78,9 @@ export function getArbitratorToolDefinitions(): Tool[] {
           policy_citations: {
             type: "array",
             items: { type: "string" },
-            description: "Policy codes cited in the decision",
+            description:
+              "Constitution sections the decision rests on, e.g. \"§13\", " +
+              "\"§14\", \"§24\"",
           },
           suspected_bad_faith: {
             type: "boolean",
@@ -245,7 +247,7 @@ export async function executeArbitratorTool(
           outcome,
           decision,
           reasoning: policyCitations.length > 0
-            ? `${reasoning}\n\nPolicy citations: ${policyCitations.join(", ")}`
+            ? `${reasoning}\n\nCites: ${policyCitations.join(", ")}`
             : reasoning,
           suspectedBadFaith,
           badFaithCategory,

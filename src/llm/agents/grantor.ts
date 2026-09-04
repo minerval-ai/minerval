@@ -23,7 +23,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { RAISING_ISSUES_POLICIES } from "../prompts/policies.js";
+import { RAISING_ISSUES } from "../prompts/raising-issues.js";
 import type { PlanItem } from "../../services/grant-service.js";
 
 export interface GrantorPlan {
@@ -92,7 +92,7 @@ already freshly assessed with low marginal_yield, duplicates of the same
 crux. Do not exceed the budget: plan roughly one owl per 'assess' item and
 three per 'deepen' item, and stop below the budget rather than padding.
 
-${RAISING_ISSUES_POLICIES}`;
+${RAISING_ISSUES}`;
 }
 
 /** One row of the survey the agent sees per claim in scope. */
