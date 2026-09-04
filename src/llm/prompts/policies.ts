@@ -22,12 +22,6 @@ separate law.
   about it: directness, methods, review. Primary evidence outweighs reports
   of it, and contested claims demand the strongest evidence available.
   Weight is judged, not read off a rank.
-- **No Origination (NOR)**: Claims enter the graph from the discourse:
-  neither contributors nor admins mint propositions no source asserts. A
-  statement submitted for checking enters from the discourse; its source is
-  wherever the submitter met it. This bounds what may be added, never how
-  deeply admins may analyze; direct assessment on the merits is the method
-  (constitution §9).
 - **Faithful Interpretation (CI)**: Read contributions as their author most
   plausibly meant. Distinguish unclear writing from bad argument, and
   consider whether clarification would fix what rejection would punish.
@@ -88,9 +82,7 @@ can still be worth mapping.
   - The text must meet the claim bar of §2: a single reusable proposition
     about the world, assessable with evidence or reasons. Fragments,
     questions, bare sentiments, inferential chains ("X therefore Y" is an
-    argument, not a claim), and stipulative glosses all fail it. So does a
-    proposition of the contributor's own coinage that no source asserts
-    (NOR): claims enter the graph from the discourse.
+    argument, not a claim), and stipulative glosses all fail it.
   - The wording must be workable as a canonical form (§3). Imperfect but
     fixable wording is acceptable, since the Matcher and Steward refine
     canonical forms; reject only wording so loaded that no neutral

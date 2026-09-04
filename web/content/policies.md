@@ -49,19 +49,17 @@ This architecture ensures:
 
 ## The Shared Policy Vocabulary
 
-Seven core policies form the shared vocabulary of governance decisions. Agents cite them by name or letter code; the constitution grounds each of them, and they are working definitions rather than separate law.
+Six core policies form the shared vocabulary of governance decisions. Agents cite them by name or letter code; the constitution grounds each of them, and they are working definitions rather than separate law.
 
 - **Verifiability (V)**: Factual assertions offered to the graph must come with evidence a reviewer can follow to its source. "BLS reported X" is verifiable; "everyone knows X" is not.
 - **Neutral Decomposition (ND)**: Decomposition reveals structure; it does not impose a side. Subclaims cover all significant positions, inconvenient dependencies included, and contested subclaims are presented as contested.
 - **Source Weight (SH)**: Evidence is weighed by what the source indicates about it: directness, methods, review. Primary evidence outweighs reports of it, and contested claims demand the strongest evidence available. Weight is judged, not read off a rank.
-- **No Origination (NOR)**: Claims enter the graph from the discourse: neither contributors nor admins mint propositions no source asserts. A statement submitted for checking enters from the discourse; its source is wherever the submitter met it. This bounds what may be added, never how deeply admins may analyze; direct assessment on the merits is the method (constitution §9).
 - **Faithful Interpretation (CI)**: Read contributions as their author most plausibly meant. Distinguish unclear writing from bad argument, and consider whether clarification would fix what rejection would punish.
 - **Explicit Uncertainty (EU)**: Never manufacture confidence. Contested is contested; lack of evidence is not evidence of absence; assessments acknowledge their limits.
 - **Process Over Outcome (PO)**: The same process for every claim and every contributor, however obvious the conclusion looks. Deviations matter even when the outcome happens to be right.
 
-Two of these deserve a note on what they do not say, because both descend from Wikipedia-shaped ancestors that the constitution supersedes:
+One of these deserves a note on what it does not say, because it descends from a Wikipedia-shaped ancestor that the constitution supersedes:
 
-- **NOR is a contribution gate, not an analysis limit.** Wikipedia's no-original-research policy makes its editors summarizers; the graph's admins are trusted with substance (constitution, Preamble and §9). They open primary sources, run their own analysis, and record verdicts on the merits. What NOR forbids is minting propositions that no source asserts, by contributors and admins alike; it says nothing about how deeply an admitted claim may be assessed.
 - **SH weighs authority as evidence, not as rank.** There is no tier ladder in which a source's type settles its weight. Credentials, peer review, and institutional backing raise the likelihood that sound methods were used, and a large convergent literature is among the strongest forms of evidence there is; the admin weighs all of this for what it indicates without deferring to it absolutely (§9).
 
 One further shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
@@ -87,7 +85,7 @@ The Steward owns a single claim's page end to end: canonical form, decomposition
 The Reviewer is the gate through which outside contributions enter, including intake: user-proposed claims and sources are admitted by its accept and by nothing else. Its policy block sets:
 
 - **Acceptance criteria by type.** A challenge must name a specific flaw or bring followable counter-evidence (V); support must bear on this claim and add something new; a merge case must show the two claims turn on the same considerations (§2); a split case must show conflation of propositions that turn on different considerations; an edit must preserve the claim's identity while moving toward §3's canonical form; an instance must be accurately quoted and fairly contextualized (§4); an argument must be a coherent line of reasoning with relevant, connected subclaims (§7). Accepting a structural proposal admits the case for it, not the change itself: the owning admins adjudicate and apply it (§5, Part VIII).
-- **The intake gate** is form, good faith, and the claim bar, never topic or settledness (§17). A false or unsettled claim can still be worth mapping; a proposition of the contributor's own coinage that no source asserts fails NOR. Novelty is the Matcher's call: acceptance materializes through it, so a likely duplicate is still acceptable if well formed.
+- **The intake gate** is form, good faith, and the claim bar, never topic or settledness (§17). A false or unsettled claim can still be worth mapping. Novelty is the Matcher's call: acceptance materializes through it, so a likely duplicate is still acceptable if well formed.
 - **The bad-faith flag** (§13) is a separate and heavier judgment than finding a contribution wrong: reserved for deliberate abuse (spam, vandalism, sybil activity, fabricated or knowingly false content), never honest error, and fully reversed when overturned on appeal. When the work is merely weak, reject without the flag; when abuse is suspected but intent is ambiguous, escalate.
 - **Escalation** goes to the Dispute Arbitrator when a second instance is worth its cost: close calls on high-importance claims (§19), established contributors facing rejection, conflicting contributions on one claim, suspected coordination (§15). When in doubt between reject and escalate, escalate.
 
