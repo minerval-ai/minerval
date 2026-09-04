@@ -26,10 +26,10 @@
  * runs/swap-<stamp>/swap.json.
  */
 import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { argFlag, assertCorpusDb, CORPUS_DATABASE_URL, CORPUS_PROFILE, gitCommit, hasFlag, positional, REPO_ROOT, RUNS_ROOT } from "./lib.js";
+import { argFlag, assertCorpusDb, CORPUS_DATABASE_URL, CORPUS_PROFILE, gitCommit, hasFlag, positional, RUNS_ROOT } from "./lib.js";
+import { latestRunRecord, runChild } from "./arms.js";
 import { closeDb, getDb } from "../../src/db/client.js";
 import { evalRuns } from "../../src/db/schema.js";
 import { loadConfig } from "../../src/config.js";
@@ -45,30 +45,6 @@ import {
   type SwappableAgent,
 } from "./swap-lib.js";
 import type { AgreementReport } from "./graph-agreement.js";
-
-function runChild(script: string, args: string[], env: Record<string, string>): void {
-  const result = spawnSync("npx", ["tsx", script, ...args], {
-    cwd: REPO_ROOT,
-    stdio: "inherit",
-    env: { ...process.env, ...env, CORPUS_DATABASE_URL },
-  });
-  if (result.status !== 0) {
-    throw new Error(`${script} ${args.join(" ")} exited with ${result.status ?? result.signal}`);
-  }
-}
-
-/** The run.json of the newest run dir for `cluster` started at or after `since`. */
-function latestRunRecord(cluster: string, since: Date): ArmRecord {
-  const dirs = readdirSync(RUNS_ROOT)
-    .filter((d) => d.startsWith(`${cluster}-`) && existsSync(join(RUNS_ROOT, d, "run.json")))
-    .map((d) => ({ d, mtime: statSync(join(RUNS_ROOT, d, "run.json")).mtimeMs }))
-    .sort((x, y) => y.mtime - x.mtime);
-  for (const { d } of dirs) {
-    const rec = JSON.parse(readFileSync(join(RUNS_ROOT, d, "run.json"), "utf8")) as ArmRecord;
-    if (new Date(rec.startedAt).getTime() >= since.getTime() - 5_000) return rec;
-  }
-  throw new Error(`no run.json for ${cluster} written since ${since.toISOString()} under ${RUNS_ROOT}`);
-}
 
 async function main(): Promise<void> {
   assertCorpusDb();

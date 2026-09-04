@@ -30,6 +30,7 @@
     "corpus:contributions": "tsx scripts/corpus/contributions.ts",
     "corpus:agreement": "tsx scripts/corpus/agreement.ts",
     "corpus:swap": "tsx scripts/corpus/swap.ts",
+    "corpus:property": "tsx scripts/corpus/property.ts",
     "predictions": "tsx scripts/predictions.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts"
   },

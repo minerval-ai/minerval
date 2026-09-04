@@ -200,6 +200,28 @@ question in one line. Two full drains of the cluster: budget accordingly,
 and repeat before reading a difference as the model's rather than the run's.
 Registered as kind `swap`; `--dry-run` prints the arm commands.
 
+**Properties** (#334 S3 tier 1, from #295) — the invariances that need no
+referent, each measured as the agreement between two arms of the same cluster:
+
+```bash
+npm run corpus:property -- idempotency blackholes --profile=production        # same config twice: the noise floor
+npm run corpus:property -- path-independence blackholes --seed=3               # arm B ingests in a shuffled order
+npm run corpus:property -- path-independence eggs --baseline=<snapshot>         # reuse a drained arm A
+```
+
+`idempotency` is the pipeline's own noise floor — the band every other
+comparison has to clear. `path-independence` uses `corpus:run
+--order=shuffle:<seed>` (or `reverse`) for arm B: matching is stateful, the
+first phrasing ingested becomes the node, and the constitution wants that not
+to matter. Model convergence is `corpus:swap`. Arms are child runs, snapshotted
+as `prop_<stamp>_a` / `_b`, compared by `corpus:agreement`; the summary reads
+the F1 and edit distance in plain language, attributes the unmatched claims to
+the agent that minted them, and is registered as kind `property`. Every
+property is one pair of arms: repeat before reading a number as the pipeline's.
+`#295`'s adversarial counterparts (the same property under a hostile
+permutation or rewording) are the next slice once the contribution driver
+carries attacks.
+
 **Matcher golden pairs** (#99 layer 1) — the per-PR regression net for the one
 agent whose task saturates enough for exact-match grading. 30 pinned pairs in
 [`golden/matcher-pairs.json`](./golden/matcher-pairs.json) (paraphrase /
@@ -268,7 +290,8 @@ accrues only as questions resolve.
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard
 into the run dir; `--score=0` is structural-only), `--profile=production`,
-`--swap=<agent>:<model>` (one agent on another model, on top of the profile).
+`--swap=<agent>:<model>` (one agent on another model, on top of the profile),
+`--order=reverse|shuffle:<seed>` (ingest the selected posts in another order).
 
 `corpus:score` flags: `--sample=N` (claims to LLM-judge; default 15, `0` =
 structural-only), `--no-judge`, `--out=DIR`, `--allow-same-model-judge`. The
