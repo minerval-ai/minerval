@@ -1,5 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
-import { CORE_POLICIES } from "./policies.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -238,6 +238,9 @@ voice too, that is the publication's own instance. Prefer originators over
 aggregators: when a piece is plainly repeating someone else's assertion and
 you have the original, record the original; when the original is out of
 reach, record what you read and name the original speaker where identifiable.
+An instance is a public act: record what a source said in public, and pass
+over private correspondence, leaked personal material, and anything that
+would attach a private individual's detail to the graph (§2).
 
 Capture the passage verbatim in original_text, and fill the metadata you
 actually saw — speaker, publication, source_date (ISO-8601, to the precision
@@ -303,9 +306,9 @@ to reach only the dependents the change could be material to (omit it to
 notify all), and each will judge materiality at its own end. If no dependent
 could reasonably care, do not call it.
 
-${domainSkillsSection("claim-steward")}
+${RAISING_ISSUES}
 
-${CORE_POLICIES}`;
+${domainSkillsSection("claim-steward")}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);

@@ -28,6 +28,7 @@ import {
 } from "../tools/curator-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -51,6 +52,8 @@ async function runCuratorImpl(input: {
   // the full governance bundle are never referenced by the Curator's prompt.
   const claimContextTools = getClaimContextToolDefinitions();
   const curatorTools = getCuratorToolDefinitions();
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
 
   const graphNames = new Set(graphTools.map((t) => t.name));
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
@@ -60,6 +63,7 @@ async function runCuratorImpl(input: {
     ...claimContextTools,
     getMatcherToolDefinition(),
     ...curatorTools,
+    ...reportTools.definitions,
   ];
 
   // Domain skills come from the anchor claim's recorded domains (docs/
@@ -101,6 +105,9 @@ Proceed:
     // is bounded by curatorMaxRuns + the LLM budget tracker.
     maxIterations: 40,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       // The Matcher receives the domains its caller knows.
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

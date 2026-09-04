@@ -29,8 +29,8 @@ describe("migration sanity", () => {
     const [count] = await rawQuery<{ n: string }>(
       `SELECT COUNT(*) AS n FROM drizzle.__drizzle_migrations`
     );
-    // 0000..0039 — at least the full current chain applied.
-    expect(Number(count!.n)).toBeGreaterThanOrEqual(40);
+    // 0000..0045 — at least the full current chain applied.
+    expect(Number(count!.n)).toBeGreaterThanOrEqual(46);
   });
 
   it("installed the money constraints and partial unique indexes", async () => {
@@ -49,10 +49,12 @@ describe("migration sanity", () => {
     ]);
     const indexes = await rawQuery<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes WHERE indexname IN
-         ('uq_action_allocations_live_placement', 'uq_orders_open_per_claim')`
+         ('uq_action_allocations_live_placement', 'uq_orders_open_per_claim',
+          'uq_agent_reports_dedupe_key')`
     );
     expect(indexes.map((i) => i.indexname).sort()).toEqual([
       "uq_action_allocations_live_placement",
+      "uq_agent_reports_dedupe_key",
       "uq_orders_open_per_claim",
     ]);
   });

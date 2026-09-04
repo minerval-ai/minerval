@@ -32,6 +32,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { resolveProvider } from "../providers/routing.js";
 import { withAgent, withSkills } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { skillsByName } from "../prompts/skills.js";
 import {
@@ -128,7 +129,10 @@ async function runMandateReviewImpl(input: {
     name: "web_search",
     max_uses: 5,
   };
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
   const tools: Tool[] = [
+    ...reportTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
     // (get_claim, get_decomposition, get_dependents). Valuing the ledger is a
     // judgment call about what falls under this mandate's words, and that is
@@ -548,6 +552,9 @@ async function runMandateReviewImpl(input: {
     maxTokens: 4096,
     maxIterations: 24,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       // Shared graph reads first; null means "not mine", so the mandate's own
       // handlers below still run.
       const graphRead = await executeGraphReadTool(name, toolInput);

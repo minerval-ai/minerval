@@ -1,18 +1,40 @@
 /**
  * Vendors verbatim project documents, the real agent system prompts, and the
  * domain skills into the web/ frontend, so the explainer shows exactly what
- * the agents are governed by.
+ * the agents are governed by, and the eval system's record into
+ * web/content/evals/ so the public evals page (#368) renders from committed
+ * files rather than anyone's database.
  *
  * Run from the repo root:  npx tsx scripts/sync-frontend-content.ts
  *
- * Re-run whenever the constitution, docs, prompts, or skills change. The
- * drift test (tests/unit/scripts/frontend-content-drift.test.ts) regenerates
- * into a temporary directory and diffs it against web/content/, so a stale
- * vendored copy fails CI rather than quietly misdescribing the agents.
+ * Re-run whenever the constitution, docs, prompts, or skills change, and
+ * after committing a scorecard, a filled judge-review sheet, a golden-suite
+ * run, or a change to a fixture or the production model pins. Publishing a
+ * new eval result is: commit the file under corpus/, run this, commit
+ * web/content/evals/, open the PR. The drift test
+ * (tests/unit/scripts/frontend-content-drift.test.ts) regenerates the agents
+ * and skills into a temporary directory and diffs them against web/content/,
+ * so a stale vendored copy fails CI rather than quietly misdescribing the
+ * agents.
  */
-import { writeFileSync, mkdirSync, copyFileSync } from "fs";
-import { resolve, dirname } from "path";
+import {
+  writeFileSync,
+  mkdirSync,
+  copyFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  statSync,
+  rmSync,
+} from "fs";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
+import { execSync } from "child_process";
+
+import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
+import { buildEvalsIndex, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
+import { MODELS } from "../src/llm/models.js";
 
 import { getExtractorSystemPrompt } from "../src/llm/prompts/extractor.js";
 import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
@@ -23,6 +45,8 @@ import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arb
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
+import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
+import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -228,12 +252,158 @@ export function syncFrontendContent(contentDir: string): {
   return { agents: agentIndex, skills: skillIndex };
 }
 
+/**
+ * Write the eval system's record (#368) into `contentDir`/evals: everything
+ * the evals page shows that is a fact rather than prose, the committed
+ * scorecards and review sheets, the fixtures, and an index of what production
+ * runs on, at what price, over which clusters. The page reads only from
+ * web/content/evals/; nothing on the public site touches a corpus database.
+ * Kept apart from syncFrontendContent because its output carries a timestamp
+ * and the git commit, so the drift test does not diff it.
+ */
+export function syncEvalsContent(contentDir: string): {
+  scorecards: number;
+  goldenRuns: number;
+  reviews: number;
+  clusters: number;
+  goldenPairs: number;
+  predictions: number;
+  contributions: number;
+  pinnedAgents: number;
+  gitCommit: string | null;
+} {
+  const corpusDir = resolve(root, "corpus");
+  const evalsDir = resolve(contentDir, "evals");
+  rmSync(evalsDir, { recursive: true, force: true });
+  mkdirSync(evalsDir, { recursive: true });
+
+  const jsonFiles = (dir: string) =>
+    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+  const readJson = <T,>(path: string) => JSON.parse(readFileSync(path, "utf8")) as T;
+  const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+  // Clusters: every corpus/<dir>/manifest.json, sized over its committed posts.
+  const clusters: ClusterInput[] = readdirSync(corpusDir)
+    .filter((d) => existsSync(join(corpusDir, d, "manifest.json")) && statSync(join(corpusDir, d)).isDirectory())
+    .filter((d) => d !== "predictions")
+    .sort()
+    .map((key) => {
+      const manifest = readJson<{
+        kind?: string;
+        description: string;
+        source: string;
+        posts: Array<{ id: string; title: string; author?: string; url?: string; role?: string }>;
+      }>(join(corpusDir, key, "manifest.json"));
+      const postsDir = join(corpusDir, key, "posts");
+      const total = existsSync(postsDir)
+        ? readdirSync(postsDir)
+            .filter((f) => f.endsWith(".md"))
+            .reduce((n, f) => n + words(readFileSync(join(postsDir, f), "utf8")), 0)
+        : 0;
+      return { key, kind: manifest.kind ?? "lesswrong", description: manifest.description, source: manifest.source, posts: manifest.posts, words: total };
+    });
+
+  // Scorecards and golden runs, copied file for file under the same names.
+  const scorecardFiles: Array<{ cluster: string; file: string }> = [];
+  const goldenRunFiles: string[] = [];
+  const scorecardsRoot = join(corpusDir, "scorecards");
+  for (const cluster of readdirSync(scorecardsRoot).filter((d) => statSync(join(scorecardsRoot, d)).isDirectory()).sort()) {
+    const target = cluster === "golden-matcher" ? resolve(evalsDir, "golden-runs") : resolve(evalsDir, "scorecards", cluster);
+    mkdirSync(target, { recursive: true });
+    for (const file of jsonFiles(join(scorecardsRoot, cluster))) {
+      copyFileSync(join(scorecardsRoot, cluster, file), resolve(target, file));
+      if (cluster === "golden-matcher") goldenRunFiles.push(file);
+      else scorecardFiles.push({ cluster, file });
+    }
+  }
+
+  // Filled judge-review sheets (#334 §2.8 as amended).
+  const reviewsDir = join(corpusDir, "calibration");
+  mkdirSync(resolve(evalsDir, "reviews"), { recursive: true });
+  const reviews = (existsSync(reviewsDir) ? readdirSync(reviewsDir).filter((f) => f.endsWith(".md")).sort() : []).map((file) => {
+    copyFileSync(join(reviewsDir, file), resolve(evalsDir, "reviews", file));
+    return { file, text: readFileSync(join(reviewsDir, file), "utf8") };
+  });
+
+  // Fixtures: the golden pairs, the predictions set, the contribution scenarios.
+  copyFileSync(join(corpusDir, "golden", "matcher-pairs.json"), resolve(evalsDir, "golden-pairs.json"));
+  copyFileSync(join(corpusDir, "predictions", "manifest.json"), resolve(evalsDir, "predictions.json"));
+  mkdirSync(resolve(evalsDir, "contributions"), { recursive: true });
+  const contributions: ContributionScenarioInput[] = jsonFiles(join(corpusDir, "contributions")).map((file) => {
+    copyFileSync(join(corpusDir, "contributions", file), resolve(evalsDir, "contributions", file));
+    return readJson<ContributionScenarioInput>(join(corpusDir, "contributions", file));
+  });
+
+  let gitCommit: string | null = null;
+  try {
+    gitCommit = execSync("git rev-parse --short HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    gitCommit = null;
+  }
+
+  // The exact texts the evals run on, so the guide shows the artifact rather
+  // than describing it: the judge's prompt (rendered with placeholders where a
+  // claim's own fields go) and the questions it must answer; the pair judge's
+  // prompt; the rubric and the scorecard design note, verbatim.
+  const judgePromptSample = buildJudgePrompt({
+    id: "<claim id>",
+    text: "<the claim's canonical text>",
+    claimType: "<claim type>",
+    importance: 0.5,
+    status: "<status>",
+    confidence: 0.8,
+    reasoningTrace: "<the Steward's reasoning trace, verbatim>",
+    subclaims: [{ relation: "<relation>", text: "<a direct subclaim's text>", status: "<its status>" }],
+    instances: [{ originalText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
+  });
+  writeFileSync(resolve(evalsDir, "judge-prompt.md"), judgePromptSample + "\n");
+  writeFileSync(resolve(evalsDir, "judge-standards.md"), CONSTITUTION_STANDARDS + "\n");
+  writeFileSync(resolve(evalsDir, "judge-schema.json"), JSON.stringify(JUDGE_SCHEMA, null, 2) + "\n");
+  writeFileSync(
+    resolve(evalsDir, "pair-judge.json"),
+    JSON.stringify({ prompt: pairJudgePrompt("<a claim from graph A>", "<a claim from graph B>"), schema: PAIR_JUDGE_SCHEMA }, null, 2) + "\n"
+  );
+  copyFileSync(resolve(corpusDir, "RUBRIC.md"), resolve(evalsDir, "rubric.md"));
+  copyFileSync(resolve(corpusDir, "SCORING.md"), resolve(evalsDir, "scoring.md"));
+
+  const evalsIndex = buildEvalsIndex({
+    syncedAt: new Date().toISOString(),
+    gitCommit,
+    pins: parseModelPins(readFileSync(API_STACK_PATH, "utf8")),
+    // The judge's default (JUDGE_MODEL unset): src/config.ts pins it to Sonnet.
+    judgeModel: MODELS.sonnet,
+    ratesFor: (model: string) => (hasExplicitRates(model) ? ratesForModel(model) : null),
+    clusters,
+    golden: readJson(join(corpusDir, "golden", "matcher-pairs.json")),
+    predictions: readJson(join(corpusDir, "predictions", "manifest.json")),
+    contributions,
+    reviews,
+    scorecardFiles,
+    goldenRunFiles,
+    rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
+  });
+  writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
+
+  return {
+    scorecards: scorecardFiles.length,
+    goldenRuns: goldenRunFiles.length,
+    reviews: reviews.length,
+    clusters: clusters.length,
+    goldenPairs: evalsIndex.golden.pairs,
+    predictions: evalsIndex.predictions.count,
+    contributions: contributions.length,
+    pinnedAgents: evalsIndex.pins.length,
+    gitCommit,
+  };
+}
+
 const invokedDirectly =
   typeof process.argv[1] === "string" &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 
 if (invokedDirectly) {
-  const { agents, skills } = syncFrontendContent(resolve(root, "web/content"));
+  const contentDir = resolve(root, "web/content");
+  const { agents, skills } = syncFrontendContent(contentDir);
   console.log(
     `Synced ${agents.length} agents + ${skills.length} skill(s) + 3 docs into web/content/`
   );
@@ -249,5 +419,13 @@ if (invokedDirectly) {
           `  skill ${s.name} v${s.version} — ${s.bodyChars}c, ${s.roles.length} roles, ${s.tools.length} tools`
       )
       .join("\n")
+  );
+
+  const evals = syncEvalsContent(contentDir);
+  console.log(
+    `Synced the eval record into web/content/evals/: ${evals.scorecards} scorecard(s), ` +
+      `${evals.goldenRuns} golden run(s), ${evals.reviews} review sheet(s), ` +
+      `${evals.clusters} clusters, ${evals.goldenPairs} golden pairs, ${evals.predictions} predictions, ` +
+      `${evals.contributions} contribution scenario(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
   );
 }

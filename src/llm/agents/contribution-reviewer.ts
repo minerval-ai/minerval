@@ -18,6 +18,7 @@ import {
 } from "../tools/reviewer-tools.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -34,9 +35,13 @@ async function runContributionReviewImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.governanceModel;
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
+    ...reportTools.definitions,
   ];
 
   // Domain skills come from the contribution's target claim (docs/
@@ -53,7 +58,7 @@ Please review this contribution:
 1. Use get_contribution_details to load the contribution and understand what is being proposed.
 2. If it targets an existing claim, use get_claim_with_context to understand that claim. Intake contributions (propose_claim, propose_source) have no target claim; the proposal itself is what you are judging.
 3. Use get_contributor_profile to understand the contributor's history and trust level.
-4. Evaluate the contribution against policies.
+4. Evaluate the contribution against the acceptance criteria for its type.
 5. Record your decision using record_review_decision (accept, reject, or escalate).
 6. If you accept a contribution on an existing claim, use notify_claim_steward so the steward can integrate the change. Accepted INTAKE contributions are materialized automatically by record_review_decision (matching/canonicalization, then claim creation or extraction); do not call notify_claim_steward for those; the result is reported back to you in the tool result.
 7. If you escalate, use escalate_to_arbitrator with your reasoning.`;
@@ -66,6 +71,9 @@ Please review this contribution:
     maxTokens: 8192,
     maxIterations: 8,
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

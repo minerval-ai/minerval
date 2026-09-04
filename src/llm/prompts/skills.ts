@@ -9,10 +9,10 @@
  * after the constitution-plus-role block, so the shared block's cache entry
  * is unchanged between skilled and unskilled runs of the same role.
  *
- * Precedence: constitution, then the role and its policies, then the skill.
- * A skill may sharpen a role's obligations and add procedures and tools; it
- * never loosens one, and where it appears to diverge from the constitution
- * the constitution wins and the skill is defective.
+ * Precedence: constitution, then the role (whose prompt carries its operating
+ * standards), then the skill. A skill may sharpen a role's obligations and add
+ * procedures and tools; it never loosens one, and where it appears to diverge
+ * from the constitution the constitution wins and the skill is defective.
  */
 import { readFileSync, readdirSync, existsSync, statSync } from "fs";
 import { resolve, dirname, join } from "path";

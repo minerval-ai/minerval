@@ -1,4 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -83,6 +84,8 @@ asserts, so the new instance's stance is "affirms".
   weighed and how they relate (specification, generalization, counterpart).
   The calling agent, Steward or Curator, uses these to decide whether to
   link or escalate; they are not decoration.
+
+${RAISING_ISSUES}
 
 ${domainSkillsSection("matcher")}`;
 

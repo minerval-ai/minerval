@@ -19,6 +19,8 @@ const nextConfig = {
       { source: "/about/architecture", destination: "/docs/architecture", permanent: true },
       { source: "/about/agents", destination: "/docs/agents", permanent: true },
       { source: "/about/agents/:key", destination: "/docs/agents/:key", permanent: true },
+      // The public evals page (#368) lives under /docs; the short URL points at it.
+      { source: "/evals", destination: "/docs/evals", permanent: true },
     ];
   },
 };

@@ -1,0 +1,206 @@
+{
+  "cluster": "predictions",
+  "kind": "predictions",
+  "description": "Resolvable predictions (#334 S6, from #296): claims with a resolution criterion, a resolution date and an operationalization, so that reality — not a judge — eventually grades the credence the Steward assigned. Seeded early because signal accrues only as questions resolve. Authored 2026-09-02 for a spread of domains and horizons (one to sixteen months); no market baseline is attached yet (the forecasting platforms were unreachable from the authoring environment) — attach them with `predictions import-baselines` so the Minerval-vs-market comparative can be computed. Wording follows §3: the shortest neutral statement of what will be checked, in the direction the criterion resolves YES.",
+  "authoredAt": "2026-09-02",
+  "predictions": [
+    {
+      "id": "nobel-physics-2026-shared",
+      "claim": "The 2026 Nobel Prize in Physics will be shared by two or more laureates.",
+      "resolutionCriterion": "YES if the Royal Swedish Academy of Sciences names more than one laureate for the 2026 Nobel Prize in Physics.",
+      "resolutionDate": "2026-10-31",
+      "operationalization": "nobelprize.org, the official 2026 Physics announcement.",
+      "domain": "science",
+      "notes": "Short horizon; a recurring, well-defined event with a stable base rate."
+    },
+    {
+      "id": "nobel-chemistry-2026-us-affiliation",
+      "claim": "At least one 2026 Nobel Chemistry laureate will be affiliated with a United States institution.",
+      "resolutionCriterion": "YES if nobelprize.org lists a United States institution as an affiliation at the time of the award for any 2026 Chemistry laureate.",
+      "resolutionDate": "2026-10-31",
+      "operationalization": "nobelprize.org laureate pages for the 2026 Chemistry prize, the 'affiliation at the time of the award' field.",
+      "domain": "science",
+      "notes": "Short horizon."
+    },
+    {
+      "id": "nobel-peace-2026-organization",
+      "claim": "The 2026 Nobel Peace Prize will be awarded to an organization rather than only to individuals.",
+      "resolutionCriterion": "YES if at least one 2026 Peace Prize laureate is an organization (alone or shared).",
+      "resolutionDate": "2026-10-31",
+      "operationalization": "nobelprize.org, the official 2026 Peace Prize announcement.",
+      "domain": "politics",
+      "notes": "Short horizon."
+    },
+    {
+      "id": "us-house-120th-republican-majority",
+      "claim": "Republicans will hold a majority of U.S. House seats when the 120th Congress convenes.",
+      "resolutionCriterion": "YES if, on the day the 120th Congress first convenes (scheduled 2027-01-03), the Clerk of the House's official party breakdown shows Republicans with at least 218 seats, vacancies counted as neither party.",
+      "resolutionDate": "2027-01-04",
+      "operationalization": "Office of the Clerk of the U.S. House of Representatives, official party division on the convening day.",
+      "domain": "politics",
+      "notes": "Resolves on the November 2026 midterms plus certification."
+    },
+    {
+      "id": "us-senate-120th-republican-50",
+      "claim": "Republicans will hold at least 50 U.S. Senate seats when the 120th Congress convenes.",
+      "resolutionCriterion": "YES if the Senate's official party division on the convening day of the 120th Congress shows 50 or more Republican senators (independents caucusing with either party do not count as Republicans).",
+      "resolutionDate": "2027-01-04",
+      "operationalization": "senate.gov party division for the 120th Congress on its convening day.",
+      "domain": "politics",
+      "notes": "Sibling of the House question; tests whether credences on correlated questions cohere."
+    },
+    {
+      "id": "giss-2026-anomaly-120",
+      "claim": "NASA GISS will report the 2026 global mean surface temperature anomaly at or above 1.20 °C versus 1951–1980.",
+      "resolutionCriterion": "YES if the GISTEMP v4 annual land-ocean temperature index for calendar 2026, as first published, is at or above 1.20 °C relative to the 1951–1980 mean.",
+      "resolutionDate": "2027-01-31",
+      "operationalization": "NASA GISS GISTEMP v4 annual mean anomaly table (the January release covering 2026), first published value.",
+      "domain": "climate",
+      "notes": "A threshold near recent annual values, so the question is live rather than settled."
+    },
+    {
+      "id": "nsidc-2026-september-record-low",
+      "claim": "Arctic sea ice extent will set a record-low September monthly average in 2026.",
+      "resolutionCriterion": "YES if the NSIDC Sea Ice Index September 2026 monthly average extent is below the September 2012 monthly average, the record low at the time of seeding.",
+      "resolutionDate": "2026-10-15",
+      "operationalization": "NSIDC Sea Ice Index (G02135), monthly average extent, Northern Hemisphere, September 2026 versus September 2012.",
+      "domain": "climate",
+      "notes": "Short horizon; the melt season is mostly over at seeding, which makes this a test of how the Steward handles late information."
+    },
+    {
+      "id": "fed-dec-2026-upper-bound-325",
+      "claim": "The federal funds target range's upper bound will be at or below 3.25% after the December 2026 FOMC meeting.",
+      "resolutionCriterion": "YES if the FOMC statement issued at the conclusion of its December 2026 meeting sets a target range whose upper bound is 3.25% or lower.",
+      "resolutionDate": "2026-12-20",
+      "operationalization": "federalreserve.gov, the FOMC statement for the December 2026 meeting.",
+      "domain": "economics",
+      "notes": "Monetary-policy path; a question markets price continuously, so a baseline is easy to attach later."
+    },
+    {
+      "id": "cpi-dec-2026-below-3",
+      "claim": "U.S. CPI-U 12-month inflation for December 2026 will be below 3.0% as first published.",
+      "resolutionCriterion": "YES if the BLS first-published 12-month percent change in CPI-U, all items, not seasonally adjusted, for December 2026 is below 3.0%.",
+      "resolutionDate": "2027-01-31",
+      "operationalization": "BLS Consumer Price Index news release for December 2026, first print (revisions ignored).",
+      "domain": "economics",
+      "notes": ""
+    },
+    {
+      "id": "hicp-dec-2026-at-most-2",
+      "claim": "Euro-area annual HICP inflation for December 2026 will be at or below 2.0% in Eurostat's flash estimate.",
+      "resolutionCriterion": "YES if Eurostat's flash estimate of euro-area annual HICP inflation for December 2026 is 2.0% or lower.",
+      "resolutionDate": "2027-01-15",
+      "operationalization": "Eurostat euro indicators flash estimate for December 2026 (published early January 2027).",
+      "domain": "economics",
+      "notes": ""
+    },
+    {
+      "id": "china-2026-gdp-at-least-45",
+      "claim": "China's preliminary 2026 GDP growth will be reported at or above 4.5%.",
+      "resolutionCriterion": "YES if the National Bureau of Statistics of China's preliminary estimate of real GDP growth for calendar 2026 is 4.5% or higher.",
+      "resolutionDate": "2027-01-31",
+      "operationalization": "NBS of China, the January 2027 preliminary GDP release for 2026.",
+      "domain": "economics",
+      "notes": "Official statistic as published; the question is about the reported number, not the true growth rate."
+    },
+    {
+      "id": "sp500-2026-up-on-year",
+      "claim": "The S&P 500 will close 2026 above its 2025 year-end close.",
+      "resolutionCriterion": "YES if the S&P 500's official closing level on the last trading day of 2026 exceeds its official close on 2025-12-31.",
+      "resolutionDate": "2027-01-02",
+      "operationalization": "S&P Dow Jones Indices official closing levels.",
+      "domain": "markets",
+      "notes": "A base-rate question with a well-known prior."
+    },
+    {
+      "id": "btc-above-150k-before-2027",
+      "claim": "Bitcoin will trade above US$150,000 at some point before 2027-01-01.",
+      "resolutionCriterion": "YES if CoinMarketCap's BTC/USD daily high exceeds 150,000 on any day from seeding through 2026-12-31.",
+      "resolutionDate": "2027-01-02",
+      "operationalization": "CoinMarketCap historical data for BTC, daily high, USD.",
+      "domain": "markets",
+      "notes": ""
+    },
+    {
+      "id": "starship-ship-catch-2026",
+      "claim": "SpaceX will catch a Starship upper stage with the launch tower arms during 2026.",
+      "resolutionCriterion": "YES if SpaceX's official flight recap for any Starship flight in 2026 states that the ship (the upper stage, not the Super Heavy booster) was caught by the tower.",
+      "resolutionDate": "2027-01-05",
+      "operationalization": "spacex.com flight updates for Starship flights in 2026.",
+      "domain": "technology",
+      "notes": "Engineering milestone with a crisp observable."
+    },
+    {
+      "id": "m8-earthquake-within-year",
+      "claim": "A magnitude 8.0 or greater earthquake will occur somewhere on Earth between 2026-09-02 and 2027-09-01.",
+      "resolutionCriterion": "YES if the USGS earthquake catalog contains any event with reviewed magnitude 8.0 or greater in that window.",
+      "resolutionDate": "2027-09-02",
+      "operationalization": "USGS Earthquake Catalog (earthquake.usgs.gov), reviewed magnitudes.",
+      "domain": "science",
+      "notes": "A pure base-rate question; good for checking whether the Steward reasons from frequency."
+    },
+    {
+      "id": "who-pheic-within-year",
+      "claim": "The WHO will declare a new Public Health Emergency of International Concern between 2026-09-02 and 2027-09-01.",
+      "resolutionCriterion": "YES if the WHO Director-General declares a PHEIC under the International Health Regulations in that window, for an event not already under a PHEIC declaration at seeding.",
+      "resolutionDate": "2027-09-02",
+      "operationalization": "WHO news releases and IHR Emergency Committee statements.",
+      "domain": "health",
+      "notes": ""
+    },
+    {
+      "id": "uk-general-election-before-2028",
+      "claim": "The United Kingdom will hold a general election before 2028-01-01.",
+      "resolutionCriterion": "YES if polling day of a UK general election falls on or before 2027-12-31.",
+      "resolutionDate": "2028-01-02",
+      "operationalization": "UK Parliament / Electoral Commission records.",
+      "domain": "politics",
+      "notes": "Longest horizon in the set."
+    },
+    {
+      "id": "tesla-2026-deliveries-above-18m",
+      "claim": "Tesla will report more than 1.8 million vehicle deliveries for calendar 2026.",
+      "resolutionCriterion": "YES if Tesla's official production and deliveries release for Q4 2026 puts full-year 2026 deliveries above 1,800,000.",
+      "resolutionDate": "2027-01-15",
+      "operationalization": "Tesla investor relations, the Q4 and FY 2026 production and deliveries press release.",
+      "domain": "business",
+      "notes": ""
+    },
+    {
+      "id": "atlantic-2026-cat4-us-landfall",
+      "claim": "A Category 4 or stronger hurricane will make U.S. landfall during the 2026 Atlantic season.",
+      "resolutionCriterion": "YES if the National Hurricane Center's records show a hurricane making landfall in a U.S. state or territory at Category 4 or 5 intensity (sustained winds at or above 130 mph) during the 2026 season.",
+      "resolutionDate": "2026-12-15",
+      "operationalization": "NHC tropical cyclone reports and advisories for the 2026 Atlantic season.",
+      "domain": "climate",
+      "notes": "Partly elapsed at seeding; still open through November."
+    },
+    {
+      "id": "dodgers-2026-world-series",
+      "claim": "The Los Angeles Dodgers will win the 2026 World Series.",
+      "resolutionCriterion": "YES if the Dodgers win the 2026 MLB World Series.",
+      "resolutionDate": "2026-11-10",
+      "operationalization": "MLB.com official results.",
+      "domain": "sports",
+      "notes": "A low-probability-by-construction question, to populate the low end of the calibration curve."
+    },
+    {
+      "id": "jwst-science-operations-mid-2027",
+      "claim": "The James Webb Space Telescope will be conducting science observations on 2027-06-30.",
+      "resolutionCriterion": "YES if JWST is in normal science operations (not in an extended safe mode or decommissioned) on 2027-06-30 per STScI/NASA status reports.",
+      "resolutionDate": "2027-07-01",
+      "operationalization": "STScI JWST observatory status and NASA mission updates.",
+      "domain": "science",
+      "notes": "A high-probability-by-construction question, to populate the high end of the calibration curve."
+    },
+    {
+      "id": "nber-2026-peak-announced-by-sep-2027",
+      "claim": "The NBER will announce a U.S. business-cycle peak dated in 2026 before 2027-09-01.",
+      "resolutionCriterion": "YES if, before 2027-09-01, the NBER Business Cycle Dating Committee announces a peak (the start of a recession) with a peak month in calendar 2026.",
+      "resolutionDate": "2027-09-02",
+      "operationalization": "NBER Business Cycle Dating Committee announcements (nber.org/research/business-cycle-dating).",
+      "domain": "economics",
+      "notes": "Announcement lag is part of the question, deliberately."
+    }
+  ]
+}

@@ -1,0 +1,378 @@
+{
+  "version": 1,
+  "description": "Matcher golden pairs (#334 S1, from #137/#99 layer 1). Each pair seeds `existing` claims into the corpus DB and asks the Matcher whether `candidate` is one of them. Expectations follow the constitution: same proposition under any wording matches (§3); a claim and its denial are ONE node, so a negation matches with stance 'denies' (§2); specification/generalization and different-considerations claims do NOT match (§2's 'same considerations' test). existing[0] is the expected counterpart on match pairs; later entries are distractors. Grading is exact-match on (is_match, matched id, stance) — the Matcher's judgment saturates (§19), so near-deterministic grading is appropriate here and nowhere else.",
+  "pairs": [
+    {
+      "id": "para-01",
+      "category": "paraphrase",
+      "existing": [
+        "Advanced AI poses a non-negligible risk of human extinction this century.",
+        "Advanced AI will transform the labor market within decades."
+      ],
+      "candidate": {
+        "extractedText": "Frankly, there's a real chance AI wipes us all out before 2100.",
+        "proposedCanonical": "There is a substantial probability that AI causes human extinction by 2100."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Casual register, same proposition. The labor-market distractor shares topic, not considerations."
+    },
+    {
+      "id": "para-02",
+      "category": "paraphrase",
+      "existing": [
+        "LHC particle collisions cannot produce black holes that endanger the Earth."
+      ],
+      "candidate": {
+        "extractedText": "Micro black holes from CERN's collider pose no threat to the planet.",
+        "proposedCanonical": "Black holes produced at the LHC pose no danger to Earth."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Straight rewording; 'CERN's collider' and 'the LHC' co-refer."
+    },
+    {
+      "id": "para-03",
+      "category": "paraphrase",
+      "existing": [
+        "Dietary cholesterol from eggs has little effect on blood cholesterol in most people.",
+        "Egg yolks are high in dietary cholesterol."
+      ],
+      "candidate": {
+        "extractedText": "For the average person, eating eggs barely moves serum cholesterol at all.",
+        "proposedCanonical": "Egg consumption has minimal effect on serum cholesterol for most people."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "'Blood cholesterol' vs 'serum cholesterol' is vocabulary, not substance. The composition distractor (yolks are high in cholesterol) is a different proposition."
+    },
+    {
+      "id": "para-04",
+      "category": "paraphrase",
+      "existing": [
+        "SARS-CoV-2 most likely entered humans through natural zoonotic spillover.",
+        "The Huanan Seafood Market was the early epicenter of COVID-19 cases."
+      ],
+      "candidate": {
+        "extractedText": "The pandemic probably began the old-fashioned way: a virus jumping from animals to people.",
+        "proposedCanonical": "COVID-19 most likely originated via animal-to-human transmission."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Same origin claim; the market-epicenter distractor is evidence FOR it, not the claim itself."
+    },
+    {
+      "id": "para-05",
+      "category": "paraphrase",
+      "existing": ["Raising the minimum wage reduces teen employment."],
+      "candidate": {
+        "extractedText": "Hike the minimum wage and teenagers lose jobs — that's the standard result.",
+        "proposedCanonical": "Minimum-wage increases cost teenagers jobs."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Constitution §19's own example claim, reworded."
+    },
+    {
+      "id": "para-06",
+      "category": "paraphrase",
+      "existing": ["SSRIs outperform placebo for moderate depression."],
+      "candidate": {
+        "extractedText": "In moderate depression, SSRI antidepressants beat sugar pills in the trials.",
+        "proposedCanonical": "For moderate depression, SSRIs are more effective than placebo."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Same comparative efficacy proposition."
+    },
+    {
+      "id": "para-07",
+      "category": "paraphrase",
+      "existing": [
+        "Human activity is the principal cause of observed global warming since the mid-20th century."
+      ],
+      "candidate": {
+        "extractedText": "Even granting that most of the recent warming is man-made, the policy conclusions don't follow.",
+        "proposedCanonical": "Most warming since 1950 is attributable to human activity."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Frame-independence (§3): a critic conceding the claim in passing still AFFIRMS the same proposition. The policy complaint is a different claim the extractor would surface separately."
+    },
+    {
+      "id": "para-08",
+      "category": "paraphrase",
+      "existing": ["Hawking radiation causes black holes to lose mass over time."],
+      "candidate": {
+        "extractedText": "Black holes evaporate: they radiate away their mass via the Hawking process.",
+        "proposedCanonical": "Black holes evaporate by emitting Hawking radiation."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Technical vs plain statement of the same mechanism claim."
+    },
+    {
+      "id": "neg-01",
+      "category": "negation",
+      "existing": [
+        "LHC collisions could create stable black holes that accrete the Earth."
+      ],
+      "candidate": {
+        "extractedText": "CERN's collider cannot produce stable, Earth-devouring black holes — the physics rules it out.",
+        "proposedCanonical": "The LHC cannot produce stable black holes that would consume the Earth."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "A claim and its denial are one node (§2): this source takes the denying side."
+    },
+    {
+      "id": "neg-02",
+      "category": "negation",
+      "existing": [
+        "Egg consumption increases cardiovascular disease risk in the general population.",
+        "Eggs are a significant source of dietary protein."
+      ],
+      "candidate": {
+        "extractedText": "Eating eggs does not raise your risk of heart disease, the meta-analyses suggest.",
+        "proposedCanonical": "Egg consumption does not increase cardiovascular disease risk for most people."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "Direct negation; must find the counterpart despite opposite polarity embedding further apart."
+    },
+    {
+      "id": "neg-03",
+      "category": "negation",
+      "existing": ["Raising the minimum wage reduces teen employment."],
+      "candidate": {
+        "extractedText": "Careful studies keep finding no detectable effect of minimum-wage hikes on teen employment.",
+        "proposedCanonical": "Minimum-wage increases have no detectable effect on teen employment."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "The contrary ('no effect') denies the reduction claim; same question, same considerations."
+    },
+    {
+      "id": "neg-04",
+      "category": "negation",
+      "existing": [
+        "Advanced AI poses a non-negligible risk of human extinction this century."
+      ],
+      "candidate": {
+        "extractedText": "The extinction-from-AI discourse is science fiction; there is no credible pathway this century.",
+        "proposedCanonical": "Fears of AI-caused human extinction this century are unfounded."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "Dismissal of the risk claim is its denial, not a new claim."
+    },
+    {
+      "id": "neg-05",
+      "category": "negation",
+      "existing": [
+        "Publication bias inflates the measured effect size of antidepressants."
+      ],
+      "candidate": {
+        "extractedText": "It is simply not credible that the published antidepressant effect sizes are free of publication-bias inflation.",
+        "proposedCanonical": "Published antidepressant effect sizes are inflated by publication bias."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Polarity trap: the double negative ('not free of inflation') AFFIRMS the claim. A matcher that pattern-matches surface negation words gets the stance wrong."
+    },
+    {
+      "id": "neg-06",
+      "category": "negation",
+      "existing": ["Hawking radiation causes black holes to lose mass over time."],
+      "candidate": {
+        "extractedText": "Hawking radiation has never been observed and, I will argue, does not exist; black holes do not evaporate.",
+        "proposedCanonical": "Black holes do not lose mass to Hawking radiation."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "The published-dissent posture from the blackholes cluster: denial of the evaporation mechanism."
+    },
+    {
+      "id": "spec-01",
+      "category": "specification",
+      "existing": ["Raising the minimum wage reduces teen employment."],
+      "candidate": {
+        "extractedText": "After Seattle's 2016 increase, hours for low-wage workers fell measurably.",
+        "proposedCanonical": "Seattle's 2016 minimum-wage increase reduced hours for low-wage workers."
+      },
+      "expect": { "isMatch": false },
+      "note": "One city's episode is a specification: evidence for it bears only partly on the general claim (§2). Create and relate, don't merge."
+    },
+    {
+      "id": "spec-02",
+      "category": "specification",
+      "existing": [
+        "Advanced AI poses a non-negligible risk of human extinction this century."
+      ],
+      "candidate": {
+        "extractedText": "A misaligned AGI would predictably develop instrumental drives toward self-preservation and resource acquisition.",
+        "proposedCanonical": "Misaligned AGI would develop instrumental goals of self-preservation and resource acquisition."
+      },
+      "expect": { "isMatch": false },
+      "note": "A load-bearing subclaim of the risk case, not the risk claim itself."
+    },
+    {
+      "id": "spec-03",
+      "category": "specification",
+      "existing": ["Vaccines do not cause autism."],
+      "candidate": {
+        "extractedText": "The large Danish cohort settled it for MMR: no autism link.",
+        "proposedCanonical": "The MMR vaccine does not cause autism."
+      },
+      "expect": { "isMatch": false },
+      "note": "MMR-specific evidence bears fully on the MMR claim and only partly on the all-vaccines claim: different considerations, two nodes."
+    },
+    {
+      "id": "spec-04",
+      "category": "specification",
+      "existing": ["Eggs are safe to eat daily for most healthy adults."],
+      "candidate": {
+        "extractedText": "In diabetics, daily egg consumption tracks with elevated cardiovascular risk in several cohorts.",
+        "proposedCanonical": "Daily egg consumption is associated with elevated cardiovascular risk in diabetics."
+      },
+      "expect": { "isMatch": false },
+      "note": "The subgroup claim turns on subgroup-specific evidence; it is not the general-population claim restated."
+    },
+    {
+      "id": "spec-05",
+      "category": "specification",
+      "existing": [
+        "Astrophysical cosmic-ray collisions bound the catastrophic risk from LHC collisions."
+      ],
+      "candidate": {
+        "extractedText": "If collider-produced black holes were dangerous, cosmic rays striking neutron stars would already have produced observable effects.",
+        "proposedCanonical": "Cosmic-ray impacts on neutron stars would reveal any danger from collider-scale black holes."
+      },
+      "expect": { "isMatch": false },
+      "note": "One specific step of the astrophysical-bound argument, not the bound claim itself."
+    },
+    {
+      "id": "spec-06",
+      "category": "specification",
+      "existing": ["GLP-1 agonists reduce body weight in obese adults."],
+      "candidate": {
+        "extractedText": "We now know drugs can do what diets rarely sustain: lasting weight loss.",
+        "proposedCanonical": "Pharmacological interventions can produce sustained weight loss."
+      },
+      "expect": { "isMatch": false },
+      "note": "Generalization direction: the drug-class claim supports but does not equal the general claim."
+    },
+    {
+      "id": "diff-01",
+      "category": "similar_but_different",
+      "existing": ["Lockdowns failed to reduce SARS-CoV-2 transmission."],
+      "candidate": {
+        "extractedText": "Whatever they did to case curves, the lockdowns cost more than they bought us.",
+        "proposedCanonical": "The costs of COVID-19 lockdowns exceeded their public-health benefits."
+      },
+      "expect": { "isMatch": false },
+      "note": "Constitution §2's own example: 'lockdowns didn't work' as epidemiological failure vs cost-benefit failure are different claims in the same words."
+    },
+    {
+      "id": "diff-02",
+      "category": "similar_but_different",
+      "existing": ["Artificial general intelligence will be developed before 2040."],
+      "candidate": {
+        "extractedText": "Building AGI on that timeline would be reckless beyond anything in industrial history.",
+        "proposedCanonical": "Developing AGI before 2040 would be dangerous."
+      },
+      "expect": { "isMatch": false },
+      "note": "Timeline forecast vs evaluative claim about that timeline: nothing bearing on 'will it happen' settles 'would it be dangerous'."
+    },
+    {
+      "id": "diff-03",
+      "category": "similar_but_different",
+      "existing": [
+        "Advanced AI poses a non-negligible risk of human extinction this century."
+      ],
+      "candidate": {
+        "extractedText": "AI clearly poses serious risks of large-scale societal harm in the coming decades.",
+        "proposedCanonical": "AI poses serious risks of large-scale harm this century."
+      },
+      "expect": { "isMatch": false },
+      "note": "The canonical over-merge trap (#295): catastrophic-harm risk and extinction risk turn on different considerations. Merging them destroys the disagreement."
+    },
+    {
+      "id": "diff-04",
+      "category": "similar_but_different",
+      "existing": ["Egg yolks are high in dietary cholesterol."],
+      "candidate": {
+        "extractedText": "The old advice assumed that cholesterol you eat becomes cholesterol in your blood.",
+        "proposedCanonical": "Dietary cholesterol intake raises blood cholesterol levels."
+      },
+      "expect": { "isMatch": false },
+      "note": "A composition fact vs a physiological causal claim; adjacent in every source, identical in neither."
+    },
+    {
+      "id": "diff-05",
+      "category": "similar_but_different",
+      "existing": [
+        "The Wuhan Institute of Virology conducted gain-of-function research on coronaviruses."
+      ],
+      "candidate": {
+        "extractedText": "That research program, critics say, is what started the pandemic.",
+        "proposedCanonical": "Gain-of-function coronavirus research caused the COVID-19 pandemic."
+      },
+      "expect": { "isMatch": false },
+      "note": "The activity claim can be true while the causal-origin claim is false; the lab-leak debate lives in the gap between them."
+    },
+    {
+      "id": "diff-06",
+      "category": "similar_but_different",
+      "existing": ["Peer review reliably filters out fraudulent research."],
+      "candidate": {
+        "extractedText": "Say what you will, refereeing does make published papers clearer.",
+        "proposedCanonical": "Peer review improves the clarity of published papers."
+      },
+      "expect": { "isMatch": false },
+      "note": "Two different functions attributed to the same institution: fraud filtering vs clarity."
+    },
+    {
+      "id": "diff-07",
+      "category": "similar_but_different",
+      "existing": [
+        "The LHC's center-of-mass collision energy exceeds that of any previous human-built collider."
+      ],
+      "candidate": {
+        "extractedText": "Nature has been running the experiment forever: cosmic-ray collisions dwarf LHC energies.",
+        "proposedCanonical": "Cosmic-ray collisions reach energies far above the LHC's."
+      },
+      "expect": { "isMatch": false },
+      "note": "Related comparative facts that are premises in the same argument, on different comparanda. Relationship, not identity."
+    },
+    {
+      "id": "hard-01",
+      "category": "hard",
+      "existing": [
+        "A misaligned superintelligence would likely cause human extinction on its first deployment.",
+        "Aligning superintelligent AI is substantially harder than aligning subhuman AI.",
+        "AI capabilities are advancing faster than AI alignment research."
+      ],
+      "candidate": {
+        "extractedText": "The core of the doom case is that we need to get the very first try at aligning a superintelligence right, because a failed first try means we do not get another: an unaligned system at that capability level ends us.",
+        "proposedCanonical": "Humanity would not survive a failed first attempt to align a superintelligent AI, because a misaligned system at that level would be lethal and no retry would be possible."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "The over-elaboration failure from the field notes: a framing-heavy 30-word proposal must still find its terse counterpart among close distractors."
+    },
+    {
+      "id": "hard-02",
+      "category": "hard",
+      "existing": [
+        "Observational nutrition studies are confounded by healthy-user bias.",
+        "Randomized controlled trials of diet are difficult to run at scale."
+      ],
+      "candidate": {
+        "extractedText": "People who eat what the culture calls 'healthy' also exercise, smoke less, and see doctors — so cohort studies of any one food are measuring the whole lifestyle.",
+        "proposedCanonical": "Systematic lifestyle differences among healthy eaters bias observational studies of individual foods."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "affirms" },
+      "note": "Cross-vocabulary paraphrase: 'healthy-user bias' never appears in the candidate, but the proposition is the same."
+    },
+    {
+      "id": "hard-03",
+      "category": "hard",
+      "existing": [
+        "The minimum wage should be raised.",
+        "Raising the minimum wage reduces teen employment."
+      ],
+      "candidate": {
+        "extractedText": "On balance, raising the minimum wage now would be a mistake.",
+        "proposedCanonical": "The minimum wage should not be raised."
+      },
+      "expect": { "isMatch": true, "matchedIndex": 0, "stance": "denies" },
+      "note": "Uniformity across claim types (§8): a normative claim and its denial are one node too, and the empirical distractor about teen employment must not absorb it."
+    }
+  ]
+}

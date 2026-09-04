@@ -15,6 +15,7 @@ export interface GraphSnapshot {
     claimType: string;
     importance: number;
     createdBy: string;
+    createdAt?: string | Date;
   }>;
   /** decomposition/relationship edges: parent leans on child */
   edges: Array<{ parent: string; child: string; rel: string }>;
@@ -25,8 +26,15 @@ export interface GraphSnapshot {
     confidence: number;
     reasoningTrace: string;
   }>;
-  /** one row per instance (utterance); we only need the claim id to count */
-  instances: Array<{ claimId: string }>;
+  /** one row per instance (utterance); the metrics need only the claim id,
+   *  the judge (score.ts) also reads what the source said */
+  instances: Array<{
+    claimId: string;
+    originalText?: string;
+    stance?: string;
+    proposedCanonicalForm?: string | null;
+    createdAt?: string | Date;
+  }>;
   /** total word count across all ingested source bodies (for claims-per-1k-words) */
   sourceWords: number;
 }
@@ -84,6 +92,35 @@ export interface StructuralMetrics {
       parent: string;
       child: string;
     }>;
+  };
+  /**
+   * Who authors the graph's language (#334, addendum of 2026-08-11). The
+   * Extractor proposes a canonical form per passage; on a new claim the
+   * Matcher's rewording wins. With the proposal persisted on the instance
+   * (#379) this is finally a measurement: how often the second author
+   * rewrites the first, by how much, and how far the phrasings the Matcher
+   * absorbs into existing claims sit from those claims. Rates are null when
+   * nothing carries a proposal (graphs built before #379).
+   */
+  canonicalAuthorship: {
+    /** First instance of each extractor-minted claim — the new-claim path. */
+    authoringInstances: number;
+    /** …of which carry the extractor's proposal. */
+    withProposal: number;
+    /** Share of proposals the Matcher rewrote (normalized text differs). */
+    rewriteRate: number | null;
+    /** Mean token-Jaccard distance between proposal and stored form, over rewrites. */
+    rewriteMagnitude: number | null;
+    /** Mean (stored words − proposed words) over rewrites; positive = lengthened. */
+    meanWordDelta: number | null;
+    matched: {
+      /** Later instances with a proposal — the match path. */
+      count: number;
+      /** Share recorded as denying the canonical form: negations absorbed (§2). */
+      deniesShare: number | null;
+      /** Mean token-Jaccard distance between the proposal and the claim it was matched to. */
+      meanProposalDistance: number | null;
+    };
   };
 }
 
@@ -242,6 +279,104 @@ export function computeStructuralMetrics(g: GraphSnapshot): StructuralMetrics {
       meanCompound: mean(compoundImps),
     },
     coherence: computeCoherence(g),
+    canonicalAuthorship: computeCanonicalAuthorship(g),
+  };
+}
+
+/** Lowercased word tokens, punctuation stripped. */
+export function tokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** 1 − |A∩B| / |A∪B| over word sets; 0 = same words, 1 = nothing shared. */
+export function jaccardDistance(a: string, b: string): number {
+  const A = new Set(tokens(a));
+  const B = new Set(tokens(b));
+  if (A.size === 0 && B.size === 0) return 0;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  return 1 - inter / (A.size + B.size - inter);
+}
+
+const toMs = (d: string | Date | undefined): number =>
+  d === undefined ? Number.NaN : (d instanceof Date ? d : new Date(d)).getTime();
+
+/**
+ * The authorship split: for each extractor-minted claim, its earliest
+ * instance is the one whose proposal the Matcher either kept or rewrote
+ * when the claim was created; every later instance (on any claim) reached
+ * the claim through a match. Instances are ordered by created_at where
+ * present, else by array order (score.ts loads them ordered).
+ */
+function computeCanonicalAuthorship(g: GraphSnapshot): StructuralMetrics["canonicalAuthorship"] {
+  const claimById = new Map(g.claims.map((c) => [c.id, c]));
+  const byClaim = new Map<string, GraphSnapshot["instances"]>();
+  g.instances.forEach((i, idx) => {
+    (byClaim.get(i.claimId) ?? byClaim.set(i.claimId, []).get(i.claimId)!).push({ ...i, _idx: idx } as never);
+  });
+  const mean = (xs: number[]) =>
+    xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 1000) / 1000 : null;
+  const norm = (t: string) => tokens(t).join(" ");
+
+  let authoring = 0;
+  let withProposal = 0;
+  const rewriteDistances: number[] = [];
+  const wordDeltas: number[] = [];
+  let rewrites = 0;
+  let matchedCount = 0;
+  let matchedDenies = 0;
+  const matchedDistances: number[] = [];
+
+  for (const [claimId, list] of byClaim) {
+    const claim = claimById.get(claimId);
+    if (!claim) continue;
+    const sorted = [...list].sort((x, y) => {
+      const dx = toMs(x.createdAt);
+      const dy = toMs(y.createdAt);
+      if (Number.isNaN(dx) || Number.isNaN(dy)) {
+        return ((x as { _idx?: number })._idx ?? 0) - ((y as { _idx?: number })._idx ?? 0);
+      }
+      return dx - dy;
+    });
+    const [first, ...rest] = sorted;
+    if (first && claim.createdBy === "extractor") {
+      authoring++;
+      const proposal = first.proposedCanonicalForm;
+      if (proposal) {
+        withProposal++;
+        if (norm(proposal) !== norm(claim.text)) {
+          rewrites++;
+          rewriteDistances.push(jaccardDistance(proposal, claim.text));
+          wordDeltas.push(tokens(claim.text).length - tokens(proposal).length);
+        }
+      }
+    } else if (first) {
+      // Not extractor-minted: every instance reached it by a match.
+      rest.unshift(first);
+    }
+    for (const i of rest) {
+      if (!i.proposedCanonicalForm) continue;
+      matchedCount++;
+      if (i.stance === "denies") matchedDenies++;
+      matchedDistances.push(jaccardDistance(i.proposedCanonicalForm, claim.text));
+    }
+  }
+
+  return {
+    authoringInstances: authoring,
+    withProposal,
+    rewriteRate: withProposal ? Math.round((rewrites / withProposal) * 1000) / 1000 : null,
+    rewriteMagnitude: mean(rewriteDistances),
+    meanWordDelta: mean(wordDeltas),
+    matched: {
+      count: matchedCount,
+      deniesShare: matchedCount ? Math.round((matchedDenies / matchedCount) * 1000) / 1000 : null,
+      meanProposalDistance: mean(matchedDistances),
+    },
   };
 }
 

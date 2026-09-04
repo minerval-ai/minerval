@@ -16,16 +16,67 @@ Delete scorecards freely if a run was aborted or misconfigured — this is a
 history of runs worth comparing against, not a log of every invocation.
 
 Each scorecard embeds its configuration fingerprint (`pipelineEpoch`, git
-commit, agent + judge models), so a file stays interpretable on its own.
-Compare any two with:
+commit, `profile`, agent + judge models, the spend `caps` in force, and the
+models `observed` per agent during the run), so a file stays interpretable on
+its own. `modelsSource` says where the agent models came from: `run` (recorded
+by `corpus:run` when the graph was built), `registry` (read back from that
+run's row by a later `corpus:score`), or `score-time` (config when scored —
+right only if nothing changed in between; the one pre-existing baseline,
+`blackholes/2026-08-09…`, is of this kind and records the Matcher wrongly for
+exactly that reason). Compare any two with:
 
 ```bash
+# two single runs: deltas printed, no verdict (one sample each)
 npm run corpus:compare -- corpus/scorecards/<cluster>/<A>.json corpus/scorecards/<cluster>/<B>.json
+# two configurations, three runs each: mean ± sd per side, and whether the
+# delta clears the combined spread
+npm run corpus:compare -- <A1>.json,<A2>.json,<A3>.json <B1>.json,<B2>.json,<B3>.json
 ```
 
-One run is one nondeterministic sample: a delta is real only if it repeats
-across N≈3 runs or exceeds run-to-run noise (`corpus/SCORING.md`).
+One run is one nondeterministic sample: a delta is real only when it exceeds
+the run-to-run spread, which takes N≈3 runs per side to measure
+(`corpus/SCORING.md`). The committed baseline for each cluster should
+therefore be the N≈3 set, not one file.
 
-This file-based history is the phase-0 form of #334's eval-run registry (L1);
-when runs become first-class database records, this directory becomes an
-import source and retires.
+## Files are the record; the registry is a local index
+
+The eval-run registry (`eval_runs`, #334 L1) exists and every scored run,
+golden run, agreement, swap, property and contribution run registers in it
+— but it lives in each developer's **corpus database**, not anywhere
+shared. Two people's registries never see each other's runs, and a
+`corpus:reset` on a fresh machine starts one empty. So the committed files
+in this directory are the shared, durable record, and the registry is a
+per-machine index over the runs that happened there: `corpus:runs` and
+`db:<id>` refs are conveniences for the person who ran them, not history.
+
+That is a deliberate resolution of the plan's original intent (that this
+directory would "retire" once the registry landed): a shared registry would
+mean a shared database the harness writes to, which the harness's
+isolation discipline forbids. If the public evals page (#368) needs a
+richer source than these files, the right move is to export registry rows
+into version control (a `corpus:runs --export` into `corpus/runs/`), not
+to point the site at anyone's corpus DB. Until then: commit the scorecards
+that matter, and treat `runs/` and the registry as scratch.
+
+## Publishing to the site
+
+The public evals page (`/docs/evals`, #368) renders from these files, not
+from any database. Publishing a result is a scripted step, not a page edit:
+
+```bash
+# 1. commit the record under corpus/: a scorecard here, a golden run under
+#    golden-matcher/, a filled review sheet under corpus/calibration/, or a
+#    change to a fixture (golden pairs, predictions, a contribution scenario)
+# 2. vendor it into the frontend
+npx tsx scripts/sync-frontend-content.ts     # corpus/ → web/content/evals/
+# 3. commit web/content/evals/ and open the PR
+```
+
+The sync also regenerates `web/content/evals/index.json`: the production
+model pins and their list rates, the judge default, every cluster's size and
+sources, and the composition of every fixture, so the page's facts come from
+the repository at sync time rather than from someone's memory. Results that
+only register in the per-machine registry (agreement, swap, property and
+contribution runs) have no committed home yet and reach the page by hand;
+`corpus:runs --export` is the planned fix.
+

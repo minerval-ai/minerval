@@ -7,6 +7,7 @@ import {
   bigint,
   numeric,
   boolean,
+  date,
   timestamp,
   jsonb,
   uniqueIndex,
@@ -389,6 +390,15 @@ export const claimInstances = pgTable(
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
     originalText: text("original_text").notNull(),
+    // The canonical form the EXTRACTOR proposed for this passage (§3), kept
+    // next to the verbatim text it was proposed for. The Matcher has the
+    // last word on a new claim's wording (url-extraction.ts stores its
+    // rewrite as claims.text), and until this column existed the proposal
+    // was discarded — so who authored the graph's language, and whether the
+    // second author improved it, was unmeasurable (#334, 2026-08-11). Null
+    // for instances recorded without a proposal (a Steward sighting of an
+    // existing claim).
+    proposedCanonicalForm: text("proposed_canonical_form"),
     context: text("context"),
     summaryContext: text("summary_context"),
     // Whether this source asserts the canonical claim ("affirms") or its
@@ -826,6 +836,56 @@ export const evalRuns = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_eval_runs_cluster_time").on(table.cluster, table.createdAt)]
+);
+
+// ---------------------------------------------------------------------------
+// claim_predictions (#334 S6, from #296)
+//
+// A prediction is an ordinary claim with a lifecycle the rest of the graph
+// lacks: it RESOLVES, and reality — not a judge, not consensus — grades the
+// credence the Steward assigned. This is the one objective calibration
+// handle the project has, so predictions carry, one row per claim, what
+// makes them resolvable: the criterion, the date by which the world settles
+// it, and the source of truth that settles it. Credence is not frozen here;
+// assessment history already keeps every verdict with its timestamp, and the
+// scorer reads the last credence stated before resolution (scripts/corpus/
+// prediction-score.ts) — the contemporaneous belief, never a later revision.
+// A market or community probability captured at seeding is the baseline the
+// Minerval-vs-crowd comparative needs. A resolved row keeps its outcome and a
+// note on how it was settled; scoring only ever reads resolved rows.
+// ---------------------------------------------------------------------------
+export const claimPredictions = pgTable(
+  "claim_predictions",
+  {
+    claimId: uuid("claim_id")
+      .primaryKey()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // The fixture entry this row was seeded from (corpus/predictions/), so
+    // seeding is idempotent and a resolution can name the question by id.
+    // Null for predictions that arrive by other paths.
+    fixtureId: text("fixture_id"),
+    resolutionCriterion: text("resolution_criterion").notNull(),
+    // The date by which the outcome is knowable; the scorer uses it (or the
+    // earlier actual resolution) as the cutoff for the credence it grades.
+    resolutionDate: date("resolution_date").notNull(),
+    operationalization: text("operationalization").notNull(),
+    domain: text("domain"),
+    baselineProbability: real("baseline_probability"),
+    baselineSource: text("baseline_source"),
+    baselineAt: timestamp("baseline_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // true = the claim as stated came true; false = it did not. Null = open.
+    outcome: boolean("outcome"),
+    resolutionNote: text("resolution_note"),
+    resolvedBy: text("resolved_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_claim_predictions_fixture").on(table.fixtureId),
+    index("idx_claim_predictions_due").on(table.resolutionDate),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -2415,6 +2475,94 @@ export const attachments = pgTable(
   ]
 );
 
+// agent_reports
+//
+// The agents' own bug tracker (#366): what raise_issue writes. Every agent
+// (and every external agent on the MCP surface) can report, in its own
+// words, a system failure, a gap in its tools, or a concrete improvement
+// idea. Deliberately NOT audit_log, which is claim-scoped and belongs to the
+// claim's history: a report is about the machinery, not the graph, so it
+// carries attribution as plain columns (no FKs into agent_runs, which is
+// empty when tracing is off, and none into claims, whose history this is
+// not part of). Operational telemetry: separately retained, safe to prune by
+// last_seen_at.
+//
+// The same failure recurs across thousands of runs, so the row is an
+// upsert: dedupe_key collapses repeats into one row with an occurrence
+// count and a last-seen stamp — frequency × severity is the triage signal.
+// Reports quote whatever the agent was working on (source text, contribution
+// bodies), so body is capped at write time and context_refs holds ids, not
+// content.
+// ---------------------------------------------------------------------------
+export const agentReports = pgTable(
+  "agent_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // 'system_failure' | 'tool_gap' | 'improvement' — reportKindEnum in
+    // src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    // 'blocking' | 'degraded' | 'annoyance' | 'idea' — reportSeverityEnum.
+    severity: text("severity").notNull(),
+    // One line, written as a claim about what is wrong or what should exist.
+    title: text("title").notNull(),
+    // What the agent was trying to do, what happened, what it expected, and
+    // for improvements the concrete proposal.
+    body: text("body").notNull().default(""),
+    // The tool / prompt / pipeline the report is about, when there is one.
+    surface: text("surface"),
+    // 'internal' (our own agents) | 'external' (MCP callers). External
+    // reports triage in their own queue: a report is cheap to file and "the
+    // reviewer's tool is broken" is a convenient thing for a rejected
+    // contributor's agent to claim.
+    origin: text("origin").notNull().default("internal"),
+    // The reporting agent (steward | curator | matcher | ... | mcp).
+    agent: text("agent").notNull(),
+    // The model that wrote the report, when known.
+    model: text("model"),
+    // External reports are attributed to the contributor whose key filed
+    // them; null for internal agents.
+    reporterContributorId: uuid("reporter_contributor_id").references(
+      () => contributors.id,
+      { onDelete: "set null" }
+    ),
+    // Optional pointers (claim id, contribution id, source url, job id) as
+    // ids only — never quoted content.
+    contextRefs: jsonb("context_refs").notNull().default({}),
+    // Attribution snapshotted from the usage context at write time. Plain
+    // columns, no FKs: run identity only exists when tracing is on.
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    claimId: uuid("claim_id"),
+    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' —
+    // reportStatusEnum.
+    status: text("status").notNull().default("new"),
+    triageNote: text("triage_note"),
+    // Who moved the status last: an audit run id, a service caller, a name.
+    triagedBy: text("triaged_by"),
+    triagedAt: timestamp("triaged_at", { withTimezone: true }),
+    // For status 'duplicate': the report this one collapses into. Not a
+    // self-FK so a triager can point at a row that later gets pruned.
+    duplicateOfId: uuid("duplicate_of_id"),
+    // Collapses the same report across runs: hash of origin, agent, kind,
+    // surface, and the normalized title. Computed server-side, never by
+    // the reporter.
+    dedupeKey: text("dedupe_key").notNull(),
+    occurrenceCount: integer("occurrence_count").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_agent_reports_dedupe_key").on(table.dedupeKey),
+    index("idx_agent_reports_status_seen").on(table.status, table.lastSeenAt),
+    index("idx_agent_reports_agent_seen").on(table.agent, table.lastSeenAt),
+    index("idx_agent_reports_origin_status").on(table.origin, table.status),
+  ]
+);
+
 // Type exports
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
@@ -2490,3 +2638,5 @@ export type PrizePayout = typeof prizePayouts.$inferSelect;
 export type NewPrizePayout = typeof prizePayouts.$inferInsert;
 export type Attachment = typeof attachments.$inferSelect;
 export type NewAttachment = typeof attachments.$inferInsert;
+export type AgentReport = typeof agentReports.$inferSelect;
+export type NewAgentReport = typeof agentReports.$inferInsert;

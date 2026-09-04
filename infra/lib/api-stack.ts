@@ -197,7 +197,9 @@ export class ApiStack extends cdk.Stack {
         // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
         // quality and price (#257). First agent routed off Anthropic; the rest
         // keep their defaults until the eval apparatus (#273/#297) can rank
-        // candidates.
+        // candidates. Pinned here AND as the config default
+        // (OPENROUTER_MODELS.deepseekFlash) so corpus and dev runs match on the
+        // model production matches on; the model guard asserts the two agree.
         MATCHER_MODEL: "deepseek/deepseek-v4-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
@@ -226,6 +228,14 @@ export class ApiStack extends cdk.Stack {
         // ledger instead of by a count. See src/config.ts.
         EXTENSION_MAX_CLAIMS: "10",
         ...leanCheckerEnvironment,
+        // Agent traces (#334 L0): the full tool-use transcript of every agent
+        // run, persisted for the eval harness, debugging and the production
+        // monitors. On by default now; this pin makes the choice visible.
+        // Kept for 30 days by the retention sweep — a Steward run is tens of
+        // KB of transcript, so this is a window, not history. llm_usage keeps
+        // run_id and cost indefinitely.
+        TRACE_LEVEL: "full",
+        TRACE_RETENTION_DAYS: "30",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),

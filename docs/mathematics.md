@@ -369,8 +369,9 @@ new. Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
 
 ### 2.7 No origination
 
-The No Origination policy (`src/llm/prompts/policies.ts:25-30`) reconciles
-with issue #301's question-posing thesis as follows. Mathematical claims
+The constitution's claim bar (§2: a claim is a reusable proposition the
+discourse refers to, and the graph originates none) reconciles with issue
+#301's question-posing thesis as follows. Mathematical claims
 enter from the discourse: papers, monographs, problem lists, formalization
 projects, question sites. A conjecture posed by the graph's agents, or by the
 solver during an attempt, is not a claim; it may appear in the prose of an
@@ -379,8 +380,8 @@ outside the platform states it. Publishing a formal statement of an existing
 claim is a rendering, not origination. A proof the solver produces is
 evidence on an existing claim, recorded as an argument. Directing attention
 is posing: the Mathematics mandate orders existing open problems and funds
-attempts, which is the judgment §19 invites, not the origination the policy
-forbids.
+attempts, which is the judgment §19 invites, not the origination §2 rules
+out.
 
 ---
 
@@ -488,7 +489,7 @@ Audit, Matcher, Curator, Grantmaker). For the Steward, whose toolset changes
 when the skill brings Lean tools, the population is separate anyway.
 
 **The layer model becomes four layers**, and every surface says so the same
-way: (1) the constitution, (2) the role and its policies, (3) the domain
+way: (1) the constitution, (2) the role, (3) the domain
 skills active for this run, (4) the task. Authority runs constitution, then
 role obligations, then skill; a skill may sharpen a role's obligations and
 never loosen them. The role prompt gains a short `## Domain skills` heading
@@ -590,7 +591,7 @@ receives. Add:
 - On the docs hub (`web/app/docs/page.tsx:131-152`), a fourth card, "The
   skills."
 - `docs/policies.md`: the Prompt Architecture diagram gains the skill block
-  as Layer 3, and a "Skills" section after "Role Policies" explains what a
+  as Layer 3, and a "Skills" section after "Role Standards" explains what a
   skill is, how it is selected, and the precedence rule.
   `docs/architecture.md` ("The Agent Pipeline") replaces "a single cached
   block" with "one cached block, plus one per active domain skill."
@@ -633,7 +634,7 @@ so "which assessments were made under Mathematics skill v1" is a query.
 
 Add: `skills/README.md`, `skills/mathematics/SKILL.md`,
 `skills/mathematics/tools.json`; `src/llm/prompts/skills.ts`;
-`src/llm/tools/skill-tools.ts`; `src/db/migrations/0043_domain_skills.sql`;
+`src/llm/tools/skill-tools.ts`; `src/db/migrations/0046_mathematics_domain.sql`;
 `scripts/backfill-claim-domains.ts`; `web/app/docs/skills/page.tsx` and
 `[name]/page.tsx`; generated `web/content/skills/**`;
 `tests/unit/llm/prompts/skills.test.ts`, `tests/unit/llm/steward-skills.test.ts`,

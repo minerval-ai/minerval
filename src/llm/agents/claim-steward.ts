@@ -49,6 +49,7 @@ import {
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
+import { createReportTools } from "../tools/report-tools.js";
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -246,6 +247,9 @@ async function runClaimStewardImpl(input: {
     : allSkillTools.filter((t) => !isLeanTool(t.name));
   const leanToolsWithheld = allSkillTools.some((t) => isLeanTool(t.name)) && !checkerConfigured;
 
+  // Every agent carries the report channel (#366).
+  const reportTools = createReportTools({ model });
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
@@ -253,6 +257,7 @@ async function runClaimStewardImpl(input: {
     getMatcherToolDefinition(),
     ...elicitTools,
     ...skillTools,
+    ...reportTools.definitions,
     webSearchTool,
   ];
 
@@ -414,6 +419,9 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
         `log_stewardship_decision, do so on your next turn so your work is saved.`,
     },
     executeTool: async (name, toolInput) => {
+      // The report channel first (#366): null means "not my tool".
+      const report = await reportTools.execute(name, toolInput);
+      if (report !== null) return report;
       if (name === "match_claim") {
         // The Matcher receives the domains its caller knows.
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

@@ -45,11 +45,21 @@ export interface UsageContext {
    */
   skills?: string[];
   /**
+   * Set by untraced(): the work in progress handles content that must stay
+   * transient — a reader's page text, a chat question, a passage handed to
+   * the MCP for on-demand analysis (#356). withAgent opens no run inside it
+   * and no step is recorded, whatever TRACE_LEVEL says. Metering is
+   * unaffected: llm_usage rows carry counts and cost, never content.
+   */
+  untraced?: true;
+  /**
    * Live cost accumulator for the enclosing metered operation. The metering
-   * chokepoint adds each call's BILLED (marked-up) cost here synchronously,
-   * so cap-and-settle charging (owl-ledger-service.settleMeteredCharge) can
-   * read the operation's real cost the moment the work finishes, without
-   * waiting on the async llm_usage insert.
+   * chokepoint adds each call's REAL cost here synchronously — the same raw,
+   * per-model figure it writes to llm_usage; the platform's margin lives in
+   * the owl's purchase price, never here — so cap-and-settle charging
+   * (owl-ledger-service.settleMeteredCharge) can read the operation's cost
+   * the moment the work finishes, without waiting on the async llm_usage
+   * insert. The field keeps its historical name.
    */
   meter?: { billedMicroUsd: number };
 }
@@ -79,7 +89,8 @@ export function runWithUsageContext<T>(
  * agent invoked another agent".
  */
 export function withAgent<T>(agent: string, fn: () => T): T {
-  const trace = startAgentRun(agent, getUsageContext());
+  const context = getUsageContext();
+  const trace = context.untraced ? null : startAgentRun(agent, context);
   if (!trace) return runWithUsageContext({ agent }, fn);
   return runWithUsageContext({ agent, runId: trace.runId, trace }, () => {
     let result: T;
@@ -117,6 +128,23 @@ export function withSkills<T>(skills: readonly string[], fn: () => T): T {
   const trace = getUsageContext().trace;
   if (trace) recordAgentRunSkills(trace, names);
   return runWithUsageContext({ skills: names }, fn);
+}
+
+/**
+ * Run `fn` with tracing suppressed, whatever TRACE_LEVEL says. This is the
+ * privacy seam of the trace substrate (#356): the transcript of an agent
+ * run is verbatim — the page it read, the question it was asked — so work
+ * over content a user never published runs inside this wrapper, and nothing
+ * derived from that content reaches agent_runs or agent_steps. Any trace
+ * handle from an enclosing run is dropped too, so a nested agent cannot
+ * append its steps to an outer run. Independent of the metering context,
+ * which keeps attributing tokens and cost as usual.
+ */
+export function untraced<T>(fn: () => T): T {
+  return runWithUsageContext(
+    { untraced: true, trace: undefined, runId: null },
+    fn
+  );
 }
 
 /**

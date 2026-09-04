@@ -15,6 +15,9 @@
  *     runs inside a usage context so the per-token meter attributes the spend.
  *   - Writes: submit_contribution — routes through the existing contribution
  *     pipeline (Contribution Reviewer + reputation rules, #71).
+ *   - Feedback: raise_issue (#366) — the external agent's channel for
+ *     reporting a failure or gap in THIS server's tools. Free, attributed,
+ *     rate-limited; lands in agent_reports beside our own agents' reports.
  */
 import { z } from "zod";
 import {
@@ -30,7 +33,7 @@ import {
   type QuotaDecision,
 } from "../server/plugins/quota.js";
 import type { PricedOp } from "../services/owl.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, untraced } from "../llm/usage-context.js";
 import { hybridSearch } from "../services/search-service.js";
 import {
   getClaimById,
@@ -63,7 +66,17 @@ import {
 import { getOrCreateContributor } from "../services/contributor-service.js";
 import { checkContributionRateLimit } from "../services/reputation-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
-import { contributionTypeEnum } from "../schemas/common.js";
+import {
+  contributionTypeEnum,
+  reportKindEnum,
+  reportSeverityEnum,
+} from "../schemas/common.js";
+import {
+  checkReportRateLimit,
+  raiseIssue,
+  REPORT_BODY_MAX_CHARS,
+  REPORT_TITLE_MAX_CHARS,
+} from "../services/report-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -123,6 +136,13 @@ function formatAssessment(
  * (refunded if it throws — the user shouldn't pay for our failure), and run
  * the work inside a usage context so the metering chokepoint (llm/client.ts)
  * attributes every token to the calling account and key.
+ *
+ * The work runs untraced (#356): these tools analyze text the caller hands
+ * over on demand — a draft, a memo, a passage from wherever they are reading
+ * — which is theirs, not the graph's. Metering keeps counts and cost; no
+ * transcript of the text is kept. Text meant to become provenance goes
+ * through source submission, where the fetched document is public by
+ * construction and its transcript is part of the record.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
@@ -146,7 +166,7 @@ async function agentic<T>(
         apiKeyId: ctx.auth.apiKeyId,
         requestId: ctx.requestId,
       },
-      fn
+      () => untraced(fn)
     )
   );
   if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
@@ -665,6 +685,91 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           contribution_type: contribution.contributionType,
           review_status: contribution.reviewStatus,
           submitted_at: contribution.submittedAt.toISOString(),
+        },
+      });
+    }
+  );
+
+  // ---- feedback ----
+
+  server.registerTool(
+    "raise_issue",
+    {
+      title: "Raise an issue about this server",
+      description:
+        "Report a problem with THIS SERVER or its tools, or a concrete idea " +
+        "for improving it — never a judgment about a claim (that is what " +
+        "submit_contribution is for). Use it when a tool errored or returned " +
+        "something the docs say is impossible (system_failure); when the tool " +
+        "you need does not exist, is misdescribed, or cannot express what you " +
+        "need to say (tool_gap); or when working here showed you a specific, " +
+        "actionable improvement to the graph or its machinery (improvement). " +
+        "Reports go to the people who maintain the graph; they never affect a " +
+        "claim, a contribution, or its review. Cite ids, never paste content. " +
+        "Free, attributed to your account, and rate-limited.",
+      inputSchema: {
+        kind: reportKindEnum,
+        severity: reportSeverityEnum,
+        title: z.string().min(1).max(REPORT_TITLE_MAX_CHARS),
+        body: z.string().min(1).max(REPORT_BODY_MAX_CHARS),
+        surface: z.string().max(200).optional(),
+        context_refs: z
+          .record(z.union([z.string().max(500), z.number(), z.boolean()]))
+          .optional(),
+      },
+    },
+    async (input) => {
+      // Same attribution rule as contributions: a report is cheap to file
+      // and "the reviewer's tool is broken" is a convenient thing for a
+      // rejected contributor's agent to claim, so every one names its filer.
+      const externalId = ctx.auth.contributorExternalId;
+      if (!externalId) {
+        return errorResult(
+          "NO_CONTRIBUTOR_IDENTITY",
+          "This API key is not bound to a contributor identity; reports must be attributable"
+        );
+      }
+      const contributor = await getOrCreateContributor({
+        externalId,
+        displayName: externalId,
+      });
+      if (contributor.isSuspended) {
+        return errorResult(
+          "CONTRIBUTOR_SUSPENDED",
+          `Contributor is suspended: ${contributor.suspensionReason ?? "No reason provided"}`
+        );
+      }
+      const rate = checkReportRateLimit(contributor.id);
+      if (rate.limited) {
+        return errorResult(
+          "REPORT_RATE_LIMITED",
+          `Report rate limit (${rate.limitPerHour}/hour) exceeded; retry later`
+        );
+      }
+
+      const result = await raiseIssue({
+        kind: input.kind,
+        severity: input.severity,
+        title: input.title,
+        body: input.body,
+        surface: input.surface ?? null,
+        contextRefs: input.context_refs ?? null,
+        origin: "external",
+        agent: "mcp",
+        reporterContributorId: contributor.id,
+      });
+      if (!result.reportId) {
+        return errorResult(
+          "REPORT_NOT_RECORDED",
+          result.problem ?? "The report could not be recorded; retry later"
+        );
+      }
+      return jsonResult({
+        report: {
+          id: result.reportId,
+          status: "new",
+          occurrence_count: result.occurrenceCount,
+          deduplicated: result.deduplicated,
         },
       });
     }

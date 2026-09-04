@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODELS, modelSupportsLongRun } from "./llm/models.js";
+import { MODELS, OPENROUTER_MODELS, modelSupportsLongRun } from "./llm/models.js";
 import {
   isSupportedModelId,
   unresolvableModelIdMessage,
@@ -219,10 +219,16 @@ const configSchema = z.object({
 
   // Agent trace persistence (#334 L0): "full" records agent_runs +
   // agent_steps, "off" records nothing. Unset defaults are resolved in
-  // trace-service.ts: off in production (until a retention job exists) and
-  // under vitest, full everywhere else — so dev and the corpus harness trace
-  // by default.
+  // trace-service.ts: off under vitest (unit tests must not attempt DB
+  // writes), full everywhere else, production included — the retention
+  // sweep below bounds what production keeps.
   traceLevel: z.enum(["off", "full"]).optional(),
+  // How long agent_runs (and, by cascade, agent_steps) are kept before the
+  // retention sweep (workers/trace-retention.ts) deletes them. Traces are
+  // big — a Steward run is tens of KB of transcript — so production keeps a
+  // window, not history; llm_usage rows keep their run_id and cost forever.
+  // 0 disables the sweep (keep everything; the corpus harness wants that).
+  traceRetentionDays: z.coerce.number().default(30),
   // Enqueue-event telemetry (#334 L0, #217): one tiny row per enqueue through
   // the queue-service chokepoint. Unset resolves in enqueue-events-service.ts:
   // off under vitest, ON everywhere else including production — fan-out data
@@ -544,7 +550,8 @@ const configSchema = z.object({
   attemptMaxIterations: z.coerce.number().int().positive().default(500),
   // Agents whose transcripts are always traced regardless of TRACE_LEVEL
   // (comma-separated). The solver's transcript is the evidence a prize
-  // review may rely on, and traceLevel() defaults off in production.
+  // review may rely on, so an operator switching TRACE_LEVEL off elsewhere
+  // does not switch it off here.
   traceAlwaysAgents: z
     .string()
     .transform((s) =>
@@ -645,11 +652,25 @@ const configSchema = z.object({
   curatorSweepRate: z.coerce.number().default(1),
 
   // Governance — model IDs. Any provider-resolvable ID works (see
-  // src/llm/providers/routing.ts); the defaults below are Anthropic
-  // (src/llm/models.ts).
+  // src/llm/providers/routing.ts); the defaults below come from
+  // src/llm/models.ts — Anthropic (MODELS) except the Matcher, which defaults
+  // to its production DeepSeek pin (OPENROUTER_MODELS).
   // The Matcher is an agentic search loop; a small model suffices since the
-  // judgment is "same proposition?" over candidates it retrieves itself.
-  matcherModel: modelId(MODELS.haiku),
+  // judgment is "same proposition?" over candidates it retrieves itself, and
+  // DeepSeek V4 Flash beats Haiku 4.5 on both quality and price (#257).
+  //
+  // This default IS the production pin (MATCHER_MODEL in
+  // infra/lib/api-stack.ts), deliberately: the default used to be Haiku while
+  // production ran DeepSeek, so everything that does not go through the ECS
+  // task definition — corpus runs, the golden matcher suite, dev — silently
+  // matched on a model production had already moved off, and stamped that
+  // model into its scorecard (corpus/scorecards/blackholes/2026-08-09…json is
+  // the record of one such run). The model guard pins the two together.
+  //
+  // Consequence: the Matcher routes to OpenRouter, so OPENROUTER_API_KEY is
+  // required for anything that matches. The adapter fails loudly naming the
+  // key; set MATCHER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only.
+  matcherModel: modelId(OPENROUTER_MODELS.deepseekFlash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
   // STEWARD_MODEL=claude-fable-5-1 so the most important claims get the deepest
@@ -714,6 +735,17 @@ const configSchema = z.object({
   // A suspension that has stood unexamined this many days gets a
   // contributor_review audit asking whether it should still hold.
   auditStaleSuspensionDays: z.coerce.number().default(14),
+  // Agent reports (#366). The most raise_issue calls one agent run may
+  // record; past the cap the tool acknowledges without writing, so a chatty
+  // run cannot flood the table. 0 = unlimited.
+  agentReportsPerRun: z.coerce.number().default(3),
+  // Hourly cap on raise_issue calls per external (MCP) contributor. 0 =
+  // unlimited.
+  reportRateLimitPerHour: z.coerce.number().default(5),
+  // Triage cadence: at most one report_triage audit per this many hours,
+  // skipped when no new reports arrived. 0 disables triage sweeps (reports
+  // still record; the /reports API still serves them).
+  reportTriageIntervalHours: z.coerce.number().default(24),
 
   // SQS governance queues
   sqsContributionQueue: z.string().default(""),
@@ -776,6 +808,7 @@ export function loadConfig(): Config {
     llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
     llmDailyCallLimit: process.env.LLM_DAILY_CALL_LIMIT,
     traceLevel: process.env.TRACE_LEVEL,
+    traceRetentionDays: process.env.TRACE_RETENTION_DAYS,
     enqueueEvents: process.env.ENQUEUE_EVENTS,
     queueDepthSampleIntervalHours: process.env.QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS,
     llmHourlyTokenLimit: process.env.LLM_HOURLY_TOKEN_LIMIT,
@@ -885,6 +918,9 @@ export function loadConfig(): Config {
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,
+    agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
+    reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
+    reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,

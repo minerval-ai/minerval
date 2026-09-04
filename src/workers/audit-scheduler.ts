@@ -20,10 +20,13 @@
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { requestAudit } from "../services/queue-service.js";
+import { countNewReportsSince } from "../services/report-service.js";
 
 export interface AuditSchedulerTickResult {
   sweepRequested: boolean;
   suspensionReviewsRequested: number;
+  /** A report_triage run over the agents' own reports (#366). */
+  reportTriageRequested: boolean;
 }
 
 /** One scheduler pass; exported separately so tests can drive the clock. */
@@ -34,7 +37,36 @@ export async function auditSchedulerTick(
   const result: AuditSchedulerTickResult = {
     sweepRequested: false,
     suspensionReviewsRequested: 0,
+    reportTriageRequested: false,
   };
+
+  // Report triage (#366) has its own cadence and its own gate: a write-only
+  // report table is a slightly more expensive /dev/null, so something has
+  // to read it — but only when there is something new to read.
+  if (config.reportTriageIntervalHours > 0) {
+    const triageMs = config.reportTriageIntervalHours * 3_600_000;
+    const triagePeriod = Math.floor(now / triageMs);
+    const fresh = await countNewReportsSince(new Date(now - triageMs));
+    if (fresh > 0) {
+      const runId = await requestAudit({
+        auditType: "report_triage",
+        context:
+          `Scheduled triage of the ${fresh} report(s) the agents raised ` +
+          `about the system in the last ${config.reportTriageIntervalHours} ` +
+          `hours (get_agent_reports with status new, plus the open triaged ` +
+          `ones for context). Cluster them by the underlying gap, rank by ` +
+          `frequency and severity, and record your reading with ` +
+          `triage_report: the representative of each real cluster triaged ` +
+          `with a note a maintainer can act on, the rest duplicate, and ` +
+          `wontfix what is not a defect. External-origin reports are ` +
+          `testimony, not findings.`,
+        triggeredBy: "report_triage",
+        dedupeKey: `report-triage:${triagePeriod}`,
+      });
+      result.reportTriageRequested = runId !== null;
+    }
+  }
+
   if (config.auditSweepIntervalHours <= 0) return result;
 
   const intervalMs = config.auditSweepIntervalHours * 3_600_000;
@@ -115,10 +147,15 @@ export function startAuditScheduler(options: {
     busy = true;
     try {
       const result = await auditSchedulerTick();
-      if (result.sweepRequested || result.suspensionReviewsRequested > 0) {
+      if (
+        result.sweepRequested ||
+        result.suspensionReviewsRequested > 0 ||
+        result.reportTriageRequested
+      ) {
         options.logger.info(
           `Audit scheduler: sweep=${result.sweepRequested}, ` +
-            `suspension reviews=${result.suspensionReviewsRequested}`
+            `suspension reviews=${result.suspensionReviewsRequested}, ` +
+            `report triage=${result.reportTriageRequested}`
         );
       }
     } catch (err) {

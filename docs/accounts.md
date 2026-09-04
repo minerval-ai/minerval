@@ -426,3 +426,44 @@ owls earned. `/signin` lists whichever providers are configured.
   and presented only on the eight operator routes above. The Lean checker's
   bearer token is a Secrets Manager entry created by the checker stack and
   read by the API task alone (docs/infrastructure.md).
+
+## Deletion
+
+The privacy policy promises to delete an account and its records on
+request, by email. No deletion job exists yet; this is the scope one would
+have to cover (#356), so the promise stays keepable as tables are added.
+
+- **Nothing to delete, by construction.** Page text and chat from the
+  browser extension, and text sent to the MCP's on-demand analysis tools,
+  never reach the database: the pipeline runs untraced and keeps its result
+  only in an in-memory cache (see the extension section of
+  [architecture.md](architecture.md)). Erasure has nothing to find here,
+  which is the point of keeping it that way.
+- **Rows keyed to the account** (`contributors.id`), deletable outright:
+  `api_keys`, `oauth_tokens`, `oauth_authorization_requests`,
+  `grant_conversations`, `assessment_orders`, `budget_jobs`, `grants`
+  (`funder_user_id`), `action_allocations` (`user_id`), `owl_ledger`,
+  `jobs` (`user_id`), and the attribution columns on `llm_usage` and
+  `agent_runs` (`user_id`, plain uuids with no FK). Transcripts in
+  `agent_runs`/`agent_steps` expire on their own within
+  `TRACE_RETENTION_DAYS`; a request can delete the account's rows at once.
+- **The prize path** (`prize_claims.claimant_id`, `attachments.owner_id`,
+  and the `payee` and tax columns on `prize_claims` and `prize_payouts`):
+  the identity, residency, and tax-form records a paid prize requires. A
+  claim that was paid stays on the record for the retention its tax
+  treatment demands (the prize rules say how long); everything else keyed
+  to the claimant is deletable with the account, and an open claim is
+  withdrawn first.
+- **The public record**: `contributions`, `contribution_reviews`,
+  `appeals`, `arbitration_results`, `reputation_events`, and the
+  `audit_findings` that cite a contributor. These are the
+  graph's exchanges with a contributor, attributed by design (see
+  [reputation.md](reputation.md) and the privacy policy's contributor
+  standing section). The honest deletion detaches identity, nulling
+  `external_id`, `display_name`, `email`, and `avatar_url` so the row
+  survives as an anonymous contributor, rather than unpublishing the
+  exchange; the same treatment Wikipedia gives a vanished editor.
+- **The claim layer** carries no account identity: claims, instances, and
+  assessments name sources and speakers, never users. Personal detail there
+  is a constitutional violation (§2), handled as a correction to the graph,
+  not as account erasure.

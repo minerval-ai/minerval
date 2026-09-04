@@ -1,4 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -127,6 +128,8 @@ When a mandate must be refused, call decline_mandate with a reason you would
 be comfortable publishing, and tell the funder directly. If they redirect to
 an acceptable goal, continue the conversation; a declined conversation can
 recover.
+
+${RAISING_ISSUES}
 
 ${domainSkillsSection("grantmaker")}`;
 

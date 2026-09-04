@@ -1,21 +1,24 @@
-# Judge-calibration labeling sheet — blackholes
+# Judge-review sheet — blackholes
 
 eval_run: 832f7f15-3063-4c1a-8f2f-ccaf79cf92bb
 
 ## Instructions
 
-Label each claim below against the standards — the SAME standards the
-LLM judge is pinned to, reproduced here. Work from the claim, its
-assessment, and its subclaims alone; the judge's verdicts are withheld
-so your labels stay independent. Fill every field in each `labels`
-block (replace the comments). Then run:
-
-    npm run corpus:calibrate -- compare <this-file>
-
-Disagreement is signal, not failure — where your labels and the judge
-diverge systematically is exactly what this measures (#137).
+Read each claim below, then the judge's verdict on it, against the
+standards — the SAME standards the judge is pinned to, reproduced here.
+Fill a `review` block only where a verdict misses. The real output is
+the `## Overall` section at the end: not a grade of the judge's
+homework, but feedback on the task itself — where the standards or
+dimensions miss the right thing, what is measured that shouldn't be,
+what isn't measured that should be. Rubric-wording fixes go to
+scripts/corpus/judge.ts (then re-score and review again); what-is-
+measured fixes go to the plan (#334). Commit the filled sheet as the
+record; no agreement statistic is computed (#334 §2.8 as amended).
 
 ## Standards
+
+(As pinned into the judge at run time, 2026-08-09 — before #372 rebased the claim bar
+on reference rather than contestation. Reviewed 2026-09-02 against both.)
 
 ```
 Standards, from the Minerval constitution (cited by section):
@@ -49,14 +52,24 @@ claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
 **Direct subclaims (0):**
 - (atomic: no decomposition)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 5 |
+| reasoning_fit | 5 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | n_a |
+| importance (judged, vs 0.15 stored) | 0.15 |
+
+Flags: status_miscalibrated
+
+> This is a settled physics derivation (Bondi rate scales with density; WD density << NS density) rather than a disputable proposition anchoring debate—closer to a textbook-fact/argument step than a §2 claim, though the reasoning itself is thorough, well-sourced, and appropriately weighted with correct low importance.
+
+```review
 claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: claim_bar 'no' was correct under the standard pinned at run time and is wrong under #372: under the reference-based bar this is a claim (a unit of reference in the accretion literature; Giddings-Mangano and their critics both assert it). The old §2 wording and §19's settled-stub license conflicted, and the judge resolved it toward §2 — a task defect, resolved constitutionally. Importance 0.15 endorsed.
 ```
 
 ---
@@ -83,14 +96,24 @@ claim_id: 31233c47-7721-4c16-b37a-fb8fa973b0b8
 - [requires] A black hole with mass near the Planck mass has horizon curvature comparable to the Planck scale (status: none)
 - [contradicts] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.45 stored) | 0.35 |
+
+Flags: false_precision
+
+> The two 'uncontested premises' (semiclassical breakdown at Planck curvature; Planck-mass horizon curvature) are explicitly described as settled background in the prose yet were still promoted to separate subclaim nodes, contrary to \u00a76's instruction that uncontested definitions/facts belong in prose; the contested pair, by contrast, is well-chosen and well-argued, with quotes from both robustness and trans-Planckian-problem camps.
+
+```review
 claim_id: 31233c47-7721-4c16-b37a-fb8fa973b0b8
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -114,14 +137,24 @@ claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
 **Direct subclaims (0):**
 - (atomic: no decomposition)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 5 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | n_a |
+| importance (judged, vs 0.3 stored) | 0.15 |
+
+Flags: false_precision
+
+> The reasoning itself states there is 'uniform agreement on the underlying observational fact across proponents and critics of the broader safety argument,' which means this is not actually disputed by informed people and should not have passed the claim bar as a standalone node; it reads as background evidence that belongs in prose supporting the parent (mBH safety) claim rather than as its own contestable proposition, and the precise 0.88 confidence adds unwarranted false precision to what is essentially settled observational fact.
+
+```review
 claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Same family as item 1: claim_bar 'no' reflects the pre-#372 bar; under the reference-based bar this observational fact is a claim (asserted by LSAG, Giddings-Mangano, Peter's critique all refer to it). It is also a shared dependency (child of item 12) — exactly the cross-source structure the graph exists to hold. Importance 0.15 endorsed.
 ```
 
 ---
@@ -148,14 +181,24 @@ claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
 - [requires] A black hole formed inside a white dwarf or neutron star would be gravitationally bound and remain trapped within the star (status: none)
 - [requires] A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.3 |
+
+Flags: status_miscalibrated, hallucination_risk
+
+> The reasoning assigns a high prior (0.9) to the capture subclaim and cites countervailing evidence (charge/density effects on capture) that logically bears on capture, yet attributes that nuance to justify a lower confidence on the accretion subclaim instead; meanwhile the capture subclaim's actual status is 'none,' inconsistent with the parent being marked 'supported' at 0.85. Specific numeric claims (e.g., '10,000x faster,' 'minutes to two days') are asserted with precision that is hard to verify independently, raising some hallucination risk.
+
+```review
 claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Endorse the substantive catch: the charge/capture-cross-section evidence bears on the CAPTURE subclaim, yet the Steward used it to lower the ACCRETION subclaim's seed while leaving capture at 0.9. The second point misses: a child at status 'none' is a deferred stub, not an inconsistency with the parent's 'supported' (constitution allows assessing before children; judge prompt now says so).
 ```
 
 ---
@@ -178,14 +221,24 @@ claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
 - [requires] Cosmic rays reaching Earth's atmosphere have center-of-mass energies exceeding those of LHC collisions (status: none)
 - [requires] Earth, the Moon, white dwarfs, and neutron stars have survived billions of years of cosmic ray bombardment without catastrophe (status: none)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | good |
+| importance (judged, vs 0.3 stored) | 0.2 |
+
+Flags: other
+
+> The reasoning itself concedes the two subclaims are 'essentially settled bedrock facts,' which suggests the parent statement is a settled empirical fact used as evidence in the LHC-safety debate rather than a genuinely disputable proposition that should anchor its own node per §2; sourcing and nuance-handling are otherwise strong.
+
+```review
 claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Pre-#372 claim-bar reading; under the reference-based bar this is a claim (the LSAG report's own premise, referred to across every safety source), and it is shared by items 8 and 12. Importance 0.2 endorsed.
 ```
 
 ---
@@ -213,14 +266,24 @@ claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
 - [contradicts] Analog gravity experiments show Hawking-like thermal radiation is insensitive to modified short-distance dispersion relations (status: none)
 - [contradicts] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 3 |
+| reasoning_fit | 3 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_shallow |
+| importance (judged, vs 0.5 stored) | 0.4 |
+
+Flags: status_miscalibrated, false_precision
+
+> The reasoning cites specific, balanced literature on both sides and explains the contested verdict well, but it introduces an unreconciled numeric mismatch (stated confidence 0.75 vs. a separate 'credence of 0.4') that a reader cannot cleanly interpret, and two subclaims explicitly used as key evidence in the prose ('analog gravity experiments...') are left with status 'none' rather than being scored, leaving the graph's support structure thinner than the narrative it accompanies.
+
+```review
 claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: The false_precision flag is wrong on the judge's own terms: confidence 0.75 (that CONTESTED is the right status) vs credence 0.4 (that the claim is true) is §10's two-number design working exactly as intended on a contested claim. Task defect — the two-number semantics were never pinned into the judge; now they are. The 'none' children are deferral, not thinness. Readability 3 is fair; the trace is dense.
 ```
 
 ---
@@ -250,14 +313,24 @@ claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
 - [contradicts] The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven (status: contested)
 - [supports] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.35 |
+
+Flags: status_miscalibrated
+
+> The reasoning itself surfaces a credible, peer-reviewed contradiction to the 'eventually evaporate' half of the claim (remnant literature) yet still lands on 'verified' at 0.85 confidence rather than 'supported' with tempered confidence, which reads as rounding up a genuinely open endpoint question.
+
+```review
 claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Endorse: the trace surfaces live peer-reviewed remnant literature against the 'eventually evaporate' half and still lands on verified; under §10's definitions (verified = examined directly, establishes) this is supported.
 ```
 
 ---
@@ -286,14 +359,24 @@ claim_id: 694a1de3-20fb-4e83-821d-b15f01f94d81
 - [supports] Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe (status: verified)
 - [supports] Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous. (status: verified)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.4 stored) | 0.25 |
+
+Flags: status_miscalibrated
+
+> Reasoning is well-sourced and appropriately calibrated (0.95 not 1.0 due to residual Hawking-radiation uncertainty), but stored importance of 0.4 seems too high for a matter the reasoning itself calls scientifically non-live and settled among experts ("the scientific question is not live"), which per \u00a719 should sit closer to the 0.15 settled-fact anchor.
+
+```review
 claim_id: 694a1de3-20fb-4e83-821d-b15f01f94d81
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -315,14 +398,24 @@ claim_id: 74137053-82a6-477e-8842-45a1639d9f17
 **Direct subclaims (1):**
 - [requires] Large extra dimension models predict the fundamental Planck scale could be as low as the TeV scale (status: none)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | too_granular |
+| importance (judged, vs 0.25 stored) | 0.15 |
+
+Flags: status_miscalibrated
+
+> The claim is essentially a settled attribution of what ADD-type theories predict, not a proposition that informed people actively dispute, so it likely fails the §2 claim bar despite being well-sourced and reasoned; the single subclaim about the TeV-scale Planck prediction is itself an uncontested model premise that belongs in prose per §6, not a node, and the stored importance (0.25) overstates a settled theoretical-attribution fact that should sit near the 0.15 'minor or settled' anchor.
+
+```review
 claim_id: 74137053-82a6-477e-8842-45a1639d9f17
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Pre-#372 claim-bar reading; a settled theoretical attribution referred to by every source in the discourse is a claim under the reference-based bar. Importance 0.15 endorsed. too_granular on the TeV-Planck-scale subclaim is arguable either way.
 ```
 
 ---
@@ -346,14 +439,25 @@ claim_id: 919bf964-1fc6-4c69-b428-ff0a6dc7442f
 - [requires] Hawking radiation causes black holes to lose mass and eventually evaporate (status: verified)
 - [contradicts] Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.4 stored) | 0.4 |
+
+Flags: status_miscalibrated
+
+> The parent reasoning explicitly calls subclaims (1) and (2) 'essentially uncontroversial,' which per 
+§6 argues they belong in prose rather than as separate nodes; also, marking subclaim (1) 'verified' sits uneasily with the same reasoning's citation of Unruh-Schützhold that whether real black holes emit Hawking radiation 'remains an open question' and that it has never been directly measured.
+
+```review
 claim_id: 919bf964-1fc6-4c69-b428-ff0a6dc7442f
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
 ```
 
 ---
@@ -379,14 +483,24 @@ claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
 **Direct subclaims (1):**
 - [contradicts] Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density (status: verified)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.35 stored) | 0.2 |
+
+Flags: status_miscalibrated, other
+
+> The reasoning itself admits this claim is 'close to inseparable' from its parent mechanism claim, suggesting it should be prose within that assessment rather than a separate node; stored importance (0.35) also looks inflated since the reasoning finds no credible rebuttal of the core mechanism, making this closer to settled/minor (~0.15-0.2). The lone subclaim is oddly tagged 'contradicts' despite being verified and not actually undermining the parent's 'fast enough' conclusion.
+
+```review
 claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: The 'oddly tagged contradicts' point is shallow: a VERIFIED child can legitimately cut against its parent — WD accretion being much slower is exactly the evidence that narrows 'fast enough' for the white-dwarf leg. Prose-not-node is superseded by #372 (the node is also the Matcher's dedup target for a neutron-star reformulation). Importance 0.2 endorsed.
 ```
 
 ---
@@ -412,14 +526,24 @@ claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
 - [supports] Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe (status: verified)
 - [requires] A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.4 stored) | 0.35 |
+
+Flags: status_miscalibrated
+
+> The reasoning is transparent and cites concrete literature (Giddings-Mangano, Peter's critique and reply), but labels the claim 'verified' at 0.88 while simultaneously admitting the inference is 'not logically airtight' and rests on an unconfirmed hypothetical (non-evaporating black holes) — 'supported' would better match the hedged confidence expressed in the prose. The Peter counter-argument is stated only briefly before being dismissed as 'addressed,' giving it less room than the mainstream view.
+
+```review
 claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes: Endorse on status: verified at 0.88 while the trace concedes the inference is 'not logically airtight' reads as supported under §10. Adds a point no dimension grades: the canonical form says 'rules out', a strength the assessment does not defend — a §3 form problem (see #360), not an assessment problem.
 ```
 
 ---
@@ -448,12 +572,77 @@ claim_id: f17e7d15-80ba-4372-b13f-6aef8873c0af
 - [supports] Dispersive field theory calculations show the Hawking radiation spectrum is reproduced under modified high-frequency dispersion relations (status: none)
 - [contradicts] Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes (status: supported)
 
-```labels
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.3 |
+
+Flags: none
+
+> The dissenting philsci-archive objection is treated as credible and serious rather than dismissed, but the write-up blurs the line between 'contested' (opposing credible argument) and 'supported' (settled core, uncertain generalization) without fully justifying why the former wasn't chosen; the call is defensible but borderline.
+
+```review
 claim_id: f17e7d15-80ba-4372-b13f-6aef8873c0af
-readability:      # 1-5
-reasoning_fit:    # 1-5
-impartiality:     # 1-5
-claim_bar:        # yes | no
-granularity:      # good | too_granular | too_shallow | n_a
-importance:       # 0.0-1.0 on the §19 anchors
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Overall
+
+The output that matters: feedback on the task, not scores on the judge.
+
+```overall
+Reviewed 2026-09-02 (Claude pass, discussed with Jackson; see #334 comment of that date).
+
+The judge is consistent and mostly defensible on its own terms. Its most frequent
+findings trace to four gaps in the TASK it was given, not to judge error:
+
+1. Claim bar vs §19 stubs (items 1, 3, 5, 9). The pre-#372 §2 said settled facts
+   are not claims; §19 said settled dependencies are recorded as low-importance
+   stubs. The Steward followed §19, the judge enforced §2. Resolved by #372:
+   the bar is now reference, not contestation — a settled proposition many
+   sources refer to is a claim. Under the new bar all four verdicts flip to
+   'yes', and the shared-child structure they anchor (item 5 under both 8 and
+   12) is exactly what the graph exists to hold.
+
+2. Unassessed children read as defects (items 4, 6). Status 'none' is a deferred
+   stub or an un-run steward — an allocation outcome, invisible to a judge
+   grading one claim in isolation. Fixed: the judge prompt now says so.
+
+3. Confidence vs credence (item 6). §10's two numbers answer different questions
+   and are expected to diverge on contested claims; the judge, never told this,
+   flagged a textbook-correct pair as false precision. Fixed: semantics pinned.
+
+4. verified vs supported (7 of 13 status_miscalibrated flags). §10 already
+   defines the boundary (examined directly and establishes, vs incomplete or
+   indirect) but the judge was pinned only the status NAMES. Fixed: definitions
+   pinned. Note the definitions lean the judge's way — items 8, 9, 12 rest on
+   indirect evidence about an unobserved hypothetical — so expect the Steward
+   side to move once its own outputs are re-judged.
+
+Where the judge was simply right: item 4's misattributed capture evidence;
+item 7's rounding up over live remnant literature; the importance deflation
+(judge lower on 10 of 13), which matches #68's known failure mode.
+
+Not measured that should be: canonical-form strength (item 12's 'rules out'
+outruns its assessment) — a §3 dimension; and reasoning anchored to ingestion
+context (#360 and the blinding question raised on #334). On this sheet the
+parent-claim references are mostly benign scope demarcation.
+
+Scales: readability / reasoning_fit / impartiality sat in a 3–5 band and
+carried nothing the flags and notes did not. Left in place for now; the
+evidence is on record for the next reviewer to weigh.
+
+What is good: the trans-Planckian triangle (items 2, 6, 13) is shared across
+parents, correctly polarized, and coherent as a joint state; item 3's instance
+stance bookkeeping (Peter's critique routed to the parent's inference, not
+recorded as denying the observation) is §9 done right. The near-settled control
+cluster behaves like one.
 ```

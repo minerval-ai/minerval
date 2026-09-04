@@ -1,6 +1,7 @@
 /**
- * List the eval-run registry (#334 L1): recent scored runs with their config
- * fingerprint and headline metrics, newest first. History is a table, so
+ * List the eval-run registry (#334 L1): recent runs — ingests, scorecards,
+ * golden runs — with their config fingerprint and headline metrics, newest
+ * first. History is a table, so
  * "what happened to the claim-bar rate across the last five runs" is this
  * command plus corpus:compare, not file archaeology.
  *
@@ -21,7 +22,7 @@ interface EvalRunRow {
   id: string;
   cluster: string;
   kind: string;
-  config: Scorecard["config"];
+  config: Partial<Scorecard["config"]> | null;
   scorecard: Scorecard | null;
   created_at: string;
 }
@@ -46,20 +47,26 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `  ${"id".padEnd(8)} ${"when".padEnd(16)} ${"cluster".padEnd(12)} ` +
-      `${"epoch".padEnd(24)} ${"commit".padEnd(8)} ${"claims".padStart(6)} ` +
+    `  ${"id".padEnd(8)} ${"when".padEnd(16)} ${"kind".padEnd(10)} ${"cluster".padEnd(12)} ` +
+      `${"epoch".padEnd(22)} ${"commit".padEnd(8)} ${"steward".padEnd(22)} ${"claims".padStart(6)} ` +
       `${"dedup".padStart(6)} ${"bar%".padStart(5)} ${"read".padStart(5)}`
   );
   for (const row of rows) {
     const s = row.scorecard;
     const st = s?.structural;
     const j = s?.judged;
+    // The steward model that actually ran, when the run recorded it; else the
+    // configured one. A row without either predates run-time fingerprints.
+    const steward =
+      row.config?.observed?.steward?.[0] ?? row.config?.models?.steward ?? "?";
     console.log(
       `  ${row.id.slice(0, 8)} ` +
         `${new Date(row.created_at).toISOString().slice(0, 16).padEnd(16)} ` +
+        `${row.kind.padEnd(10)} ` +
         `${row.cluster.padEnd(12)} ` +
-        `${(row.config?.pipelineEpoch ?? "?").padEnd(24)} ` +
+        `${(row.config?.pipelineEpoch ?? "?").padEnd(22)} ` +
         `${(row.config?.gitCommit ?? "?").padEnd(8)} ` +
+        `${steward.slice(0, 22).padEnd(22)} ` +
         `${String(st?.extraction.totalClaims ?? "—").padStart(6)} ` +
         `${(st?.matching.dedupRatio?.toFixed(2) ?? "—").padStart(6)} ` +
         `${(j ? Math.round(j.claimBarPassRate * 100) + "%" : "—").padStart(5)} ` +

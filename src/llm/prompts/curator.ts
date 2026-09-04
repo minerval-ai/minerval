@@ -1,4 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
+import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -76,6 +77,8 @@ overwrite each other.
 Concluding that nothing needs to change is a legitimate outcome (Working
 Together). Whatever you do, say why in the reasoning fields; the tools handle
 the bookkeeping.
+
+${RAISING_ISSUES}
 
 ${domainSkillsSection("curator")}`;
 

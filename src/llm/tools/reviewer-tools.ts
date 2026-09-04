@@ -68,8 +68,8 @@ export function getReviewerToolDefinitions(): Tool[] {
             type: "array",
             items: { type: "string" },
             description:
-              "Policy codes cited (e.g. V, ND, CI, GF), plus constitution " +
-              "sections where relevant",
+              "Constitution sections the decision rests on, e.g. \"§2\", " +
+              "\"§13\", \"Part VIII\"",
           },
           suspected_bad_faith: {
             type: "boolean",

@@ -40,6 +40,8 @@ Because most sentences in a document are instances of, or arguments for, claims 
 
 A claim may also enter because someone asked: a checkable public statement submitted for assessment is admissible on the same terms as one met in ingestion, arriving as a stub the same economics govern (§19).
 
+A claim is about the world, not about a private person. The graph holds propositions that public discourse refers to; it does not hold personal detail about individuals who have not entered that discourse: a name joined to health, finances, whereabouts, conduct, or correspondence. That a passage carries such detail does not make it a claim, however well formed, and removing the name does not rescue it: a general proposition is worth minting when the discourse already refers to it, never because one private case can be made to sound general. Public acts are the deliberate exception. What an official decided, a company announced, or an author published is exactly what the graph exists to assess, and naming who did it is provenance, not exposure. Where the line is unclear, leave the person out and prefer the recoverable error: a claim left out can be added later, and personal detail once published cannot be unpublished.
+
 Two formulations are the same claim when they turn on the same considerations: when nothing could count as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a useful diagnostic, since two formulations that would unfold differently turn on different considerations. "The lockdowns did not work" read as "lockdowns failed to reduce transmission" and read as "lockdowns' costs exceeded their benefits" are different claims in the same words: an epidemiological finding bears on the first and only partly on the second. When it is unclear whether two formulations are the same claim, create both and record their relationship; accurate structure matters more than minimal nodes.
 
 A claim and its denial are not two claims but one. They pose the same question and turn on the same considerations, differing only in which answer a source endorses. Represent the disagreement on the single claim, through its assessment and its for and against arguments, with each source recorded as affirming or denying it, rather than as two mirror-image pages that would split the debate the claim exists to host. Recognizing that a new formulation is the negation or rewording of an existing claim is a matter of judgment, exercised by the matcher at ingestion and refined over time; it need not be right on the first pass. The canonical wording is the most neutral, affirmative, general statement that both sides would accept as a fair description of what is in dispute, judged on its merits rather than by which formulation arrived first: the node's identity and history stay stable while its wording is free to improve.
@@ -383,6 +385,14 @@ Not claims:
   itself disputed or consulted.
 - **Questions, commands, meta-text** ("in this post I argue..."), rhetoric,
   and hedged non-assertions ("some might say...").
+- **Personal detail about private individuals.** The graph holds
+  propositions the discourse refers to, not facts about people who have not
+  entered it (§2). A passage about a named private person's health,
+  finances, whereabouts, or conduct yields no claim, and dropping the name
+  does not turn one case into a general proposition. Public acts are
+  different: what an official decided, a company announced, or an author
+  published is claim material like any other. When unsure, leave the person
+  out; the omission is the recoverable error.
 
 ## Canonical form
 
@@ -407,7 +417,8 @@ fifteen words, rarely more than twenty-five.
 ## Fields
 
 - **original_text**: the exact span from the document. This is provenance;
-  the author's wording and framing live here.
+  the author's wording and framing live here. Keep the span to the
+  assertion: it carries no personal detail the claim itself leaves out.
 - **context**: one or two surrounding sentences, only when needed to
   disambiguate the span.
 - **proposed_canonical_form**: as above.

@@ -471,6 +471,11 @@ export default function FlfPage() {
           things whose value we see and have chosen not to build yet. The reasoning behind each is in
           its section above.
         </p>
+        <p>
+          How the agents are tested is documented under <Link href="/docs/evals">evals</Link>,
+          one page per test, with what each costs and what it cannot show. Most are built and
+          have not yet been run on real output; each page says so.
+        </p>
       </section>
 
       <p className={s.disclaimer}>

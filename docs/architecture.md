@@ -374,9 +374,9 @@ dispute about one of its subclaims.
 ## The Agent Pipeline
 
 Each agent is a model with a system prompt assembled in layers: the full
-constitution first, then the agent's specific role (governance roles also
-splice in the relevant operational policies), then the domain skills active
-for the run, then the task. The constitution-plus-role prompt is sent as one
+constitution first, then the agent's specific role (whose prompt carries the
+role's operating standards, summarized in the policies below), then the
+domain skills active for the run, then the task. The constitution-plus-role prompt is sent as one
 cached block, plus one per active domain skill, so the constitution is paid
 for once per agent rather than once per call. The prompts live in
 `src/llm/prompts/`, the skills in `skills/`, and both are vendored verbatim
@@ -472,6 +472,25 @@ These act through tools over the life of a claim and the graph:
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
+
+Every one of these agents, the Matcher and the Extension Agent's chat
+included, also carries a **`raise_issue`** tool: one channel, in the agent's
+own words, for a system failure, a gap in its own tools, or a concrete
+improvement idea arrived at from having just done the work. It is
+fire-and-forget (it always acknowledges and can never fail a run) and the
+policies say it is never a substitute for acting. Reports land in
+`agent_reports`, not `audit_log`: they are about the machinery, not the
+graph, so they carry ids rather than content, collapse repeats into one row
+with an occurrence count, and are retained and purged separately. Inside
+untraced work (the extension, the MCP's on-demand analysis) a report keeps
+its title, surface, and ids but its body is withheld, so the #356 rule
+holds for this channel too. External
+agents on the MCP surface get the same tool, attributed and rate-limited, and
+their reports triage as testimony rather than findings. The audit scheduler
+requests a `report_triage` audit for each period that saw new reports; the
+Audit Agent clusters them by underlying gap, ranks by frequency and
+severity, and records a reading through `triage_report` that the
+service-scoped `/reports` API exposes to maintainers.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
@@ -946,6 +965,16 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
+Nothing the extension sends is persisted (#356). The page is whatever the
+reader has open, so the whole pipeline runs untraced (no `agent_runs` or
+`agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or instances,
+and keeps its result only in an in-memory cache; chat is the same. The MCP's
+on-demand analysis tools follow the same rule. Only source submission, where
+the fetched document is public by construction, produces provenance and a
+transcript. The claim layer carries its own guard: the constitution (§2)
+holds that a claim is about the world, not a private person, and the
+Extractor is where that binds.
+
 ### MCP
 
 A remote MCP server, speaking streamable HTTP at `POST /mcp` on the API host,
@@ -1034,7 +1063,7 @@ the graph, not by how they read.
 
 ---
 
-The operational policies that follow turn the constitution's principles into
-concrete, per-agent rules: the shared policy vocabulary every governance
-decision cites, the acceptance criteria the Contribution Reviewer applies, and
-the reasoning obligations every agent carries.
+The role standards that follow turn the constitution's principles into
+concrete, per-agent rules: the acceptance criteria the Contribution Reviewer
+applies, the appeal and audit standards behind it, and the reasoning
+obligations every agent carries.

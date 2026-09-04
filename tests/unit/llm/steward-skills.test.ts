@@ -152,7 +152,8 @@ describe("Steward toolset with the mathematics tag", () => {
     const opts = await run(["mathematics"]);
     const names = opts.tools.map((t) => t.name);
     // The skill's tools sit as one block after match_claim (and the Elicit
-    // tools, absent here) and before web_search, the Lean four first.
+    // tools, absent here) and before raise_issue and web_search, the Lean
+    // four first.
     const first = names.indexOf("lean_search");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     expect(names.slice(first, first + 4)).toEqual([
@@ -161,9 +162,9 @@ describe("Steward toolset with the mathematics tag", () => {
       "lean_check",
       "publish_formalization",
     ]);
-    expect(names.at(-1)).toBe("web_search");
+    expect(names.slice(-2)).toEqual(["raise_issue", "web_search"]);
     const skillTools = getSkill("mathematics").tools.map((t) => t.name);
-    expect(names.slice(first, -1).every((n) => skillTools.includes(n))).toBe(true);
+    expect(names.slice(first, -2).every((n) => skillTools.includes(n))).toBe(true);
 
     // Two cached blocks: the constitution-plus-role block, unchanged, then
     // the skill's Steward view as its own block.

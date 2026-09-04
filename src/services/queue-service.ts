@@ -75,7 +75,9 @@ export interface AuditMessage {
     | "decision_audit"
     | "pattern_analysis"
     | "contributor_review"
-    | "anomaly_investigation";
+    | "anomaly_investigation"
+    // Triage of the agents' own reports (#366): cluster, rank, set status.
+    | "report_triage";
   context: string;
   // The audit_runs row this message executes (#180): findings attach to it,
   // and completion is recorded on it. Absent only for hand-crafted messages.
@@ -374,6 +376,7 @@ export async function requestAudit(input: {
     | "bad_faith_flag"
     | "scheduled_sweep"
     | "suspension_review"
+    | "report_triage"
     | "manual"
     // The prize triggers (docs/mathematics.md §8.1, §8.4, §8.5): a bounty
     // opened at or above the sign-off threshold, a Steward's acceptance of

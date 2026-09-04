@@ -47,8 +47,8 @@ export default async function AgentPage({ params }: { params: Promise<{ key: str
         <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)" }}>
           Every agent&rsquo;s prompt is layered: <strong>(1)</strong> the full{" "}
           <Link href="/docs/constitution">Constitution</Link> (identical for all agents),{" "}
-          <strong>(2)</strong> the role-specific instructions below, including this
-          agent&rsquo;s policies, <strong>(3)</strong> the{" "}
+          <strong>(2)</strong> the role-specific instructions below, which carry this
+          agent&rsquo;s operating standards, <strong>(3)</strong> the{" "}
           <Link href="/docs/skills">domain skills</Link> active for the run, one block each
           after the role, and <strong>(4)</strong> the task context, supplied at runtime.
           Authority runs in that order: a skill may sharpen a role&rsquo;s obligations and

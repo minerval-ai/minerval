@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-08-08T01:31:00Z",
+  "matcherModel": "deepseek/deepseek-v4-flash",
+  "note": "First live validation of the S1 golden suite (#334), run as six chunks; consolidated. 30/30 pins pass on the production Matcher model. All expectations confirmed against the constitution: negations matched with stance denies (one-node doctrine, section 2), the double-negative trap returned affirms, and no over-merges.",
+  "summary": {
+    "total": 30,
+    "passed": 30,
+    "passRate": 1.0,
+    "byCategory": {
+      "paraphrase": {
+        "total": 8,
+        "passed": 8
+      },
+      "negation": {
+        "total": 6,
+        "passed": 6
+      },
+      "specification": {
+        "total": 6,
+        "passed": 6
+      },
+      "similar_but_different": {
+        "total": 7,
+        "passed": 7
+      },
+      "hard": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "costMicroUsd": 59739,
+  "results": [
+    {
+      "id": "diff-01",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed claim is distinct from the only semantically similar candidate found (\"Lockdowns failed to reduce SARS-CoV-2 transmission\"; ID 663be1fa-0c89-43ba-90e8-af0a1b075718). They turn on different considerations: the existing claim is about epidemiological effectiveness (did lockdowns reduce transmission at all?), while the proposed claim is about net cost-benefit (did the costs outweigh the benefits?), which remains open even if transmission was reduced. The original text itself marks the distinction (\"Whatever they did to case curves...\"). Different subclaims would decompose from each claim, confirming they are distinct propositions."
+      }
+    },
+    {
+      "id": "diff-02",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.92,
+        "reasoning": "The only semantically close existing claim in the graph is \"Artificial general intelligence will be developed before 2040\" (aa0c82d5-bfde-4fae-bc40-1206e4a6a224). That is a predictive/timeline claim about whether AGI will be built. The proposed claim \u2014 \"Developing AGI before 2040 would be dangerous\" \u2014 is an evaluative claim about the consequences of doing so. Different considerations bear on each: evidence about AI research timelines and compute trends bears on the prediction; arguments about alignment difficulty, AI risk, and safety research progress bear on the evaluative claim. They are not the same claim, nor a negation/counterpart of each other (a denial of the prediction \u2014 \"AGI will NOT be developed before 2040\" \u2014 is not the same as \"it would not be dangerous if it were\"). No existing claim about the danger or recklessness of AGI development by a specific timeframe was found in any search framing. This is a novel claim."
+      }
+    },
+    {
+      "id": "diff-03",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.65,
+        "reasoning": "The closest existing claim (2e395c8c-3c42-411a-8c66-fda134f2741a) is 'Advanced AI poses a non-negligible risk of human extinction this century.' Under \u00a72, two formulations are the same claim when the same considerations bear on both. Evidence about AI causing mass unemployment, democratic erosion, catastrophic accidents short of extinction, or other large-scale societal harms bears on the proposed claim but does not bear equally on the extinction-specific claim. The existing claim is narrower (a specification) rather than an identity match. Because a claim and its denial are one node, I also searched the negation to check for a counterpart; the single existing result remained the extinction claim, which is a distinct proposition rather than a negation. The proposed claim is therefore novel in the graph. The canonical form captures the original text's meaning in neutral terms ('large-scale societal harm' rather than the slightly ambiguous 'large-scale harm'), matching the original source's framing of serious societal risks."
+      }
+    },
+    {
+      "id": "diff-04",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.97,
+        "reasoning": "Searched under ~15 framings including the direct form, paraphrases (e.g., 'eating cholesterol increases serum cholesterol', 'cholesterol from food affects blood cholesterol'), and the negation ('dietary cholesterol does not raise blood cholesterol'). Every search returns only 'Egg yolks are high in dietary cholesterol' at low similarity (~0.47-0.60). That claim is about the composition of a food, not about the causal or correlational effect of dietary intake on blood levels. The two propositions are related in discourse (the egg-yolks claim is a premise some might rely on in arguing for this claim) but they turn on different considerations \u2014 egg composition data vs. feeding trial and epidemiological evidence on blood lipids \u2014 and are therefore distinct claims. The original text affirms this proposition: it describes the old advice as assuming the causal link."
+      }
+    },
+    {
+      "id": "diff-05",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.98,
+        "reasoning": "The only semantically close claim in the graph is claim 25c68345: \"The Wuhan Institute of Virology conducted gain-of-function research on coronaviruses.\" This is a claim about whether the research was conducted (a factual claim about activities and funding). The proposed claim \u2014 \"Gain-of-function coronavirus research caused the COVID-19 pandemic\" \u2014 is a causal claim about whether that research is what started the pandemic. Different considerations bear on each: evidence about budgets, published papers, and laboratory methods bears on the first; evidence about viral genetics, phylogenetic analysis, early case clusters, and epidemiological tracing bears on the second. One can accept the existence claim while denying the causal claim (natural origin hypothesis), and vice versa. The causal claim depends on the existence claim as a premise but goes beyond it. These are distinct claims, not two wordings of the same proposition."
+      }
+    },
+    {
+      "id": "diff-06",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "Searched under multiple framings including the original wording, the proposed canonical form, paraphrases ('improves paper quality', 'makes papers clearer', 'improves readability'), and the negation. The only existing claim returned \u2014 'Peer review reliably filters out fraudulent research' \u2014 is a different proposition. 'Filters out fraudulent research' concerns detection of fabrication and misconduct; 'improves clarity' concerns whether revisers strengthen arguments, clarify exposition, and improve prose. These turn on different considerations: a study on fraud detection does not bear on clarity improvements, and a study on writing improvements does not bear on fraud detection. No existing claim covers this proposition or its negation."
+      }
+    },
+    {
+      "id": "diff-07",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.98,
+        "reasoning": "The only semantic neighbor returned (id 61811b3c) says 'The LHC's center-of-mass collision energy exceeds that of any previous human-built collider.' This compares the LHC to other human-built colliders \u2014 evidence about Tevatron, SPS, etc. The proposed claim compares cosmic-ray collisions to the LHC \u2014 evidence about ultra-high-energy cosmic rays, the Oh-My-God particle, etc. These turn on different considerations: one is about the history of human-built accelerators, the other about natural high-energy phenomena. Different claims per \u00a72."
+      }
+    },
+    {
+      "id": "hard-01",
+      "category": "hard",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "The proposed claim and existing claim 79ce37cb are the same proposition examined from two angles. Both assert that deploying a misaligned superintelligence for the first time would cause human extinction, with no second chance (the 'no retry' is entailed by extinction \u2014 if you are dead you cannot retry). A 'failed first attempt to align' that results in deploying a misaligned system is exactly the scenario the existing claim describes. The same considerations bear on both: arguments about instrumental convergence, the capability of superintelligence to outcompete humanity, arguments about deception and the orthogonality thesis, and counterarguments about corrigibility or safe sandboxing. The proposed wording adds 'no retry' as emphasis, not as a distinct evidentiary component. The source (the original text) affirms this proposition \u2014 it argues that an unaligned system at that capability level ends humanity, meaning extinction on first deployment."
+      }
+    },
+    {
+      "id": "hard-02",
+      "category": "hard",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.98,
+        "reasoning": "The existing claim \"Observational nutrition studies are confounded by healthy-user bias\" matches the proposed claim under several framings (0.65\u20130.93 similarity across different searches, peaking at 0.93 on the negation search). The core proposition is identical: that observational studies of diet/nutrition produce biased estimates because people who eat \"healthy\" foods also have healthier lifestyles overall (exercise, smoke less, better healthcare access). The source text explains the mechanism behind this bias \u2014 it affirms the claim by describing the confound. The existing canonical form is more concise and neutral, making it the better canonical form per \u00a73. The second result (\"RCTs of diet are difficult to run at scale\") is a related but distinct claim about RCT feasibility rather than the confounding of observational studies."
+      }
+    },
+    {
+      "id": "hard-03",
+      "category": "hard",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form \"The minimum wage should not be raised\" is the negation/direct denial of the existing claim \"The minimum wage should be raised\" (efcad84f-fd74-4369-9c5b-2286108ddb57). Per \u00a72 of the constitution, a claim and its denial are one claim \u2014 they pose the same question and turn on the same considerations, differing only in which answer a source endorses. The original text (\"On balance, raising the minimum wage now would be a mistake\") asserts the denial, so the instance_stance is \"denies.\" The two empirical subclaims in the results (e.g., \"Raising the minimum wage reduces teen employment\") are distinct propositions that may bear on this normative question as subclaims but are not the same claim."
+      }
+    },
+    {
+      "id": "neg-01",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.95,
+        "reasoning": "The existing claim (id: 2e28710a-...) states 'LHC collisions could create stable black holes that accrete the Earth' \u2014 a positive proposition about possibility. The source text asserts 'CERN's collider cannot produce stable, Earth-devouring black holes \u2014 the physics rules it out,' which is the direct denial/negation of that same proposition. Per Section 2 of the constitution, a claim and its denial are one claim: they pose the same question and turn on the same considerations (quantum gravity, cosmic ray bounds, Hawking radiation, etc.). The proposed canonical form simplifies the text but preserves the identical propositional content: whether LHC collisions can produce stable Earth-consuming black holes. The source's answer is 'no,' matching as 'denies.'"
+      }
+    },
+    {
+      "id": "neg-02",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.92,
+        "reasoning": "The existing claim \"Egg consumption increases cardiovascular disease risk in the general population\" and the source's proposition (\"Egg consumption does not increase cardiovascular disease risk for most people\") are denials of the same proposition. They turn on the same considerations: epidemiological evidence from meta-analyses on egg intake and cardiovascular outcomes. Per \u00a72 of the constitution, a claim and its denial are one node \u2014 they pose the same question and differ only in which answer the source endorses. The minor difference between \"in the general population\" and \"for most people\" does not split the claim, as both describe the same broad population scope of the scientific debate. The source's reference to \"meta-analyses\" is framing/argument, not part of the claim itself (\u00a74: framing lives in the instance, not the canonical form)."
+      }
+    },
+    {
+      "id": "neg-03",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.95,
+        "reasoning": "The proposed claim \u2014 \"Minimum-wage increases have no detectable effect on teen employment\" \u2014 is the direct negation/contrary of the existing claim \"Raising the minimum wage reduces teen employment\" (c1e0ceb5). Both ask the same question (what effect does the minimum wage have on teen employment?) and turn on the same considerations (empirical evidence from labor market studies, quasi-experimental research, etc.). Per \u00a72 and the matching instructions, a claim and its denial are one node: they differ only in which answer the source endorses. The source text asserts that careful studies find *no detectable effect*, which is the negation of the existing claim (which asserts a negative effect). Therefore the source denies the canonical claim."
+      }
+    },
+    {
+      "id": "neg-04",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form (\"Fears of AI-caused human extinction this century are unfounded\") is the direct denial of the existing claim \"Advanced AI poses a non-negligible risk of human extinction this century.\" Per \u00a72, a claim and its denial are one claim \u2014 they pose the same question (\"does advanced AI pose a real extinction risk this century?\") and turn on the same considerations (evidence about AI capabilities, control difficulty, pathways to catastrophe, historical analogies). Creating a separate node for the denial would split the debate the claim exists to host, producing two mirror-image pages. The existing canonical form is already neutral and accepts both sides as debating the same proposition. The source text (\"the extinction-from-AI discourse is science fiction; there is no credible pathway this century\") denies this claim, so instance_stance is \"denies.\""
+      }
+    },
+    {
+      "id": "neg-05",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form ('Published antidepressant effect sizes are inflated by publication bias') is propositionally identical to the existing claim ('Publication bias inflates the measured effect size of antidepressants.'). Both assert that publication bias causes antidepressant effect sizes to appear larger than their true values. The same evidence bears on both equally: funnel plot asymmetry analyses, comparisons of published vs. unpublished trial results (e.g., Turner et al. 2008), trial registry analyses, and selective reporting studies. The only difference is minor wording variation ('the measured effect size of antidepressants' vs. 'published antidepressant effect sizes'), which does not change the proposition at issue. The original text strongly affirms the claim: denying that the effect sizes are 'free of publication-bias inflation' is equivalent to asserting they are inflated by it."
+      }
+    },
+    {
+      "id": "neg-06",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.97,
+        "reasoning": "The existing claim (ab752ef7) asserts that \"Hawking radiation causes black holes to lose mass over time.\" The proposed claim \"Black holes do not lose mass to Hawking radiation\" is the direct negation of this proposition \u2014 it denies the causal claim about mass loss. Both formulations address the same question (Does Hawking radiation carry mass away from black holes?) and turn on the same considerations: the theoretical existence of Hawking radiation, its predicted effects on black hole mass, and any empirical evidence for or against those effects. Per \u00a72, a claim and its denial are one claim, differing only in which answer a source endorses, so this is a match. The source asserts the position that Hawking radiation does not exist and black holes do not evaporate, which is the denial of the canonical claim."
+      }
+    },
+    {
+      "id": "para-01",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.93,
+        "reasoning": "Searched under 6 framings (the proposed canonical form, its shorter version, 'AI wipes out humanity this century', the negation, a concise version, and the original text). Every search returned claim 9e92b777 as the top result with scores 0.56-0.80, well above noise. The secondary result (c7a9386c, about labor markets) is unrelated.\n\nThe proposed canonical form (\"There is a substantial probability that AI causes human extinction by 2100\") and the existing claim (\"Advanced AI poses a non-negligible risk of human extinction this century\") are the same claim: same subject matter (AI-driven human extinction), same timeframe (this century / by 2100), and same type of proposition (some meaningful chance of it happening). The difference between \"substantial probability\" and \"non-negligible risk\" is a difference of phrasing, not of which considerations bear on the claim \u2014 evidence about AI capabilities, control problem difficulty, and timelines bears equally on both. The existing canonical form is the superior one: more neutral and more likely to be accepted by both sides as a fair description of the dispute. The original text (\"a real chance\") affirms this claim."
+      }
+    },
+    {
+      "id": "para-02",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.97,
+        "reasoning": "The proposed canonical form (\"Black holes produced at the LHC pose no danger to Earth\") and the existing claim (\"LHC particle collisions cannot produce black holes that endanger the Earth\") are the same proposition in different words. Both assert that black holes originating from LHC collisions are not a threat to Earth; the same theoretical and empirical considerations bear on both equally (Hawking radiation calculations, cosmic ray comparisons, production cross-section limits, safety review findings). The original source text (\"Micro black holes from CERN's collider pose no threat to the planet\") affirms this proposition. No alternative matches or near-misses were found across multiple search framings (including the negation and paraphrases)."
+      }
+    },
+    {
+      "id": "para-03",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form (\"Egg consumption has minimal effect on serum cholesterol for most people\") and the existing claim (\"Dietary cholesterol from eggs has little effect on blood cholesterol in most people\") are the same claim. The same evidence bears on both: studies of egg consumption and blood lipids, dietary cholesterol guidelines, and meta-analyses of egg intake and cardiovascular risk. \"Serum cholesterol\" = \"blood cholesterol,\" \"minimal effect\" = \"little effect,\" and \"for most people\" = \"in most people\" \u2014 all are minor wording differences. The slight difference between \"egg consumption\" and \"dietary cholesterol from eggs\" does not split the claim, because the live debate is about whether eating eggs raises cholesterol, and both formulations host that same debate. The negation search returned the same claim at 0.597, confirming it is the counterpart. The source text (\"barely moves serum cholesterol at all\") clearly affirms this claim."
+      }
+    },
+    {
+      "id": "para-04",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed claim \"COVID-19 most likely originated via animal-to-human transmission\" and the existing claim \"SARS-CoV-2 most likely entered humans through natural zoonotic spillover\" are the same proposition. \"COVID-19\" and \"SARS-CoV-2\" refer to the same pandemic event (the virus causing the disease), and \"animal-to-human transmission\" and \"natural zoonotic spillover\" describe the same mechanism. The same body of evidence \u2014 market epidemiology, phylogenetic analysis, animal tracing studies \u2014 bears on both formulations, and no consideration could bear on one without bearing equally on the other. The original source text (\"a virus jumping from animals to people\") clearly affirms this position, consistent with the existing claim's direction."
+      }
+    },
+    {
+      "id": "para-05",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.97,
+        "reasoning": "The proposed claim \"Minimum-wage increases cost teenagers jobs\" and the existing claim \"Raising the minimum wage reduces teen employment\" express the same proposition. Both state that minimum-wage hikes cause a reduction in teenage employment. The same body of evidence (youth employment elasticities, Card-Krueger, Neumark-Wascher, etc.) bears on both; the same arguments for and against are relevant; there is no difference in implicit parameters, definitions, or scope that would split them into separate claims. The difference is purely verbal (\"cost jobs\" vs. \"reduces employment\"). The original text (\"Hike the minimum wage and teenagers lose jobs \u2014 that's the standard result\") asserts this causal claim, so the instance stance is \"affirms.\""
+      }
+    },
+    {
+      "id": "para-06",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.98,
+        "reasoning": "The existing claim \"SSRIs outperform placebo for moderate depression\" (73cc808c) and the proposed form \"For moderate depression, SSRIs are more effective than placebo\" are the same claim under \u00a72. \"Outperform\" and \"are more effective than\" are equivalent in this context, and both formulations turn on the same evidence (RCTs comparing SSRI vs. placebo response in moderate depression). The original text (\"SSRI antidepressants beat sugar pills in the trials\") clearly affirms this proposition. The negation search also returned the same claim (score 0.852), confirming the claim node already hosts both affirmers and deniers. The existing canonical wording is slightly more concise and equally neutral, so the match goes to the existing node."
+      }
+    },
+    {
+      "id": "para-07",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form matches the existing claim bc7a6806. Both assert that human activity has been the dominant cause of the warming observed since the mid-20th century. Every consideration bearing on one \u2014 climate attribution studies, temperature reconstructions, fingerprinting of greenhouse gas vs. natural forcings \u2014 bears equally on the other. The difference in wording (\"principal cause\" vs. \"most ... attributable to\", \"since the mid-20th century\" vs. \"since 1950\") is a difference in framing, not in the proposition asserted. The original text (\"Even granting that most of the recent warming is man-made...\") grants this claim as a premise, so the instance stance is affirms."
+      }
+    },
+    {
+      "id": "para-08",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.92,
+        "reasoning": "The proposed claim \"Black holes evaporate by emitting Hawking radiation\" is a rewording of the same proposition as the existing claim \"Hawking radiation causes black holes to lose mass over time.\" The same considerations bear on both: the quantum field-theoretic calculation of particle production at the event horizon, the spectrum and temperature of the emitted radiation, and the timescale of mass loss. \"Evaporation\" in the black hole context is precisely the process of mass loss via Hawking radiation. The discourse treats these formulations interchangeably: evidence that Hawking radiation carries away mass is evidence that black holes evaporate, and vice versa. The negation searches (\"black holes do not evaporate via Hawking radiation,\" \"Hawking radiation does not cause black holes to lose mass\") also converge on the same existing claim (scores 0.65-0.82), confirming it is the counterpart node. The source's text plainly asserts this claim."
+      }
+    },
+    {
+      "id": "spec-01",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.97,
+        "reasoning": "No existing match found. The nearest candidate ('Raising the minimum wage reduces teen employment.') is a distinct claim covering a different population (teens vs. low-wage workers), a different outcome (employment vs. hours worked), and a different scope (general across all minimum-wage increases vs. specific to Seattle's 2016 ordinance). Per \u00a72: different considerations bear on each \u2014 meta-analyses of general minimum-wage effects are not the evidence one would consult for a Seattle-2016-specific hours finding, and the detailed Seattle study, replications, and methodological critiques are not the evidence one would consult for the general claim. Searched 9 framings including multiple paraphrases and the negation; all returned the same candidate with similarity scores 0.40\u20130.53, confirming these are topically related but not the same claim."
+      }
+    },
+    {
+      "id": "spec-02",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "Extensive search across multiple framings (canonical form, original text, negation, keyword variations including 'instrumental convergence', 'instrumental goals', 'self-preservation') returned no matching claim. The only semantically similar claim returned (ID b7da361f: 'Advanced AI poses a non-negligible risk of human extinction this century') is a distinct proposition: the instrumental convergence thesis about subgoal formation is a mechanism that could contribute to extinction risk, but the two claims have different truth conditions. One could accept instrumental convergence while thinking extinction risk is negligible (if alignment is believed easy), or believe extinction risk is non-negligible for other reasons (e.g., accidental side effects without instrumental convergence). Different considerations bear on each, so they are distinct claims. The negation search also returned nothing."
+      }
+    },
+    {
+      "id": "spec-03",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The existing claim 'Vaccines do not cause autism' (c6838fdc) covers all vaccines broadly. The proposed claim is specific to the MMR vaccine alone. These turn on different considerations: evidence about non-MMR vaccines (HPV, DTaP, thimerosal content) bears on the broad claim but not on the MMR-specific one. The MMR-specific claim is a specification of the broad claim \u2014 it's narrower in scope \u2014 so they are related but distinct. The canonical form is short, neutral, affirmative, and captures the proposition as actually debated ('MMR vaccine' not 'measles-mumps-rubella', since that's what both sides use in this debate). The Danish cohort study mentioned in the original text supports the assertion, so stance is affirms."
+      }
+    },
+    {
+      "id": "spec-04",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "Searched under 7 framings including paraphrases and the negation. Only one near match appeared across all searches: \"Eggs are safe to eat daily for most healthy adults\" (score ~0.44-0.55). This is a different claim with a different scope (general healthy adults vs. diabetics specifically) and opposite direction (safety/absence of harm vs. association with elevated cardiovascular risk). Different considerations bear on each: evidence about eggs and CVD in diabetic subpopulations is different from evidence about egg safety in the general population. The two claims share a topic (eggs and health) but are not the same proposition, and neither is the negation of the other. This is a new claim."
+      }
+    },
+    {
+      "id": "spec-05",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.85,
+        "reasoning": "The existing claim is: \"Astrophysical cosmic-ray collisions bound the catastrophic risk from LHC collisions.\" This is a broad claim that cosmic-ray collisions at relevant energies generally bound the risk \u2014 it could be supported by terrestrial detectors, Earth's continued existence, neutron star observations, etc. The proposed claim is narrower: it specifically says that cosmic-ray impacts on neutron stars would reveal danger from collider-scale black holes. This involves additional physics about black hole absorption by neutron stars and neutron star stability that the broader claim does not depend on. Different considerations bear on each: evidence about neutron star survival is central to the proposed claim but only indirectly relevant to the broader one, while evidence about terrestrial cosmic ray observations bears on the broader claim but not the neutron-star-specific one. The relationship is specification/instantiation, not identity."
+      }
+    },
+    {
+      "id": "spec-06",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed claim is a broad claim about pharmacological interventions generally producing sustained weight loss. The only existing claim ('GLP-1 agonists reduce body weight in obese adults') is narrower in three ways: it specifies a particular drug class rather than all pharmacological interventions, it limits the population to obese adults, and it omits the 'sustained' temporal dimension. Different evidence bears on each: evidence about GLP-1 agonists specifically or about non-obese populations, and evidence about short-term vs. sustained effects, cuts differently across the two claims. The existing claim is a specification of the broader proposed claim, not the same claim."
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
-  "id": "0603b90f-9b55-4059-b0f6-f610ba6366ee",
-  "prevId": "8ba1f6fb-ecb1-453d-b67f-e08c9ed8bd0d",
+  "id": "0a1d7a2c-37b9-4fe7-819d-dce1f9f42249",
+  "prevId": "0ad9ada0-c145-49ed-8dc4-fe52888d0078",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -490,12 +490,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1517,12 +1511,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
         "is_current": {
           "name": "is_current",
           "type": "boolean",
@@ -1594,182 +1582,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.attachments": {
-      "name": "attachments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "contribution_id": {
-          "name": "contribution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "filename": {
-          "name": "filename",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "size_bytes": {
-          "name": "size_bytes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage": {
-          "name": "storage",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'db'"
-        },
-        "body": {
-          "name": "body",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'restricted'"
-        },
-        "scan_status": {
-          "name": "scan_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_attachments_contribution": {
-          "name": "idx_attachments_contribution",
-          "columns": [
-            {
-              "expression": "contribution_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_attachments_sha256": {
-          "name": "idx_attachments_sha256",
-          "columns": [
-            {
-              "expression": "sha256",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "attachments_contribution_id_contributions_id_fk": {
-          "name": "attachments_contribution_id_contributions_id_fk",
-          "tableFrom": "attachments",
-          "tableTo": "contributions",
-          "columnsFrom": [
-            "contribution_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "attachments_owner_id_contributors_id_fk": {
-          "name": "attachments_owner_id_contributors_id_fk",
-          "tableFrom": "attachments",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_attachments_size": {
-          "name": "ck_attachments_size",
-          "value": "size_bytes >= 0"
-        },
-        "ck_attachments_body_location": {
-          "name": "ck_attachments_body_location",
-          "value": "(storage = 'db' AND body IS NOT NULL) OR (storage = 's3' AND storage_key IS NOT NULL)"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.audit_findings": {
@@ -2189,272 +2001,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.bounties": {
-      "name": "bounties",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "formalization_id": {
-          "name": "formalization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pool_id": {
-          "name": "pool_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "condition_type": {
-          "name": "condition_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'lean_statement'"
-        },
-        "resolution": {
-          "name": "resolution",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'either'"
-        },
-        "amount_micro_usd": {
-          "name": "amount_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'requested'"
-        },
-        "rules_version": {
-          "name": "rules_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "posted_by_grant_id": {
-          "name": "posted_by_grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rationale": {
-          "name": "rationale",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "opened_at": {
-          "name": "opened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "human_confirmed_at": {
-          "name": "human_confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "human_confirmed_by": {
-          "name": "human_confirmed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "withdraw_effective_at": {
-          "name": "withdraw_effective_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolution_note": {
-          "name": "resolution_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_bounties_claim": {
-          "name": "idx_bounties_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_bounties_status": {
-          "name": "idx_bounties_status",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_bounties_formalization": {
-          "name": "idx_bounties_formalization",
-          "columns": [
-            {
-              "expression": "formalization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_bounty_live_per_claim": {
-          "name": "uq_bounty_live_per_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status IN ('requested', 'confirm_pending', 'open', 'claim_pending', 'house_result_pending', 'rebinding')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "bounties_claim_id_claims_id_fk": {
-          "name": "bounties_claim_id_claims_id_fk",
-          "tableFrom": "bounties",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "bounties_formalization_id_claim_formalizations_id_fk": {
-          "name": "bounties_formalization_id_claim_formalizations_id_fk",
-          "tableFrom": "bounties",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "formalization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "bounties_pool_id_prize_pools_id_fk": {
-          "name": "bounties_pool_id_prize_pools_id_fk",
-          "tableFrom": "bounties",
-          "tableTo": "prize_pools",
-          "columnsFrom": [
-            "pool_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "bounties_posted_by_grant_id_grants_id_fk": {
-          "name": "bounties_posted_by_grant_id_grants_id_fk",
-          "tableFrom": "bounties",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "posted_by_grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_bounties_amount": {
-          "name": "ck_bounties_amount",
-          "value": "amount_micro_usd > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.budget_jobs": {
       "name": "budget_jobs",
       "schema": "",
@@ -2604,277 +2150,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.claim_formalizations": {
-      "name": "claim_formalizations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "language": {
-          "name": "language",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'lean4'"
-        },
-        "pin_id": {
-          "name": "pin_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lean_toolchain": {
-          "name": "lean_toolchain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mathlib_rev": {
-          "name": "mathlib_rev",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mathlib_tag": {
-          "name": "mathlib_tag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "image_digest": {
-          "name": "image_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "statement_source": {
-          "name": "statement_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_hash": {
-          "name": "source_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expr_hash": {
-          "name": "expr_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pp_type": {
-          "name": "pp_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "constants": {
-          "name": "constants",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "definitions_axioms": {
-          "name": "definitions_axioms",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "witness_present": {
-          "name": "witness_present",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "correspondence": {
-          "name": "correspondence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "review_notes": {
-          "name": "review_notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "authored_by": {
-          "name": "authored_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_run_id": {
-          "name": "created_by_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reviewed_by_run_id": {
-          "name": "reviewed_by_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reviewed_at": {
-          "name": "reviewed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "review_period_ends_at": {
-          "name": "review_period_ends_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retired_at": {
-          "name": "retired_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retire_reason": {
-          "name": "retire_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "superseded_by": {
-          "name": "superseded_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_formalization_published": {
-          "name": "uq_formalization_published",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status = 'published'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_claim_formalizations_claim": {
-          "name": "idx_claim_formalizations_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "claim_formalizations_claim_id_claims_id_fk": {
-          "name": "claim_formalizations_claim_id_claims_id_fk",
-          "tableFrom": "claim_formalizations",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "claim_formalizations_superseded_by_claim_formalizations_id_fk": {
-          "name": "claim_formalizations_superseded_by_claim_formalizations_id_fk",
-          "tableFrom": "claim_formalizations",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "superseded_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_claim_formalizations_claim_version": {
-          "name": "uq_claim_formalizations_claim_version",
-          "nullsNotDistinct": false,
-          "columns": [
-            "claim_id",
-            "version"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.claim_instances": {
       "name": "claim_instances",
       "schema": "",
@@ -2903,6 +2178,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "proposed_canonical_form": {
+          "name": "proposed_canonical_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "context": {
           "name": "context",
@@ -3021,6 +2302,149 @@
           "tableTo": "sources",
           "columnsFrom": [
             "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_predictions": {
+      "name": "claim_predictions",
+      "schema": "",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "fixture_id": {
+          "name": "fixture_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_criterion": {
+          "name": "resolution_criterion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolution_date": {
+          "name": "resolution_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operationalization": {
+          "name": "operationalization",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baseline_probability": {
+          "name": "baseline_probability",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baseline_source": {
+          "name": "baseline_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baseline_at": {
+          "name": "baseline_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_note": {
+          "name": "resolution_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_claim_predictions_fixture": {
+          "name": "idx_claim_predictions_fixture",
+          "columns": [
+            {
+              "expression": "fixture_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_claim_predictions_due": {
+          "name": "idx_claim_predictions_due",
+          "columns": [
+            {
+              "expression": "resolution_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_predictions_claim_id_claims_id_fk": {
+          "name": "claim_predictions_claim_id_claims_id_fk",
+          "tableFrom": "claim_predictions",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "claim_id"
           ],
           "columnsTo": [
             "id"
@@ -3344,19 +2768,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "domains": {
-          "name": "domains",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "domains_source": {
-          "name": "domains_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "embedding": {
           "name": "embedding",
           "type": "vector(1536)",
@@ -3459,21 +2870,6 @@
           "columns": [
             {
               "expression": "text_search",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "idx_claims_domains": {
-          "name": "idx_claims_domains",
-          "columns": [
-            {
-              "expression": "domains",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3698,18 +3094,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "challenged_formalization_id": {
-          "name": "challenged_formalization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "challenged_prize_claim_id": {
-          "name": "challenged_prize_claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "review_claimed_at": {
           "name": "review_claimed_at",
           "type": "timestamp with time zone",
@@ -3823,32 +3207,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "contributions_challenged_formalization_id_claim_formalizations_id_fk": {
-          "name": "contributions_challenged_formalization_id_claim_formalizations_id_fk",
-          "tableFrom": "contributions",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "challenged_formalization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "contributions_challenged_prize_claim_id_prize_claims_id_fk": {
-          "name": "contributions_challenged_prize_claim_id_prize_claims_id_fk",
-          "tableFrom": "contributions",
-          "tableTo": "prize_claims",
-          "columnsFrom": [
-            "challenged_prize_claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3926,20 +3284,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "owls_prized_micro_usd": {
-          "name": "owls_prized_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "prize_ineligible": {
-          "name": "prize_ineligible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "contribution_standing": {
           "name": "contribution_standing",
@@ -4546,13 +3890,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4772,211 +4109,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.lean_checks": {
-      "name": "lean_checks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "formalization_id": {
-          "name": "formalization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "submission_sha256": {
-          "name": "submission_sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "submission_source": {
-          "name": "submission_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "submitted_by": {
-          "name": "submitted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prize_claim_id": {
-          "name": "prize_claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt_id": {
-          "name": "attempt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "checks": {
-          "name": "checks",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "diagnostics": {
-          "name": "diagnostics",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "truncated": {
-          "name": "truncated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "resource": {
-          "name": "resource",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pin_id": {
-          "name": "pin_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "image_digest": {
-          "name": "image_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "checker_version": {
-          "name": "checker_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "second_opinion": {
-          "name": "second_opinion",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cost_micro_usd": {
-          "name": "cost_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_lean_checks_formalization": {
-          "name": "idx_lean_checks_formalization",
-          "columns": [
-            {
-              "expression": "formalization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_lean_checks_submission_sha256": {
-          "name": "idx_lean_checks_submission_sha256",
-          "columns": [
-            {
-              "expression": "submission_sha256",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "lean_checks_formalization_id_claim_formalizations_id_fk": {
-          "name": "lean_checks_formalization_id_claim_formalizations_id_fk",
-          "tableFrom": "lean_checks",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "formalization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_lean_checks_submission": {
-          "name": "uq_lean_checks_submission",
-          "nullsNotDistinct": false,
-          "columns": [
-            "formalization_id",
-            "submission_sha256",
-            "checker_version",
-            "mode"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.llm_usage": {
       "name": "llm_usage",
       "schema": "",
@@ -5054,18 +4186,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "external_units": {
-          "name": "external_units",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_unit_kind": {
-          "name": "external_unit_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "job_id": {
           "name": "job_id",
@@ -5864,1036 +4984,6 @@
       },
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.platform_flags": {
-      "name": "platform_flags",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.prize_claims": {
-      "name": "prize_claims",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "contribution_id": {
-          "name": "contribution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bounty_id": {
-          "name": "bounty_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "formalization_id": {
-          "name": "formalization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimant_id": {
-          "name": "claimant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "direction": {
-          "name": "direction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "rejected_stage": {
-          "name": "rejected_stage",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lean_check_id": {
-          "name": "lean_check_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "check_attempts": {
-          "name": "check_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "tie_group": {
-          "name": "tie_group",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "steward_decision": {
-          "name": "steward_decision",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result_category": {
-          "name": "result_category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "defect_award_micro_usd": {
-          "name": "defect_award_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "window_ends_at": {
-          "name": "window_ends_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "window_paused_ms": {
-          "name": "window_paused_ms",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "audit_outcome": {
-          "name": "audit_outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_off_at": {
-          "name": "signed_off_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_off_by": {
-          "name": "signed_off_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payee": {
-          "name": "payee",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_name": {
-          "name": "credit_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tools_disclosure": {
-          "name": "tools_disclosure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "declarations": {
-          "name": "declarations",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rules_version": {
-          "name": "rules_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "submitted_at": {
-          "name": "submitted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_prize_claims_bounty_status": {
-          "name": "idx_prize_claims_bounty_status",
-          "columns": [
-            {
-              "expression": "bounty_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_prize_claims_claimant": {
-          "name": "idx_prize_claims_claimant",
-          "columns": [
-            {
-              "expression": "claimant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_prize_claims_formalization_status": {
-          "name": "idx_prize_claims_formalization_status",
-          "columns": [
-            {
-              "expression": "formalization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_prize_claim_live_per_claimant": {
-          "name": "uq_prize_claim_live_per_claimant",
-          "columns": [
-            {
-              "expression": "claimant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "formalization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status IN ('queued', 'checking', 'check_error', 'checked', 'in_review', 'in_challenge_window', 'payable', 'defect_award_pending')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prize_claims_contribution_id_contributions_id_fk": {
-          "name": "prize_claims_contribution_id_contributions_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "contributions",
-          "columnsFrom": [
-            "contribution_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "prize_claims_bounty_id_bounties_id_fk": {
-          "name": "prize_claims_bounty_id_bounties_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "bounties",
-          "columnsFrom": [
-            "bounty_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "prize_claims_claim_id_claims_id_fk": {
-          "name": "prize_claims_claim_id_claims_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "prize_claims_formalization_id_claim_formalizations_id_fk": {
-          "name": "prize_claims_formalization_id_claim_formalizations_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "formalization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "prize_claims_claimant_id_contributors_id_fk": {
-          "name": "prize_claims_claimant_id_contributors_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "claimant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "prize_claims_lean_check_id_lean_checks_id_fk": {
-          "name": "prize_claims_lean_check_id_lean_checks_id_fk",
-          "tableFrom": "prize_claims",
-          "tableTo": "lean_checks",
-          "columnsFrom": [
-            "lean_check_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "prize_claims_contribution_id_unique": {
-          "name": "prize_claims_contribution_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "contribution_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_prize_claims_defect_award": {
-          "name": "ck_prize_claims_defect_award",
-          "value": "defect_award_micro_usd IS NULL OR defect_award_micro_usd >= 0"
-        },
-        "ck_prize_claims_window_paused": {
-          "name": "ck_prize_claims_window_paused",
-          "value": "window_paused_ms >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.prize_payouts": {
-      "name": "prize_payouts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "prize_claim_id": {
-          "name": "prize_claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_micro_usd": {
-          "name": "amount_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "withholding_micro_usd": {
-          "name": "withholding_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'usd'"
-        },
-        "payee_country": {
-          "name": "payee_country",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_form_kind": {
-          "name": "tax_form_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "screening_result": {
-          "name": "screening_result",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'internal'"
-        },
-        "provider_payee_id": {
-          "name": "provider_payee_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_payout_id": {
-          "name": "provider_payout_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "paid_at": {
-          "name": "paid_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_prize_payouts_claim": {
-          "name": "idx_prize_payouts_claim",
-          "columns": [
-            {
-              "expression": "prize_claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prize_payouts_prize_claim_id_prize_claims_id_fk": {
-          "name": "prize_payouts_prize_claim_id_prize_claims_id_fk",
-          "tableFrom": "prize_payouts",
-          "tableTo": "prize_claims",
-          "columnsFrom": [
-            "prize_claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "prize_payouts_idempotency_key_unique": {
-          "name": "prize_payouts_idempotency_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "idempotency_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_prize_payouts_amount": {
-          "name": "ck_prize_payouts_amount",
-          "value": "amount_micro_usd > 0"
-        },
-        "ck_prize_payouts_withholding": {
-          "name": "ck_prize_payouts_withholding",
-          "value": "withholding_micro_usd >= 0 AND withholding_micro_usd <= amount_micro_usd"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.prize_pool_entries": {
-      "name": "prize_pool_entries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "pool_id": {
-          "name": "pool_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_micro_usd": {
-          "name": "amount_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bounty_id": {
-          "name": "bounty_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prize_claim_id": {
-          "name": "prize_claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bank_reference": {
-          "name": "bank_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stripe_event_id": {
-          "name": "stripe_event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_prize_pool_entries_pool": {
-          "name": "idx_prize_pool_entries_pool",
-          "columns": [
-            {
-              "expression": "pool_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_prize_pool_entries_bounty": {
-          "name": "idx_prize_pool_entries_bounty",
-          "columns": [
-            {
-              "expression": "bounty_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prize_pool_entries_pool_id_prize_pools_id_fk": {
-          "name": "prize_pool_entries_pool_id_prize_pools_id_fk",
-          "tableFrom": "prize_pool_entries",
-          "tableTo": "prize_pools",
-          "columnsFrom": [
-            "pool_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "prize_pool_entries_idempotency_key_unique": {
-          "name": "prize_pool_entries_idempotency_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "idempotency_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "ck_prize_pool_entries_reason": {
-          "name": "ck_prize_pool_entries_reason",
-          "value": "reason IN ('platform_deposit', 'sponsorship', 'owl_prize', 'withholding_remitted', 'defect_award', 'review_award', 'admin_adjust', 'payout')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.prize_pools": {
-      "name": "prize_pools",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'usd'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "prize_pools_domain_unique": {
-          "name": "prize_pools_domain_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "domain"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.proof_attempts": {
-      "name": "proof_attempts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "formalization_id": {
-          "name": "formalization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action_id": {
-          "name": "action_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variant": {
-          "name": "variant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "effort": {
-          "name": "effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'running'"
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "report": {
-          "name": "report",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lean_proof": {
-          "name": "lean_proof",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lean_check_id": {
-          "name": "lean_check_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notebook": {
-          "name": "notebook",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "is_calibration": {
-          "name": "is_calibration",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "ceiling_micro_usd": {
-          "name": "ceiling_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "spent_micro_usd": {
-          "name": "spent_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "turns": {
-          "name": "turns",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "compactions": {
-          "name": "compactions",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "served_models": {
-          "name": "served_models",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "heartbeat_at": {
-          "name": "heartbeat_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_proof_attempts_claim": {
-          "name": "idx_proof_attempts_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_proof_attempts_status": {
-          "name": "idx_proof_attempts_status",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_proof_attempts_formalization": {
-          "name": "idx_proof_attempts_formalization",
-          "columns": [
-            {
-              "expression": "formalization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "proof_attempts_formalization_id_claim_formalizations_id_fk": {
-          "name": "proof_attempts_formalization_id_claim_formalizations_id_fk",
-          "tableFrom": "proof_attempts",
-          "tableTo": "claim_formalizations",
-          "columnsFrom": [
-            "formalization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "proof_attempts_action_id_actions_id_fk": {
-          "name": "proof_attempts_action_id_actions_id_fk",
-          "tableFrom": "proof_attempts",
-          "tableTo": "actions",
-          "columnsFrom": [
-            "action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "proof_attempts_lean_check_id_lean_checks_id_fk": {
-          "name": "proof_attempts_lean_check_id_lean_checks_id_fk",
-          "tableFrom": "proof_attempts",
-          "tableTo": "lean_checks",
-          "columnsFrom": [
-            "lean_check_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_proof_attempts_ceiling": {
-          "name": "ck_proof_attempts_ceiling",
-          "value": "ceiling_micro_usd > 0"
-        },
-        "ck_proof_attempts_spent": {
-          "name": "ck_proof_attempts_spent",
-          "value": "spent_micro_usd >= 0"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.queue_depth_snapshots": {

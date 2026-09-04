@@ -22,7 +22,7 @@ export default function Privacy() {
         contributor&rsquo;s track record on the graph, is described below.
       </p>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
-        Effective July 31, 2026 · applies to minerval.ai, the Minerval API, and
+        Effective September 2, 2026 · applies to minerval.ai, the Minerval API, and
         the Minerval browser extension.
       </p>
 
@@ -63,6 +63,26 @@ export default function Privacy() {
         requests are not tied to any account.
       </p>
 
+      <h2 id="transcripts">Agent transcripts</h2>
+      <p>
+        The graph&rsquo;s own work is kept on the record. When you submit a
+        URL for ingestion, the agents that read it and reason about it leave
+        a transcript: the fetched document, their searches, and their
+        reasoning, attributed to the submitting account and kept for thirty
+        days so the process can be inspected and evaluated. Sources are
+        public pages by construction (our servers fetch them without
+        credentials), and the claims they yield become part of the public
+        graph with their provenance.
+      </p>
+      <p>
+        Content you hand over to be analyzed rather than ingested is
+        different, and is never part of a transcript: the page open in your
+        browser when you use the extension, questions typed into its chat,
+        and passages sent to the MCP server&rsquo;s analysis tools are
+        processed and then discarded. Only the metering record described
+        above remains.
+      </p>
+
       <h2 id="extension">The browser extension</h2>
       <p>
         The extension sends a page&rsquo;s readable text, its URL, and its
@@ -76,11 +96,15 @@ export default function Privacy() {
       <p>
         Sent page text is used for exactly one purpose: extracting the claims
         on the page and matching them against the graph so the extension can
-        annotate what you are reading and answer your questions. Analysis
-        results are cached server-side, keyed by the page URL and a hash of
-        its content, so re-analyzing an unchanged page is instant and is not
-        re-processed. Analysis requests authenticate with your API key and
-        are metered as described above.
+        annotate what you are reading and answer your questions. Page text
+        is transient: it is never written to our database or to agent
+        transcripts, and no claim is added to the graph from it. Analysis
+        results are cached in server memory, keyed by the page URL and a
+        hash of its content, so re-analyzing an unchanged page is instant
+        and is not re-processed; the cache expires within about an hour and
+        does not survive a server restart. Chat questions are handled the
+        same way and are not retained at all. Analysis requests
+        authenticate with your API key and are metered as described above.
       </p>
       <p>
         The extension stores your settings (API key, markup level, and
@@ -103,9 +127,11 @@ export default function Privacy() {
 
       <h2 id="retention">Retention &amp; deletion</h2>
       <p>
-        Cached page analyses expire from the server cache; metering records
-        are retained as account history. To delete your account and its
-        associated records, email us and we will remove them.
+        Cached page analyses expire from server memory within about an hour;
+        agent transcripts from source ingestion are deleted after thirty
+        days; metering records are retained as account history. To delete
+        your account and its associated records, email us and we will remove
+        them.
       </p>
 
       <h2 id="contact">Contact</h2>

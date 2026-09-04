@@ -223,10 +223,15 @@ CREATE TABLE "proof_attempts" (
 	CONSTRAINT "ck_proof_attempts_spent" CHECK (spent_micro_usd >= 0)
 );
 --> statement-breakpoint
+ALTER TABLE "agent_runs" ADD COLUMN "skills" text[];--> statement-breakpoint
+ALTER TABLE "assessments" ADD COLUMN "skills" text[];--> statement-breakpoint
+ALTER TABLE "claims" ADD COLUMN "domains" text[] DEFAULT '{}' NOT NULL;--> statement-breakpoint
+ALTER TABLE "claims" ADD COLUMN "domains_source" text;--> statement-breakpoint
 ALTER TABLE "contributions" ADD COLUMN "challenged_formalization_id" uuid;--> statement-breakpoint
 ALTER TABLE "contributions" ADD COLUMN "challenged_prize_claim_id" uuid;--> statement-breakpoint
 ALTER TABLE "contributors" ADD COLUMN "owls_prized_micro_usd" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "contributors" ADD COLUMN "prize_ineligible" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "grants" ADD COLUMN "skills" text[] DEFAULT '{}' NOT NULL;--> statement-breakpoint
 ALTER TABLE "llm_usage" ADD COLUMN "external_units" numeric;--> statement-breakpoint
 ALTER TABLE "llm_usage" ADD COLUMN "external_unit_kind" text;--> statement-breakpoint
 ALTER TABLE "attachments" ADD CONSTRAINT "attachments_contribution_id_contributions_id_fk" FOREIGN KEY ("contribution_id") REFERENCES "public"."contributions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -270,4 +275,5 @@ CREATE INDEX "idx_proof_attempts_claim" ON "proof_attempts" USING btree ("claim_
 CREATE INDEX "idx_proof_attempts_status" ON "proof_attempts" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_proof_attempts_formalization" ON "proof_attempts" USING btree ("formalization_id");--> statement-breakpoint
 ALTER TABLE "contributions" ADD CONSTRAINT "contributions_challenged_formalization_id_claim_formalizations_id_fk" FOREIGN KEY ("challenged_formalization_id") REFERENCES "public"."claim_formalizations"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "contributions" ADD CONSTRAINT "contributions_challenged_prize_claim_id_prize_claims_id_fk" FOREIGN KEY ("challenged_prize_claim_id") REFERENCES "public"."prize_claims"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "contributions" ADD CONSTRAINT "contributions_challenged_prize_claim_id_prize_claims_id_fk" FOREIGN KEY ("challenged_prize_claim_id") REFERENCES "public"."prize_claims"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_claims_domains" ON "claims" USING gin ("domains");

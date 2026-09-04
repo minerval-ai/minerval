@@ -7,10 +7,12 @@
  * caches on first read), so every corpus entry script imports this file first.
  */
 import { config as loadDotenv } from "dotenv";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../../src/config.js";
+import { applyProductionProfile } from "./production-pins.js";
 
 loadDotenv(); // pull ANTHROPIC_API_KEY / OPENAI_API_KEY etc. from .env if present
 
@@ -33,6 +35,62 @@ process.env.LOG_LEVEL ??= "warn";
 // Belt-and-suspenders: make sure we never accidentally drain to real SQS.
 delete process.env.SQS_URL_EXTRACTION_QUEUE;
 delete process.env.SQS_CLAIM_PIPELINE_QUEUE;
+
+/**
+ * Model profile (#334). `--profile=production` (or CORPUS_PROFILE=production)
+ * runs the harness on the per-agent model pins from the CDK task definition,
+ * so a baseline measures the configuration production actually runs rather
+ * than the config.ts defaults — the first epoch baseline (#349) was cut on the
+ * Sonnet default Steward while production ran Fable. The pins override any
+ * *_MODEL already in the environment: a profile means "as production", and a
+ * stray override in .env must not quietly make it something else. Applied
+ * here, at import, for the same reason DATABASE_URL is: it has to land before
+ * any src module caches config.
+ */
+export const CORPUS_PROFILE: string | null =
+  argFlag("profile") ?? process.env.CORPUS_PROFILE ?? null;
+if (CORPUS_PROFILE === "production") {
+  const pins = applyProductionProfile();
+  console.log(
+    `profile: production — ${pins.map((p) => `${p.envVar}=${p.model}`).join(", ")}`
+  );
+} else if (CORPUS_PROFILE !== null) {
+  throw new Error(
+    `Unknown profile "${CORPUS_PROFILE}" (known: production). ` +
+      `Omit --profile to run on the config defaults plus your .env overrides.`
+  );
+}
+
+/**
+ * Model swap (#334 L1, the model-swap runner): `--swap=<agent>:<model>` puts
+ * ONE agent on another model for this run, applied after the profile so a
+ * swap on top of production means "production, except this agent". The
+ * fingerprint records it. Swappable agents: extractor, matcher, steward,
+ * curator (their *_MODEL env vars).
+ */
+export const CORPUS_SWAP: { agent: string; envVar: string; model: string } | null = (() => {
+  const raw = argFlag("swap");
+  if (!raw) return null;
+  const i = raw.indexOf(":");
+  if (i <= 0 || i === raw.length - 1) {
+    throw new Error(`--swap must be <agent>:<model>, got "${raw}"`);
+  }
+  const agent = raw.slice(0, i);
+  const model = raw.slice(i + 1);
+  const envVars: Record<string, string> = {
+    extractor: "EXTRACTOR_MODEL",
+    matcher: "MATCHER_MODEL",
+    steward: "STEWARD_MODEL",
+    curator: "CURATOR_MODEL",
+  };
+  const envVar = envVars[agent];
+  if (!envVar) {
+    throw new Error(`--swap: unknown agent "${agent}" (extractor | matcher | steward | curator)`);
+  }
+  process.env[envVar] = model;
+  console.log(`swap: ${agent} → ${model} (${envVar})`);
+  return { agent, envVar, model };
+})();
 
 /**
  * Fail loudly if the DB the app actually resolved is not the isolated corpus DB.
@@ -121,6 +179,17 @@ export function postUrl(p: ManifestPost): string {
 
 export function loadManifest(name: string): Manifest {
   return JSON.parse(readFileSync(manifestPath(name), "utf8")) as Manifest;
+}
+
+/** Short git commit of the working tree, for run fingerprints; null outside a checkout. */
+export function gitCommit(): string | null {
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
 }
 
 // --- tiny CLI helpers -------------------------------------------------------

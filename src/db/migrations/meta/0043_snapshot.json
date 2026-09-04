@@ -1,5 +1,5 @@
 {
-  "id": "8ba1f6fb-ecb1-453d-b67f-e08c9ed8bd0d",
+  "id": "0ad9ada0-c145-49ed-8dc4-fe52888d0078",
   "prevId": "9bed3061-39f6-4787-8be5-ccc09e466cf2",
   "version": "7",
   "dialect": "postgresql",
@@ -490,12 +490,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1517,12 +1511,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
         "is_current": {
           "name": "is_current",
           "type": "boolean",
@@ -2191,6 +2179,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "proposed_canonical_form": {
+          "name": "proposed_canonical_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "context": {
           "name": "context",
           "type": "text",
@@ -2631,19 +2625,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "domains": {
-          "name": "domains",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "domains_source": {
-          "name": "domains_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "embedding": {
           "name": "embedding",
           "type": "vector(1536)",
@@ -2746,21 +2727,6 @@
           "columns": [
             {
               "expression": "text_search",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "idx_claims_domains": {
-          "name": "idx_claims_domains",
-          "columns": [
-            {
-              "expression": "domains",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3780,13 +3746,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "skills": {
-          "name": "skills",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
         },
         "created_at": {
           "name": "created_at",

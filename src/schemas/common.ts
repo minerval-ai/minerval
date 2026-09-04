@@ -144,3 +144,29 @@ export const sourceTypeEnum = z.enum([
   "social_media",
   "unknown",
 ]);
+
+// Agent reports (#366): the agents' own channel for system failures, tool
+// gaps, and improvement ideas. Keep in sync with the agent_reports column
+// comments in src/db/schema.ts.
+export const reportKindEnum = z.enum([
+  "system_failure",
+  "tool_gap",
+  "improvement",
+]);
+
+export const reportSeverityEnum = z.enum([
+  "blocking",
+  "degraded",
+  "annoyance",
+  "idea",
+]);
+
+export const reportOriginEnum = z.enum(["internal", "external"]);
+
+export const reportStatusEnum = z.enum([
+  "new",
+  "triaged",
+  "duplicate",
+  "actioned",
+  "wontfix",
+]);

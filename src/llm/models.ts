@@ -7,9 +7,12 @@
  * Bedrock/Vertex-style IDs ("us.anthropic.claude-...") 404 there and resolve to
  * no provider at all, so config rejects them (see issue #11).
  *
- * These are the DEFAULTS. Any agent can be pointed at another provider with its
- * *_MODEL env var — which backend an ID routes to is decided by ID shape in
- * src/llm/providers/routing.ts, the single source of truth for routing.
+ * These are the Anthropic DEFAULTS. Any agent can be pointed at another
+ * provider with its *_MODEL env var — which backend an ID routes to is decided
+ * by ID shape in src/llm/providers/routing.ts, the single source of truth for
+ * routing. Non-Anthropic IDs this codebase pins as a DEFAULT (rather than as an
+ * operator override) live in OPENROUTER_MODELS below, so every model reachable
+ * from a config default is still declared in one file.
  */
 export const MODELS = {
   /**
@@ -30,6 +33,23 @@ export const MODELS = {
   opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
+} as const;
+
+/**
+ * Non-Anthropic model IDs pinned as a per-agent DEFAULT in src/config.ts.
+ *
+ * A "vendor/model" ID routes to OpenRouter, so an agent defaulted here needs
+ * OPENROUTER_API_KEY — the Anthropic key alone will not serve it (the adapter
+ * fails loudly naming the missing key).
+ *
+ * DeepSeek V4 Flash is the Matcher's tier: its judgment is narrow ("same
+ * proposition?") over candidates it retrieves itself, and it beats Haiku 4.5 on
+ * both quality and price (issue #257). It is pinned identically on the ECS task
+ * definition (MATCHER_MODEL in infra/lib/api-stack.ts); the model guard asserts
+ * the two agree, so a corpus or dev run scores the model production runs.
+ */
+export const OPENROUTER_MODELS = {
+  deepseekFlash: "deepseek/deepseek-v4-flash",
 } as const;
 
 /** Default model for general completions when a caller doesn't specify one. */

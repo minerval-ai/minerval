@@ -5,8 +5,8 @@ the constitution's standards apply in one domain, what the domain's
 characteristic objects are in the claim schema, what counts as evidence of
 which grade there, and what tools and procedures the domain brings. Every
 admin prompt is assembled in four layers, in order of authority: the
-constitution, the role and its policies, the domain skills active for the
-run, and the task. A skill may sharpen how a role's obligations apply and may
+constitution, the role (whose prompt carries its own operating standards),
+the domain skills active for the run, and the task. A skill may sharpen how a role's obligations apply and may
 add procedures and tools; it never removes an obligation, and where it
 appears to diverge from the constitution, the constitution wins and the skill
 is defective.
