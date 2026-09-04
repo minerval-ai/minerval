@@ -109,6 +109,8 @@ export interface FormalizationRow {
   constants: unknown;
   definitions_axioms: unknown;
   witness_present: boolean;
+  /** The statement introduces a definition Mathlib lacks, the Steward's own (§5.4). */
+  own_definitions: boolean;
   correspondence: string | null;
   review_notes: string | null;
   status: FormalizationStatus;
@@ -182,7 +184,7 @@ const FORMALIZATION_COLUMNS = `
   id, claim_id, version, language, pin_id, lean_toolchain, mathlib_rev,
   mathlib_tag, image_digest, namespace, statement_source, source_hash,
   expr_hash, pp_type, constants, definitions_axioms, witness_present,
-  correspondence, review_notes, status, authored_by, model,
+  own_definitions, correspondence, review_notes, status, authored_by, model,
   created_by_run_id, reviewed_by_run_id, reviewed_at, published_at,
   review_period_ends_at, retired_at, retire_reason, superseded_by, created_at`;
 
@@ -378,6 +380,7 @@ export function formalizationSummary(row: FormalizationRow): FormalizationSummar
     pp_type: row.pp_type,
     source_hash: row.source_hash,
     expr_hash: row.expr_hash,
+    own_definitions: row.own_definitions === true,
     correspondence: row.correspondence,
     published_at: iso(row.published_at),
     review_period_ends_at: iso(row.review_period_ends_at),
@@ -816,6 +819,8 @@ export interface StoreFormalizationInput {
   elaboration: ElaborateResponse;
   correspondence?: string | null;
   reviewNotes?: string | null;
+  /** The statement introduces a definition Mathlib lacks (§5.4); false when absent. */
+  ownDefinitions?: boolean;
   authoredBy: string;
   model?: string | null;
   runId?: string | null;
@@ -848,11 +853,11 @@ export async function storeElaboratedFormalization(
          (claim_id, version, language, pin_id, lean_toolchain, mathlib_rev,
           mathlib_tag, image_digest, namespace, statement_source, source_hash,
           expr_hash, pp_type, constants, definitions_axioms, witness_present,
-          correspondence, review_notes, status, authored_by, model,
+          own_definitions, correspondence, review_notes, status, authored_by, model,
           created_by_run_id, reviewed_by_run_id, reviewed_at)
        VALUES ($1::uuid, $2::int, 'lean4', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-               $13::jsonb, $14::jsonb, $15::boolean, $16, $17, $18::text, $19, $20,
-               $21::uuid,
+               $13::jsonb, $14::jsonb, $15::boolean, $22::boolean, $16, $17, $18::text,
+               $19, $20, $21::uuid,
                CASE WHEN $18::text = 'reviewed' THEN $21::uuid END,
                CASE WHEN $18::text = 'reviewed' THEN now() END)
        RETURNING ${FORMALIZATION_COLUMNS}`,
@@ -878,6 +883,7 @@ export async function storeElaboratedFormalization(
         input.authoredBy,
         input.model ?? null,
         input.runId ?? null,
+        input.ownDefinitions === true,
       ]
     );
     return inserted!;

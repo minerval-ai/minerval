@@ -82,7 +82,7 @@ export async function buildApp() {
   await app.register(reportRoutes, { prefix: "/reports" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,
-  // /prize-claims, /bounties, /prize-pools, /lean-checks, and /attachments,
+  // /prize-claims, /bounties, /lean-checks, and /attachments,
   // so they register without a prefix (docs/mathematics.md §11.1).
   await app.register(formalizationsRoutes);
   await app.register(attemptsRoutes);

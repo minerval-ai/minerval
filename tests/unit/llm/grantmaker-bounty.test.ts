@@ -46,7 +46,7 @@ vi.mock("../../../src/services/bounty-service.js", () => ({
   }),
   getBountyById: vi.fn(async (id: string) => (state.live && state.live.id === id ? state.live : null)),
   getLiveBountyForClaim: vi.fn(async () => state.live),
-  formatUsd: (micro: number) => `$${micro / 1_000_000}`,
+  formatOwls: (micro: number) => `${micro / 1_000_000} owls`,
 }));
 
 import { executeManagementTool, getBountyToolDefinitions } from "../../../src/llm/agents/grantmaker.js";
@@ -72,9 +72,9 @@ describe("post_bounty", () => {
 
   it("first call: records the request on the mandate and returns opened:false", async () => {
     const passStartedAt = new Date("2026-03-10T10:00:00Z");
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 500, expires_in_days: 180, rationale: "a live crux" }, { passStartedAt }))!);
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 500, expires_in_days: 180, rationale: "a live crux" }, { passStartedAt }))!);
     expect(out).toMatchObject({ success: true, opened: false, bounty_id: "b-1", status: "requested" });
-    expect(state.requests[0]).toMatchObject({ claimId: CLAIM, cashUsd: 500, expiresInDays: 180, rationale: "a live crux", grantId: GRANT, passStartedAt });
+    expect(state.requests[0]).toMatchObject({ claimId: CLAIM, owls: 500, expiresInDays: 180, rationale: "a live crux", grantId: GRANT, passStartedAt });
     expect(state.opens).toHaveLength(0);
     expect(state.grantUpdates[0]!.sql).toMatch(/bounty_requests/);
     expect(state.grantUpdates[0]!.params).toEqual([GRANT, CLAIM, "b-1", 500, "a live crux"]);
@@ -84,7 +84,7 @@ describe("post_bounty", () => {
     const passStartedAt = new Date(Date.now() - 3_600_000);
     state.pending = { at: new Date(Date.now() - 1_800_000).toISOString(), bounty_id: "b-1" };
     state.live = { id: "b-1", status: "requested", amount_micro_usd: 500_000_000 };
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 500, rationale: "still" }, { passStartedAt }))!);
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 500, rationale: "still" }, { passStartedAt }))!);
     expect(out.opened).toBe(false);
     expect(state.opens).toHaveLength(0);
     expect(state.requests).toHaveLength(1);
@@ -94,8 +94,8 @@ describe("post_bounty", () => {
     state.pending = { at: new Date(Date.now() - 86_400_000).toISOString(), bounty_id: "b-1" };
     state.live = { id: "b-1", status: "requested", amount_micro_usd: 500_000_000 };
     const passStartedAt = new Date(Date.now() - 60_000);
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 500, rationale: "still right" }, { passStartedAt }))!);
-    expect(out).toMatchObject({ success: true, opened: true, status: "open", amount: "$500" });
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 500, rationale: "still right" }, { passStartedAt }))!);
+    expect(out).toMatchObject({ success: true, opened: true, status: "open", amount: "500 owls" });
     expect(state.opens[0]).toMatchObject({ bountyId: "b-1", passStartedAt, confirmedBy: null });
     expect(state.requests).toHaveLength(0);
     expect(state.grantUpdates[0]!.sql).toMatch(/#- ARRAY\['bounty_requests'/);
@@ -104,7 +104,7 @@ describe("post_bounty", () => {
   it("a stale request (older than the confirmation window) starts over", async () => {
     state.pending = { at: new Date(Date.now() - 30 * 86_400_000).toISOString(), bounty_id: "b-1" };
     state.live = { id: "b-1", status: "requested", amount_micro_usd: 500_000_000 };
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 500, rationale: "again" }, { passStartedAt: new Date() }))!);
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 500, rationale: "again" }, { passStartedAt: new Date() }))!);
     expect(out.opened).toBe(false);
     expect(state.requests).toHaveLength(1);
   });
@@ -113,21 +113,21 @@ describe("post_bounty", () => {
     state.pending = { at: new Date(Date.now() - 86_400_000).toISOString(), bounty_id: "b-1" };
     state.live = { id: "b-1", status: "requested", amount_micro_usd: 1_500_000_000 };
     state.openResult = { ok: true, bounty_id: "b-1", status: "confirm_pending", opened: false };
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 1500, rationale: "big" }, { passStartedAt: new Date(Date.now() - 60_000) }))!);
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 1500, rationale: "big" }, { passStartedAt: new Date(Date.now() - 60_000) }))!);
     expect(out).toMatchObject({ success: true, opened: false, status: "confirm_pending" });
     expect(out.note).toMatch(/confirm/);
   });
 
   it("returns the service's bounds as the problem", async () => {
-    state.requestResult = { ok: false, code: "AMOUNT_OUT_OF_BOUNDS", message: "a bounty is between $250 and $5,000 per claim" };
-    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 50, rationale: "tiny" }, { passStartedAt: new Date() }))!);
+    state.requestResult = { ok: false, code: "AMOUNT_OUT_OF_BOUNDS", message: "a bounty is between 250 owls and 5,000 owls per claim" };
+    const out = JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 50, rationale: "tiny" }, { passStartedAt: new Date() }))!);
     expect(out).toMatchObject({ success: false, code: "AMOUNT_OUT_OF_BOUNDS" });
     expect(state.grantUpdates).toHaveLength(0);
   });
 
   it("refuses a malformed claim id or a missing rationale before touching anything", async () => {
-    expect(JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: "nope", cash_usd: 500, rationale: "x" }))!)).toMatchObject({ success: false });
-    expect(JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, cash_usd: 500, rationale: "" }))!)).toMatchObject({ success: false, problem: /rationale/ });
+    expect(JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: "nope", owls: 500, rationale: "x" }))!)).toMatchObject({ success: false });
+    expect(JSON.parse((await executeManagementTool(GRANT, "post_bounty", { claim_id: CLAIM, owls: 500, rationale: "" }))!)).toMatchObject({ success: false, problem: /rationale/ });
     expect(state.requests).toHaveLength(0);
   });
 });

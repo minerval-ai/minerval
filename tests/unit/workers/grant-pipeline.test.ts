@@ -12,6 +12,7 @@ const { state, stewardRuns, grantorRuns } = vi.hoisted(() => ({
   state: {
     grant: null as null | Record<string, unknown>,
     spent: 0,
+    liveBounties: 0,
     targets: [] as Array<{
       id: string;
       prior_state: string;
@@ -98,6 +99,13 @@ vi.mock("../../../src/services/regrant-service.js", () => ({
   grantCommittedMicroUsd: vi.fn(async () => state.spent),
 }));
 
+vi.mock("../../../src/services/bounty-service.js", () => ({
+  mandateClosureBlockers: vi.fn(async () => ({
+    live_bounties: state.liveBounties,
+    bounty_ids: Array.from({ length: state.liveBounties }, (_, i) => `b-${i}`),
+  })),
+}));
+
 vi.mock("../../../src/services/priority-service.js", () => ({
   refreshQueuePriority: vi.fn(async () => 1),
 }));
@@ -145,6 +153,7 @@ beforeEach(() => {
   grantorRuns.length = 0;
   state.grant = null;
   state.spent = 0;
+  state.liveBounties = 0;
   state.targets = [];
   state.specificTargets = {};
   state.grantUpdates = [];
@@ -228,6 +237,21 @@ describe("processNextGrantTask", () => {
     expect(
       state.grantUpdates.some((u) => u.sql.includes("'completed'"))
     ).toBe(true);
+  });
+
+  it("leaves an exhausted deepen grant live while a bounty is held against its escrow", async () => {
+    // docs/mathematics.md §8.1: the escrow that backs a public offer is
+    // never refunded from under it; the Grantmaker withdraws the bounties
+    // first and the mandate closes once none is live.
+    state.grant = grant();
+    state.targets = [];
+    state.liveBounties = 1;
+    const r = await processNextGrantTask();
+    expect(r.status).toBe("empty");
+    expect(state.refunds).toHaveLength(0);
+    expect(
+      state.grantUpdates.some((u) => u.sql.includes("'completed'"))
+    ).toBe(false);
   });
 
   it("keeps an exhausted agent mandate alive: closing it is its review agent's call", async () => {

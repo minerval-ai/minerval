@@ -1,15 +1,17 @@
 /**
  * The mathematics schema (docs/mathematics.md §5.1, §7.9, §8.1, §8.4,
- * §8.7), exercised against a database migrated from zero: every new table
- * and column exists, and the backstops the design relies on hold — one
+ * §8.7), exercised against a database migrated from zero: every table and
+ * column exists, the prize fund is gone (a bounty holds against the escrow
+ * of the mandate that posted it, so `posted_by_grant_id` is NOT NULL and no
+ * pool table exists), and the backstops the design relies on hold: one
  * published statement per claim, one live bounty per claim, one live prize
- * claim per claimant per statement, the prize-fund reason vocabulary, the
- * money CHECKs, and ON DELETE RESTRICT under a claim that carries money.
+ * claim per claimant per statement, the money CHECKs, and ON DELETE
+ * RESTRICT under a claim that carries money.
  */
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
-import { seedUser, seedClaim, pgCode } from "./helpers.js";
+import { seedUser, seedClaim, seedGrantWithJob, pgCode } from "./helpers.js";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";
@@ -42,31 +44,30 @@ async function seedFormalization(input: {
   return rows[0]!.id;
 }
 
-async function seedPool(): Promise<string> {
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO prize_pools (domain) VALUES ($1) RETURNING id`,
-    [`dbtest-${randomUUID()}`]
-  );
-  return rows[0]!.id;
+/** The mandate a bounty holds against (§8.1). */
+async function seedPostingMandate(): Promise<string> {
+  const funder = await seedUser("bounty-mandate");
+  const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 2_500_000_000 });
+  return grantId;
 }
 
 async function seedBounty(input: {
   claimId: string;
   formalizationId: string;
-  poolId: string;
+  grantId: string;
   status?: string;
   amountMicroUsd?: number;
 }): Promise<string> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO bounties
-       (claim_id, formalization_id, pool_id, amount_micro_usd, status,
+       (claim_id, formalization_id, posted_by_grant_id, amount_micro_usd, status,
         rules_version, rationale)
      VALUES ($1, $2, $3, $4, $5, 'rules-v1', 'DB-test bounty')
      RETURNING id`,
     [
       input.claimId,
       input.formalizationId,
-      input.poolId,
+      input.grantId,
       input.amountMicroUsd ?? 250_000_000,
       input.status ?? "open",
     ]
@@ -114,17 +115,17 @@ async function seedPrizeClaim(input: {
   return rows[0]!.id;
 }
 
-/** A claim with a published statement, a fund, and one open bounty. */
+/** A claim with a published statement, a posting mandate, and one open bounty. */
 async function bountyFixture(label: string) {
   const claimId = await seedClaim(label);
   const formalizationId = await seedFormalization({ claimId });
-  const poolId = await seedPool();
-  const bountyId = await seedBounty({ claimId, formalizationId, poolId });
-  return { claimId, formalizationId, poolId, bountyId };
+  const grantId = await seedPostingMandate();
+  const bountyId = await seedBounty({ claimId, formalizationId, grantId });
+  return { claimId, formalizationId, grantId, bountyId };
 }
 
-describe("migration 0044 (mathematics)", () => {
-  it("created every new table", async () => {
+describe("migrations 0044 through 0047 (mathematics)", () => {
+  it("created every new table, and the prize fund's two tables are gone", async () => {
     const rows = await rawQuery<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name IN
@@ -141,10 +142,39 @@ describe("migration 0044 (mathematics)", () => {
       "platform_flags",
       "prize_claims",
       "prize_payouts",
-      "prize_pool_entries",
-      "prize_pools",
       "proof_attempts",
     ]);
+  });
+
+  it("a bounty names the mandate whose escrow it holds against, and carries no pool", async () => {
+    const rows = await rawQuery<{ column_name: string; is_nullable: string; data_type: string }>(
+      `SELECT column_name, is_nullable, data_type FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'bounties'
+          AND column_name IN ('pool_id', 'posted_by_grant_id', 'amount_micro_usd')
+        ORDER BY column_name`
+    );
+    expect(rows.map((r) => [r.column_name, r.is_nullable, r.data_type])).toEqual([
+      ["amount_micro_usd", "NO", "bigint"],
+      ["posted_by_grant_id", "NO", "uuid"],
+    ]);
+    const claimId = await seedClaim("bounty-no-mandate");
+    const formalizationId = await seedFormalization({ claimId });
+    await expect(
+      rawQuery(
+        `INSERT INTO bounties (claim_id, formalization_id, amount_micro_usd, status, rules_version, rationale)
+         VALUES ($1, $2, 1, 'open', 'v', 'x')`,
+        [claimId, formalizationId]
+      )
+    ).rejects.toSatisfy((e: unknown) => pgCode(e) === "23502");
+  });
+
+  it("a formal statement records whether it introduces the Steward's own definitions (§5.4)", async () => {
+    const [col] = await rawQuery<{ data_type: string; is_nullable: string; column_default: string }>(
+      `SELECT data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'claim_formalizations'
+          AND column_name = 'own_definitions'`
+    );
+    expect(col).toEqual({ data_type: "boolean", is_nullable: "NO", column_default: "false" });
   });
 
   it("added the new columns on contributors, contributions, and llm_usage", async () => {
@@ -209,7 +239,6 @@ describe("migration 0044 (mathematics)", () => {
       "idx_lean_checks_submission_sha256",
       "idx_prize_claims_bounty_status",
       "idx_prize_claims_claimant",
-      "idx_prize_pool_entries_pool",
       "idx_proof_attempts_claim",
       "idx_proof_attempts_status",
       "uq_bounty_live_per_claim",
@@ -251,7 +280,6 @@ describe("migration 0044 (mathematics)", () => {
       "ck_prize_claims_window_paused:c",
       "ck_prize_payouts_amount:c",
       "ck_prize_payouts_withholding:c",
-      "ck_prize_pool_entries_reason:c",
       "ck_proof_attempts_ceiling:c",
       "ck_proof_attempts_spent:c",
       "uq_claim_formalizations_claim_version:u",
@@ -342,69 +370,20 @@ describe("lean_checks", () => {
   });
 });
 
-describe("prize_pool_entries", () => {
-  it("rejects an unknown reason and accepts every reason in the design", async () => {
-    const poolId = await seedPool();
-    const insert = (reason: string, amount: number) =>
-      rawQuery(
-        `INSERT INTO prize_pool_entries (pool_id, amount_micro_usd, reason)
-         VALUES ($1, $2, $3)`,
-        [poolId, amount, reason]
-      );
-    await expect(insert("escrow", 1_000_000)).rejects.toSatisfy(
-      (e: unknown) => pgCode(e) === CHECK_VIOLATION
-    );
-    for (const reason of [
-      "platform_deposit",
-      "sponsorship",
-      "owl_prize",
-      "withholding_remitted",
-      "defect_award",
-      "review_award",
-      "admin_adjust",
-      "payout",
-    ]) {
-      await expect(insert(reason, 1_000_000)).resolves.toBeTruthy();
-    }
-  });
-
-  it("credits exactly once under an idempotency key", async () => {
-    const poolId = await seedPool();
-    const key = `deposit:${randomUUID()}`;
-    const insert = () =>
-      rawQuery(
-        `INSERT INTO prize_pool_entries
-           (pool_id, amount_micro_usd, reason, bank_reference, idempotency_key)
-         VALUES ($1, 2500000000, 'platform_deposit', 'wire-1', $2)`,
-        [poolId, key]
-      );
-    await insert();
-    await expect(insert()).rejects.toSatisfy(
-      (e: unknown) => pgCode(e) === UNIQUE_VIOLATION
-    );
-    const [sum] = await rawQuery<{ total: string }>(
-      `SELECT COALESCE(SUM(amount_micro_usd), 0) AS total
-         FROM prize_pool_entries WHERE pool_id = $1`,
-      [poolId]
-    );
-    expect(Number(sum!.total)).toBe(2_500_000_000);
-  });
-});
-
 describe("bounties", () => {
   it("rejects a non-positive amount", async () => {
     const claimId = await seedClaim("bounty-amount");
     const formalizationId = await seedFormalization({ claimId });
-    const poolId = await seedPool();
+    const grantId = await seedPostingMandate();
     for (const amount of [0, -1]) {
       await expect(
-        seedBounty({ claimId, formalizationId, poolId, amountMicroUsd: amount })
+        seedBounty({ claimId, formalizationId, grantId, amountMicroUsd: amount })
       ).rejects.toSatisfy((e: unknown) => pgCode(e) === CHECK_VIOLATION);
     }
   });
 
   it("uq_bounty_live_per_claim: one live bounty per claim across every live status", async () => {
-    const { claimId, formalizationId, poolId } = await bountyFixture("bounty-live");
+    const { claimId, formalizationId, grantId } = await bountyFixture("bounty-live");
     for (const status of [
       "requested",
       "confirm_pending",
@@ -414,13 +393,13 @@ describe("bounties", () => {
       "rebinding",
     ]) {
       await expect(
-        seedBounty({ claimId, formalizationId, poolId, status })
+        seedBounty({ claimId, formalizationId, grantId, status })
       ).rejects.toSatisfy((e: unknown) => pgCode(e) === UNIQUE_VIOLATION);
     }
   });
 
   it("a terminal bounty does not block a new one", async () => {
-    const { claimId, formalizationId, poolId, bountyId } =
+    const { claimId, formalizationId, grantId, bountyId } =
       await bountyFixture("bounty-terminal");
     await rawQuery(
       `UPDATE bounties SET status = 'resolved_unpaid', resolved_at = now()
@@ -428,7 +407,7 @@ describe("bounties", () => {
       [bountyId]
     );
     await expect(
-      seedBounty({ claimId, formalizationId, poolId, status: "open" })
+      seedBounty({ claimId, formalizationId, grantId, status: "open" })
     ).resolves.toBeTruthy();
   });
 

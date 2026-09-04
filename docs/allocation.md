@@ -289,9 +289,10 @@ Mathematics brings three new kinds of action to the ledger and one thing
 that is not an action at all. Three things are kept apart, and confusing
 them is how the invariants below would break: an **allocation** is money
 placed on an action so it runs (spend, metered and settled); a **bounty**
-is money offered for an answer, held until earned, funding nothing on the
-ledger; a **prize payout** is the discharge of that liability, in owls.
-The reader-facing account is docs/prizes.md; the mechanism is
+is owls offered for an answer, held against the posting mandate's escrow
+until earned, funding nothing on the ledger; a **prize payout** is the
+discharge of that liability, in owls, and the consumption of the hold. The
+reader-facing account is docs/prizes.md; the mechanism is
 docs/mathematics.md, sections 7 and 8.
 
 **The three action kinds.** `formalize` (the Steward drafts, elaborates,
@@ -316,85 +317,113 @@ exist. Because the allocator skips an increment larger than the day's room
 outright, the mandate's daily rate must exceed one attempt's estimate or
 attempts never fund.
 
-`prize_review` is funded differently, because a mandate's escrow can be
-paused, exhausted, or closed while a claim waits, and a claimant must never
-pay for the review of a submission. When a bounty opens, the platform
-mints owls worth `PRIZE_REVIEW_RESERVE_FRACTION` (0.10) of its amount, at
-cost, into a platform-owned prize-review reserve job, outside any mandate's
-day room, as a hold releasable only to `prize_review` actions on that
-bounty's claims. The prize-check worker is the executor: it claims each
-such action, runs the check, the Reviewer, and the Steward under that job,
-and completes the action with the metered amount; the unspent remainder
-returns when the bounty closes. The reserve is an `admin_adjust` mint like
-the seed's, never a draw on the prize fund, which the ledger cannot see.
-The mandate page shows the reserve and its spend beside each bounty.
+`prize_review` is paid for by the posting mandate but reserved outside its
+day room, because a mandate's escrow can be paused, exhausted, or closing
+while a claim waits, and a claimant must never pay for the review of a
+submission. When a bounty opens, the platform mints owls worth
+`PRIZE_REVIEW_RESERVE_FRACTION` (0.10) of its amount, at cost, into a
+platform-owned prize-review reserve job, as a hold releasable only to
+`prize_review` actions on that bounty's claims; the reserve is a term in
+the posting mandate's committed money for as long as the bounty is live
+(its budget while the job runs, and what was actually placed on the
+reviews once it is released). The prize-check worker is the executor: it
+claims each such action, runs the check, the Reviewer, and the Steward
+under that job, and completes the action with the metered amount; the
+unspent remainder returns when the bounty closes and only what was placed
+on the reviews stays counted against the mandate. The mandate page shows
+the reserve and its spend beside each bounty.
 
-**A bounty is not an allocation.** It appears on no action, enters no
-`mandate_valuations` row, and reduces nothing that remains to be covered.
-The constitutional channel for demand to move scheduling is an allocation
-on the attempt action, which the Grantmaker may place and the mandate page
-discloses; a bounty moves nothing. Bounties are cash only, drawn from a
-per-domain prize fund (`prize_pools`, `mathematics` first) whose entries
-are the platform's deposits and, later and only after counsel, fund-level
-sponsorship with Minerval as sole obligor. Owls never fund a bounty: an owl
-that could become a winner's owl would be a transfer of owls between
-people, which nothing in the system permits and which the owl's standing
-as prepaid credit depends on. The mandate spends owls on `formalize`,
-`attempt_proof`, and `prize_review`, which is compute, not prize money.
+**A bounty is a term in committed money, like a regrant.** It appears on
+no action, enters no `mandate_valuations` row, and reduces nothing that
+remains to be covered; the constitutional channel for demand to move
+scheduling is an allocation on the attempt action, which the Grantmaker
+may place and the mandate page discloses, and a bounty moves nothing. What
+a bounty does is hold. It is posted by a mandate's Grantmaker
+(`post_bounty`, carried by the Mathematics skill, so any mandate whose
+skills include `mathematics` can post one) and held against that mandate's
+escrow from the moment it opens until it resolves: its amount is a term in
+`grantCommittedMicroUsd` (src/services/regrant-service.ts) beside
+allocation shares, non-ledger metered spend, and regrants out, computed
+from one SQL fragment (src/services/prize-commitment.ts) that the
+allocator, the regrant path, the floor check, the posting itself, and the
+mandate's closing settlement all read, so a mandate can never promise the
+same owl to an attempt and to a prize. There is no prize fund, no deposit
+route, and no second ledger; the escrow the bounty holds against is the
+only source of the prize.
 
-**The fund's three numbers.** Only the first is stored:
+**The mandate's prize numbers.** All derived and none stored, for each
+bounty of the mandate:
 
-    balance   = SUM(prize_pool_entries.amount_micro_usd)
-    reserved  = SUM(bounties.amount_micro_usd) over live bounties
-                (open, claim_pending, house_result_pending, rebinding)
-    available = balance - reserved
+    live ? GREATEST(amount, paid) : paid
+    + the prize-review reserve (the job's budget while running; the
+      amount placed on prize_review actions once released)
 
-A bounty opens only when `available` covers it; nothing is posted when a
-bounty opens or closes. The only debits are `owl_prize`, `defect_award`,
-`review_award`, `withholding_remitted`, and, only when a cash rail exists,
-`payout`; each consumes the bounty's reservation where one exists. A
-dollar is promised once, in `reserved`, and spent once, in an entry.
+where live is a holding status (`confirm_pending`, `open`, `claim_pending`,
+`house_result_pending`, `rebinding`; a `requested` bounty holds nothing)
+and paid is the gross sum of `prize_payouts` on the bounty's prize claims,
+status not `reversed`. The mandate page and the prize listing show the
+escrow, what is held in open bounties, what was paid, the review reserve,
+and the headroom (budget less committed money, every term included), in
+owls. A bounty opens only when the headroom covers it; nothing is posted
+when a bounty opens or closes. An owl is promised once, in the hold, and
+consumed once, in a payout row; a defect award is a payout row too. When a
+bounty expires, is withdrawn, or is settled by the platform's own solver,
+the hold lapses and the headroom returns.
 
 **Posting is two-pass, and confirmed above a threshold.** The Grantmaker's
-`post_bounty` records an intent on the mandate in one review pass, and only
-a call from a later pass, a fresh context re-judging the mission, opens it.
-Below `BOUNTY_AUTONOMY_THRESHOLD_USD` (default $1,000) the two passes alone
-open the bounty, so the Grantmaker determines and funds ordinary prizes
-without anyone's signature; at or above it the posting waits for a human
-confirmation (`POST /bounties/:id/confirm`, operator key). A public reward
-offer binds the company until revoked with equal publicity, and the review
-pass reads the open web in the same context as the tool; that is why a
-binding offer, and only that, waits on a person. The work (assessments,
-formalizations, attempts) proceeds without anyone's signature, so this is
-not the human bottleneck §19 forbids. Mechanical bounds besides: a
-`published` statement past its review period that the solver has attempted
-without settling; cash within `available` and within per-pass and per-day
-fractions of the fund; at most `MAX_BOUNTY_PER_CLAIM_USD` ($5,000 in v1)
-per claim; one live bounty per claim.
+`post_bounty {claim_id, owls, expires_in_days, rationale}` records an
+intent on the mandate in one review pass, and only a call from a later
+pass, a fresh context re-judging the mission, opens it. Below
+`BOUNTY_AUTONOMY_THRESHOLD_OWLS` (default 1,000) the two passes alone open
+the bounty, so the Grantmaker determines and funds ordinary prizes without
+anyone's signature; at or above it the posting waits for a human
+confirmation (`POST /bounties/:id/confirm`, operator key), and a
+`confirm_pending` bounty already holds. A public reward offer binds the
+company until revoked with equal publicity, and the review pass reads the
+open web in the same context as the tool; that is why a binding offer, and
+only that, waits on a person. The work (assessments, formalizations,
+attempts) proceeds without anyone's signature, so this is not the human
+bottleneck §19 forbids. Mechanical bounds besides: the posting mandate is
+active with its escrow running; a `published` statement past its review
+period that the solver has attempted without settling; the amount within
+the mandate's headroom and within per-pass and per-day fractions of its
+escrow budget (`BOUNTY_ESCROW_FRACTION_PER_PASS` 0.4,
+`BOUNTY_ESCROW_FRACTION_PER_DAY` 0.5); between `MIN_BOUNTY_PER_CLAIM_OWLS`
+and `MAX_BOUNTY_PER_CLAIM_OWLS` (250 and 5,000 in v1) per claim; one live
+bounty per claim. The posting takes the mandate's allocator lock, so a
+posting and an allocation pass serialize on the same headroom. A mandate
+with a bounty in a holding status, or with a non-terminal prize claim,
+cannot complete: `complete_mandate` refuses at both passes and the `deepen`
+exhaustion path leaves it live, until the Grantmaker has withdrawn the
+bounties (thirty days' notice each) and the last has resolved, so the
+escrow that backs a prize is never refunded from under it.
 
-**The accounting truth of an owl prize.** A prize of N dollars paid in owls
-mints N owls with ledger reason `prize_award`, and the fund posts an
-`owl_prize` debit of N dollars in the same transaction. When spent, the
-owls cover about N dollars of metered cost, paid by the platform to its
-providers as they are spent; the liability is measured at cost, one dollar
-per owl, like every owl outstanding, and it is backed by the N dollars the
-fund debited. The fund's balance is therefore what remains to be offered,
-and since the fund never posts more in open bounties than its balance, no
-owl a prize can ever mint is unbacked. The sale margin forgone (owls at
-one per dollar are four times the purchase rate) is disclosed, never
-booked. For the platform an owl prize is never dearer than the dollars set
-aside and cheaper by whatever fraction is never spent; both readings are
-shown on the fund's page. Prize owls never expire, are never transferable,
-and never become cash; `owls_prized_micro_usd` is kept apart from
-`owls_earned_micro_usd` so the leaderboard keeps its meaning
-(docs/accounts.md).
+**The accounting truth of an owl prize.** A prize of N owls retires N owls
+of the posting mandate's escrow and mints N owls in the winner's account
+with ledger reason `prize_award`, net of any required withholding; the
+`prize_payouts` row is what consumes the hold, and the mandate is counted
+down by the gross amount the way a regrant is counted rather than moved.
+Owls never move between accounts, so the total owl liability is unchanged,
+and every prize owl is backed by escrow that was paid for before the offer
+was made: for a platform mandate the seed's mint at cost, for a mandate a
+person funded the owls that person bought. When spent, the owls cover
+about N dollars of metered cost, paid by the platform to its providers as
+they are spent; the liability is measured at cost, one dollar per owl,
+like every owl outstanding. Withholding, where it applies, is recorded on
+the payout row as the platform's own tax remittance. For the winner, owls
+at one per dollar of the prize's face are four times the purchase rate;
+for the platform an owl prize is never dearer than the escrow that backed
+it and cheaper by whatever fraction is never spent; both readings are
+shown. Prize owls never expire, are never transferable, and never become
+cash; `owls_prized_micro_usd` is kept apart from `owls_earned_micro_usd`
+so the leaderboard keeps its meaning (docs/accounts.md).
 
 **The platform is never a claimant.** If the solver produces an accepted
 check on a bounty-bearing statement, the worker moves the bounty to
 `house_result_pending` in the transaction that closes the attempt, the
 Steward judges fidelity, and `mark_problem_solved_by_platform` closes the
 bounty `resolved_internally`: no prize is paid, the proof is published,
-and the reservation returns to the fund. A submission whose source matches
+and the hold lapses. A submission whose source matches
 an attempt-mode check is rejected as a copy of the platform's own work; a
 human claim filed before the attempt completed is judged first.
 

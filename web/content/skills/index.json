@@ -273,6 +273,10 @@
                 "type": "string",
                 "description": "Your vacuity and fidelity review: what you checked and what you found."
               },
+              "own_definitions": {
+                "type": "boolean",
+                "description": "true when the statement introduces a definition Mathlib lacks; the correspondence note must then say the definition is the Steward's own, which sources it follows, and why the Lean text matches them."
+              },
               "confirm": {
                 "type": "boolean",
                 "description": "Set on the second, fresh-context pass to publish a reviewed row (or return it to draft)."
@@ -417,7 +421,7 @@
           }
         }
       ],
-      "bodyChars": 22254
+      "bodyChars": 23548
     }
   ]
 }

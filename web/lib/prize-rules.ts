@@ -7,8 +7,8 @@
 // the terms bumps the version and the effective date together. Past versions
 // are retained in this file's history.
 
-export const PRIZE_RULES_VERSION = "1.0";
-export const PRIZE_RULES_EFFECTIVE = "2026-03-01";
+export const PRIZE_RULES_VERSION = "2026-09-04";
+export const PRIZE_RULES_EFFECTIVE = "2026-09-04";
 
 export interface PrizeRule {
   slug: string;
@@ -33,13 +33,13 @@ export const PRIZE_RULES: PrizeRule[] = [
     slug: "the-formal-statement-is-the-contract",
     title: "The formal statement is the contract",
     body:
-      "What counts as a solution is the statement as published, under the named Lean toolchain and Mathlib revision, with the allowed axioms propext, Classical.choice, and Quot.sound only, and with the static policy published with these rules. If the statement is found not to say what the claim says, the prize is not owed for proving it; a claimant whose submission exposes the defect receives the defect award of ten percent of the prize, at most $500, drawn from the prize; a person who exposes a defect during the statement's public review period, before any prize is offered, receives a fixed review award of $100; and the prize re-binds to the corrected statement after fourteen days' notice and the corrected statement's own review period, less any defect award paid.",
+      "What counts as a solution is the statement as published, under the named Lean toolchain and Mathlib revision, with the allowed axioms propext, Classical.choice, and Quot.sound only (Lean's standard classical foundation), and with the static policy published with these rules. If the statement is found not to say what the claim says, the prize is not owed for proving it; a claimant whose submission exposes the defect receives the defect award of ten percent of the prize, at most 500 owls, drawn from the prize; a person who exposes a defect during the statement's public review period, before any prize is offered, receives a fixed review award of 100 owls; and the prize re-binds to the corrected statement after fourteen days' notice and the corrected statement's own review period, less any defect award paid.",
   },
   {
     slug: "eligibility",
     title: "Eligibility",
     body:
-      "Natural persons aged 18 or over; one payee per submission; not Minerval, its contractors on this program, or funders of the Mathematics mandate; not residents of jurisdictions where the prize cannot lawfully be paid, including comprehensively sanctioned jurisdictions and, for now, Italy and Brazil. Entry is free. Purchasing anything from Minerval confers no advantage.",
+      "Natural persons aged 18 or over; one payee per submission; not Minerval, its contractors on this program, or a person who funded the mandate that posted the prize; not residents of jurisdictions where the prize cannot lawfully be paid, including comprehensively sanctioned jurisdictions and, for now, Italy and Brazil. Entry is free. Purchasing anything from Minerval confers no advantage.",
   },
   {
     slug: "submissions",
@@ -57,13 +57,13 @@ export const PRIZE_RULES: PrizeRule[] = [
     slug: "review",
     title: "Review",
     body:
-      "The checker's verdict is mechanical and public. The steward judges only whether the statement proved is the statement posted. An accepted submission is announced on the claim page and becomes payable after a challenge window of fourteen days (thirty for prizes of $1,000 or more), extended while an admitted challenge is open, up to twice the window. Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited. Prizes of $1,000 or more, and prizes on claims of high importance, require a named person's sign-off.",
+      "The checker's verdict is mechanical and public. The steward judges only whether the statement proved is the statement posted. An accepted submission is announced on the claim page and becomes payable after a challenge window of fourteen days (thirty for prizes of 1,000 owls or more), extended while an admitted challenge is open, up to twice the window. Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited. Prizes of 1,000 owls or more, and prizes on claims of high importance, require a named person's sign-off.",
   },
   {
     slug: "payment",
     title: "Payment",
     body:
-      "Prizes are paid in owls, one owl per dollar of the prize. Owls are credit for metered work on the site; they do not expire, cannot be transferred, and are never redeemable for cash. Payment requires identity verification, a tax form, and sanctions screening first, to be completed within ninety days of the prize becoming payable, after which the prize lapses; the amount may be reduced by required withholding.",
+      "Prizes are stated and paid in owls. Owls are credit for metered work on the site, valued at one dollar of metered cost each; they do not expire, cannot be transferred, and are never redeemable for cash. Payment requires identity verification, a tax form, and sanctions screening first, to be completed within ninety days of the prize becoming payable, after which the prize lapses; the amount may be reduced by required withholding.",
   },
   {
     slug: "taxes",

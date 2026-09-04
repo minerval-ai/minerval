@@ -118,19 +118,22 @@ a rediscovery for a result.
 
 ## How a prize works
 
-A prize is money Minerval offers for a Lean proof or disproof of one
-published formal statement. The offer is posted by the Mathematics
-mandate's Grantmaker, only on a statement whose review period has ended
-and which the solver has attempted at maximum effort without settling.
-Every posting is made in two passes, in fresh contexts, and at or above a
-threshold it waits for a named person's confirmation, because a public
-offer of a reward binds the company until it is withdrawn with equal
-publicity. Amounts are set from what the discourse would gain from a
-settled answer, what the problem appears to demand of a capable claimant,
-and the fund's balance; the reasoning is stated publicly with each
-posting. Offering a prize changes nothing about how the claim is assessed
-or how important the graph judges it to be. It says only that someone
-would like the question settled.
+A prize is owls Minerval offers for a Lean proof or disproof of one
+published formal statement. The offer is posted by a mandate's Grantmaker
+from that mandate's own escrow (in this epoch, the Mathematics prizes
+mandate), only on a statement whose review period has ended and which the
+solver has attempted at maximum effort without settling, and its amount is
+held against that escrow from the day it opens until it resolves, so no
+mandate promises the same owl to a prize and to an attempt. Every posting
+is made in two passes, in fresh contexts, and at or above a threshold it
+waits for a named person's confirmation, because a public offer of a
+reward binds the company until it is withdrawn with equal publicity.
+Amounts are set in owls from what the discourse would gain from a settled
+answer, what the problem appears to demand of a capable claimant, and the
+mandate's headroom; the reasoning is stated publicly with each posting.
+Offering a prize changes nothing about how the claim is assessed or how
+important the graph judges it to be. It says only that someone would like
+the question settled.
 
 **Claiming.** The claim page carries the prize and a button. A claimant
 submits a Lean file, a written account of the approach, a disclosure of
@@ -161,13 +164,13 @@ formalization of a proof already in the literature is paid in full,
 because it is exactly what the offer asked for; a submission that merely
 points to prior work is credited on the page and earns no prize. A
 submission that exposes a defect in the statement earns a defect award of
-ten percent of the prize, at most $500, and the statement is retired and
-corrected.
+ten percent of the prize, at most 500 owls, and the statement is retired
+and corrected.
 
 **The challenge window.** An accepted submission is announced on the claim
 page, the proof and the checker record are published, and the graph
 records a provisional assessment. The prize becomes payable only after a
-public window of fourteen days, or thirty for prizes of $1,000 or more.
+public window of fourteen days, or thirty for prizes of 1,000 owls or more.
 The window is not for re-judging the proof, which is mechanical and
 public. It is for what the checker cannot see: a defective statement, an
 ineligible claimant, a stolen proof, an axiom or tactic the policy missed,
@@ -178,27 +181,28 @@ answered by reference without a pause.
 
 **Audit and sign-off.** Every acceptance is reviewed in full by the Audit
 agent, against a fixed checklist, before the prize can become payable; a
-decision that fails any item goes back for fresh review. Prizes of $1,000
-or more, prizes on claims of high importance, and any case where a check,
+decision that fails any item goes back for fresh review. Prizes of 1,000
+owls or more, prizes on claims of high importance, and any case where a check,
 a screening, or the model that served the decision was not what it should
 have been require a named person's sign-off as well.
 
 **Payment.** After the window closes without a successful challenge, the
 audit has passed, and any required sign-off is recorded, the ledger pays
-without further judgment from anyone. Prizes are paid in owls, one owl per
-dollar of the prize. Owls are credit for metered work on the graph:
-assessments, deeper passes, mandates the winner directs. They do not
-expire, cannot be transferred, and are never redeemable for cash. The
-platform's mathematics prize fund records the full dollar amount as spent
-the moment the owls are granted, so every prize owl is backed by a dollar
-already deposited, and the fund never offers more in open prizes than it
-holds.
+without further judgment from anyone. Prizes are stated and paid in owls.
+Owls are credit for metered work on the graph, valued at one dollar of
+metered cost each: assessments, deeper passes, mandates the winner directs.
+They do not expire, cannot be transferred, and are never redeemable for
+cash. The mandate that posted the prize is counted down by the full amount
+the moment the owls are granted, and it held that amount from the day the
+prize opened, so every prize owl is backed by escrow that was paid for
+before the offer was made, and no mandate offers more in open prizes than
+its escrow has room for.
 
 ## The platform is never a claimant
 
 If Minerval's own solver produces a checked proof of a statement carrying
 a prize, the prize closes without a payout, the proof is published, and
-the money returns to the fund. A submission that reproduces the solver's
+the hold on the mandate's escrow lapses. A submission that reproduces the solver's
 own work is not eligible. A human submission filed before the solver's
 attempt completed is judged first and, if it passes, wins; the platform's
 result never displaces a claim filed earlier.
@@ -211,15 +215,15 @@ account and a one-time code sent to its verified email; a tax form, a W-9
 for U.S. persons or a W-8BEN otherwise, uploaded as a restricted
 attachment that never becomes public; and screening against the sanctions
 lists, recorded by the operator. A winner who does not complete the steps
-within the period forfeits, and the prize returns to the fund. Natural
+within the period forfeits, and the hold lapses. Natural
 persons aged eighteen or over are eligible, one payee per submission, with
 co-authors named on the page; Minerval, its contractors on this program,
-and funders of the Mathematics mandate are not. Residents of jurisdictions
+and a person who funded the mandate that posted the prize are not. Residents of jurisdictions
 where the prize cannot lawfully be paid are ineligible, and the rules list
 them.
 
-Prizes are income to the winner, reported at the dollar value of the
-prize, and Minerval reports and withholds as United States law requires; a
+Prizes are income to the winner, reported at the value of the prize, one
+dollar of metered cost per owl, and Minerval reports and withholds as United States law requires; a
 prize to a non-U.S. winner is paid net of any required withholding.
 
 ## Why prizes are not paid in cash yet
@@ -240,7 +244,9 @@ when it exists, the rules will say so.
   standard. Assessments and their reasoning never mention money.
 - A prize is not an allocation. It funds no work on the graph and buys no
   scheduling.
-- Owls never fund a prize, and prize owls are never converted to cash.
+- A prize is owls held against the escrow of the mandate that posted it,
+  allocated by that mandate's Grantmaker and by nothing else; there is no
+  prize fund, and prize owls are never converted to cash.
 - The platform is never a claimant, and no single agent, person, or web
   page can move money alone: the checker verifies, the Reviewer screens,
   the steward judges, the public may challenge, the Audit agent reviews, a

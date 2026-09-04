@@ -60,6 +60,10 @@ import {
   grantCommittedMicroUsd,
 } from "../../services/regrant-service.js";
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
+import {
+  mandateClosureBlockers,
+  closureBlockedMessage,
+} from "../../services/bounty-service.js";
 
 export interface MandateReviewResult {
   note: string;
@@ -423,7 +427,9 @@ async function runMandateReviewImpl(input: {
         "this again, still judging the mission done. One pass — however " +
         "convinced — cannot irreversibly end the mandate, which also " +
         "means nothing you read during a single pass can. Exhausting the " +
-        "current plan is a waypoint, not by itself a reason to close.",
+        "current plan is a waypoint, not by itself a reason to close. A " +
+        "mandate with a live bounty cannot close at either pass: withdraw " +
+        "its bounties first (withdraw_bounty gives thirty days' notice).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -469,7 +475,7 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (metered + allocated + regranted), ` +
+    `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
     `(yours to set). Plan: ${items.length} items, ${grant.plan_cursor} executed.\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
@@ -724,6 +730,19 @@ async function runMandateReviewImpl(input: {
         // older than the confirmation window go stale and start over.
         const CONFIRM_WINDOW_DAYS = 7;
         const reason = String(toolInput.reason ?? "").trim();
+        // A mandate with a live bounty cannot close at either pass (§8.1):
+        // the escrow that backs the prize is never refunded from under it.
+        const blockers = await mandateClosureBlockers(grant.id);
+        if (blockers.live_bounties > 0) {
+          return JSON.stringify({
+            success: false,
+            closed: false,
+            code: "LIVE_BOUNTIES",
+            live_bounties: blockers.live_bounties,
+            bounty_ids: blockers.bounty_ids,
+            problem: closureBlockedMessage(blockers.live_bounties),
+          });
+        }
         const [pending] = await rawQuery<{ at: string | null }>(
           `SELECT mandate->'close_requested'->>'at' AS at
              FROM grants WHERE id = $1`,

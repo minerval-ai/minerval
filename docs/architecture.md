@@ -891,9 +891,10 @@ ledgers, `reconciliation_events` is the Curator's reversible audit log,
 run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
 queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
 formal statements and every check), `proof_attempts` (the solver's runs),
-`prize_pools` and `prize_pool_entries` (the per-domain prize fund and its
-ledger), `bounties`, `prize_claims`, `prize_payouts`, `attachments`, and
-`platform_flags` (operator switches such as `solver_paused`).
+`bounties` (owls held against the escrow of the mandate that posted each
+one; there is no prize fund), `prize_claims`, `prize_payouts`,
+`attachments`, and `platform_flags` (operator switches such as
+`solver_paused`).
 ### Attachments
 
 Uploaded files (a prize claim's Lean source, documents, and data; a
@@ -1012,10 +1013,9 @@ spend guardrail is the owl balance and the escrowed budgets behind mandates.
 Three credentials, not two, once money can move. The service key
 (`MINERVAL_API_KEY`) is deployed to the web tier and acts for any user
 through the acting-user header, so it cannot be the credential that moves
-money. Eight routes require an **operator key** (`MINERVAL_OPERATOR_KEY`),
+money. Seven routes require an **operator key** (`MINERVAL_OPERATOR_KEY`),
 held outside the web deployment and used only from the operator's own
-session: the prize-fund deposit (`POST /prize-pools/:domain/deposit`), the
-bounty confirmation (`POST /bounties/:id/confirm`), the prize-claim
+session: the bounty confirmation (`POST /bounties/:id/confirm`), the prize-claim
 sign-off (`POST /prize-claims/:id/sign-off`), the void
 (`POST /prize-claims/:id/void`), the sanctions screening
 (`POST /prize-claims/:id/screening`), the owl grant

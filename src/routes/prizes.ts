@@ -1,15 +1,17 @@
 /**
  * Routes for the prizes surfaces (docs/mathematics.md §11.1, §8.11).
  * Registered without a prefix because the paths span /claims, /prizes,
- * /prize-claims, /bounties, /prize-pools, /attachments, and /operator.
+ * /prize-claims, /bounties, /attachments, and /operator.
  *
  * Credentials: reads are public; the filing and the challenge run through
  * `authenticate` + `gateContributor` (no agentic quota, no owl charge); the
  * withdrawal and the payee steps require the dashboard session plus a
- * one-time code; the deposit, the confirmation, the sign-off, the void, the
- * screening, and the operator page require the operator key
- * (`requireOperator`). Every call to a money route is written to audit_log
- * with the credential kind and the acting person.
+ * one-time code; the confirmation, the sign-off, the void, the screening,
+ * the owl grant, the check retry, and the operator page require the
+ * operator key (`requireOperator`). Every call to a money route is written
+ * to audit_log with the credential kind and the acting person. There is no
+ * deposit route: prizes are held against and paid from the posting
+ * mandate's escrow, and the seed is what funds a platform mandate.
  *
  * Multipart (`@fastify/multipart`) is registered in a child scope holding
  * only the two upload routes, so no other route parses multipart bodies.
@@ -30,9 +32,9 @@ import {
   getLatestBountyForClaim,
   listOpenBounties,
   openBountiesAtom,
+  prizeMandateNumbers,
   prizeRulesContentHash,
 } from "../services/bounty-service.js";
-import { depositToPool, getPoolPublicView } from "../services/prize-pool-service.js";
 import {
   challengePrizeClaim,
   filePrizeClaim,
@@ -85,22 +87,6 @@ async function logMoneyRoute(claimId: string | null, action: string, reasoning: 
   await rawQuery(
     `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, $2, $3, $4)`,
     [claimId, action, reasoning, actor]
-  ).catch(() => undefined);
-}
-
-/**
- * The fund deposit has no claim, and `audit_log.claim_id` is NOT NULL, so
- * its trail is the `prize_fund_deposits` platform flag: a JSON list with
- * one appended entry per call, carrying the credential kind and the acting
- * person like every other money route (docs/mathematics.md §8.11).
- */
-async function logFundDeposit(entry: Record<string, unknown>): Promise<void> {
-  await rawQuery(
-    `INSERT INTO platform_flags (key, value)
-     VALUES ('prize_fund_deposits', jsonb_build_array($1::jsonb))
-     ON CONFLICT (key) DO UPDATE
-       SET value = platform_flags.value || jsonb_build_array($1::jsonb), updated_at = now()`,
-    [JSON.stringify(entry)]
   ).catch(() => undefined);
 }
 
@@ -178,7 +164,7 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { limit?: number; offset?: number } }>("/prizes", {
     schema: {
       tags: ["prizes"],
-      summary: "Open bounties across the graph, largest first, paged",
+      summary: "Open bounties across the graph, largest first, paged, with the prize numbers of every mandate that posts them",
       querystring: {
         type: "object",
         properties: {
@@ -188,8 +174,14 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      const { items, total } = await listOpenBounties({ limit: request.query.limit, offset: request.query.offset });
-      return reply.send({ prizes: items, total, rules_version: PRIZE_RULES_VERSION });
+      const [{ items, total }, mandates] = await Promise.all([
+        listOpenBounties({ limit: request.query.limit, offset: request.query.offset }),
+        prizeMandateNumbers().catch(() => []),
+      ]);
+      // Per-mandate numbers in owls at cost (docs/mathematics.md §8.1):
+      // escrow, held in open bounties, paid in prizes, the review reserve,
+      // and headroom. There is no fund to report.
+      return reply.send({ prizes: items, total, mandates, rules_version: PRIZE_RULES_VERSION });
     },
   });
 
@@ -197,12 +189,6 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
     const { items } = await listOpenBounties({ limit: 50 });
     const base = `${request.protocol}://${request.hostname}`;
     return reply.header("content-type", "application/atom+xml; charset=utf-8").send(openBountiesAtom(items, base));
-  });
-
-  app.get<{ Params: { domain: string } }>("/prize-pools/:domain", { schema: { tags: ["prizes"], summary: "The fund's balance and entries by reason" } }, async (request, reply) => {
-    const view = await getPoolPublicView(request.params.domain);
-    if (!view) return reply.code(404).send(errorBody("NOT_FOUND", "no prize fund for that domain"));
-    return reply.send({ pool: view });
   });
 
   app.get<{ Params: { id: string } }>("/claims/:id/bounty", { schema: { tags: ["prizes"], summary: "The claim's bounty and the terms an outside solver needs" } }, async (request, reply) => {
@@ -428,34 +414,6 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ------------------------------------------------------- operator routes
-
-  app.post<{ Params: { domain: string }; Body: { amount_cents?: number; bank_reference?: string; batch_key?: string } }>("/prize-pools/:domain/deposit", {
-    schema: { tags: ["prizes"], summary: "Record a platform deposit into the fund (operator key; idempotent under batch_key)" },
-    preHandler: [app.requireOperator],
-    handler: async (request, reply) => {
-      const body = request.body ?? {};
-      const res = await depositToPool({
-        domain: request.params.domain,
-        amount_cents: Number(body.amount_cents),
-        bank_reference: String(body.bank_reference ?? ""),
-        batch_key: String(body.batch_key ?? ""),
-      });
-      if (!res.ok) return reply.code(422).send(errorBody(res.code, res.message));
-      const actor = operatorActor(request);
-      await logFundDeposit({
-        entry_id: res.entry_id,
-        domain: request.params.domain,
-        amount_cents: Number(body.amount_cents),
-        bank_reference: String(body.bank_reference ?? ""),
-        batch_key: String(body.batch_key ?? ""),
-        duplicate: res.duplicate,
-        credential: "operator_key",
-        actor: `operator:${actor}`,
-        at: new Date().toISOString(),
-      });
-      return reply.code(res.duplicate ? 200 : 201).send({ entry_id: res.entry_id, duplicate: res.duplicate, pool: res.numbers, recorded_by: actor });
-    },
-  });
 
   app.post<{ Params: { id: string } }>("/bounties/:id/confirm", {
     schema: { tags: ["prizes"], summary: "Confirm a bounty at or above the autonomy threshold (operator key)" },

@@ -16,7 +16,12 @@ proves the abc conjecture" earns a node; "the prime number theorem has been
 proven" does not, because nobody disputes it, and it is the status of the
 theorem. A definition is setup, not a claim; a proof step nobody outside one
 proof refers to is not a claim; a lemma becomes a claim when the discourse
-names and reuses it. Mathematical claims carry `claim_type = mathematical`
+names and reuses it. A proposition the platform's own work brings to
+light, a lemma an attempt sharpened or a statement several open problems
+turn on that no source states cleanly, can become a claim on exactly the
+terms a claim from a paper does, with its provenance recorded; do not go
+looking for claims to make, and do not loosen the standard because the
+platform noticed it first. Mathematical claims carry `claim_type = mathematical`
 and the domain tag `mathematics`; a claim about the economics or history of
 a theorem is a claim of another type that may also carry the tag.
 
@@ -67,8 +72,8 @@ Credences on a claim, its special cases, and its equivalents must be
 jointly tenable.
 
 **Importance and liveness.** Settled mathematics is load-bearing almost
-everywhere and important almost nowhere. A settled theorem sits near 0.15
-however much rests on it. An open problem is live when the discourse
+everywhere and important almost nowhere. A settled theorem usually sits
+near 0.15 however much rests on it. An open problem is live when the discourse
 consults, attacks, cites, or prices it; liveness is recorded as
 contestation, and it is evidence from the discourse, never from the
 platform's own ledger. Anchors, calibrated across fields: the Riemann
@@ -81,8 +86,11 @@ assessment, and your reasoning never mentions money.
 means: the submission compiled under the statement's pin, the proved
 theorem's type is alpha-equivalent to the published statement (or its
 negation), the axiom closure is within `propext`, `Classical.choice`, and
-`Quot.sound`, no unsafe or partial or externally implemented declaration
-was added, and the kernel replayed the declarations. That is evidence of
+`Quot.sound` (Lean's standard classical foundation, choice included; the
+rule excludes only axioms a submission adds), no unsafe or partial or
+externally implemented declaration was added, and the kernel replayed the
+declarations. A hypothesis a claim assumes beyond that foundation belongs
+in the statement as an antecedent, never in a proof as an axiom. That is evidence of
 the highest grade about the formal statement and nothing else. Whether the
 formal statement says what the claim says is the steward's judgment, made
 before publication and again at acceptance. A `rejected` verdict says the
@@ -90,13 +98,12 @@ submission failed one named gate; a rejected disproof is not evidence for
 the statement. An `error` verdict is no evidence at all. A failed check is
 never a reputation event.
 
-**Prizes, and the money boundary.** A bounty is money the platform offers,
-from a prize fund the allocation ledger cannot see, for a Lean proof or
-disproof of one published statement under one pin, judged by the checker
-and then by the steward for fidelity, exposed to a public challenge window,
-audited, and paid in owls, one per dollar, backed by the fund. A bounty is not
-an allocation: it funds nothing, it enters no valuation, and it changes no
-standard. The platform is never a claimant; if its own solver settles a
+**Prizes, and the money boundary.** A bounty is owls a mandate's Grantmaker
+offers from that mandate's escrow, held there until the prize resolves, for
+a Lean proof or disproof of one published statement under one pin, judged
+by the checker and then by the steward for fidelity, exposed to a public
+challenge window, audited, and paid in owls. A bounty is not an allocation:
+it funds no work, it enters no valuation, and it changes no standard. The platform is never a claimant; if its own solver settles a
 statement, the bounty closes unpaid and the proof is published. Every
 attempt the platform makes is disclosed on the claim page before a bounty
 opens. Funders are never named on claim surfaces; Minerval is named as

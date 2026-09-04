@@ -96,7 +96,7 @@ describe("the transition matrix", () => {
 });
 
 describe("the challenge window", () => {
-  const cfg = { prizeChallengeWindowDaysSmall: 14, prizeChallengeWindowDaysLarge: 30, prizeWindowTierUsd: 1000 };
+  const cfg = { prizeChallengeWindowDaysSmall: 14, prizeChallengeWindowDaysLarge: 30, prizeWindowTierOwls: 1000 };
 
   it("is 14 days below the tier and 30 at or above it", () => {
     expect(challengeWindowDays(999_990_000, cfg)).toBe(14);
@@ -227,7 +227,7 @@ describe("tie groups and supersession", () => {
 });
 
 describe("the sign-off rule", () => {
-  const cfg = { prizeHumanSignoffUsd: 1000, prizeHumanSignoffImportance: 0.6 };
+  const cfg = { prizeHumanSignoffOwls: 1000, prizeHumanSignoffImportance: 0.6 };
   const base = { amountMicroUsd: 500_000_000, importance: 0.3, reviewStatus: "accepted", arbitrationHumanReview: false, secondOpinionDisagrees: false, fallbackRan: false, screeningResult: "clear" };
 
   it("is not required for a small prize on an ordinary claim with a clean record", () => {

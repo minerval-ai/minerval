@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getAttemptPublic: vi.fn(),
   getAttempt: vi.fn(),
   cancelAttempt: vi.fn(),
+  getAttemptStats: vi.fn(),
 }));
 
 vi.mock("../../../src/services/attempt-extras.js", () => ({
@@ -21,6 +22,10 @@ vi.mock("../../../src/services/attempt-service.js", () => ({
   getAttemptPublic: mocks.getAttemptPublic,
   getAttempt: mocks.getAttempt,
   cancelAttempt: mocks.cancelAttempt,
+}));
+vi.mock("../../../src/services/attempt-stats-service.js", () => ({
+  ATTEMPT_STATS_TTL_MS: 30_000,
+  getAttemptStats: mocks.getAttemptStats,
 }));
 
 import { attemptsRoutes } from "../../../src/routes/attempts.js";
@@ -65,6 +70,36 @@ beforeEach(() => {
   mocks.getAttemptPublic.mockReset();
   mocks.getAttempt.mockReset();
   mocks.cancelAttempt.mockReset();
+  mocks.getAttemptStats.mockReset();
+});
+
+describe("GET /attempts/stats", () => {
+  it("returns the platform record, cached briefly, and narrows to a mandate on ?grant_id=", async () => {
+    const record = { grant_id: null, totals: { attempts: 2, live: 0 }, calibration: null };
+    mocks.getAttemptStats.mockResolvedValueOnce(record);
+    const app = await buildApp(userAuth);
+    const res = await app.inject({ method: "GET", url: "/attempts/stats" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(record);
+    expect(res.headers["cache-control"]).toBe("public, max-age=30");
+    expect(mocks.getAttemptStats).toHaveBeenCalledWith(null);
+
+    const GRANT_ID = "d1d1d1d1-0000-4000-8000-000000000001";
+    mocks.getAttemptStats.mockResolvedValueOnce({ ...record, grant_id: GRANT_ID });
+    const scoped = await app.inject({ method: "GET", url: `/attempts/stats?grant_id=${GRANT_ID}` });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().grant_id).toBe(GRANT_ID);
+    expect(mocks.getAttemptStats).toHaveBeenLastCalledWith(GRANT_ID);
+    // The literal path is a route of its own, never read as an attempt id.
+    expect(mocks.getAttemptPublic).not.toHaveBeenCalled();
+  });
+
+  it("rejects a grant_id that is not a uuid", async () => {
+    const app = await buildApp(userAuth);
+    const res = await app.inject({ method: "GET", url: "/attempts/stats?grant_id=not-a-uuid" });
+    expect(res.statusCode).toBe(400);
+    expect(mocks.getAttemptStats).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /claims/:id/attempts", () => {

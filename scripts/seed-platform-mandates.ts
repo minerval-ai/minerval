@@ -1,21 +1,27 @@
 /**
- * Seed the platform's own mandates — the ones Minerval sets up and runs,
+ * Seed the platform's own mandates, the ones Minerval sets up and runs,
  * which take pride of place on the public /mandates page.
  *
  * The load-bearing one is GENERAL ASSESSMENT: the mandate whose escrow is
  * however many dollars Minerval allocates to expanding and maintaining the
- * graph (Minerval buys owls at $1 per owl — at cost; the $4 price is what
+ * graph (Minerval buys owls at $1 per owl, at cost; the $4 price is what
  * users pay, and the margin funds this escrow). Its allocator backs the
  * highest value-per-dollar assessments up to its daily rate through the
  * same allocation engine every funder uses, and its ALLOCATION POLICY is
  * the platform's formulas, amendable by its Grantmaker in conversation.
- * Beside it: Mathematics (docs/mathematics.md §10 and Appendix B, with its
- * prize fund) and AI Economics, topical standing mandates.
+ * Beside it: Mathematics and Mathematics prizes (docs/mathematics.md §10
+ * and Appendix B: one mandate funds formalizations, attempts, and
+ * stewardship; the other offers prizes from its own escrow and funds
+ * nothing else in this epoch) and AI Economics, topical standing mandates.
  *
- * Idempotent: re-running tops nothing up and never duplicates — it matches on
- * mandate TITLE, so changing a budget here never alters an existing row. The
- * Mathematics prize fund's first deposit is keyed by a deposit batch, so a
- * later, larger deposit is a new row rather than a silent no-op.
+ * There is no prize fund. A bounty is held against the escrow of the
+ * mandate that posted it (docs/mathematics.md §8.1), so the Mathematics
+ * prizes mandate's escrow is the only source of its prizes and the only
+ * money this seed puts behind them.
+ *
+ * Idempotent: re-running tops nothing up and never duplicates. It matches
+ * on mandate TITLE, so changing a budget here never alters an existing
+ * row; the money flags below are the only path that changes one.
  *
  * Local:  DATABASE_URL=… npm run seed:platform-mandates
  * Prod:   the DB is private, so run it as a one-off ECS task on the API's own
@@ -28,17 +34,17 @@
  *       "command":["npm","run","seed:platform-mandates"]}]}'
  *
  * Flags (docs/mathematics.md §10.9):
- *   --deposit-batch <key>    the prize fund deposit's batch key (default
- *                            "initial"); a new key records a new deposit of
- *                            MATH_PRIZE_POOL_USD.
  *   --update-mandate <key>   update an existing mandate's text, skills, and
  *                            allocation policy keys from this file; never
  *                            its money. Records the revision on the row.
- *   --daily-owls N           with --update-mandate: set the daily rate.
- *   --top-up-owls N          with --update-mandate: mint and escrow N more
- *                            platform owls under a batch-keyed idempotency
- *                            key (see --top-up-batch), exactly as creation
- *                            does.
+ *                            Works for every key here (mathematics and
+ *                            mathematics-prizes included).
+ *   --mandate <key>          the mandate a money flag applies to; defaults
+ *                            to the --update-mandate key when both are given.
+ *   --daily-owls N           set the mandate's daily rate.
+ *   --top-up-owls N          mint and escrow N more platform owls into the
+ *                            mandate under a batch-keyed idempotency key
+ *                            (see --top-up-batch), exactly as creation does.
  *   --top-up-batch <key>     the top-up's batch key (default: today's date).
  */
 import { rawQuery, withTransaction, closeDb } from "../src/db/client.js";
@@ -66,13 +72,46 @@ interface PlatformMandate {
     refusals?: string;
     disclosure?: string;
   };
-  /** A prize fund for the mandate's domain, with its first deposit in USD. */
-  prizePool?: { domain: string; depositUsd: number };
 }
 
-const usd = (n: number) =>
-  `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const owls = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const percent = (fraction: number) => `${Math.round(fraction * 100)} percent`;
+
+/**
+ * The sentences every mandate that carries the Mathematics skill states in
+ * its prize policy (docs/mathematics.md §10.4), after the sentence that
+ * says which mandate posts prizes in this epoch. The bounds are read from
+ * the environment so the text says what the mechanism enforces.
+ */
+function commonPrizePolicy(): string {
+  const config = loadConfig();
+  return (
+    "Prizes never enter any valuation, importance, assessment, or standard. " +
+    "A bounty binds only to a published formal statement whose review period " +
+    "has ended and which the platform's solver has attempted at maximum " +
+    "effort without settling, with the attempt's report public. Amounts are " +
+    "set by the Grantmaker in owls from how much the discourse would gain " +
+    "from a settled answer, the effort the problem appears to require from a " +
+    "capable claimant, and the posting mandate's headroom and the number of " +
+    "open bounties; where a mandate funds both attempts and prizes, its " +
+    "Grantmaker says with each posting why a prize is the better use of " +
+    "those owls than another attempt; amounts never feed back into " +
+    "importance, and the reasoning is stated publicly with each posting. " +
+    `Bounds: ${owls(config.minBountyPerClaimOwls)} to ${owls(config.maxBountyPerClaimOwls)} owls per claim; ` +
+    "at most one live bounty per claim; holds never above the posting " +
+    "mandate's headroom, and per pass and per day at most " +
+    `${percent(config.bountyEscrowFractionPerPass)} and ${percent(config.bountyEscrowFractionPerDay)} of its escrow; ` +
+    "every posting made in two passes and, at or above " +
+    `${owls(config.bountyAutonomyThresholdOwls)} owls, confirmed by a human. ` +
+    "Prizes are stated and paid in owls, valued at one dollar of metered " +
+    "cost each, and every prize owl is backed by escrow that was paid for " +
+    "before the offer was made. A trivial resolution of a mis-stated problem " +
+    "earns the defect award, not the prize; a rediscovery of a published " +
+    "proof earns credit on the page, not the prize; the platform is never a " +
+    "claimant. No bounty is posted on a problem carrying a third-party prize " +
+    "in the discourse until the double-payment question is settled."
+  );
+}
 
 /** The Mathematics mandate, Appendix B, with its bracketed numbers read from the environment. */
 function mathematicsMandate(): PlatformMandate {
@@ -91,10 +130,11 @@ function mathematicsMandate(): PlatformMandate {
       "of the problems that matter; holds independent proofs of one result side " +
       "by side; attempts, with the platform's own solver, the problems where an " +
       "attempt has a real chance of settling the question or teaching where the " +
-      "difficulty lies; and posts prizes on the problems the platform could not " +
-      "settle, so that the answer, when someone finds it, becomes part of the " +
-      "public record on terms fixed in advance. The mandate's value is the " +
-      "ordering it produces and the questions it poses, not the theorems it proves.",
+      "difficulty lies; and sees prizes offered, by the Mathematics prizes " +
+      "mandate in this epoch, on the problems the platform could not settle, so " +
+      "that the answer, when someone finds it, becomes part of the public " +
+      "record on terms fixed in advance. The mandate's value is the ordering it " +
+      "produces and the questions it poses, not the theorems it proves.",
     // websearch OR-form: a topical scope wants anything matching ANY of
     // its terms, not the conjunction of all of them.
     scopeQuery: "mathematics OR theorem OR conjecture OR proof",
@@ -104,11 +144,11 @@ function mathematicsMandate(): PlatformMandate {
       "open problems in the notable range and the lemmas several of them rest " +
       "on. Calibrate the solver on settled problems before attempting open ones. " +
       "Attempt open problems in order of importance times tractability, " +
-      "sub-results before the problems that rest on them. Post bounties only on " +
-      "statements the platform attempted and could not settle, after their " +
-      "public review period. Keep every attempt, every statement, every check, " +
-      "and every prize decision public. Revise this mandate's own policy numbers " +
-      "as live series replace the priors.",
+      "sub-results before the problems that rest on them. Publish the attempt " +
+      "reports and statements the Mathematics prizes mandate posts bounties on; " +
+      "post no bounties from this escrow in this epoch. Keep every attempt, " +
+      "every statement, every check, and every prize decision public. Revise " +
+      "this mandate's own policy numbers as live series replace the priors.",
     sections: {
       scope:
         "Propositions of mathematics; the contested applications of mathematical " +
@@ -120,27 +160,11 @@ function mathematicsMandate(): PlatformMandate {
         "mandate is the Grantmaker's judgment, and the mathematics domain tag is " +
         "a strong prior for it.",
       prize_policy:
-        "Prizes are paid from the mathematics prize fund, never from this " +
-        "mandate's compute budget, and they never enter any valuation, " +
-        "importance, assessment, or standard. A bounty binds only to a published " +
-        "formal statement whose review period has ended and which the platform's " +
-        "solver has attempted at maximum effort without settling, with the " +
-        "attempt's report public. Amounts are set from how much the discourse " +
-        "would gain from a settled answer, the effort the problem appears to " +
-        "require from a capable claimant, and the fund's balance and the number " +
-        "of open bounties; amounts never feed back into importance, and the " +
-        "reasoning is stated publicly with each posting. Bounds: " +
-        `${usd(config.minBountyPerClaimUsd)} to ${usd(config.maxBountyPerClaimUsd)} per claim; ` +
-        "at most one live bounty per claim; the total of open bounties never " +
-        "above the fund's balance; every posting made in two passes and, at or " +
-        `above ${usd(config.bountyAutonomyThresholdUsd)}, confirmed by a human. ` +
-        "Prizes are paid in owls, one owl per dollar, and every owl prize is " +
-        "backed by a dollar in the fund the moment it is granted. A trivial " +
-        "resolution of a mis-stated problem earns the defect award, not the " +
-        "prize; a rediscovery of a published proof earns credit on the page, not " +
-        "the prize; the platform is never a claimant. No bounty is posted on a " +
-        "problem carrying a third-party prize in the discourse until the " +
-        "double-payment question is settled.",
+        "This mandate funds formalizations, attempts, and stewardship, and in " +
+        "this epoch it posts no prizes; the Mathematics prizes mandate posts " +
+        "them. Both mandates draw on escrows a Grantmaker allocates, and " +
+        "nothing else funds a prize. " +
+        commonPrizePolicy(),
       attempt_policy:
         "An attempt is valued as expected information: importance times the " +
         "Grantmaker's stated probability that this variant succeeds times a " +
@@ -179,7 +203,78 @@ function mathematicsMandate(): PlatformMandate {
       attempt_cooldown_days: cooldownDays,
       attempt_claim_lifetime_cap_owls: lifetimeCapOwls,
     },
-    prizePool: { domain: "mathematics", depositUsd: config.mathPrizePoolUsd },
+  };
+}
+
+/**
+ * The Mathematics prizes mandate (docs/mathematics.md §8.1, §10.4, Appendix
+ * B): a prizes-only mandate whose escrow is the only source of its prizes.
+ * No daily rate: its spend is prizes, paced by the per-pass and per-day
+ * fractions of the escrow, and its own review passes.
+ */
+function mathematicsPrizesMandate(): PlatformMandate {
+  const config = loadConfig();
+  return {
+    key: "mathematics-prizes",
+    title: "Mathematics prizes",
+    objective:
+      "To offer prizes, on terms fixed in advance, for Lean proofs and " +
+      "disproofs of the open problems the platform attempted and could not " +
+      "settle, so that the answer, when someone finds it, becomes part of the " +
+      "public record. In this epoch the mandate funds nothing else: no " +
+      "formalizations, no attempts, no stewardship. Its escrow is the only " +
+      "source of its prizes, and each prize it offers is the mandate's own " +
+      "judgment, stated publicly with the posting, about which settled answer " +
+      "the discourse would gain most from.",
+    scopeQuery: "mathematics OR theorem OR conjecture OR proof",
+    strategy:
+      "Read the platform's attempt record and post bounties only on published " +
+      "statements the solver attempted at maximum effort and could not settle, " +
+      "after their public review period, with the attempt's report public. " +
+      "Size each prize from what the discourse would gain from a settled " +
+      "answer, the effort the problem appears to demand of a capable claimant, " +
+      "and the escrow's headroom and the number of open bounties. Post the " +
+      "first bounties small and deliberately tractable, one of them on a " +
+      "problem chosen to exercise the whole path from posting to payment, and " +
+      "say so publicly. Renew a bounty that still earns its place and withdraw, " +
+      "with notice, one that does not. Revise this mandate's own priors as " +
+      "prizes are claimed, expire, or close.",
+    sections: {
+      scope:
+        "Published formal statements, in Lean 4 against a pinned Mathlib, of " +
+        "open problems of mathematics that the platform's solver has attempted " +
+        "without settling. The scope query (mathematics OR theorem OR conjecture " +
+        "OR proof) is retrieval, not membership; which statements deserve a " +
+        "prize is the Grantmaker's judgment, made from the attempt record, the " +
+        "claim's importance, and the results that rest on it.",
+      prize_policy:
+        "This mandate offers prizes and funds nothing else in this epoch. Its " +
+        "escrow is the only source of its prizes: a bounty holds its amount " +
+        "against the escrow from the moment it opens until it resolves, and the " +
+        "mandate's headroom is what remains after every hold. " +
+        commonPrizePolicy(),
+      refusals:
+        "This mandate declines, at any budget: any bounty whose purpose is to " +
+        "move an assessment or an importance; any bounty on a statement it " +
+        "cannot show is faithful, whose review period has not ended, or which " +
+        "the platform's solver has not attempted without settling; any request " +
+        "to fund an attempt, a formalization, or an assessment from this escrow " +
+        "in this epoch; and any sponsorship offered on condition of naming, " +
+        "influence over a statement, or a say in acceptance.",
+      disclosure:
+        "The prize on this claim was offered by the Mathematics prizes mandate " +
+        "from its own escrow. A prize buys no attention and no conclusion: it " +
+        "does not change how the claim is assessed or how important the graph " +
+        "judges it to be, and it says only that someone would like the question " +
+        "settled.",
+    },
+    budgetOwls: config.mathPrizesEscrowOwls,
+    policy: "cover",
+    dailyBudgetOwls: 0,
+    skills: ["mathematics"],
+    allocationPolicy: {
+      est_prize_review_cost_owls: 12,
+    },
   };
 }
 
@@ -214,6 +309,7 @@ function mandates(): PlatformMandate[] {
       allocationPolicy: null,
     },
     mathematicsMandate(),
+    mathematicsPrizesMandate(),
     {
       key: "ai-economics",
       title: "AI Economics",
@@ -261,8 +357,8 @@ function mandateJson(m: PlatformMandate, notes: string): Record<string, unknown>
 // ---------------------------------------------------------------------------
 
 interface Args {
-  depositBatch: string;
   updateMandate: string | null;
+  mandate: string | null;
   dailyOwls: number | null;
   topUpOwls: number | null;
   topUpBatch: string;
@@ -270,8 +366,8 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
-    depositBatch: "initial",
     updateMandate: null,
+    mandate: null,
     dailyOwls: null,
     topUpOwls: null,
     topUpBatch: new Date().toISOString().slice(0, 10),
@@ -284,11 +380,11 @@ function parseArgs(argv: string[]): Args {
       return v;
     };
     switch (a) {
-      case "--deposit-batch":
-        args.depositBatch = next();
-        break;
       case "--update-mandate":
         args.updateMandate = next();
+        break;
+      case "--mandate":
+        args.mandate = next();
         break;
       case "--daily-owls":
         args.dailyOwls = Number(next());
@@ -309,8 +405,9 @@ function parseArgs(argv: string[]): Args {
         throw new Error(`unknown argument ${a}`);
     }
   }
-  if ((args.dailyOwls !== null || args.topUpOwls !== null) && !args.updateMandate) {
-    throw new Error("--daily-owls and --top-up-owls need --update-mandate <key>");
+  if (args.mandate === null) args.mandate = args.updateMandate;
+  if ((args.dailyOwls !== null || args.topUpOwls !== null) && !args.mandate) {
+    throw new Error("--daily-owls and --top-up-owls need --mandate <key>");
   }
   return args;
 }
@@ -334,9 +431,9 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
   const budgetMicro = owlsToMicroUsd(m.budgetOwls);
   const mandate = mandateJson(m, STANDING_NOTE);
 
-  // One transaction per mandate: mint, job, hold, and grant land (or
-  // roll back) together — a crash mid-way can never leave an orphaned
-  // running job whose hold's idempotency key pins the escrow to it.
+  // One transaction per mandate: mint, job, hold, and grant land (or roll
+  // back) together, so a crash mid-way can never leave an orphaned running
+  // job whose hold's idempotency key pins the escrow to it.
   return withTransaction(async (tx) => {
     // Mint the platform's owls (idempotent), then escrow them.
     await tx.query(
@@ -385,55 +482,19 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
   });
 }
 
-/**
- * The domain's prize fund (docs/mathematics.md §8.1) and its deposit,
- * recorded as `platform_deposit` under an idempotency key that carries the
- * deposit batch: the same batch twice is one row, a new batch is a new
- * deposit.
- */
-async function ensurePrizePool(
-  pool: { domain: string; depositUsd: number },
-  depositBatch: string
-): Promise<void> {
-  const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO prize_pools (domain) VALUES ($1)
-     ON CONFLICT (domain) DO UPDATE SET domain = EXCLUDED.domain
-     RETURNING id`,
-    [pool.domain]
-  );
-  const poolId = row!.id;
-  const amount = Math.round(pool.depositUsd * 1_000_000);
-  if (amount <= 0) {
-    console.log(`= prize fund ${pool.domain}: no deposit (MATH_PRIZE_POOL_USD is 0)`);
-    return;
-  }
-  const key = `platform_deposit:${pool.domain}:${depositBatch}`;
-  const inserted = await rawQuery<{ id: string }>(
-    `INSERT INTO prize_pool_entries
-       (pool_id, amount_micro_usd, reason, bank_reference, idempotency_key)
-     VALUES ($1, $2, 'platform_deposit', $3, $4)
-     ON CONFLICT (idempotency_key) DO NOTHING
-     RETURNING id`,
-    [poolId, amount, `seed:${depositBatch}`, key]
-  );
-  if (inserted.length > 0) {
-    console.log(`+ prize fund ${pool.domain}: deposited ${usd(pool.depositUsd)} (batch ${depositBatch})`);
-  } else {
-    console.log(`= prize fund ${pool.domain}: batch ${depositBatch} already deposited`);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Updating a live row (§10.9)
 // ---------------------------------------------------------------------------
 
-async function updateMandate(m: PlatformMandate, args: Args, platformId: string): Promise<void> {
-  const [existing] = await rawQuery<{
-    id: string;
-    budget_job_id: string;
-    mandate: Record<string, unknown> | null;
-    plan: { strategy?: string; items?: unknown[] } | null;
-  }>(
+interface ExistingMandate {
+  id: string;
+  budget_job_id: string;
+  mandate: Record<string, unknown> | null;
+  plan: { strategy?: string; items?: unknown[] } | null;
+}
+
+async function findExisting(m: PlatformMandate): Promise<ExistingMandate> {
+  const [existing] = await rawQuery<ExistingMandate>(
     `SELECT id, budget_job_id, mandate, plan FROM grants
       WHERE is_platform = true AND name = $1`,
     [m.title]
@@ -441,59 +502,82 @@ async function updateMandate(m: PlatformMandate, args: Args, platformId: string)
   if (!existing) {
     throw new Error(`no platform mandate "${m.title}" exists to update; run the seed first`);
   }
+  return existing;
+}
+
+/**
+ * The money flags, applied to one mandate: the daily rate, and a top-up
+ * minted and escrowed exactly as creation does, once per batch key. Returns
+ * the revision sentences to record on the row.
+ */
+async function applyMoney(
+  m: PlatformMandate,
+  existing: ExistingMandate,
+  args: Args,
+  platformId: string,
+  tx: { query: <T>(q: string, p?: unknown[]) => Promise<T[]> }
+): Promise<string[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const revisions: string[] = [];
+  if (args.dailyOwls !== null) {
+    await tx.query(
+      `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now() WHERE id = $1`,
+      [existing.id, owlsToMicroUsd(args.dailyOwls)]
+    );
+    revisions.push(`The daily rate was set to ${owls(args.dailyOwls)} owls on ${today}.`);
+    console.log(`~ ${m.title}: daily rate ${owls(args.dailyOwls)} owls`);
+  }
+  if (args.topUpOwls !== null) {
+    const micro = owlsToMicroUsd(args.topUpOwls);
+    const mintKey = `platform_mandate_mint:${m.key}:${args.topUpBatch}`;
+    const holdKey = `platform_mandate_hold:${m.key}:${args.topUpBatch}`;
+    const minted = await tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
+       VALUES ($1, $2, 'admin_adjust', $3)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id`,
+      [platformId, micro, mintKey]
+    );
+    if (minted.length > 0) {
+      await tx.query(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id, idempotency_key)
+         VALUES ($1, $2, 'escrow_hold', $3, $4)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [platformId, -micro, existing.budget_job_id, holdKey]
+      );
+      // The same increment the contribution path makes: a job paused for
+      // budget resumes.
+      await tx.query(
+        `UPDATE budget_jobs
+            SET budget_micro_usd = budget_micro_usd + $2,
+                status = CASE WHEN status = 'paused_budget' THEN 'running' ELSE status END,
+                updated_at = now()
+          WHERE id = $1`,
+        [existing.budget_job_id, micro]
+      );
+      revisions.push(
+        `The escrow was topped up by ${owls(args.topUpOwls)} owls on ${today} (batch ${args.topUpBatch}).`
+      );
+      console.log(`+ ${m.title}: topped up ${owls(args.topUpOwls)} owls (batch ${args.topUpBatch})`);
+    } else {
+      console.log(`= ${m.title}: top-up batch ${args.topUpBatch} already applied`);
+    }
+  }
+  return revisions;
+}
+
+/** The text, the skills, and the policy keys: never the money. */
+async function updateMandateText(m: PlatformMandate, args: Args, platformId: string): Promise<void> {
+  const existing = await findExisting(m);
   const today = new Date().toISOString().slice(0, 10);
   const previousNotes = String(existing.mandate?.notes ?? STANDING_NOTE);
 
   await withTransaction(async (tx) => {
-    // The money first, so the note records only what actually happened:
-    // the two explicit flags are the only path that changes it, and a
-    // top-up batch applies once.
+    // The money first, so the note records only what actually happened.
     const revisions: string[] = [`The mandate text was revised on ${today} by the platform.`];
-    if (args.dailyOwls !== null) {
-      await tx.query(
-        `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now() WHERE id = $1`,
-        [existing.id, owlsToMicroUsd(args.dailyOwls)]
-      );
-      revisions.push(`The daily rate was set to ${owls(args.dailyOwls)} owls on ${today}.`);
+    if (args.mandate === m.key) {
+      revisions.push(...(await applyMoney(m, existing, args, platformId, tx)));
     }
-    if (args.topUpOwls !== null) {
-      const micro = owlsToMicroUsd(args.topUpOwls);
-      const mintKey = `platform_mandate_mint:${m.key}:${args.topUpBatch}`;
-      const holdKey = `platform_mandate_hold:${m.key}:${args.topUpBatch}`;
-      const minted = await tx.query<{ id: string }>(
-        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
-         VALUES ($1, $2, 'admin_adjust', $3)
-         ON CONFLICT (idempotency_key) DO NOTHING
-         RETURNING id`,
-        [platformId, micro, mintKey]
-      );
-      if (minted.length > 0) {
-        await tx.query(
-          `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id, idempotency_key)
-           VALUES ($1, $2, 'escrow_hold', $3, $4)
-           ON CONFLICT (idempotency_key) DO NOTHING`,
-          [platformId, -micro, existing.budget_job_id, holdKey]
-        );
-        // The same increment the contribution path makes: a job paused for
-        // budget resumes.
-        await tx.query(
-          `UPDATE budget_jobs
-              SET budget_micro_usd = budget_micro_usd + $2,
-                  status = CASE WHEN status = 'paused_budget' THEN 'running' ELSE status END,
-                  updated_at = now()
-            WHERE id = $1`,
-          [existing.budget_job_id, micro]
-        );
-        revisions.push(
-          `The escrow was topped up by ${owls(args.topUpOwls)} owls on ${today} (batch ${args.topUpBatch}).`
-        );
-        console.log(`+ ${m.title}: topped up ${owls(args.topUpOwls)} owls (batch ${args.topUpBatch})`);
-      } else {
-        console.log(`= ${m.title}: top-up batch ${args.topUpBatch} already applied`);
-      }
-    }
-
-    // Then the text, the skills, and the policy keys: never the money.
     const notes = `${previousNotes.trim()}\n\n${revisions.join(" ")}`.trim();
     const mandate = {
       ...(existing.mandate ?? {}),
@@ -526,12 +610,37 @@ async function updateMandate(m: PlatformMandate, args: Args, platformId: string)
   });
   console.log(
     `~ ${m.title} updated (${existing.id}): text, skills [${m.skills.join(", ")}], ` +
-      `policy keys ${m.allocationPolicy ? Object.keys(m.allocationPolicy).join(", ") : "(none)"}` +
-      (args.dailyOwls !== null ? `; daily rate ${owls(args.dailyOwls)} owls` : "")
+      `policy keys ${m.allocationPolicy ? Object.keys(m.allocationPolicy).join(", ") : "(none)"}`
   );
 }
 
+/** The money flags alone (--mandate without --update-mandate): the text stays. */
+async function updateMandateMoney(m: PlatformMandate, args: Args, platformId: string): Promise<void> {
+  const existing = await findExisting(m);
+  await withTransaction(async (tx) => {
+    const revisions = await applyMoney(m, existing, args, platformId, tx);
+    if (revisions.length === 0) return;
+    const previousNotes = String(existing.mandate?.notes ?? STANDING_NOTE);
+    const notes = `${previousNotes.trim()}\n\n${revisions.join(" ")}`.trim();
+    await tx.query(
+      `UPDATE grants
+          SET mandate = jsonb_set(COALESCE(mandate, '{}'::jsonb), '{notes}', to_jsonb($2::text)),
+              updated_at = now()
+        WHERE id = $1`,
+      [existing.id, notes]
+    );
+  });
+}
+
 // ---------------------------------------------------------------------------
+
+function mandateByKey(all: PlatformMandate[], key: string): PlatformMandate {
+  const m = all.find((x) => x.key === key);
+  if (!m) {
+    throw new Error(`unknown mandate key "${key}"; known: ${all.map((x) => x.key).join(", ")}`);
+  }
+  return m;
+}
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -539,14 +648,14 @@ async function main() {
   const all = mandates();
 
   if (args.updateMandate) {
-    const m = all.find((x) => x.key === args.updateMandate);
-    if (!m) {
-      throw new Error(
-        `unknown mandate key "${args.updateMandate}"; known: ${all.map((x) => x.key).join(", ")}`
-      );
+    await updateMandateText(mandateByKey(all, args.updateMandate), args, platformId);
+    if (args.mandate && args.mandate !== args.updateMandate) {
+      await updateMandateMoney(mandateByKey(all, args.mandate), args, platformId);
     }
-    await updateMandate(m, args, platformId);
-    if (m.prizePool) await ensurePrizePool(m.prizePool, args.depositBatch);
+    return;
+  }
+  if (args.mandate) {
+    await updateMandateMoney(mandateByKey(all, args.mandate), args, platformId);
     return;
   }
 
@@ -562,7 +671,6 @@ async function main() {
       const grantId = await createMandate(m, platformId);
       console.log(`+ ${m.title} created (${grantId}), ${owls(m.budgetOwls)} owls`);
     }
-    if (m.prizePool) await ensurePrizePool(m.prizePool, args.depositBatch);
   }
 }
 

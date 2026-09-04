@@ -3,10 +3,10 @@ import {
   fetchList, fetchOpenPrizes, fetchSearch,
 } from "./api";
 import {
-  getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizes,
+  getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizeMandates, listOpenPrizes,
 } from "./fixtures";
 import type {
-  AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem,
+  AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
   SearchResultItem,
 } from "./types";
 import {
@@ -108,14 +108,18 @@ export async function loadClaims(
   }
 }
 
-// Open bounties, largest first (docs/mathematics.md §8.3): the /prizes page
-// and the strip under the territories. Live, an API without the route yields
-// an empty strip; offline, the sample theorem's bounty.
+// Open bounties, largest first (docs/mathematics.md §8.3), with the prize
+// numbers of the mandates that post them (§8.1): the /prizes page and the
+// strip under the territories. Live, an API without the route yields an
+// empty strip; offline, the sample theorem's bounty and its mandate.
 export async function loadOpenPrizes(
   limit = 50,
-): Promise<{ prizes: PrizeListItem[]; source: DataSource }> {
-  if (!apiConfigured()) return { prizes: listOpenPrizes().slice(0, limit), source: "fixture" };
-  return { prizes: await fetchOpenPrizes(limit), source: "live" };
+): Promise<{ prizes: PrizeListItem[]; mandates: PrizeMandateNumbers[]; source: DataSource }> {
+  if (!apiConfigured()) {
+    return { prizes: listOpenPrizes().slice(0, limit), mandates: listOpenPrizeMandates(), source: "fixture" };
+  }
+  const { prizes, mandates } = await fetchOpenPrizes(limit);
+  return { prizes, mandates, source: "live" };
 }
 
 // One house attempt with its report and notebook (§7.7). The claim id is a

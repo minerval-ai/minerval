@@ -16,6 +16,12 @@ export interface FormalizationSummary {
   pp_type: string;
   source_hash: string;
   expr_hash: string;
+  /**
+   * The statement introduces a definition Mathlib lacks, the Steward's own
+   * (docs/mathematics.md §5.4); the correspondence note says which sources
+   * it follows.
+   */
+  own_definitions: boolean;
   correspondence: string | null;
   published_at: string | null;
   review_period_ends_at: string | null;

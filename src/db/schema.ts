@@ -1962,6 +1962,10 @@ export const claimFormalizations = pgTable(
     definitionsAxioms: jsonb("definitions_axioms").notNull(),
     // An `example` witnessing satisfiable hypotheses elaborated.
     witnessPresent: boolean("witness_present").notNull(),
+    // The statement introduces a definition Mathlib lacks, written by the
+    // Steward (or taken from a public formalization project) and declared
+    // as its own in the correspondence note (docs/mathematics.md §5.4).
+    ownDefinitions: boolean("own_definitions").notNull().default(false),
     // Reader-facing note, graph voice.
     correspondence: text("correspondence"),
     // Audit-facing; may name tools and checks.
@@ -2141,79 +2145,20 @@ export const platformFlags = pgTable("platform_flags", {
 });
 
 // ---------------------------------------------------------------------------
-// prize_pools / prize_pool_entries
-//
-// The per-domain prize fund (§8.1) and its ledger. Only the balance is
-// stored, as the sum of entries; `reserved` is derived from live bounties
-// and `available` is the difference. A bounty opens only when `available`
-// covers it, and nothing is posted when a bounty opens or closes: a dollar
-// is promised once (in reserved) and spent once (in an entry). Debits are
-// owl_prize (the cash amount the moment prize owls are granted, so every
-// owl prize is fully funded), withholding_remitted, defect_award,
-// review_award, and — only once a cash rail exists — payout. The reason
-// vocabulary is a CHECK because the fund's arithmetic keys on it.
-// ---------------------------------------------------------------------------
-export const prizePools = pgTable("prize_pools", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  domain: text("domain").notNull().unique(),
-  currency: text("currency").notNull().default("usd"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const PRIZE_POOL_ENTRY_REASONS = [
-  "platform_deposit",
-  "sponsorship",
-  "owl_prize",
-  "withholding_remitted",
-  "defect_award",
-  "review_award",
-  "admin_adjust",
-  "payout",
-] as const;
-
-export const prizePoolEntries = pgTable(
-  "prize_pool_entries",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    poolId: uuid("pool_id")
-      .notNull()
-      .references(() => prizePools.id),
-    // Signed: deposits and sponsorships positive, debits negative.
-    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
-    reason: text("reason").notNull(),
-    bountyId: uuid("bounty_id"),
-    prizeClaimId: uuid("prize_claim_id"),
-    // Evidence of the cash for a platform deposit.
-    bankReference: text("bank_reference"),
-    stripeEventId: text("stripe_event_id"),
-    idempotencyKey: text("idempotency_key").unique(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("idx_prize_pool_entries_pool").on(table.poolId),
-    index("idx_prize_pool_entries_bounty").on(table.bountyId),
-    check(
-      "ck_prize_pool_entries_reason",
-      sql`reason IN ('platform_deposit', 'sponsorship', 'owl_prize', 'withholding_remitted', 'defect_award', 'review_award', 'admin_adjust', 'payout')`
-    ),
-  ]
-);
-
-// ---------------------------------------------------------------------------
 // bounties
 //
-// A public offer bound to one formalization (§8.1): USD-denominated, drawn
-// from the domain's prize fund, posted by a mandate's Grantmaker in two
-// passes and, at or above the autonomy threshold, confirmed by a person.
-// Lifecycle: requested → confirm_pending → open → claim_pending → paid |
-// resolved_unpaid | open; open → house_result_pending → resolved_internally
-// | open | rebinding; open → expired | withdrawn | rebinding. At most one
-// LIVE bounty per claim (uq_bounty_live_per_claim), and `reserved` sums the
-// amounts of the live ones.
+// A public offer bound to one formalization (§8.1): denominated in owls
+// (stored as micro-USD at cost, one owl per dollar of metered work), posted
+// by a mandate's Grantmaker in two passes and, at or above the autonomy
+// threshold, confirmed by a person, and held against that mandate's escrow
+// from the moment it opens until it resolves: its amount is a term in the
+// mandate's committed money (src/services/prize-commitment.ts), and the
+// payout row is what consumes it. Lifecycle: requested → confirm_pending →
+// open → claim_pending → paid | resolved_unpaid | open; open →
+// house_result_pending → resolved_internally | open | rebinding; open →
+// expired | withdrawn | rebinding. At most one LIVE bounty per claim
+// (uq_bounty_live_per_claim). No prize fund exists: the escrow the bounty
+// holds against is the only source of the prize.
 // ---------------------------------------------------------------------------
 export const bounties = pgTable(
   "bounties",
@@ -2225,13 +2170,11 @@ export const bounties = pgTable(
     formalizationId: uuid("formalization_id")
       .notNull()
       .references(() => claimFormalizations.id, { onDelete: "restrict" }),
-    poolId: uuid("pool_id")
-      .notNull()
-      .references(() => prizePools.id),
     // lean_statement; reserved: steward_judgment | external_resolution
     conditionType: text("condition_type").notNull().default("lean_statement"),
     // proof | disproof | either
     resolution: text("resolution").notNull().default("either"),
+    // Owls at cost (micro-USD).
     amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
     // requested | confirm_pending | open | claim_pending |
     // house_result_pending | rebinding | paid | resolved_internally |
@@ -2239,7 +2182,10 @@ export const bounties = pgTable(
     status: text("status").notNull().default("requested"),
     // The official-rules version in force when posted (§8.10).
     rulesVersion: text("rules_version").notNull(),
-    postedByGrantId: uuid("posted_by_grant_id").references(() => grants.id),
+    // The mandate whose escrow the bounty holds against (§8.1).
+    postedByGrantId: uuid("posted_by_grant_id")
+      .notNull()
+      .references(() => grants.id),
     rationale: text("rationale").notNull(),
     requestedAt: timestamp("requested_at", { withTimezone: true })
       .notNull()
@@ -2627,9 +2573,6 @@ export type NewLeanCheck = typeof leanChecks.$inferInsert;
 export type ProofAttempt = typeof proofAttempts.$inferSelect;
 export type NewProofAttempt = typeof proofAttempts.$inferInsert;
 export type PlatformFlag = typeof platformFlags.$inferSelect;
-export type PrizePool = typeof prizePools.$inferSelect;
-export type PrizePoolEntry = typeof prizePoolEntries.$inferSelect;
-export type NewPrizePoolEntry = typeof prizePoolEntries.$inferInsert;
 export type Bounty = typeof bounties.$inferSelect;
 export type NewBounty = typeof bounties.$inferInsert;
 export type PrizeClaim = typeof prizeClaims.$inferSelect;

@@ -70,16 +70,15 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the eight operator routes: the prize-fund deposit, bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below) |
+| `requireOperator` | the operator key, held outside the web deployment | the seven operator routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below) |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
 **The operator key.** The service key is deployed to the web tier and acts
 for any user through the acting-user header, so it cannot be the
-credential that moves money. Eight routes require a separate operator key
+credential that moves money. Seven routes require a separate operator key
 (`MINERVAL_OPERATOR_KEY`), held outside the web deployment and used only
-from the operator's own session: the prize-fund deposit
-(`POST /prize-pools/:domain/deposit`), the bounty confirmation
+from the operator's own session: the bounty confirmation
 (`POST /bounties/:id/confirm`), the prize-claim sign-off
 (`POST /prize-claims/:id/sign-off`), the void
 (`POST /prize-claims/:id/void`), the sanctions screening
@@ -95,10 +94,11 @@ payee step (`POST /prize-claims/:id/payee`), the tax form
 (`POST /prize-claims/:id/withdraw`), so a leaked consumer key or service
 key alone can neither redirect a prize nor abandon a winning claim. Every
 call to a writing route among these is written to `audit_log` on the claim
-with the credential kind and the acting person (`prize_route:*`); the
-deposit has no claim, so each call is appended to the `prize_fund_deposits`
-platform flag as a JSON list entry carrying the same fields. The service
-key alone moves no money.
+with the credential kind and the acting person (`prize_route:*`). There is
+no deposit route: a prize is owls held against the escrow of the mandate
+that posted it, and a platform mandate's escrow is funded by the seed
+(`scripts/seed-platform-mandates.ts`). The service key alone moves no
+money.
 
 ## The per-token meter
 
@@ -296,18 +296,23 @@ leaderboard (below).
 ## Prizes paid in owls
 
 A prize (docs/prizes.md; the mechanism in docs/mathematics.md, section 8)
-is paid in owls at one owl per dollar of the prize, and it reaches the
-ledger through one path only: `payPrize`, run after the challenge window
-has closed, the audit has passed, any required sign-off is recorded, and
-the winner's steps below are complete.
+is stated and paid in owls, the unit of metered work valued at one dollar
+of metered cost each, and it reaches the ledger through one path only:
+`payPrize`, run after the challenge window has closed, the audit has
+passed, any required sign-off is recorded, and the winner's steps below
+are complete. The bounty behind it was held against the escrow of the
+mandate whose Grantmaker posted it from the day it opened, so every prize
+owl is backed by escrow paid for before the offer was made.
 
 - **The `prize_award` reason.** The grant is one `owl_ledger` row with
   reason `prize_award`, positive, net of any required withholding, with
   `claim_id` and `prize_claim_id` set and idempotency key
   `prize:<prize_claim_id>:owls`, written in the same transaction as the
-  `prize_payouts` row (`kind = 'owls'`, `provider = 'internal'`) and the
-  prize fund's `owl_prize` debit at the cash amount, so every prize owl is
-  backed by a dollar already deposited. The ledger says "award" because
+  `prize_payouts` row (`kind = 'owls'`, `provider = 'internal'`). The
+  payout row is what consumes the posting mandate's hold: from that row
+  onward the mandate's committed money counts the gross amount, the way a
+  regrant is counted rather than moved, and the bounty's hold lapses when
+  it closes. The ledger says "award" because
   the legal posture depends on prize owls being promotional credit: issued
   without payment, never expiring, never transferable, never redeemable
   for cash, never converted later. A post-payout voiding after fraud is a
@@ -317,17 +322,18 @@ the winner's steps below are complete.
   `owls_earned_micro_usd` and is kept apart from it. Earned owls are the
   importance-scaled award for accepted contributions and are what the
   leaderboard ranks; a prize is a payment for one result, fixed in
-  advance, and folding it into the earned total would let a single $2,500
-  prize outrank years of accepted work. Prize owls are excluded from the
+  advance, and folding it into the earned total would let a single
+  2,500-owl prize outrank years of accepted work. Prize owls are excluded from the
   leaderboard sum, spend like any other owl, and appear on the profile as
   "Prizes" beside, not inside, "owls earned". `GET /contributors/:id` and
   `/users/me` expose `owls_prized` and `open_prize_claims`.
 - **The winner's steps.** After the prize claim becomes `payable` the
-  winner sees "Your prize" on the account page: the amount; what owls are
-  (metered work on the graph: assessments, deeper passes, mandates the
-  winner directs); that they are non-transferable, non-refundable, and
-  never redeemable for cash; that the prize is reported for tax at its
-  dollar value; and three steps to complete within `PRIZE_PAYEE_STEPS_DAYS`
+  winner sees "Your prize" on the account page: the amount, in owls; what
+  owls are (metered work on the graph: assessments, deeper passes, mandates
+  the winner directs, valued at one dollar of metered cost each); that they
+  are non-transferable, non-refundable, and never redeemable for cash; that
+  the prize is reported for tax at that value; and three steps to complete
+  within `PRIZE_PAYEE_STEPS_DAYS`
   (90). The steps are identity and residency (`POST /prize-claims/:id/payee`,
   dashboard session plus an emailed one-time code, because a leaked
   consumer key must not redirect a prize); a tax form, W-9 for U.S. persons
@@ -337,22 +343,24 @@ the winner's steps below are complete.
   The sign-off checklist requires all three before any `prize_award` row
   is written; the owl path is not a way around them. A winner who does not
   complete the steps within the period forfeits (`forfeited`), and the
-  reservation returns to the fund.
-- **Tax and screening records.** Prizes are ordinary income at the dollar
-  value of the prize. `prize_payouts` records `withholding_micro_usd`,
+  bounty's hold on the mandate's escrow lapses with the claim.
+- **Tax and screening records.** Prizes are ordinary income at the value
+  of the prize, one dollar of metered cost per owl. `prize_payouts` records
+  `withholding_micro_usd`,
   `tax_form_kind` (`w9` | `w8ben`), `payee_country`, and
   `screening_result`. A W-9 with a valid TIN means no withholding and a
   1099-MISC at the statutory threshold; a missing TIN means 24 percent
   backup withholding; a W-8BEN means 30 percent withholding by default,
-  the withheld amount remitted from the fund (`withholding_remitted`) and
+  the withheld amount recorded on the payout row as the platform's own
+  remittance (the mandate is consumed for the gross amount it offered) and
   a 1042-S record, pending counsel's view on the source of prize income.
   Persons in comprehensively sanctioned jurisdictions are ineligible by
   rule, and a screening result other than clear is a human sign-off
   condition. Payee details, provider ids, tax forms, and screening results
   never serialize on any public route, and the records are kept at least
   seven years.
-- **The daily tranche rule.** A grant above `PRIZE_OWL_TRANCHE_USD`
-  ($2,000) is written in daily tranches of at most that amount, one
+- **The daily tranche rule.** A grant above `PRIZE_OWL_TRANCHE_OWLS`
+  (2,000 owls) is written in daily tranches of at most that amount, one
   `prize_award` row per day under a per-tranche idempotency key, so no
   single day loads more owls onto one account than the closed-loop
   prepaid-access threshold the owl's legal posture relies on. The largest

@@ -1,5 +1,5 @@
 import type {
-  AttemptSummary, ClaimDetail, ClaimEventsPage, FormalizationSummary, PrizeListItem,
+  AttemptSummary, ClaimDetail, ClaimEventsPage, FormalizationSummary, PrizeListItem, PrizeMandateNumbers,
   SearchResultItem,
 } from "./types";
 
@@ -838,7 +838,7 @@ const LEGENDRE: ClaimDetail = {
     summary:
       "Legendre's conjecture is open. It has been [[claim:legendre-computed|checked for every n below 4 × 10⁹]] by the exhaustive tables of prime gaps, and the proven results point the same way without reaching it: [[claim:bertrand-postulate|Bertrand's postulate]] puts a prime in every interval (n, 2n], and [[claim:bhp-gaps|the Baker–Harman–Pintz bound]] puts one in every interval of length x^0.525 for large x, where the conjecture needs length 2√x + 1. Supported, not verified: no proof exists, and the status answers whether one does. The credence records the field's view that the statement is true.",
     reasoning_trace:
-      "The claim is a proposition of mathematics, true or false by proof, and no proof is on record. The evidence that bears on it is of three kinds. First, computation: [[claim:legendre-computed|the conjecture holds for every n below 4 × 10⁹]], because every maximal prime gap below 2⁶⁴ is known and none exceeds 1,550, while the interval between n² and (n + 1)² has length 2n + 1. Second, weaker proven statements in the same direction: [[claim:bertrand-postulate|Bertrand's postulate]], machine-checked here, and [[claim:bhp-gaps|the Baker–Harman–Pintz bound]], an accepted proof placing a prime in [x, x + x^0.525] for all sufficiently large x. Third, the heuristic of Cramér's model, under which the conjecture holds with room to spare; that heuristic is not evidence of the kind that changes a status, and it is recorded here only as the reason the credence is high. The formal statement was published on 20 February 2026 as version 2, after version 1 was retired in review for quantifying over n = 0; the house solver attempted the statement twice and settled nothing, and a prize of $2,500 is open on it. The prize changes nothing in this assessment. What would change it: a proof, which would make the claim verified; a counterexample, which the computation makes very unlikely below 4 × 10⁹; or a proof for a density-one set of n, which would strengthen the support without settling the question.",
+      "The claim is a proposition of mathematics, true or false by proof, and no proof is on record. The evidence that bears on it is of three kinds. First, computation: [[claim:legendre-computed|the conjecture holds for every n below 4 × 10⁹]], because every maximal prime gap below 2⁶⁴ is known and none exceeds 1,550, while the interval between n² and (n + 1)² has length 2n + 1. Second, weaker proven statements in the same direction: [[claim:bertrand-postulate|Bertrand's postulate]], machine-checked here, and [[claim:bhp-gaps|the Baker–Harman–Pintz bound]], an accepted proof placing a prime in [x, x + x^0.525] for all sufficiently large x. Third, the heuristic of Cramér's model, under which the conjecture holds with room to spare; that heuristic is not evidence of the kind that changes a status, and it is recorded here only as the reason the credence is high. The formal statement was published on 20 February 2026 as version 2, after version 1 was retired in review for quantifying over n = 0; the house solver attempted the statement twice and settled nothing, and a prize of 2,500 owls is open on it. The prize changes nothing in this assessment. What would change it: a proof, which would make the claim verified; a counterexample, which the computation makes very unlikely below 4 × 10⁹; or a proof for a density-one set of n, which would strengthen the support without settling the question.",
     subclaim_summary: {},
     assessed_at: "2026-03-02T23:30:00Z",
     model: "claude-fable-5-1",
@@ -1220,6 +1220,24 @@ export function listClaims(): SearchResultItem[] {
 }
 
 // Open bounties, largest first: the sample theorem's one.
+// The mandate the sample bounty holds against (docs/mathematics.md §8.1):
+// a prizes-only platform mandate with a 2,500-owl escrow, 2,500 owls held in
+// the one open bounty, and a 250-owl review reserve.
+export function listOpenPrizeMandates(): PrizeMandateNumbers[] {
+  return [
+    {
+      grant_id: "mandate-mathematics-prizes",
+      title: "Mathematics prizes",
+      escrow_micro_usd: 5_000_000_000,
+      held_micro_usd: 2_500_000_000,
+      paid_micro_usd: 0,
+      review_reserve_micro_usd: 250_000_000,
+      headroom_micro_usd: 2_250_000_000,
+      open_bounties: 1,
+    },
+  ];
+}
+
 export function listOpenPrizes(): PrizeListItem[] {
   return [
     {

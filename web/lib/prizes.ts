@@ -2,7 +2,7 @@ import type {
   AttemptOutcome, AttemptSummary, BountyStatus, BountySummary, PrizeClaimStatus,
   PrizeClaimSummary,
 } from "./types";
-import { formatUsd, fmtDateLong } from "./format";
+import { formatOwls, fmtDateLong } from "./format";
 
 // The prize vocabulary (docs/mathematics.md §8): which bounty states a page
 // shows, what each prize-claim state means to the claimant, and the phrases
@@ -157,11 +157,11 @@ export function houseAttemptSentence(attempts: BountySummary["attempts"]): strin
     ? `produced a checked ${last.outcome}`
     : "did not settle it";
   if (sorted.length === 1) {
-    return `Minerval's own solver attempted this statement on ${fmtDateLong(last.finished_at)} at ${effort} (${formatUsd(last.cost_micro_usd)} of compute) and ${what}; its report is public.`;
+    return `Minerval's own solver attempted this statement on ${fmtDateLong(last.finished_at)} at ${effort} (${formatOwls(last.cost_micro_usd)} of compute) and ${what}; its report is public.`;
   }
   const total = sorted.reduce((s, a) => s + a.cost_micro_usd, 0);
   const times = sorted.length === 2 ? "twice" : `${sorted.length} times`;
-  return `Minerval's own solver attempted this statement ${times}, most recently on ${fmtDateLong(last.finished_at)} at ${effort} (${formatUsd(total)} of compute in all), and ${what}; the reports are public.`;
+  return `Minerval's own solver attempted this statement ${times}, most recently on ${fmtDateLong(last.finished_at)} at ${effort} (${formatOwls(total)} of compute in all), and ${what}; the reports are public.`;
 }
 
 export function submissionsPhrase(n: number): string {
@@ -171,9 +171,16 @@ export function submissionsPhrase(n: number): string {
   return `${words[n] ?? n} submissions received.`;
 }
 
-// The two sentences the rules require beside every payment surface.
+// The two sentences the rules require beside every payment surface. A prize
+// is stated and paid in owls (docs/mathematics.md §8.1, §8.7): the unit of
+// metered work on the graph, valued at one dollar of metered cost each.
 export const PRIZE_PAYMENT_SENTENCE =
-  "Prizes are paid in owls, one owl per dollar, which buy metered work on the graph and are never redeemable for cash; a prize is taxable income at its dollar value.";
+  "Prizes are stated and paid in owls, credit for metered work on the graph valued at one dollar of metered cost each and never redeemable for cash; a prize is taxable income at that value.";
+
+// The one-line gloss beside a bounty's amount (§8.1): what an owl is, and
+// where the terms are.
+export const OWLS_GLOSS =
+  "Owls are Minerval's unit of metered work on the graph, valued at one dollar of metered cost each.";
 
 export const PRIZE_TAX_SANCTIONS_NOTICE =
   "Prizes are income to the winner and are reported and withheld as United States law requires: a W-9 or W-8BEN before payment, and withholding where the law calls for it. Every payee is screened against sanctions lists before payment. Residents of comprehensively sanctioned jurisdictions are not eligible, and, for now, neither are residents of Italy or Brazil.";

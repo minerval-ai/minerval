@@ -493,6 +493,7 @@ async function publishFormalizationTool(
   const statementSource = typeof input.statement_source === "string" ? input.statement_source : "";
   const correspondence = str(input.correspondence);
   const reviewNotes = str(input.review_notes);
+  const ownDefinitions = input.own_definitions === true;
   const runId = getUsageContext().runId ?? null;
   const model = ctx.run?.model ?? null;
 
@@ -505,6 +506,13 @@ async function publishFormalizationTool(
     });
   }
 
+  if (ownDefinitions && !correspondence) {
+    return refuse(
+      "own_definitions is set but the correspondence note is empty. A statement that " +
+        "introduces a definition Mathlib lacks needs a note saying the definition is the " +
+        "Steward's own, which sources it follows, and why the Lean text matches them."
+    );
+  }
   if (!correspondence) {
     return refuse(
       "The correspondence note is required: say, in the graph's voice, how the formal " +
@@ -551,6 +559,7 @@ async function publishFormalizationTool(
       elaboration,
       correspondence,
       reviewNotes,
+      ownDefinitions,
       authoredBy: "claim_steward",
       model,
       runId,
@@ -567,6 +576,7 @@ async function publishFormalizationTool(
       source_hash: row.source_hash,
       expr_hash: row.expr_hash,
       witness_present: row.witness_present,
+      own_definitions: row.own_definitions === true,
       warnings: elaboration.warnings ?? [],
       statement_source: row.statement_source,
       message:

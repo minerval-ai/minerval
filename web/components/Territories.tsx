@@ -2,7 +2,7 @@ import Link from "next/link";
 import { territoryHref, type Territory } from "@/lib/territories";
 import type { PrizeListItem, SearchResultItem } from "@/lib/types";
 import { STATUS } from "@/lib/ontology";
-import { formatUsd } from "@/lib/format";
+import { formatOwls } from "@/lib/format";
 import { StatusBadge, Unassessed } from "./Assessment";
 import styles from "./Territories.module.css";
 
@@ -149,7 +149,7 @@ export function OpenPrizes({ items }: { items: PrizeListItem[] }) {
               {p.text}
             </Link>
             <span className={styles.prizeAmount}>
-              {formatUsd(p.bounty.amount_micro_usd)}
+              {formatOwls(p.bounty.amount_micro_usd)}
               <span className={styles.prizeState}> · {p.bounty.status.replace(/_/g, " ")}</span>
             </span>
           </li>

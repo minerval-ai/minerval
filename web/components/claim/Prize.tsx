@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { BountySummary, PrizeClaimSummary } from "@/lib/types";
-import { formatUsd, fmtDate, fmtDateLong } from "@/lib/format";
+import { formatOwls, fmtDate, fmtDateLong } from "@/lib/format";
 import {
-  BOUNTY_STATUS_LABEL, PRIZE_PAYMENT_SENTENCE, PRIZE_TAX_SANCTIONS_NOTICE,
+  BOUNTY_STATUS_LABEL, OWLS_GLOSS, PRIZE_PAYMENT_SENTENCE, PRIZE_TAX_SANCTIONS_NOTICE,
   challengeWindowDays, houseAttemptSentence, isBountyLive, isBountyShown,
   prizeClaimStateLabel, resolutionPhrase, submissionsPhrase,
 } from "@/lib/prizes";
@@ -11,9 +11,10 @@ import {
 // statement because the bounty is pinned to the statement, and below the
 // verdict, never in the assessment band. It carries, in the graph's voice: the
 // offer and what it is for; the house-attempt sentence; the submission count;
-// the sentence that separates the prize from the assessment; the button while
-// the prize is open; the explanatory paragraph with the owls-only payment
-// terms; the server-rendered state sentence; the submissions list with every
+// the sentence that separates the prize from the assessment; the one-line
+// gloss on what an owl is, with the rules; the button while the prize is
+// open; the explanatory paragraph with the owls-only payment terms; the
+// server-rendered state sentence; the submissions list with every
 // outcome on the record; the house-attempt disclosure; the tax and sanctions
 // notice; and the rules version in force. Funder names never appear; Minerval
 // is named because the rules require a named sponsor. Rendered only once a
@@ -27,7 +28,7 @@ export function Prize({
 }) {
   if (!bounty || !isBountyShown(bounty.status)) return null;
   const live = isBountyLive(bounty.status);
-  const amount = formatUsd(bounty.amount_micro_usd);
+  const amount = formatOwls(bounty.amount_micro_usd);
   const attemptSentence = houseAttemptSentence(bounty.attempts ?? []);
   const claims = [...(prizeClaims ?? [])].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
   const windowDays = challengeWindowDays(bounty.amount_micro_usd);
@@ -46,6 +47,9 @@ export function Prize({
         {" "}Offering a prize does not change how this claim is assessed or how
         important the graph judges it to be; it says only that someone would
         like the question settled.
+      </p>
+      <p className="prize-gloss" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
+        {OWLS_GLOSS} <Link href="/prizes/rules">The rules →</Link>
       </p>
 
       {bounty.status === "open" && (
@@ -80,7 +84,7 @@ export function Prize({
         <p className="prize-state">
           <span className="sc">awarded</span>
           Paid to {bounty.awarded.credit_name} on {fmtDateLong(bounty.awarded.paid_at)}:{" "}
-          {formatUsd(bounty.awarded.amount_micro_usd)}, in owls.
+          {formatOwls(bounty.awarded.amount_micro_usd)}.
         </p>
       )}
 
@@ -111,7 +115,7 @@ export function Prize({
                 <span className="prize-sub-who">Minerval&rsquo;s solver</span>
                 <span className="prize-sub-meta">
                   {fmtDate(a.finished_at)} · {a.variant === "max" ? "maximum" : "standard"} effort ·{" "}
-                  {formatUsd(a.cost_micro_usd)} of compute ·{" "}
+                  {formatOwls(a.cost_micro_usd)} of compute ·{" "}
                   {a.outcome === "proof" || a.outcome === "disproof"
                     ? `produced a checked ${a.outcome}`
                     : "did not settle it"}

@@ -111,6 +111,7 @@ vi.mock("../../../../src/services/formalization-service.js", async (importOrigin
         witness_present: e.witness_present,
         correspondence: input.correspondence,
         review_notes: input.reviewNotes,
+        own_definitions: (input as { ownDefinitions?: boolean }).ownDefinitions === true,
         authored_by: input.authoredBy,
         model: input.model,
         created_by_run_id: input.runId,
@@ -532,6 +533,42 @@ describe("publish_formalization", () => {
     expect(noNote.success).toBe(false);
     expect(noNote.message).toMatch(/correspondence note is required/);
     expect(fake.elaborations).toHaveLength(0);
+  });
+
+  it("refuses own_definitions without a correspondence note, and records the flag with one", async () => {
+    const refused = JSON.parse(
+      await executeLeanTool(
+        "publish_formalization",
+        { ...base, correspondence: "", own_definitions: true },
+        steward
+      )
+    );
+    expect(refused.success).toBe(false);
+    expect(refused.message).toMatch(/own_definitions is set but the correspondence note is empty/);
+    expect(refused.message).toMatch(/Steward's own/);
+    expect(fake.elaborations).toHaveLength(0);
+    expect(mocks.stored).toHaveLength(0);
+
+    const recorded = JSON.parse(
+      await executeLeanTool(
+        "publish_formalization",
+        {
+          ...base,
+          correspondence:
+            "The definition is the Steward's own; it follows Erdős and Turán (1941), and Mathlib has none.",
+          own_definitions: true,
+        },
+        steward
+      )
+    );
+    expect(recorded.success).toBe(true);
+    expect(recorded.own_definitions).toBe(true);
+    expect(mocks.stored[0]).toMatchObject({ own_definitions: true });
+
+    // Unstated, the flag is false.
+    const plain = JSON.parse(await executeLeanTool("publish_formalization", base, steward));
+    expect(plain.success).toBe(true);
+    expect(plain.own_definitions).toBe(false);
   });
 
   describe("the second pass", () => {

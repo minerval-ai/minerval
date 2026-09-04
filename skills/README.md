@@ -32,6 +32,21 @@ One document per domain serves every role. The loader splices each role's
 view from the same file, so the Steward's verification procedure and the
 Reviewer's criteria cannot drift apart.
 
+The format is the Agent Skills standard (agentskills.io): a directory named
+for the skill, a `SKILL.md` with YAML frontmatter (`name`, `description`,
+optional `metadata`) and a Markdown body, and any bundled files beside it.
+A standard skill loader could read these files as they are, and the
+`plugin/skills/` directory shows the same format serving Claude Code. What
+is Minerval's own is small and deliberate: the body's H2 sections are
+addressed to roles so one document serves every administrator, and
+`src/llm/prompts/skills.ts` splices a role's view into the system prompt as
+a cached block rather than letting an agent load the file on demand, because
+an administrator's prompt is public and versioned and must not vary with
+what the agent chose to read. The standard's progressive disclosure (a
+skill's longer references loaded only when needed) is not built; a skill
+that outgrows one file would add a reference directory and a read tool, and
+the loader would leave the prompt block as it is.
+
 ## SKILL.md
 
 The file opens with YAML frontmatter:

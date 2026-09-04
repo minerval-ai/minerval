@@ -10,17 +10,24 @@
  * (kind owls, provider internal, withholding computed), then the owl_ledger
  * `prize_award` row net of withholding under the idempotency key
  * `prize:<prize_claim_id>:owls` in daily tranches of at most
- * PRIZE_OWL_TRANCHE_USD, increments contributors.owls_prized_micro_usd,
- * posts the fund's owl_prize debit at the cash amount and a
- * withholding_remitted debit for any withholding, marks the claim paid, and
- * supersedes the other non-tie-group claims. Everything money-moving runs
- * in one transaction under a row lock, so two racing payouts produce one.
+ * PRIZE_OWL_TRANCHE_OWLS, increments contributors.owls_prized_micro_usd,
+ * marks the claim paid, and supersedes the other non-tie-group claims.
+ * Everything money-moving runs in one transaction under a row lock, so two
+ * racing payouts produce one.
+ *
+ * The payout row is the record that consumes the posting mandate's hold:
+ * from that row onward the mandate's committed money counts the gross
+ * amount (prize-commitment.ts), the way a regrant is counted rather than
+ * moved, and the bounty's hold lapses when it closes. Withholding stays on
+ * the row as the platform's own tax remittance; the mandate is consumed for
+ * the gross amount it offered. A defect award is a payout row too. No fund
+ * is debited, because none exists.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { loadConfig, type Config } from "../config.js";
 import { OWL_REASONS } from "./owl-ledger-service.js";
-import { asRunner, postOwlPrizeDebit, postWithholdingRemitted, postDefectAward, type Runner } from "./prize-pool-service.js";
-import { getBountyById, closeBounty, formatUsd, usdToMicro, setBountyStatus } from "./bounty-service.js";
+import { asRunner, type Runner } from "./query-runner.js";
+import { getBountyById, closeBounty, formatOwls, owlsToMicro, setBountyStatus } from "./bounty-service.js";
 import {
   claimsToSupersede,
   getPrizeClaimById,
@@ -70,7 +77,7 @@ export function trancheKey(prizeClaimId: string, index: number): string {
 }
 
 /**
- * Daily tranches of at most PRIZE_OWL_TRANCHE_USD (§8.7, §9.1): the first
+ * Daily tranches of at most PRIZE_OWL_TRANCHE_OWLS (§8.7, §9.1): the first
  * written at payment, one more each UTC day. A pure function of the net
  * amount, the tranche size, and the payment time, so the sweep recomputes
  * the schedule instead of storing it.
@@ -79,9 +86,9 @@ export function trancheSchedule(
   prizeClaimId: string,
   netMicroUsd: number,
   paidAt: Date,
-  trancheUsd: number
+  trancheOwls: number
 ): Tranche[] {
-  const size = Math.max(1, usdToMicro(trancheUsd));
+  const size = Math.max(1, owlsToMicro(trancheOwls));
   const out: Tranche[] = [];
   let remaining = Math.max(0, Math.round(netMicroUsd));
   let i = 0;
@@ -271,9 +278,9 @@ export type PayPrizeRefusal = { ok: false; code: PayRefusalCode; message: string
 
 /**
  * Pay the prize (§8.7). One transaction under `FOR UPDATE` on the prize
- * claim: the payout row, the first owl tranche, the contributor's prized
- * total, the fund's debits, the claim to `paid`, supersession, and the
- * bounty to `paid` once its tie group is terminal.
+ * claim: the payout row (the record that consumes the mandate's hold), the
+ * first owl tranche, the contributor's prized total, the claim to `paid`,
+ * supersession, and the bounty to `paid` once its tie group is terminal.
  */
 export async function payPrize(
   prizeClaimId: string,
@@ -327,7 +334,7 @@ export async function payPrize(
       treatyPosition: !!payee.treaty_position,
     });
     const net = gross - withholding;
-    const schedule = trancheSchedule(pc.id, net, now, config.prizeOwlTrancheUsd);
+    const schedule = trancheSchedule(pc.id, net, now, config.prizeOwlTrancheOwls);
     const first = schedule[0];
 
     const [payout] = await tx.query<{ id: string }>(
@@ -358,28 +365,9 @@ export async function payPrize(
         [granted, pc.claimant_id]
       );
     }
-    if (pc.status === "defect_award_pending") {
-      await postDefectAward(
-        { poolId: bounty.pool_id, amountMicroUsd: gross, bountyId: bounty.id, prizeClaimId: pc.id, idempotencyKey: `defect_award:${pc.id}` },
-        tx
-      );
-    } else {
-      if (net > 0) {
-        await postOwlPrizeDebit(
-          { poolId: bounty.pool_id, amountMicroUsd: net, bountyId: bounty.id, prizeClaimId: pc.id, idempotencyKey: `owl_prize:${pc.id}` },
-          tx
-        );
-      }
-      if (withholding > 0) {
-        await postWithholdingRemitted(
-          { poolId: bounty.pool_id, amountMicroUsd: withholding, bountyId: bounty.id, prizeClaimId: pc.id, idempotencyKey: `withholding:${pc.id}` },
-          tx
-        );
-      }
-    }
     const moved = await transitionPrizeClaim(tx, pc.id, pc.status, "paid", {
       actor,
-      reason: `${formatUsd(gross)} paid in owls (${formatUsd(net)} net of ${formatUsd(withholding)} withholding) in ${schedule.length} tranche(s)`,
+      reason: `${formatOwls(gross)} paid (${formatOwls(net)} net of ${formatOwls(withholding)} withholding) in ${schedule.length} tranche(s); the payout row consumes the mandate's hold`,
     });
     if (!moved) return { ok: false, code: "NOT_PAYABLE", message: "the prize claim moved while being paid" };
 
@@ -399,7 +387,7 @@ export async function payPrize(
       }
       const settled = tieGroupSettled(await listPrizeClaimsForBounty(pc.bounty_id, tx), me);
       if (settled) {
-        await closeBounty(bounty.id, "paid", `settled by a checked proof submitted by ${pc.credit_name ?? "a contributor"}; prize of ${formatUsd(gross)} paid`, tx);
+        await closeBounty(bounty.id, "paid", `settled by a checked proof submitted by ${pc.credit_name ?? "a contributor"}; prize of ${formatOwls(gross)} paid`, tx);
         bountyStatus = "paid";
       } else {
         await setBountyStatus(tx, bounty.id, ["open", "claim_pending"], "claim_pending", "a tie-group member was paid; the bounty closes when every member is terminal");
@@ -449,7 +437,7 @@ export async function sweepPrizeTranches(now = new Date(), config: Config = load
   let written = 0;
   for (const row of rows) {
     const net = Number(row.amount_micro_usd) - Number(row.withholding_micro_usd);
-    const schedule = trancheSchedule(row.prize_claim_id, net, new Date(row.paid_at), config.prizeOwlTrancheUsd);
+    const schedule = trancheSchedule(row.prize_claim_id, net, new Date(row.paid_at), config.prizeOwlTrancheOwls);
     let allLanded = true;
     for (const t of schedule) {
       if (new Date(t.due_at).getTime() > now.getTime()) {
@@ -510,7 +498,7 @@ export async function clawbackPrizeOwls(input: {
     await tx.query(`UPDATE contributors SET owls_prized_micro_usd = owls_prized_micro_usd - $1 WHERE id = $2`, [total, pc.claimant_id]);
     await tx.query(
       `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'prize_claim:clawback', $2, $3)`,
-      [pc.claim_id, `prize claim ${pc.id}: ${formatUsd(total)} of prize owls reversed: ${input.reason}`, input.actor]
+      [pc.claim_id, `prize claim ${pc.id}: ${formatOwls(total)} of prize owls reversed: ${input.reason}`, input.actor]
     );
     return { reversed_micro_usd: total };
   });

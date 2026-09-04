@@ -45,7 +45,7 @@ import {
   withdrawBounty,
   getBountyById,
   getLiveBountyForClaim,
-  formatUsd,
+  formatOwls,
 } from "../../services/bounty-service.js";
 
 export interface GrantMandate {
@@ -684,29 +684,33 @@ export function getBountyToolDefinitions(): Tool[] {
     {
       name: "post_bounty",
       description:
-        "Post a bounty (docs/mathematics.md §8.1, §10.4): cash from the " +
-        "mathematics prize fund for a Lean proof or disproof of the claim's " +
-        "published formal statement. Mechanical bounds: the statement's " +
-        "review period has ended and the platform's solver attempted it " +
-        "without settling it; cash between MIN and MAX per claim; the " +
-        "per-pass and per-day fractions of the fund; the fund's available " +
-        "balance covers it; one live bounty per claim. Every posting is " +
-        "TWO-PASS: the first call records the request; only a call from a " +
-        "LATER pass (a fresh context re-judging the mission) opens it. At " +
-        "or above the autonomy threshold the posting waits for a person's " +
-        "confirmation. State the reasoning publicly in the rationale: the " +
-        "discourse's gain from a settled answer, the effort the problem " +
-        "appears to require, and the fund's state. Amounts never feed back " +
-        "into importance.",
+        "Post a bounty (docs/mathematics.md §8.1, §10.4): owls from this " +
+        "mandate's own escrow, offered for a Lean proof or disproof of the " +
+        "claim's published formal statement and held against the escrow " +
+        "from the day it opens until it resolves. Mechanical bounds: the " +
+        "statement's review period has ended and the platform's solver " +
+        "attempted it without settling it; between the minimum and the " +
+        "maximum owls per claim; the per-pass and per-day fractions of the " +
+        "escrow; the mandate's headroom (budget less committed money) " +
+        "covers it; one live bounty per claim. Every posting is TWO-PASS: " +
+        "the first call records the request; only a call from a LATER pass " +
+        "(a fresh context re-judging the mission) opens it. At or above the " +
+        "autonomy threshold the posting waits for a person's confirmation. " +
+        "State the reasoning publicly in the rationale: the discourse's " +
+        "gain from a settled answer, the effort the problem appears to " +
+        "require, the mandate's headroom and open bounties, and, where this " +
+        "mandate also funds attempts, why a prize is the better use of " +
+        "those owls than another attempt. Amounts never feed back into " +
+        "importance.",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_id: { type: "string" },
-          cash_usd: { type: "number" },
+          owls: { type: "number", description: "The amount, in owls." },
           expires_in_days: { type: "number" },
           rationale: { type: "string" },
         },
-        required: ["claim_id", "cash_usd", "rationale"],
+        required: ["claim_id", "owls", "rationale"],
       },
     },
     {
@@ -751,7 +755,7 @@ async function executePostBounty(
   opts: ManagementToolOptions
 ): Promise<string> {
   const claimId = String(toolInput.claim_id ?? "");
-  const cashUsd = Number(toolInput.cash_usd ?? 0);
+  const owls = Number(toolInput.owls ?? 0);
   const rationale = String(toolInput.rationale ?? "").trim();
   if (!UUID_RE.test(claimId)) return JSON.stringify({ success: false, problem: "claim_id must be a claim id from your survey" });
   if (!rationale) return JSON.stringify({ success: false, problem: "rationale is required; it is the public reasoning for the posting" });
@@ -772,7 +776,7 @@ async function executePostBounty(
     live.id === pending?.bounty_id &&
     (live.status === "requested" || live.status === "confirm_pending");
   if (!confirmable) {
-    const res = await requestBounty({ claimId, cashUsd, expiresInDays: Number(toolInput.expires_in_days) || null, rationale, grantId, passStartedAt });
+    const res = await requestBounty({ claimId, owls, expiresInDays: Number(toolInput.expires_in_days) || null, rationale, grantId, passStartedAt });
     if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
     await rawQuery(
       `UPDATE grants
@@ -780,11 +784,11 @@ async function executePostBounty(
                 COALESCE(mandate, '{}'::jsonb),
                 ARRAY['bounty_requests', $2::text],
                 jsonb_build_object('at', to_jsonb(now()), 'bounty_id', $3::text,
-                                   'cash_usd', $4::numeric, 'rationale', $5::text),
+                                   'owls', $4::numeric, 'rationale', $5::text),
                 true),
               updated_at = now()
         WHERE id = $1`,
-      [grantId, claimId, res.bounty_id, cashUsd, rationale]
+      [grantId, claimId, res.bounty_id, owls, rationale]
     );
     return JSON.stringify({
       success: true,
@@ -811,7 +815,7 @@ async function executePostBounty(
       bounty_id: opened.bounty_id,
       status: "confirm_pending",
       note:
-        `${formatUsd(live!.amount_micro_usd)} is at or above the autonomy threshold; the posting waits for a ` +
+        `${formatOwls(live!.amount_micro_usd)} is at or above the autonomy threshold; the posting waits for a ` +
         `person's confirmation (POST /bounties/${opened.bounty_id}/confirm with the operator key` +
         (opts.confirmedBy ? ", or the funder here" : "") +
         `). Say so in your note.`,
@@ -822,8 +826,8 @@ async function executePostBounty(
     opened: true,
     bounty_id: opened.bounty_id,
     status: "open",
-    amount: formatUsd(live!.amount_micro_usd),
-    note: "Bounty OPEN: the offer is public on the claim page and the prize listing under the rules in force.",
+    amount: formatOwls(live!.amount_micro_usd),
+    note: "Bounty OPEN: the offer is public on the claim page and the prize listing under the rules in force, and its amount is held against this mandate's escrow until it resolves.",
   });
 }
 

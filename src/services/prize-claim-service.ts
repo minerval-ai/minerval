@@ -21,11 +21,11 @@ import { awardContributionOwls, owlsForImportance } from "./contribution-award-s
 import { emitClaimEvent } from "./claim-events-service.js";
 import { retireFormalization } from "./formalization-service.js";
 import type { PrizeClaimStatus, PrizeClaimSummary } from "./claim-extras-types.js";
-import { asRunner, type Runner } from "./prize-pool-service.js";
+import { asRunner, type Runner } from "./query-runner.js";
 import {
   PLATFORM_EXTERNAL_ID,
   PRIZE_RULES_VERSION,
-  formatUsd,
+  formatOwls,
   getBountyById,
   getLiveBountyForClaim,
   getPlatformAccountId,
@@ -33,7 +33,7 @@ import {
   reserveRoomMicroUsd,
   setBountyStatus,
   closeBounty,
-  usdToMicro,
+  owlsToMicro,
   NON_TERMINAL_PRIZE_CLAIM_STATUSES,
   type BountyRow,
 } from "./bounty-service.js";
@@ -111,10 +111,10 @@ export const QUEUE_HOLDING_STATUSES: readonly PrizeClaimStatus[] = [
 
 export function challengeWindowDays(
   amountMicroUsd: number,
-  config: Pick<Config, "prizeChallengeWindowDaysSmall" | "prizeChallengeWindowDaysLarge" | "prizeWindowTierUsd"> = loadConfig()
+  config: Pick<Config, "prizeChallengeWindowDaysSmall" | "prizeChallengeWindowDaysLarge" | "prizeWindowTierOwls"> = loadConfig()
 ): number {
   const days =
-    amountMicroUsd >= usdToMicro(config.prizeWindowTierUsd)
+    amountMicroUsd >= owlsToMicro(config.prizeWindowTierOwls)
       ? config.prizeChallengeWindowDaysLarge
       : config.prizeChallengeWindowDaysSmall;
   return Math.max(14, days);
@@ -312,11 +312,11 @@ export interface SignoffInput {
 /** Human sign-off is required before payable when any of §8.5's conditions holds. */
 export function signoffRequired(
   input: SignoffInput,
-  config: Pick<Config, "prizeHumanSignoffUsd" | "prizeHumanSignoffImportance"> = loadConfig()
+  config: Pick<Config, "prizeHumanSignoffOwls" | "prizeHumanSignoffImportance"> = loadConfig()
 ): { required: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (input.amountMicroUsd >= usdToMicro(config.prizeHumanSignoffUsd)) {
-    reasons.push(`the prize is at or above ${formatUsd(usdToMicro(config.prizeHumanSignoffUsd))}`);
+  if (input.amountMicroUsd >= owlsToMicro(config.prizeHumanSignoffOwls)) {
+    reasons.push(`the prize is at or above ${formatOwls(owlsToMicro(config.prizeHumanSignoffOwls))}`);
   }
   if (input.importance >= config.prizeHumanSignoffImportance) {
     reasons.push(`the claim's importance is at or above ${config.prizeHumanSignoffImportance}`);
@@ -1220,7 +1220,7 @@ export async function acceptPrizeClaim(input: {
     dedupeKey: `prize_claim:${input.prizeClaimId}:${decisionId}`,
     context:
       `The Claim Steward accepted prize claim ${input.prizeClaimId} on claim ${outcome.bounty!.claim_id} ` +
-      `(bounty ${outcome.bounty!.id}, ${formatUsd(outcome.bounty!.amount_micro_usd)}; category ${input.resultCategory}). ` +
+      `(bounty ${outcome.bounty!.id}, ${formatOwls(outcome.bounty!.amount_micro_usd)}; category ${input.resultCategory}). ` +
       `Review the acceptance fully against the Mathematics skill's audit checklist: statement fidelity, ` +
       `claimant eligibility, the checker record, prior submissions, and the served model` +
       (input.run.fallbackRan ? " (a fallback model served this decision: send it back for fresh review)" : "") +
@@ -1275,11 +1275,11 @@ export async function rejectPrizeClaimBySteward(input: {
       if (!input.statementDefect?.trim()) return { ok: false, message: "statement_defect must say what the statement got wrong" };
       const award = Math.min(
         Math.floor(bounty.amount_micro_usd * config.prizeDefectAwardFraction),
-        usdToMicro(config.prizeDefectAwardCapUsd)
+        owlsToMicro(config.prizeDefectAwardCapOwls)
       );
       const moved = await transitionPrizeClaim(tx, pc.id, "in_review", "defect_award_pending", {
         actor: input.actor,
-        reason: `the submission exposed a statement defect; defect award of ${formatUsd(award)} recorded: ${input.statementDefect}`,
+        reason: `the submission exposed a statement defect; defect award of ${formatOwls(award)} recorded: ${input.statementDefect}`,
         set: { stewardDecision: decision, resultCategory: "statement_defect", defectAwardMicroUsd: award, auditOutcome: null },
       });
       if (!moved) return { ok: false, message: "another decision landed first" };
@@ -1315,7 +1315,7 @@ export async function rejectPrizeClaimBySteward(input: {
       dedupeKey: `prize_claim:${input.prizeClaimId}:${decisionId}`,
       context:
         `The Claim Steward found a statement defect through prize claim ${input.prizeClaimId} on claim ` +
-        `${outcome.bounty!.claim_id} and recorded a defect award of ${formatUsd(outcome.defect_award_micro_usd ?? 0)}. ` +
+        `${outcome.bounty!.claim_id} and recorded a defect award of ${formatOwls(outcome.defect_award_micro_usd ?? 0)}. ` +
         `Audit the finding as you would an acceptance, and record the outcome with record_prize_audit_outcome.`,
     }).catch(() => null);
     const { bounty: _b, formalizationId: _f, ...rest } = outcome;
@@ -1615,7 +1615,7 @@ export async function forfeitOverduePrizeClaims(now = new Date()): Promise<strin
     await withTransaction(async (tx) => {
       const moved = await transitionPrizeClaim(tx, row.id, ["payable", "defect_award_pending"], "forfeited", {
         actor: "prize_window_closer",
-        reason: `the winner's steps were not completed within ${config.prizePayeeStepsDays} days; the reservation returns to the fund`,
+        reason: `the winner's steps were not completed within ${config.prizePayeeStepsDays} days; the hold on the mandate's escrow lapses`,
       });
       if (!moved) return;
       forfeited.push(row.id);

@@ -16,7 +16,7 @@ import {
   seedVerity, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
-import { formatUsd } from "@/lib/format";
+import { formatOwls } from "@/lib/format";
 import { liveBountyMicro } from "@/lib/prizes";
 import { ArgumentText } from "@/components/ArgumentText";
 import { Term } from "@/components/Term";
@@ -132,7 +132,7 @@ interface PreviewState {
 const MAP_KEY = {
   claim: "A box is a claim: a single proposition the graph assesses, with its own page and map. Click any claim to centre the map on it.",
   argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Arguments are not destinations; click their claims to explore.",
-  prize: "A double ring marks a claim with a live prize: an amount offered for a machine-checked proof or disproof of its published formal statement. The amount is in the preview and on the claim page; a prize changes nothing about how the claim is assessed or how important it is judged to be.",
+  prize: "A double ring marks a claim with a live prize: an amount in owls offered for a machine-checked proof or disproof of its published formal statement. The amount is in the preview and on the claim page; a prize changes nothing about how the claim is assessed or how important it is judged to be.",
   checked: "⊢ marks a claim whose published formal statement has a machine-checked proof or disproof. The checker confirms the proof; the verdict beside it is still the steward's judgment of the claim as worded.",
 } as const;
 
@@ -174,13 +174,15 @@ const BED_CLS: Record<string, string> = {
 };
 
 // The two mathematics marks after a chip's status glyph (docs/mathematics.md
-// §8.3): $ for a live prize, ⊢ for a machine-checked statement. Text, not
-// colour, so the meaning survives the tier-3 minims' size and any palette.
+// §8.3): ¤ for a live prize (a prize is owls, never dollars, so the mark is
+// the generic currency sign rather than a dollar sign), ⊢ for a
+// machine-checked statement. Text, not colour, so the meaning survives the
+// tier-3 minims' size and any palette.
 function Marks({ bits }: { bits: ClaimBits }) {
   return (
     <>
       {bits.prizeMicroUsd != null && (
-        <span className={styles.prizeMark} aria-label={`prize ${formatUsd(bits.prizeMicroUsd)}`}>$</span>
+        <span className={styles.prizeMark} aria-label={`prize ${formatOwls(bits.prizeMicroUsd)}`}>¤</span>
       )}
       {bits.checked && (
         <span className={styles.checkMark} aria-label={`machine-checked ${bits.checked}`}>⊢</span>
@@ -665,7 +667,7 @@ export function GraphView({
               )}
               {focusMarks.prizeMicroUsd != null && (
                 <span className={styles.focusPrize} title={MAP_KEY.prize}>
-                  Prize: {formatUsd(focusMarks.prizeMicroUsd)} · open
+                  Prize: {formatOwls(focusMarks.prizeMicroUsd)} · open
                 </span>
               )}
             </div>
@@ -1057,7 +1059,7 @@ export function GraphView({
                     </div>
                     {c.prizeMicroUsd != null && (
                       <div className={styles.previewPrize} title={MAP_KEY.prize}>
-                        Prize: {formatUsd(c.prizeMicroUsd)} · open
+                        Prize: {formatOwls(c.prizeMicroUsd)} · open
                       </div>
                     )}
                     {/* Verdict confidence is meta ("is the badge right?"), so

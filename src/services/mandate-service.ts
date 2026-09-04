@@ -56,13 +56,14 @@ interface GrantRow {
   job_status: string;
   funder_user_id: string;
   manager_name: string;
+  skills: string[] | null;
   created_at: Date | null;
 }
 
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
-         g.funder_user_id, g.created_at,
+         g.funder_user_id, g.skills, g.created_at,
          j.budget_micro_usd, j.status AS job_status,
          COALESCE(c.display_name, 'a Minerval user') AS manager_name
     FROM grants g
@@ -238,6 +239,8 @@ export interface MandateDetail extends MandateSummary {
   }>;
   /** Non-empty exactly when the mandate ingests: the pipeline view. */
   pipeline: SourcePipelineRow[];
+  /** The domain skills the mandate's Grantmaker carries (skill names). */
+  skills: string[];
   /** Set only for the manager: the conversation to keep talking in. */
   conversation_id?: string;
   is_manager?: boolean;
@@ -335,6 +338,7 @@ export async function getPublicMandate(
       assessed_at: f.assessed_at?.toISOString() ?? null,
     })),
     pipeline,
+    skills: Array.isArray(row.skills) ? row.skills : [],
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
       : {}),

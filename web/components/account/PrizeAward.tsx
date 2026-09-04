@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { OpenPrizeClaim } from "@/lib/types";
-import { formatUsd, fmtDate, fmtDateLong, daysUntil } from "@/lib/format";
+import { formatOwls, fmtDate, fmtDateLong, daysUntil } from "@/lib/format";
 import { PRIZE_PAYEE_STEPS_DAYS, prizeClaimNextStep, prizeClaimStateLabel } from "@/lib/prizes";
 
 // "Your prize" (docs/mathematics.md §8.7): what the winner sees on the account
@@ -280,8 +280,7 @@ function TaxFormUpload({ claim }: { claim: OpenPrizeClaim }) {
 }
 
 function Award({ claim }: { claim: OpenPrizeClaim }) {
-  const amount = formatUsd(claim.amount_micro_usd);
-  const owls = Math.floor(claim.amount_micro_usd / 1_000_000);
+  const amount = formatOwls(claim.amount_micro_usd);
   const daysLeft = daysUntil(claim.payee_deadline_at);
   return (
     <div className="prize-award">
@@ -301,11 +300,11 @@ function Award({ claim }: { claim: OpenPrizeClaim }) {
         )}
       </p>
       <p>
-        The prize is paid in owls, one owl per dollar: {owls.toLocaleString("en-US")} owls, less any
-        withholding the law requires. Owls are Minerval&rsquo;s unit of account for metered work on
-        the graph: assessments, deeper passes, and mandates you direct. They do not expire, cannot be
-        transferred, are not refundable, and are never redeemable for cash. The prize is reported for
-        tax at its dollar value.
+        The prize is stated and paid in owls: {amount}, less any withholding the law requires.
+        Owls are Minerval&rsquo;s unit of account for metered work on the graph, valued at one
+        dollar of metered cost each: assessments, deeper passes, and mandates you direct. They do
+        not expire, cannot be transferred, are not refundable, and are never redeemable for cash.
+        The prize is reported for tax at that value.
       </p>
       {(claim.status === "payable" || claim.status === "defect_award_pending") && (
         <>
@@ -317,7 +316,7 @@ function Award({ claim }: { claim: OpenPrizeClaim }) {
                 {daysLeft != null && <> ({daysLeft} day{daysLeft === 1 ? "" : "s"} left)</>}
               </>
             )}
-            . A prize whose steps are not completed in time lapses, and the reservation returns to the fund.
+            . A prize whose steps are not completed in time lapses, and its hold on the mandate&rsquo;s escrow lapses with it.
           </p>
           <ol className="prize-steps">
             <li>
@@ -342,7 +341,7 @@ function Award({ claim }: { claim: OpenPrizeClaim }) {
           <p className="prize-fine">
             Prizes are income to the winner. Minerval reports and withholds as United States law
             requires: a 1099-MISC at the statutory threshold for a U.S. person, and a 1042-S with
-            withholding for everyone else. The grant is made in daily tranches of at most $2,000.
+            withholding for everyone else. The grant is made in daily tranches of at most 2,000 owls.
           </p>
         </>
       )}
@@ -375,7 +374,7 @@ export function PrizeAward({ claims }: { claims: OpenPrizeClaim[] }) {
                 <tr key={c.id}>
                   <td>
                     <Link href={`/claims/${c.claim_id}`}>{c.claim_text}</Link>{" "}
-                    <span style={{ color: "var(--faint)" }}>· {formatUsd(c.amount_micro_usd)} · {c.direction}</span>
+                    <span style={{ color: "var(--faint)" }}>· {formatOwls(c.amount_micro_usd)} · {c.direction}</span>
                   </td>
                   <td>{fmtDate(c.submitted_at)}</td>
                   <td>{prizeClaimStateLabel(c)}</td>

@@ -15,6 +15,7 @@ import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
 import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
+import { prizeCommitmentSql } from "./prize-commitment.js";
 
 /**
  * Escrow owls into a job behind the balance guard: the hold is written only
@@ -281,14 +282,18 @@ export async function refundUnspentBudget(job: {
   // as shares, so a self-funded run isn't double-counted). Regrants still
   // out live in their targets' budgets and are NOT refundable here; if a
   // target later settles, the source is closed by then and its share
-  // returns via the dead-source path below. A plain job (deep
-  // decomposition) is just its metered llm_usage, as before.
+  // returns via the dead-source path below. The prize term (bounties held
+  // against this escrow, prizes paid from it, the prize-review reserve) is
+  // excluded the same way: a held bounty is a public offer the escrow
+  // backs, and a paid prize was consumed. A plain job (deep decomposition)
+  // is just its metered llm_usage, as before.
   const [grant] = await rawQuery<{ id: string }>(
     `SELECT id FROM grants WHERE budget_job_id = $1`,
     [job.id]
   );
   let spent: number;
   let regrantsOut = 0;
+  let prizes = 0;
   if (grant) {
     // The mandate is closing: money still riding on open actions returns
     // to the escrow first, so it can neither fund runs after the refund
@@ -304,6 +309,7 @@ export async function refundUnspentBudget(job: {
       shares: number;
       nonledger: number;
       regrants: number;
+      prizes: number;
     }>(
       `SELECT
          COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
@@ -315,17 +321,19 @@ export async function refundUnspentBudget(job: {
                         WHERE metered_job_id = $2), 0))::bigint AS nonledger,
          COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
                      FROM regrants WHERE from_grant_id = $1), 0)::bigint
-           AS regrants`,
+           AS regrants,
+         ${prizeCommitmentSql("$1")} AS prizes`,
       [grant.id, job.id]
     );
     spent = Number(row?.shares ?? 0) + Number(row?.nonledger ?? 0);
     regrantsOut = Number(row?.regrants ?? 0);
+    prizes = Number(row?.prizes ?? 0);
   } else {
     spent = await getJobSpentMicroUsd(job.id);
   }
   const unspent = Math.max(
     0,
-    Number(job.budgetMicroUsd) - spent - regrantsOut
+    Number(job.budgetMicroUsd) - spent - regrantsOut - prizes
   );
   if (unspent <= 0) return 0;
 

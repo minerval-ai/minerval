@@ -43,7 +43,7 @@ import {
   solverDailyCapMicroUsd,
   solverSpentTodayMicroUsd,
 } from "../../src/llm/solver-budget.js";
-import { seedClaim, seedAction, OWL } from "./helpers.js";
+import { seedClaim, seedAction, seedUser, seedGrantWithJob, OWL } from "./helpers.js";
 
 async function seedFormalization(claimId: string, status = "published"): Promise<FormalizationRow> {
   const rows = await rawQuery<FormalizationRow>(
@@ -70,23 +70,22 @@ async function seedFormalization(claimId: string, status = "published"): Promise
   return rows[0]!;
 }
 
-async function seedPool(): Promise<string> {
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO prize_pools (domain) VALUES ($1) RETURNING id`,
-    [`dbtest-attempts-${randomUUID()}`]
-  );
-  return rows[0]!.id;
+/** The mandate a bounty holds against (§8.1). */
+async function seedPostingMandate(): Promise<string> {
+  const funder = await seedUser("attempts-bounty-mandate");
+  const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 2_500_000_000 });
+  return grantId;
 }
 
 async function seedBounty(claimId: string, formalizationId: string, status = "open"): Promise<string> {
-  const poolId = await seedPool();
+  const grantId = await seedPostingMandate();
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO bounties
-       (claim_id, formalization_id, pool_id, amount_micro_usd, status,
+       (claim_id, formalization_id, posted_by_grant_id, amount_micro_usd, status,
         rules_version, rationale, opened_at)
      VALUES ($1, $2, $3, 500000000, $4, 'rules-v1', 'DB-test bounty', now())
      RETURNING id`,
-    [claimId, formalizationId, poolId, status]
+    [claimId, formalizationId, grantId, status]
   );
   return rows[0]!.id;
 }
@@ -517,5 +516,157 @@ describe("the transcript and the cost series", () => {
       [cap]
     );
     expect(await solverSpentTodayMicroUsd()).toBe(spent);
+  });
+});
+
+describe("the platform's record", () => {
+  it("counts by outcome and variant with medians, splits novel proofs from rediscoveries, and narrows to a mandate", async () => {
+    const {
+      getAttemptStats,
+      resetAttemptStatsCache,
+    } = await import("../../src/services/attempt-stats-service.js");
+    const { seedUser, seedGrantWithJob } = await import("./helpers.js");
+    const funder = await seedUser("record-funder");
+    const { grantId: mathGrant } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 1000 * OWL });
+    const { grantId: otherGrant } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 1000 * OWL });
+
+    // A closed attempt under a grant: the action carries the variant, the
+    // close carries the outcome and the spend.
+    async function closed(input: {
+      grantId: string;
+      variant: "standard" | "max";
+      status?: "completed" | "refused" | "failed";
+      outcome?: "proof" | "disproof" | "partial" | "negative" | null;
+      spentOwls: number;
+      calibration?: boolean;
+      settledBefore?: boolean;
+      accepted?: boolean;
+    }) {
+      const claimId = await seedClaim(`record-${input.variant}`);
+      const formalization = await seedFormalization(claimId);
+      if (input.settledBefore) {
+        await rawQuery(
+          `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, assessed_at)
+           VALUES ($1, 'verified', 0.9, 'DB-test: settled before the attempt', now() - interval '1 day')`,
+          [claimId]
+        );
+      }
+      const actionId = await seedAction({
+        group: `attempt:${formalization.id}:1`,
+        variant: input.variant,
+        kind: "attempt_proof",
+        costMicroUsd: 100 * OWL,
+        status: "running",
+        claimId,
+      });
+      const r = await openAttempt({
+        action: { id: actionId, variant: input.variant, cost_est_micro_usd: 100 * OWL },
+        claimId,
+        formalization,
+        grantId: input.grantId,
+        planItem: input.calibration
+          ? { action: "attempt_proof", claim_id: claimId, rationale: "control", is_calibration: true }
+          : null,
+      });
+      if (!r.ok) throw new Error(`${r.code}: ${r.message}`);
+      let leanCheckId: string | null = null;
+      if (input.accepted) {
+        const check = await recordAttemptLeanCheck(acceptedCheck(r.attempt.id, formalization.id));
+        leanCheckId = check.id;
+      }
+      const c = await closeAttempt(r.attempt.id, {
+        status: input.status ?? "completed",
+        outcome: input.outcome ?? null,
+        leanCheckId,
+        spentMicroUsd: input.spentOwls * OWL,
+      });
+      if (input.status !== "refused" && input.status !== "failed") await publishAttempt(r.attempt.id);
+      return { claimId, attemptId: r.attempt.id, close: c! };
+    }
+
+    const novel = await closed({ grantId: mathGrant, variant: "max", outcome: "proof", spentOwls: 40, accepted: true });
+    const redis = await closed({ grantId: mathGrant, variant: "max", outcome: "disproof", spentOwls: 20, accepted: true, settledBefore: true });
+    await closed({ grantId: mathGrant, variant: "max", outcome: "negative", spentOwls: 60 });
+    await closed({ grantId: mathGrant, variant: "standard", outcome: "partial", spentOwls: 10 });
+    await closed({ grantId: mathGrant, variant: "standard", status: "refused", spentOwls: 1 });
+    const control = await closed({ grantId: mathGrant, variant: "standard", outcome: "proof", spentOwls: 5, calibration: true, accepted: true });
+    // Another mandate's attempt never enters this mandate's record.
+    await closed({ grantId: otherGrant, variant: "max", outcome: "proof", spentOwls: 99, accepted: true });
+    // A live attempt is not part of the record, but it is counted as live.
+    const live = await fixture("record-live");
+    await open(live, { grantId: mathGrant });
+
+    resetAttemptStatsCache();
+    const stats = await getAttemptStats(mathGrant);
+    expect(stats.grant_id).toBe(mathGrant);
+    expect(stats.totals).toEqual({ attempts: 6, live: 1, owls_spent: 136, median_cost_owls: 15 });
+    expect(stats.by_outcome).toEqual([
+      { outcome: "proved", count: 2, owls_spent: 45, median_cost_owls: 22.5 },
+      { outcome: "disproved", count: 1, owls_spent: 20, median_cost_owls: 20 },
+      { outcome: "lead", count: 1, owls_spent: 10, median_cost_owls: 10 },
+      { outcome: "no_result", count: 1, owls_spent: 60, median_cost_owls: 60 },
+      { outcome: "refused", count: 1, owls_spent: 1, median_cost_owls: 1 },
+    ]);
+    expect(stats.by_variant).toEqual([
+      { variant: "max", count: 3, settled: 2, owls_spent: 120, median_cost_owls: 40 },
+      { variant: "standard", count: 3, settled: 1, owls_spent: 16, median_cost_owls: 5 },
+    ]);
+    expect(stats.calibration_series).toMatchObject({
+      attempts: 1,
+      passes: 1,
+      pass_rate: 1,
+      owls_spent: 5,
+      cost_per_pass_owls: 5,
+    });
+    expect(stats.calibration_series.problems.map((p) => p.claim_id)).toEqual([control.claimId]);
+    expect(stats.calibration).toBeNull();
+    // The claim verified a day before the attempt closed is a rediscovery;
+    // the open claim's checked proof is a novel proof; the control is neither.
+    expect(stats.novel_proofs.count).toBe(1);
+    expect(stats.novel_proofs.items[0]).toMatchObject({
+      attempt_id: novel.attemptId,
+      claim_id: novel.claimId,
+      outcome: "proof",
+      variant: "max",
+      owls_spent: 40,
+    });
+    expect(stats.rediscoveries.items.map((i) => i.attempt_id).sort()).toEqual(
+      [redis.attemptId, control.attemptId].sort()
+    );
+
+    // The platform-wide record includes the other mandate's attempt.
+    resetAttemptStatsCache();
+    const all = await getAttemptStats(null);
+    expect(all.grant_id).toBeNull();
+    expect(all.totals.attempts).toBeGreaterThanOrEqual(7);
+    expect(all.novel_proofs.count).toBeGreaterThanOrEqual(2);
+
+    // An unpublished result on a claim with a live bounty is withheld: on the
+    // record's spend, under no outcome, in no list.
+    const held = await fixture("record-held");
+    await seedBounty(held.claimId, held.formalization.id, "open");
+    const heldAttempt = await open(held, { grantId: mathGrant });
+    const heldCheck = await recordAttemptLeanCheck(acceptedCheck(heldAttempt.id, held.formalization.id));
+    await closeAttempt(heldAttempt.id, {
+      status: "completed",
+      outcome: "proof",
+      leanCheckId: heldCheck.id,
+      spentMicroUsd: 33 * OWL,
+    });
+    resetAttemptStatsCache();
+    const withHeld = await getAttemptStats(mathGrant);
+    expect(withHeld.totals.attempts).toBe(7);
+    expect(withHeld.by_outcome.find((o) => o.outcome === "withheld")).toEqual({
+      outcome: "withheld",
+      count: 1,
+      owls_spent: 33,
+      median_cost_owls: 33,
+    });
+    expect(withHeld.by_outcome.find((o) => o.outcome === "proved")!.count).toBe(2);
+    expect(withHeld.novel_proofs.items.map((i) => i.attempt_id)).not.toContain(heldAttempt.id);
+
+    // The memo serves the computed record until it expires.
+    const again = await getAttemptStats(mathGrant);
+    expect(again).toBe(withHeld);
   });
 });

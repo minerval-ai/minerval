@@ -76,11 +76,12 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Mandate not found", code: "NOT_FOUND" });
       }
-      // The Prizes section (docs/mathematics.md §8.3): the fund's balance
-      // and reservation, bounties posted, prizes paid, the bounty table,
-      // and the house solver's attempts under this mandate. Prizes are
-      // paid from a separate fund, never from this mandate's compute
-      // budget; a failure in either must not hide the page.
+      // The Prizes section (docs/mathematics.md §8.3): the mandate's prize
+      // numbers (escrow, held in open bounties, paid, the review reserve,
+      // headroom), bounties posted, prizes paid, the bounty table, and the
+      // house solver's attempts under this mandate. A bounty holds against
+      // this mandate's own escrow; a failure in either must not hide the
+      // page.
       const [prizes, attempts] = await Promise.all([
         mandatePrizesBlock(request.params.id).catch(() => null),
         listMandateAttempts(request.params.id).catch(() => []),

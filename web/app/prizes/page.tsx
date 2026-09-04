@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { loadOpenPrizes } from "@/lib/data";
-import { formatUsd, fmtDate } from "@/lib/format";
+import { formatOwls, fmtDate } from "@/lib/format";
 import {
   BOUNTY_STATUS_LABEL, PRIZE_PAYMENT_SENTENCE, houseAttemptSentence, resolutionPhrase,
   submissionsPhrase,
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function PrizesPage() {
-  const { prizes, source } = await loadOpenPrizes(100);
+  const { prizes, mandates, source } = await loadOpenPrizes(100);
 
   return (
     <div className="col-wide">
@@ -54,9 +54,10 @@ export default async function PrizesPage() {
 
       {prizes.length === 0 ? (
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)" }}>
-          No prizes are open right now. A prize appears here when the
-          Mathematics mandate posts one on a claim whose formal statement has
-          passed its public review period.
+          No prizes are open right now. A prize appears here when a
+          mandate&rsquo;s Grantmaker posts one, from that mandate&rsquo;s own
+          escrow, on a claim whose formal statement has passed its public
+          review period.
         </p>
       ) : (
         <div className="cards">
@@ -70,7 +71,7 @@ export default async function PrizesPage() {
                   <div className="card-claim">{p.text}</div>
                 </Link>
                 <p className="prize-card-offer">
-                  <span className="prize-card-amount">{formatUsd(p.bounty.amount_micro_usd)}</span>
+                  <span className="prize-card-amount">{formatOwls(p.bounty.amount_micro_usd)}</span>
                   {" "}for a {resolutionPhrase(p.bounty.resolution)}
                   {p.bounty.opened_at && <> · open since {fmtDate(p.bounty.opened_at)}</>}
                   {" · "}{submissionsPhrase(p.bounty.submissions).replace(/\.$/, "").toLowerCase()}
@@ -105,13 +106,53 @@ export default async function PrizesPage() {
         </div>
       )}
 
+      {mandates.length > 0 && (
+        <>
+          <hr className="thin" />
+          <h2 style={{ fontSize: "1.05rem" }}>Where the prizes come from</h2>
+          <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", maxWidth: "44rem" }}>
+            A prize is owls held against the escrow of the mandate whose
+            Grantmaker posted it, from the day it opens until it resolves; the
+            payout consumes the hold. Each mandate&rsquo;s numbers are derived,
+            never stored, and a bounty opens only when the headroom covers it.
+          </p>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>mandate</th>
+                <th>escrow</th>
+                <th>held in open prizes</th>
+                <th>paid in prizes</th>
+                <th>review reserve</th>
+                <th>headroom</th>
+                <th>open</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mandates.map((m) => (
+                <tr key={m.grant_id}>
+                  <td className="alloc-label"><Link href={`/mandates/${m.grant_id}`}>{m.title}</Link></td>
+                  <td>{formatOwls(m.escrow_micro_usd)}</td>
+                  <td>{formatOwls(m.held_micro_usd)}</td>
+                  <td>{formatOwls(m.paid_micro_usd)}</td>
+                  <td>{formatOwls(m.review_reserve_micro_usd)}</td>
+                  <td>{formatOwls(m.headroom_micro_usd)}</td>
+                  <td>{m.open_bounties}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <hr className="thin" />
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-        Prizes are offered by Minerval, the sole obligor, from the mathematics
-        prize fund, which never posts more in open prizes than its balance.
-        Every attempt by Minerval&rsquo;s own solver on a prized statement is
-        public with its cost and its report before the prize opens, so an
-        outside claimant knows what has been tried.
+        Prizes are offered by Minerval, the sole obligor, in owls held against
+        the escrow of the mandate that posted each one; no mandate promises
+        the same owl to a prize and to an attempt. Every attempt by
+        Minerval&rsquo;s own solver on a prized statement is public with its
+        cost and its report before the prize opens, so an outside claimant
+        knows what has been tried.
       </p>
     </div>
   );

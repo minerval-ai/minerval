@@ -293,11 +293,11 @@ looks at the run.
 **Voiding and signing off a prize claim.** Both need the operator key and
 are written to `audit_log` with the credential kind and the acting person,
 as are the screening (`POST /prize-claims/:id/screening`), the owl grant
-(`POST /prize-claims/:id/pay`), and the check retry; the fund deposit,
-which has no claim to write against, is appended to the
-`prize_fund_deposits` platform flag instead.
+(`POST /prize-claims/:id/pay`), and the check retry. There is no deposit
+route: a prize is owls held against the escrow of the mandate that posted
+it, and a platform mandate's escrow is funded by the seed.
 Sign-off (`POST /prize-claims/:id/sign-off {note}`) is required before
-`payable` when the bounty is at or above `PRIZE_HUMAN_SIGNOFF_USD`, the
+`payable` when the bounty is at or above `PRIZE_HUMAN_SIGNOFF_OWLS`, the
 claim's importance is at or above `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, the
 contribution is in `human_review`, an Arbitrator outcome on a challenge was
 `human_review`, a second-opinion checker disagreed with the verdict, the
@@ -328,16 +328,18 @@ same tag, and deploy with the new digest; bump `checker_version` in
 `lean_checks` dedupe key includes it. Never delete an old tag: retired
 images stay in the registry so any historical verdict can be re-run.
 
-**Reconciling the prize fund.** Monthly, and before any bounty at or above
-the sign-off threshold opens: compare `prize_pool_entries` by reason
-against the operating account (each `platform_deposit` carries a
-`bank_reference`; each `owl_prize` matches one `prize_award` grant at the
-cash amount, net of any `withholding_remitted` entry; each `defect_award`
-and `review_award` names its claim), confirm `reserved` equals the sum over
-live bounties and `available` is never negative, and confirm that when
-every bounty is terminal `reserved` is zero. When a cash rail exists the
-same job compares the provider's ledger. A discrepancy is an
-`admin_adjust` entry with a note, never an edit of an existing row.
+**Reconciling the prize escrows.** Monthly, and before any bounty at or
+above the sign-off threshold opens: for each mandate with a live or paid
+bounty, confirm that its prize numbers (`GET /prizes`, and the mandate
+page) agree with the rows they are derived from (each bounty in a holding
+status is held at its amount; each `prize_payouts` row not `reversed`
+matches one `prize_award` grant net of its `withholding_micro_usd`, and is
+counted gross against the mandate; each prize-review reserve job names its
+bounty in its checkpoint), that the mandate's headroom is never negative,
+and that when every bounty of the mandate is terminal nothing is held.
+When a cash rail exists the same job compares the provider's ledger. A
+discrepancy is an `admin_adjust` entry with a note, never an edit of an
+existing row.
 
 ## Monitoring
 

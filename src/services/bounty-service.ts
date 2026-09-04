@@ -1,22 +1,35 @@
 /**
  * Bounties (docs/mathematics.md §8.1, §8.3, §8.5, §8.6): a public offer
- * bound to one published formal statement, drawn from the domain's prize
- * fund, posted by a mandate's Grantmaker in two passes and, at or above the
- * autonomy threshold, confirmed by a person.
+ * bound to one published formal statement, denominated in owls, posted by
+ * a mandate's Grantmaker in two passes and, at or above the autonomy
+ * threshold, confirmed by a person, and held against that mandate's escrow
+ * from the moment it opens until it resolves.
+ *
+ * There is no prize fund. A bounty's amount is a term in the posting
+ * mandate's committed money (prize-commitment.ts), beside allocation
+ * shares, non-ledger metered spend, and regrants out; the allocator, the
+ * regrant path, and the mandate's closing settlement read that one number,
+ * so a mandate never promises the same owl to an attempt and to a prize.
+ * A posting is bounded by the mandate's headroom (budget less committed)
+ * and by per-pass and per-day fractions of its escrow budget, and it takes
+ * the mandate's allocator lock, so a posting and an allocation pass
+ * serialize on the same headroom. When the prize is paid the payout row is
+ * the record and the hold becomes consumption; when the bounty expires, is
+ * withdrawn, or is settled by the platform's own solver, the hold lapses.
+ * Nothing is posted when a bounty opens or closes.
  *
  * Lifecycle: requested → confirm_pending → open → claim_pending → paid |
  * resolved_unpaid | open again; open → house_result_pending →
  * resolved_internally | open | rebinding; open → expired | withdrawn |
  * rebinding. `expires_at` and `withdraw_effective_at` are suspended while
  * any prize claim on the bounty is non-terminal, so a live claim never
- * loses its reservation. Nothing is posted to the fund when a bounty opens
- * or closes: the reservation is derived from the live statuses.
+ * loses its hold.
  *
  * The prize-review reserve (§8.6) is minted here when a bounty opens: owls
  * worth PRIZE_REVIEW_RESERVE_FRACTION of the amount, minted by the platform
- * at cost (an admin_adjust like the seed's, never a draw on the fund) into a
- * platform-owned budget job held for prize_review actions on this bounty's
- * claims, and released when the bounty closes.
+ * at cost into a platform-owned budget job held for prize_review actions
+ * on this bounty's claims, released when the bounty closes, and counted
+ * against the posting mandate through the same prize term.
  */
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
@@ -25,33 +38,37 @@ import { getOrCreateContributor } from "./contributor-service.js";
 import { requestAudit } from "./queue-service.js";
 import { emitClaimEvent } from "./claim-events-service.js";
 import { checkedKindSql } from "./formalization-service.js";
-import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
+import { owlCostMicroUsd, owlsToMicroUsd } from "./owl.js";
+import { grantCommittedMicroUsd } from "./regrant-service.js";
+import { asRunner, type Runner } from "./query-runner.js";
 import {
-  asRunner,
-  getOrCreatePool,
-  poolNumbers,
-  PRIZE_DOMAIN_MATHEMATICS,
-  type Runner,
-} from "./prize-pool-service.js";
+  HOLDING_BOUNTY_STATUSES,
+  PRIZE_RESERVE_JOB_KIND,
+  isHoldingBountyStatus,
+  prizeCommitmentBreakdown,
+} from "./prize-commitment.js";
+import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
+
+export { HOLDING_BOUNTY_STATUSES, PRIZE_RESERVE_JOB_KIND, isHoldingBountyStatus };
 
 // ---------------------------------------------------------------------------
 // Rules version and money units
 // ---------------------------------------------------------------------------
 
 /** The official-rules version in force (§8.10); every bounty and claim records it. */
-export const PRIZE_RULES_VERSION = "2026-09-01";
+export const PRIZE_RULES_VERSION = "2026-09-04";
 
 /** The rules text the API serves at GET /prizes/rules, in the graph's voice. */
 export const PRIZE_RULES_TEXT = `Minerval prize rules, version ${PRIZE_RULES_VERSION}
 
 1. Sponsor. Minerval is the sole obligor of every prize offered on the site. No other person holds funds for a claimant or owes a claimant anything.
 2. What is offered. A prize, in the amount shown on the claim page, for the first eligible submission that the checker accepts as a proof or disproof of the formal statement identified on that page by its version, pin, and hashes, and that the claim's steward accepts as faithful to the claim, after the challenge window closes without a successful challenge.
-3. The formal statement is the contract. What counts as a solution is the statement as published, under the named Lean toolchain and Mathlib revision, with the allowed axioms propext, Classical.choice, and Quot.sound only, and with the static policy published with these rules. If the statement is found not to say what the claim says, the prize is not owed for proving it; a claimant whose submission exposes the defect receives the defect award of ten percent of the prize, at most $500, drawn from the prize; and the prize re-binds to the corrected statement after fourteen days' notice and the corrected statement's own review period, less any defect award paid.
-4. Eligibility. Natural persons aged 18 or over; one payee per submission; not Minerval, its contractors on this program, or funders of the Mathematics mandate; not residents of jurisdictions where the prize cannot lawfully be paid, including comprehensively sanctioned jurisdictions and, for now, Italy and Brazil. Entry is free. Purchasing anything from Minerval confers no advantage.
+3. The formal statement is the contract. What counts as a solution is the statement as published, under the named Lean toolchain and Mathlib revision, with the allowed axioms propext, Classical.choice, and Quot.sound only (Lean's standard classical foundation), and with the static policy published with these rules. If the statement is found not to say what the claim says, the prize is not owed for proving it; a claimant whose submission exposes the defect receives the defect award of ten percent of the prize, at most 500 owls, drawn from the prize; a person who exposes a defect during the statement's public review period, before any prize is offered, receives a fixed review award of 100 owls; and the prize re-binds to the corrected statement after fourteen days' notice and the corrected statement's own review period, less any defect award paid.
+4. Eligibility. Natural persons aged 18 or over; one payee per submission; not Minerval, its contractors on this program, or a person who funded the mandate that posted the prize; not residents of jurisdictions where the prize cannot lawfully be paid, including comprehensively sanctioned jurisdictions and, for now, Italy and Brazil. Entry is free. Purchasing anything from Minerval confers no advantage.
 5. Submissions. Through the claim page's form, with a Lean file, a written account, a tools disclosure, and the declarations. AI assistance is permitted and must be disclosed. A submission is confidential to Minerval and its agents until it is accepted or the prize closes, and is then dedicated to the public domain under CC0 1.0. A submission that reproduces a proof Minerval's own solver produced is not eligible.
 6. Priority. The first submission by time of receipt that passes the checker and the steward's review wins. Submissions with identical receipt times that both pass share the prize equally. Once a submission has passed the checker, no further submissions are accepted for that prize unless it is later rejected. There is no random selection at any stage.
-7. Review. The checker's verdict is mechanical and public. The steward judges only whether the statement proved is the statement posted. An accepted submission is announced on the claim page and becomes payable after a challenge window of fourteen days (thirty for prizes of $1,000 or more), extended while an admitted challenge is open, up to twice the window. Every acceptance is audited. Prizes of $1,000 or more, and prizes on claims of high importance, require a named person's sign-off.
-8. Payment. Prizes are paid in owls, one owl per dollar of the prize. Owls are credit for metered work on the site; they do not expire, cannot be transferred, and are never redeemable for cash. Payment requires identity verification, a tax form, and sanctions screening first, to be completed within ninety days of the prize becoming payable, after which the prize lapses; the amount may be reduced by required withholding.
+7. Review. The checker's verdict is mechanical and public. The steward judges only whether the statement proved is the statement posted. An accepted submission is announced on the claim page and becomes payable after a challenge window of fourteen days (thirty for prizes of 1,000 owls or more), extended while an admitted challenge is open, up to twice the window. Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited. Prizes of 1,000 owls or more, and prizes on claims of high importance, require a named person's sign-off.
+8. Payment. Prizes are stated and paid in owls. Owls are credit for metered work on the site, valued at one dollar of metered cost each; they do not expire, cannot be transferred, and are never redeemable for cash. Payment requires identity verification, a tax form, and sanctions screening first, to be completed within ninety days of the prize becoming payable, after which the prize lapses; the amount may be reduced by required withholding.
 9. Taxes. Prizes are income to the winner. Minerval reports and withholds as United States law requires.
 10. Withdrawal and change. Minerval may withdraw or amend a prize with thirty days' notice on the claim page and the prize listing; submissions received before the effective time are judged under the prior terms. A prize closes without payment if Minerval's own solver produces a checked proof first, in which case the proof is published, or if the only passing submission came from a person who was not eligible.
 11. Publicity. The winner's chosen credit name, the proof, and the checker record are published as a matter of record.
@@ -62,21 +79,26 @@ export function prizeRulesContentHash(): string {
   return createHash("sha256").update(PRIZE_RULES_TEXT).digest("hex");
 }
 
-export function usdToMicro(usd: number): number {
-  return Math.round(usd * 1_000_000);
+/** Owls to micro-USD at cost: one owl is one dollar of metered work. */
+export function owlsToMicro(owls: number): number {
+  return owlsToMicroUsd(owls);
 }
 
-export function microToUsd(micro: number): number {
-  return micro / 1_000_000;
+/** Micro-USD at cost to owls, at full precision. */
+export function microToOwls(micro: number): number {
+  return micro / owlCostMicroUsd();
 }
 
-/** Amounts render through one helper and never with owl marks (§11.1). */
-export function formatUsd(micro: number): string {
-  const usd = micro / 1_000_000;
-  const whole = Math.floor(usd);
-  const cents = Math.round((usd - whole) * 100);
-  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return cents === 0 ? `$${grouped}` : `$${grouped}.${String(cents).padStart(2, "0")}`;
+/**
+ * Every prize amount renders through this one helper, as owls and never as
+ * dollars (§8.1, §11.1): "1,000 owls", "250 owls", "12.5 owls" only when
+ * the amount is fractional.
+ */
+export function formatOwls(micro: number): string {
+  const owls = microToOwls(micro);
+  const rounded = Math.round(owls * 100) / 100;
+  const body = rounded.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return rounded === 1 ? `${body} owl` : `${body} owls`;
 }
 
 export const PLATFORM_EXTERNAL_ID = "platform:minerval";
@@ -98,13 +120,14 @@ export interface BountyRow {
   id: string;
   claim_id: string;
   formalization_id: string;
-  pool_id: string;
   condition_type: string;
   resolution: "proof" | "disproof" | "either";
+  /** Owls at cost (micro-USD). */
   amount_micro_usd: number;
   status: BountyStatus;
   rules_version: string;
-  posted_by_grant_id: string | null;
+  /** The mandate whose escrow the bounty holds against. */
+  posted_by_grant_id: string;
   rationale: string;
   requested_at: Date;
   opened_at: Date | null;
@@ -116,7 +139,7 @@ export interface BountyRow {
   resolution_note: string | null;
 }
 
-const BOUNTY_COLS = `id, claim_id, formalization_id, pool_id, condition_type, resolution,
+const BOUNTY_COLS = `id, claim_id, formalization_id, condition_type, resolution,
   amount_micro_usd::bigint AS amount_micro_usd, status, rules_version,
   posted_by_grant_id, rationale, requested_at, opened_at, expires_at,
   human_confirmed_at, human_confirmed_by, withdraw_effective_at, resolved_at,
@@ -286,20 +309,23 @@ export type BountyRefusalCode =
   | "NO_PUBLISHED_STATEMENT"
   | "REVIEW_PERIOD_OPEN"
   | "NO_CLOSED_ATTEMPT"
+  | "MANDATE_NOT_ACTIVE"
   | "AMOUNT_OUT_OF_BOUNDS"
   | "PASS_FRACTION_EXCEEDED"
   | "DAY_FRACTION_EXCEEDED"
-  | "INSUFFICIENT_AVAILABLE"
+  | "INSUFFICIENT_ESCROW"
   | "LIVE_BOUNTY_EXISTS"
   | "BOUNTY_NOT_FOUND"
   | "BAD_STATE";
 
 export interface BountyBoundsInput {
   amountMicroUsd: number;
-  minUsd: number;
-  maxUsd: number;
-  balanceMicroUsd: number;
-  availableMicroUsd: number;
+  minOwls: number;
+  maxOwls: number;
+  /** The posting mandate's escrow budget (budget_jobs.budget_micro_usd). */
+  escrowMicroUsd: number;
+  /** Budget less committed money, with this bounty's own prior hold excluded. */
+  headroomMicroUsd: number;
   committedThisPassMicroUsd: number;
   committedTodayMicroUsd: number;
   fractionPerPass: number;
@@ -309,43 +335,43 @@ export interface BountyBoundsInput {
 /**
  * The mechanical money bounds on a posting, as a pure function so the
  * request and the open apply the same rule and the tests can pin it:
- * per-claim bounds, the per-pass and per-day fractions of the fund's
- * balance, and `available` covering the amount.
+ * per-claim bounds, the per-pass and per-day fractions of the mandate's
+ * escrow budget, and the mandate's headroom covering the amount.
  */
 export function checkBountyBounds(
   input: BountyBoundsInput
 ): { ok: true } | { ok: false; code: BountyRefusalCode; message: string } {
   const amount = Math.round(input.amountMicroUsd);
-  const min = usdToMicro(input.minUsd);
-  const max = usdToMicro(input.maxUsd);
+  const min = owlsToMicro(input.minOwls);
+  const max = owlsToMicro(input.maxOwls);
   if (!(amount >= min && amount <= max)) {
     return {
       ok: false,
       code: "AMOUNT_OUT_OF_BOUNDS",
-      message: `a bounty is between ${formatUsd(min)} and ${formatUsd(max)} per claim; ${formatUsd(amount)} was asked`,
+      message: `a bounty is between ${formatOwls(min)} and ${formatOwls(max)} per claim; ${formatOwls(amount)} was asked`,
     };
   }
-  const passCap = Math.floor(input.balanceMicroUsd * input.fractionPerPass);
+  const passCap = Math.floor(input.escrowMicroUsd * input.fractionPerPass);
   if (input.committedThisPassMicroUsd + amount > passCap) {
     return {
       ok: false,
       code: "PASS_FRACTION_EXCEEDED",
-      message: `a review pass may commit at most ${formatUsd(passCap)} of the fund; ${formatUsd(input.committedThisPassMicroUsd)} already committed this pass`,
+      message: `a review pass may commit at most ${formatOwls(passCap)} of the mandate's escrow to bounties; ${formatOwls(input.committedThisPassMicroUsd)} already committed this pass`,
     };
   }
-  const dayCap = Math.floor(input.balanceMicroUsd * input.fractionPerDay);
+  const dayCap = Math.floor(input.escrowMicroUsd * input.fractionPerDay);
   if (input.committedTodayMicroUsd + amount > dayCap) {
     return {
       ok: false,
       code: "DAY_FRACTION_EXCEEDED",
-      message: `bounties opened today may total at most ${formatUsd(dayCap)} of the fund; ${formatUsd(input.committedTodayMicroUsd)} already committed today`,
+      message: `bounties opened today may total at most ${formatOwls(dayCap)} of the mandate's escrow; ${formatOwls(input.committedTodayMicroUsd)} already committed today`,
     };
   }
-  if (amount > input.availableMicroUsd) {
+  if (amount > input.headroomMicroUsd) {
     return {
       ok: false,
-      code: "INSUFFICIENT_AVAILABLE",
-      message: `the fund's available balance is ${formatUsd(input.availableMicroUsd)} (balance less reservations); ${formatUsd(amount)} cannot be reserved`,
+      code: "INSUFFICIENT_ESCROW",
+      message: `the mandate's escrow headroom is ${formatOwls(Math.max(0, input.headroomMicroUsd))} (budget less committed money); ${formatOwls(amount)} cannot be held against it`,
     };
   }
   return { ok: true };
@@ -423,10 +449,9 @@ export async function bindableFormalization(
 /** What a mandate has committed to bounties in this pass and today (UTC). */
 async function grantCommitments(
   r: Runner,
-  grantId: string | null,
+  grantId: string,
   passStartedAt: Date | null
 ): Promise<{ thisPass: number; today: number }> {
-  if (!grantId) return { thisPass: 0, today: 0 };
   const [row] = await r.query<{ pass: string | number; today: string | number }>(
     `SELECT
        COALESCE(SUM(CASE WHEN $2::timestamptz IS NOT NULL
@@ -444,15 +469,85 @@ async function grantCommitments(
   return { thisPass: Number(row?.pass ?? 0), today: Number(row?.today ?? 0) };
 }
 
+interface PostingMandate {
+  id: string;
+  budget_job_id: string;
+  budget_micro_usd: number;
+}
+
+/**
+ * The posting mandate, locked for the posting: the same advisory lock the
+ * allocator takes (runMandateAllocator), so a posting and an allocation
+ * pass serialize on the mandate's headroom, plus a row lock on the grant.
+ * The mandate must be active with its escrow job running; a paused or
+ * closed mandate posts nothing.
+ */
+async function lockPostingMandate(
+  tx: TxQuery,
+  grantId: string
+): Promise<PostingMandate | { ok: false; code: BountyRefusalCode; message: string }> {
+  await tx.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended('mandate-allocator:' || $1, 0))`,
+    [grantId]
+  );
+  await tx.query(`SELECT id FROM grants WHERE id = $1 FOR UPDATE`, [grantId]);
+  const [grant] = await tx.query<{
+    id: string;
+    budget_job_id: string;
+    budget_micro_usd: string | number;
+    job_status: string;
+    status: string;
+  }>(
+    `SELECT g.id, g.budget_job_id, j.budget_micro_usd, j.status AS job_status, g.status
+       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+      WHERE g.id = $1`,
+    [grantId]
+  );
+  if (!grant || grant.status !== "active" || grant.job_status !== "running") {
+    return {
+      ok: false,
+      code: "MANDATE_NOT_ACTIVE",
+      message: grant
+        ? `the posting mandate is ${grant.status} with its escrow ${grant.job_status}; only an active mandate with a running escrow posts a bounty`
+        : "the posting mandate was not found",
+    };
+  }
+  return {
+    id: grant.id,
+    budget_job_id: grant.budget_job_id,
+    budget_micro_usd: Number(grant.budget_micro_usd),
+  };
+}
+
+/**
+ * The mandate's escrow headroom for a posting: budget less committed money
+ * (grantCommittedMicroUsd, the prize term included), with this bounty's own
+ * hold excluded when it already holds (a confirm_pending bounty being
+ * opened), so it is not counted against itself.
+ */
+async function postingHeadroom(
+  tx: TxQuery,
+  mandate: PostingMandate,
+  own: { status: string; amount_micro_usd: number } | null
+): Promise<number> {
+  const committed = await grantCommittedMicroUsd(
+    { id: mandate.id, budgetJobId: mandate.budget_job_id },
+    tx
+  );
+  const ownHold = own && isHoldingBountyStatus(own.status) ? own.amount_micro_usd : 0;
+  return mandate.budget_micro_usd - (committed - ownHold);
+}
+
 export interface RequestBountyInput {
   claimId: string;
-  cashUsd: number;
+  /** The amount, in owls. */
+  owls: number;
   expiresInDays?: number | null;
   rationale: string;
-  grantId: string | null;
+  /** The mandate whose escrow the bounty holds against. */
+  grantId: string;
   /** The review pass this call belongs to (two-pass anchoring). */
   passStartedAt?: Date | null;
-  domain?: string;
 }
 
 export type RequestBountyResult =
@@ -462,16 +557,16 @@ export type RequestBountyResult =
 /**
  * The first pass: record the intent as a `requested` bounty. Every
  * mechanical bound is applied here too, so a request that could never open
- * is refused with the reason rather than parked.
+ * is refused with the reason rather than parked. A requested bounty holds
+ * nothing against the escrow yet.
  */
 export async function requestBounty(input: RequestBountyInput): Promise<RequestBountyResult> {
   const config = loadConfig();
-  const domain = input.domain ?? PRIZE_DOMAIN_MATHEMATICS;
-  const amount = usdToMicro(Number(input.cashUsd) || 0);
+  const amount = owlsToMicro(Number(input.owls) || 0);
   const rationale = String(input.rationale ?? "").trim();
   return withTransaction(async (tx) => {
-    const pool = await getOrCreatePool(domain, tx);
-    await tx.query(`SELECT id FROM prize_pools WHERE id = $1 FOR UPDATE`, [pool.id]);
+    const mandate = await lockPostingMandate(tx, input.grantId);
+    if ("ok" in mandate) return mandate;
     const bindable = await bindableFormalization(input.claimId, tx);
     if (!bindable.ok) return bindable;
     const live = await getLiveBountyForClaim(input.claimId, tx);
@@ -482,21 +577,20 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
         message: `the claim already carries a live bounty (${live.id}, ${live.status})`,
       };
     }
-    const numbers = await poolNumbers(pool.id, tx);
-    const committed = await grantCommitments(tx, input.grantId, input.passStartedAt ?? null);
+    const committed = await grantCommitments(tx, mandate.id, input.passStartedAt ?? null);
     // A re-request of the same claim replaces the pending one; its own
     // amount must not count against itself.
     const priorAmount = live?.status === "requested" ? live.amount_micro_usd : 0;
     const bounds = checkBountyBounds({
       amountMicroUsd: amount,
-      minUsd: config.minBountyPerClaimUsd,
-      maxUsd: config.maxBountyPerClaimUsd,
-      balanceMicroUsd: numbers.balance_micro_usd,
-      availableMicroUsd: numbers.available_micro_usd,
+      minOwls: config.minBountyPerClaimOwls,
+      maxOwls: config.maxBountyPerClaimOwls,
+      escrowMicroUsd: mandate.budget_micro_usd,
+      headroomMicroUsd: await postingHeadroom(tx, mandate, live),
       committedThisPassMicroUsd: Math.max(0, committed.thisPass - priorAmount),
       committedTodayMicroUsd: Math.max(0, committed.today - priorAmount),
-      fractionPerPass: config.bountyPoolFractionPerPass,
-      fractionPerDay: config.bountyPoolFractionPerDay,
+      fractionPerPass: config.bountyEscrowFractionPerPass,
+      fractionPerDay: config.bountyEscrowFractionPerDay,
     });
     if (!bounds.ok) return bounds;
     const expiresIn = Math.max(
@@ -507,26 +601,26 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
       await tx.query(
         `UPDATE bounties
             SET amount_micro_usd = $2, rationale = $3, formalization_id = $4,
-                resolution_note = $5, requested_at = now(), updated_at = now()
+                posted_by_grant_id = $5, resolution_note = $6, requested_at = now(),
+                updated_at = now()
           WHERE id = $1`,
-        [live.id, amount, rationale, bindable.formalizationId, `expires_in_days:${expiresIn}`]
+        [live.id, amount, rationale, bindable.formalizationId, mandate.id, `expires_in_days:${expiresIn}`]
       );
-      await logBountyEvent(tx, live, "requested", `re-requested at ${formatUsd(amount)}: ${rationale}`);
+      await logBountyEvent(tx, live, "requested", `re-requested at ${formatOwls(amount)}: ${rationale}`);
       return { ok: true, bounty_id: live.id, status: "requested", opened: false };
     }
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO bounties
-         (claim_id, formalization_id, pool_id, amount_micro_usd, status,
+         (claim_id, formalization_id, amount_micro_usd, status,
           rules_version, posted_by_grant_id, rationale, resolution_note)
-       VALUES ($1, $2, $3, $4, 'requested', $5, $6, $7, $8)
+       VALUES ($1, $2, $3, 'requested', $4, $5, $6, $7)
        RETURNING id`,
       [
         input.claimId,
         bindable.formalizationId,
-        pool.id,
         amount,
         PRIZE_RULES_VERSION,
-        input.grantId,
+        mandate.id,
         rationale,
         `expires_in_days:${expiresIn}`,
       ]
@@ -542,7 +636,7 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
         rules_version: PRIZE_RULES_VERSION,
       },
       "requested",
-      `${formatUsd(amount)} requested by the Grantmaker: ${rationale}`
+      `${formatOwls(amount)} requested by the Grantmaker: ${rationale}`
     );
     return { ok: true, bounty_id: row!.id, status: "requested", opened: false };
   });
@@ -556,7 +650,9 @@ export type OpenBountyResult =
  * The second pass (a fresh context re-judging the mission) or the human
  * confirmation: open the bounty, or park it at confirm_pending when the
  * amount is at or above the autonomy threshold. Re-applies every bound
- * under the pool's row lock, so a bounty never opens beyond `available`.
+ * under the mandate's allocator lock, so a bounty never opens beyond the
+ * mandate's headroom. A confirm_pending bounty already holds; opening it
+ * changes nothing in the escrow's arithmetic.
  */
 export async function openBounty(input: {
   bountyId: string;
@@ -566,8 +662,12 @@ export async function openBounty(input: {
 }): Promise<OpenBountyResult> {
   const config = loadConfig();
   const result = await withTransaction(async (tx): Promise<OpenBountyResult> => {
-    const bounty = await getBountyById(input.bountyId, tx);
-    if (!bounty) return { ok: false, code: "BOUNTY_NOT_FOUND", message: "bounty not found" };
+    const pre = await getBountyById(input.bountyId, tx);
+    if (!pre) return { ok: false, code: "BOUNTY_NOT_FOUND", message: "bounty not found" };
+    const mandate = await lockPostingMandate(tx, pre.posted_by_grant_id);
+    if ("ok" in mandate) return mandate;
+    await tx.query(`SELECT id FROM bounties WHERE id = $1 FOR UPDATE`, [pre.id]);
+    const bounty = (await getBountyById(pre.id, tx))!;
     if (bounty.status !== "requested" && bounty.status !== "confirm_pending") {
       return {
         ok: false,
@@ -575,27 +675,24 @@ export async function openBounty(input: {
         message: `bounty is ${bounty.status}; only a requested or confirm_pending bounty opens`,
       };
     }
-    await tx.query(`SELECT id FROM prize_pools WHERE id = $1 FOR UPDATE`, [bounty.pool_id]);
-    await tx.query(`SELECT id FROM bounties WHERE id = $1 FOR UPDATE`, [bounty.id]);
     const bindable = await bindableFormalization(bounty.claim_id, tx);
     if (!bindable.ok) return bindable;
-    const numbers = await poolNumbers(bounty.pool_id, tx);
-    const committed = await grantCommitments(tx, bounty.posted_by_grant_id, input.passStartedAt ?? null);
+    const committed = await grantCommitments(tx, mandate.id, input.passStartedAt ?? null);
     const bounds = checkBountyBounds({
       amountMicroUsd: bounty.amount_micro_usd,
-      minUsd: config.minBountyPerClaimUsd,
-      maxUsd: config.maxBountyPerClaimUsd,
-      balanceMicroUsd: numbers.balance_micro_usd,
-      availableMicroUsd: numbers.available_micro_usd,
+      minOwls: config.minBountyPerClaimOwls,
+      maxOwls: config.maxBountyPerClaimOwls,
+      escrowMicroUsd: mandate.budget_micro_usd,
+      headroomMicroUsd: await postingHeadroom(tx, mandate, bounty),
       committedThisPassMicroUsd: Math.max(0, committed.thisPass - bounty.amount_micro_usd),
       committedTodayMicroUsd: Math.max(0, committed.today - bounty.amount_micro_usd),
-      fractionPerPass: config.bountyPoolFractionPerPass,
-      fractionPerDay: config.bountyPoolFractionPerDay,
+      fractionPerPass: config.bountyEscrowFractionPerPass,
+      fractionPerDay: config.bountyEscrowFractionPerDay,
     });
     if (!bounds.ok) return bounds;
 
     const needsHuman =
-      bounty.amount_micro_usd >= usdToMicro(config.bountyAutonomyThresholdUsd) &&
+      bounty.amount_micro_usd >= owlsToMicro(config.bountyAutonomyThresholdOwls) &&
       !input.confirmedBy;
     if (needsHuman) {
       if (bounty.status !== "confirm_pending") {
@@ -607,7 +704,7 @@ export async function openBounty(input: {
           tx,
           bounty,
           "confirm_pending",
-          `${formatUsd(bounty.amount_micro_usd)} is at or above the autonomy threshold; waiting for a person's confirmation`
+          `${formatOwls(bounty.amount_micro_usd)} is at or above the autonomy threshold; held against the mandate's escrow while waiting for a person's confirmation`
         );
       }
       return { ok: true, bounty_id: bounty.id, status: "confirm_pending", opened: false };
@@ -627,7 +724,7 @@ export async function openBounty(input: {
       tx,
       bounty,
       "opened",
-      `${formatUsd(bounty.amount_micro_usd)} offered for a proof or disproof of the formal statement` +
+      `${formatOwls(bounty.amount_micro_usd)} offered for a proof or disproof of the formal statement, held against the mandate's escrow` +
         (input.confirmedBy ? ` (confirmed by ${input.confirmedBy})` : "")
     );
     await mintPrizeReviewReserve(bounty, tx);
@@ -650,16 +747,16 @@ function expiresInDaysOf(note: string | null, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Every opened bounty at or above PRIZE_HUMAN_SIGNOFF_USD triggers an audit (§8.1). */
+/** Every opened bounty at or above PRIZE_HUMAN_SIGNOFF_OWLS triggers an audit (§8.1). */
 async function auditOpenedBounty(bountyId: string): Promise<void> {
   const config = loadConfig();
   const bounty = await getBountyById(bountyId);
-  if (!bounty || bounty.amount_micro_usd < usdToMicro(config.prizeHumanSignoffUsd)) return;
+  if (!bounty || bounty.amount_micro_usd < owlsToMicro(config.prizeHumanSignoffOwls)) return;
   await requestAudit({
     auditType: "decision_audit",
     triggeredBy: "bounty_posted",
     context:
-      `Bounty ${bounty.id} of ${formatUsd(bounty.amount_micro_usd)} opened on claim ` +
+      `Bounty ${bounty.id} of ${formatOwls(bounty.amount_micro_usd)} opened on claim ` +
       `${bounty.claim_id} (formal statement ${bounty.formalization_id}). Audit the posting: ` +
       `does the statement say what the claim says, has the review period ended, did the ` +
       `solver attempt it without settling it, and is the amount within the mandate's policy? ` +
@@ -681,8 +778,9 @@ export async function confirmBounty(input: {
 // ---------------------------------------------------------------------------
 
 /**
- * A terminal transition: the reservation is released by the status change
- * alone (nothing is posted), and the prize-review reserve returns.
+ * A terminal transition: the hold lapses by the status change alone
+ * (nothing is posted; a paid bounty stays counted through its payout row),
+ * and the prize-review reserve returns.
  */
 export async function closeBounty(
   bountyId: string,
@@ -796,8 +894,8 @@ export async function expireAndWithdrawDueBounties(): Promise<{ expired: number;
       row.id,
       row.kind,
       row.kind === "withdrawn"
-        ? "withdrawn after the notice period; the reservation returns to the fund"
-        : "expired; the reservation returns to the fund"
+        ? "withdrawn after the notice period; the hold on the mandate's escrow lapses"
+        : "expired; the hold on the mandate's escrow lapses"
     );
     if (!closed) continue;
     if (row.kind === "withdrawn") withdrawn++;
@@ -821,8 +919,10 @@ export async function rebindDueBounties(): Promise<number> {
     defect_paid: string | number;
   }>(
     `SELECT b.id, b.claim_id, b.amount_micro_usd, f.id AS new_formalization_id,
-            COALESCE((SELECT -SUM(e.amount_micro_usd) FROM prize_pool_entries e
-                       WHERE e.bounty_id = b.id AND e.reason = 'defect_award'), 0)::bigint AS defect_paid
+            COALESCE((SELECT SUM(pp.amount_micro_usd)
+                        FROM prize_claims pc JOIN prize_payouts pp ON pp.prize_claim_id = pc.id
+                       WHERE pc.bounty_id = b.id AND pc.result_category = 'statement_defect'
+                         AND pp.status <> 'reversed'), 0)::bigint AS defect_paid
        FROM bounties b
        JOIN claim_formalizations f
          ON f.claim_id = b.claim_id AND f.status = 'published'
@@ -858,7 +958,7 @@ export async function rebindDueBounties(): Promise<number> {
         tx,
         updated,
         "rebound",
-        `re-bound to the corrected statement ${row.new_formalization_id} at ${formatUsd(amount)}`
+        `re-bound to the corrected statement ${row.new_formalization_id} at ${formatOwls(amount)}`
       );
       rebound++;
     });
@@ -869,8 +969,6 @@ export async function rebindDueBounties(): Promise<number> {
 // ---------------------------------------------------------------------------
 // The prize-review reserve (§8.6)
 // ---------------------------------------------------------------------------
-
-export const PRIZE_RESERVE_JOB_KIND = "prize_review_reserve";
 
 export function reserveMicroUsdFor(amountMicroUsd: number, fraction: number): number {
   return Math.floor(Math.round(amountMicroUsd) * fraction);
@@ -897,7 +995,11 @@ export async function getReserveJob(bountyId: string, tx?: Runner): Promise<Rese
 /**
  * Mint the reserve: owls worth the fraction of the bounty, minted by the
  * platform at cost (admin_adjust) and escrowed into a platform-owned job
- * held for this bounty. Idempotent per bounty; the fund is never touched.
+ * held for this bounty, because a mandate's own escrow can be paused,
+ * exhausted, or closing while a claim waits and a filed claim must be
+ * reviewed whatever the mandate is doing. The job's budget counts against
+ * the posting mandate through the prize term (prize-commitment.ts).
+ * Idempotent per bounty.
  */
 export async function mintPrizeReviewReserve(
   bounty: { id: string; claim_id: string; amount_micro_usd: number },
@@ -1072,7 +1174,7 @@ export function bountyStateSentence(input: StateSentenceInput): string {
       return "The formal statement was revised after this prize was posted and the prize is held until the revised statement is confirmed.";
     case "paid":
       return input.awarded
-        ? `Settled by a checked proof submitted by ${input.awarded.credit_name} on ${dateWords(input.awarded.paid_at)}; prize of ${formatUsd(input.awarded.amount_micro_usd)} paid.`
+        ? `Settled by a checked proof submitted by ${input.awarded.credit_name} on ${dateWords(input.awarded.paid_at)}; prize of ${formatOwls(input.awarded.amount_micro_usd)} paid.`
         : "Settled by a checked proof; the prize was paid.";
     case "resolved_internally":
       return "Closed without a payout when Minerval's own solver produced a checked proof.";
@@ -1290,7 +1392,7 @@ export function openBountiesAtom(items: OpenBountyListing[], baseUrl = ""): stri
       (i) =>
         `  <entry>\n` +
         `    <id>urn:minerval:bounty:${i.bounty.id}</id>\n` +
-        `    <title>${xmlEscape(`${formatUsd(i.bounty.amount_micro_usd)} for a proof or disproof: ${i.text}`)}</title>\n` +
+        `    <title>${xmlEscape(`${formatOwls(i.bounty.amount_micro_usd)} for a proof or disproof: ${i.text}`)}</title>\n` +
         `    <link href="${xmlEscape(`${baseUrl}/claims/${i.claim_id}`)}"/>\n` +
         `    <updated>${i.bounty.opened_at ?? updated}</updated>\n` +
         `    <summary>${xmlEscape(i.bounty.state_sentence)}</summary>\n` +
@@ -1309,11 +1411,20 @@ export function openBountiesAtom(items: OpenBountyListing[], baseUrl = ""): stri
 }
 
 export interface MandatePrizesBlock {
-  pool_balance_micro_usd: number;
-  reserved_micro_usd: number;
+  /** The mandate's escrow budget (budget_jobs.budget_micro_usd). */
+  escrow_micro_usd: number;
+  /** Held in bounties in a holding status. */
+  held_micro_usd: number;
+  /** Gross payouts on the mandate's bounties. */
+  paid_micro_usd: number;
+  /** The prize-review reserve: running budgets, and placed spend once released. */
+  review_reserve_micro_usd: number;
+  /** Budget less committed money, every term included; never below zero. */
+  headroom_micro_usd: number;
   bounties_posted: number;
   bounties_total_micro_usd: number;
   prizes_paid: number;
+  /** Owls granted to winners, net of withholding. */
   owls_paid: number;
   bounties: Array<{
     id: string;
@@ -1329,10 +1440,42 @@ export interface MandatePrizesBlock {
   }>;
 }
 
+/**
+ * The mandate's prize numbers (§8.1), all derived and none stored: the
+ * escrow, what is held in open bounties, what was paid, the review
+ * reserve, and the headroom that remains after every hold. The prize
+ * term is read through the same SQL the escrow's arithmetic uses.
+ */
+export async function mandatePrizeNumbers(grantId: string): Promise<{
+  escrow_micro_usd: number;
+  held_micro_usd: number;
+  paid_micro_usd: number;
+  review_reserve_micro_usd: number;
+  headroom_micro_usd: number;
+} | null> {
+  const [grant] = await rawQuery<{ budget_job_id: string; budget_micro_usd: string | number }>(
+    `SELECT g.budget_job_id, j.budget_micro_usd
+       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+      WHERE g.id = $1`,
+    [grantId]
+  );
+  if (!grant) return null;
+  const budget = Number(grant.budget_micro_usd);
+  const [breakdown, committed] = await Promise.all([
+    prizeCommitmentBreakdown(grantId),
+    grantCommittedMicroUsd({ id: grantId, budgetJobId: grant.budget_job_id }),
+  ]);
+  return {
+    escrow_micro_usd: budget,
+    held_micro_usd: breakdown.held_micro_usd,
+    paid_micro_usd: breakdown.paid_micro_usd,
+    review_reserve_micro_usd: breakdown.review_reserve_micro_usd,
+    headroom_micro_usd: Math.max(0, budget - committed),
+  };
+}
+
 /** The mandate page's Prizes section (§8.3): tiles and the bounty table. */
 export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizesBlock> {
-  const pool = await getOrCreatePool(PRIZE_DOMAIN_MATHEMATICS);
-  const numbers = await poolNumbers(pool.id);
   const rows = await rawQuery<{
     id: string;
     claim_id: string;
@@ -1368,14 +1511,20 @@ export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizes
       WHERE b.posted_by_grant_id = $1 AND pc.status = 'paid'`,
     [grantId]
   );
+  const numbers = (await mandatePrizeNumbers(grantId)) ?? {
+    escrow_micro_usd: 0,
+    held_micro_usd: 0,
+    paid_micro_usd: 0,
+    review_reserve_micro_usd: 0,
+    headroom_micro_usd: 0,
+  };
   const posted = rows.filter((r) => !["requested", "confirm_pending"].includes(r.status));
   return {
-    pool_balance_micro_usd: numbers.balance_micro_usd,
-    reserved_micro_usd: numbers.reserved_micro_usd,
+    ...numbers,
     bounties_posted: posted.length,
     bounties_total_micro_usd: posted.reduce((s, r) => s + Number(r.amount_micro_usd), 0),
     prizes_paid: Number(paid?.n ?? 0),
-    owls_paid: Number(paid?.owls ?? 0) / 1_000_000,
+    owls_paid: microToOwls(Number(paid?.owls ?? 0)),
     bounties: rows.map((r) => ({
       id: r.id,
       claim_id: r.claim_id,
@@ -1391,4 +1540,72 @@ export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizes
       reserve_spent_micro_usd: Number(r.reserve_spent),
     })),
   };
+}
+
+/** One mandate's prize numbers on the prize listing (GET /prizes). */
+export interface PrizeMandateNumbers {
+  grant_id: string;
+  title: string;
+  escrow_micro_usd: number;
+  held_micro_usd: number;
+  paid_micro_usd: number;
+  review_reserve_micro_usd: number;
+  headroom_micro_usd: number;
+  open_bounties: number;
+}
+
+/**
+ * Every mandate with a live or paid bounty, with its prize numbers in
+ * owls at cost (§8.1): the listing's account of where prizes come from.
+ */
+export async function prizeMandateNumbers(): Promise<PrizeMandateNumbers[]> {
+  const mandates = await rawQuery<{ id: string; title: string; open_bounties: string | number }>(
+    `SELECT g.id, COALESCE(g.mandate->>'title', g.name) AS title,
+            (SELECT COUNT(*) FROM bounties b
+              WHERE b.posted_by_grant_id = g.id AND b.status IN ('open', 'claim_pending'))::int AS open_bounties
+       FROM grants g
+      WHERE EXISTS (SELECT 1 FROM bounties b
+                     WHERE b.posted_by_grant_id = g.id
+                       AND b.status IN ('confirm_pending', 'open', 'claim_pending', 'house_result_pending', 'rebinding', 'paid'))
+      ORDER BY g.is_platform DESC, g.created_at ASC`
+  );
+  const out: PrizeMandateNumbers[] = [];
+  for (const m of mandates) {
+    const numbers = await mandatePrizeNumbers(m.id);
+    if (!numbers) continue;
+    out.push({ grant_id: m.id, title: m.title, ...numbers, open_bounties: Number(m.open_bounties) });
+  }
+  return out;
+}
+
+/**
+ * What stands between a mandate and closure (§8.1): bounties in a holding
+ * status, and bounties with a non-terminal prize claim. A mandate with any
+ * cannot complete, because the escrow that backs the prize must never be
+ * refunded from under it; the Grantmaker withdraws them first
+ * (withdraw_bounty, thirty days' notice) and the mandate closes once none
+ * is live.
+ */
+export async function mandateClosureBlockers(grantId: string): Promise<{
+  live_bounties: number;
+  bounty_ids: string[];
+}> {
+  const rows = await rawQuery<{ id: string }>(
+    `SELECT b.id FROM bounties b
+      WHERE b.posted_by_grant_id = $1
+        AND (b.status = ANY($2)
+             OR EXISTS (SELECT 1 FROM prize_claims pc
+                         WHERE pc.bounty_id = b.id AND pc.status = ANY($3)))
+      ORDER BY b.requested_at ASC`,
+    [grantId, [...HOLDING_BOUNTY_STATUSES], [...NON_TERMINAL_PRIZE_CLAIM_STATUSES]]
+  );
+  return { live_bounties: rows.length, bounty_ids: rows.map((r) => r.id) };
+}
+
+/** The refusal a closure gets while bounties stand, in the Grantmaker's tool result. */
+export function closureBlockedMessage(liveBounties: number): string {
+  return (
+    `The mandate has ${liveBounties} live ${liveBounties === 1 ? "bounty" : "bounties"} held against its escrow; ` +
+    `withdraw them first (withdraw_bounty gives thirty days' notice) and the mandate closes once none is live.`
+  );
 }

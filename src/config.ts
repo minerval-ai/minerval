@@ -495,9 +495,10 @@ const configSchema = z.object({
   // A published statement is public for this long before any bounty may
   // bind to it (§5.6): a bounty on a mis-stated proposition rewards
   // proving the wrong thing. A `challenge` upheld during the period earns
-  // the fixed review award, in USD, from the prize fund.
+  // the fixed review award, in owls. No code path pays it yet; until it is
+  // mechanised the operator grants it by hand as an admin owl grant.
   formalizationReviewPeriodDays: z.coerce.number().min(0).default(14),
-  formalizationReviewAwardUsd: z.coerce.number().min(0).default(100),
+  formalizationReviewAwardOwls: z.coerce.number().min(0).default(100),
 
   // --- Mathematics: the solver (§7) ---
   // The solver runs only on the strong tier: the long-run loop needs a
@@ -563,20 +564,24 @@ const configSchema = z.object({
     .default("math_solver"),
 
   // --- Mathematics: bounties (§8.1) ---
-  // Per-claim bounds in USD. The maximum is the v1 ceiling raised only by
-  // configuration after counsel's items; the minimum keeps the fund from
-  // fragmenting into offers too small to move anyone.
-  maxBountyPerClaimUsd: z.coerce.number().min(0).default(5000),
-  minBountyPerClaimUsd: z.coerce.number().min(0).default(250),
-  // How much of the fund the Grantmaker may commit per review pass and per
-  // UTC day, as fractions of the fund's balance — the same shape as the
-  // mandate move caps, so the mandate scales with the money.
-  bountyPoolFractionPerPass: z.coerce.number().min(0).max(1).default(0.1),
-  bountyPoolFractionPerDay: z.coerce.number().min(0).max(1).default(0.25),
-  // A posting below this opens on the two-pass alone; at or above it, a
-  // public offer that binds the company to pay waits for a person's
+  // A bounty is denominated in owls (stored, like every owl amount, as
+  // micro-USD at cost: one owl is one dollar of metered work) and held
+  // against the posting mandate's escrow from the moment it opens until it
+  // resolves. Per-claim bounds in owls: the maximum is the v1 ceiling
+  // raised only by configuration after counsel's items; the minimum keeps
+  // an escrow from fragmenting into offers too small to move anyone.
+  maxBountyPerClaimOwls: z.coerce.number().min(0).default(5000),
+  minBountyPerClaimOwls: z.coerce.number().min(0).default(250),
+  // How much of the posting mandate's escrow the Grantmaker may commit to
+  // bounties per review pass and per UTC day, as fractions of the escrow
+  // budget, the same shape as the mandate move caps, so the bounds scale
+  // with the money.
+  bountyEscrowFractionPerPass: z.coerce.number().min(0).max(1).default(0.4),
+  bountyEscrowFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
+  // A posting below this (owls) opens on the two-pass alone; at or above
+  // it, a public offer that binds the company to pay waits for a person's
   // confirmation (operator key or the founder in the management chat).
-  bountyAutonomyThresholdUsd: z.coerce.number().min(0).default(1000),
+  bountyAutonomyThresholdOwls: z.coerce.number().min(0).default(1000),
   // Withdrawal is prospective only, with this much public notice; a bounty
   // expires after this many days unless the Grantmaker renews it.
   bountyNoticeDays: z.coerce.number().min(0).default(30),
@@ -584,9 +589,9 @@ const configSchema = z.object({
 
   // --- Mathematics: prize claims (§8.4–§8.7) ---
   // A prize needs a human sign-off before `payable` when the bounty is at
-  // or above this amount or the claim's importance at or above this level
-  // (plus the other conditions in §8.5, which are not configurable).
-  prizeHumanSignoffUsd: z.coerce.number().min(0).default(1000),
+  // or above this amount (owls) or the claim's importance at or above this
+  // level (plus the other conditions in §8.5, which are not configurable).
+  prizeHumanSignoffOwls: z.coerce.number().min(0).default(1000),
   prizeHumanSignoffImportance: z.coerce.number().min(0).max(1).default(0.6),
   // The challenge window between acceptance and payment (§8.5): the small
   // window below the tier, the large one at or above it, never under 14
@@ -594,23 +599,24 @@ const configSchema = z.object({
   // the constitution's §16 rests on, not a tuning knob.
   prizeChallengeWindowDaysSmall: z.coerce.number().min(14).default(14),
   prizeChallengeWindowDaysLarge: z.coerce.number().min(14).default(30),
-  prizeWindowTierUsd: z.coerce.number().min(0).default(1000),
+  prizeWindowTierOwls: z.coerce.number().min(0).default(1000),
   // The winner's steps (identity, tax form, screening) must complete within
-  // this many days of `payable`, or the claim forfeits and the reservation
-  // returns to the fund.
+  // this many days of `payable`, or the claim forfeits and the bounty's
+  // hold lapses.
   prizePayeeStepsDays: z.coerce.number().min(1).default(90),
   // When a bounty opens, owls worth this fraction of it are minted at cost
   // into the platform's prize-review job as a hold releasable only to
-  // prize_review actions on that bounty's claims (§8.6).
+  // prize_review actions on that bounty's claims; the reserve counts
+  // against the posting mandate's escrow (§8.6).
   prizeReviewReserveFraction: z.coerce.number().min(0).max(1).default(0.1),
   // A statement defect exposed by a claimant earns this fraction of the
-  // bounty, capped, from the bounty's reservation (§8.4).
+  // bounty, capped (owls), drawn from the prize (§8.4).
   prizeDefectAwardFraction: z.coerce.number().min(0).max(1).default(0.1),
-  prizeDefectAwardCapUsd: z.coerce.number().min(0).default(500),
+  prizeDefectAwardCapOwls: z.coerce.number().min(0).default(500),
   // An owl prize above this is granted in daily tranches of at most this
-  // much, so no single day loads more than the closed-loop threshold §9.1
-  // relies on.
-  prizeOwlTrancheUsd: z.coerce.number().positive().default(2000),
+  // many owls, so no single day loads more than the closed-loop threshold
+  // §9.1 relies on.
+  prizeOwlTrancheOwls: z.coerce.number().positive().default(2000),
   // The prize-check worker's bounds (§8.4): concurrent cold-lane checks,
   // checks per UTC day, the reclaim window for a `checking` row whose
   // worker died, and the checker-error retries before `check_error` holds
@@ -626,23 +632,24 @@ const configSchema = z.object({
   prizeClaimsPerDayPlatform: z.coerce.number().int().min(0).default(5),
 
   // --- Mathematics: who can move money (§8.11) ---
-  // The operator key: the fund deposit, the bounty confirmation, the
-  // prize-claim sign-off, and the void require it. Held outside the web
-  // deployment and used only from the operator's own session, because the
-  // service key acts for any user through the acting-user header and so
-  // cannot be the credential that moves money. Empty = those four routes
-  // are closed.
+  // The operator key: the bounty confirmation, the prize-claim sign-off,
+  // the void, the screening, the owl grant, the check retry, and the
+  // operator page require it. Held outside the web deployment and used
+  // only from the operator's own session, because the service key acts
+  // for any user through the acting-user header and so cannot be the
+  // credential that moves money. Empty = those routes are closed.
   minervalOperatorKey: z.string().default(""),
 
-  // --- Mathematics: the mandate's sizing (§10.7) ---
+  // --- Mathematics: the mandates' sizing (§10.7) ---
   // Read from the environment rather than written as literals in the seed,
-  // so the mandate is robust to far more money without a code change: the
-  // escrow (owls at cost), the daily rate (must exceed one max attempt's
-  // prior plus a day of passes, or attempts never fund), and the first
-  // prize-fund deposit in USD.
+  // so the program is robust to far more money without a code change: the
+  // Mathematics mandate's escrow (owls at cost) and daily rate (must exceed
+  // one max attempt's prior plus a day of passes, or attempts never fund),
+  // and the Mathematics prizes mandate's escrow, the only source of its
+  // prizes.
   mathMandateEscrowOwls: z.coerce.number().min(0).default(2500),
   mathMandateDailyOwls: z.coerce.number().min(0).default(200),
-  mathPrizePoolUsd: z.coerce.number().min(0).default(2500),
+  mathPrizesEscrowOwls: z.coerce.number().min(0).default(2500),
   // Cap the total number of Curator invocations per process (0 = unlimited),
   // mirroring stewardMaxRuns for predictable test/deploy spend.
   curatorMaxRuns: z.coerce.number().default(0),
@@ -863,7 +870,7 @@ export function loadConfig(): Config {
     leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,
     leanCheckOverheadMicroUsd: process.env.LEAN_CHECK_OVERHEAD_MICRO_USD,
     formalizationReviewPeriodDays: process.env.FORMALIZATION_REVIEW_PERIOD_DAYS,
-    formalizationReviewAwardUsd: process.env.FORMALIZATION_REVIEW_AWARD_USD,
+    formalizationReviewAwardOwls: process.env.FORMALIZATION_REVIEW_AWARD_OWLS,
     solverModel: process.env.SOLVER_MODEL,
     solverEnabled: process.env.SOLVER_ENABLED,
     solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
@@ -874,23 +881,23 @@ export function loadConfig(): Config {
     attemptMaxWallHours: process.env.ATTEMPT_MAX_WALL_HOURS,
     attemptMaxIterations: process.env.ATTEMPT_MAX_ITERATIONS,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
-    maxBountyPerClaimUsd: process.env.MAX_BOUNTY_PER_CLAIM_USD,
-    minBountyPerClaimUsd: process.env.MIN_BOUNTY_PER_CLAIM_USD,
-    bountyPoolFractionPerPass: process.env.BOUNTY_POOL_FRACTION_PER_PASS,
-    bountyPoolFractionPerDay: process.env.BOUNTY_POOL_FRACTION_PER_DAY,
-    bountyAutonomyThresholdUsd: process.env.BOUNTY_AUTONOMY_THRESHOLD_USD,
+    maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,
+    minBountyPerClaimOwls: process.env.MIN_BOUNTY_PER_CLAIM_OWLS,
+    bountyEscrowFractionPerPass: process.env.BOUNTY_ESCROW_FRACTION_PER_PASS,
+    bountyEscrowFractionPerDay: process.env.BOUNTY_ESCROW_FRACTION_PER_DAY,
+    bountyAutonomyThresholdOwls: process.env.BOUNTY_AUTONOMY_THRESHOLD_OWLS,
     bountyNoticeDays: process.env.BOUNTY_NOTICE_DAYS,
     bountyDefaultExpiryDays: process.env.BOUNTY_DEFAULT_EXPIRY_DAYS,
-    prizeHumanSignoffUsd: process.env.PRIZE_HUMAN_SIGNOFF_USD,
+    prizeHumanSignoffOwls: process.env.PRIZE_HUMAN_SIGNOFF_OWLS,
     prizeHumanSignoffImportance: process.env.PRIZE_HUMAN_SIGNOFF_IMPORTANCE,
     prizeChallengeWindowDaysSmall: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_SMALL,
     prizeChallengeWindowDaysLarge: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_LARGE,
-    prizeWindowTierUsd: process.env.PRIZE_WINDOW_TIER_USD,
+    prizeWindowTierOwls: process.env.PRIZE_WINDOW_TIER_OWLS,
     prizePayeeStepsDays: process.env.PRIZE_PAYEE_STEPS_DAYS,
     prizeReviewReserveFraction: process.env.PRIZE_REVIEW_RESERVE_FRACTION,
     prizeDefectAwardFraction: process.env.PRIZE_DEFECT_AWARD_FRACTION,
-    prizeDefectAwardCapUsd: process.env.PRIZE_DEFECT_AWARD_CAP_USD,
-    prizeOwlTrancheUsd: process.env.PRIZE_OWL_TRANCHE_USD,
+    prizeDefectAwardCapOwls: process.env.PRIZE_DEFECT_AWARD_CAP_OWLS,
+    prizeOwlTrancheOwls: process.env.PRIZE_OWL_TRANCHE_OWLS,
     prizeCheckMaxConcurrent: process.env.PRIZE_CHECK_MAX_CONCURRENT,
     prizeChecksPerDay: process.env.PRIZE_CHECKS_PER_DAY,
     prizeCheckReclaimMinutes: process.env.PRIZE_CHECK_RECLAIM_MINUTES,
@@ -901,7 +908,7 @@ export function loadConfig(): Config {
     minervalOperatorKey: process.env.MINERVAL_OPERATOR_KEY,
     mathMandateEscrowOwls: process.env.MATH_MANDATE_ESCROW_OWLS,
     mathMandateDailyOwls: process.env.MATH_MANDATE_DAILY_OWLS,
-    mathPrizePoolUsd: process.env.MATH_PRIZE_POOL_USD,
+    mathPrizesEscrowOwls: process.env.MATH_PRIZES_ESCROW_OWLS,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
     curatorSweepRate: process.env.CURATOR_SWEEP_RATE,
     matcherModel: process.env.MATCHER_MODEL,

@@ -1,7 +1,17 @@
-// Shared formatting for money and dates. Every prize, bounty, and attempt
-// amount on the site renders through formatUsd (docs/mathematics.md §11.1):
-// dollars, never owl marks, because a prize is denominated in dollars even
-// when it is paid in owls.
+// Shared formatting for money and dates. Every prize and bounty amount on
+// the site renders through formatOwls (docs/mathematics.md §8.1, §11.1): a
+// bounty is denominated in owls, held against the posting mandate's escrow,
+// and never shown as dollars. formatUsd remains for metered compute costs
+// on surfaces that are not prize surfaces.
+
+// micro-USD at cost → "2,500 owls", "250 owls", "12.5 owls" (a fraction only
+// when the amount has one), "1 owl". One owl is one dollar of metered work.
+export function formatOwls(micro: number): string {
+  const owls = Math.round((micro / 1_000_000) * 100) / 100;
+  const body = Math.abs(owls).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const sign = owls < 0 ? "−" : "";
+  return `${sign}${body} ${Math.abs(owls) === 1 ? "owl" : "owls"}`;
+}
 
 // micro-USD → "$2,500", "$84", "$0.42". Whole dollars carry no cents; anything
 // else shows two places. Negative amounts take a real minus sign.

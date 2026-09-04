@@ -173,8 +173,6 @@ const FORBIDDEN_TABLES = [
   "budget_jobs",
   "grants",
   "regrants",
-  "prize_pools",
-  "prize_pool_entries",
   "bounties",
   "prize_claims",
   "prize_payouts",

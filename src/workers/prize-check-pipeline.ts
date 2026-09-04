@@ -75,7 +75,7 @@ import {
 } from "../services/prize-claim-service.js";
 import { getLeanSourceForContribution } from "../services/attachment-service.js";
 import { getBountyById, getReserveJob, getPlatformAccountId, setBountyStatus } from "../services/bounty-service.js";
-import { asRunner } from "../services/prize-pool-service.js";
+import { asRunner } from "../services/query-runner.js";
 
 export type PrizeCheckStatus =
   /** A verdict landed, a Reviewer or Steward run happened: one unit of work. */

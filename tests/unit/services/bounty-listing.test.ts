@@ -21,8 +21,10 @@ vi.mock("../../../src/db/client.js", () => ({
     if (sql.includes("COUNT(*)::int AS n FROM bounties")) return [{ n: state.listing.length }];
     if (sql.includes("FROM claim_formalizations WHERE id")) return [{ source_hash: "sh", expr_hash: "eh", pin_id: "pin-1" }];
     if (sql.includes("COUNT(*)::int AS n FROM prize_claims")) return [{ n: 2 }];
-    if (sql.includes("FROM prize_pools")) return [{ id: "pool-1", domain: "mathematics" }];
-    if (sql.includes("prize_pool_entries")) return [{ balance: 0, reserved: 0, available: 0 }];
+    // The mandate's prize numbers (§8.1): its escrow job, and the prize
+    // term's breakdown from the shared FROM clause.
+    if (sql.includes("FROM grants g JOIN budget_jobs j")) return [{ budget_job_id: "job-1", budget_micro_usd: 2_500_000_000 }];
+    if (sql.includes("AS held")) return [{ held: 500_000_000, paid: 0, reserve: 50_000_000, total: 550_000_000 }];
     return [];
   }),
   withTransaction: vi.fn(),
@@ -37,11 +39,9 @@ vi.mock("../../../src/services/contributor-service.js", () => ({
   getOrCreateContributor: vi.fn(async () => ({ id: "platform" })),
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({ requestAudit: vi.fn(async () => "run") }));
-vi.mock("../../../src/services/prize-pool-service.js", () => ({
-  asRunner: (tx?: unknown) => tx ?? { query: async () => [] },
-  getOrCreatePool: vi.fn(async () => ({ id: "pool-1", domain: "mathematics" })),
-  poolNumbers: vi.fn(async () => ({ balance_micro_usd: 1_000_000_000, reserved_micro_usd: 500_000_000, available_micro_usd: 500_000_000 })),
-  PRIZE_DOMAIN_MATHEMATICS: "mathematics",
+// Committed money, every term included (the prize term among them).
+vi.mock("../../../src/services/regrant-service.js", () => ({
+  grantCommittedMicroUsd: vi.fn(async () => 600_000_000),
 }));
 
 import {
@@ -59,7 +59,6 @@ function listingRow(overrides: Record<string, unknown> = {}) {
     id: "b-1",
     claim_id: "claim-1",
     formalization_id: "f-1",
-    pool_id: "pool-1",
     condition_type: "lean_statement",
     resolution: "either",
     amount_micro_usd: "500000000",
@@ -133,7 +132,8 @@ describe("openBountiesAtom", () => {
     state.listing = [listingRow({ text: "A <claim> & its text" })];
     const { items } = await listOpenBounties();
     const xml = openBountiesAtom(items, "https://minerval.example");
-    expect(xml).toContain("for a proof or disproof: A &lt;claim&gt; &amp; its text</title>");
+    expect(xml).toContain("500 owls for a proof or disproof: A &lt;claim&gt; &amp; its text</title>");
+    expect(xml).not.toContain("$");
     expect(xml).toContain('<link href="https://minerval.example/claims/claim-1"/>');
     expect(xml).toContain("urn:minerval:bounty:b-1");
   });
@@ -149,6 +149,16 @@ describe("mandatePrizesBlock", () => {
     expect(block.bounties[0]).toMatchObject({ id: "b-1", claim_id: "claim-1", text: "The claim", amount_micro_usd: 500_000_000, status: "open" });
     expect("claim_text" in block.bounties[0]!).toBe(false);
     expect(block.bounties_posted).toBe(1);
+    // The mandate's prize numbers (§8.1): escrow, held, paid, the review
+    // reserve, and headroom = budget less committed money; no fund anywhere.
+    expect(block).toMatchObject({
+      escrow_micro_usd: 2_500_000_000,
+      held_micro_usd: 500_000_000,
+      paid_micro_usd: 0,
+      review_reserve_micro_usd: 50_000_000,
+      headroom_micro_usd: 1_900_000_000,
+    });
+    expect("pool_balance_micro_usd" in block).toBe(false);
   });
 });
 

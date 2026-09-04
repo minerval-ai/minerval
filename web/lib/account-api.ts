@@ -803,18 +803,29 @@ export interface MandateDetailView extends MandateSummaryView {
     assessed_at: string | null;
   }>;
   pipeline: MandatePipelineRow[];
+  // The domain skills the mandate's Grantmaker carries (skill names). The
+  // Record block (docs/mathematics.md §7.10) renders only for a mandate
+  // carrying the mathematics skill. Absent until the API serves it.
+  skills?: string[];
   conversation_id?: string;
   is_manager?: boolean;
-  // Mathematics (docs/mathematics.md §8.3): the prize fund this mandate
-  // draws on, and the house solver's attempts under it. Null and empty for
-  // every other mandate, and until the API serves them.
+  // Mathematics (docs/mathematics.md §8.1, §8.3): the mandate's prize
+  // numbers (a bounty holds against this mandate's own escrow), and the
+  // house solver's attempts under it. Null and empty for every other
+  // mandate, and until the API serves them.
   prizes: MandatePrizesView | null;
   attempts: AttemptSummary[];
 }
 
+// All derived and none stored (§8.1), in owls at cost: the escrow, what is
+// held in open bounties, what was paid, the prize-review reserve, and the
+// headroom that remains after every hold and every other commitment.
 export interface MandatePrizesView {
-  pool_balance_micro_usd: number;
-  reserved_micro_usd: number;
+  escrow_micro_usd: number;
+  held_micro_usd: number;
+  paid_micro_usd: number;
+  review_reserve_micro_usd: number;
+  headroom_micro_usd: number;
   bounties_posted: number;
   bounties_total_micro_usd: number;
   prizes_paid: number;

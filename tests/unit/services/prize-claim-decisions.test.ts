@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const state = vi.hoisted(() => ({
   claim: null as null | Record<string, unknown>,
-  bounty: { id: "b-1", claim_id: "claim-1", pool_id: "pool-1", formalization_id: "f-1", amount_micro_usd: 2_500_000_000, status: "claim_pending", resolution: "either", rules_version: "v", posted_by_grant_id: null, resolution_note: null, opened_at: new Date() },
+  bounty: { id: "b-1", claim_id: "claim-1", formalization_id: "f-1", amount_micro_usd: 2_500_000_000, status: "claim_pending", resolution: "either", rules_version: "v", posted_by_grant_id: "g-1", resolution_note: null, opened_at: new Date() },
   updates: [] as Array<{ sql: string; params: unknown[] }>,
   audits: [] as Array<Record<string, unknown>>,
   awards: [] as Array<Record<string, unknown>>,
@@ -166,7 +166,7 @@ describe("reject", () => {
     const r = await rejectPrizeClaimBySteward({ prizeClaimId: "pc-1", reason: "vacuous hypothesis", resultCategory: "statement_defect", statementDefect: "the hypothesis is unsatisfiable", actor: "s", run });
     expect(r).toMatchObject({ ok: true, status: "defect_award_pending" });
     if (!r.ok) return;
-    expect(r.defect_award_micro_usd).toBe(Math.min(Math.floor(2_500_000_000 * config.prizeDefectAwardFraction), config.prizeDefectAwardCapUsd * 1_000_000));
+    expect(r.defect_award_micro_usd).toBe(Math.min(Math.floor(2_500_000_000 * config.prizeDefectAwardFraction), config.prizeDefectAwardCapOwls * 1_000_000));
     expect(state.retired[0]).toMatchObject({ id: "f-1", reason: /defect exposed by prize claim pc-1/ });
     expect(state.updates.some((u) => u.sql.includes("SET status = 'rebinding'"))).toBe(true);
     expect(state.audits[0]).toMatchObject({ triggeredBy: "prize_acceptance", dedupeKey: `prize_claim:pc-1:${r.decision_id}` });

@@ -181,7 +181,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     "LEAN_CPU_HOUR_COST_MICRO_USD",
     "LEAN_CHECK_OVERHEAD_MICRO_USD",
     "FORMALIZATION_REVIEW_PERIOD_DAYS",
-    "FORMALIZATION_REVIEW_AWARD_USD",
+    "FORMALIZATION_REVIEW_AWARD_OWLS",
     "SOLVER_MODEL",
     "SOLVER_ENABLED",
     "SOLVER_DAILY_CAP_OWLS",
@@ -192,23 +192,23 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     "ATTEMPT_MAX_WALL_HOURS",
     "ATTEMPT_MAX_ITERATIONS",
     "TRACE_ALWAYS_AGENTS",
-    "MAX_BOUNTY_PER_CLAIM_USD",
-    "MIN_BOUNTY_PER_CLAIM_USD",
-    "BOUNTY_POOL_FRACTION_PER_PASS",
-    "BOUNTY_POOL_FRACTION_PER_DAY",
-    "BOUNTY_AUTONOMY_THRESHOLD_USD",
+    "MAX_BOUNTY_PER_CLAIM_OWLS",
+    "MIN_BOUNTY_PER_CLAIM_OWLS",
+    "BOUNTY_ESCROW_FRACTION_PER_PASS",
+    "BOUNTY_ESCROW_FRACTION_PER_DAY",
+    "BOUNTY_AUTONOMY_THRESHOLD_OWLS",
     "BOUNTY_NOTICE_DAYS",
     "BOUNTY_DEFAULT_EXPIRY_DAYS",
-    "PRIZE_HUMAN_SIGNOFF_USD",
+    "PRIZE_HUMAN_SIGNOFF_OWLS",
     "PRIZE_HUMAN_SIGNOFF_IMPORTANCE",
     "PRIZE_CHALLENGE_WINDOW_DAYS_SMALL",
     "PRIZE_CHALLENGE_WINDOW_DAYS_LARGE",
-    "PRIZE_WINDOW_TIER_USD",
+    "PRIZE_WINDOW_TIER_OWLS",
     "PRIZE_PAYEE_STEPS_DAYS",
     "PRIZE_REVIEW_RESERVE_FRACTION",
     "PRIZE_DEFECT_AWARD_FRACTION",
-    "PRIZE_DEFECT_AWARD_CAP_USD",
-    "PRIZE_OWL_TRANCHE_USD",
+    "PRIZE_DEFECT_AWARD_CAP_OWLS",
+    "PRIZE_OWL_TRANCHE_OWLS",
     "PRIZE_CHECK_MAX_CONCURRENT",
     "PRIZE_CHECKS_PER_DAY",
     "PRIZE_CHECK_RECLAIM_MINUTES",
@@ -218,7 +218,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     "MINERVAL_OPERATOR_KEY",
     "MATH_MANDATE_ESCROW_OWLS",
     "MATH_MANDATE_DAILY_OWLS",
-    "MATH_PRIZE_POOL_USD",
+    "MATH_PRIZES_ESCROW_OWLS",
     "ENVIRONMENT",
   ];
   const saved: Record<string, string | undefined> = {};
@@ -247,7 +247,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.leanCpuHourCostMicroUsd).toBe(200_000);
     expect(c.leanCheckOverheadMicroUsd).toBe(20_000);
     expect(c.formalizationReviewPeriodDays).toBe(14);
-    expect(c.formalizationReviewAwardUsd).toBe(100);
+    expect(c.formalizationReviewAwardOwls).toBe(100);
     // §7: the solver, on the strong tier, off by default.
     expect(c.solverModel).toBe(MODELS.fable);
     expect(c.solverEnabled).toBe(false);
@@ -259,25 +259,25 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.attemptMaxWallHours).toBe(6);
     expect(c.attemptMaxIterations).toBe(500);
     expect(c.traceAlwaysAgents).toEqual(["math_solver"]);
-    // §8.1: bounties.
-    expect(c.maxBountyPerClaimUsd).toBe(5000);
-    expect(c.minBountyPerClaimUsd).toBe(250);
-    expect(c.bountyPoolFractionPerPass).toBe(0.1);
-    expect(c.bountyPoolFractionPerDay).toBe(0.25);
-    expect(c.bountyAutonomyThresholdUsd).toBe(1000);
+    // §8.1: bounties, in owls, bounded by the posting mandate's escrow.
+    expect(c.maxBountyPerClaimOwls).toBe(5000);
+    expect(c.minBountyPerClaimOwls).toBe(250);
+    expect(c.bountyEscrowFractionPerPass).toBe(0.4);
+    expect(c.bountyEscrowFractionPerDay).toBe(0.5);
+    expect(c.bountyAutonomyThresholdOwls).toBe(1000);
     expect(c.bountyNoticeDays).toBe(30);
     expect(c.bountyDefaultExpiryDays).toBe(365);
     // §8.4–§8.7: prize claims.
-    expect(c.prizeHumanSignoffUsd).toBe(1000);
+    expect(c.prizeHumanSignoffOwls).toBe(1000);
     expect(c.prizeHumanSignoffImportance).toBe(0.6);
     expect(c.prizeChallengeWindowDaysSmall).toBe(14);
     expect(c.prizeChallengeWindowDaysLarge).toBe(30);
-    expect(c.prizeWindowTierUsd).toBe(1000);
+    expect(c.prizeWindowTierOwls).toBe(1000);
     expect(c.prizePayeeStepsDays).toBe(90);
     expect(c.prizeReviewReserveFraction).toBe(0.1);
     expect(c.prizeDefectAwardFraction).toBe(0.1);
-    expect(c.prizeDefectAwardCapUsd).toBe(500);
-    expect(c.prizeOwlTrancheUsd).toBe(2000);
+    expect(c.prizeDefectAwardCapOwls).toBe(500);
+    expect(c.prizeOwlTrancheOwls).toBe(2000);
     expect(c.prizeCheckMaxConcurrent).toBe(2);
     expect(c.prizeChecksPerDay).toBe(50);
     expect(c.prizeCheckReclaimMinutes).toBe(30);
@@ -288,7 +288,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.minervalOperatorKey).toBe("");
     expect(c.mathMandateEscrowOwls).toBe(2500);
     expect(c.mathMandateDailyOwls).toBe(200);
-    expect(c.mathPrizePoolUsd).toBe(2500);
+    expect(c.mathPrizesEscrowOwls).toBe(2500);
   });
 
   it("reads overrides with the right coercions", async () => {
@@ -297,7 +297,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     process.env.SOLVER_DAILY_CAP_OWLS = "150";
     process.env.PRIZE_REVIEW_RESERVE_FRACTION = "0.2";
     process.env.MINERVAL_OPERATOR_KEY = "op-secret";
-    process.env.MATH_PRIZE_POOL_USD = "1000";
+    process.env.MATH_PRIZES_ESCROW_OWLS = "1000";
     const { loadConfig } = await import("../../src/config.js");
     const c = loadConfig();
     expect(c.solverEnabled).toBe(true);
@@ -305,7 +305,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.solverDailyCapOwls).toBe(150);
     expect(c.prizeReviewReserveFraction).toBe(0.2);
     expect(c.minervalOperatorKey).toBe("op-secret");
-    expect(c.mathPrizePoolUsd).toBe(1000);
+    expect(c.mathPrizesEscrowOwls).toBe(1000);
   });
 
   it("SOLVER_ENABLED is on only for the literal string 'true'", async () => {
@@ -332,8 +332,8 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(() => loadConfig()).toThrow();
   });
 
-  it("keeps the fund fractions inside [0, 1]", async () => {
-    process.env.BOUNTY_POOL_FRACTION_PER_DAY = "1.5";
+  it("keeps the escrow fractions inside [0, 1]", async () => {
+    process.env.BOUNTY_ESCROW_FRACTION_PER_DAY = "1.5";
     const { loadConfig } = await import("../../src/config.js");
     expect(() => loadConfig()).toThrow();
   });

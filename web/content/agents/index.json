@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 7359,
-    "fullChars": 55857,
+    "fullChars": 55863,
     "skills": [
       {
         "name": "mathematics",
@@ -29,7 +29,7 @@
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
     "roleChars": 6092,
-    "fullChars": 54590,
+    "fullChars": 54596,
     "skills": [
       {
         "name": "mathematics",
@@ -49,7 +49,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 11653,
-    "fullChars": 60151,
+    "fullChars": 60157,
     "skills": [
       {
         "name": "mathematics",
@@ -70,7 +70,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 19999,
-    "fullChars": 68497,
+    "fullChars": 68503,
     "skills": [
       {
         "name": "mathematics",
@@ -97,7 +97,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 5775,
-    "fullChars": 54273,
+    "fullChars": 54279,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 9252,
-    "fullChars": 57750,
+    "fullChars": 57756,
     "skills": [
       {
         "name": "mathematics",
@@ -140,7 +140,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 9772,
-    "fullChars": 58270,
+    "fullChars": 58276,
     "skills": [
       {
         "name": "mathematics",
@@ -168,7 +168,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 8908,
-    "fullChars": 57406,
+    "fullChars": 57412,
     "skills": [
       {
         "name": "mathematics",

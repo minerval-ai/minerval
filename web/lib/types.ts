@@ -515,7 +515,7 @@ export interface ClaimCitationPayload {
 
 // --- mathematics: formal statements, checks, prizes, attempts ----------------
 // Read models served beside the claim (docs/mathematics.md §11.1). Amounts are
-// micro-USD integers like every money column; they render through formatUsd
+// micro-USD integers like every money column; prize amounts render through formatOwls
 // and never with owl marks.
 
 // One check the Lean checker ran, summarised for a reading surface.
@@ -542,6 +542,10 @@ export interface FormalizationSummary {
   pp_type: string;
   source_hash: string;
   expr_hash: string;
+  // The statement introduces a definition Mathlib lacks, the Steward's own
+  // (§5.4); the correspondence note says which sources it follows. Absent on
+  // older payloads, which read as false.
+  own_definitions?: boolean;
   correspondence: string | null;
   published_at: string | null;
   review_period_ends_at: string | null;
@@ -627,6 +631,106 @@ export interface AttemptSummary {
     confidence: number;
   } | null;
   notebook: Record<string, string> | null;
+}
+
+// The platform's attempt record (docs/mathematics.md §7.10), as
+// GET /attempts/stats returns it: by outcome and by variant the count, the
+// owls spent, and the median cost; the calibration series; and the house
+// solves split into novel proofs and rediscoveries. `calibration` (the
+// Grantmaker's stated probability against the realized rate, by decile) is
+// null while no stated probability is stored.
+export type RecordOutcome =
+  | "proved"
+  | "disproved"
+  | "lead"
+  | "no_result"
+  | "refused"
+  | "cancelled"
+  | "error"
+  | "withheld";
+
+export interface AttemptStatsOutcome {
+  outcome: RecordOutcome;
+  count: number;
+  owls_spent: number;
+  median_cost_owls: number | null;
+}
+
+export interface AttemptStatsVariant {
+  variant: string;
+  count: number;
+  settled: number;
+  owls_spent: number;
+  median_cost_owls: number | null;
+}
+
+export interface AttemptStatsProblem {
+  claim_id: string;
+  claim_text: string;
+  attempts: number;
+  passes: number;
+  pass_rate: number | null;
+  owls_spent: number;
+  cost_per_pass_owls: number | null;
+  last_finished_at: string | null;
+}
+
+export interface AttemptStatsSolve {
+  attempt_id: string;
+  claim_id: string;
+  claim_text: string;
+  outcome: "proof" | "disproof";
+  variant: string;
+  finished_at: string | null;
+  owls_spent: number;
+}
+
+export interface AttemptStats {
+  grant_id: string | null;
+  generated_at: string;
+  totals: {
+    attempts: number;
+    live: number;
+    owls_spent: number;
+    median_cost_owls: number | null;
+  };
+  by_outcome: AttemptStatsOutcome[];
+  by_variant: AttemptStatsVariant[];
+  calibration_series: {
+    attempts: number;
+    passes: number;
+    pass_rate: number | null;
+    owls_spent: number;
+    cost_per_pass_owls: number | null;
+    problems: AttemptStatsProblem[];
+  };
+  calibration: null | {
+    deciles: Array<{
+      decile: number;
+      stated_low: number;
+      stated_high: number;
+      attempts: number;
+      successes: number;
+      realized_rate: number | null;
+    }>;
+  };
+  novel_proofs: { count: number; items: AttemptStatsSolve[] };
+  rediscoveries: { count: number; items: AttemptStatsSolve[] };
+}
+
+// One mandate's prize numbers on GET /prizes (docs/mathematics.md §8.1), in
+// owls at cost: the escrow a bounty holds against, what is held in open
+// bounties, what was paid, the prize-review reserve, and the headroom that
+// remains after every hold. There is no fund.
+export interface PrizeMandateNumbers {
+  grant_id: string;
+  title: string;
+  escrow_micro_usd: number;
+  held_micro_usd: number;
+  paid_micro_usd: number;
+  review_reserve_micro_usd: number;
+  headroom_micro_usd: number;
+  open_bounties: number;
 }
 
 // One row of GET /prizes: an open bounty with the claim it is pinned to.

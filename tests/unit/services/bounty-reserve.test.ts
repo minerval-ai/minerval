@@ -1,9 +1,10 @@
 /**
  * The prize-review reserve (docs/mathematics.md §8.6) over a scripted
  * runner: minting is an admin_adjust mint plus an escrow_hold into a
- * platform-owned job (never a draw on the fund), idempotent per bounty;
- * the release returns live allocations' unspent parts through refund rows,
- * cancels open actions, and refunds the never-placed remainder of the hold.
+ * platform-owned job (the posting mandate's escrow is counted, never
+ * moved), idempotent per bounty; the release returns live allocations'
+ * unspent parts through refund rows, cancels open actions, and refunds the
+ * never-placed remainder of the hold.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -36,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("minting", () => {
-  it("mints the fraction at cost into a platform-owned job with a hold, keyed per bounty, and touches no prize_pool_entries", async () => {
+  it("mints the fraction at cost into a platform-owned job with a hold, keyed per bounty, and writes no bounty or grant row", async () => {
     const config = loadConfig();
     const r = runner((sql) => {
       if (sql.includes("FROM budget_jobs")) return state.job ? [state.job] : [];
@@ -55,7 +56,7 @@ describe("minting", () => {
     expect(JSON.parse(jobInsert.params[4] as string)).toMatchObject({ bounty_id: "b-1" });
     const hold = state.queries.find((q) => q.sql.includes("'escrow_hold'"))!;
     expect(hold.params).toEqual(["platform", -50_000_000, "claim-1", "job-1", "prize_reserve_hold:b-1"]);
-    expect(state.queries.some((q) => q.sql.includes("prize_pool_entries"))).toBe(false);
+    expect(state.queries.some((q) => /UPDATE (bounties|grants|budget_jobs)\b/.test(q.sql))).toBe(false);
     // Idempotent: a second mint finds the job and writes nothing.
     state.queries = [];
     expect(await mintPrizeReviewReserve({ id: "b-1", claim_id: "claim-1", amount_micro_usd: 500_000_000 }, r)).toMatchObject({ id: "job-1" });

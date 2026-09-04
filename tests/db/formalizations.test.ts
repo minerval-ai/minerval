@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
-import { seedClaim, pgCode } from "./helpers.js";
+import { seedClaim, seedUser, seedGrantWithJob, pgCode } from "./helpers.js";
 import {
   FakeLeanCheckerClient,
   FAKE_PIN,
@@ -75,24 +75,22 @@ async function checkRecord(statementSource: string, proof: string, verdict: "acc
   return fake.getCheck(queued.check_id);
 }
 
-async function seedPool(): Promise<string> {
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO prize_pools (domain) VALUES ('mathematics')
-     ON CONFLICT (domain) DO UPDATE SET domain = EXCLUDED.domain
-     RETURNING id`
-  );
-  return rows[0]!.id;
+/** The mandate a bounty holds against (§8.1). */
+async function seedPostingMandate(): Promise<string> {
+  const funder = await seedUser("formalizations-bounty-mandate");
+  const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 5_000_000_000 });
+  return grantId;
 }
 
 async function seedBounty(claimId: string, formalizationId: string, status = "open"): Promise<string> {
-  const poolId = await seedPool();
+  const grantId = await seedPostingMandate();
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO bounties
-       (claim_id, formalization_id, pool_id, amount_micro_usd, status,
+       (claim_id, formalization_id, posted_by_grant_id, amount_micro_usd, status,
         rules_version, rationale, opened_at, updated_at)
      VALUES ($1, $2, $3, 2500000000, $4, '2026-09', 'DB test', now(), now() - interval '1 hour')
      RETURNING id`,
-    [claimId, formalizationId, poolId, status]
+    [claimId, formalizationId, grantId, status]
   );
   return rows[0]!.id;
 }
@@ -432,5 +430,43 @@ describe("the machine-checked badge", () => {
       window: { state: "review_period", accepting_claims: false },
     });
     expect(terms!.formalization.statement_url).toMatch(new RegExp(`/claims/${claimId}/formalization\\.lean$`));
+  });
+});
+
+describe("definitions of the Steward's own", () => {
+  it("round-trips own_definitions through the store and the read models, false when unstated", async () => {
+    const claimId = await seedClaim("own-definitions");
+    const plain = await storeReviewed(claimId);
+    expect(plain.own_definitions).toBe(false);
+
+    const version = await nextFormalizationVersion(claimId);
+    const normalized = normalizeStatementSource(DECLARATIONS, { claimId, version });
+    if (!normalized.ok) throw new Error(normalized.error);
+    const elaboration = await fake.elaborate({ statement_source: normalized.source });
+    const own = await storeElaboratedFormalization({
+      claimId,
+      version,
+      statementSource: normalized.source,
+      elaboration,
+      correspondence:
+        "The definition of a Sidon set is the Steward's own; it follows Erdős and Turán (1941) and Mathlib has none.",
+      reviewNotes: "Checked the definition against the source.",
+      ownDefinitions: true,
+      authoredBy: "claim_steward",
+      status: "reviewed",
+    });
+    expect(own.own_definitions).toBe(true);
+
+    const [row] = await rawQuery<{ own_definitions: boolean }>(
+      `SELECT own_definitions FROM claim_formalizations WHERE id = $1`,
+      [own.id]
+    );
+    expect(row!.own_definitions).toBe(true);
+
+    const versions = await listFormalizations(claimId);
+    expect(versions.map((v) => [v.version, v.own_definitions])).toEqual([
+      [2, true],
+      [1, false],
+    ]);
   });
 });

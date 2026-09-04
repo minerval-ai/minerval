@@ -39,6 +39,7 @@ import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
+import { prizeCommitmentSql } from "./prize-commitment.js";
 
 export type AllocateResult =
   | {
@@ -454,7 +455,9 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- a self-funded run isn't counted twice — and so a run that cost
             -- more than it was allocated has its overage counted here rather
             -- than cancelled out, which is what subtracting the full
-            -- actions.metered_cost used to do) + regrants.
+            -- actions.metered_cost used to do) + regrants + the prize term
+            -- (bounties held against the escrow, prizes paid, the review
+            -- reserve; prize-commitment.ts).
             (j.budget_micro_usd
               - COALESCE((SELECT SUM(al.spent_micro_usd)
                             FROM action_allocations al
@@ -471,7 +474,8 @@ export async function fundGrantSelfActions(): Promise<number> {
                                WHERE al.grant_id = g.id), 0))
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
                             FROM regrants r
-                           WHERE r.from_grant_id = g.id), 0))::bigint
+                           WHERE r.from_grant_id = g.id), 0)
+              - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
             -- The day's remaining room under the mandate's rate, counted the
             -- same way runMandateAllocator counts it. A rate of 0 means

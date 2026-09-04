@@ -30,7 +30,7 @@ constitution amendments (F).
 7. [The solver](#7-the-solver)
 8. [Prizes](#8-prizes)
 9. [Legal considerations, and the Stripe conversation](#9-legal-considerations-and-the-stripe-conversation)
-10. [The Mathematics mandate](#10-the-mathematics-mandate)
+10. [The Mathematics mandates](#10-the-mathematics-mandates)
 11. [Surfaces: API, MCP, docs, frontend](#11-surfaces-api-mcp-docs-frontend)
 12. [Evaluation and tests](#12-evaluation-and-tests)
 13. [Infrastructure and operations](#13-infrastructure-and-operations)
@@ -38,7 +38,7 @@ constitution amendments (F).
 15. [Decisions for the founder](#15-decisions-for-the-founder)
 
 Appendices: [A. The Mathematics skill](#appendix-a-the-mathematics-skill) ·
-[B. The Mathematics mandate](#appendix-b-the-mathematics-mandate) ·
+[B. The Mathematics mandates](#appendix-b-the-mathematics-mandates) ·
 [C. The solver prompt](#appendix-c-the-solver-prompt) ·
 [D. Prize rules sketch](#appendix-d-prize-rules-sketch) ·
 [E. Glossary of names](#appendix-e-glossary-of-names) ·
@@ -79,18 +79,23 @@ properties.
    contexts and exposed to public challenge before money can attach.
 2. **Money never touches the epistemic side.** A bounty enters no valuation,
    no importance, no assessment, and no standard. It is a liability of the
-   platform to a future claimant, denominated in dollars, held in a domain
-   prize fund the allocation ledger cannot see. The solver's compute is
-   ordinary metered spend on the action ledger. Prizes are payouts, never
-   spend.
-3. **Owls stay one-way, and every prize owl is backed by a dollar.** Cash
-   in pays owls out; owls never fund a prize and never become cash. A prize
-   is paid in owls at one owl per dollar as a promotional grant, labeled as
-   such in the ledger, valued at the cash amount for tax, never expiring,
-   never transferable, never redeemable, and the fund debits the cash
-   amount the moment the owls are granted. Cash payouts are out of v1; a
-   rail is designed for later behind an adapter. Nothing here gives an owl
-   a property a regulator could read as stored value.
+   platform to a future claimant, denominated in owls, held against the
+   escrow of the mandate whose Grantmaker offered it. The solver's compute
+   is ordinary metered spend on the action ledger. Prizes are payouts,
+   never spend, and a bounty is not an allocation: it funds no work.
+3. **One allocation structure, and owls stay one-way.** The agentic
+   Grantmaker over a mandate's escrow is the only way resources are
+   allocated on the platform, and prizes go through it: a Grantmaker
+   decides whether a prize or another attempt is the better use of the
+   same owls, and the bounty holds its amount against the mandate's escrow
+   until it resolves. A prize is paid in owls as a promotional grant,
+   labeled as such in the ledger, valued at one dollar of metered cost
+   for tax, never expiring, never transferable, never redeemable; the
+   mandate's owls retire as the winner's are issued, so the owl liability
+   does not grow. Owls never move between accounts and never become cash.
+   Cash payouts are out of v1; a rail is designed for later behind an
+   adapter. Nothing here gives an owl a property a regulator could read as
+   stored value.
 4. **Payout is mechanical after judgment, and judgment is slow where money
    is at stake.** The checker issues the verdict; the Contribution Reviewer
    screens form, identity, and good faith; the Steward judges statement
@@ -119,11 +124,12 @@ must never advertise an offer it cannot honor.
   then the first target list under a low daily cap, every attempt disclosed
   on the claim page. The mandate rewrite lands here. This is where the
   founder's compute money starts moving.
-- **Phase 3: prizes payable in owls.** The prize fund, the Grantmaker's
-  `post_bounty`, the display on page, map, list, and mandate page, the rules
-  page, and the full claim-prize flow with its window and audit, paying in
-  owls, fully backed by the fund, with identity, tax form, and screening
-  collected by hand. Counsel's first items (section 9.3) are done before
+- **Phase 3: prizes payable in owls.** The Mathematics prizes mandate,
+  the Grantmaker's `post_bounty` holding against its escrow, the display on
+  page, map, list, and mandate page, the rules page, and the full
+  claim-prize flow with its window and audit, paying in owls from the
+  mandate's hold, with identity, tax form, and screening collected by
+  hand. Counsel's first items (section 9.3) are done before
   this phase opens. v1 ends here.
 - **Later: cash.** A payout rail behind an adapter, the Stripe conversation,
   provider screening, and withholding remittance. Designed here so v1 does
@@ -141,24 +147,24 @@ each:
 
 | Question | Position | Section |
 |---|---|---|
-| Can owls fund a bounty? | No. Bounties are cash only, from a platform prize fund. Owl pledges are not built; third-party money enters at the fund level as sponsorship, after counsel. | 8.1 |
+| Can owls fund a bounty? | Yes, and nothing else does. A bounty is denominated in owls and held against the posting mandate's escrow, allocated by that mandate's Grantmaker; there is no prize fund and no second allocation structure. | 8.1 |
 | Does a bounty enter the attempt's valuation? | Never. Demand moves scheduling only through allocations on the attempt action. | 7.3, 10.5 |
 | What selects a skill? | `claims.domains`, set by admin judgment. `claim_type = mathematical` is the proposition-kind facet. Neither the funding mandate nor importance gates the Lean tools. | 3.4 |
 | In what order is a prize claim reviewed? | Route gate, checker, Contribution Reviewer, Steward, challenge window with the audit inside it, sign-off, payout. The checker runs before any agent so a failed proof costs no judgment. | 8.4 |
-| Cash payouts? | Not in v1. Every prize is paid in owls, one per dollar, and the fund debits the dollars when the owls are granted, so every prize owl is backed. A rail is designed behind an adapter for later; the Stripe question waits until then. | 8.7, 8.8, 9.2 |
+| Cash payouts? | Not in v1. Every prize is paid in owls, and the mandate's hold becomes consumption when the owls are granted, so every prize owl is backed by escrow paid for before the offer. A rail is designed behind an adapter for later; the Stripe question waits until then. | 8.7, 8.8, 9.2 |
 | Who verifies a solver result? | The kernel, for Lean-checked outcomes; the Steward judges fidelity. Anything the kernel cannot check is a lead, never a result. | 7.6 |
 | May attempts start before the statement's public review period ends? | Yes; the attempt doubles as a vacuity probe. Bounties wait for the period. | 5.6 |
-| Is the platform ever a claimant? | Never. A house solve closes the bounty unpaid and publishes the proof. | 7.6, 8.1 |
-| Written proofs? | Not in v1. Lean only; where Mathlib lacks the definitions, no bounty. | 8.2 |
-| Who pays for prize review? | A self-funded `prize_review` action on the Mathematics mandate, never the claimant. | 8.6 |
-| Challenge window? | 14 days below $1,000; 30 at or above; paused while a challenge is open. | 8.5 |
+| Is the platform ever a claimant? | Never. A house solve closes the bounty unpaid and publishes the proof. The platform keeps its own record of attempts, costs, and calibration, in public. | 7.6, 7.10, 8.1 |
+| Written proofs? | Not in v1. Lean only; where Mathlib lacks a definition, the Steward finds or writes one and says so. | 5.4, 8.2 |
+| Who pays for prize review? | A `prize_review` action reserved from the posting mandate's escrow when the bounty opens, never the claimant. | 8.6 |
+| Challenge window? | 14 days below 1,000 owls; 30 at or above; paused while a challenge is open. | 8.5 |
 | What must a winner do to be paid? | Complete identity, residency, tax form, and screening within 90 days of `payable`; then the owls are granted. | 8.7 |
 | Any deposit to claim? | None. Abuse control is non-monetary. | 8.4 |
-| Caps and sign-off in v1? | $5,000 per claim; human sign-off at $1,000 or importance 0.6; postings below $1,000 open on the Grantmaker's two-pass alone; at or above, founder confirmation (`BOUNTY_AUTONOMY_THRESHOLD_USD`). | 8.1, 8.5 |
+| Caps and sign-off in v1? | 5,000 owls per claim; human sign-off at 1,000 owls or importance 0.6; postings below 1,000 owls open on the Grantmaker's two-pass alone; at or above, founder confirmation (`BOUNTY_AUTONOMY_THRESHOLD_OWLS`). | 8.1, 8.5 |
 | Are funders named on claim surfaces? | No. Minerval is named because the rules require a named sponsor. | 8.3 |
 | Does a failed check touch reputation? | No. A kernel result is a mechanism. | 8.4 |
 | Which model runs the money decisions? | The strong tier, forced for the six money triggers of section 6.4, which are invoked directly rather than through the steward queue; a fallback-served acceptance is an audit send-back. | 6.4 |
-| Where does the skill sit in the prompt? | A separate cached block after the role block; documented as Layer 3 of four, below the role in authority. | 3.3 |
+| Where does the skill sit in the prompt? | A separate cached block after the role block: constitution, role, skill, task, in that order of authority. | 3.3 |
 | Does the constitution change? | Three minimal amendments: one before the solver first runs, two before prizes open. | Appendix F |
 
 ### 1.4 What is deferred, and what it costs to add later
@@ -167,7 +173,7 @@ each:
 |---|---|---|
 | Cash payouts | Out of v1 by the founder's decision; the adapter, the Stripe approval, and provider screening are designed in sections 8.8 and 9.2. | Two to three days once a rail is approved; the state machine already has the states. |
 | Owl pledges to bounties | Makes owls transferable between people, the property the owl's legal posture rests on. Counsel first. | Two to three days: a pledge table, a hold reason, a fifth committed-money term in the escrow queries. |
-| Per-claim third-party cash pledges | Chargebacks and money-transmission questions the fund-level product avoids. | Four days after counsel. |
+| Third-party money for prizes | A person who wants to fund prizes funds or regrants into a mandate that posts them; a cash sponsorship product raises chargeback and money-transmission questions and waits for counsel. | Four days after counsel. |
 | Written-proof prize track | The Steward cannot referee a research proof at prize standard. | A human panel; not an engineering item. |
 | S3 attachment storage | Postgres `bytea` is adequate at v1 volumes. | Two days: bucket, gateway endpoint, presign routes, backfill. |
 | Virus scanning of uploads | Files are stored, never rendered; served with `nosniff` and a sandboxing CSP. | One day. |
@@ -367,21 +373,24 @@ is a strong identity signal the Matcher checks before concluding a claim is
 new. Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
 "For the Matcher").
 
-### 2.7 No origination
+### 2.7 Where mathematical claims come from
 
-The constitution's claim bar (§2: a claim is a reusable proposition the
-discourse refers to, and the graph originates none) reconciles with issue
-#301's question-posing thesis as follows. Mathematical claims
-enter from the discourse: papers, monographs, problem lists, formalization
-projects, question sites. A conjecture posed by the graph's agents, or by the
-solver during an attempt, is not a claim; it may appear in the prose of an
-argument or an attempt report, and it becomes a node only when a source
-outside the platform states it. Publishing a formal statement of an existing
-claim is a rendering, not origination. A proof the solver produces is
-evidence on an existing claim, recorded as an argument. Directing attention
-is posing: the Mathematics mandate orders existing open problems and funds
-attempts, which is the judgment §19 invites, not the origination §2 rules
-out.
+Mathematical claims enter from the discourse: papers, monographs, problem
+lists, formalization projects, question sites, and the working notes of
+the field. Publishing a formal statement of an existing claim is a
+rendering, not a new claim; a proof the solver produces is evidence on an
+existing claim, recorded as an argument; a conjecture the solver poses in
+an attempt report is prose in that report. The ordinary principles decide
+whether anything the Steward meets in its own work is claimworthy: a
+proposition the graph's work has identified, a lemma several open problems
+turn on that no source states cleanly, or a question an attempt sharpened,
+can become a claim when it is claimworthy on the same terms as a claim
+from a paper, and its provenance says where it came from. Nothing in the
+skill encourages the Steward to invent claims, and the standards for what
+is worth a node do not loosen because the platform noticed it first.
+Directing attention is the mandate's ordinary work: the Mathematics
+mandate orders existing open problems and funds attempts, which is the
+judgment §19 invites.
 
 ---
 
@@ -823,6 +832,19 @@ proof compiled but used the axiom `Foo.bar`, which the rules do not allow").
 A rejected disproof is not evidence for the statement; an `error` is no
 evidence at all; the skill says both.
 
+The allowed set is Lean's standard classical foundation, not a
+restriction to constructive mathematics: `Classical.choice` is the axiom
+of choice, and `propext` and `Quot.sound` are the other two axioms Mathlib
+itself rests on, so every classical proof Mathlib can express is
+admissible. What the rule excludes is an axiom the submission adds:
+`sorry`, trust in the compiler or a native evaluation, or a user axiom
+that asserts what was to be proved. A claim that is conditional on a
+hypothesis beyond the standard foundation (a large-cardinal assumption,
+the generalized Riemann hypothesis, a conjecture the field takes as
+given) is stated with the hypothesis as an antecedent of `Statement`,
+and the correspondence note says so; the hypothesis is then part of what
+is proved, not an axiom the checker must trust.
+
 ### 5.3 Service architecture
 
 The checker is a Minerval-owned HTTP service, `lean-checker`, one container
@@ -933,6 +955,23 @@ Fidelity, the thing no checker discharges, is handled in four layers:
    before any bounty binds to it, and any accepted proof is public for a
    further window before payment.
 
+**Definitions Mathlib lacks.** Where a statement needs a definition
+Mathlib does not have, the Steward first looks for one in a public
+formalization project and cites it; failing that, it writes one. A
+Steward-written definition is a standard object stated carefully, in the
+statement file's namespace, with the correspondence note saying that the
+definition is the Steward's own, which sources it follows, and why the
+Lean text matches them; `claim_formalizations.own_definitions` records
+that the statement carries one, and the claim page says so beside the
+statement. The judgment that a definition is right is the same judgment
+the Steward makes about the statement as a whole, on the same checklist
+and with the same second fresh-context pass, and it is trusted on the same
+terms: a reviewed statement, public for its review period, open to
+challenge. The checker's `definitions` field lists the new constants so a
+reader can see exactly what was introduced. A definition the Steward
+cannot state to its own satisfaction is a reason not to publish, stated in
+the review notes, not a reason to publish something weaker.
+
 Answer-construction problems ("find the value") are out of scope for v1; the
 Steward formalizes them as an existence statement plus a separate claim
 asserting the value.
@@ -985,9 +1024,9 @@ anyone may file an ordinary `challenge` contribution against the claim that
 names the formalization (a new column
 `contributions.challenged_formalization_id`); an upheld challenge returns the
 statement to `reviewed`, restarts the period on republication, and earns the
-challenger a fixed review award (`FORMALIZATION_REVIEW_AWARD_USD`, $100)
-from the prize fund, so exposing a defect early pays better than sitting on
-it until a bounty opens. The period exists because a bounty on a mis-stated
+challenger a fixed review award (`FORMALIZATION_REVIEW_AWARD_OWLS`, 100
+owls), granted by the platform as a `prize_award`, so exposing a defect
+early pays better than sitting on it until a bounty opens. The period exists because a bounty on a mis-stated
 proposition rewards proving the wrong thing.
 
 The solver may attempt a statement as soon as it is published. The statement
@@ -1413,8 +1452,8 @@ effort; the mandate page says so.
 importance times tractability, with sub-results that several open problems
 rest on preferred over any one of them. The first list is about ten open
 candidates plus the calibration controls; the first budget split is roughly
-two thirds attempts and formalizations, one third prize fund, revisited
-after the first ten attempts.
+two thirds attempts and formalizations, one third the prizes mandate's
+escrow, revisited after the first ten attempts.
 
 **Disclosure.** Every attempt is public. When an attempt closes, the claim
 page shows the date, the variant, the metered cost, and the outcome; the
@@ -1503,6 +1542,44 @@ CREATE TABLE proof_attempts (
 );
 ```
 
+### 7.10 The platform's own record
+
+The platform is never a claimant, and it keeps score on itself. Every
+attempt is a row in `proof_attempts` with its variant, cost, outcome, and
+the Grantmaker's stated probability at scheduling, so the record is a
+by-product of the ledger rather than a report anyone writes. Two surfaces
+read it:
+
+- `GET /attempts/stats` (and `?grant_id=` for one mandate) returns the
+  platform's attempt record: by outcome (`proved`, `disproved`, `lead`,
+  `no_result`, `refused`, `cancelled`, `error`, and `withheld` for an
+  unpublished result on a claim with a live bounty, section 7.7), the
+  count, the owls spent, and the median cost; by variant, the same, with
+  the number settled; the calibration series (the settled problems, with
+  the pass rate and the cost per pass); and novel proofs, a house solve of
+  a claim that had no `verified` or `contradicted` assessment and no
+  argument citing an accepted check before the attempt finished, counted
+  and listed separately from rediscoveries. Calibration in the
+  forecasting sense, the Grantmaker's stated probability of success
+  against the realized rate by decile, so that a Grantmaker who keeps
+  scheduling attempts at "0.3" that succeed one time in fifty is visible
+  as such, has its place in the response and is empty until the stated
+  probability is recorded as a number: today it is prose in the
+  valuation's rationale, which the ledger prunes when the action closes.
+  A `tractability` figure on the `attempt_proof` plan item, stamped onto
+  the attempt when it opens, is the follow-up that fills it.
+- The Mathematics mandate page carries a "Record" block with the same
+  numbers for that mandate's attempts, beside its prize numbers, and the
+  claim page's attempt strip links each attempt to its report.
+
+The record is public because the constitution puts the platform's own
+judgment under the same scrutiny as anyone's (§4), and because the number
+that matters most for the program, what an attempt on an open problem
+actually buys, is one the founder cannot set by policy and can only
+learn. The Grantmaker reads the record in its review pass and revises the
+mandate's priors from it (section 10.5); the audit agent reads it when a
+house solve closes a bounty.
+
 ---
 
 ## 8. Prizes
@@ -1516,76 +1593,107 @@ settled); a **bounty** is money offered for an answer, held until earned,
 funding nothing on the ledger; a **prize payout** is the discharge of that
 liability, in owls in v1 and in cash only when a rail exists.
 
-### 8.1 Bounty model and funding sources
+### 8.1 Bounty model and funding
 
-**Denomination.** A bounty is denominated in USD (micro-USD integers, like
-every money column). The condition is fixed: a Lean proof or disproof of one
-published formal statement, identified by id, `source_hash`, and
-`expr_hash`, under one pin, with the allowed axiom set and the static policy
-named in the rules.
+**Denomination.** A bounty is denominated in owls. It is stored, like every
+owl amount, as micro-USD at cost (one owl is one dollar of metered work),
+and it is rendered on every surface as owls, never as dollars. The
+condition is fixed: a Lean proof or disproof of one published formal
+statement, identified by id, `source_hash`, and `expr_hash`, under one
+pin, with the allowed axiom set and the static policy named in the rules.
 
-**Funding in v1: the platform prize fund only.** Bounties are cash only,
-drawn from `prize_pools` (one row per domain, `mathematics` first) whose
-balance is the sum of `prize_pool_entries`. The founder's deposit is
-recorded by `POST /prize-pools/:domain/deposit` (service key, idempotent
-under a batch key, carrying a bank reference as evidence of the cash). The
-fund is a bookkeeping liability against corporate cash in the operating
-account, not a segregated account and not money held "for" anyone; counsel
-may advise a separate bank account for reputational reasons, which changes
-nothing in the schema. The word "escrow" never appears in prize text; the
-fund is "the mathematics prize fund."
+**Funding: a mandate's escrow, through its Grantmaker.** There is one
+resource-allocation structure on the platform, the agentic Grantmaker over
+a mandate's escrow, and prizes use it. A bounty is posted by a mandate's
+Grantmaker and held against that mandate's escrow: from the moment it
+opens until it resolves, its amount is a term in the mandate's committed
+money, beside allocation shares, non-ledger metered spend, and regrants
+out (`grantCommittedMicroUsd`, `src/services/regrant-service.ts`). The
+allocator, the regrant path, and the mandate's closing settlement all read
+that one number, so a mandate can never promise the same owl to an attempt
+and to a prize. When the prize is paid, the hold becomes consumption: the
+payout row is the record, and the mandate's escrow is counted down by the
+gross amount the way a regrant is counted rather than moved. When the
+bounty expires, is withdrawn, or is settled by the platform's own solver,
+the hold lapses and the headroom returns. There is no prize fund, no
+deposit route, and no second ledger.
 
-Owl pledges to bounties are not built. An owl that could become a winner's
-owl would be a person-to-person transfer of owls, a property nothing in the
-current system permits (`src/services/owl.ts:1-9`: bought or earned, then
-spent) and the property on which the owl's "prepaid credit" posture rests
-(section 9.1). It would also let signup and monthly grants
-(`src/config.ts:128-129`) become prize value at face. The Mathematics mandate
-spends owls on `formalize`, `attempt_proof`, and `prize_review` actions,
-which is compute, not prize money.
+The winner's owls are minted by the platform as `prize_award` rows in the
+winner's account (section 8.7). Owls never move between accounts; the
+mandate's owls retire as committed money and the winner's are issued
+against them, so the total owl liability is unchanged and every prize owl
+is backed by escrow that was paid for before the offer was made. For a
+platform mandate that is the seed's mint at cost; for a mandate funded by
+a person, it is the owls that person bought. Prize money is therefore
+"fully funded" in the only sense the platform has: an owl is promised once,
+in the hold, and issued once, in the grant.
 
-Third-party money enters, when it enters, at the fund level: a
-dollar-denominated "sponsor the mathematics prize fund" product sold through
-Stripe Checkout in payment mode, structured as a purchase of sponsorship of
-Minerval's program with Minerval as sole obligor, no property interest
-retained, no right to direct or veto any award, enumerated refund terms, and
-no "escrow," "deposit," or "held for you" language anywhere. This product
-ships only after counsel has confirmed the structure (section 9.3). Per-claim
-third-party pledges are deferred indefinitely; they raise chargeback,
-laundering, and money-transmission questions that fund-level sponsorship does
-not.
+**Which mandates post prizes.** `post_bounty` is in every Grantmaker's
+toolset, in the review pass and the management chat alike, so any mandate
+can post one from its own escrow; its condition, a published formal
+statement the solver attempted without settling, is what confines it to
+mathematics today. In this epoch the seed
+creates two platform mandates: **Mathematics**, which funds formalizations,
+attempts, and stewardship and posts no prizes, and **Mathematics prizes**,
+a prizes-only mandate whose Grantmaker offers prizes on the problems the
+platform attempted and could not settle, and funds nothing else. The split
+is a statement of policy on two mandate pages, not a mechanism: a mixed
+mandate that funds attempts and posts prizes from one escrow works today,
+and the Mathematics mandate's policy says "in this epoch," not "never."
+The Grantmaker's judgment about whether a prize or an attempt is the
+better use of the same owls is exactly the judgment the mandate exists to
+make, and it is stated publicly with each posting.
 
-**Posting.** The Mathematics mandate's Grantmaker posts a bounty with
-`post_bounty {claim_id, cash_usd, expires_in_days, rationale}` (review pass
-and management chat, one implementation in `executeManagementTool`).
-Mechanical bounds: the claim must carry a `published` formalization whose
-review period has ended and which the solver has attempted without settling
-(section 10.4); cash is bounded by the fund's `available` balance, per pass and per day as
-fractions of the fund (`BOUNTY_POOL_FRACTION_PER_PASS` 0.1, per day 0.25),
-and per claim by
-`MAX_BOUNTY_PER_CLAIM_USD` ($5,000 in v1, raised only by configuration after
-counsel's items); at most one live bounty per claim.
+A person who funds a mandate (by creating it or regranting into it) holds
+no right against any winner or any prize. Minerval is the sole obligor of
+every prize (Appendix D, item 1); the mandate's escrow is Minerval's own
+bookkeeping of owls already paid for. Funders of the posting mandate are
+ineligible for its prizes (Appendix D, item 4). Because a person's owls can
+now stand behind a prize through a mandate they fund, counsel item 7 asks
+whether that changes the sponsorship analysis; the design's answer is that
+it does not, since the person bought a one-way credit for metered work and
+directed a mandate, and the prize is issued by Minerval from its own
+liability, but the question is put rather than assumed.
+
+**Posting.** The Grantmaker posts with `post_bounty {claim_id, owls,
+expires_in_days, rationale}` (review pass and management chat, one
+implementation in `executeManagementTool`). Mechanical bounds: the claim
+must carry a `published` formalization whose review period has ended and
+which the solver has attempted without settling (section 10.4); the amount
+must fit the mandate's escrow headroom (budget less committed money) and
+is bounded per pass and per day as fractions of the escrow
+(`BOUNTY_ESCROW_FRACTION_PER_PASS` 0.4, `BOUNTY_ESCROW_FRACTION_PER_DAY`
+0.5) and per claim by `MIN_BOUNTY_PER_CLAIM_OWLS` and
+`MAX_BOUNTY_PER_CLAIM_OWLS` (250 and 5,000 in v1, raised only by
+configuration after counsel's items); at most one live bounty per claim.
+The posting takes the mandate's allocator lock, so a posting and an
+allocation pass serialize on the same headroom.
 
 Every posting is **two-pass**: the first call records the intent on the
 mandate (as `complete_mandate`'s closure request does,
-`src/llm/agents/mandate-review.ts:677-716`), and only a call from a later
-pass, a fresh context re-judging the mission, opens it. A posting below
-`BOUNTY_AUTONOMY_THRESHOLD_USD` (default $1,000) opens on the two-pass
+`src/llm/agents/mandate-review.ts`), and only a call from a later pass, a
+fresh context re-judging the mission, opens it. A posting below
+`BOUNTY_AUTONOMY_THRESHOLD_OWLS` (default 1,000) opens on the two-pass
 alone, so the Grantmaker determines and funds ordinary prizes without
 anyone's signature; at or above it, the posting waits for a human
 confirmation (`POST /bounties/:id/confirm`, operator key, or the founder in
 the management chat). The reason is that a public reward offer is a
 unilateral contract binding until revoked with equal publicity (section
-9.1), and the review pass reads the open web in the same context as the tool
-(`mandate-review.ts:404-416, 456-464` name injection as the reason for the
-money caps). This is not the human bottleneck §19 forbids: the work
-(assessments, formalizations, attempts) proceeds without anyone's
-signature; only an offer that binds the company to pay waits, and amendment
-F.1 says so. Every opened bounty at or above `PRIZE_HUMAN_SIGNOFF_USD` also
-triggers an audit (`requestAudit`, whose `triggeredBy` union gains
-`bounty_posted`, `prize_acceptance`, and `prize_check_error`, with the
-required `auditType` and `context` supplied) whose finding, if adverse,
-withdraws it before any claim can be filed against it.
+9.1), and the review pass reads the open web in the same context as the
+tool. This is not the human bottleneck §19 forbids: the work (assessments,
+formalizations, attempts) proceeds without anyone's signature; only an
+offer that binds the company to pay waits, and amendment F.1 says so.
+Every opened bounty at or above `PRIZE_HUMAN_SIGNOFF_OWLS` also triggers
+an audit (`requestAudit` with `triggeredBy: bounty_posted`) whose finding,
+if adverse, withdraws it before any claim can be filed against it.
+
+**Closing a mandate.** A mandate with a live bounty cannot complete:
+`complete_mandate` refuses at both passes until the Grantmaker has
+withdrawn the mandate's bounties (thirty days' notice each) and the last
+has resolved, and the mechanical exhaustion path of a `deepen` mandate
+leaves such a mandate live rather than settling it. The prize is
+Minerval's obligation whatever happens to the mandate; the rule exists so
+the escrow that backs it is never refunded from under it.
 
 **Lifecycle.** `requested` → `confirm_pending` → `open` → `claim_pending` (a
 prize claim is past the checker; the gate closes to new filings) → `paid` |
@@ -1597,18 +1705,15 @@ refuses claims filed after the attempt's `finished_at`) → `resolved_internally
 | `open` | `rebinding`; to `expired`; to `withdrawn`; or to `rebinding`
 (section 8.5). `expires_at` and `withdraw_effective_at` are suspended while
 any prize claim on the bounty is non-terminal, so a live claim never loses
-its reservation. Any transition of the bound statement out of `published`
-(a canonical-form change, an upheld formalization challenge, a merge or a
+its hold. Any transition of the bound statement out of `published` (a
+canonical-form change, an upheld formalization challenge, a merge or a
 split) moves an `open` bounty to `rebinding` in the same transaction.
-Withdrawal is prospective only, with 30 days' notice on the claim page and the prize
-listing; submissions received before the effective time are judged under the
-prior terms. Expiry (`expires_at`, default 365 days, renewable by the
-Grantmaker) releases the reservation. A house solve (section 7.6) moves the
-bounty to `resolved_internally`: no prize is paid, the proof is published,
-and the reservation returns to the fund. If a fund sponsorship exists by
-then, a house solve or a withdrawal returns nothing to sponsors, because
-sponsorship funds the program, not one claim; this is one reason the
-fund-level product is the right shape.
+Withdrawal is prospective only, with thirty days' notice on the claim page
+and the prize listing; submissions received before the effective time are
+judged under the prior terms. Expiry (`expires_at`, default 365 days,
+renewable by the Grantmaker) releases the hold. A house solve (section
+7.6) moves the bounty to `resolved_internally`: no prize is paid, the proof
+is published, and the hold lapses.
 
 **Priority.** If a human prize claim and a platform attempt land at the same
 time, a claim filed before the attempt completed is judged first and, if
@@ -1619,31 +1724,17 @@ gate, and a submission whose source hash matches an attempt-mode
 own work.
 
 ```sql
-CREATE TABLE prize_pools (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  domain text NOT NULL UNIQUE, currency text NOT NULL DEFAULT 'usd',
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE TABLE prize_pool_entries (          -- balance = SUM(amount_micro_usd)
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  pool_id uuid NOT NULL REFERENCES prize_pools(id),
-  amount_micro_usd bigint NOT NULL,
-  reason text NOT NULL,                    -- platform_deposit | sponsorship | owl_prize | withholding_remitted | defect_award | review_award | admin_adjust | payout (reserved for a cash rail)
-  bounty_id uuid, prize_claim_id uuid, bank_reference text, stripe_event_id text,
-  idempotency_key text UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
 CREATE TABLE bounties (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
   formalization_id uuid NOT NULL REFERENCES claim_formalizations(id) ON DELETE RESTRICT,
-  pool_id uuid NOT NULL REFERENCES prize_pools(id),
+  posted_by_grant_id uuid NOT NULL REFERENCES grants(id),  -- the escrow the bounty holds against
   condition_type text NOT NULL DEFAULT 'lean_statement',   -- reserved: steward_judgment | external_resolution
   resolution text NOT NULL DEFAULT 'either',               -- proof | disproof | either
-  amount_micro_usd bigint NOT NULL CHECK (amount_micro_usd > 0),
+  amount_micro_usd bigint NOT NULL CHECK (amount_micro_usd > 0),  -- owls at cost
   status text NOT NULL DEFAULT 'requested',                 -- requested | confirm_pending | open | claim_pending | house_result_pending | rebinding | paid | resolved_internally | resolved_unpaid | expired | withdrawn
   rules_version text NOT NULL,
-  posted_by_grant_id uuid REFERENCES grants(id), rationale text NOT NULL,
+  rationale text NOT NULL,
   requested_at timestamptz NOT NULL DEFAULT now(), opened_at timestamptz, expires_at timestamptz,
   human_confirmed_at timestamptz, human_confirmed_by text,
   withdraw_effective_at timestamptz, resolved_at timestamptz, resolution_note text,
@@ -1653,20 +1744,18 @@ CREATE UNIQUE INDEX uq_bounty_live_per_claim ON bounties (claim_id)
   WHERE status IN ('requested','confirm_pending','open','claim_pending','house_result_pending','rebinding');
 ```
 
-Three numbers, and only the first is stored. `balance` is the sum of the
-entries. `reserved` is derived: the sum of `amount_micro_usd` over live
-bounties (`open`, `claim_pending`, `house_result_pending`, `rebinding`).
-`available` is `balance` minus `reserved`, and a bounty opens only when
-`available` covers it. Nothing is posted when a bounty opens or closes. The
-only debits are `owl_prize` (owls granted, at the cash amount, so the
-fund's balance is what remains to be offered and the dollars back the owl
-liability like every owl outstanding: this is what makes every owl prize
-fully funded), `withholding_remitted`, `defect_award`, `review_award`, and,
-only when a rail exists, `payout`; each consumes
-the bounty's reservation where one exists, and a defect award reduces the
-rebound bounty by its amount unless the Grantmaker tops it up under the
-ordinary caps. A dollar is promised once, in `reserved`, and spent once, in
-an entry.
+**The mandate's prize numbers**, all derived and none stored: `held` is
+the sum of `amount_micro_usd` over the mandate's bounties in a holding
+status (`confirm_pending`, `open`, `claim_pending`, `house_result_pending`,
+`rebinding`); `paid` is the sum of gross payouts on the mandate's bounties;
+`review reserve` is the budget of each live prize-review reserve job and
+the placed spend of each released one (section 8.6). The mandate's
+committed money adds these to its shares, non-ledger spend, and regrants,
+and its headroom is budget less that sum. A bounty opens only when the
+headroom covers it. Nothing is posted when a bounty opens or closes. An
+owl is promised once, in `held`, and consumed once, in a payout row; a
+defect award is a payout row too, and it reduces the rebound bounty by
+its amount unless the Grantmaker tops it up under the ordinary bounds.
 
 ### 8.2 The condition, and what is not built
 
@@ -1677,13 +1766,17 @@ source resolves the question on a date, the predictions work of #296), so
 the form, the state machine, the window, and the payout are reused without a
 second governance path. Nothing for either is built now.
 
-No written-proof track exists in v1. Where Mathlib lacks the definitions a
-statement needs, the Steward does not publish one and no bounty opens; the
-claim page can say so. The known cost is that some real results (the 2025
-unit-distance disproof stalled in Lean for want of Mathlib's number theory)
-cannot win a Minerval prize yet. The alternative, the Steward refereeing a
-natural-language research proof at the standard a cash prize requires, is a
-job the Steward should not attempt.
+No written-proof track exists in v1. Where Mathlib lacks a definition a
+statement needs, the Steward finds it in a public formalization project or,
+failing that, writes it (section 5.4): a careful definition of a standard
+object, stated in the correspondence note as the Steward's own, with the
+reasons it matches the literature's, is worth publishing on its own and is
+one of the things this program exists to produce. Such a statement carries
+`own_definitions = true`, the review period and the challenge window apply
+to it exactly as to a Mathlib-only statement, and a bounty may bind to it.
+The alternative, the Steward refereeing a natural-language research proof
+at the standard a prize requires, remains a job the Steward should not
+attempt.
 
 ### 8.3 Display on the claim page, the map, the list, and the mandate page
 
@@ -1704,10 +1797,11 @@ graph:
 
 > **Prize**
 >
-> $2,500 is offered by Minerval for a Lean 4 proof or disproof of the formal
-> statement above, checked against Mathlib at the pinned revision. Open since
+> 2,500 owls are offered by Minerval for a Lean 4 proof or disproof of the
+> formal statement above, checked against Mathlib at the pinned revision.
+> Owls are metered work on the graph, one per dollar of cost. Open since
 > 12 March 2026. Minerval's own solver attempted this statement on 2 March
-> 2026 at maximum effort ($84 of compute) and did not settle it; its report
+> 2026 at maximum effort (84 owls of compute) and did not settle it; its report
 > is public. Three submissions received. Offering a prize does not change
 > how this claim is assessed or how important the graph judges it to be; it
 > says only that someone would like the question settled.
@@ -1722,9 +1816,9 @@ graph:
 > a public challenge window of 30 days. Entry is free; purchasing owls
 > confers no advantage. The first complete submission that passes, by time
 > of receipt, is the one paid; later independent proofs are credited on this
-> page. Prizes are paid in owls, one owl per dollar, which buy metered work
-> on the graph and are never redeemable for cash; a prize is taxable income
-> at its dollar value. Rules →
+> page. Prizes are paid in owls, which buy metered work on the graph at one
+> dollar of cost each and are never redeemable for cash; a prize is taxable
+> income at that value. Rules →
 
 Below the button: the state sentence (a submission is being checked; a
 submission passed the checker and awaits review; accepted on DATE and
@@ -1742,9 +1836,9 @@ funding disclosure that exists today (`ClaimView.tsx:288-300`) stays where it
 is, and the prize section adopts its placement discipline.
 
 **Map view.** A node with a live bounty gets a double-ruled outline (distinct
-in shape from the `nudged` ring and from every status colour) and a small `$`
-mark after the status glyph on the tier chips; the amount appears in the
-hover preview ("Prize: $2,500 · open") and on the focus card, together with
+in shape from the `nudged` ring and from every status colour) and a small
+prize mark after the status glyph on the tier chips; the amount appears in
+the hover preview ("Prize: 2,500 owls · open") and on the focus card, together with
 the machine-checked badge at small size. The amount is not painted on the
 node: the map orients and the claim page informs
 (`web/app/claims/[id]/map/page.tsx:6-8`). `ClaimBits`
@@ -1771,12 +1865,14 @@ mandate's `scope_query` never becomes this filter: scope is the Grantmaker's
 judgment.
 
 **Mandate page.** A "Prizes" section after "Assessments this mandate funded"
-(`web/app/mandates/[id]/page.tsx:273-296`): tiles for the fund balance and
-reserved amount, bounties posted (count, total), prizes paid (count, owls); the attempt log (each attempt with claim, variant, cost, outcome, and
-the link to its report); a table of claims with a bounty (text, amount,
-status, open since, submissions, outcome). The sentence under the heading:
-"Prizes are paid from a separate fund, not from this mandate's compute
-budget. They reward proofs and disproofs of formal statements the steward
+(`web/app/mandates/[id]/page.tsx`): tiles for the escrow, the amount held
+in open bounties, the review reserve, the headroom, bounties posted (count,
+total), prizes paid (count, owls); the "Record" block of section 7.10; the
+attempt log (each attempt with claim, variant, cost, outcome, and the link
+to its report); a table of claims with a bounty (text, amount, status, open
+since, submissions, outcome). The sentence under the heading: "Prizes are
+owls this mandate's Grantmaker set aside from its escrow. They reward
+proofs and disproofs of formal statements the steward
 has published, and they buy no influence over any assessment." Prize spend
 is never counted against the mandate's escrow meter. The allocation view's
 kind labels gain `formalize`, `attempt_proof`, and `prize_review`.
@@ -1955,10 +2051,10 @@ decision, reason, result_category?: "new_result" |
 reject states the defect and, for `statement_defect`, retires the statement,
 drafts a corrected one, and records a defect award
 (`PRIZE_DEFECT_AWARD_FRACTION` 0.10 of the bounty, capped at
-`PRIZE_DEFECT_AWARD_CAP_USD` $500) on the claim, which moves to
+`PRIZE_DEFECT_AWARD_CAP_OWLS` 500 owls) on the claim, which moves to
 `defect_award_pending`, is audited like an acceptance, skips the window, and
 then follows the winner's steps and the grant, drawn from the bounty's
-reservation. The corrected statement follows the full publication path
+hold. The corrected statement follows the full publication path
 (draft, the fresh-context second pass, the review period), never a
 republication inside the same run. A
 `formalization_of_known_proof` outcome is judged by the rules in force (the
@@ -2019,7 +2115,7 @@ defective statement, an ineligible or sanctioned claimant, a stolen proof,
 an axiom or tactic the policy missed, an earlier submission mishandled.
 
 - **Length.** `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL` 14 below
-  `PRIZE_WINDOW_TIER_USD` $1,000; `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE` 30 at
+  `PRIZE_WINDOW_TIER_OWLS` 1,000 owls; `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE` 30 at
   or above; never below 14. The window pauses only while a challenge the Reviewer has admitted is
   open; a challenge on a ground already decided is answered by reference
   without a pause; and the total pause is capped at twice the window, beyond
@@ -2051,14 +2147,14 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
   acceptance is reviewed fully, not sampled, against the checklist in the
   skill's Audit section.
 - **Human sign-off.** Required before `payable` when the bounty is at or
-  above `PRIZE_HUMAN_SIGNOFF_USD` ($1,000), the claim's importance is at or
+  above `PRIZE_HUMAN_SIGNOFF_OWLS` (1,000 owls), the claim's importance is at or
   above `PRIZE_HUMAN_SIGNOFF_IMPORTANCE` (0.6), the contribution is in
   `human_review`, an Arbitrator outcome on a challenge was `human_review`,
   the second-opinion checker disagreed with the verdict, the Steward's
   decision was served by a fallback model, or the sanctions screening
   returned anything but clear. In v1 the founder signs; a panel of
-  named mathematicians replaces one signer as prizes grow (at $2,500 one
-  named mathematician, at $10,000 or importance 0.9 a panel of three with
+  named mathematicians replaces one signer as prizes grow (at 2,500 owls
+  one named mathematician, at 10,000 owls or importance 0.9 a panel of three with
   two subject experts), and the founder decides when to convene it (section
   15).
 - **Statement defects after acceptance.** If a challenge on the ground of
@@ -2085,34 +2181,35 @@ an axiom or tactic the policy missed, an earlier submission mishandled.
 A self-funded action kind `prize_review` covers the cold-lane check, the
 Reviewer run, the Steward's `prize_claim` run, the audit, and any `fresh`
 replay, so the cost is metered, attributed, and visible and never touches
-the claimant. It is funded not from the mandate's escrow, which can be
-paused, exhausted, or closed while a claim waits, but from a platform-owned
-prize-review budget job, funded the way `fundGrantSelfActions` funds
-`mandate_review` (`src/services/allocation-service.ts:434`) but outside any
-mandate's day room: when a bounty opens, owls worth `PRIZE_REVIEW_RESERVE_FRACTION`
-(0.10) of its amount are minted by the platform at cost into that job (an
-`admin_adjust` mint like the seed's, never a draw on the prize fund, which
-the ledger cannot see) as a hold releasable only to `prize_review` actions
-on that bounty's claims, and the unspent remainder returns when the bounty
-closes. The prize-check worker is the executor of `prize_review`: it claims
-the row, runs the check, the Reviewer, and the Steward under the job, and
-completes the action with the metered amount. The mandate page shows the
-reserve and its spend beside the bounty. The
-`prize_claim` trigger gets a `queue_priority` boost at enqueue so a review on
-a 0.3-importance problem does not wait days behind higher-importance work
-inside a window measured in days; target: the Steward's run starts within 24
-hours of `in_review`.
+the claimant. The money is the posting mandate's: when a bounty opens, owls
+worth `PRIZE_REVIEW_RESERVE_FRACTION` (0.10) of its amount are set aside
+for the review of claims on it, and that reserve is a term in the
+mandate's committed money for as long as it is live (section 8.1). The
+mechanism is a platform-owned prize-review budget job per bounty, minted
+at cost when the bounty opens and held for `prize_review` actions on that
+bounty's claims only, because a mandate's own escrow can be paused,
+exhausted, or closing while a claim waits and a filed claim must be
+reviewed whatever the mandate is doing. When the bounty closes, the
+unspent remainder returns and only what was placed on the reviews stays
+counted against the mandate. The prize-check worker is the executor of
+`prize_review`: it claims the row, runs the check, the Reviewer, and the
+Steward under the job, and completes the action with the metered amount.
+The mandate page shows the reserve and its spend beside the bounty. The
+`prize_claim` trigger gets a `queue_priority` boost at enqueue so a review
+on a 0.3-importance problem does not wait days behind higher-importance
+work inside a window measured in days; target: the Steward's run starts
+within 24 hours of `in_review`.
 
 ### 8.7 Paying the prize in owls
 
 Cash payouts are out of v1 by the founder's decision. Every prize is paid
-in owls, one owl per dollar of the bounty, and every owl prize is fully
-funded: the fund debits the cash amount the moment the owls are granted,
-and the fund never posts more in open bounties than its balance (section
-8.1), so every owl a prize can ever mint is backed by a dollar already
-deposited. The amounts are the Grantmaker's (section 10.4); below the
-confirmation threshold nobody else decides them, and the grant after
-`payable` is mechanical.
+in owls, one owl per owl of the bounty, and every owl prize is fully
+funded in the platform's own terms: the amount was held against the
+posting mandate's escrow from the day the bounty opened, that escrow was
+paid for before the offer was made, and the hold becomes consumption in
+the same transaction that grants the owls (section 8.1). The amounts are
+the Grantmaker's (section 10.4); below the confirmation threshold nobody
+else decides them, and the grant after `payable` is mechanical.
 
 **The winner's steps.** After `payable` the winner sees "Your prize" on the
 account page (`PrizeAward.tsx`): the amount; what owls are (metered work on
@@ -2127,7 +2224,7 @@ tax form (W-9 or W-8BEN) uploaded as a restricted attachment of kind
 payout row from OFAC's search. The sign-off checklist requires all three
 before any `prize_award` row is written; the owl path is not a way around
 them. A winner who does not complete the steps within the period forfeits
-(`forfeited`), and the reservation returns to the fund.
+(`forfeited`), and the bounty's hold lapses when it closes.
 
 **The grant.** `payPrize` writes a `prize_payouts` row first (`kind =
 'owls'`, `provider = 'internal'`, with `withholding_micro_usd`,
@@ -2137,25 +2234,28 @@ posture depends on prize owls being promotional credit), positive and net
 of any required withholding, `claim_id` and `prize_claim_id` set,
 idempotency key `prize:<prize_claim_id>:owls`, and increments a new
 `contributors.owls_prized_micro_usd`, kept separate from
-`owls_earned_micro_usd` (`src/db/schema.ts:456`) so the leaderboard keeps
+`owls_earned_micro_usd` (`src/db/schema.ts`) so the leaderboard keeps
 its meaning; prize owls are excluded from the leaderboard sum. Prize owls
 never expire, and no ledger path ever converts them to cash, so
-`src/services/owl.ts:9` stays true. A grant above $2,000 is written in daily
-tranches of at most `PRIZE_OWL_TRANCHE_USD` ($2,000), so no single day loads
-more than the closed-loop threshold section 9.1 relies on. The fund posts an
-`owl_prize` debit at the cash amount in the same transaction, so its
-balance is what remains to be offered; the dollars back the owl liability
-like every owl outstanding, and the fund's public page says so.
+`src/services/owl.ts` stays true. A grant above 2,000 owls is written in
+daily tranches of at most `PRIZE_OWL_TRANCHE_OWLS` (2,000), so no single
+day loads more than the closed-loop threshold section 9.1 relies on. The
+payout row is what consumes the mandate's hold: the mandate's committed
+money counts the gross amount from that row onward, and the bounty's hold
+lapses when it closes. Withholding, where it applies, is recorded on the
+payout row as the platform's own tax remittance; the mandate is consumed
+for the gross amount it offered.
 
 The accounting truth, stated in `docs/allocation.md` when this ships: a
-prize of N dollars paid in owls mints N owls; when spent they cover about N
-dollars of metered cost, paid by the platform to its providers as they are
-spent; the liability is measured at cost, one dollar per owl, like every owl
-outstanding, and it is backed by the N dollars the fund debited; the sale
-margin forgone is disclosed, never booked. For the winner, owls at one per
-dollar are four times the purchase rate; for the platform, an owl prize is
-never dearer than the dollars set aside and cheaper by whatever fraction is
-never spent. Both readings are shown.
+prize of N owls retires N owls of a mandate's escrow and mints N owls in
+the winner's account; when spent they cover about N dollars of metered
+cost, paid by the platform to its providers as they are spent; the
+liability is measured at cost, one dollar per owl, like every owl
+outstanding, and the total outstanding does not change when a prize is
+paid. For the winner, owls at one per dollar of the prize's face are four
+times the purchase rate; for the platform, an owl prize is never dearer
+than the escrow that backed it and cheaper by whatever fraction is never
+spent. Both readings are shown.
 
 **Reversal.** A post-payout voiding after fraud is recorded on the payout
 row (`reversed`); the clawback is a negative `prize_award` row mirroring
@@ -2180,7 +2280,7 @@ with `failed` and `reversed`. `prize_payouts` already records `kind`,
 it exists, is elected once after `payable` and irrevocably, with one exit:
 a payout that has failed three times or sat in `payout_pending` for 90 days
 may be converted to owls. A reconciliation job would compare
-`prize_pool_entries` with the provider's ledger and the operating account
+`prize_payouts` with the provider's ledger and the operating account
 monthly.
 
 Which rail: Stripe's published restricted-business list names contests and
@@ -2211,7 +2311,8 @@ the default is 30 percent withholding with Form 1042-S and Form 1042 filing,
 unless counsel's memo on the source of prize income (Treas. Reg. §1.863-1(d))
 supports a foreign-source position. A non-U.S. winner
 receives owls equal to the prize net of required withholding, and Minerval
-remits the withheld amount from the fund (`withholding_remitted`), pending
+remits the withheld amount from its own cash, recorded on the payout row
+(`withholding_micro_usd`), pending
 counsel's view on whether gross-up or a U.S.-persons-only eligibility rule is
 preferable. An owl prize is reported at the cash-equivalent fair market
 value with a documented methodology the accountant confirms.
@@ -2260,8 +2361,8 @@ The service key (`MINERVAL_API_KEY`) is deployed to the web tier and acts
 for any user through the acting-user header, so it cannot be the credential
 that moves money. Four routes require an operator key
 (`MINERVAL_OPERATOR_KEY`), a credential held outside the web deployment and
-used only from the operator's own session: the fund deposit, the bounty
-confirmation, the prize-claim sign-off, and the void. Two routes act for a
+used only from the operator's own session: the bounty confirmation, the
+prize-claim sign-off, the void, and the payee screening record. Two routes act for a
 winner and require both the dashboard session and a one-time code sent to
 the account's verified email: the payee step and the withdrawal, so a
 leaked consumer key or service key alone can neither redirect a prize nor
@@ -2286,8 +2387,8 @@ advice.
    statement hash, the pin, the axiom set, the checker configuration). This
    keeps the program outside the chance-based registration and bonding
    regimes (New York, Florida, Rhode Island) and outside the states reported
-   to forbid consideration in skill contests. The v1 per-claim cap of $5,000
-   keeps single prizes small; the program's standing rests on the
+   to forbid consideration in skill contests. The v1 per-claim cap of 5,000
+   owls keeps single prizes small; the program's standing rests on the
    skill-contest characterization and on counsel item 11, not on the cap,
    since some registration regimes key on aggregate prize value.
 2. **The bounty is a unilateral contract.** A public reward offer binds
@@ -2304,9 +2405,10 @@ advice.
    keeps the program away from federal money-transmitter status (the
    integral-to-services exemption at 31 CFR 1010.100(ff)(5)(ii)(F)), from
    New York Banking Law §641, and from state escrow-agent regimes, subject to
-   counsel's confirmation. It is why per-claim pledges and owl pledges are
-   not built, and why "escrow," "deposit," and "held for you" leave
-   user-facing prize text.
+   counsel's confirmation. It is why per-claim pledges are not built, why a
+   person who wants to fund prizes does so by funding a mandate whose
+   Grantmaker decides, holding no right against any winner, and why
+   "deposit" and "held for you" leave user-facing prize text.
 4. **Owls as prizes are promotional credit.** This is the founder's
    question, and the short answer is that paying prizes in owls creates no new
    legal problem provided owls remain one-way and promotional. Prize owls
@@ -2365,7 +2467,8 @@ adapter of section 8.8. Points, in order:
   request to Stripe's support or the account team describing the program:
   a scientific prize for machine-verified mathematical proofs, free entry,
   no element of chance, fixed criteria published in advance, U.S. sponsor,
-  prizes of $250 to $5,000, a few dozen payees a year at most.
+  prizes of 250 to 5,000 owls (valued at one dollar each), a few dozen
+  payees a year at most.
 - **The product is Global Payouts, not Connect.** Global Payouts pays
   individuals who are not sellers; Connect Express and Custom model payees as
   merchants with onboarding, KYC, and platform liability that this program
@@ -2418,9 +2521,13 @@ Before Phase 3 (prizes payable in owls):
    of withholding, gross-up, or U.S. persons only). Needed before Phase 3
    if non-U.S. winners are eligible in v1 (section 15).
 7. Money transmission and prepaid access: confirmation from New York
-   counsel that the fund-level sponsorship structure is outside Banking Law
-   §641 and the federal definition, and a review of purchased owls and of
-   prize-granted owls loaded in tranches against the closed-loop
+   counsel that a prize held against a mandate's escrow, including a
+   mandate a person funded with purchased owls, is Minerval's own
+   obligation and not funds held for or transmitted on behalf of anyone
+   (the person directs a mandate, holds no right against a winner, and
+   never receives value back), so that the program stays outside Banking
+   Law §641 and the federal definition; and a review of purchased owls and
+   of prize-granted owls loaded in tranches against the closed-loop
    prepaid-access exclusion and state gift-card and escheat rules.
 
 When cash returns:
@@ -2436,33 +2543,38 @@ Before third-party sponsorship or larger prizes:
    sit in a segregated account.
 10. International openings: Italy's scientific-merit exemption, Canada's
     Competition Act disclosure and Quebec language rules, and which
-    countries to exclude once prize sizes exceed $5,000.
+    countries to exclude once prize sizes exceed 5,000 owls.
 11. Prize registration thresholds: a memo confirming that New York,
     Florida, and Rhode Island registration and bonding do not apply to a
-    skill contest, before any single bounty exceeds $5,000.
+    skill contest, before any single bounty exceeds 5,000 owls.
 12. Minors and teams; entity payees.
 13. The double-payment question for problems carrying a third-party prize in
     the discourse (Erdős prizes administered through a foundation), before
     any such problem receives a Minerval bounty.
 
 Everything above is a question about scale. The v1 program (free entry,
-owls-only payout, prizes at or below $5,000, tax forms collected before any
-payout, a named sponsor, a versioned rules page, a 14- to 30-day window,
-human sign-off at $1,000) can open on items 1 to 7; cash, when it returns,
+owls-only payout, prizes at or below 5,000 owls, tax forms collected before
+any payout, a named sponsor, a versioned rules page, a 14- to 30-day window,
+human sign-off at 1,000 owls) can open on items 1 to 7; cash, when it returns,
 needs 8; growth needs the rest.
 
 ---
 
-## 10. The Mathematics mandate
+## 10. The Mathematics mandates
 
 The seeded mandate today is two sentences of objective, a keyword scope
 query, 100 owls of escrow, and 10 owls a day
 (`scripts/seed-platform-mandates.ts:68-90`), policy `cover`, so a judgment
 mandate valued by its Grantmaker rather than by the General formula. That is
-far from what the founder asked for. This section fixes the mandate's
-objective, strategy, scope, prize policy, attempt policy, valuation policy,
-bounds, sizing, and plan; Appendix B carries the full text that goes into the
-seed and onto the mandate's public page.
+far from what the founder asked for. This section fixes the Mathematics
+mandate's objective, strategy, scope, prize policy, attempt policy,
+valuation policy, bounds, sizing, and plan, and describes the second
+platform mandate, Mathematics prizes, which the same seed creates beside
+it; Appendix B carries the full text of both that goes into the seed and
+onto the mandate pages. The two are one program under two Grantmakers: the
+first funds the work, the second offers the prizes, and each draws only on
+its own escrow. A later epoch may merge them into one mandate that does
+both, which the mechanism already supports (section 8.1).
 
 ### 10.1 Objective
 
@@ -2473,11 +2585,12 @@ conditional consequences, and the field's considered expectation; publish
 reviewed formal statements of the problems that matter; hold independent
 proofs of one result side by side; attempt, with the platform's own
 instrument, the problems where an attempt has a real chance of settling the
-question or teaching where the difficulty lies; and post prizes on the
-problems the platform could not settle, so that the answer, when someone
-finds it, becomes part of the public record on terms fixed in advance. The
-mandate's value is the ordering it produces and the questions it poses, not
-the theorems it proves.
+question or teaching where the difficulty lies; and see prizes offered, by
+the Mathematics prizes mandate in this epoch, on the problems the platform
+could not settle, so that the answer, when someone finds it, becomes part
+of the public record on terms fixed in advance. The mandate's value is the
+ordering it produces and the questions it poses, not the theorems it
+proves.
 
 ### 10.2 Strategy
 
@@ -2508,25 +2621,40 @@ where a claim of the first kind turns on it.
 ### 10.4 Prize policy
 
 Stated on the mandate page in the graph's voice and enforced by the
-mechanism of section 8:
+mechanism of section 8. Two platform mandates carry the Mathematics skill
+in this epoch, and their prize policies differ in one sentence:
 
-- Prizes are paid from the mathematics prize fund, never from this
-  mandate's compute budget, and never enter any valuation, importance,
-  assessment, or standard.
+- **Mathematics** funds formalizations, attempts, and stewardship and, in
+  this epoch, posts no prizes; the Mathematics prizes mandate posts them.
+  Both mandates draw on escrows a Grantmaker allocates, and nothing else
+  funds a prize.
+- **Mathematics prizes** offers prizes and funds nothing else in this
+  epoch. Its escrow is the only source of its prizes; a bounty holds its
+  amount against the escrow from the moment it opens until it resolves,
+  and the mandate's headroom is what remains after every hold.
+
+The rest is common to both, and to any later mandate that carries the
+skill:
+
+- Prizes never enter any valuation, importance, assessment, or standard.
 - A bounty binds only to a published formal statement whose review period
   has ended and which the platform's solver has attempted at effort `max`
   without settling, with the attempt's report public.
-- Amounts are set by the Grantmaker from three things: how much the
-  discourse would gain from a settled answer (the claim's importance and the
-  results that rest on it), the effort the problem appears to require from a
-  capable claimant (prior attempts, the size of the literature, the state
-  of Mathlib), and the fund's balance and the number of open bounties.
-  Amounts never feed back into importance. The Grantmaker states the
-  reasoning publicly with each posting.
-- v1 bounds: $250 to $5,000 per claim; at most one live bounty per claim;
-  the total of open bounties never above the fund's balance; every posting
-  two-pass; every posting confirmed by a human until the founder raises the
-  autonomy threshold.
+- Amounts are set by the Grantmaker in owls from three things: how much
+  the discourse would gain from a settled answer (the claim's importance
+  and the results that rest on it), the effort the problem appears to
+  require from a capable claimant (prior attempts, the size of the
+  literature, the state of Mathlib), and the mandate's headroom and the
+  number of open bounties. Where a mandate funds both attempts and prizes,
+  the Grantmaker says with each posting why a prize is the better use of
+  those owls than another attempt. Amounts never feed back into
+  importance. The Grantmaker states the reasoning publicly with each
+  posting.
+- v1 bounds: 250 to 5,000 owls per claim; at most one live bounty per
+  claim; holds never above the mandate's headroom, and per pass and per
+  day at most the configured fractions of the escrow; every posting
+  two-pass; every posting at or above the autonomy threshold confirmed by
+  a human until the founder raises it.
 - A trivial resolution of a mis-stated problem earns the defect award, not
   the prize; a rediscovery of a published proof earns credit on the page,
   not the prize; the platform is never a claimant.
@@ -2585,24 +2713,27 @@ a say in acceptance; and any attempt on a claim the Steward has not tagged
 and stewarded. Integrity outranks revenue (`docs/allocation.md`, invariant
 6).
 
-### 10.7 Escrow, daily rate, and fund sizing
+### 10.7 Escrow, daily rate, and sizing
 
 The seeded rate of 10 owls a day cannot fund any attempt:
 `runMandateAllocator` skips an increment larger than the day's room outright
-(`src/services/allocation-service.ts:376-382`), and `fundGrantSelfActions`
+(`src/services/allocation-service.ts`), and `fundGrantSelfActions`
 applies the same day room. All sizing is read from the environment rather
 than written as literals (`MATH_MANDATE_ESCROW_OWLS`,
-`MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD`), and the shape is what
-makes the mandate robust to far more money: move caps as fractions of escrow
-(`src/config.ts:394-395`), fund draws as fractions of the fund, the day's
-room as a rate the Grantmaker sets, cost estimates as p80 of live runs, and
-only safety ceilings as absolute numbers an operator raises by
-configuration. Two worked examples for the first deposit:
+`MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZES_ESCROW_OWLS`), and the shape is
+what makes the program robust to far more money: move caps as fractions of
+escrow (`src/config.ts`), bounty bounds as fractions of the posting
+mandate's escrow, the day's room as a rate the Grantmaker sets, cost
+estimates as p80 of live runs, and only safety ceilings as absolute
+numbers an operator raises by configuration. The prizes mandate has no
+daily rate (rate 0 is "escrow-bounded" in the grants schema): its spend is
+prizes, which are paced by the per-pass and per-day fractions, and its own
+review passes. Two worked examples for the first commitment:
 
-| First commitment | Escrow (owls, at cost) | Daily rate | Prize fund | What it buys |
+| First commitment | Mathematics escrow (owls) | Daily rate | Mathematics prizes escrow (owls) | What it buys |
 |---|---|---|---|---|
-| $3,000 | 2,000 | 200 | $1,000 | The corpus baseline, about forty formalizations, the calibration runs, ten to fifteen attempts at the priors, and two or three first bounties of $250 to $500. |
-| $5,000 | 2,500 | 200 | $2,500 | The same compute plus room for a first bounty of $1,000 and several smaller ones. |
+| $3,000 | 2,000 | 200 | 1,000 | The corpus baseline, about forty formalizations, the calibration runs, ten to fifteen attempts at the priors, and two or three first bounties of 250 to 500 owls. |
+| $5,000 | 2,500 | 200 | 2,500 | The same compute plus room for a first bounty of 1,000 owls and several smaller ones. |
 
 The daily rate of 200 owls sits above one `max` attempt's prior (150) plus a
 day of review passes and formalizations, so the allocator can place an
@@ -2611,7 +2742,8 @@ during calibration) is the outer bound. The first bounties are small and
 deliberately tractable, and one is posted on a problem whose purpose is to
 exercise the whole path end to end, said so publicly. The split (roughly two
 thirds to attempts and formalizations, one third to prizes) is revisited
-after the first ten attempts and the first paid prize. The founder decides
+after the first ten attempts and the first paid prize, and a later epoch
+may merge the two mandates into one that funds both. The founder decides
 the figures (section 15).
 
 ### 10.8 Plan items
@@ -2632,8 +2764,8 @@ The seed script matches on title and never updates an existing row
 mandate reaches a live deployment only through a new path. Add
 `--update-mandate <key>` to the seed: it updates `grants.mandate`
 (objective, strategy, prize policy, attempt policy, the disclosure
-paragraph), `grants.skills`, `grants.prize_pool_id`, and the allocation
-policy keys. Two explicit flags change money, because the platform is the
+paragraph), `grants.skills`, and the allocation policy keys, for either
+of the two platform mandates. Two explicit flags change money, because the platform is the
 funder of its own mandates and no review pass can raise an escrow:
 `--daily-owls N` sets the rate, and `--top-up-owls N` mints and escrows
 more platform owls under a batch-keyed idempotency key, exactly as the seed
@@ -2645,11 +2777,10 @@ next review pass reads the new text in its briefing. A management
 conversation with the mandate's Grantmaker is the other path and is the one
 for later revisions.
 
-The seed also creates the `prize_pools` row for `mathematics` and records
-the first deposit as `platform_deposit` under an idempotency key that
-includes the deposit batch, so a later, larger deposit is a new row rather
-than a silent no-op (the current mint at lines 153-158 would skip a second
-deposit under the same key).
+The seed also creates the Mathematics prizes mandate (section 10.4) with
+its escrow from `MATH_PRIZES_ESCROW_OWLS`, minted and held exactly as the
+Mathematics mandate's is, and `--top-up-owls` takes the mandate's key so
+either escrow can be raised under a batch-keyed idempotency key.
 
 ---
 
@@ -2675,9 +2806,8 @@ Bounties and prizes:
 - `GET /prizes` (public): open bounties across the graph, largest first,
   paged, with the same read model; also as an Atom feed at `GET /prizes.atom`.
 - `GET /prizes/rules` and `GET /prizes/rules/:version` (public).
-- `GET /prize-pools/:domain` (public): balance and entries by reason.
-- `POST /prize-pools/:domain/deposit` (operator key): `{amount_cents,
-  bank_reference, batch_key}`.
+- `GET /attempts/stats` and `GET /attempts/stats?grant_id=` (public): the
+  platform's attempt record (section 7.10).
 - `POST /bounties/:id/confirm` (operator key): the human confirmation.
 - `POST /claims/:id/prize-claims` (multipart; `authenticate` +
   `gateContributor`; no agentic quota).
@@ -2742,9 +2872,9 @@ Add `docs/prizes.md` (a reader-facing explainer of mathematics on Minerval
 and how prizes work, vendored like the constitution), the `docs/skills`
 pages (section 3.6), the rules page, and the privacy policy's prizes
 section. Update `docs/allocation.md` (four new invariants: a bounty is not
-an allocation; prize money never enters a valuation; owls never fund a
-prize; the platform is never a claimant; plus the accounting truth of an
-owl prize and the prize fund), `docs/accounts.md` (payouts, tax, the
+an allocation; prize money never enters a valuation; a bounty is a term in
+committed money like a regrant; the platform is never a claimant; plus the
+accounting truth of an owl prize), `docs/accounts.md` (payouts, tax, the
 `prize_award` reason, `owls_prized`; and its owl-pack list, which is stale
 against `src/config.ts:191` today), `docs/architecture.md` (the checker
 service, the solver worker, attachments, the long-run loop, the skill
@@ -2869,7 +2999,7 @@ groups, supersession on paid, the cooldown ladder); the route gate's every
 refusal code and the one-transaction insert; the Reviewer's `claim_prize`
 branch admitting without credit; the checker worker's per-statement
 serialization, concurrency cap, poll transitions, retries, and reclaim;
-`post_bounty`'s two-pass, fraction caps, `available` bound, review-period
+`post_bounty`'s two-pass, fraction bounds, escrow headroom, review-period
 and attempt preconditions, and human confirmation; the gate closed at
 `claim_pending` and after an attempt's `finished_at`; a submission matching
 an attempt-mode check rejected; `check_error` holding the queue; the tie
@@ -2884,14 +3014,16 @@ only with a qualifying check.
 Database (real Postgres from migration zero, `tests/db/`): the new tables
 and CHECK constraints; the partial unique indexes (one published statement
 per claim, one live bounty per claim, one live prize claim per claimant per
-statement); prize-fund invariants (a bounty never opens beyond `available`; the
-sum of debits against a bounty never exceeds its amount; `reserved` returns
-to zero when every bounty is terminal); payout idempotency
+statement); prize invariants (a bounty never opens beyond the mandate's
+headroom; a held bounty shrinks the allocator's room by its amount; the
+payouts on a bounty never exceed its amount; the hold lapses when every
+bounty is terminal; a mandate with a live bounty cannot complete); payout
+idempotency
 (the same key twice yields one `owl_ledger` row or one payout row); prize
 owls excluded from the leaderboard sum; escrow headroom with `prize_review`
 reserves; two racing acceptances producing one accepted claim and two
 racing payouts producing one; the corpus reset list including every new
-table; and an end-to-end money-path test (deposit, bounty, claim, mocked
+table; and an end-to-end money-path test (escrow, bounty, claim, mocked
 check, admit, accept, audit, window, payee steps, owl grant, ledger
 invariants at every step).
 
@@ -2938,8 +3070,8 @@ job.
 - **Runbooks** in `docs/infrastructure.md`: pin advance and statement
   migration; pausing the solver; cancelling an attempt; re-queuing a
   `check_error`; voiding and signing off a prize claim; withdrawing a bounty
-  with notice; a checker image rebuild; reconciling the prize fund against
-  the operating account and the provider.
+  with notice; a checker image rebuild; reconciling prize payouts against
+  the mandates' holds.
 - **Monitoring**: checker queue depth and per-check wall time; the solver's
   daily spend against its cap; attempts `running` past their heartbeat;
   prize claims in `checking` past the reclaim window; claims in
@@ -3006,7 +3138,7 @@ job.
   attempt pages and the attempt log on the claim page; the solver's
   `/docs/agents` page.
 - The mandate rewrite (Appendix B), the `--update-mandate` seed path, the
-  new policy keys and bounds, the `prize_pools` row.
+  new policy keys and bounds, the Mathematics prizes mandate.
 - Calibration runs under the 100-owl cap, results on the mandate page; then
   the first target list from the Grantmaker's review pass, attempted under
   the 400-owl cap.
@@ -3016,9 +3148,9 @@ job.
 
 **Phase 3: prizes payable in owls (about two weeks; counsel items 1 to 7
 done). v1 ends here.**
-- `prize_pool_entries`, `bounties`, `prize_claims`, `prize_payouts`,
-  `attachments`; the deposit route; `post_bounty` and `withdraw_bounty`
-  with two-pass, caps, and human confirmation; the confirm route.
+- `bounties`, `prize_claims`, `prize_payouts`, `attachments`; the prize
+  term in committed money; `post_bounty` and `withdraw_bounty` with
+  two-pass, bounds, and human confirmation; the confirm route.
 - The prize section on the claim page, the map ring and mark, the list
   chip, `/prizes` and its feed, the "Open prizes" strip, the mandate page's
   Prizes section, the Mathematics territory.
@@ -3043,7 +3175,8 @@ done). v1 ends here.**
   and screening replacing the operator's hand steps; withholding remittance
   through the provider; the reconciliation job. The state machine already
   has `payout_pending`, `failed`, and `reversed` for it.
-- Later still, after counsel item 9: the fund-level sponsorship product.
+- Later still, after counsel item 9: a cash sponsorship product, if one is
+  ever wanted beyond funding a mandate.
 
 ### 14.2 Dependencies
 
@@ -3067,7 +3200,7 @@ machine-checked badge. At the end of Phase 2: the platform's own attempts,
 with their costs and reports, on the mandate page and the claim pages, and
 the first compute money accounted for. At the end of Phase 3: a prize on a
 claim page and on the map, a claim button that works end to end, and a
-winner paid in owls, fully backed by the fund.
+winner paid in owls from the mandate's hold.
 
 ---
 
@@ -3078,27 +3211,28 @@ written on the recommendation; a different choice changes the section
 cited.
 
 1. **The first figures** (section 10.7). Recommended: a $5,000 first
-   commitment as 2,500 owls of escrow at cost, 200 owls a day, and a $2,500
-   prize fund. At $3,000: 2,000 owls, 200 a day, $1,000. Every figure is an
-   environment variable, and the shape is what carries larger sums.
+   commitment as 2,500 owls of escrow at cost for the Mathematics mandate,
+   200 owls a day, and 2,500 owls of escrow for the Mathematics prizes
+   mandate. At $3,000: 2,000 owls, 200 a day, 1,000 owls. Every figure is
+   an environment variable, and the shape is what carries larger sums.
 2. **Prize claims: checker first** (section 8.4). Recommended: the route
    gate, then the checker, then the Reviewer, then the Steward, so a failed
    proof consumes no judgment. The alternative, Reviewer first, screens
    identity and good faith before any compute is spent; it costs a Reviewer
    run per spam submission the gate let through.
 3. **Autonomy of bounty posting** (section 8.1). Recommended: postings
-   below $1,000 open on the Grantmaker's two-pass alone, so the Grantmaker
-   determines and funds ordinary prizes; at or above, the founder confirms.
+   below 1,000 owls open on the Grantmaker's two-pass alone, so the
+   Grantmaker determines and funds ordinary prizes; at or above, the
+   founder confirms.
    The threshold is configuration; two-pass posting stays regardless.
-4. **What the fund records when a prize is paid in owls** (section 8.7).
-   Recommended: a debit at the cash amount when the owls are granted, so
-   the fund's balance is what remains to be offered and every owl prize is
-   fully funded by a dollar already deposited. The alternative keeps the
-   cash in the fund and shows the owl liability beside it, which lets one
-   dollar appear to back both.
+4. **Two mandates or one** (section 10.4). Recommended: a prizes-only
+   Mathematics prizes mandate beside the Mathematics mandate for the first
+   epoch, so the first prize decisions are legible on their own page and
+   the compute mandate's escrow is never held by a bounty. The mechanism
+   supports a mixed mandate today, and a later epoch may merge them.
 5. **International winners in v1** (section 8.9). Recommended: open to
    non-U.S. winners from the start, with the owl grant reduced by the 30
-   percent withholding and the withheld amount remitted from the fund, once
+   percent withholding and the withheld amount remitted by Minerval, once
    counsel item 6 is answered. The alternative restricts v1 prizes to U.S.
    persons, which removes the Form 1042 mechanics and most of the claimant
    pool. Cash payouts are out of v1 by the founder's decision, so the rail
@@ -3108,8 +3242,8 @@ cited.
    the attempt is the best vacuity probe. The alternative waits 14 days per
    statement and is safer only against a mis-statement both reviews missed.
 7. **Sign-off** (section 8.5). Recommended: the founder alone in v1; a named
-   mathematician joins at the first $2,500 prize; a panel of three at
-   $10,000 or importance 0.9.
+   mathematician joins at the first 2,500-owl prize; a panel of three at
+   10,000 owls or importance 0.9.
 8. **Paying a checked formalization of a proof already in the literature**
    (section 8.4). Recommended: pay in full. The platform's own literature
    search failed before posting, and the claimant delivered exactly what
@@ -3170,7 +3304,12 @@ proves the abc conjecture" earns a node; "the prime number theorem has been
 proven" does not, because nobody disputes it, and it is the status of the
 theorem. A definition is setup, not a claim; a proof step nobody outside one
 proof refers to is not a claim; a lemma becomes a claim when the discourse
-names and reuses it. Mathematical claims carry `claim_type = mathematical`
+names and reuses it. A proposition the platform's own work brings to
+light, a lemma an attempt sharpened or a statement several open problems
+turn on that no source states cleanly, can become a claim on exactly the
+terms a claim from a paper does, with its provenance recorded; do not go
+looking for claims to make, and do not loosen the standard because the
+platform noticed it first. Mathematical claims carry `claim_type = mathematical`
 and the domain tag `mathematics`; a claim about the economics or history of
 a theorem is a claim of another type that may also carry the tag.
 
@@ -3221,8 +3360,8 @@ Credences on a claim, its special cases, and its equivalents must be
 jointly tenable.
 
 **Importance and liveness.** Settled mathematics is load-bearing almost
-everywhere and important almost nowhere. A settled theorem sits near 0.15
-however much rests on it. An open problem is live when the discourse
+everywhere and important almost nowhere. A settled theorem usually sits
+near 0.15 however much rests on it. An open problem is live when the discourse
 consults, attacks, cites, or prices it; liveness is recorded as
 contestation, and it is evidence from the discourse, never from the
 platform's own ledger. Anchors, calibrated across fields: the Riemann
@@ -3235,8 +3374,11 @@ assessment, and your reasoning never mentions money.
 means: the submission compiled under the statement's pin, the proved
 theorem's type is alpha-equivalent to the published statement (or its
 negation), the axiom closure is within `propext`, `Classical.choice`, and
-`Quot.sound`, no unsafe or partial or externally implemented declaration
-was added, and the kernel replayed the declarations. That is evidence of
+`Quot.sound` (Lean's standard classical foundation, choice included; the
+rule excludes only axioms a submission adds), no unsafe or partial or
+externally implemented declaration was added, and the kernel replayed the
+declarations. A hypothesis a claim assumes beyond that foundation belongs
+in the statement as an antecedent, never in a proof as an axiom. That is evidence of
 the highest grade about the formal statement and nothing else. Whether the
 formal statement says what the claim says is the steward's judgment, made
 before publication and again at acceptance. A `rejected` verdict says the
@@ -3244,13 +3386,12 @@ submission failed one named gate; a rejected disproof is not evidence for
 the statement. An `error` verdict is no evidence at all. A failed check is
 never a reputation event.
 
-**Prizes, and the money boundary.** A bounty is money the platform offers,
-from a prize fund the allocation ledger cannot see, for a Lean proof or
-disproof of one published statement under one pin, judged by the checker
-and then by the steward for fidelity, exposed to a public challenge window,
-audited, and paid in owls, one per dollar, backed by the fund. A bounty is not
-an allocation: it funds nothing, it enters no valuation, and it changes no
-standard. The platform is never a claimant; if its own solver settles a
+**Prizes, and the money boundary.** A bounty is owls a mandate's Grantmaker
+offers from that mandate's escrow, held there until the prize resolves, for
+a Lean proof or disproof of one published statement under one pin, judged
+by the checker and then by the steward for fidelity, exposed to a public
+challenge window, audited, and paid in owls. A bounty is not an allocation:
+it funds no work, it enters no valuation, and it changes no standard. The platform is never a claimant; if its own solver settles a
 statement, the bounty closes unpaid and the proof is published. Every
 attempt the platform makes is disclosed on the claim page before a bounty
 opens. Funders are never named on claim surfaces; Minerval is named as
@@ -3274,9 +3415,15 @@ infinitely many primes p such that p + 2 is prime" is canonical; "∀N ∃p>N
 ## For the Claim Steward
 
 **Publishing a formal statement.** Draft the statement as a `def Statement :
-Prop` in the checker's convention, taking every definition from Mathlib
-rather than introducing your own, and elaborate it with `lean_elaborate`
-until it type-checks. Then read it as an adversary would, against this
+Prop` in the checker's convention, taking definitions from Mathlib where it
+has them. Where it does not, find one in a public formalization project
+and cite it, or write one yourself: a standard object stated carefully,
+with the correspondence note saying the definition is your own, which
+sources it follows, and why the Lean text matches them, and the statement
+published with `own_definitions` set so the page says so. A definition
+you cannot state to your own satisfaction is a reason not to publish, said
+in your review notes, never a reason to publish something weaker.
+Elaborate with `lean_elaborate` until the statement type-checks. Then read it as an adversary would, against this
 checklist: the conjecture defined as `True` or as something trivially
 equivalent; two sides aliased so equality is by `rfl`; the crux moved into a
 hypothesis; contradictory or vacuous hypotheses; a hypothesis silently
@@ -3328,9 +3475,14 @@ vacuous? A trivial proof in the first minutes of an attempt is a statement
 defect until shown otherwise. If the result stands, record the argument and
 the assessment, log the decision, and notify dependent stewards. If a
 bounty is bound to the statement, call `mark_problem_solved_by_platform`;
-never call it for a partial result. A negative report is an outcome: record
-that the platform attempted the problem at the stated effort and did not
-settle it.
+never call it for a partial result. The tool refuses while a human prize
+claim filed earlier is live on the bounty: a claim filed before the attempt
+completed is judged first and, if accepted, wins, and a platform result
+never blocks it. On that refusal record your assessment and leave the
+bounty to the prize path; the tool can be called again once every earlier
+claim has reached a terminal status. A negative report is an outcome:
+record that the platform attempted the problem at the stated effort and
+did not settle it.
 
 **Prize claims.** You are invoked on `prize_claim` only after the checker
 has accepted the submission and the Reviewer has admitted it. Your judgment
@@ -3371,10 +3523,13 @@ and is never billed to the claimant. A bounty appears nowhere in any
 valuation. Quote attempts honestly, Lean checks included.
 
 Post a bounty with `post_bounty` only on a published statement whose review
-period has ended and which the solver attempted without settling. Set the
-amount from what the discourse would gain, what the problem appears to
-require of a capable claimant, and the fund's balance; state the reasoning
-publicly. Every posting is two-pass; at or above the confirmation threshold it
+period has ended and which the solver attempted without settling. The
+bounty is owls from your own mandate's escrow, held there from the day it
+opens until it resolves. Set the amount from what the discourse would gain,
+what the problem appears to require of a capable claimant, and the
+mandate's headroom; where your mandate funds both attempts and prizes, say
+why a prize is the better use of those owls than another attempt; state
+the reasoning publicly. Every posting is two-pass; at or above the confirmation threshold it
 waits for a human. Never post on a problem carrying a
 third-party prize in the discourse until the double-payment question is
 settled. Refuse any request whose purpose is to move an assessment or an
@@ -3382,7 +3537,7 @@ importance, any bounty on a statement you cannot show is faithful, and any
 sponsorship offered on condition of naming or influence.
 
 The disclosure you write for every attempt and bounty says: the platform
-attempted this statement on DATE at effort E for $X and did not settle it;
+attempted this statement on DATE at effort E for N owls and did not settle it;
 its report is public; offering a prize changes nothing about how the claim
 is assessed.
 
@@ -3519,11 +3674,15 @@ open. Equivalent formulations merged on the strength of a theorem. A
 solver's trivial proof recorded as a result rather than a defect.
 ```
 
-## Appendix B: The Mathematics mandate
+## Appendix B: The Mathematics mandates
 
 The text that goes into `scripts/seed-platform-mandates.ts` under the
-`mathematics` key and onto the mandate's public page. Numbers marked with
-brackets are read from the environment (section 10.7).
+`mathematics` and `mathematics-prizes` keys and onto the two mandate
+pages. Numbers marked with brackets are read from the environment (section
+10.7). The prize policy is common to both mandates from its third sentence
+on; the seed carries it once.
+
+### Mathematics
 
 **Title.** Mathematics
 
@@ -3535,22 +3694,24 @@ expectation; publishes reviewed formal statements, in Lean 4 against a
 pinned Mathlib, of the problems that matter; holds independent proofs of
 one result side by side; attempts, with the platform's own solver, the
 problems where an attempt has a real chance of settling the question or
-teaching where the difficulty lies; and posts prizes on the problems the
-platform could not settle, so that the answer, when someone finds it,
-becomes part of the public record on terms fixed in advance. The mandate's
-value is the ordering it produces and the questions it poses, not the
-theorems it proves.
+teaching where the difficulty lies; and sees prizes offered, by the
+Mathematics prizes mandate in this epoch, on the problems the platform
+could not settle, so that the answer, when someone finds it, becomes part
+of the public record on terms fixed in advance. The mandate's value is the
+ordering it produces and the questions it poses, not the theorems it
+proves.
 
 **Strategy.** Cover unassessed mathematical claims in scope with light
 passes, concentrating depth where working mathematicians disagree.
 Formalize the open problems in the notable range and the lemmas several of
 them rest on. Calibrate the solver on settled problems before attempting
 open ones. Attempt open problems in order of importance times
-tractability, sub-results before the problems that rest on them. Post
-bounties only on statements the platform attempted and could not settle,
-after their public review period. Keep every attempt, every statement,
-every check, and every prize decision public. Revise this mandate's own
-policy numbers as live series replace the priors.
+tractability, sub-results before the problems that rest on them. Publish
+the attempt reports and statements the Mathematics prizes mandate posts
+bounties on; post no bounties from this escrow in this epoch. Keep every
+attempt, every statement, every check, and every prize decision public.
+Revise this mandate's own policy numbers as live series replace the
+priors.
 
 **Scope.** Propositions of mathematics; the contested applications of
 mathematical results elsewhere in the graph; and claims about the
@@ -3561,24 +3722,31 @@ is retrieval, not membership; which actions fall under this mandate is the
 Grantmaker's judgment, and the `mathematics` domain tag is a strong prior
 for it.
 
-**Prize policy.** Prizes are paid from the mathematics prize fund, never
-from this mandate's compute budget, and they never enter any valuation,
+**Prize policy.** This mandate funds formalizations, attempts, and
+stewardship, and in this epoch it posts no prizes; the Mathematics prizes
+mandate posts them. Both mandates draw on escrows a Grantmaker allocates,
+and nothing else funds a prize. Prizes never enter any valuation,
 importance, assessment, or standard. A bounty binds only to a published
 formal statement whose review period has ended and which the platform's
-solver has attempted at maximum effort without settling, with the attempt's
-report public. Amounts are set from how much the discourse would gain from
-a settled answer, the effort the problem appears to require from a capable
-claimant, and the fund's balance and the number of open bounties; amounts
-never feed back into importance, and the reasoning is stated publicly with
-each posting. Bounds: [$250] to [$5,000] per claim; at most one live bounty
-per claim; the total of open bounties never above the fund's balance; every
-posting made in two passes and, at or above [$1,000], confirmed by a human.
-Prizes are paid in owls, one owl per dollar, and every owl prize is backed
-by a dollar in the fund the moment it is granted. A trivial resolution of a mis-stated
-problem earns the defect award, not the prize; a rediscovery of a published
-proof earns credit on the page, not the prize; the platform is never a
-claimant. No bounty is posted on a problem carrying a third-party prize in
-the discourse until the double-payment question is settled.
+solver has attempted at maximum effort without settling, with the
+attempt's report public. Amounts are set by the Grantmaker in owls from
+how much the discourse would gain from a settled answer, the effort the
+problem appears to require from a capable claimant, and the posting
+mandate's headroom and the number of open bounties; where a mandate funds
+both attempts and prizes, its Grantmaker says with each posting why a
+prize is the better use of those owls than another attempt; amounts never
+feed back into importance, and the reasoning is stated publicly with each
+posting. Bounds: [250] to [5,000] owls per claim; at most one live bounty
+per claim; holds never above the posting mandate's headroom, and per pass
+and per day at most [40] percent and [50] percent of its escrow; every
+posting made in two passes and, at or above [1,000] owls, confirmed by a
+human. Prizes are stated and paid in owls, valued at one dollar of metered
+cost each, and every prize owl is backed by escrow that was paid for
+before the offer was made. A trivial resolution of a mis-stated problem
+earns the defect award, not the prize; a rediscovery of a published proof
+earns credit on the page, not the prize; the platform is never a claimant.
+No bounty is posted on a problem carrying a third-party prize in the
+discourse until the double-payment question is settled.
 
 **Attempt policy.** An attempt is valued as expected information:
 importance times the Grantmaker's stated probability that this variant
@@ -3611,12 +3779,74 @@ says only that someone would like the question settled.
 `attempt_claim_lifetime_cap_owls` 500; the standard keys unchanged.
 
 **Budget.** Escrow [2,500] owls; daily rate [200] owls; policy `cover`;
-skills `["mathematics"]`; prize fund [$2,500] on first deposit.
+skills `["mathematics"]`.
 
 **Plan.** Reassess the backfilled mathematics cohort under the skill;
 formalize the first-target claims as the Grantmaker's first review pass
 names them; attempt the calibration controls at variant `max`, flagged as
 calibration; then attempt the first-target list in valuation order.
+
+### Mathematics prizes
+
+**Title.** Mathematics prizes
+
+**Objective.** To offer prizes, on terms fixed in advance, for Lean proofs
+and disproofs of the open problems the platform attempted and could not
+settle, so that the answer, when someone finds it, becomes part of the
+public record. In this epoch the mandate funds nothing else: no
+formalizations, no attempts, no stewardship. Its escrow is the only source
+of its prizes, and each prize it offers is the mandate's own judgment,
+stated publicly with the posting, about which settled answer the
+discourse would gain most from.
+
+**Strategy.** Read the platform's attempt record and post bounties only on
+published statements the solver attempted at maximum effort and could not
+settle, after their public review period, with the attempt's report
+public. Size each prize from what the discourse would gain from a settled
+answer, the effort the problem appears to demand of a capable claimant,
+and the escrow's headroom and the number of open bounties. Post the first
+bounties small and deliberately tractable, one of them on a problem chosen
+to exercise the whole path from posting to payment, and say so publicly.
+Renew a bounty that still earns its place and withdraw, with notice, one
+that does not. Revise this mandate's own priors as prizes are claimed,
+expire, or close.
+
+**Scope.** Published formal statements, in Lean 4 against a pinned
+Mathlib, of open problems of mathematics that the platform's solver has
+attempted without settling. The scope query (`mathematics OR theorem OR
+conjecture OR proof`) is retrieval, not membership; which statements
+deserve a prize is the Grantmaker's judgment, made from the attempt
+record, the claim's importance, and the results that rest on it.
+
+**Prize policy.** This mandate offers prizes and funds nothing else in
+this epoch. Its escrow is the only source of its prizes: a bounty holds
+its amount against the escrow from the moment it opens until it resolves,
+and the mandate's headroom is what remains after every hold. Then the
+common text, from "Prizes never enter any valuation" to "until the
+double-payment question is settled," word for word as above.
+
+**Refusals.** This mandate declines, at any budget: any bounty whose
+purpose is to move an assessment or an importance; any bounty on a
+statement it cannot show is faithful, whose review period has not ended,
+or which the platform's solver has not attempted without settling; any
+request to fund an attempt, a formalization, or an assessment from this
+escrow in this epoch; and any sponsorship offered on condition of naming,
+influence over a statement, or a say in acceptance.
+
+**Disclosure (shown on every claim carrying this mandate's prize).** The
+prize on this claim was offered by the Mathematics prizes mandate from its
+own escrow. A prize buys no attention and no conclusion: it does not
+change how the claim is assessed or how important the graph judges it to
+be, and it says only that someone would like the question settled.
+
+**Allocation policy keys.** `est_prize_review_cost_owls` 12; the standard
+keys unchanged.
+
+**Budget.** Escrow [2,500] owls; no daily rate (escrow-bounded); policy
+`cover`; skills `["mathematics"]`.
+
+**Plan.** None seeded: the Grantmaker's first review pass reads the
+attempt record and posts, or declines to post, from it.
 
 ## Appendix C: The solver prompt
 
@@ -3693,21 +3923,22 @@ corresponds to a mechanism in section 8.
 3. **The formal statement is the contract.** What counts as a solution is
    the statement as published, under the named Lean toolchain and Mathlib
    revision, with the allowed axioms `propext`, `Classical.choice`, and
-   `Quot.sound` only, and with the static policy published with these
-   rules. If the statement is found not to say what the claim says, the
-   prize is not owed for proving it; a claimant whose submission exposes
-   the defect receives the defect award of ten percent of the prize, at most
-   $500, drawn from the prize; a person who exposes a defect during the
-   statement's public review period, before any prize is offered, receives
-   a fixed review award of $100; and the prize re-binds to the corrected
-   statement after fourteen days' notice and the corrected statement's own
-   review period, less any defect award paid.
+   `Quot.sound` only (Lean's standard classical foundation), and with the
+   static policy published with these rules. If the statement is found not
+   to say what the claim says, the prize is not owed for proving it; a
+   claimant whose submission exposes the defect receives the defect award
+   of ten percent of the prize, at most 500 owls, drawn from the prize; a
+   person who exposes a defect during the statement's public review period,
+   before any prize is offered, receives a fixed review award of 100 owls;
+   and the prize re-binds to the corrected statement after fourteen days'
+   notice and the corrected statement's own review period, less any defect
+   award paid.
 4. **Eligibility.** Natural persons aged 18 or over; one payee per
-   submission; not Minerval, its contractors on this program, or funders of
-   the Mathematics mandate; not residents of jurisdictions where the prize
-   cannot lawfully be paid, including comprehensively sanctioned
-   jurisdictions and, for now, Italy and Brazil. Entry is free. Purchasing
-   anything from Minerval confers no advantage.
+   submission; not Minerval, its contractors on this program, or a person
+   who funded the mandate that posted the prize; not residents of
+   jurisdictions where the prize cannot lawfully be paid, including
+   comprehensively sanctioned jurisdictions and, for now, Italy and Brazil.
+   Entry is free. Purchasing anything from Minerval confers no advantage.
 5. **Submissions.** Through the claim page's form, with a Lean file, a
    written account, a tools disclosure, and the declarations. AI assistance
    is permitted and must be disclosed. A submission is confidential to
@@ -3726,17 +3957,19 @@ corresponds to a mechanism in section 8.
 7. **Review.** The checker's verdict is mechanical and public. The steward
    judges only whether the statement proved is the statement posted. An
    accepted submission is announced on the claim page and becomes payable
-   after a challenge window of fourteen days (thirty for prizes of $1,000
-   or more), extended while an admitted challenge is open, up to twice the window.
-   Challenges may be filed only on the listed grounds, with evidence. Every acceptance is audited.
-   Prizes of $1,000 or more, and prizes on claims of high importance,
-   require a named person's sign-off.
-8. **Payment.** Prizes are paid in owls, one owl per dollar of the prize.
-   Owls are credit for metered work on the site; they do not expire, cannot
-   be transferred, and are never redeemable for cash. Payment requires
-   identity verification, a tax form, and sanctions screening first, to be
-   completed within ninety days of the prize becoming payable, after which
-   the prize lapses; the amount may be reduced by required withholding.
+   after a challenge window of fourteen days (thirty for prizes of 1,000
+   owls or more), extended while an admitted challenge is open, up to
+   twice the window. Challenges may be filed only on the listed grounds,
+   with evidence. Every acceptance is audited. Prizes of 1,000 owls or
+   more, and prizes on claims of high importance, require a named person's
+   sign-off.
+8. **Payment.** Prizes are stated and paid in owls. Owls are credit for
+   metered work on the site, valued at one dollar of metered cost each;
+   they do not expire, cannot be transferred, and are never redeemable for
+   cash. Payment requires identity verification, a tax form, and sanctions
+   screening first, to be completed within ninety days of the prize
+   becoming payable, after which the prize lapses; the amount may be
+   reduced by required withholding.
 9. **Taxes.** Prizes are income to the winner. Minerval reports and
    withholds as United States law requires.
 10. **Withdrawal and change.** Minerval may withdraw or amend a prize with
@@ -3764,7 +3997,6 @@ docs, and the site agree.
 | Table | `claim_formalizations` | Formal statements; statuses `draft`, `reviewed`, `published`, `retired`; `superseded_by` links versions. |
 | Table | `lean_checks` | Every check the platform runs; verdicts `accepted`, `rejected`, `error`; modes `prize`, `attempt`, `steward`. |
 | Table | `proof_attempts` | Solver attempts; the notebook, the report, the ceiling and spend. |
-| Table | `prize_pools`, `prize_pool_entries` | The per-domain prize fund and its ledger; `balance` is stored as entries, `reserved` is derived from live bounties, `available` is the difference. |
 | Table | `bounties` | An offer bound to a formalization; statuses `requested`, `confirm_pending`, `open`, `claim_pending`, `house_result_pending`, `rebinding`, `paid`, `resolved_internally`, `resolved_unpaid`, `expired`, `withdrawn`. |
 | Table | `prize_claims` | One per `claim_prize` contribution; the prize state machine (`queued`, `checking`, `check_error`, `checked`, `in_review`, `in_challenge_window`, `payable`, `defect_award_pending`, `paid`, `rejected`, `voided`, `withdrawn`, `superseded`, `forfeited`); `window_ends_at` set at acceptance. |
 | Table | `prize_payouts` | The discharge of a prize; `kind = 'owls'` in v1, `cash` reserved for a rail. |
@@ -3781,10 +4013,10 @@ docs, and the site agree.
 | Solver tools | `lean_search`, `lean_elaborate`, `lean_check`, code execution, `notebook_write`, `notebook_read`, `report` | |
 | Triggers | `formalize`, `formalization_review`, `prize_claim`, `prize_claim_voided`, `prize_window_closed`, `attempt_completed` | Steward triggers that force the strong model. |
 | Checker endpoints | `/health`, `/v1/elaborate`, `/v1/scratch`, `/v1/search`, `/v1/check`, `/v1/checks/:id`, `/v1/pins` | |
-| Routes | `GET /claims/:id/bounty`, `GET /prizes`, `POST /claims/:id/prize-claims`, `POST /prize-claims/:id/payee`, `POST /prize-pools/:domain/deposit`, `POST /bounties/:id/confirm` | The load-bearing ones; section 11.1 has the rest. |
-| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MAX_BOUNTY_PER_CLAIM_USD`, `BOUNTY_AUTONOMY_THRESHOLD_USD`, `PRIZE_HUMAN_SIGNOFF_USD`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_USD`, `PRIZE_PAYEE_STEPS_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `PRIZE_OWL_TRANCHE_USD`, `FORMALIZATION_REVIEW_AWARD_USD`, `MINERVAL_OPERATOR_KEY`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZE_POOL_USD` | |
+| Routes | `GET /claims/:id/bounty`, `GET /prizes`, `POST /claims/:id/prize-claims`, `POST /prize-claims/:id/payee`, `POST /bounties/:id/confirm`, `GET /attempts/stats` | The load-bearing ones; section 11.1 has the rest. |
+| Config | `LEAN_CHECKER_URL`, `FORMALIZATION_REVIEW_PERIOD_DAYS`, `SOLVER_MODEL`, `SOLVER_ENABLED`, `SOLVER_DAILY_CAP_OWLS`, `MIN_BOUNTY_PER_CLAIM_OWLS`, `MAX_BOUNTY_PER_CLAIM_OWLS`, `BOUNTY_AUTONOMY_THRESHOLD_OWLS`, `BOUNTY_ESCROW_FRACTION_PER_PASS`, `BOUNTY_ESCROW_FRACTION_PER_DAY`, `PRIZE_HUMAN_SIGNOFF_OWLS`, `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, `PRIZE_CHALLENGE_WINDOW_DAYS_SMALL`, `PRIZE_CHALLENGE_WINDOW_DAYS_LARGE`, `PRIZE_WINDOW_TIER_OWLS`, `PRIZE_PAYEE_STEPS_DAYS`, `PRIZE_REVIEW_RESERVE_FRACTION`, `PRIZE_OWL_TRANCHE_OWLS`, `FORMALIZATION_REVIEW_AWARD_OWLS`, `MINERVAL_OPERATOR_KEY`, `MATH_MANDATE_ESCROW_OWLS`, `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZES_ESCROW_OWLS` | Prize amounts are owls; the columns stay micro-USD at cost. |
 | Epoch | `2026-09-domain-skills` | The pipeline epoch the skill takes effect under. |
-| Words never used in prize text | escrow, deposit, held for you | The fund is "the mathematics prize fund." |
+| Words never used in prize text | deposit, held for you | A prize is "owls the mandate set aside"; the word escrow names the mandate's own budget and nothing a claimant has a right to. |
 
 ## Appendix F: Constitution amendments
 

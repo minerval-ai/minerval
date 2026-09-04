@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { loadClaim } from "@/lib/data";
-import { formatUsd, fmtDateLong } from "@/lib/format";
+import { formatOwls, fmtDateLong } from "@/lib/format";
 import { resolutionPhrase } from "@/lib/prizes";
 import { PrizeClaimForm } from "@/components/claim/PrizeClaimForm";
 
@@ -61,7 +61,7 @@ export default async function PrizeClaimPage({
       </p>
       <div className="claim-eyebrow">
         <span className="sc">Prize claim</span>
-        {bounty && <span className="tag prize">{formatUsd(bounty.amount_micro_usd)}</span>}
+        {bounty && <span className="tag prize">{formatOwls(bounty.amount_micro_usd)}</span>}
       </div>
       <h1 className="claim-hero" style={{ fontSize: "1.5rem" }}>
         <Link href={`/claims/${detail.claim.id}`} className="plain">{detail.claim.text}</Link>
@@ -85,7 +85,7 @@ export default async function PrizeClaimPage({
       ) : (
         <>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".86rem", color: "var(--ink-soft)", maxWidth: "36rem" }}>
-            {formatUsd(bounty!.amount_micro_usd)} is offered for a Lean 4{" "}
+            {formatOwls(bounty!.amount_micro_usd)} is offered for a Lean 4{" "}
             {resolutionPhrase(bounty!.resolution)} of statement {formalization!.version},
             published {fmtDateLong(formalization!.published_at)} and pinned to{" "}
             <span className="mono">{formalization!.pin_id}</span>. Entry is free. The

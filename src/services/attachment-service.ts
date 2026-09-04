@@ -16,7 +16,7 @@
  */
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
-import { asRunner, type Runner } from "./prize-pool-service.js";
+import { asRunner, type Runner } from "./query-runner.js";
 
 export type AttachmentKind = "lean_source" | "document" | "dataset" | "code" | "tax_form";
 export type AttachmentVisibility = "restricted" | "public";

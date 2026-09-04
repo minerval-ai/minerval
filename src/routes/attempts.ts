@@ -6,6 +6,9 @@
  *     outcome, dates; the report and notebook once published.
  *   GET  /attempts/:id               — one attempt; `?include=transcript`
  *     adds the agent_runs/agent_steps transcript for service callers.
+ *   GET  /attempts/stats             the platform's attempt record
+ *     (§7.10): by outcome, by variant, the calibration series, and the
+ *     novel proofs; `?grant_id=` narrows it to one mandate's attempts.
  *   POST /admin/attempts/:id/cancel  — service key: a running attempt
  *     becomes `cancelling`, which the solver polls each turn.
  *
@@ -16,6 +19,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { isDirectService } from "../server/plugins/auth.js";
 import { loadAttemptExtras } from "../services/attempt-extras.js";
 import { cancelAttempt, getAttempt, getAttemptPublic } from "../services/attempt-service.js";
+import { ATTEMPT_STATS_TTL_MS, getAttemptStats } from "../services/attempt-stats-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,6 +47,29 @@ export async function attemptsRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const attempts = await loadAttemptExtras(request.params.id);
       return reply.send({ claim_id: request.params.id, attempts });
+    },
+  });
+
+  // Registered before /attempts/:id so the literal path is never read as an
+  // id. Public, and served from a brief memo like the other read models.
+  app.get<{ Querystring: { grant_id?: string } }>("/attempts/stats", {
+    schema: {
+      tags: ["attempts"],
+      summary:
+        "The platform's attempt record: by outcome and by variant the count, " +
+        "the owls spent, and the median cost; the calibration series; and the " +
+        "novel proofs listed apart from rediscoveries. ?grant_id= narrows it " +
+        "to one mandate's attempts",
+      querystring: {
+        type: "object",
+        properties: { grant_id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const stats = await getAttemptStats(request.query.grant_id ?? null);
+      return reply
+        .header("cache-control", `public, max-age=${Math.floor(ATTEMPT_STATS_TTL_MS / 1000)}`)
+        .send(stats);
     },
   });
 

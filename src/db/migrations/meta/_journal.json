@@ -330,6 +330,13 @@
       "when": 1788561680075,
       "tag": "0046_mathematics_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788563272138,
+      "tag": "0047_prizes_from_escrow",
+      "breakpoints": true
     }
   ]
 }

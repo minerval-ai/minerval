@@ -147,6 +147,8 @@ Proceed:
 Statement file (as elaborated; pp_type: ${row.pp_type}; witness present: ${row.witness_present}):
 ${row.statement_source}
 
+Own definitions: ${row.own_definitions ? "yes; the statement introduces a definition Mathlib lacks" : "no"}
+
 Correspondence note: ${row.correspondence ?? "(none)"}
 
 Author's review notes: ${row.review_notes ?? "(none)"}`
@@ -164,6 +166,8 @@ Proceed:
    satisfiable, are the trivial witnesses the informal problem excludes
    excluded, do the definitions match Mathlib's and the literature's, and
    does the correspondence note say what the formal statement leaves out?
+   Where the statement introduces a definition of the Steward's own, check
+   that definition against the sources the correspondence note names.
    Use lean_elaborate to probe anything you doubt.
 3. Decide with one call: publish_formalization with confirm: true and this
    formalization_id to publish it, or confirm: false with review_notes

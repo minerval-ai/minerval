@@ -62,6 +62,12 @@ export function FormalStatement({
         </span>
       </p>
       {f.correspondence && <p className="formal-note">{f.correspondence}</p>}
+      {f.own_definitions && (
+        <p className="formal-note" style={{ color: "var(--muted)" }}>
+          This statement introduces a definition of the Steward&rsquo;s own; the
+          correspondence note says which sources it follows.
+        </p>
+      )}
       {inReview && (
         <p className="formal-note" style={{ color: "var(--muted)" }}>
           This statement is in its public review period until{" "}

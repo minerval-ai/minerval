@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { BountySummary, FormalizationSummary } from "@/lib/types";
-import { formatUsd } from "@/lib/format";
+import { formatOwls } from "@/lib/format";
 import { PRIZE_PAYMENT_SENTENCE, PRIZE_TAX_SANCTIONS_NOTICE, resolutionPhrase } from "@/lib/prizes";
 import { PRIZE_RULES_VERSION } from "@/lib/prize-rules";
 import { useViewerSession } from "../useViewerSession";
@@ -327,7 +327,7 @@ export function PrizeClaimForm({
       <div className="prize-form-pay">
         <span className="sc">Payment</span>
         <p>
-          The prize is {formatUsd(bounty.amount_micro_usd)}. {PRIZE_PAYMENT_SENTENCE} Nothing
+          The prize is {formatOwls(bounty.amount_micro_usd)}. {PRIZE_PAYMENT_SENTENCE} Nothing
           binding is collected here: if your submission is accepted and the challenge window
           closes, the account page asks for identity and residency, a tax form, and sanctions
           screening, to be completed within ninety days.
