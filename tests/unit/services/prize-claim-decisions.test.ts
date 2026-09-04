@@ -24,23 +24,35 @@ vi.mock("../../../src/db/client.js", () => {
     state.updates.push({ sql, params });
     if (sql.includes("FROM prize_claims WHERE id = $1")) return state.claim ? [state.claim] : [];
     if (sql.includes("FROM bounties WHERE id = $1")) return [state.bounty];
+    const applySets = () => {
+      const sets = sql.slice(sql.indexOf("SET") + 3, sql.indexOf("WHERE")).split(",").map((s) => s.trim());
+      for (const s of sets) {
+        const m = /^(\w+) = \$(\d+)/.exec(s);
+        if (!m || !state.claim) continue;
+        const col = m[1]!;
+        const val = params[Number(m[2]) - 1];
+        if (col === "steward_decision") state.claim.steward_decision = typeof val === "string" ? JSON.parse(val) : val;
+        else if (col === "window_ends_at") state.claim.window_ends_at = val;
+        else if (col === "window_paused_ms") state.claim.window_paused_ms = val;
+        else if (col === "audit_outcome") state.claim.audit_outcome = val;
+        else if (col === "defect_award_micro_usd") state.claim.defect_award_micro_usd = val;
+        else if (col === "result_category") state.claim.result_category = val;
+        else if (col === "rejected_stage") state.claim.rejected_stage = val;
+      }
+    };
     if (sql.includes("UPDATE prize_claims SET status")) {
       const to = params[1] as string;
       const froms = params[2] as string[];
       if (!state.claim || !froms.includes(state.claim.status as string)) return [];
       state.claim = { ...state.claim, status: to };
-      const sets = sql.slice(sql.indexOf("SET") + 3, sql.indexOf("WHERE")).split(",").map((s) => s.trim());
-      for (const s of sets) {
-        const m = /^(\w+) = \$(\d+)/.exec(s);
-        if (!m) continue;
-        const col = m[1]!;
-        const val = params[Number(m[2]) - 1];
-        if (col === "steward_decision") state.claim.steward_decision = typeof val === "string" ? JSON.parse(val) : val;
-        else if (col === "window_ends_at") state.claim.window_ends_at = val;
-        else if (col === "defect_award_micro_usd") state.claim.defect_award_micro_usd = val;
-        else if (col === "result_category") state.claim.result_category = val;
-        else if (col === "rejected_stage") state.claim.rejected_stage = val;
-      }
+      applySets();
+      return [state.claim];
+    }
+    // A field update without a status change (the audit outcome, the payee steps).
+    if (sql.includes("UPDATE prize_claims SET updated_at = now()")) {
+      if (!state.claim) return [];
+      state.claim = { ...state.claim };
+      applySets();
       return [state.claim];
     }
     if (sql.includes("SELECT importance FROM claims")) return [{ importance: state.importance }];
@@ -75,7 +87,7 @@ vi.mock("../../../src/services/formalization-service.js", () => ({
 }));
 vi.mock("../../../src/services/contributor-service.js", () => ({ getOrCreateContributor: vi.fn(async () => ({ id: "platform" })) }));
 
-import { acceptPrizeClaim, rejectPrizeClaimBySteward } from "../../../src/services/prize-claim-service.js";
+import { acceptPrizeClaim, rejectPrizeClaimBySteward, recordPrizeAuditOutcome } from "../../../src/services/prize-claim-service.js";
 import { loadConfig } from "../../../src/config.js";
 
 function inReview() {
@@ -162,5 +174,45 @@ describe("reject", () => {
 
   it("statement_defect needs the defect stated", async () => {
     expect(await rejectPrizeClaimBySteward({ prizeClaimId: "pc-1", reason: "x", resultCategory: "statement_defect", actor: "s", run })).toMatchObject({ ok: false, message: /statement_defect must say/ });
+  });
+});
+
+describe("the audit's send-back", () => {
+  function inWindow() {
+    return {
+      ...inReview(),
+      status: "in_challenge_window",
+      steward_decision: { decision: "accept", reason: "faithful", result_category: "new_result", statement_defect: null, run_id: "run-1", decision_id: "dec-1", served_model: "claude-standard", fallback_ran: true, at: new Date().toISOString() },
+      window_ends_at: new Date(Date.now() + 14 * 86_400_000),
+      window_paused_ms: 3_600_000,
+      audit_outcome: null,
+    };
+  }
+
+  it("returns the claim to in_review with the window cleared and the acceptance withdrawn, leaving the note in the trail", async () => {
+    state.claim = inWindow();
+    const r = await recordPrizeAuditOutcome({ prizeClaimId: "pc-1", outcome: "send_back", note: "served by a fallback model", actor: "audit_agent:run-2" });
+    expect(r).toEqual({ ok: true, status: "in_review" });
+    expect(state.claim!.status).toBe("in_review");
+    expect(state.claim!.steward_decision).toBeNull();
+    expect(state.claim!.window_ends_at).toBeNull();
+    const transition = state.updates.find((u) => u.sql.includes("UPDATE prize_claims SET status") && u.params[1] === "in_review")!;
+    expect(transition.params[2]).toEqual(["in_challenge_window"]);
+    expect(transition.sql).toContain("window_paused_ms = $");
+    // The send-back note itself, and the transition naming the withdrawn decision, both reach audit_log.
+    const audit = state.updates.filter((u) => u.sql.includes("INSERT INTO audit_log"));
+    expect(audit.some((u) => u.params[1] === "prize_claim:audit_send_back" && String(u.params[2]).includes("served by a fallback model"))).toBe(true);
+    expect(audit.some((u) => u.params[1] === "prize_claim:in_review" && String(u.params[2]).includes("dec-1"))).toBe(true);
+  });
+
+  it("only records the outcome on a claim outside the window, and refuses before acceptance", async () => {
+    state.claim = { ...inWindow(), status: "payable" };
+    expect(await recordPrizeAuditOutcome({ prizeClaimId: "pc-1", outcome: "send_back", note: "n", actor: "a" })).toEqual({ ok: true, status: "payable" });
+    expect(state.updates.some((u) => u.sql.includes("UPDATE prize_claims SET status"))).toBe(false);
+    state.claim = inWindow();
+    expect(await recordPrizeAuditOutcome({ prizeClaimId: "pc-1", outcome: "clear", note: "holds", actor: "a" })).toEqual({ ok: true, status: "in_challenge_window" });
+    expect(state.claim!.status).toBe("in_challenge_window");
+    state.claim = inReview();
+    expect(await recordPrizeAuditOutcome({ prizeClaimId: "pc-1", outcome: "send_back", note: "n", actor: "a" })).toMatchObject({ ok: false, message: /in_review/ });
   });
 });

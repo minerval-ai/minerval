@@ -14,6 +14,12 @@ import { PRIZE_PAYEE_STEPS_DAYS, prizeClaimNextStep, prizeClaimStateLabel } from
 // sanctions screening the operator records. The sign-off checklist requires
 // all three before any owl is granted. Live claims in earlier states are
 // listed beneath with their next step.
+//
+// The two steps the winner takes each need a one-time code beside the
+// signed-in session. The API issues a code to this session on request and
+// returns it in the response; nothing is sent by email in this version, so
+// the code is shown here, beside the step it unlocks, with the API's own
+// delivery note.
 
 const WINNER_STATES = new Set<OpenPrizeClaim["status"]>([
   "payable", "defect_award_pending", "paid", "forfeited",
@@ -22,11 +28,74 @@ const LIVE_STATES = new Set<OpenPrizeClaim["status"]>([
   "queued", "checking", "check_error", "checked", "in_review", "in_challenge_window",
 ]);
 
+interface IssuedCode {
+  code: string;
+  expires_at: string;
+  delivery: string;
+}
+
+function GetCode({
+  claimId, purpose, onCode,
+}: {
+  claimId: string;
+  purpose: "payee" | "withdraw";
+  onCode: (code: string) => void;
+}) {
+  const [state, setState] = useState<"idle" | "busy" | "error">("idle");
+  const [issued, setIssued] = useState<IssuedCode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onClick() {
+    setState("busy");
+    setError(null);
+    try {
+      const res = await fetch(`/api/prize-claims/${encodeURIComponent(claimId)}/code`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ purpose }),
+      });
+      const body = (await res.json().catch(() => null)) as (Partial<IssuedCode> & { error?: string }) | null;
+      if (res.ok && body?.code) {
+        setIssued({
+          code: body.code,
+          expires_at: body.expires_at ?? "",
+          delivery: body.delivery ?? "returned to your session; no message is sent in this version",
+        });
+        setState("idle");
+        onCode(body.code);
+      } else {
+        setState("error");
+        setError(body?.error ?? "A code could not be issued.");
+      }
+    } catch {
+      setState("error");
+      setError("A code could not be issued. Please try again.");
+    }
+  }
+
+  return (
+    <div>
+      <button className="prize-code-button" type="button" onClick={onClick} disabled={state === "busy"}>
+        {state === "busy" ? "Issuing…" : issued ? "Get a fresh code" : "Get a code"}
+      </button>
+      {issued && (
+        <p className="prize-code" role="status">
+          Your code: <code>{issued.code}</code>
+          {issued.expires_at && <> (valid until {fmtDateLong(issued.expires_at)})</>}
+          . It has been entered below. Delivery: {issued.delivery}.
+        </p>
+      )}
+      {error && <p className="contribute-error">{error}</p>}
+    </div>
+  );
+}
+
 function PayeeForm({ claim }: { claim: OpenPrizeClaim }) {
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">(
     claim.payee_status === "submitted" || claim.payee_status === "verified" ? "done" : "idle",
   );
   const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -39,10 +108,11 @@ function PayeeForm({ claim }: { claim: OpenPrizeClaim }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           legal_name: data.get("legal_name"),
-          address: data.get("address"),
-          country: data.get("country"),
+          country: String(data.get("country") ?? "").trim().toUpperCase(),
           us_person: data.get("us_person") === "yes",
-          code: data.get("code"),
+          has_tin: data.get("has_tin") === "on",
+          treaty_position: data.get("treaty_position") === "on",
+          code: String(data.get("code") ?? "").trim(),
         }),
       });
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -60,28 +130,64 @@ function PayeeForm({ claim }: { claim: OpenPrizeClaim }) {
   if (state === "done") {
     return (
       <p className="prize-step-done" role="status">
-        Identity and residency recorded{claim.payee_status === "verified" ? " and verified" : "; verification follows"}.
+        Identity and residency recorded.
       </p>
     );
   }
   return (
     <form className="prize-step-form" onSubmit={onSubmit}>
       <label className="contribute-label" htmlFor={`legal-${claim.id}`}>Legal name</label>
-      <input className="contribute-field" id={`legal-${claim.id}`} name="legal_name" maxLength={120} required />
-      <label className="contribute-label" htmlFor={`addr-${claim.id}`}>Postal address</label>
-      <textarea className="contribute-field" id={`addr-${claim.id}`} name="address" rows={3} maxLength={400} required />
+      <input className="contribute-field" id={`legal-${claim.id}`} name="legal_name" maxLength={200} required />
       <label className="contribute-label" htmlFor={`country-${claim.id}`}>Country of residence</label>
-      <input className="contribute-field" id={`country-${claim.id}`} name="country" maxLength={80} required />
+      <input
+        className="contribute-field mono"
+        id={`country-${claim.id}`}
+        name="country"
+        maxLength={2}
+        pattern="[A-Za-z]{2}"
+        placeholder="two-letter code, e.g. GB"
+        autoCapitalize="characters"
+        style={{ maxWidth: "12rem" }}
+        required
+      />
+      <p className="contribute-hint">The country as its ISO two-letter code.</p>
       <label className="contribute-label">U.S. person for tax purposes?</label>
       <div className="prize-form-radios">
         <label><input type="radio" name="us_person" value="yes" required /> yes</label>
         <label><input type="radio" name="us_person" value="no" /> no</label>
       </div>
-      <label className="contribute-label" htmlFor={`code-${claim.id}`}>One-time code</label>
-      <input className="contribute-field mono" id={`code-${claim.id}`} name="code" maxLength={16} autoComplete="one-time-code" required />
+      <div className="prize-form-checks">
+        <label>
+          <input type="checkbox" name="has_tin" /> I will provide a valid taxpayer identification
+          number on my tax form.
+        </label>
+        <label>
+          <input type="checkbox" name="treaty_position" /> I am not a U.S. person and I claim a
+          tax-treaty or foreign-source position on my W-8BEN that reduces the withholding.
+        </label>
+      </div>
       <p className="contribute-hint">
-        The code was emailed to this account&rsquo;s address when the prize became payable. It is
-        asked for so that a leaked API key can never redirect a prize.
+        For a U.S. person, a valid taxpayer identification number on the W-9 means no backup
+        withholding; without one, 24 percent is withheld. For everyone else, 30 percent is
+        withheld unless a treaty or foreign-source position on the W-8BEN reduces it. Leave a
+        box unticked if it does not apply to you.
+      </p>
+      <label className="contribute-label" htmlFor={`code-${claim.id}`}>One-time code</label>
+      <input
+        className="contribute-field mono"
+        id={`code-${claim.id}`}
+        name="code"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        autoComplete="one-time-code"
+        spellCheck={false}
+        required
+      />
+      <GetCode claimId={claim.id} purpose="payee" onCode={setCode} />
+      <p className="contribute-hint">
+        A code is issued to this signed-in session on request and shown here; no message is
+        sent in this version. It is asked for so that a leaked API key can never redirect a
+        prize. One code covers both this step and the tax form.
       </p>
       <div className="contribute-actions">
         <button className="signin-button" type="submit" disabled={state === "busy"}>
@@ -98,16 +204,20 @@ function TaxFormUpload({ claim }: { claim: OpenPrizeClaim }) {
     claim.tax_form_status === "received" ? "done" : "idle",
   );
   const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
-    const file = data.get("file");
+    const file = data.get("tax_form");
     if (!(file instanceof File) || file.size === 0) {
       setError("Attach the completed form.");
       return;
     }
-    data.set("kind", "tax_form");
+    if (!String(data.get("code") ?? "").trim()) {
+      setError("Enter the one-time code; use “Get a code” to issue one.");
+      return;
+    }
     setState("busy");
     setError(null);
     try {
@@ -134,14 +244,30 @@ function TaxFormUpload({ claim }: { claim: OpenPrizeClaim }) {
     <form className="prize-step-form" onSubmit={onSubmit}>
       <label className="contribute-label">Form</label>
       <div className="prize-form-radios">
-        <label><input type="radio" name="form_kind" value="w9" defaultChecked /> W-9 (U.S. person)</label>
-        <label><input type="radio" name="form_kind" value="w8ben" /> W-8BEN (everyone else)</label>
+        <label><input type="radio" name="kind" value="w9" defaultChecked /> W-9 (U.S. person)</label>
+        <label><input type="radio" name="kind" value="w8ben" /> W-8BEN (everyone else)</label>
       </div>
-      <input className="contribute-field" type="file" name="file" accept=".pdf,application/pdf" required />
+      <input className="contribute-field" type="file" name="tax_form" accept=".pdf,application/pdf" required />
       <p className="contribute-hint">
         A PDF, at most 10 MiB. Without a valid taxpayer identification number on a W-9, backup
         withholding of 24 percent applies; on a W-8BEN, 30 percent withholding applies unless a
         treaty or a foreign-source position reduces it.
+      </p>
+      <label className="contribute-label" htmlFor={`taxcode-${claim.id}`}>One-time code</label>
+      <input
+        className="contribute-field mono"
+        id={`taxcode-${claim.id}`}
+        name="code"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        autoComplete="one-time-code"
+        spellCheck={false}
+        required
+      />
+      <GetCode claimId={claim.id} purpose="payee" onCode={setCode} />
+      <p className="contribute-hint">
+        The same kind of code as the identity step, issued to this signed-in session on
+        request; a code issued for the identity step is valid here too.
       </p>
       <div className="contribute-actions">
         <button className="signin-button" type="submit" disabled={state === "busy"}>
@@ -168,8 +294,10 @@ function Award({ claim }: { claim: OpenPrizeClaim }) {
           <>, paid{claim.paid_at ? ` on ${fmtDateLong(claim.paid_at)}` : ""}.</>
         ) : claim.status === "forfeited" ? (
           <>. {prizeClaimNextStep(claim)}</>
-        ) : (
+        ) : claim.window_ends_at ? (
           <>, payable since {fmtDateLong(claim.window_ends_at)}.</>
+        ) : (
+          <>, payable now.</>
         )}
       </p>
       <p>

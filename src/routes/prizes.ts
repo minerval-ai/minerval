@@ -88,6 +88,22 @@ async function logMoneyRoute(claimId: string | null, action: string, reasoning: 
   ).catch(() => undefined);
 }
 
+/**
+ * The fund deposit has no claim, and `audit_log.claim_id` is NOT NULL, so
+ * its trail is the `prize_fund_deposits` platform flag: a JSON list with
+ * one appended entry per call, carrying the credential kind and the acting
+ * person like every other money route (docs/mathematics.md §8.11).
+ */
+async function logFundDeposit(entry: Record<string, unknown>): Promise<void> {
+  await rawQuery(
+    `INSERT INTO platform_flags (key, value)
+     VALUES ('prize_fund_deposits', jsonb_build_array($1::jsonb))
+     ON CONFLICT (key) DO UPDATE
+       SET value = platform_flags.value || jsonb_build_array($1::jsonb), updated_at = now()`,
+    [JSON.stringify(entry)]
+  ).catch(() => undefined);
+}
+
 interface ParsedMultipart {
   fields: Record<string, string>;
   files: Record<string, IncomingFile[]>;
@@ -425,7 +441,19 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
         batch_key: String(body.batch_key ?? ""),
       });
       if (!res.ok) return reply.code(422).send(errorBody(res.code, res.message));
-      return reply.code(res.duplicate ? 200 : 201).send({ entry_id: res.entry_id, duplicate: res.duplicate, pool: res.numbers, recorded_by: operatorActor(request) });
+      const actor = operatorActor(request);
+      await logFundDeposit({
+        entry_id: res.entry_id,
+        domain: request.params.domain,
+        amount_cents: Number(body.amount_cents),
+        bank_reference: String(body.bank_reference ?? ""),
+        batch_key: String(body.batch_key ?? ""),
+        duplicate: res.duplicate,
+        credential: "operator_key",
+        actor: `operator:${actor}`,
+        at: new Date().toISOString(),
+      });
+      return reply.code(res.duplicate ? 200 : 201).send({ entry_id: res.entry_id, duplicate: res.duplicate, pool: res.numbers, recorded_by: actor });
     },
   });
 
@@ -477,8 +505,11 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
     preHandler: [app.requireOperator],
     handler: async (request, reply) => {
       const actor = operatorActor(request);
-      const res = await recordScreening({ prizeClaimId: request.params.id, result: String(request.body?.result ?? ""), recordedBy: actor, note: request.body?.note });
+      const result = String(request.body?.result ?? "");
+      const res = await recordScreening({ prizeClaimId: request.params.id, result, recordedBy: actor, note: request.body?.note });
       if (!res.ok) return reply.code(res.status).send(errorBody("SCREENING_REFUSED", res.message));
+      const pc = await getPrizeClaimById(request.params.id);
+      await logMoneyRoute(pc?.claim_id ?? null, "prize_route:screening", `prize claim ${request.params.id}: sanctions screening recorded as ${result} with the operator key`, `operator:${actor}`);
       return reply.send({ prize_claim_id: request.params.id, recorded_by: actor });
     },
   });
@@ -500,8 +531,11 @@ export async function prizesRoutes(app: FastifyInstance): Promise<void> {
     schema: { tags: ["prizes"], summary: "Release a check_error hold (operator key)" },
     preHandler: [app.requireOperator],
     handler: async (request, reply) => {
-      const ok = await retryCheckError(request.params.id, `operator:${operatorActor(request)}`);
+      const actor = operatorActor(request);
+      const ok = await retryCheckError(request.params.id, `operator:${actor}`);
       if (!ok) return reply.code(409).send(errorBody("NOT_CHECK_ERROR", "the prize claim is not in check_error"));
+      const pc = await getPrizeClaimById(request.params.id);
+      await logMoneyRoute(pc?.claim_id ?? null, "prize_route:retry_check", `prize claim ${request.params.id}: check_error hold released with the operator key`, `operator:${actor}`);
       return reply.send({ prize_claim_id: request.params.id, status: "queued" });
     },
   });

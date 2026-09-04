@@ -24,6 +24,7 @@ import {
   getPrizeClaimForAgent,
   recordPrizeAuditOutcome,
 } from "../../services/prize-claim-service.js";
+import { withdrawBounty } from "../../services/bounty-service.js";
 
 /** Everything a run's tool executions need to know about the run itself. */
 export interface AuditToolContext {
@@ -279,6 +280,27 @@ export function getAuditToolDefinitions(): Tool[] {
           },
         },
         required: ["prize_claim_id", "outcome", "note"],
+      },
+    },
+    {
+      name: "withdraw_bounty_after_audit",
+      description:
+        "Withdraw a bounty whose posting an audit found defective " +
+        "(docs/mathematics.md §8.1): a statement that does not say what " +
+        "the claim says, a posting outside the mandate's bounds, an " +
+        "injected or manipulated rationale. A bounty not yet open closes " +
+        "at once, before any claim can be filed against it; an open bounty " +
+        "is withdrawn with the ordinary notice, and submissions received " +
+        "before the effective time are judged under the prior terms. " +
+        "Requires the finding_id from flag_issue documenting why.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          bounty_id: { type: "string" },
+          reason: { type: "string", description: "Why, for the public record on the claim page" },
+          finding_id: { type: "string", description: "The finding documenting the defect" },
+        },
+        required: ["bounty_id", "reason", "finding_id"],
       },
     },
     {
@@ -583,7 +605,35 @@ export async function executeAuditTool(
           message:
             outcome === "clear"
               ? `Audit outcome 'clear' recorded on prize claim ${prizeClaimId}; the window closer may promote it when the window elapses.`
-              : `Prize claim ${prizeClaimId} sent back; it cannot become payable until a fresh acceptance is audited again.`,
+              : `Prize claim ${prizeClaimId} sent back to review (${res.status}); the Steward decides afresh, and the new decision is audited again before it can become payable.`,
+        });
+      }
+
+      case "withdraw_bounty_after_audit": {
+        const bountyId = String(input.bounty_id ?? "").trim();
+        const reason = String(input.reason ?? "").trim();
+        const findingId = String(input.finding_id ?? "").trim();
+        if (!bountyId || !reason) {
+          return JSON.stringify({ success: false, message: "bounty_id and reason are required." });
+        }
+        if (!findingId || !(await findingExists(findingId))) {
+          return `Error: withdrawing a bounty requires the finding_id from flag_issue documenting why.`;
+        }
+        const res = await withdrawBounty({
+          bountyId,
+          rationale: `audit finding ${findingId}: ${reason}`,
+          actor: `audit_agent${context.runId ? `:${context.runId}` : ""}`,
+        });
+        if (!res.ok) return JSON.stringify({ success: false, code: res.code, message: res.message });
+        return JSON.stringify({
+          success: true,
+          bounty_id: bountyId,
+          status: res.status,
+          effective_at: res.effective_at,
+          message:
+            res.status === "withdrawn"
+              ? `Bounty ${bountyId} withdrawn before opening; no claim can be filed against it.`
+              : `Bounty ${bountyId} withdrawn with notice, effective ${res.effective_at}; submissions received before then are judged under the prior terms.`,
         });
       }
 

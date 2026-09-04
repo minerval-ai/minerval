@@ -9,6 +9,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   composeClaimEvents,
   emitClaimEvent,
+  isPrizeAuditAction,
   subscribeClaimEvents,
   type ClaimEvent,
   type ClaimEventsInput,
@@ -213,6 +214,28 @@ describe("composeClaimEvents: mathematics kinds", () => {
       is_calibration: false,
       actor: "math_solver",
     });
+  });
+});
+
+describe("composeClaimEvents: the prize path's audit rows", () => {
+  it("does not repeat bounty, prize-claim, or money-route audit rows as steward notes", () => {
+    const at = new Date("2026-04-01T00:00:00.000Z");
+    const entry = (id: string, action: string) => ({ id, action, reasoning: `${action} happened`, createdBy: "prize_service", createdAt: at });
+    const events = composeClaimEvents({
+      ...base(),
+      auditEntries: [
+        entry("a1", "bounty:opened"),
+        entry("a2", "prize_claim:in_challenge_window"),
+        entry("a3", "prize_claim:audit_send_back"),
+        entry("a4", "prize_route:sign_off"),
+        entry("a5", "reassessed"),
+      ],
+    });
+    const notes = events.filter((e) => e.kind === "steward_note");
+    expect(notes.map((e) => e.id)).toEqual(["steward_note:a5"]);
+    expect(isPrizeAuditAction("bounty:requested")).toBe(true);
+    expect(isPrizeAuditAction("prize_route:retry_check")).toBe(true);
+    expect(isPrizeAuditAction("no_action_needed")).toBe(false);
   });
 });
 

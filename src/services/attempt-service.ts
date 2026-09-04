@@ -1033,14 +1033,30 @@ export type MarkSolvedResult =
       bounty: { id: string; status: string; previous_status: string } | null;
       published_at: string | null;
     }
-  | { ok: false; code: string; message: string };
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      /** On HUMAN_CLAIM_PENDING: the live claims filed before the result, in priority order. */
+      pending_prize_claims?: Array<{ id: string; status: string; submitted_at: string }>;
+    };
+
+/**
+ * The prize-claim statuses that end a claim (prize-claim-service's
+ * TERMINAL_PRIZE_CLAIM_STATUSES); any other status is a live claim with
+ * priority over a platform result (§8.1).
+ */
+const TERMINAL_PRIZE_CLAIM_STATUSES = ["paid", "rejected", "voided", "withdrawn", "superseded", "forfeited"];
 
 /**
  * `mark_problem_solved_by_platform`: verify the accepted check belongs to
  * the attempt and the formalization, move the bounty from
  * `house_result_pending` (or `open`) to `resolved_internally` with a note,
  * publish the attempt, and return the record. Refused for anything but a
- * checked proof or disproof.
+ * checked proof or disproof, and refused while a human prize claim filed
+ * earlier is live on the bounty: a claim filed before the attempt completed
+ * is judged first and, if accepted, wins; a platform result never blocks it
+ * (§8.1).
  */
 export async function markProblemSolvedByPlatform(input: {
   formalizationId: string;
@@ -1117,6 +1133,30 @@ export async function markProblemSolvedByPlatform(input: {
     );
     let bountyOut: { id: string; status: string; previous_status: string } | null = null;
     if (bounty) {
+      const live = await tx.query<{ id: string; status: string; submitted_at: Date }>(
+        `SELECT id, status, submitted_at FROM prize_claims
+          WHERE bounty_id = $1 AND status <> ALL($2::text[])
+          ORDER BY submitted_at ASC, id ASC`,
+        [bounty.id, TERMINAL_PRIZE_CLAIM_STATUSES]
+      );
+      if (live.length > 0) {
+        const pending = live.map((c) => ({
+          id: c.id,
+          status: c.status,
+          submitted_at: new Date(c.submitted_at).toISOString(),
+        }));
+        return {
+          ok: false,
+          code: "HUMAN_CLAIM_PENDING",
+          message:
+            `bounty ${bounty.id} has ${pending.length} live prize claim(s) filed before the platform's result ` +
+            `(${pending.map((c) => `${c.id} ${c.status}, filed ${c.submitted_at}`).join("; ")}); ` +
+            "a claim filed earlier is judged first and, if accepted, wins, and a platform result never " +
+            "blocks it. Record your assessment and leave the bounty to the prize path; this tool can be " +
+            "called again once every earlier claim has reached a terminal status.",
+          pending_prize_claims: pending,
+        };
+      }
       await tx.query(
         `UPDATE bounties
             SET status = 'resolved_internally', resolved_at = now(),

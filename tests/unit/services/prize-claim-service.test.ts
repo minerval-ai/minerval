@@ -61,6 +61,8 @@ describe("the transition matrix", () => {
     expect(canTransition("in_review", "defect_award_pending")).toBe(true);
     expect(canTransition("in_challenge_window", "payable")).toBe(true);
     expect(canTransition("in_challenge_window", "voided")).toBe(true);
+    // The audit's send-back returns the window to review for a fresh decision (§8.5).
+    expect(canTransition("in_challenge_window", "in_review")).toBe(true);
     expect(canTransition("payable", "paid")).toBe(true);
     expect(canTransition("payable", "forfeited")).toBe(true);
     expect(canTransition("defect_award_pending", "paid")).toBe(true);
@@ -72,6 +74,8 @@ describe("the transition matrix", () => {
     expect(canTransition("checked", "in_challenge_window")).toBe(false);
     expect(canTransition("in_review", "payable")).toBe(false);
     expect(canTransition("in_challenge_window", "paid")).toBe(false);
+    expect(canTransition("payable", "in_review")).toBe(false);
+    expect(canTransition("in_challenge_window", "checked")).toBe(false);
     expect(canTransition("paid", "voided")).toBe(false);
     expect(canTransition("rejected", "queued")).toBe(false);
     expect(() => assertTransition("paid", "payable")).toThrow(/cannot move/);

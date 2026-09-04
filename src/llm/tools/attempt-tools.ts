@@ -80,7 +80,15 @@ export const executeMarkProblemSolvedByPlatform: SkillToolExecutor = async (inpu
     reason,
   });
   if (!result.ok) {
-    return JSON.stringify({ success: false, code: result.code, message: result.message });
+    // A refusal is a structured result the Steward routes around; the
+    // pending human claims (§8.1: filed earlier, judged first) travel with
+    // it so the Steward knows what it is waiting on.
+    return JSON.stringify({
+      success: false,
+      code: result.code,
+      message: result.message,
+      ...(result.pending_prize_claims ? { pending_prize_claims: result.pending_prize_claims } : {}),
+    });
   }
   return JSON.stringify({
     success: true,

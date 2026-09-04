@@ -161,9 +161,12 @@ egress is to those endpoints. `infra/bin/app.ts` passes the service URL,
 the secret, and the cold-lane launch parameters to the API stack, which
 sets `LEAN_CHECKER_URL`, `LEAN_CHECKER_TOKEN`, and the
 `LEAN_CHECKER_COLD_*` variables on the API task and grants it
-`ecs:RunTask`. The API reaches the checker over private addressing; the
-checker reaches nothing, and a synth-level test asserts the no-callback
-rule.
+`ecs:RunTask`. The `LEAN_CHECKER_COLD_*` variables and the `RunTask` grant
+are reserved for a future path in which the API launches one cold-lane
+task per prize check itself; nothing in `src/` reads them today, and prize
+checks go to the checker service's `POST /v1/check` and are polled. The
+API reaches the checker over private addressing; the checker reaches
+nothing, and a synth-level test asserts the no-callback rule.
 
 The endpoints, every one but the first behind the bearer token:
 
@@ -222,11 +225,13 @@ storage past about 5 GB, or a second region.
   the checker stack and read by the API task and the checker tasks. It is
   the only secret the checker ever sees, and it is never in the web tier.
 - `MINERVAL_OPERATOR_KEY`: the operator key (docs/accounts.md, "The
-  operator key") for the four money routes: the fund deposit, the bounty
-  confirmation, the prize-claim sign-off, and the void. It is held outside
-  the web deployment, in the operator's own password manager or a Secrets
-  Manager entry the web task cannot read, and used only from the
-  operator's own session. It is never set on the Vercel project.
+  operator key") for the eight operator routes: the fund deposit, the
+  bounty confirmation, the prize-claim sign-off, the void, the sanctions
+  screening, the owl grant, the release of a `check_error` hold, and the
+  operator page. It is held outside the web deployment, in the operator's
+  own password manager or a Secrets Manager entry the web task cannot
+  read, and used only from the operator's own session. It is never set on
+  the Vercel project.
 - Nothing else is baked into the checker image or its environment, because
   the cold lane runs a claimant's code.
 - A payout provider's key arrives only with cash payouts, in its own entry,
@@ -270,11 +275,27 @@ queue: no later claim on that statement is checked until it is resolved, so
 an infrastructure failure never costs a claimant their priority. From the
 operator page, first fix the cause (a cold-lane task that cannot pull its
 image, a daily CPU cap spent, a warm lane that lost its Mathlib), then
-re-queue the claim; it returns to `queued` with its original
-`submitted_at`. A claim is never rejected from `check_error`.
+re-queue the claim (`POST /prize-claims/:id/retry-check`, operator key,
+written to `audit_log` as `prize_route:retry_check`); it returns to
+`queued` with its original `submitted_at`, and the worker's next
+submission forces a fresh run rather than the checker's deduplicated error
+record. A claim is never rejected from `check_error`.
+
+**A prize claim stuck in review.** The prize-check worker re-invokes the
+Steward on `prize_claim` for an `in_review` claim with no decision after 24
+hours, at most once a day per claim, and again at once when the Audit
+agent sends an acceptance back (the claim returns to `in_review` with its
+window cleared). The operator page lists every claim in review for over 24
+hours under `in_review_over_24h`, keyed on when it entered review, so a
+claim the Steward keeps failing to decide stays visible until someone
+looks at the run.
 
 **Voiding and signing off a prize claim.** Both need the operator key and
-are written to `audit_log` with the credential kind and the acting person.
+are written to `audit_log` with the credential kind and the acting person,
+as are the screening (`POST /prize-claims/:id/screening`), the owl grant
+(`POST /prize-claims/:id/pay`), and the check retry; the fund deposit,
+which has no claim to write against, is appended to the
+`prize_fund_deposits` platform flag instead.
 Sign-off (`POST /prize-claims/:id/sign-off {note}`) is required before
 `payable` when the bounty is at or above `PRIZE_HUMAN_SIGNOFF_USD`, the
 claim's importance is at or above `PRIZE_HUMAN_SIGNOFF_IMPORTANCE`, the

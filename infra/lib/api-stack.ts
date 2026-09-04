@@ -73,8 +73,12 @@ export class ApiStack extends cdk.Stack {
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
-    // Lean checker (docs/mathematics.md 5.3): the API polls the warm lane over
-    // private DNS and launches one cold-lane task per prize check. RunTask
+    // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
+    // service over private DNS, and the checker's own queue runs the cold
+    // lane today; prize checks are submitted to POST /v1/check and polled.
+    // The LEAN_CHECKER_COLD_* variables and the RunTask grant are RESERVED
+    // for a future path in which the API launches one cold-lane Fargate
+    // task per prize check itself: nothing in src/ reads them yet. RunTask
     // needs the task definition, the cluster, and PassRole on the task's two
     // roles; DescribeTasks and StopTask cover polling for the task's private
     // address and cancelling a runaway. The checker never calls back.
@@ -84,6 +88,7 @@ export class ApiStack extends cdk.Stack {
       lc.tokenSecret.grantRead(taskDef.taskRole);
       Object.assign(leanCheckerEnvironment, {
         LEAN_CHECKER_URL: lc.url,
+        // Reserved for the RunTask path above; unread by src/ today.
         LEAN_CHECKER_COLD_CLUSTER_ARN: lc.cluster.clusterArn,
         LEAN_CHECKER_COLD_TASK_DEFINITION_ARN: lc.coldTaskDefinition.taskDefinitionArn,
         LEAN_CHECKER_COLD_SUBNET_IDS: lc.subnetIds.join(","),
@@ -157,6 +162,14 @@ export class ApiStack extends cdk.Stack {
         // The solver runs on the strong tier; config refuses production
         // without it (docs/mathematics.md §7.8).
         SOLVER_MODEL: "claude-fable-5-1",
+        // The Steward's six money triggers (formalize, formalization_review,
+        // prize_claim, prize_claim_voided, prize_window_closed,
+        // attempt_completed) run on this tier from the workers that own
+        // them, never on STEWARD_MODEL by way of the queue; config refuses
+        // production without it (docs/mathematics.md §6.4). Setting it also
+        // turns on model tiering: every assess/reassess group carries a
+        // 'strong' variant the allocators buy by marginal return.
+        STEWARD_STRONG_MODEL: "claude-fable-5-1",
         // The other load-bearing governance agents also run on Fable: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations

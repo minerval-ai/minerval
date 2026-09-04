@@ -349,7 +349,7 @@ describe("the end-to-end money path", () => {
 
     // The fake checker accepts; the worker runs the Reviewer (mocked to admit) and invokes the Steward.
     const fake = new FakeLeanCheckerClient();
-    const check = await processNextPrizeCheck({ client: fake, pollMs: 0 });
+    const check = await processNextPrizeCheck({ client: fake });
     expect(check).toMatchObject({ status: "processed", prizeClaimId: filed.prize_claim_id, verdict: "accepted", outcome: "in_review" });
     let pc = (await getPrizeClaimById(filed.prize_claim_id))!;
     expect(pc.status).toBe("in_review");

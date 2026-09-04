@@ -23,6 +23,8 @@ import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { getOrCreateContributor } from "./contributor-service.js";
 import { requestAudit } from "./queue-service.js";
+import { emitClaimEvent } from "./claim-events-service.js";
+import { checkedKindSql } from "./formalization-service.js";
 import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
 import {
   asRunner,
@@ -203,10 +205,46 @@ export async function bountyHasNonTerminalClaim(
   return Number(row?.n ?? 0) > 0;
 }
 
-/** Every transition writes the claim's audit trail (§8.4). */
+/** What a bounty transition leaves the bounty in, from the action logged. */
+export function bountyStatusAfter(action: string, current?: string | null): string {
+  if (action === "opened" || action === "rebound") return "open";
+  if (
+    (LIVE_BOUNTY_STATUSES as readonly string[]).includes(action) ||
+    (TERMINAL_BOUNTY_STATUSES as readonly string[]).includes(action)
+  ) {
+    return action;
+  }
+  // A notice of withdrawal or any other bookkeeping action leaves the
+  // status where it was.
+  return current ?? action;
+}
+
+/** The event subtype the read model uses for a bounty in this status. */
+export function bountyEventSubtype(status: string): "bounty_requested" | "bounty_opened" | "bounty_resolved" {
+  if (status === "requested" || status === "confirm_pending") return "bounty_requested";
+  if ((TERMINAL_BOUNTY_STATUSES as readonly string[]).includes(status)) return "bounty_resolved";
+  return "bounty_opened";
+}
+
+/** The bounty fields a transition can carry into its event; the rest are null. */
+export interface BountyEventSubject {
+  id: string;
+  claim_id: string;
+  status?: string | null;
+  formalization_id?: string | null;
+  amount_micro_usd?: number | string | null;
+  rules_version?: string | null;
+}
+
+/**
+ * Every transition writes the claim's audit trail (§8.4) and emits a
+ * `prize` claim event carrying the bounty id and the status it now holds,
+ * so the live feed sees a bounty move as the read model would derive it.
+ * The event is best-effort: a listener's failure never fails the transition.
+ */
 export async function logBountyEvent(
   r: Runner,
-  bounty: { id: string; claim_id: string },
+  bounty: BountyEventSubject,
   action: string,
   reasoning: string,
   createdBy = "prize_service"
@@ -216,8 +254,27 @@ export async function logBountyEvent(
      VALUES ($1, $2, $3, $4)`,
     [bounty.claim_id, `bounty:${action}`, `bounty ${bounty.id}: ${reasoning}`, createdBy]
   );
-  // TODO(formalization slice): emit a `prize` claim event through
-  // claim-events-service once it exports the prize event kind.
+  const status = bountyStatusAfter(action, bounty.status);
+  const subtype = bountyEventSubtype(status);
+  await emitClaimEvent({
+    kind: "prize",
+    id: `prize:bounty:${bounty.id}:${subtype}:${status}`,
+    at: new Date().toISOString(),
+    actor: createdBy,
+    claim_id: bounty.claim_id,
+    subtype,
+    bounty_id: bounty.id,
+    prize_claim_id: null,
+    formalization_id: bounty.formalization_id ?? null,
+    amount_micro_usd:
+      bounty.amount_micro_usd === null || bounty.amount_micro_usd === undefined
+        ? null
+        : Number(bounty.amount_micro_usd),
+    status,
+    direction: null,
+    credit_name: null,
+    rules_version: bounty.rules_version ?? null,
+  }).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +533,14 @@ export async function requestBounty(input: RequestBountyInput): Promise<RequestB
     );
     await logBountyEvent(
       tx,
-      { id: row!.id, claim_id: input.claimId },
+      {
+        id: row!.id,
+        claim_id: input.claimId,
+        status: "requested",
+        formalization_id: bindable.formalizationId,
+        amount_micro_usd: amount,
+        rules_version: PRIZE_RULES_VERSION,
+      },
       "requested",
       `${formatUsd(amount)} requested by the Grantmaker: ${rationale}`
     );
@@ -627,11 +691,12 @@ export async function closeBounty(
   tx?: TxQuery
 ): Promise<boolean> {
   const run = async (r: Runner): Promise<boolean> => {
-    const [row] = await r.query<{ id: string; claim_id: string; status: string }>(
+    const [row] = await r.query<BountyEventSubject>(
       `UPDATE bounties
           SET status = $2, resolved_at = now(), resolution_note = $3, updated_at = now()
         WHERE id = $1 AND status = ANY($4)
-        RETURNING id, claim_id, status`,
+        RETURNING id, claim_id, status, formalization_id,
+                  amount_micro_usd::bigint AS amount_micro_usd, rules_version`,
       [bountyId, status, note, [...LIVE_BOUNTY_STATUSES]]
     );
     if (!row) return false;
@@ -650,10 +715,11 @@ export async function setBountyStatus(
   note: string
 ): Promise<boolean> {
   const froms = Array.isArray(from) ? from : [from];
-  const [row] = await r.query<{ id: string; claim_id: string }>(
+  const [row] = await r.query<BountyEventSubject>(
     `UPDATE bounties SET status = $2, updated_at = now()
       WHERE id = $1 AND status = ANY($3)
-      RETURNING id, claim_id`,
+      RETURNING id, claim_id, status, formalization_id,
+                amount_micro_usd::bigint AS amount_micro_usd, rules_version`,
     [bountyId, to, froms]
   );
   if (!row) return false;
@@ -778,12 +844,13 @@ export async function rebindDueBounties(): Promise<number> {
       continue;
     }
     await withTransaction(async (tx) => {
-      const [updated] = await tx.query<{ id: string; claim_id: string }>(
+      const [updated] = await tx.query<BountyEventSubject>(
         `UPDATE bounties
             SET status = 'open', formalization_id = $2, amount_micro_usd = $3,
                 opened_at = now(), updated_at = now()
           WHERE id = $1 AND status = 'rebinding'
-          RETURNING id, claim_id`,
+          RETURNING id, claim_id, status, formalization_id,
+                    amount_micro_usd::bigint AS amount_micro_usd, rules_version`,
         [row.id, row.new_formalization_id, amount]
       );
       if (!updated) return;
@@ -1135,10 +1202,27 @@ export function bountyTerms(bounty: BountyRow, summary: BountySummary) {
   };
 }
 
+/**
+ * One row of GET /prizes: an open bounty with the claim it is pinned to,
+ * carrying what a browse card needs beside the amount: the claim's kind,
+ * its current assessment, its importance, and whether a published formal
+ * statement is already machine-checked (and which way).
+ */
 export interface OpenBountyListing {
   claim_id: string;
-  claim_text: string;
+  text: string;
+  claim_type: string;
+  assessment_status: string | null;
+  importance: number;
+  checked: "proof" | "disproof" | null;
   bounty: BountySummary;
+}
+
+/** BOUNTY_COLS qualified with a table alias, for joins. */
+function bountyColsFor(alias: string): string {
+  return BOUNTY_COLS.split(",")
+    .map((col) => `${alias}.${col.trim()}`)
+    .join(", ");
 }
 
 /** GET /prizes — open bounties across the graph, largest first, paged. */
@@ -1148,10 +1232,22 @@ export async function listOpenBounties(opts: {
 } = {}): Promise<{ items: OpenBountyListing[]; total: number }> {
   const limit = Math.min(100, Math.max(1, opts.limit ?? 20));
   const offset = Math.max(0, opts.offset ?? 0);
-  const rows = await rawQuery<BountyRow & { claim_text: string }>(
-    `SELECT ${BOUNTY_COLS.replace(/(^|,\s*)id,/, "$1b.id,").replace(/\b(claim_id|formalization_id|pool_id|condition_type|resolution|status|rules_version|posted_by_grant_id|rationale|requested_at|opened_at|expires_at|human_confirmed_at|human_confirmed_by|withdraw_effective_at|resolved_at|resolution_note)\b/g, "b.$1").replace("amount_micro_usd::bigint", "b.amount_micro_usd::bigint")},
-            c.text AS claim_text
-       FROM bounties b JOIN claims c ON c.id = b.claim_id
+  const rows = await rawQuery<
+    BountyRow & {
+      text: string;
+      claim_type: string;
+      importance: number | string | null;
+      assessment_status: string | null;
+      checked: "proof" | "disproof" | null;
+    }
+  >(
+    `SELECT ${bountyColsFor("b")},
+            c.text AS text, c.claim_type, c.importance,
+            a.status AS assessment_status,
+            ${checkedKindSql("c.id")} AS checked
+       FROM bounties b
+       JOIN claims c ON c.id = b.claim_id
+       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
       WHERE b.status IN ('open', 'claim_pending')
       ORDER BY b.amount_micro_usd DESC, b.opened_at ASC
       LIMIT $1 OFFSET $2`,
@@ -1162,10 +1258,15 @@ export async function listOpenBounties(opts: {
   );
   const items: OpenBountyListing[] = [];
   for (const row of rows) {
+    const { text, claim_type, importance, assessment_status, checked, ...bounty } = row;
     items.push({
       claim_id: row.claim_id,
-      claim_text: row.claim_text,
-      bounty: await bountySummary(normalize(row)),
+      text,
+      claim_type,
+      assessment_status: assessment_status ?? null,
+      importance: Number(importance ?? 0),
+      checked: checked ?? null,
+      bounty: await bountySummary(normalize(bounty)),
     });
   }
   return { items, total: Number(count?.n ?? 0) };
@@ -1189,7 +1290,7 @@ export function openBountiesAtom(items: OpenBountyListing[], baseUrl = ""): stri
       (i) =>
         `  <entry>\n` +
         `    <id>urn:minerval:bounty:${i.bounty.id}</id>\n` +
-        `    <title>${xmlEscape(`${formatUsd(i.bounty.amount_micro_usd)} for a proof or disproof: ${i.claim_text}`)}</title>\n` +
+        `    <title>${xmlEscape(`${formatUsd(i.bounty.amount_micro_usd)} for a proof or disproof: ${i.text}`)}</title>\n` +
         `    <link href="${xmlEscape(`${baseUrl}/claims/${i.claim_id}`)}"/>\n` +
         `    <updated>${i.bounty.opened_at ?? updated}</updated>\n` +
         `    <summary>${xmlEscape(i.bounty.state_sentence)}</summary>\n` +
@@ -1217,7 +1318,7 @@ export interface MandatePrizesBlock {
   bounties: Array<{
     id: string;
     claim_id: string;
-    claim_text: string;
+    text: string;
     amount_micro_usd: number;
     status: BountyStatus;
     opened_at: string | null;
@@ -1235,7 +1336,7 @@ export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizes
   const rows = await rawQuery<{
     id: string;
     claim_id: string;
-    claim_text: string;
+    text: string;
     amount_micro_usd: string | number;
     status: BountyStatus;
     opened_at: Date | null;
@@ -1244,7 +1345,7 @@ export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizes
     reserve: string | number;
     reserve_spent: string | number;
   }>(
-    `SELECT b.id, b.claim_id, c.text AS claim_text, b.amount_micro_usd, b.status,
+    `SELECT b.id, b.claim_id, c.text AS text, b.amount_micro_usd, b.status,
             b.opened_at, b.resolution_note,
             (SELECT COUNT(*) FROM prize_claims pc WHERE pc.bounty_id = b.id)::int AS submissions,
             COALESCE((SELECT j.budget_micro_usd FROM budget_jobs j
@@ -1278,7 +1379,7 @@ export async function mandatePrizesBlock(grantId: string): Promise<MandatePrizes
     bounties: rows.map((r) => ({
       id: r.id,
       claim_id: r.claim_id,
-      claim_text: r.claim_text,
+      text: r.text,
       amount_micro_usd: Number(r.amount_micro_usd),
       status: r.status,
       opened_at: r.opened_at ? new Date(r.opened_at).toISOString() : null,

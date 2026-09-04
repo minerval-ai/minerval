@@ -270,10 +270,13 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       // 'empty' — fall through to the grant lane.
     }
 
-    // 4b. The prize-check lane (docs/mathematics.md §8.4): one cold-lane
-    //     check per pass, run before any agent sees the submission, then
-    //     the Reviewer and the Steward under the bounty's reserve. Counts
-    //     toward the Steward cap because an accepted check runs one.
+    // 4b. The prize-check lane (docs/mathematics.md §8.4), two-step so a
+    //     twenty-minute check never holds the drain: a tick submits one
+    //     claim to the cold lane and returns, or polls the checks in flight
+    //     once each and lands the first finished one, running the Reviewer
+    //     and the Steward under the bounty's reserve. A landing counts
+    //     toward the Steward cap because an accepted check runs one; a
+    //     submission is bookkeeping and does not.
     if (prizeLanesOn) {
       const startedAt = now();
       let p: Awaited<ReturnType<typeof processNextPrizeCheck>>;
@@ -285,22 +288,22 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         p = { status: "empty", error: err instanceof Error ? err.message : String(err) };
         errors.prizeCheck = (errors.prizeCheck ?? 0) + 1;
       }
-      if (p.status === "processed") {
+      if (p.status === "processed" || p.status === "submitted") {
         seq++;
-        stewardProcessed++;
+        if (p.status === "processed") stewardProcessed++;
         if (!p.error) processed.prizeCheck = (processed.prizeCheck ?? 0) + 1;
         else errors.prizeCheck = (errors.prizeCheck ?? 0) + 1;
         opts.onEvent?.({
           seq,
           queue: "prizeCheck",
-          message: { prizeClaimId: p.prizeClaimId, verdict: p.verdict, outcome: p.outcome },
+          message: { prizeClaimId: p.prizeClaimId, checkId: p.checkId, verdict: p.verdict, outcome: p.outcome, status: p.status },
           ok: !p.error,
           error: p.error,
           durationMs: now() - startedAt,
         });
         continue;
       }
-      // 'empty', 'capped', or 'no_checker' — fall through.
+      // 'polling', 'empty', 'capped', or 'no_checker' — fall through.
     }
 
     // 4c. The window closer (§8.5): promotions, voids, forfeits, expiries,

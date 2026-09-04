@@ -101,6 +101,27 @@ describe("mark_problem_solved_by_platform", () => {
     expect(out).toEqual({ success: false, code: "NOT_A_RESULT", message: "partial settles nothing" });
   });
 
+  it("passes the pending human claims through on HUMAN_CLAIM_PENDING", async () => {
+    mocks.markProblemSolvedByPlatform.mockResolvedValueOnce({
+      ok: false,
+      code: "HUMAN_CLAIM_PENDING",
+      message: "a claim filed earlier is judged first",
+      pending_prize_claims: [{ id: "pc-1", status: "in_review", submitted_at: "2026-08-30T12:00:00.000Z" }],
+    });
+    const out = JSON.parse(
+      await executeMarkProblemSolvedByPlatform(
+        { formalization_id: "f1", attempt_id: "a1", lean_check_id: "chk-1", reason: "faithful" },
+        ctx
+      )
+    );
+    expect(out).toEqual({
+      success: false,
+      code: "HUMAN_CLAIM_PENDING",
+      message: "a claim filed earlier is judged first",
+      pending_prize_claims: [{ id: "pc-1", status: "in_review", submitted_at: "2026-08-30T12:00:00.000Z" }],
+    });
+  });
+
   it("returns the record on success, saying what happened to the bounty", async () => {
     mocks.markProblemSolvedByPlatform.mockResolvedValueOnce({
       ok: true,

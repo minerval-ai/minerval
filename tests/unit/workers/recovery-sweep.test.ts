@@ -105,6 +105,11 @@ describe("handleContributionMessage claim guard", () => {
     expect(release.q).toContain("review_attempts = review_attempts - 1");
   });
 
+  it("never claims a claim_prize contribution: its review is the prize-check worker's", async () => {
+    await handleContributionMessage({ contributionId: CONTRIB });
+    expect(state.queries[0].q).toContain("contribution_type <> 'claim_prize'");
+  });
+
   it("keeps the claim on genuine errors (reclaim-window backoff)", async () => {
     state.reviewError = new Error("agent exploded");
     await expect(
@@ -185,6 +190,15 @@ describe("sweepStalledReviewWork", () => {
       { contributionId: "c-escalated", trigger: "escalated_review" },
       { contributionId: "c-appealed", trigger: "appeal", appealId: "a-1" },
     ]);
+  });
+
+  it("leaves claim_prize contributions to the prize-check worker (docs/mathematics.md §8.4)", async () => {
+    await sweepStalledReviewWork();
+    const pendingSelect = state.queries.find(
+      (e) => e.q.trimStart().startsWith("SELECT") && e.q.includes("review_status = 'pending'")
+    );
+    expect(pendingSelect).toBeDefined();
+    expect(pendingSelect!.q).toContain("contribution_type <> 'claim_prize'");
   });
 
   it("only selects unclaimed, under-cap rows", async () => {

@@ -1,6 +1,6 @@
 import "server-only";
 import type {
-  AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimSummary,
+  AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
 
 // Server-only client for the account/keys/usage half of the API (#70).
@@ -884,33 +884,60 @@ export async function allocateToClaim(
 
 // --- prize claims (docs/mathematics.md §8.4, §8.7) ---------------------------
 
+// What the filing returns (201): the new prize claim's id, the contribution
+// it is filed as, its queued state, the time of receipt (the claimant's
+// priority), and its tie group when another submission arrived within the
+// tie window.
+export interface FiledPrizeClaim {
+  prize_claim_id: string;
+  contribution_id: string;
+  status: PrizeClaimStatus;
+  submitted_at: string;
+  tie_group: string | null;
+}
+
 export interface SubmittedPrizeClaim {
-  prize_claim: PrizeClaimSummary;
+  prize_claim: FiledPrizeClaim;
   contribution: { id: string; review_status: string } | null;
 }
 
-/** File a prize claim: multipart, forwarded as received. No owl charge. */
+/**
+ * File a prize claim: multipart under the API's field names
+ * (lib/prize-forms.ts), forwarded with the session. No owl charge.
+ */
 export async function submitPrizeClaim(
   externalId: string,
   claimId: string,
   form: FormData
 ): Promise<SubmittedPrizeClaim> {
-  const r = await accountFetchForm<{
-    prize_claim?: PrizeClaimSummary;
-    contribution?: { id: string; review_status: string };
-  }>(`/claims/${claimId}/prize-claims`, form, { actingUser: externalId });
+  const r = await accountFetchForm<{ prize_claim: FiledPrizeClaim }>(
+    `/claims/${claimId}/prize-claims`,
+    form,
+    { actingUser: externalId }
+  );
+  const filed = r.prize_claim;
   return {
-    prize_claim: r.prize_claim as PrizeClaimSummary,
-    contribution: r.contribution ?? null,
+    prize_claim: filed,
+    contribution: filed?.contribution_id
+      ? { id: filed.contribution_id, review_status: "pending" }
+      : null,
   };
 }
 
 export interface PrizePayeeInput {
   legal_name: string;
-  address: string;
+  // ISO 3166-1 alpha-2.
   country: string;
   us_person: boolean;
-  // The emailed one-time code: a leaked consumer key must not redirect a prize.
+  // A U.S. person who will give a valid taxpayer identification number on
+  // the W-9 is paid without backup withholding; the API defaults this to
+  // false, which withholds 24 percent, so it is always sent explicitly.
+  has_tin: boolean;
+  // A non-U.S. person claiming a treaty or foreign-source position on the
+  // W-8BEN; the API defaults this to false, which withholds 30 percent.
+  treaty_position: boolean;
+  // The one-time code issued to this session for the payee steps: a leaked
+  // consumer key must not redirect a prize.
   code: string;
 }
 
@@ -919,7 +946,10 @@ export async function submitPrizePayee(
   externalId: string,
   prizeClaimId: string,
   input: PrizePayeeInput
-): Promise<{ payee_status: string }> {
+): Promise<{
+  prize_claim_id: string;
+  payee: { country: string; us_person: boolean; identity_recorded_at: string };
+}> {
   return accountFetch(`/prize-claims/${prizeClaimId}/payee`, {
     method: "POST",
     body: input,
@@ -927,13 +957,44 @@ export async function submitPrizePayee(
   });
 }
 
-/** The tax form (W-9 or W-8BEN), stored as a restricted attachment of kind tax_form. */
+/**
+ * The tax form (W-9 or W-8BEN), stored as a restricted attachment
+ * (POST /prize-claims/:id/attachments: the file part `tax_form`, `kind`,
+ * and the payee-step `code`).
+ */
 export async function uploadPrizeTaxForm(
   externalId: string,
   prizeClaimId: string,
   form: FormData
-): Promise<{ attachment: { id: string; kind: string } }> {
+): Promise<{ attachment_id: string }> {
   return accountFetchForm(`/prize-claims/${prizeClaimId}/attachments`, form, {
+    actingUser: externalId,
+  });
+}
+
+export type PrizeCodePurpose = "payee" | "withdraw";
+
+export interface IssuedPrizeCode {
+  code: string;
+  expires_at: string;
+  purpose: PrizeCodePurpose;
+  // The API's own note on how the code reaches the claimant; in this
+  // version it is returned to the session and nothing is sent.
+  delivery: string;
+}
+
+/**
+ * Issue a one-time code for the payee steps or a withdrawal
+ * (POST /prize-claims/:id/code). Returned to the claimant's session only.
+ */
+export async function requestPrizeClaimCode(
+  externalId: string,
+  prizeClaimId: string,
+  purpose: PrizeCodePurpose
+): Promise<IssuedPrizeCode> {
+  return accountFetch(`/prize-claims/${prizeClaimId}/code`, {
+    method: "POST",
+    body: { purpose },
     actingUser: externalId,
   });
 }

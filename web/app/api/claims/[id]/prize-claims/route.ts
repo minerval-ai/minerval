@@ -5,23 +5,17 @@ import {
   submitPrizeClaim,
   AccountApiError,
 } from "../../../../../lib/account-api";
+import { buildPrizeClaimApiForm } from "../../../../../lib/prize-forms";
 
 // The prize-claim route (docs/mathematics.md §8.4): the browser posts the
-// form here as multipart; the handler holds the session and forwards the
-// FormData to the API with the service key and the acting-user header, files
-// included, the way the JSON routes forward their bodies. The API validates
-// independently: statement version, attachment policy, the static Lean
-// policy, eligibility, rate limits, and the declarations. This route only
-// turns each of its codes into a sentence a claimant can act on.
+// form here as multipart; the handler holds the session, rebuilds the body
+// under the field names the API reads (lib/prize-forms.ts), and forwards it
+// with the service key and the acting-user header, files included. The API
+// validates independently: statement version, attachment policy, the static
+// Lean policy, eligibility, rate limits, and the declarations. This route
+// only turns each of its codes into a sentence a claimant can act on.
 
 export const runtime = "nodejs";
-
-const CONTENT_MIN = 200;
-const CONTENT_MAX = 20_000;
-const LEAN_MAX_BYTES = 256 * 1024;
-const DOCS_MAX = 5;
-const DOC_MAX_BYTES = 10 * 1024 * 1024;
-const DOCS_TOTAL_BYTES = 25 * 1024 * 1024;
 
 function friendlyError(err: AccountApiError): { status: number; error: string } {
   switch (err.code) {
@@ -58,15 +52,16 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
     case "INVALID_SUBMISSION":
       return {
         status: 422,
-        error: err.message && err.message !== `Minerval API ${err.status} for /claims`
+        error: err.message && !err.message.startsWith("Minerval API ")
           ? `The submission was refused before anything ran: ${err.message}`
           : "The submission was refused before anything ran: a file or the Lean source breaks the attachment policy or the static Lean policy published with the rules.",
       };
     case "DECLARATIONS_REQUIRED":
       return {
         status: 422,
-        error:
-          "Each declaration must be made, and the claim must be filed under the rules version in force.",
+        error: err.message && !err.message.startsWith("Minerval API ")
+          ? `The declarations were not accepted: ${err.message}.`
+          : "Each declaration must be made, and the claim must be filed under the rules version in force.",
       };
     case "DEPOSIT_REQUIRED":
       return {
@@ -76,6 +71,8 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
       };
     case "CONTRIBUTOR_SUSPENDED":
       return { status: 403, error: "This account is suspended from contributing." };
+    case "USER_IDENTITY_REQUIRED":
+      return { status: 403, error: "This account is not provisioned for contributing; sign out and back in." };
     case "NOT_FOUND":
       return { status: 404, error: "This claim no longer exists." };
     default:
@@ -112,54 +109,15 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  // Light checks that save a round trip; the API is the authority.
-  const content = String(form.get("content") ?? "").trim();
-  if (content.length < CONTENT_MIN || content.length > CONTENT_MAX) {
-    return NextResponse.json(
-      { error: `The written account must run between ${CONTENT_MIN} and ${CONTENT_MAX.toLocaleString()} characters.` },
-      { status: 400 }
-    );
-  }
-  const direction = String(form.get("direction") ?? "");
-  if (direction !== "proof" && direction !== "disproof") {
-    return NextResponse.json({ error: "Say whether this is a proof or a disproof." }, { status: 400 });
-  }
-  if (!String(form.get("formalization_id") ?? "").trim()) {
-    return NextResponse.json({ error: "The statement version is missing; reload the page." }, { status: 400 });
-  }
-  const leanFile = form.get("lean_file");
-  const leanSource = String(form.get("lean_source") ?? "");
-  const hasFile = leanFile instanceof File && leanFile.size > 0;
-  if (!hasFile && !leanSource.trim()) {
-    return NextResponse.json({ error: "Attach the Lean file or paste the Lean source." }, { status: 400 });
-  }
-  if (hasFile && (leanFile as File).size > LEAN_MAX_BYTES) {
-    return NextResponse.json({ error: "The Lean file must be at most 256 KiB." }, { status: 400 });
-  }
-  if (!hasFile) form.delete("lean_file");
-  const docs = form.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0);
-  form.delete("documents");
-  for (const d of docs) form.append("documents", d);
-  if (docs.length > DOCS_MAX || docs.some((d) => d.size > DOC_MAX_BYTES)
-    || docs.reduce((s, d) => s + d.size, 0) > DOCS_TOTAL_BYTES) {
-    return NextResponse.json(
-      { error: "At most five documents, 10 MiB each and 25 MiB in all." },
-      { status: 400 }
-    );
-  }
-  for (const k of ["declare_eligible", "declare_understands", "declare_cc0", "declare_rules"]) {
-    if (form.get(k) !== "on") {
-      return NextResponse.json({ error: "Each declaration must be made." }, { status: 400 });
-    }
-  }
-  // The form's presentational fields are not part of the API's contract.
-  form.delete("lean_mode");
-  if (session.user?.name && !form.get("contributor_display_name")) {
-    form.set("contributor_display_name", session.user.name);
+  // Light checks that save a round trip, and the rebuild under the API's
+  // field names; the API is the authority.
+  const built = buildPrizeClaimApiForm(form);
+  if (!built.ok) {
+    return NextResponse.json({ error: built.error }, { status: 400 });
   }
 
   try {
-    const result = await submitPrizeClaim(session.externalId, id, form);
+    const result = await submitPrizeClaim(session.externalId, id, built.form);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof AccountApiError) {

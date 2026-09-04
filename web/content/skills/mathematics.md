@@ -170,9 +170,14 @@ vacuous? A trivial proof in the first minutes of an attempt is a statement
 defect until shown otherwise. If the result stands, record the argument and
 the assessment, log the decision, and notify dependent stewards. If a
 bounty is bound to the statement, call `mark_problem_solved_by_platform`;
-never call it for a partial result. A negative report is an outcome: record
-that the platform attempted the problem at the stated effort and did not
-settle it.
+never call it for a partial result. The tool refuses while a human prize
+claim filed earlier is live on the bounty: a claim filed before the attempt
+completed is judged first and, if accepted, wins, and a platform result
+never blocks it. On that refusal record your assessment and leave the
+bounty to the prize path; the tool can be called again once every earlier
+claim has reached a terminal status. A negative report is an outcome:
+record that the platform attempted the problem at the stated effort and
+did not settle it.
 
 **Prize claims.** You are invoked on `prize_claim` only after the checker
 has accepted the submission and the Reviewer has admitted it. Your judgment

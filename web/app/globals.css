@@ -1324,6 +1324,9 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 .prize-step-form { max-width: 30rem; font-family: var(--sans); font-size: 0.86rem; }
 .prize-step-form .contribute-label:first-child { margin-top: 0; }
 .prize-step-done { font-family: var(--sans); font-size: 0.84rem; color: var(--st-verified); margin: 0; }
+.prize-code { font-family: var(--sans); font-size: 0.82rem; margin: 0.4rem 0 0; }
+.prize-code code { font-size: 0.8rem; word-break: break-all; user-select: all; }
+.prize-code-button { font: inherit; font-size: 0.8rem; padding: 0.15rem 0.55rem; cursor: pointer; }
 .prize-step-note { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin: 0; }
 
 /* ----- the rules page (§8.10) ----- */

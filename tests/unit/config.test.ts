@@ -79,6 +79,9 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
   // SOLVER_MODEL joins the guard (docs/mathematics.md §7.8): a multi-hour
   // attempt on a model nobody chose is a different product than the
   // mandate funded, so production names it even while the solver is off.
+  // STEWARD_STRONG_MODEL joins it too (docs/mathematics.md §6.4): the
+  // Steward's six money triggers run on it and nowhere else, and the direct
+  // invocation refuses production without it, so the boot must refuse first.
   const MODEL_ENV = [
     "STEWARD_MODEL",
     "CURATOR_MODEL",
@@ -86,6 +89,7 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
     "ARBITRATION_MODEL",
     "EXTRACTOR_MODEL",
     "SOLVER_MODEL",
+    "STEWARD_STRONG_MODEL",
   ];
   const saved: Record<string, string | undefined> = {};
   let savedEnvironment: string | undefined;
@@ -132,6 +136,7 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
     // default because this guard did not cover it.
     expect(message).toContain("EXTRACTOR_MODEL");
     expect(message).toContain("SOLVER_MODEL");
+    expect(message).toContain("STEWARD_STRONG_MODEL");
     expect(message).not.toContain("STEWARD_MODEL");
   });
 

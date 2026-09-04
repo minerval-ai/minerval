@@ -927,6 +927,13 @@ export function loadConfig(): Config {
     // model nobody chose is a different product than the mandate funded,
     // so production names it even while SOLVER_ENABLED is false.
     "SOLVER_MODEL",
+    // The Steward's six money triggers (formalize, formalization_review,
+    // prize_claim, prize_claim_voided, prize_window_closed,
+    // attempt_completed) run on this tier and nowhere else (§6.4); the
+    // direct invocation refuses to run without it in production, so a
+    // deploy that forgot it would fail on the first prize claim instead of
+    // at boot. Naming it here fails the boot.
+    "STEWARD_STRONG_MODEL",
   ].filter((k) => !process.env[k]);
   if (defaultedModelEnvs.length > 0) {
     if (_config.env === "production") {
@@ -934,16 +941,18 @@ export function loadConfig(): Config {
       throw new Error(
         `Missing model env(s) in production: ${defaultedModelEnvs.join(", ")}. ` +
           "The load-bearing agents (Steward/Curator/Extractor/Audit/" +
-          "Arbitration/solver) must run an explicitly chosen tier (issue " +
-          "#77) — set the env(s) rather than silently falling back to the " +
-          "default."
+          "Arbitration/solver) and the Steward's money triggers " +
+          "(STEWARD_STRONG_MODEL) must run an explicitly chosen tier (issue " +
+          "#77, docs/mathematics.md §6.4) — set the env(s) rather than " +
+          "silently falling back to the default."
       );
     }
     if (!process.env.VITEST) {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}) and the solver on ${MODELS.fable}. ` +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.fable}, ` +
+          "and the Steward's money triggers on STEWARD_MODEL. " +
           "Fine for local dev; set the env(s) (production uses " +
           "claude-fable-5-1) if this environment does real assessment work."
       );

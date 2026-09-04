@@ -60,7 +60,9 @@ export const PRIZE_CLAIM_TRANSITIONS: Record<PrizeClaimStatus, readonly PrizeCla
   check_error: ["queued", "checking", "withdrawn", "voided", "superseded"],
   checked: ["in_review", "rejected", "withdrawn", "voided", "superseded"],
   in_review: ["in_challenge_window", "rejected", "defect_award_pending", "withdrawn", "voided", "superseded"],
-  in_challenge_window: ["payable", "voided", "withdrawn", "superseded"],
+  // A send-back by the Audit agent returns the window to in_review for a
+  // fresh Steward decision (§8.5); nothing else leaves the window backwards.
+  in_challenge_window: ["payable", "in_review", "voided", "withdrawn", "superseded"],
   payable: ["paid", "forfeited", "voided", "withdrawn", "superseded"],
   defect_award_pending: ["paid", "forfeited", "voided", "withdrawn"],
   paid: [],
@@ -1441,7 +1443,14 @@ export async function signOffPrizeClaim(input: {
   return { ok: true };
 }
 
-/** The Audit agent's outcome on an acceptance: 'clear' or a send-back (§8.5). */
+/**
+ * The Audit agent's outcome on an acceptance: 'clear' or a send-back
+ * (§8.5). A send-back during the challenge window is not a dead end: the
+ * claim returns to `in_review` with the window and its pauses cleared and
+ * the acceptance withdrawn (it stays in the audit trail), and the
+ * prize-check worker re-invokes the Steward on `prize_claim`, so a fresh
+ * decision with a new decision id opens a new window and a new audit.
+ */
 export async function recordPrizeAuditOutcome(input: {
   prizeClaimId: string;
   outcome: "clear" | "send_back";
@@ -1452,6 +1461,26 @@ export async function recordPrizeAuditOutcome(input: {
   if (!pc) return { ok: false, message: "prize claim not found" };
   if (!["in_challenge_window", "defect_award_pending", "payable"].includes(pc.status)) {
     return { ok: false, message: `prize claim is ${pc.status}; an audit outcome applies to an accepted claim` };
+  }
+  if (input.outcome === "send_back" && pc.status === "in_challenge_window") {
+    return withTransaction(async (tx) => {
+      await updatePrizeClaimFields(tx, pc.id, { auditOutcome: "send_back" }, {
+        actor: input.actor,
+        reason: `audit outcome send_back: ${input.note}`,
+        action: "audit_send_back",
+      });
+      const prior = pc.steward_decision;
+      const moved = await transitionPrizeClaim(tx, pc.id, "in_challenge_window", "in_review", {
+        actor: input.actor,
+        reason:
+          `returned to review by the audit's send-back; the acceptance` +
+          (prior ? ` (decision ${prior.decision_id}, ${prior.result_category ?? "uncategorized"}, served by ${prior.served_model ?? "unknown"})` : "") +
+          ` is withdrawn and the window cleared; the Steward decides afresh`,
+        set: { stewardDecision: null, windowEndsAt: null, windowPausedMs: 0 },
+      });
+      if (!moved) return { ok: false as const, message: "the prize claim moved while the audit outcome was being recorded" };
+      return { ok: true as const, status: "in_review" as const };
+    });
   }
   await updatePrizeClaimFields(asRunner(), pc.id, { auditOutcome: input.outcome }, {
     actor: input.actor,
@@ -1850,10 +1879,41 @@ export async function operatorPrizeQueue() {
   const payable = await rawQuery<{ id: string; claim_id: string; status: string; payee: PayeeRecord | null }>(
     `SELECT id, claim_id, status, payee FROM prize_claims WHERE status IN ('payable', 'defect_award_pending') ORDER BY updated_at ASC`
   );
+  // A claim admitted over a day ago and still undecided: keyed on the
+  // moment it entered in_review (its audit row), not on updated_at, which
+  // the worker's daily re-invocation bumps, so a chronic case stays listed.
+  const inReviewStale = await rawQuery<{
+    id: string;
+    claim_id: string;
+    in_review_since: Date;
+    updated_at: Date;
+    audit_outcome: string | null;
+    has_steward_decision: boolean;
+  }>(
+    `SELECT pc.id, pc.claim_id, pc.updated_at, pc.audit_outcome,
+            (pc.steward_decision IS NOT NULL) AS has_steward_decision,
+            COALESCE((SELECT MAX(al.created_at) FROM audit_log al
+                       WHERE al.claim_id = pc.claim_id AND al.action = 'prize_claim:in_review'
+                         AND al.reasoning LIKE 'prize claim ' || pc.id || ':%'), pc.updated_at) AS in_review_since
+       FROM prize_claims pc
+      WHERE pc.status = 'in_review'
+        AND COALESCE((SELECT MAX(al.created_at) FROM audit_log al
+                       WHERE al.claim_id = pc.claim_id AND al.action = 'prize_claim:in_review'
+                         AND al.reasoning LIKE 'prize claim ' || pc.id || ':%'), pc.updated_at) <= now() - interval '24 hours'
+      ORDER BY in_review_since ASC`
+  );
   return {
     awaiting_signoff: signoffs,
     check_errors: checkErrors.map((r) => ({ ...r, check_attempts: Number(r.check_attempts), updated_at: new Date(r.updated_at).toISOString() })),
     house_result_pending_over_7_days: houseResults.map((r) => ({ ...r, updated_at: new Date(r.updated_at).toISOString() })),
+    in_review_over_24h: inReviewStale.map((r) => ({
+      prize_claim_id: r.id,
+      claim_id: r.claim_id,
+      in_review_since: new Date(r.in_review_since).toISOString(),
+      last_activity_at: new Date(r.updated_at).toISOString(),
+      audit_outcome: r.audit_outcome,
+      has_steward_decision: r.has_steward_decision === true,
+    })),
     bounties_awaiting_confirmation: confirmPending.map((r) => ({ ...r, amount_micro_usd: Number(r.amount_micro_usd), requested_at: new Date(r.requested_at).toISOString() })),
     payable: payable.map((r) => ({
       prize_claim_id: r.id,

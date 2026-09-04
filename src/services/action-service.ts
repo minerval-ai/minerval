@@ -177,7 +177,7 @@ export async function reconcileActions(): Promise<{
     status: string;
     policy: string;
     plan: {
-      items?: Array<{ action: string; url?: string; claim_id?: string; variant?: string }>;
+      items?: Array<{ action: string; url?: string; claim_id?: string; variant?: string; rationale?: string }>;
     } | null;
     plan_cursor: number;
   }>(
@@ -295,10 +295,15 @@ export async function reconcileActions(): Promise<{
       for (const claimId of formalizeClaims) {
         await ensureFormalizeAction(claimId, await formalizeCostMicroUsd());
       }
-      const attemptItems = new Map<string, number>();
+      // One entry per attempt_proof item, in plan order, carrying its
+      // rationale: the n-th item entitles the n-th group, and its rationale
+      // is what may waive the cooldown (§7.2).
+      const attemptItems = new Map<string, string[]>();
       for (const it of items) {
         if (it.action !== "attempt_proof" || !it.claim_id) continue;
-        attemptItems.set(it.claim_id, (attemptItems.get(it.claim_id) ?? 0) + 1);
+        const list = attemptItems.get(it.claim_id) ?? [];
+        list.push(typeof it.rationale === "string" ? it.rationale : "");
+        attemptItems.set(it.claim_id, list);
       }
       if (attemptItems.size > 0) {
         const policy = await getMandateAllocationPolicy(g.id);
@@ -307,8 +312,11 @@ export async function reconcileActions(): Promise<{
           standard: Math.round(policy.est_attempt_standard_cost_owls * owl),
           max: Math.round(policy.est_attempt_max_cost_owls * owl),
         };
-        for (const [claimId, wanted] of attemptItems) {
-          await ensureAttemptActions(claimId, wanted, costs);
+        for (const [claimId, rationales] of attemptItems) {
+          await ensureAttemptActions(claimId, rationales.length, costs, {
+            cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
+            rationales,
+          });
         }
       }
     }
@@ -392,17 +400,27 @@ export async function ensureFormalizeAction(
 }
 
 /**
+ * A plan item's rationale waives the attempt cooldown only when it says
+ * something: at least this many characters (a new lemma in the subtree was
+ * formalized; a prior report names a route it could not pursue for budget).
+ */
+export const ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS = 20;
+
+/**
  * Open the next attempt group on a claim's published statement when the
  * plan asks for more attempts than the ledger has opened: group
  * `attempt:<formalization_id>:<n>` with `n` one more than the closed
  * attempts on that statement, and the two variants as sibling rows. Each
  * plan item entitles one group; a group still open or running blocks the
- * next; a claim without a published statement opens nothing.
+ * next; a claim without a published statement opens nothing; and the next
+ * group waits out the mandate's `attempt_cooldown_days` after the last
+ * closed attempt unless the item entitling it states a reason (§7.2).
  */
 export async function ensureAttemptActions(
   claimId: string,
   wantedGroups: number,
-  costs: { standard: number; max: number }
+  costs: { standard: number; max: number },
+  opts: { cooldownDays?: number; rationales?: readonly string[] } = {}
 ): Promise<void> {
   const [formalization] = await rawQuery<{ id: string }>(
     `SELECT id FROM claim_formalizations
@@ -420,6 +438,22 @@ export async function ensureAttemptActions(
   const groups = Number(state?.groups ?? 0);
   const live = Number(state?.live ?? 0);
   if (live > 0 || groups >= wantedGroups) return;
+  const cooldownDays = Math.max(0, Number(opts.cooldownDays ?? 0));
+  if (cooldownDays > 0) {
+    const [last] = await rawQuery<{ finished_at: Date }>(
+      `SELECT finished_at FROM proof_attempts
+        WHERE formalization_id = $1 AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC LIMIT 1`,
+      [formalization.id]
+    );
+    const withinCooldown =
+      !!last && new Date(last.finished_at).getTime() > Date.now() - cooldownDays * 86_400_000;
+    if (withinCooldown) {
+      const rationales = opts.rationales ?? [];
+      const rationale = rationales[groups] ?? rationales[rationales.length - 1] ?? "";
+      if (rationale.trim().length < ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS) return;
+    }
+  }
   const n = groups + 1;
   for (const variant of ATTEMPT_VARIANTS) {
     await rawQuery(

@@ -11,6 +11,7 @@ import {
   serializeOwlPacks,
 } from "../services/billing-service.js";
 import { microUsdToOwls } from "../services/owl.js";
+import { listOpenPrizeClaimsFor } from "../services/prize-account-service.js";
 import { trustLevelFor } from "../services/reputation-service.js";
 
 export function serializeUser(user: Contributor) {
@@ -23,6 +24,9 @@ export function serializeUser(user: Contributor) {
     reputation_score: user.reputationScore,
     trust_level: trustLevelFor(user.reputationScore, user.isSuspended),
     owls_earned: microUsdToOwls(user.owlsEarnedMicroUsd),
+    // Prize owls (docs/mathematics.md §8.7) beside, not inside, owls earned:
+    // the leaderboard sum excludes them.
+    owls_prized: microUsdToOwls(user.owlsPrizedMicroUsd ?? 0),
     contribution_standing: user.contributionStanding,
     bad_faith_flags: user.badFaithFlags,
     contributions_accepted: user.contributionsAccepted,
@@ -72,18 +76,25 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  // GET /users/me — the acting account plus its current entitlement.
+  // GET /users/me — the acting account plus its current entitlement and,
+  // for a claimant, its prize claims with where the winner's steps stand
+  // (docs/mathematics.md §8.7). A failure in the prize query is logged and
+  // must not hide the account.
   app.get("/me", {
     schema: {
       tags: ["users"],
-      summary: "Get the authenticated account and its plan/entitlement",
+      summary: "Get the authenticated account, its plan/entitlement, and its prize claims",
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
       const userId = request.auth!.userId!;
-      const [user, entitlement] = await Promise.all([
+      const [user, entitlement, openPrizeClaims] = await Promise.all([
         getContributorById(userId),
         getEntitlement(userId),
+        listOpenPrizeClaimsFor(userId).catch((err) => {
+          console.error("[users] prize claims for /users/me failed:", err instanceof Error ? err.message : err);
+          return [];
+        }),
       ]);
       if (!user) {
         return reply.code(404).send({ error: "Account not found" });
@@ -92,6 +103,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         user: serializeUser(user),
         entitlement: serializeEntitlement(entitlement),
         packs: serializeOwlPacks(),
+        open_prize_claims: openPrizeClaims,
       });
     },
   });

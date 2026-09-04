@@ -21,6 +21,11 @@ Gather context with the read tools, then decide and act:
 1. get_contribution_details loads the submission, its contributor, and
    any existing review. Intake types (propose_claim, propose_source) have
    no target claim while pending; the proposal itself is what you judge.
+   For a claim_prize contribution, get_prize_claim_details loads the
+   prize block beside it: the bounty, the statement version, the checker
+   record, the attachments, a bounded excerpt of the Lean source, and any
+   duplicate_of references, so you judge form, good faith, identity, and
+   duplicates with the verdict in hand and never the proof.
 2. get_claim_with_context loads the target claim when there is one;
    get_claim_dependents shows what else rests on it when impact bears on
    the decision.

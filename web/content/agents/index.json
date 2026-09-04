@@ -48,8 +48,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 10728,
-    "fullChars": 58294,
+    "roleChars": 11077,
+    "fullChars": 58643,
     "skills": [
       {
         "name": "mathematics",
@@ -139,8 +139,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 7979,
-    "fullChars": 55545,
+    "roleChars": 8668,
+    "fullChars": 56234,
     "skills": [
       {
         "name": "mathematics",

@@ -26,6 +26,7 @@ const { state, queries } = vi.hoisted(() => ({
     },
     attemptGroups: { groups: 0, live: 0 },
     publishedFor: new Set<string>(),
+    lastAttemptFinishedAt: null as Date | null,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -39,6 +40,9 @@ vi.mock("../../../src/db/client.js", () => ({
       return state.publishedFor.has(params[0] as string) ? [{ id: FORMALIZATION_B }] : [];
     }
     if (q.includes("COUNT(DISTINCT exclusion_group)")) return [state.attemptGroups];
+    if (q.includes("FROM proof_attempts") && q.includes("finished_at IS NOT NULL")) {
+      return state.lastAttemptFinishedAt ? [{ finished_at: state.lastAttemptFinishedAt }] : [];
+    }
     return [];
   }),
   withTransaction: vi.fn(),
@@ -59,6 +63,7 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   getMandateAllocationPolicy: vi.fn(async () => ({
     est_attempt_standard_cost_owls: 60,
     est_attempt_max_cost_owls: 150,
+    attempt_cooldown_days: 30,
   })),
 }));
 
@@ -77,6 +82,7 @@ beforeEach(() => {
   state.grant.plan = { items: [] };
   state.attemptGroups = { groups: 0, live: 0 };
   state.publishedFor = new Set();
+  state.lastAttemptFinishedAt = null;
 });
 
 describe("formalize rows from plan items", () => {
@@ -148,6 +154,40 @@ describe("attempt_proof rows from plan items", () => {
     state.attemptGroups = { groups: 1, live: 0 };
     await reconcileActions();
     expect(inserts("attempt_proof")).toHaveLength(0);
+  });
+
+  it("waits out the mandate's cooldown after the last closed attempt unless the entitling item states a reason (§7.2)", async () => {
+    const DAY = 86_400_000;
+    state.publishedFor.add(CLAIM_B);
+    state.attemptGroups = { groups: 1, live: 0 };
+    state.lastAttemptFinishedAt = new Date(Date.now() - 3 * DAY);
+    // The second item entitles the second group; a bare rationale waives nothing.
+    state.grant.plan.items = [
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "a new lemma in the subtree was formalized since" },
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "again" },
+    ];
+    await reconcileActions();
+    expect(inserts("attempt_proof")).toHaveLength(0);
+
+    // A reason of at least twenty characters on the entitling item opens it.
+    queries.length = 0;
+    state.grant.plan.items = [
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "first" },
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "the prior report names a route it could not pursue for budget" },
+    ];
+    await reconcileActions();
+    expect(inserts("attempt_proof")).toHaveLength(2);
+    expect(inserts("attempt_proof")[0]!.params[0]).toBe(ATTEMPT_GROUP(FORMALIZATION_B, 2));
+
+    // Once the cooldown has passed, no reason is needed.
+    queries.length = 0;
+    state.lastAttemptFinishedAt = new Date(Date.now() - 31 * DAY);
+    state.grant.plan.items = [
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "first" },
+      { action: "attempt_proof", claim_id: CLAIM_B, rationale: "again" },
+    ];
+    await reconcileActions();
+    expect(inserts("attempt_proof")).toHaveLength(2);
   });
 
   it("opens nothing for a claim without a published statement", async () => {

@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   spent: 0,
   check: null as null | Record<string, unknown>,
   bounty: null as null | { id: string; status: string },
+  livePrizeClaims: [] as Array<{ id: string; status: string; submitted_at: Date }>,
   publishedRows: [] as Array<{ id: string; published_at: Date | null }>,
   policy: { attempt_claim_lifetime_cap_owls: 500, est_attempt_max_cost_owls: 150, est_attempt_standard_cost_owls: 60 },
 }));
@@ -118,6 +119,9 @@ async function handle(q: string, params: unknown[] = [], tx = 0): Promise<unknow
   if (/SELECT id, status FROM bounties WHERE formalization_id = \$1 AND status IN \('house_result_pending', 'open'\)/.test(s)) {
     return state.bounty ? [state.bounty] : [];
   }
+  if (/FROM prize_claims WHERE bounty_id = \$1 AND status <> ALL/.test(s)) {
+    return state.livePrizeClaims;
+  }
   if (/SELECT published_at FROM proof_attempts/.test(s)) {
     return [{ published_at: new Date("2026-09-02T00:00:00Z") }];
   }
@@ -197,6 +201,7 @@ beforeEach(() => {
   state.spent = 0;
   state.check = null;
   state.bounty = null;
+  state.livePrizeClaims = [];
   state.publishedRows = [];
 });
 
@@ -504,6 +509,26 @@ describe("markProblemSolvedByPlatform", () => {
     expect(bountyUpdate.q).toMatch(/resolved_at = now\(\)/);
     expect(bountyUpdate.params).toEqual(["b1", "faithful"]);
     expect(tx.some((x) => /UPDATE proof_attempts p SET published_at/.test(x.q.replace(/\s+/g, " ")))).toBe(true);
+  });
+
+  it("refuses while a human prize claim filed earlier is live on the bounty, naming it (§8.1)", async () => {
+    state.attempt = attemptRow({ status: "completed", outcome: "proof", lean_check_id: "chk-1" });
+    state.check = acceptedCheck();
+    state.bounty = { id: "b1", status: "house_result_pending" };
+    state.livePrizeClaims = [{ id: "pc-early", status: "in_review", submitted_at: new Date("2026-08-30T12:00:00Z") }];
+    const r = await markProblemSolvedByPlatform(input);
+    expect(r).toMatchObject({
+      ok: false,
+      code: "HUMAN_CLAIM_PENDING",
+      message: /pc-early in_review, filed 2026-08-30T12:00:00.000Z/,
+      pending_prize_claims: [{ id: "pc-early", status: "in_review", submitted_at: "2026-08-30T12:00:00.000Z" }],
+    });
+    expect(String((r as { message: string }).message)).toMatch(/judged first/);
+    expect(state.queries.some((x) => /UPDATE bounties/.test(x.q))).toBe(false);
+    expect(state.queries.some((x) => /UPDATE proof_attempts p SET published_at/.test(x.q.replace(/\s+/g, " ")))).toBe(false);
+    // The terminal statuses do not hold it: the query excludes exactly the six.
+    const select = state.queries.find((x) => /FROM prize_claims WHERE bounty_id/.test(x.q.replace(/\s+/g, " ")))!;
+    expect(select.params).toEqual(["b1", ["paid", "rejected", "voided", "withdrawn", "superseded", "forfeited"]]);
   });
 
   it("publishes even when no live bounty is bound", async () => {

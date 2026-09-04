@@ -71,6 +71,11 @@ export default async function ContributorPage({
             <OwlMark size={14} className="owl-mark" />
             {c.owls_earned} owls earned
           </span>
+          {typeof c.owls_prized === "number" && c.owls_prized > 0 && (
+            <span className="summary-chip">
+              {c.owls_prized} owls in prizes
+            </span>
+          )}
           <span className="summary-chip">
             reputation {c.reputation_score.toFixed(0)}
           </span>

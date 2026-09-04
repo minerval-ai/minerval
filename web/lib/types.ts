@@ -433,6 +433,9 @@ export interface ContributorProfile {
     reputation_score: number;
     trust_level: string;
     owls_earned: number;
+    // Owls granted as prizes (docs/mathematics.md §8.7), beside and never
+    // inside owls_earned. Absent from an API that predates prizes.
+    owls_prized?: number;
     contribution_standing: string;
     is_verified: boolean;
     is_suspended: boolean;

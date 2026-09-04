@@ -70,25 +70,34 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the prize-fund deposit, bounty confirmation, prize-claim sign-off and void (below) |
+| `requireOperator` | the operator key, held outside the web deployment | the eight operator routes: the prize-fund deposit, bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below) |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
 **The operator key.** The service key is deployed to the web tier and acts
 for any user through the acting-user header, so it cannot be the
-credential that moves money. Four routes require a separate operator key
+credential that moves money. Eight routes require a separate operator key
 (`MINERVAL_OPERATOR_KEY`), held outside the web deployment and used only
 from the operator's own session: the prize-fund deposit
 (`POST /prize-pools/:domain/deposit`), the bounty confirmation
 (`POST /bounties/:id/confirm`), the prize-claim sign-off
-(`POST /prize-claims/:id/sign-off`), and the void
-(`POST /prize-claims/:id/void`). Two further routes act for a winner and
-require both the dashboard session and a one-time code sent to the
-account's verified email: the payee step (`POST /prize-claims/:id/payee`)
-and the withdrawal of a claim (`POST /prize-claims/:id/withdraw`), so a
-leaked consumer key or service key alone can neither redirect a prize nor
-abandon a winning claim. Every call to these six routes is written to
-`audit_log` with the credential kind and the acting person. The service
+(`POST /prize-claims/:id/sign-off`), the void
+(`POST /prize-claims/:id/void`), the sanctions screening
+(`POST /prize-claims/:id/screening`), the owl grant
+(`POST /prize-claims/:id/pay`), the release of a `check_error` hold
+(`POST /prize-claims/:id/retry-check`), and the operator page
+(`GET /operator/prizes`). Three further routes act for a winner and
+require both the dashboard session and a one-time code bound to the claim,
+the account, and the purpose, issued to the owner's own session by
+`POST /prize-claims/:id/code` (email delivery is a transport change): the
+payee step (`POST /prize-claims/:id/payee`), the tax form
+(`POST /prize-claims/:id/attachments`), and the withdrawal of a claim
+(`POST /prize-claims/:id/withdraw`), so a leaked consumer key or service
+key alone can neither redirect a prize nor abandon a winning claim. Every
+call to a writing route among these is written to `audit_log` on the claim
+with the credential kind and the acting person (`prize_route:*`); the
+deposit has no claim, so each call is appended to the `prize_fund_deposits`
+platform flag as a JSON list entry carrying the same fields. The service
 key alone moves no money.
 
 ## The per-token meter
@@ -414,6 +423,6 @@ owls earned. `/signin` lists whichever providers are configured.
   independent.
 - `MINERVAL_OPERATOR_KEY` is never set on the Vercel project or on the API
   task's environment for the web tier's benefit; it is held by the operator
-  and presented only on the four money routes above. The Lean checker's
+  and presented only on the eight operator routes above. The Lean checker's
   bearer token is a Secrets Manager entry created by the checker stack and
   read by the API task alone (docs/infrastructure.md).

@@ -78,7 +78,9 @@ export function PrizeClaimForm({
     if (docs.some((d) => d.size > DOC_MAX_BYTES)) return "Each document must be at most 10 MiB.";
     if (docs.reduce((s, d) => s + d.size, 0) > DOCS_TOTAL_BYTES) return "Documents must total at most 25 MiB.";
     if (!String(data.get("tools_disclosure") ?? "").trim()) return "Say which tools were used, or that none were.";
-    if (!String(data.get("residency_country") ?? "").trim()) return "State your country of residence.";
+    if (!/^[A-Za-z]{2}$/.test(String(data.get("residency_country") ?? "").trim())) {
+      return "Give your country of residence as its two-letter code, such as GB or DE.";
+    }
     if (!data.get("us_person")) return "Say whether you are a U.S. person.";
     if (!String(data.get("credit_name") ?? "").trim()) return "Choose a credit name for the record.";
     for (const k of ["declare_eligible", "declare_understands", "declare_cc0", "declare_rules"]) {
@@ -265,16 +267,27 @@ export function PrizeClaimForm({
       />
 
       <label className="contribute-label" htmlFor="prize-country">Country of residence</label>
-      <input className="contribute-field" id="prize-country" name="residency_country" maxLength={80} required />
+      <input
+        className="contribute-field mono"
+        id="prize-country"
+        name="residency_country"
+        maxLength={2}
+        pattern="[A-Za-z]{2}"
+        placeholder="two-letter code, e.g. GB"
+        autoCapitalize="characters"
+        style={{ maxWidth: "12rem" }}
+        required
+      />
       <label className="contribute-label">Are you a U.S. person for tax purposes?</label>
       <div className="prize-form-radios">
         <label><input type="radio" name="us_person" value="yes" required /> yes</label>
         <label><input type="radio" name="us_person" value="no" /> no</label>
       </div>
       <p className="contribute-hint">
-        Residents of comprehensively sanctioned jurisdictions, and for now of Italy and
-        Brazil, are not eligible. The answer decides which tax form is asked for if the
-        prize is paid: a W-9 for a U.S. person, a W-8BEN otherwise.
+        The country as its ISO two-letter code. Residents of comprehensively sanctioned
+        jurisdictions, and for now of Italy and Brazil, are not eligible. The answer decides
+        which tax form is asked for if the prize is paid: a W-9 for a U.S. person, a W-8BEN
+        otherwise.
       </p>
 
       <label className="contribute-label" htmlFor="prize-credit">Credit name</label>

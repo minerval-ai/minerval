@@ -370,6 +370,19 @@ function failedGate(checks: unknown): string | null {
   return null;
 }
 
+/**
+ * Audit-log actions the prize path writes for itself: bounty transitions
+ * (`bounty:*`, bounty-service), prize-claim transitions and notes
+ * (`prize_claim:*`, prize-claim-service), and the money routes
+ * (`prize_route:*`, routes/prizes). Each is already a `prize` event derived
+ * from its row, so it is not also a steward note.
+ */
+export const PRIZE_AUDIT_ACTION_PREFIXES = ["bounty:", "prize_claim:", "prize_route:"] as const;
+
+export function isPrizeAuditAction(action: string): boolean {
+  return PRIZE_AUDIT_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+}
+
 export function composeClaimEvents(input: ClaimEventsInput): ClaimEvent[] {
   const events: ClaimEvent[] = [];
 
@@ -471,6 +484,11 @@ export function composeClaimEvents(input: ClaimEventsInput): ClaimEvent[] {
   }
 
   for (const entry of input.auditEntries) {
+    // The prize path writes its own audit_log rows for every bounty and
+    // prize-claim transition and every money route; those already surface
+    // as `prize` events from the rows themselves, so they are not repeated
+    // as steward notes.
+    if (isPrizeAuditAction(entry.action)) continue;
     events.push({
       kind: "steward_note",
       id: `steward_note:${entry.id}`,

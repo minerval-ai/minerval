@@ -19,6 +19,7 @@ import {
   getPublicMandate,
   getMandateAllocationView,
   contributeToMandate,
+  listMandateAttempts,
 } from "../services/mandate-service.js";
 import { mandatePrizesBlock } from "../services/bounty-service.js";
 
@@ -76,13 +77,15 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: "Mandate not found", code: "NOT_FOUND" });
       }
       // The Prizes section (docs/mathematics.md §8.3): the fund's balance
-      // and reservation, bounties posted, prizes paid, and the bounty
-      // table. Prizes are paid from a separate fund, never from this
-      // mandate's compute budget; a failure here must not hide the page.
-      const prizes = await mandatePrizesBlock(request.params.id).catch(
-        () => null
-      );
-      return reply.send({ mandate: { ...mandate, prizes } });
+      // and reservation, bounties posted, prizes paid, the bounty table,
+      // and the house solver's attempts under this mandate. Prizes are
+      // paid from a separate fund, never from this mandate's compute
+      // budget; a failure in either must not hide the page.
+      const [prizes, attempts] = await Promise.all([
+        mandatePrizesBlock(request.params.id).catch(() => null),
+        listMandateAttempts(request.params.id).catch(() => []),
+      ]);
+      return reply.send({ mandate: { ...mandate, prizes, attempts } });
     },
   });
 

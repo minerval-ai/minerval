@@ -642,8 +642,31 @@ gate summary public, no review row, and no reputation event; `error`
 requeues up to a retry cap and then parks the claim in `check_error`, which
 holds the statement's queue until an operator resolves it, so an
 infrastructure failure never costs a claimant their priority. The worker
-then runs the Reviewer itself, under the bounty's reserve job, and on
-admission invokes the Steward directly on `prize_claim`.
+then runs the Reviewer itself, under the bounty's reserve job, with the
+review claimed in the same statement that marks it `pending` (the ordinary
+review pipeline and its recovery sweep skip `claim_prize`, so no second
+Reviewer attributed to the claimant can race it), and on admission invokes
+the Steward directly on `prize_claim`.
+
+The worker is two-step so a twenty-minute check never holds the runner's
+other lanes: a tick submits one claim to the checker and returns, and later
+ticks poll each check in flight once, landing the first finished one. The
+checker's check id has no column; it lives in an in-process map keyed by
+prize claim id, and after a restart the worker re-submits each `checking`
+row with `force: false`, which the checker dedupes against the record it
+already holds, recovering the id without a second run (a retry after a
+checker error forces a fresh run instead). Each poll heartbeats the row, so
+the reclaim sweep trips only for a dead worker. The same tick carries three
+bounded sweeps: a `checked` claim whose Reviewer run was lost is reviewed
+again under the reserve; a claim the Audit agent sent back (returned to
+`in_review` with its window cleared) is put in front of the Steward again
+for a fresh decision, a new decision id, and a new audit; and an
+`in_review` claim with no decision after 24 hours is re-invoked, at most
+once a day, and listed on the operator page under `in_review_over_24h`.
+Before any money trigger runs, the direct invocation resolves the claim's
+skills and refuses, loudly, when the trigger's tools (`decide_prize_claim`,
+`publish_formalization`, `get_proof_attempt`) are not among them, since a
+run without its own tool would decide nothing.
 
 **Six money triggers are invoked directly, never queued.** `formalize`,
 `formalization_review`, `prize_claim`, `prize_claim_voided`,
@@ -960,16 +983,27 @@ spend guardrail is the owl balance and the escrowed budgets behind mandates.
 Three credentials, not two, once money can move. The service key
 (`MINERVAL_API_KEY`) is deployed to the web tier and acts for any user
 through the acting-user header, so it cannot be the credential that moves
-money. Four routes require an **operator key** (`MINERVAL_OPERATOR_KEY`),
+money. Eight routes require an **operator key** (`MINERVAL_OPERATOR_KEY`),
 held outside the web deployment and used only from the operator's own
-session: the prize-fund deposit, the bounty confirmation, the prize-claim
-sign-off, and the void. Two routes act for a winner and require both the
-dashboard session and a one-time code sent to the account's verified email,
-the payee step and the withdrawal of a claim, so a leaked consumer or
-service key alone can neither redirect a prize nor abandon a winning claim.
-Every call to these six routes is written to `audit_log` with the
-credential kind and the acting person. The service key alone moves no
-money.
+session: the prize-fund deposit (`POST /prize-pools/:domain/deposit`), the
+bounty confirmation (`POST /bounties/:id/confirm`), the prize-claim
+sign-off (`POST /prize-claims/:id/sign-off`), the void
+(`POST /prize-claims/:id/void`), the sanctions screening
+(`POST /prize-claims/:id/screening`), the owl grant
+(`POST /prize-claims/:id/pay`), the release of a `check_error` hold
+(`POST /prize-claims/:id/retry-check`), and the operator page
+(`GET /operator/prizes`). Three routes act for a winner and require both
+the dashboard session and a one-time code bound to the claim, the account,
+and the purpose (issued to the owner's session by
+`POST /prize-claims/:id/code`; email delivery is a transport change): the
+payee step (`POST /prize-claims/:id/payee`), the tax form
+(`POST /prize-claims/:id/attachments`), and the withdrawal of a claim
+(`POST /prize-claims/:id/withdraw`), so a leaked consumer or service key
+alone can neither redirect a prize nor abandon a winning claim. Every call
+to a writing route among these is written to `audit_log` on the claim with
+the credential kind and the acting person; the deposit, which has no
+claim, is appended to the `prize_fund_deposits` platform flag instead. The
+service key alone moves no money.
 
 ---
 
