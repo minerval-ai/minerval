@@ -38,6 +38,22 @@ the run-to-run spread, which takes N≈3 runs per side to measure
 (`corpus/SCORING.md`). The committed baseline for each cluster should
 therefore be the N≈3 set, not one file.
 
-This file-based history is the phase-0 form of #334's eval-run registry (L1);
-when runs become first-class database records, this directory becomes an
-import source and retires.
+## Files are the record; the registry is a local index
+
+The eval-run registry (`eval_runs`, #334 L1) exists and every scored run,
+golden run, agreement, swap, property and contribution run registers in it
+— but it lives in each developer's **corpus database**, not anywhere
+shared. Two people's registries never see each other's runs, and a
+`corpus:reset` on a fresh machine starts one empty. So the committed files
+in this directory are the shared, durable record, and the registry is a
+per-machine index over the runs that happened there: `corpus:runs` and
+`db:<id>` refs are conveniences for the person who ran them, not history.
+
+That is a deliberate resolution of the plan's original intent (that this
+directory would "retire" once the registry landed): a shared registry would
+mean a shared database the harness writes to, which the harness's
+isolation discipline forbids. If the public evals page (#368) needs a
+richer source than these files, the right move is to export registry rows
+into version control (a `corpus:runs --export` into `corpus/runs/`), not
+to point the site at anyone's corpus DB. Until then: commit the scorecards
+that matter, and treat `runs/` and the registry as scratch.
