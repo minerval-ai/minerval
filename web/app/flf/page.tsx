@@ -472,10 +472,9 @@ export default function FlfPage() {
           its section above.
         </p>
         <p>
-          How we check the administrators&rsquo; work, instrument by instrument, with what each
-          costs and what it cannot tell you, is on <Link href="/docs/evals">the evals page</Link>.
-          It is candid about the same boundary: most of the instruments are built and have not
-          yet produced a number on real output.
+          How the agents are tested is documented under <Link href="/docs/evals">evals</Link>,
+          one page per test, with what each costs and what it cannot show. Most are built and
+          have not yet been run on real output; each page says so.
         </p>
       </section>
 

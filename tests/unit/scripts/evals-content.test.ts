@@ -5,8 +5,33 @@ import {
   buildEvalsIndex,
   modelLabel,
   parseReviewSheet,
+  parseRubric,
+  slugifyHeading,
   type EvalsIndexInput,
 } from "../../../scripts/evals-content.js";
+
+const RUBRIC = `# Ingestion Review Rubric
+
+Intro text.
+
+## A. Extraction — what got pulled out of the document
+
+**Standard.** Extract *all* substantive claims, faithfully.
+Second line of the standard (Constitution §2).
+
+**Failure modes.**
+- Under-extraction
+
+## C. Matching / canonicalization / dedup — **the core test**
+
+Some preface.
+
+**Standard.** Two formulations are the same claim when they turn on the same considerations.
+
+## I. Field notes
+
+No standard here.
+`;
 
 const input: EvalsIndexInput = {
   syncedAt: "2026-09-04T12:00:00.000Z",
@@ -78,9 +103,34 @@ const input: EvalsIndexInput = {
     { cluster: "blackholes", file: "2026-08-09T15-47-32-753Z.json" },
   ],
   goldenRunFiles: ["2026-08-08-deepseek-v4-flash.json"],
+  rubric: RUBRIC,
 };
 
 describe("evals content index", () => {
+  it("slugs headings the way the site's Markdown renderer does", () => {
+    expect(slugifyHeading("A. Extraction — what got pulled out of the document")).toBe(
+      "a-extraction-what-got-pulled-out-of-the-document"
+    );
+    expect(slugifyHeading("C. Matching / canonicalization / dedup — the core test")).toBe(
+      "c-matching-canonicalization-dedup-the-core-test"
+    );
+  });
+
+  it("parses the rubric's sections and their Standard paragraphs", () => {
+    const r = parseRubric(RUBRIC);
+    expect(r.map((x) => x.letter)).toEqual(["A", "C", "I"]);
+    expect(r[0]).toEqual({
+      letter: "A",
+      title: "A. Extraction — what got pulled out of the document",
+      slug: "a-extraction-what-got-pulled-out-of-the-document",
+      standard: "Extract all substantive claims, faithfully. Second line of the standard (Constitution §2).",
+    });
+    expect(r[1]!.title).toBe("C. Matching / canonicalization / dedup — the core test");
+    expect(r[1]!.standard).toBe("Two formulations are the same claim when they turn on the same considerations.");
+    expect(r[2]!.standard).toBe("");
+    expect(buildEvalsIndex(input).rubric).toHaveLength(3);
+  });
+
   it("labels the models the system pins and falls back to the id", () => {
     expect(modelLabel("claude-fable-5-1")).toBe("Claude Fable 5.1");
     expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");

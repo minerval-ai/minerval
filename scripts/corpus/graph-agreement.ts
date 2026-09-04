@@ -388,3 +388,32 @@ export function renderAgreement(r: AgreementReport): string {
   );
   return o.join("\n");
 }
+
+// ---- the pair judge -------------------------------------------------------
+// The ambiguous band of the matching can be confirmed by a judge model. The
+// prompt and schema live here, DB-free, so the evals guide can show the exact
+// text a pair is judged with (#368).
+
+export const PAIR_JUDGE_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    same_proposition: {
+      type: "boolean",
+      description:
+        "true if the two texts state the same proposition under §2's test: nothing could count as evidence or argument bearing on one without bearing equally on the other. A claim and its negation count as the same node. A specification, a generalization, or a claim that turns on different considerations is NOT the same.",
+    },
+    reasoning: { type: "string", description: "One or two sentences." },
+  },
+  required: ["same_proposition", "reasoning"],
+  additionalProperties: false,
+};
+
+export function pairJudgePrompt(textA: string, textB: string): string {
+  return (
+    `Two claim graphs, built independently, each contain a claim. Decide whether they are the SAME proposition — a claim ` +
+    `is individuated by what bears on it (constitution §2): two formulations are the same claim when nothing could count ` +
+    `as evidence or argument bearing on one without bearing equally on the other. Identical decomposition is a diagnostic, ` +
+    `not the definition. A claim and its denial are one node. A specification, a generalization, or a claim that turns on ` +
+    `different considerations is a different claim.\n\nClaim 1: ${textA}\nClaim 2: ${textB}`
+  );
+}

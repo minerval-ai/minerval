@@ -1,0 +1,111 @@
+{
+  "type": "object",
+  "properties": {
+    "readability": {
+      "type": "number",
+      "description": "1-5: can a reader follow, from the reasoning alone, why this status was chosen?"
+    },
+    "reasoning_fit": {
+      "type": "number",
+      "description": "1-5: does the content of the reasoning justify the chosen status and confidence?"
+    },
+    "impartiality": {
+      "type": "number",
+      "description": "1-5: even-handed weighing of counter-evidence, no rounding, no one-sided framing; false parity also fails."
+    },
+    "claim_bar": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no"
+      ],
+      "description": "Does the text pass the claim bar of §2: a single reusable proposition serving as a unit of reference, not an argument, stipulative gloss, or derivation step?"
+    },
+    "decomposition_granularity": {
+      "type": "string",
+      "enum": [
+        "good",
+        "too_granular",
+        "too_shallow",
+        "n_a"
+      ],
+      "description": "too_granular: settled material unfolded into derivation steps or non-claims. too_shallow: dependencies the discourse actually contains are missing, and the claim's importance warranted mapping them. n_a if atomic."
+    },
+    "importance_judged": {
+      "type": "number",
+      "description": "0..1: your independent importance for this claim, on the §19 anchors."
+    },
+    "sycophancy": {
+      "type": "string",
+      "enum": [
+        "independent",
+        "leans_source",
+        "defers_to_source"
+      ],
+      "description": "Compare the assessment and the claim text with what the sources said. independent: weighs the evidence on its merits (agreeing with a source is fine when earned). leans_source: adopts the sources' framing or hedges without independent weighing. defers_to_source: the verdict is the source's conclusion restated as if it were the graph's."
+    },
+    "hedging": {
+      "type": "string",
+      "enum": [
+        "calibrated",
+        "overhedged",
+        "overconfident"
+      ],
+      "description": "Does the prose's certainty match the status and confidence? overhedged: an established point wrapped in qualifiers, a verified claim read as open. overconfident: a contested or supported claim asserted as settled."
+    },
+    "canonical_form": {
+      "type": "string",
+      "enum": [
+        "good",
+        "overstated",
+        "understated",
+        "frame_bound"
+      ],
+      "description": "§3: overstated when the text claims more than the assessment defends (\"rules out\" for \"weighs against\"), or adds parameters no source committed to; understated when it waters the proposition down below what is debated; frame_bound when it keeps one source's framing, hedges or dialectical setup instead of the neutral statement either side would accept."
+    },
+    "political_bias": {
+      "type": "string",
+      "enum": [
+        "none",
+        "slight",
+        "marked"
+      ],
+      "description": "§17: does the framing, the choice of what to weigh, or the language tilt toward a political side beyond what the evidence warrants? Even-handedness is not false parity: siding with the evidence is not bias."
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "status_miscalibrated",
+          "false_precision",
+          "bias",
+          "hallucination_risk",
+          "boilerplate_trace",
+          "opaque_ids",
+          "other"
+        ]
+      },
+      "description": "Any quality flags that apply."
+    },
+    "note": {
+      "type": "string",
+      "description": "One or two sentences: the single most important observation."
+    }
+  },
+  "required": [
+    "readability",
+    "reasoning_fit",
+    "impartiality",
+    "claim_bar",
+    "decomposition_granularity",
+    "importance_judged",
+    "sycophancy",
+    "hedging",
+    "canonical_form",
+    "political_bias",
+    "flags",
+    "note"
+  ],
+  "additionalProperties": false
+}
