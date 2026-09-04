@@ -471,6 +471,12 @@ export default function FlfPage() {
           things whose value we see and have chosen not to build yet. The reasoning behind each is in
           its section above.
         </p>
+        <p>
+          How we check the administrators&rsquo; work, instrument by instrument, with what each
+          costs and what it cannot tell you, is on <Link href="/docs/evals">the evals page</Link>.
+          It is candid about the same boundary: most of the instruments are built and have not
+          yet produced a number on real output.
+        </p>
       </section>
 
       <p className={s.disclaimer}>

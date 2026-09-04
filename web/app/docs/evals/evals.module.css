@@ -1,0 +1,114 @@
+/* The evals page (#368): hairlines, small sans labels, numbers in tabular
+   figures, colour only where it carries meaning (a mis-recorded model, a
+   status). Everything else inherits the doc frame. */
+
+.status {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+  margin: -0.2rem 0 1rem;
+  font-family: var(--sans); font-size: 0.76rem; color: var(--muted);
+}
+.status :global(.tag) { font-size: 0.68rem; }
+.notyet { border-style: dashed; color: var(--faint); background: transparent; }
+
+/* the fixed template every eval section answers */
+.rows { margin: 0.6rem 0 1.6rem; border-bottom: 1px solid var(--rule-soft); }
+.row {
+  display: grid; grid-template-columns: 7.4rem minmax(0, 1fr); gap: 0.2rem 1rem;
+  padding: 0.6rem 0; border-top: 1px solid var(--rule-soft);
+}
+.k {
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted);
+  padding-top: 0.32rem;
+}
+.v { min-width: 0; }
+.v p { margin: 0 0 0.6rem; }
+.v p:last-child, .v pre:last-child, .v ul:last-child, .v table:last-child { margin-bottom: 0; }
+.v ul { margin: 0 0 0.6rem; }
+.v pre { margin: 0.4rem 0 0.6rem; }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr; gap: 0.15rem; }
+  .k { padding-top: 0; }
+}
+
+.callout {
+  border-left: 2px solid var(--ink); padding: 0.15rem 0 0.15rem 1rem;
+  margin: 1.5rem 0;
+}
+.callout .label { display: block; margin-bottom: 0.3rem; }
+.callout p:last-child { margin-bottom: 0; }
+
+/* a run's fingerprint, rendered as the record it is */
+.fp {
+  font-family: var(--mono); font-size: 0.74rem; line-height: 1.55;
+  color: var(--ink-soft); background: var(--paper-sunk);
+  border: 1px solid var(--rule); border-radius: 4px;
+  padding: 0.7rem 0.9rem; margin: 0.6rem 0 1rem;
+  white-space: pre-wrap; overflow-x: auto;
+}
+.fp b { color: var(--ink); font-weight: 600; }
+.flag { color: var(--st-contested); }
+.dim { color: var(--faint); }
+
+/* metric tables: sans, tabular numerals, hairlines */
+.metrics {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--sans); font-size: 0.8rem; margin: 0.6rem 0 1.2rem;
+}
+.metrics th, .metrics td {
+  border-top: 1px solid var(--rule-soft); padding: 0.4rem 0.6rem 0.4rem 0;
+  text-align: left; vertical-align: top;
+}
+.metrics th {
+  border-top: none; font-size: 0.66rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted);
+}
+.metrics tr:last-child td { border-bottom: 1px solid var(--rule-soft); }
+.num { font-variant-numeric: tabular-nums; text-align: right !important; white-space: nowrap; }
+.note { color: var(--muted); }
+.sample {
+  font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--faint); white-space: nowrap;
+}
+.wrap { overflow-x: auto; }
+
+/* a golden pair, shown as the Matcher sees it */
+.pair {
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card);
+  padding: 0.8rem 1rem; margin: 0.8rem 0; font-size: 0.93rem;
+}
+.pair .who {
+  font-family: var(--sans); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 0.15rem;
+}
+.pair p { margin: 0 0 0.55rem; }
+.pair .expect {
+  font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft);
+  border-top: 1px solid var(--rule-soft); padding-top: 0.5rem; margin-top: 0.4rem;
+}
+
+/* the judge's weakest verdicts */
+.claims { list-style: none; padding: 0; margin: 0.6rem 0 1.2rem; }
+.claims li { border-top: 1px solid var(--rule-soft); padding: 0.65rem 0; }
+.claims li:last-child { border-bottom: 1px solid var(--rule-soft); }
+.ctext { font-size: 0.95rem; margin: 0 0 0.3rem; }
+.cmeta { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); margin: 0 0 0.3rem; display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; }
+.cnote { font-family: var(--sans); font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft); margin: 0; }
+
+/* per-cluster result cards */
+.clusterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; margin: 1rem 0 1.4rem; }
+@media (max-width: 640px) { .clusterGrid { grid-template-columns: 1fr; } }
+.clusterCard { border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); padding: 0.8rem 0.95rem; }
+.clusterCard .name { font-weight: 600; font-size: 1rem; margin: 0 0 0.25rem; }
+.clusterCard .meta { font-family: var(--sans); font-size: 0.74rem; color: var(--muted); margin: 0; line-height: 1.5; }
+
+/* sparkline: one ink line, no axes; the number next to it is the label */
+.spark { display: inline-block; vertical-align: middle; margin-left: 0.4rem; }
+
+/* the overall block of a review sheet, quoted */
+.overall {
+  font-family: var(--mono); font-size: 0.74rem; line-height: 1.55; color: var(--ink-soft);
+  white-space: pre-wrap; border-left: 2px solid var(--rule); padding-left: 1rem; margin: 0.6rem 0 1rem;
+}
+
+.small { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }

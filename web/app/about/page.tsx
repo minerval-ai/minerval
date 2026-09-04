@@ -35,7 +35,8 @@ export default function About() {
         <Link href="/docs/constitution">Administrator Constitution</Link>, the{" "}
         <Link href="/docs/architecture">architecture and policies</Link>, and{" "}
         <Link href="/docs/agents">the eight agents</Link> with their complete system
-        prompts.
+        prompts. How we check that the administrators do their work well, and what we do not
+        yet measure, is on <Link href="/docs/evals">the evals page</Link>.
       </p>
 
       <h2 id="whos-behind-this">Who&rsquo;s behind this</h2>

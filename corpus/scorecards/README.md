@@ -57,3 +57,26 @@ richer source than these files, the right move is to export registry rows
 into version control (a `corpus:runs --export` into `corpus/runs/`), not
 to point the site at anyone's corpus DB. Until then: commit the scorecards
 that matter, and treat `runs/` and the registry as scratch.
+
+## Publishing to the site
+
+The public evals page (`/docs/evals`, #368) renders from these files, not
+from any database. Publishing a result is a scripted step, not a page edit:
+
+```bash
+# 1. commit the record under corpus/: a scorecard here, a golden run under
+#    golden-matcher/, a filled review sheet under corpus/calibration/, or a
+#    change to a fixture (golden pairs, predictions, a contribution scenario)
+# 2. vendor it into the frontend
+npx tsx scripts/sync-frontend-content.ts     # corpus/ → web/content/evals/
+# 3. commit web/content/evals/ and open the PR
+```
+
+The sync also regenerates `web/content/evals/index.json`: the production
+model pins and their list rates, the judge default, every cluster's size and
+sources, and the composition of every fixture, so the page's facts come from
+the repository at sync time rather than from someone's memory. Results that
+only register in the per-machine registry (agreement, swap, property and
+contribution runs) have no committed home yet and reach the page by hand;
+`corpus:runs --export` is the planned fix.
+

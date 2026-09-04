@@ -1,14 +1,26 @@
 /**
  * Vendors verbatim project documents and the real agent system prompts into the
- * web/ frontend, so the explainer shows exactly what the agents are governed by.
+ * web/ frontend, so the explainer shows exactly what the agents are governed by,
+ * and the eval system's record into web/content/evals/ so the public evals
+ * page (#368) renders from committed files rather than anyone's database.
  *
  * Run from the repo root:  npx tsx scripts/sync-frontend-content.ts
  *
- * Re-run whenever the constitution, docs, or prompts change.
+ * Re-run whenever the constitution, docs, or prompts change, and after
+ * committing a scorecard, a filled judge-review sheet, a golden-suite run,
+ * or a change to a fixture or the production model pins. Publishing a new
+ * eval result is: commit the file under corpus/, run this, commit
+ * web/content/evals/, open the PR.
  */
-import { writeFileSync, mkdirSync, copyFileSync } from "fs";
-import { resolve, dirname } from "path";
+import { writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync, statSync, rmSync } from "fs";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
+
+import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
+import { buildEvalsIndex, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
+import { MODELS } from "../src/llm/models.js";
 
 import { getExtractorSystemPrompt } from "../src/llm/prompts/extractor.js";
 import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
@@ -103,3 +115,102 @@ writeFileSync(resolve(agentsDir, "index.json"), JSON.stringify(index, null, 2));
 
 console.log(`Synced ${AGENTS.length} agents + 3 docs into web/content/`);
 console.log(index.map((a) => `  ${a.stage}. ${a.name} — role ${a.roleChars}c, full ${a.fullChars}c`).join("\n"));
+
+// ---- the eval system's record (#368) --------------------------------------
+// Everything the evals page shows that is a fact rather than prose: the
+// committed scorecards and review sheets, the fixtures, and an index of what
+// production runs on, at what price, over which clusters. The page reads
+// only from web/content/evals/; nothing on the public site touches a corpus
+// database.
+const corpusDir = resolve(root, "corpus");
+const evalsDir = resolve(contentDir, "evals");
+rmSync(evalsDir, { recursive: true, force: true });
+mkdirSync(evalsDir, { recursive: true });
+
+const jsonFiles = (dir: string) =>
+  existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+const readJson = <T,>(path: string) => JSON.parse(readFileSync(path, "utf8")) as T;
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+// Clusters: every corpus/<dir>/manifest.json, sized over its committed posts.
+const clusters: ClusterInput[] = readdirSync(corpusDir)
+  .filter((d) => existsSync(join(corpusDir, d, "manifest.json")) && statSync(join(corpusDir, d)).isDirectory())
+  .filter((d) => d !== "predictions")
+  .sort()
+  .map((key) => {
+    const manifest = readJson<{
+      kind?: string;
+      description: string;
+      source: string;
+      posts: Array<{ id: string; title: string; author?: string; url?: string; role?: string }>;
+    }>(join(corpusDir, key, "manifest.json"));
+    const postsDir = join(corpusDir, key, "posts");
+    const total = existsSync(postsDir)
+      ? readdirSync(postsDir)
+          .filter((f) => f.endsWith(".md"))
+          .reduce((n, f) => n + words(readFileSync(join(postsDir, f), "utf8")), 0)
+      : 0;
+    return { key, kind: manifest.kind ?? "lesswrong", description: manifest.description, source: manifest.source, posts: manifest.posts, words: total };
+  });
+
+// Scorecards and golden runs, copied file for file under the same names.
+const scorecardFiles: Array<{ cluster: string; file: string }> = [];
+const goldenRunFiles: string[] = [];
+const scorecardsRoot = join(corpusDir, "scorecards");
+for (const cluster of readdirSync(scorecardsRoot).filter((d) => statSync(join(scorecardsRoot, d)).isDirectory()).sort()) {
+  const target = cluster === "golden-matcher" ? resolve(evalsDir, "golden-runs") : resolve(evalsDir, "scorecards", cluster);
+  mkdirSync(target, { recursive: true });
+  for (const file of jsonFiles(join(scorecardsRoot, cluster))) {
+    copyFileSync(join(scorecardsRoot, cluster, file), resolve(target, file));
+    if (cluster === "golden-matcher") goldenRunFiles.push(file);
+    else scorecardFiles.push({ cluster, file });
+  }
+}
+
+// Filled judge-review sheets (#334 §2.8 as amended).
+const reviewsDir = join(corpusDir, "calibration");
+mkdirSync(resolve(evalsDir, "reviews"), { recursive: true });
+const reviews = (existsSync(reviewsDir) ? readdirSync(reviewsDir).filter((f) => f.endsWith(".md")).sort() : []).map((file) => {
+  copyFileSync(join(reviewsDir, file), resolve(evalsDir, "reviews", file));
+  return { file, text: readFileSync(join(reviewsDir, file), "utf8") };
+});
+
+// Fixtures: the golden pairs, the predictions set, the contribution scenarios.
+copyFileSync(join(corpusDir, "golden", "matcher-pairs.json"), resolve(evalsDir, "golden-pairs.json"));
+copyFileSync(join(corpusDir, "predictions", "manifest.json"), resolve(evalsDir, "predictions.json"));
+mkdirSync(resolve(evalsDir, "contributions"), { recursive: true });
+const contributions: ContributionScenarioInput[] = jsonFiles(join(corpusDir, "contributions")).map((file) => {
+  copyFileSync(join(corpusDir, "contributions", file), resolve(evalsDir, "contributions", file));
+  return readJson<ContributionScenarioInput>(join(corpusDir, "contributions", file));
+});
+
+let gitCommit: string | null = null;
+try {
+  gitCommit = execSync("git rev-parse --short HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+} catch {
+  gitCommit = null;
+}
+
+const evalsIndex = buildEvalsIndex({
+  syncedAt: new Date().toISOString(),
+  gitCommit,
+  pins: parseModelPins(readFileSync(API_STACK_PATH, "utf8")),
+  // The judge's default (JUDGE_MODEL unset): src/config.ts pins it to Sonnet.
+  judgeModel: MODELS.sonnet,
+  ratesFor: (model: string) => (hasExplicitRates(model) ? ratesForModel(model) : null),
+  clusters,
+  golden: readJson(join(corpusDir, "golden", "matcher-pairs.json")),
+  predictions: readJson(join(corpusDir, "predictions", "manifest.json")),
+  contributions,
+  reviews,
+  scorecardFiles,
+  goldenRunFiles,
+});
+writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
+
+console.log(
+  `Synced the eval record into web/content/evals/: ${scorecardFiles.length} scorecard(s), ` +
+    `${goldenRunFiles.length} golden run(s), ${reviews.length} review sheet(s), ` +
+    `${clusters.length} clusters, ${evalsIndex.golden.pairs} golden pairs, ${evalsIndex.predictions.count} predictions, ` +
+    `${contributions.length} contribution scenario(s); pins from ${evalsIndex.pins.length} agents @ ${gitCommit ?? "unknown commit"}`
+);

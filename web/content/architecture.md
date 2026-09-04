@@ -412,7 +412,10 @@ fire-and-forget (it always acknowledges and can never fail a run) and the
 policies say it is never a substitute for acting. Reports land in
 `agent_reports`, not `audit_log`: they are about the machinery, not the
 graph, so they carry ids rather than content, collapse repeats into one row
-with an occurrence count, and are retained and purged separately. External
+with an occurrence count, and are retained and purged separately. Inside
+untraced work (the extension, the MCP's on-demand analysis) a report keeps
+its title, surface, and ids but its body is withheld, so the #356 rule
+holds for this channel too. External
 agents on the MCP surface get the same tool, attributed and rate-limited, and
 their reports triage as testimony rather than findings. The audit scheduler
 requests a `report_triage` audit for each period that saw new reports; the
