@@ -106,6 +106,10 @@ export const HEADLINE_METRICS: Array<{
   { label: "E · shared subclaims", get: (s) => s.structural.crossDoc.sharedSubclaims },
   { label: "F · % with trace", get: (s) => s.structural.assessment.pctWithTrace },
   { label: "§21 · coherence violations", get: (s) => s.structural.coherence?.violations },
+  // Canonical-form authorship (#379 data; absent on older scorecards).
+  { label: "B · matcher rewrite rate", get: (s) => s.structural.canonicalAuthorship?.rewriteRate },
+  { label: "B · rewrite magnitude", get: (s) => s.structural.canonicalAuthorship?.rewriteMagnitude },
+  { label: "C · matched denies share", get: (s) => s.structural.canonicalAuthorship?.matched.deniesShare },
   { label: "imp · mean", get: (s) => s.structural.importance.mean },
   {
     label: "imp · atomic vs compound gap",
