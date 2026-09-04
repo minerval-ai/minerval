@@ -135,7 +135,10 @@ between the run and the score.
 
 Every `corpus:score` also files its `scorecard.json` into the committed history
 at `corpus/scorecards/<cluster>/` (with that fingerprint embedded) — commit the
-ones that matter as baselines. See [`scorecards/README.md`](./scorecards/README.md).
+ones that matter as baselines. **The committed files are the shared record**;
+the registry below is a per-machine index (each developer's corpus DB has its
+own, and a fresh machine starts empty). See
+[`scorecards/README.md`](./scorecards/README.md).
 
 ```bash
 npm run corpus:runs                              # list registered runs + headline metrics
