@@ -1,0 +1,648 @@
+# Judge-review sheet — blackholes
+
+eval_run: 832f7f15-3063-4c1a-8f2f-ccaf79cf92bb
+
+## Instructions
+
+Read each claim below, then the judge's verdict on it, against the
+standards — the SAME standards the judge is pinned to, reproduced here.
+Fill a `review` block only where a verdict misses. The real output is
+the `## Overall` section at the end: not a grade of the judge's
+homework, but feedback on the task itself — where the standards or
+dimensions miss the right thing, what is measured that shouldn't be,
+what isn't measured that should be. Rubric-wording fixes go to
+scripts/corpus/judge.ts (then re-score and review again); what-is-
+measured fixes go to the plan (#334). Commit the filled sheet as the
+record; no agreement statistic is computed (#334 §2.8 as amended).
+
+## Standards
+
+(As pinned into the judge at run time, 2026-08-09 — before #372 rebased the claim bar
+on reference rather than contestation. Reviewed 2026-09-02 against both.)
+
+```
+Standards, from the Minerval constitution (cited by section):
+- Claim bar (§2): a claim is a single reusable proposition that informed people could dispute with evidence or reasons, the kind that could anchor a long-running debate. Arguments ("X therefore Y"), one author's framing, uncontested definitions, and settled textbook or bedrock facts are not claims.
+- Canonical form (§3): the shortest neutral statement of the proposition as actually debated, about fifteen words and rarely more than twenty-five, acceptable to either side as a fair statement of what is in dispute.
+- Decomposition (§6): subclaims must themselves pass the claim bar; the steps of a derivation, undisputed definitions, and facts specific to one source belong in prose, not nodes. Decomposition ends where the discourse ends, not where logic bottoms out. Depth is an effort decision governed by importance (§19): an unexpanded dependency on a minor claim is a prioritization, not a gap, and marking a simple claim atomic is correct.
+- Statuses (§10): verified / supported / contested / unsupported / contradicted / unknown. Contested requires credible evidence or argument on multiple sides of the live discourse, not merely that someone could quibble. Never round a contested claim up to verified or down to contradicted.
+- Reasoning (§11, §12): every verdict shows its work: what evidence was considered, how competing evidence was weighed, what uncertainties remain, and what would change the conclusion. A reader should be able to follow why the status was chosen. Referring to subclaims by opaque id rather than by what they say is a failure.
+- Neutrality (§17, §18): claims are mapped faithfully whichever way the answer cuts, with the strongest form of each major position represented. Even-handedness is not false parity: when the evidence overwhelmingly favors one side, the assessment says so.
+- Importance (§19): consequence-if-wrong × contestability, recorded 0..1 against anchors: ≈0.9 central (widely consequential and live), ≈0.6 major within a domain, ≈0.35 a notable contested point inside a larger debate, ≈0.15 minor or settled. Load-bearing is not important: an uncontested claim is low importance even when much depends on it, so settled textbook material must never outrank the live questions users consult the graph for.
+```
+
+---
+
+## Item 1 of 13
+
+claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
+
+**Claim:** Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density
+**Type:** empirical_derived · **Stored importance:** 0.15
+**Assessment:** verified (confidence 0.92)
+
+**Reasoning:**
+
+> Physics: the Bondi accretion rate for a point mass in a uniform medium is proportional to the ambient density and to (GM)^2, divided by the cube of the sound speed (or relative velocity); it does not depend on properties other than the mass and the local gas conditions. White dwarf densities (~10^6-10^9 g/cm^3, degenerate electron gas) are many orders of magnitude below neutron star core densities (~10^14-10^15 g/cm^3, degenerate neutron matter), so for a black hole of a given mass the predicted accretion rate, and hence the rate of growth, is dramatically lower in the white-dwarf environment.
+> 
+> This is corroborated directly by the summarized results of Giddings and Mangano's own calculation, as presented by John Ellis at CERN: neutron stars are found to be consumed in under a million years across the extra-dimensional scenarios considered, while white dwarfs take "few x 10 Myr," roughly one to two orders of magnitude longer under their central estimate. A more skeptical follow-up analysis (arXiv:0808.1415) pushes the point further, arguing the true white-dwarf accretion timescale could exceed the stars' observed ages by a factor greater than 10^10, i.e., that the white-dwarf leg of the argument is far weaker (or unconstraining) precisely because of this density-driven slowdown. Both the mainstream calculation and its critics agree on the qualitative claim under review, that white-dwarf accretion is much slower than neutron-star accretion because of the density difference; they disagree only about the quantitative consequence for the overall safety argument, which is a separate question (addressed by the parent claim, [[claim:998aec97-11a1-45d6-9eb4-1081f72cd17f|whether a trapped black hole would consume a white dwarf or neutron star fast enough to matter]]).
+> 
+> No credible source was found disputing the basic scaling. The claim is therefore verified at high confidence; the only genuine uncertainty in the literature is quantitative (how much slower, and whether the absolute white-dwarf timescale remains astrophysically "fast"), not about the direction of the effect asserted here.
+
+**Direct subclaims (0):**
+- (atomic: no decomposition)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 5 |
+| reasoning_fit | 5 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | n_a |
+| importance (judged, vs 0.15 stored) | 0.15 |
+
+Flags: status_miscalibrated
+
+> This is a settled physics derivation (Bondi rate scales with density; WD density << NS density) rather than a disputable proposition anchoring debate—closer to a textbook-fact/argument step than a §2 claim, though the reasoning itself is thorough, well-sourced, and appropriately weighted with correct low importance.
+
+```review
+claim_id: 8236a74f-046c-45d4-be57-c127d28d8505
+notes: claim_bar 'no' was correct under the standard pinned at run time and is wrong under #372: under the reference-based bar this is a claim (a unit of reference in the accretion literature; Giddings-Mangano and their critics both assert it). The old §2 wording and §19's settled-stub license conflicted, and the judge resolved it toward §2 — a task defect, resolved constitutionally. Importance 0.15 endorsed.
+```
+
+---
+
+## Item 2 of 13
+
+claim_id: 31233c47-7721-4c16-b37a-fb8fa973b0b8
+
+**Claim:** Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes
+**Type:** empirical_derived · **Stored importance:** 0.45
+**Assessment:** supported (confidence 0.75)
+
+**Reasoning:**
+
+> The claim was decomposed into two uncontested premises (semiclassical gravity breaks down near Planck-scale curvature; a Planck-mass black hole's horizon curvature is at that scale) and a for/against pair of contested subclaims capturing the actual physics debate: that the derivation rests on an uncontrolled trans-Planckian extrapolation ([[claim:3b19e31c-59fe-4c8b-b90b-2037ac50961c]]) versus that robustness/universality arguments show insensitivity to unknown Planck-scale physics ([[claim:f17e7d15-80ba-4372-b13f-6aef8873c0af]]).
+> 
+> Web search into the trans-Planckian problem literature confirms this is a live, technical dispute rather than settled physics. A 2025 review of black hole thermodynamics states plainly that the semiclassical synthesis "rests on approximations whose validity remains unproven in regimes where quantum gravitational effects become important" (arxiv.org/html/2507.03778v2). Robustness arguments exist and are influential: Unruh and Schützhold's universality arguments and Agulló, Navarro-Salas, Olmo and Parker's claim that "Hawking radiation is immediately robust against an invariant Planck-scale cutoff" (arxiv.org/pdf/0906.5315) are cited as evidence the calculation does not really hinge on the unknown UV completion. But these are contested on technical grounds: Helfer's direct rebuttal shows the proposed cutoff "removes only a negligible fraction of the relevant trans-Planckian modes" (arxiv.org/pdf/1005.2319), and a philosophy-of-physics analysis (arxiv.org/pdf/1812.07078, arxiv.org/pdf/1811.03859) argues in detail that existing universality arguments are "ill-suited" to answer the trans-Planckian problem for gravitational (as opposed to analog) Hawking radiation, and that "it is at precisely at the Planck scale that we expect violations of the semi-classical field equations to occur."
+> 
+> None of the sources found argue that the semiclassical calculation is straightforwardly trustworthy for a black hole whose mass is itself at the Planck scale; the robustness arguments are generally framed as defending the calculation for astrophysical (large, low-curvature) black holes against contamination by unknown Planck-scale physics, a different and easier claim than defending it exactly at the Planck scale. This asymmetry is why the claim, read as the modest assertion that reliability "may not" hold rather than that it definitely fails, is supported rather than merely contested: essentially all specialists agree the approximation is stressed to its limit in this regime, even though they disagree about how much this matters for the qualitative conclusion (rapid decay) that the parent claim [[claim:919bf964-1fc6-4c69-b428-ff0a6dc7442f|about LHC microscopic black holes evaporating almost instantly]] draws on other, partly independent arguments to support. Confidence is not higher because the debate is genuinely technical and ongoing (new work, e.g. arxiv.org/html/2604.04774 on noncommutative spacetime modifications, continues to appear), and because assessing exactly how much the trans-Planckian problem undermines confidence, versus being a mostly academic caveat, requires expertise beyond what a literature scan can fully adjudicate.
+
+**Direct subclaims (4):**
+- [supports] The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven (status: contested)
+- [requires] Semiclassical approximations to gravity break down when spacetime curvature approaches the Planck scale (status: none)
+- [requires] A black hole with mass near the Planck mass has horizon curvature comparable to the Planck scale (status: none)
+- [contradicts] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.45 stored) | 0.35 |
+
+Flags: false_precision
+
+> The two 'uncontested premises' (semiclassical breakdown at Planck curvature; Planck-mass horizon curvature) are explicitly described as settled background in the prose yet were still promoted to separate subclaim nodes, contrary to \u00a76's instruction that uncontested definitions/facts belong in prose; the contested pair, by contrast, is well-chosen and well-argued, with quotes from both robustness and trans-Planckian-problem camps.
+
+```review
+claim_id: 31233c47-7721-4c16-b37a-fb8fa973b0b8
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Item 3 of 13
+
+claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
+
+**Claim:** White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years
+**Type:** empirical_derived · **Stored importance:** 0.3
+**Assessment:** verified (confidence 0.88)
+
+**Reasoning:**
+
+> Multiple independent sources corroborate the observational fact. A Physics (APS) synopsis of Giddings and Mangano's analysis notes that white dwarfs and neutron stars exist in large numbers with independently determinable ages, and identifies no observed destruction consistent with black hole accretion. A Science News report on the CERN LHC Safety Assessment Group's findings quotes physicist John Ellis noting that these dense stars, though bombarded by cosmic rays for billions of years, endure. Both were recorded as affirming instances. Population studies of old white dwarfs (e.g. work on planetesimal accretion in multi-Gyr-old white dwarfs) likewise treat multi-billion-year-old white dwarfs as a routinely observed population, not a matter of dispute.
+> 
+> A relevant complication surfaced in the literature (Peter, 'On the potential catastrophic risk from metastable quantum-black holes produced at particle colliders,' arXiv:0808.1415) argues that a black hole accreting inside a white dwarf could be far too dim to detect and could take longer than the star's age to fully consume it, so that 'no conclusions about mBHs can be drawn from the observed existence of such objects with ages exceeding a billion years.' This is an argument about the evidential weight of the observation for the safety conclusion, not a denial that the observation itself (no observed destruction) holds; it was therefore not recorded as a denying instance of this claim, though it is material to the parent claim's causal inference. No source was found asserting that any observed white dwarf or neutron star shows destruction signatures consistent with internal black hole accretion.
+> 
+> Given uniform agreement on the underlying observational fact across proponents and critics of the broader safety argument, the claim is assessed as verified with high confidence. The claim was kept atomic: it is a direct descriptive/observational statement rather than a claim built from disputed sub-premises, consistent with sibling claims in this decomposition (e.g. the mechanism and cosmic-ray-energy claims) which are likewise atomic.
+
+**Direct subclaims (0):**
+- (atomic: no decomposition)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 5 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | n_a |
+| importance (judged, vs 0.3 stored) | 0.15 |
+
+Flags: false_precision
+
+> The reasoning itself states there is 'uniform agreement on the underlying observational fact across proponents and critics of the broader safety argument,' which means this is not actually disputed by informed people and should not have passed the claim bar as a standalone node; it reads as background evidence that belongs in prose supporting the parent (mBH safety) claim rather than as its own contestable proposition, and the precise 0.88 confidence adds unwarranted false precision to what is essentially settled observational fact.
+
+```review
+claim_id: a39cdd0b-a08e-4b11-a338-af0944b0d229
+notes: Same family as item 1: claim_bar 'no' reflects the pre-#372 bar; under the reference-based bar this observational fact is a claim (asserted by LSAG, Giddings-Mangano, Peter's critique all refer to it). It is also a shared dependency (child of item 12) — exactly the cross-source structure the graph exists to hold. Importance 0.15 endorsed.
+```
+
+---
+
+## Item 4 of 13
+
+claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
+
+**Claim:** A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star
+**Type:** empirical_derived · **Stored importance:** 0.35
+**Assessment:** supported (confidence 0.85)
+
+**Reasoning:**
+
+> Primary source: Giddings & Mangano, "Astrophysical implications of hypothetical stable TeV-scale black holes," Phys. Rev. D 78, 035009 (2008), arXiv:0806.3381 — the source of this mechanism, deriving accretion models "based on first-principles, basic, and well-tested physical laws" and concluding that black holes trapped in white dwarfs and neutron stars "would then catalyze their decay on timescales incompatible with their known lifetimes." A Physics (APS) commentary on the paper corroborates the magnitude: accretion times for white dwarfs are estimated as roughly ten thousand times shorter than for Earth-like bodies, and neutron stars are noted to be especially sensitive given their proximity to gravitational collapse thresholds.
+> 
+> Independent corroboration: a 2017 EPJC paper extending the safety argument to a hypothetical 100 TeV collider independently derives neutron-star accretion timescales on the order of minutes to under two days, far shorter than observed neutron-star lifetimes, and explicitly frames the mechanism as: captured stable black holes would accrete and threaten the dense object's stability. This is an independent calculation reaching the same qualitative conclusion, which strengthens confidence that the mechanism is a stable, reproducible consequence of standard accretion physics rather than an artifact of one paper's assumptions.
+> 
+> Countervailing technical nuance, found via search: a law-review account of the LHC safety debate (Wagner, "The Black Hole Case," arXiv:0912.5480) notes that white dwarfs are much less dense than neutron stars, so capture "cannot be safely assumed" for any given white dwarf, and that magnetic fields in both white dwarfs and neutron stars can lower the effective cosmic-ray collision energy below LHC-relevant scales, which is why Giddings and Mangano had to identify specific observed white dwarfs with suitable mass, field strength, and age. Separately, the broader literature on capture cross-sections for charged compact objects shows that electric charge measurably affects capture dynamics, which is the physical basis for concerns (raised in post-2008 commentary) that cosmic-ray-produced black holes retaining charge might evade efficient capture in lower-density white dwarfs specifically. These are refinements to which observations most tightly constrain the scenario, not challenges to the accrete-and-destroy mechanism conditional on capture, which no source in the search contests.
+> 
+> Two subclaims were split out because they are separately contestable and reusable elsewhere: [[claim:9b89b909-e9e1-4109-8f70-3a6bf6badc86|gravitational capture and retention inside the star]] and [[claim:998aec97-11a1-45d6-9eb4-1081f72cd17f|sufficiently fast accretion to consume the star]]. Both are well supported by the primary and secondary literature; the second is the one place where legitimate technical debate (charge, density, magnetic shielding) narrows the argument's scope, so it was seeded at a somewhat lower prior credence (0.75) than the first (0.9). No instance found denies the mechanism; the two recorded instances (Giddings & Mangano 2008; the 2017 100 TeV follow-up) both affirm it. Given the derivation rests on well-tested physics but the scenario itself (a stable microscopic black hole) is hypothetical and unobserved, "supported" rather than "verified" is the more honest status, with confidence reflecting a mature, converging, largely uncontested theoretical literature. A further pass, if warranted by rising importance, would dig into the specific charge/capture-cross-section literature (e.g., Casadio, Fabi, and related follow-ups on charged TeV black holes) to see whether it materially changes the accretion-timescale conclusion for white dwarfs specifically.
+
+**Direct subclaims (2):**
+- [requires] A black hole formed inside a white dwarf or neutron star would be gravitationally bound and remain trapped within the star (status: none)
+- [requires] A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.3 |
+
+Flags: status_miscalibrated, hallucination_risk
+
+> The reasoning assigns a high prior (0.9) to the capture subclaim and cites countervailing evidence (charge/density effects on capture) that logically bears on capture, yet attributes that nuance to justify a lower confidence on the accretion subclaim instead; meanwhile the capture subclaim's actual status is 'none,' inconsistent with the parent being marked 'supported' at 0.85. Specific numeric claims (e.g., '10,000x faster,' 'minutes to two days') are asserted with precision that is hard to verify independently, raising some hallucination risk.
+
+```review
+claim_id: 0336a104-7d40-4b92-86e5-c6c0e8c12a13
+notes: Endorse the substantive catch: the charge/capture-cross-section evidence bears on the CAPTURE subclaim, yet the Steward used it to lower the ACCRETION subclaim's seed while leaving capture at 0.9. The second point misses: a child at status 'none' is a deferred stub, not an inconsistency with the parent's 'supported' (constitution allows assessing before children; judge prompt now says so).
+```
+
+---
+
+## Item 5 of 13
+
+claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
+
+**Claim:** Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe
+**Type:** empirical_derived · **Stored importance:** 0.3
+**Assessment:** verified (confidence 0.95)
+
+**Reasoning:**
+
+> The claim is well supported by primary sources. The 2008 CERN/LSAG report "Review of the Safety of LHC Collisions" (arXiv:0806.3414) states that LHC collision energies "are still far below those of the highest-energy cosmic-ray collisions that are observed regularly on Earth," and calculates that over 3×10^22 cosmic rays with energies at or above the LHC's have struck Earth's surface since its formation, equivalent to roughly a hundred thousand LHC experimental programmes on Earth alone and about a billion when scaled to the Sun's surface area. This is corroborated by secondary reporting (ScienceDaily, Physics World) and by independent literature (e.g., arXiv:0809.2571) noting that neutron stars and white dwarfs would show macroscopic effects of stable TeV-scale black holes if cosmic-ray-induced collisions there were dangerous, and none are observed.
+> 
+> One genuine scientific nuance, raised by Giddings and Mangano and recounted in secondary literature (arXiv:0912.5480), is that magnetic fields in neutron stars and some white dwarfs could decelerate cosmic-ray particles before collision, weakening the naive comparison of collision energies for those specific bodies. This is a refinement of which astronomical bodies best support the argument, not a challenge to the core claim: Giddings and Mangano identified specific white dwarfs whose properties avoid this problem, and the comparison with Earth's atmosphere (unaffected by this magnetic deceleration issue) stands regardless. No credible source denies the claim; both recorded instances ([[claim:32fe3ca0-9c8a-4d4e-8e4b-aaa1282ae217|the LSAG report]] and secondary coverage) affirm it, and I found no scientific literature contesting the basic energy comparison or the survival record. The claim is decomposed into its two load-bearing components, both essentially settled bedrock facts (cosmic ray energies exceed LHC energies; astronomical bodies have survived), each scored as low-importance embedded stubs since neither is genuinely disputed. Given unanimous, high-quality primary-source support and no competing evidence, "verified" at high confidence is warranted; the small residual uncertainty reflects only the minor scoping nuance above.
+
+**Direct subclaims (2):**
+- [requires] Cosmic rays reaching Earth's atmosphere have center-of-mass energies exceeding those of LHC collisions (status: none)
+- [requires] Earth, the Moon, white dwarfs, and neutron stars have survived billions of years of cosmic ray bombardment without catastrophe (status: none)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | good |
+| importance (judged, vs 0.3 stored) | 0.2 |
+
+Flags: other
+
+> The reasoning itself concedes the two subclaims are 'essentially settled bedrock facts,' which suggests the parent statement is a settled empirical fact used as evidence in the LHC-safety debate rather than a genuinely disputable proposition that should anchor its own node per §2; sourcing and nuance-handling are otherwise strong.
+
+```review
+claim_id: 665cc530-4ba4-4ff2-8408-23dc0ad3b35d
+notes: Pre-#372 claim-bar reading; under the reference-based bar this is a claim (the LSAG report's own premise, referred to across every safety source), and it is shared by items 8 and 12. Importance 0.2 endorsed.
+```
+
+---
+
+## Item 6 of 13
+
+claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
+
+**Claim:** The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven
+**Type:** empirical_derived · **Stored importance:** 0.5
+**Assessment:** contested (confidence 0.75)
+
+**Reasoning:**
+
+> Decomposition: the claim rests on (1) the factual premise that Hawking's original derivation traces outgoing modes to trans-Planckian frequencies near the horizon — uncontested in the literature (Hawking 1974/1976; Jacobson 1991, 1999; Unruh 1981, 1995) and treated here as settled background (kept as a low-importance stub); and (2) whether this extrapolation leaves the derivation's validity "uncontrolled"/"unproven," which is contested.
+> 
+> Against the strong reading: theoretical robustness/"universality" arguments (Unruh 1995 Phys. Rev. D 51; Jacobson 1991, 1996, 1999; Brout-Massar-Parentani-Spindel 1995; Barceló-Garay-Jannes 2009) show the Hawking spectrum is reproduced under a wide range of modified short-distance dispersion relations — see e.g. the analogue-gravity review's discussion of "UV robustness" (https://arxiv.org/pdf/gr-qc/0505065) and the JHEP 2011 paper treating the trans-Planckian problem as answered well enough to be "a guiding principle" (https://link.springer.com/article/10.1007/JHEP11(2011)112). Analog-gravity experiments (BEC, water-tank, optical analogs) empirically confirm that a Hawking-like thermal spectrum survives even though the underlying medium's short-distance ("trans-Planckian" analog) physics is fully known and non-relativistic; one review notes that because the BEC Hawking effect was shown to be "suitably robust," there is "good reason not to worry too much" about the trans-Planckian problem in that setting (https://arxiv.org/pdf/1610.05028) — recorded as a denying instance.
+> 
+> For the claim's framing: a philosophy-of-physics analysis argues these universality arguments are "completely ill-suited" to fully answer the trans-Planckian problem because they only show insensitivity of the idealized near-horizon spectrum, not the actual late-time flux, and that "Polchinski's argument offers no definitive means to rebut the force of the trans-Planckian problem" (https://philsci-archive.pitt.edu/15900/7/On-the-Universality-of-Hawking-Radiation(archive).pdf) — recorded as an affirming instance. A related paper on explanatory depth in cosmology likewise treats the trans-Planckian problem as posing "a serious challenge" to the idea that the Hawking-radiation explanation is robust across scales (https://arxiv.org/pdf/2210.14625).
+> 
+> Weighing these: the mainstream physics community treats the robustness/analog-experiment case as strong enough that the trans-Planckian problem is no longer considered a serious threat to the reality of Hawking radiation, but a smaller, credible strand (including some philosophers of physics and physicists like Unruh who originated the concern) maintains that "uncontrolled"/"unproven" is not an unreasonable characterization of the gap between the semiclassical derivation and a first-principles quantum-gravity treatment. Both sides have real technical content and neither is a fringe position, which is why the claim is best read as contested rather than resolved in either direction. Credence of 0.4 reflects a lean toward the majority robustness position while giving substantial weight to the minority critique's technical force.
+
+**Direct subclaims (3):**
+- [requires] Hawking's original derivation traces outgoing radiation modes back to arbitrarily high trans-Planckian frequencies near the horizon (status: none)
+- [contradicts] Analog gravity experiments show Hawking-like thermal radiation is insensitive to modified short-distance dispersion relations (status: none)
+- [contradicts] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 3 |
+| reasoning_fit | 3 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_shallow |
+| importance (judged, vs 0.5 stored) | 0.4 |
+
+Flags: status_miscalibrated, false_precision
+
+> The reasoning cites specific, balanced literature on both sides and explains the contested verdict well, but it introduces an unreconciled numeric mismatch (stated confidence 0.75 vs. a separate 'credence of 0.4') that a reader cannot cleanly interpret, and two subclaims explicitly used as key evidence in the prose ('analog gravity experiments...') are left with status 'none' rather than being scored, leaving the graph's support structure thinner than the narrative it accompanies.
+
+```review
+claim_id: 3b19e31c-59fe-4c8b-b90b-2037ac50961c
+notes: The false_precision flag is wrong on the judge's own terms: confidence 0.75 (that CONTESTED is the right status) vs credence 0.4 (that the claim is true) is §10's two-number design working exactly as intended on a contested claim. Task defect — the two-number semantics were never pinned into the judge; now they are. The 'none' children are deferral, not thinness. Readability 3 is fair; the trace is dense.
+```
+
+---
+
+## Item 7 of 13
+
+claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
+
+**Claim:** Hawking radiation causes black holes to lose mass and eventually evaporate
+**Type:** empirical_derived · **Stored importance:** 0.35
+**Assessment:** verified (confidence 0.85)
+
+**Reasoning:**
+
+> The claim decomposes into (1) the basic mechanism, radiation causes mass loss, which is uncontested and quantitatively specified by [[claim:6ebf8e6d-c798-4d25-9f57-47bd38bd370b|the mass-cubed lifetime relation]]; (2) whether the derivation is trustworthy given historical worries; and (3) whether evaporation truly completes.
+> 
+> For (2), [[claim:3b19e31c-59fe-4c8b-b90b-2037ac50961c|the trans-Planckian objection]] (Hawking's original calculation traces modes back to arbitrarily high frequencies) is a real historical concern, but it is met by [[claim:f17e7d15-80ba-4372-b13f-6aef8873c0af|robustness results (Unruh, Jacobson, analog-gravity and dispersive field theory studies)]] showing the thermal spectrum is insensitive to the unknown short-distance physics, and is empirically bolstered by [[claim:7a75530c-9d2c-45b1-8b3c-5bfb15c892df|Steinhauer-style analog experiments detecting Hawking-like thermal emission from sonic horizons]] (condensed-matter analogs, not gravitational confirmation, but they validate the horizon-particle-creation mechanism). A 2024 review ("Hawking for everyone," arxiv 2410.11851) restates the standard picture that radiated particles gradually reduce black hole mass, consistent with the textbook consensus, and was recorded as an affirming instance.
+> 
+> For (3), the question of whether evaporation is truly complete is unresolved: the AIP report on Alford (2026, J. Math. Phys.) on rigorous Hawking radiation calculations for collapsing charged spacetimes found the radiated flux may approach a limit rather than driving complete evaporation, "these black holes may not completely evaporate and so may just remain permanent fixtures of the universe" — recorded as an affirming instance of the remnant subclaim. Other recent theoretical work (Wondrak, van Suijlekom, Falcke 2023) extends Hawking-like radiation beyond the horizon itself, and loop-quantum-gravity and "Planck star" literature actively debate remnants versus full evaporation. None of this is majority-displacing: it is minority, exploratory theoretical work operating exactly where semiclassical methods are expected to break down (near Planck-scale masses), and it does not undercut the well-established claim that Hawking radiation causes black holes to lose mass and shrink over astronomically long timescales. It does mean full literal completion of evaporation to zero mass is not itself a fully closed question.
+> 
+> Given the overwhelming, largely uncontested consensus on the mechanism and its consequence (mass loss and shrinkage), and only a narrow, technical residue of dispute about the precise endpoint that does not bear on the claim as ordinarily understood, "verified" is the appropriate status, with confidence tempered slightly by the endpoint uncertainty and the absence of direct astrophysical observation.
+
+**Direct subclaims (5):**
+- [supports] Laboratory analog gravity experiments have detected Hawking-like thermal radiation from sonic black hole horizons (status: none)
+- [contradicts] Black holes leave a stable Planck-mass remnant rather than evaporating completely (status: none)
+- [specifies] A black hole's Hawking evaporation lifetime is proportional to the cube of its mass (status: none)
+- [contradicts] The Hawking radiation derivation relies on an uncontrolled trans-Planckian extrapolation whose validity is unproven (status: contested)
+- [supports] Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.35 |
+
+Flags: status_miscalibrated
+
+> The reasoning itself surfaces a credible, peer-reviewed contradiction to the 'eventually evaporate' half of the claim (remnant literature) yet still lands on 'verified' at 0.85 confidence rather than 'supported' with tempered confidence, which reads as rounding up a genuinely open endpoint question.
+
+```review
+claim_id: 3ea4bcb7-aa93-4357-bead-a8ac8377d1a8
+notes: Endorse: the trace surfaces live peer-reviewed remnant literature against the 'eventually evaporate' half and still lands on verified; under §10's definitions (verified = examined directly, establishes) this is supported.
+```
+
+---
+
+## Item 8 of 13
+
+claim_id: 694a1de3-20fb-4e83-821d-b15f01f94d81
+
+**Claim:** LHC particle collisions pose no danger to Earth or its inhabitants.
+**Type:** empirical_derived · **Stored importance:** 0.4
+**Assessment:** verified (confidence 0.95)
+
+**Reasoning:**
+
+> Assessed from the LHC's official safety documentation and independent secondary sources. Primary evidence: CERN's LSAG report ("The safety of the LHC" and the 2008 "Review of the Safety of LHC Collisions," Ellis et al., J. Phys. G 35 (2008) 115004), which was reviewed and endorsed by an independent CERN Scientific Policy Committee panel (Braun-Munzinger, Cavalli-Sforza, 't Hooft, Webber, Zwirner) and by the APS Division of Particles and Fields. Secondary confirmation from Wikipedia's "Safety of high-energy particle collision experiments" summarizing the 2003 and 2008 reviews, and contemporaneous science journalism (phys.org, ScienceDaily) quoting the LSAG's own framing: "Nature has already conducted the equivalent of about a hundred thousand LHC experimental programmes on Earth – and the planet still exists."
+> 
+> Two instances already on record affirm the claim directly from CERN's own safety page; two further instances recorded from phys.org (quoting LSAG) and Wikipedia (summarizing both reviews) also affirm it. No instances or credible sources found denying the claim; the historical controversy (the 2008 Hawaii lawsuit, media alarm) was driven by non-expert fear rather than by physicists offering a competing technical analysis, and it was resolved against the plaintiffs.
+> 
+> Decomposition: two independent arguments were surfaced, matching how the LSAG report itself is structured. The cosmic-ray argument ([[claim:665cc530-4ba4-4ff2-8408-23dc0ad3b35d|cosmic rays exceeding LHC energies routinely strike Earth without catastrophe]]) is essentially uncontested astrophysical fact and evaluated as holding cleanly. The black-hole argument is conditional on a minority theoretical premise ([[claim:74137053-82a6-477e-8842-45a1639d9f17|extra-dimensional theories predicting LHC black hole production]]) that most physicists consider unlikely, but the argument does not require that premise to be true, only that IF it were true, safety would still follow via [[claim:919bf964-1fc6-4c69-b428-ff0a6dc7442f|Hawking evaporation]] or, redundantly, via [[claim:a046f07f-2cd7-45ca-bdac-908b3621d415|the observed survival of denser astronomical bodies]]. This redundancy is why the overall verdict is not weakened by Hawking radiation's lack of direct experimental confirmation.
+> 
+> Given convergent, independent, peer-reviewed, and institutionally endorsed evidence, an absence of any credible countervailing physics argument, and over a decade of incident-free LHC operation since first collisions in 2010, the claim is verified at high confidence. Confidence is not set at the maximum only because Hawking radiation itself remains unconfirmed by direct observation and because "verified" claims about future/ongoing physical safety always retain a residual, essentially irreducible epistemic humility. Marginal yield of further work is low: the scientific question is not live, and further searching would mostly surface the same review documents and reporting already consulted.
+
+**Direct subclaims (4):**
+- [assumes] Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes (status: verified)
+- [requires] Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation (status: supported)
+- [supports] Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe (status: verified)
+- [supports] Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous. (status: verified)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.4 stored) | 0.25 |
+
+Flags: status_miscalibrated
+
+> Reasoning is well-sourced and appropriately calibrated (0.95 not 1.0 due to residual Hawking-radiation uncertainty), but stored importance of 0.4 seems too high for a matter the reasoning itself calls scientifically non-live and settled among experts ("the scientific question is not live"), which per \u00a719 should sit closer to the 0.15 settled-fact anchor.
+
+```review
+claim_id: 694a1de3-20fb-4e83-821d-b15f01f94d81
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Item 9 of 13
+
+claim_id: 74137053-82a6-477e-8842-45a1639d9f17
+
+**Claim:** Speculative theories with extra spatial dimensions predict the LHC could produce microscopic black holes
+**Type:** empirical_derived · **Stored importance:** 0.25
+**Assessment:** verified (confidence 0.92)
+
+**Reasoning:**
+
+> The claim is narrowly about theoretical attribution: do extra-dimension theories predict LHC microscopic black hole production. Primary sources confirm this decisively: Dimopoulos & Landsberg, "Black Holes at the LHC," Phys. Rev. Lett. 87, 161602 (2001), and Giddings & Thomas, "High-energy colliders as black hole factories," Phys. Rev. D 65, 056010 (2002), are the founding papers making exactly this prediction under ADD-type large extra dimensions. Subsequent literature (e.g. https://link.springer.com/article/10.1007/JHEP11(2015)185, which states the prediction in its abstract) and experimental search papers from CMS and ATLAS treat the prediction as well-established enough to warrant dedicated dijet/multi-jet black-hole search programs, which is itself strong indirect confirmation that the physics community regards this as a genuine, if model-dependent, prediction of these theories. A review source (arXiv:0810.0414) independently restates the same mechanism: microscopic black hole production when collision impact parameters fall below the Schwarzschild radius in 4+N dimensions.
+> 
+> The one subclaim added, [[claim:a71a4d75-5a61-427f-be10-0a37b60d70fb|that large extra dimension models predict a fundamental Planck scale as low as the TeV range]], is the load-bearing theoretical premise; it is itself uncontested as a feature of how ADD-type models are constructed (this is explicit in their original formulation, designed to solve the hierarchy problem by diluting gravity into large compact dimensions). No credible source disputes that the theories entail this prediction; the live scientific disagreement in the broader discourse is about whether such theories are true or whether the LHC's search energies were high enough to test them, not about whether the prediction follows from the theories as stated. All instances found in the literature affirm the claim; none deny it. This supports a verified status at high confidence. Marginal yield of further work is low: the theoretical-attribution question is settled in the literature, and no plausible new evidence would revise it.
+
+**Direct subclaims (1):**
+- [requires] Large extra dimension models predict the fundamental Planck scale could be as low as the TeV scale (status: none)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | no |
+| granularity | too_granular |
+| importance (judged, vs 0.25 stored) | 0.15 |
+
+Flags: status_miscalibrated
+
+> The claim is essentially a settled attribution of what ADD-type theories predict, not a proposition that informed people actively dispute, so it likely fails the §2 claim bar despite being well-sourced and reasoned; the single subclaim about the TeV-scale Planck prediction is itself an uncontested model premise that belongs in prose per §6, not a node, and the stored importance (0.25) overstates a settled theoretical-attribution fact that should sit near the 0.15 'minor or settled' anchor.
+
+```review
+claim_id: 74137053-82a6-477e-8842-45a1639d9f17
+notes: Pre-#372 claim-bar reading; a settled theoretical attribution referred to by every source in the discourse is a claim under the reference-based bar. Importance 0.15 endorsed. too_granular on the TeV-Planck-scale subclaim is arguable either way.
+```
+
+---
+
+## Item 10 of 13
+
+claim_id: 919bf964-1fc6-4c69-b428-ff0a6dc7442f
+
+**Claim:** Microscopic black holes produced at the LHC would evaporate almost instantly via Hawking radiation
+**Type:** empirical_derived · **Stored importance:** 0.4
+**Assessment:** supported (confidence 0.85)
+
+**Reasoning:**
+
+> Sources reviewed: the 2008 LSAG "Review of the Safety of LHC Collisions" (arXiv:0806.3414), which states that any microscopic black holes produced at the LHC are expected to decay by Hawking radiation before reaching the detector walls; a PhysOrg summary of Giddings and Mangano's paper describing near-universal physicist agreement that black holes evaporate via Hawking radiation, disappearing "in the tiniest fraction of a second"; a 4gravitons blog post explaining that TeV-scale black holes would "radiate away to nothing in almost an instant," while flagging that Hawking radiation has never been directly measured; and Jennifer Johnson's law-review history "The Black Hole Case," which documents Unruh and Schützhold's 2004 paper concluding that whether real black holes emit Hawking radiation "remains an open question," Unruh's own clarification to the New York Times that non-evaporation would require physics to be "really, really weird," and Otto Rössler's fringe argument (based on a non-standard reading of the Schwarzschild metric) that black holes cannot evaporate at all.
+> 
+> Weighing these: the claim decomposes into (1) whether Hawking radiation exists as a mechanism for mass loss at all, (2) whether the mass-cubed scaling law makes TeV-scale evaporation essentially instantaneous, and (3) whether the semiclassical calculation underlying both can be trusted at near-Planck-mass scales. (1) and (2) are essentially uncontroversial within the theoretical physics community and are the basis of the "for" case; (3) is the genuine crux where credentialed dissent exists, though it stops short of a serious rival prediction that such black holes would persist or grow. No source found argues LHC black holes would evaporate slowly enough to be dangerous while also being taken seriously within mainstream theoretical physics; Rössler's objection is the only source asserting outright non-evaporation, and it has not gained traction among specialists. This pattern, overwhelming mainstream convergence plus a narrow, unresolved theoretical caveat about semiclassical validity plus zero experimental confirmation of Hawking radiation itself, supports a "supported" rather than "verified" or "contested" status. Confidence in this reading is fairly high (0.85) because the asymmetry between the mainstream case and its critics is stark and well documented; claim_credence of 0.9 reflects that the proposition, read as intended (conditional on such black holes forming), is very likely true. Marginal yield of a further pass is moderate: deeper technical review of the greybody-factor and higher-dimensional evaporation literature (e.g., arXiv:1203.4683) could sharpen the picture further but is unlikely to overturn the qualitative verdict.
+
+**Direct subclaims (3):**
+- [requires] A black hole's Hawking evaporation lifetime is proportional to the cube of its mass (status: none)
+- [requires] Hawking radiation causes black holes to lose mass and eventually evaporate (status: verified)
+- [contradicts] Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.4 stored) | 0.4 |
+
+Flags: status_miscalibrated
+
+> The parent reasoning explicitly calls subclaims (1) and (2) 'essentially uncontroversial,' which per 
+§6 argues they belong in prose rather than as separate nodes; also, marking subclaim (1) 'verified' sits uneasily with the same reasoning's citation of Unruh-Schützhold that whether real black holes emit Hawking radiation 'remains an open question' and that it has never been directly measured.
+
+```review
+claim_id: 919bf964-1fc6-4c69-b428-ff0a6dc7442f
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Item 11 of 13
+
+claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
+
+**Claim:** A stable black hole captured inside a white dwarf or neutron star would accrete surrounding degenerate matter fast enough to consume the star within a short time
+**Type:** empirical_derived · **Stored importance:** 0.35
+**Assessment:** supported (confidence 0.85)
+
+**Reasoning:**
+
+> Primary source: Giddings & Mangano, "Astrophysical implications of hypothetical stable TeV-scale black holes" (arXiv:0806.3381, published Phys. Rev. D 2008), which computes Bondi accretion rates for a stable black hole captured in degenerate stellar matter and finds growth-to-macroscopic-scale timescales of order thousands of years or less for neutron-star and white-dwarf density matter, far below the ~10^9-10^10 year ages of these stars. This is corroborated by secondary physics commentary (APS Physics, "The end of the world at the Large Hadron Collider?") describing the same Bondi-theory result and noting white dwarfs and neutron stars would be "destroyed much more quickly" than lower-density bodies like Earth. Both instances affirm the claim and are recorded.
+> 
+> The parent claim ([[claim:0336a104-7d40-4b92-86e5-c6c0e8c12a13|that a captured stable micro black hole would eventually destroy its host star]]) was already assessed "supported" at 0.85 confidence, and this claim is the specific timescale-sufficiency premise within that mechanism; the two are close to inseparable in the literature, which is why match_claim initially returned this claim itself as the best match for a neutron-star-specific reformulation.
+> 
+> One subclaim was added: the observation that white-dwarf accretion is intrinsically slower than neutron-star accretion because of the white dwarf's much lower density. This is uncontroversial physics on its own, but it is the point of departure for the one genuine technical critique found in the literature (a minority technical note flagged in web search results arguing the white-dwarf leg of the safety argument is weaker than the neutron-star leg, particularly for black holes produced at energies above the LHC's, e.g. for a proposed 100 TeV collider). This critique does not challenge the mechanism itself, only its margin of safety in an extrapolated regime, and it comes from a non-mainstream source rather than a peer-reviewed rebuttal of Giddings-Mangano; it does not rise to the level of contesting the claim as stated, which is about the mechanism operating "fast enough... within a short time," not about its adequacy at arbitrary future collider energies.
+> 
+> Given the strength and directness of the primary calculation, the absence of any credible source denying the core mechanism, and only a narrow, non-mainstream qualification on one sub-case, "supported" with fairly high confidence (0.85) is the right status; it stops short of "verified" because the claim is a theoretical derivation about a hypothetical object never observed, not a directly confirmed empirical fact. Marginal yield of further work is low: the physics is settled enough that additional searching is unlikely to move the verdict, though a deeper look at the white-dwarf-specific critique could sharpen the caveat.
+
+**Direct subclaims (1):**
+- [contradicts] Bondi accretion onto a black hole trapped in a white dwarf proceeds much more slowly than in a neutron star, due to the white dwarf's much lower density (status: verified)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | too_granular |
+| importance (judged, vs 0.35 stored) | 0.2 |
+
+Flags: status_miscalibrated, other
+
+> The reasoning itself admits this claim is 'close to inseparable' from its parent mechanism claim, suggesting it should be prose within that assessment rather than a separate node; stored importance (0.35) also looks inflated since the reasoning finds no credible rebuttal of the core mechanism, making this closer to settled/minor (~0.15-0.2). The lone subclaim is oddly tagged 'contradicts' despite being verified and not actually undermining the parent's 'fast enough' conclusion.
+
+```review
+claim_id: 998aec97-11a1-45d6-9eb4-1081f72cd17f
+notes: The 'oddly tagged contradicts' point is shallow: a VERIFIED child can legitimately cut against its parent — WD accretion being much slower is exactly the evidence that narrows 'fast enough' for the white-dwarf leg. Prose-not-node is superseded by #372 (the node is also the Matcher's dedup target for a neutron-star reformulation). Importance 0.2 endorsed.
+```
+
+---
+
+## Item 12 of 13
+
+claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
+
+**Claim:** Survival of white dwarfs, neutron stars, and Earth rules out LHC-produced stable black holes being dangerous.
+**Type:** causal · **Stored importance:** 0.4
+**Assessment:** verified (confidence 0.88)
+
+**Reasoning:**
+
+> The parent claim's three subclaims have now all received independent assessments consistent with the parent's existing verdict. [[claim:665cc530-4ba4-4ff2-8408-23dc0ad3b35d|Cosmic-ray bombardment of dense stars at LHC-equivalent energies for billions of years]] remains uncontested. [[claim:0336a104-7d40-4b92-86e5-c6c0e8c12a13|The capture-and-accretion mechanism]] was newly assessed as 'supported' (confidence 0.85): well corroborated by the primary Giddings-Mangano analysis and independent follow-up literature, with only minor technical caveats about capture efficiency in lower-density white dwarfs and about charged black holes, which affect which specific stars provide airtight tests rather than the mechanism itself. [[claim:a39cdd0b-a08e-4b11-a338-af0944b0d229|The observational absence of any star destroyed by black hole accretion]] was newly assessed as 'verified' (confidence 0.88), with that subclaim's own steward flagging a literature critique (Peter, arXiv:0808.1415) about how much inferential weight the absence of a destruction signature can bear, and correctly routing that critique here as more directly material to this claim's causal inference from survival to safety than to the observational fact itself.
+> 
+> Investigating that critique: Peter's note argued that a black hole accreting via a slow, Eddington-limited or otherwise weakly-coupled channel could remain undetectable within a star for longer than the star's observed lifetime, meaning the star's survival would not by itself exclude that specific class of scenario. Giddings and Mangano's direct reply (arXiv:0808.4087) argued the scenario is internally inconsistent given the same assumptions used to build it, and no subsequent literature has revived the point. This is the standard shape of the wider technical debate already reflected in the assessment: narrow, addressed challenges to the argument's coverage of parameter space, not a rebuttal of the mechanism or a demonstration of an open danger. It sits alongside the previously identified magnetic-field-screening caveat as a second, similarly-addressed complication.
+> 
+> None of this changes the bottom line: three independently strong subclaims, a peer-reviewed and independently endorsed primary source, a directly rebutted technical challenge, and no credible surviving dissent in the physics literature. Status remains verified; confidence is held at 0.88 rather than raised further because the argument is explicitly a backstop against a hypothetical with no independent observational confirmation (non-evaporating black holes), and because the Peter-type loophole illustrates that the general inference, while robust, is not logically airtight across all conceivable parameter choices. What would move confidence further: a rigorous, unaddressed extension of the Peter scenario that survived scrutiny, or new observational bounds directly constraining Hawking-evaporation-free black hole existence.
+
+**Direct subclaims (3):**
+- [requires] White dwarfs and neutron stars show no observational evidence of destruction by black hole accretion under cosmic ray bombardment over billions of years (status: verified)
+- [supports] Cosmic rays with energies far exceeding LHC collisions regularly strike Earth and other bodies without causing catastrophe (status: verified)
+- [requires] A stable micro black hole formed inside a white dwarf or neutron star would be gravitationally captured and would accrete matter, eventually destroying the star (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 3 |
+| impartiality | 3 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.4 stored) | 0.35 |
+
+Flags: status_miscalibrated
+
+> The reasoning is transparent and cites concrete literature (Giddings-Mangano, Peter's critique and reply), but labels the claim 'verified' at 0.88 while simultaneously admitting the inference is 'not logically airtight' and rests on an unconfirmed hypothetical (non-evaporating black holes) — 'supported' would better match the hedged confidence expressed in the prose. The Peter counter-argument is stated only briefly before being dismissed as 'addressed,' giving it less room than the mainstream view.
+
+```review
+claim_id: a046f07f-2cd7-45ca-bdac-908b3621d415
+notes: Endorse on status: verified at 0.88 while the trace concedes the inference is 'not logically airtight' reads as supported under §10. Adds a point no dimension grades: the canonical form says 'rules out', a strength the assessment does not defend — a §3 form problem (see #360), not an assessment problem.
+```
+
+---
+
+## Item 13 of 13
+
+claim_id: f17e7d15-80ba-4372-b13f-6aef8873c0af
+
+**Claim:** Trans-Planckian robustness arguments show Hawking radiation predictions are insensitive to unknown Planck-scale physics
+**Type:** empirical_derived · **Stored importance:** 0.35
+**Assessment:** supported (confidence 0.7)
+
+**Reasoning:**
+
+> Evidence reviewed: multiple physics reviews and primary sources (Unruh 1995's numerical dispersive analysis; Corley 1998's analytic extension; Unruh and Schützhold's 2005 "universality" theorem; analog-gravity reviews such as Barcelo/Liberati/Visser's "Analogue Gravity," and a 2025 review explicitly stating the robustness of Hawking radiation in analogue systems "was later investigated and confirmed by numerous theoretical studies") converge on the mainstream conclusion that modifying the dispersion relation at short distances leaves the predicted thermal spectrum essentially unchanged at long wavelengths, both in theoretical dispersive-field calculations and in laboratory analog experiments (BEC, water-tank, optical). This is the basis for [[claim:3e71e72c-0e84-411b-8c93-30315f47f967|the theoretical dispersive robustness subclaim]] and [[claim:c2d92dd3-5ff5-40a3-815b-cf424751205c|the analog-experiment subclaim]], both credible and mutually reinforcing lines of evidence.
+> 
+> Against this, a philosophy-of-physics analysis (the "On the Universality of Hawking Radiation" paper) makes a specific, technical objection: universality arguments as constructed are "ill-suited" to answer the trans-Planckian problem in full, because they establish insensitivity only for near-horizon, cis-Planckian modes, and are silent about the actual late-time radiation detected far from the horizon; they also depend on assumptions such as near-horizon Lorentz invariance and idealized detector placement that do not obviously extend to a true quantum-gravity regime. This directly informed [[claim:88d4ea63-a4f1-433e-bb9d-2b1718a1893b|the assumptions-caveat subclaim]]. It is a minority position but a serious, non-frivolous one, not merely a denial without argument, so it earns genuine weight in the assessment rather than being dismissed as noise.
+> 
+> The dependency on [[claim:31233c47-7721-4c16-b37a-fb8fa973b0b8|near-Planck-mass black holes being outside the regime the semiclassical approximation, and by extension the robustness arguments, can be trusted in]] (already assessed 'supported' by its own steward) sharpens where the caveat bites hardest: not for ordinary astrocophysical black holes, where the argument is compelling, but for the hypothetical case where the whole horizon curvature is Planckian.
+> 
+> Instances: one review affirms the claim in its strong general form (all robustness work "confirmed" the effect); the philsci-archive paper denies that universality arguments fully resolve the trans-Planckian problem. Credible sources exist on both sides of how far, precisely, "insensitive" extends, which is the classic signature of 'supported rather than verified': the core physical phenomenon (insensitivity to modified UV dispersion in known test cases) is well established, but the claim's implicit generalization to "unknown Planck-scale physics" broadly is not fully nailed down, hence supported with moderate-high confidence rather than verified.
+
+**Direct subclaims (4):**
+- [contradicts] Trans-Planckian robustness arguments rely on assumptions like near-horizon Lorentz invariance and an idealized vacuum state that may not hold (status: none)
+- [supports] Analog gravity experiments show Hawking-like thermal radiation is insensitive to modified short-distance dispersion relations (status: none)
+- [supports] Dispersive field theory calculations show the Hawking radiation spectrum is reproduced under modified high-frequency dispersion relations (status: none)
+- [contradicts] Semiclassical Hawking radiation calculations may not reliably apply to near-Planck-mass microscopic black holes (status: supported)
+
+**Judge's verdict:**
+
+| dimension | verdict |
+|---|---|
+| readability | 4 |
+| reasoning_fit | 4 |
+| impartiality | 4 |
+| claim_bar | yes |
+| granularity | good |
+| importance (judged, vs 0.35 stored) | 0.3 |
+
+Flags: none
+
+> The dissenting philsci-archive objection is treated as credible and serious rather than dismissed, but the write-up blurs the line between 'contested' (opposing credible argument) and 'supported' (settled core, uncertain generalization) without fully justifying why the former wasn't chosen; the call is defensible but borderline.
+
+```review
+claim_id: f17e7d15-80ba-4372-b13f-6aef8873c0af
+notes:            # only where the verdict misses — what it got wrong; leave as-is to endorse
+```
+
+---
+
+## Overall
+
+The output that matters: feedback on the task, not scores on the judge.
+
+```overall
+Reviewed 2026-09-02 (Claude pass, discussed with Jackson; see #334 comment of that date).
+
+The judge is consistent and mostly defensible on its own terms. Its most frequent
+findings trace to four gaps in the TASK it was given, not to judge error:
+
+1. Claim bar vs §19 stubs (items 1, 3, 5, 9). The pre-#372 §2 said settled facts
+   are not claims; §19 said settled dependencies are recorded as low-importance
+   stubs. The Steward followed §19, the judge enforced §2. Resolved by #372:
+   the bar is now reference, not contestation — a settled proposition many
+   sources refer to is a claim. Under the new bar all four verdicts flip to
+   'yes', and the shared-child structure they anchor (item 5 under both 8 and
+   12) is exactly what the graph exists to hold.
+
+2. Unassessed children read as defects (items 4, 6). Status 'none' is a deferred
+   stub or an un-run steward — an allocation outcome, invisible to a judge
+   grading one claim in isolation. Fixed: the judge prompt now says so.
+
+3. Confidence vs credence (item 6). §10's two numbers answer different questions
+   and are expected to diverge on contested claims; the judge, never told this,
+   flagged a textbook-correct pair as false precision. Fixed: semantics pinned.
+
+4. verified vs supported (7 of 13 status_miscalibrated flags). §10 already
+   defines the boundary (examined directly and establishes, vs incomplete or
+   indirect) but the judge was pinned only the status NAMES. Fixed: definitions
+   pinned. Note the definitions lean the judge's way — items 8, 9, 12 rest on
+   indirect evidence about an unobserved hypothetical — so expect the Steward
+   side to move once its own outputs are re-judged.
+
+Where the judge was simply right: item 4's misattributed capture evidence;
+item 7's rounding up over live remnant literature; the importance deflation
+(judge lower on 10 of 13), which matches #68's known failure mode.
+
+Not measured that should be: canonical-form strength (item 12's 'rules out'
+outruns its assessment) — a §3 dimension; and reasoning anchored to ingestion
+context (#360 and the blinding question raised on #334). On this sheet the
+parent-claim references are mostly benign scope demarcation.
+
+Scales: readability / reasoning_fit / impartiality sat in a 3–5 band and
+carried nothing the flags and notes did not. Left in place for now; the
+evidence is on record for the next reviewer to weigh.
+
+What is good: the trans-Planckian triangle (items 2, 6, 13) is shared across
+parents, correctly polarized, and coherent as a joint state; item 3's instance
+stance bookkeeping (Peter's critique routed to the parent's inference, not
+recorded as denying the observation) is §9 done right. The near-settled control
+cluster behaves like one.
+```

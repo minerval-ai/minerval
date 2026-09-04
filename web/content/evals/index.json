@@ -1,0 +1,312 @@
+{
+  "syncedAt": "2026-09-04T14:31:36.196Z",
+  "gitCommit": "c1056bb",
+  "pins": [
+    {
+      "agent": "steward",
+      "envVar": "STEWARD_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "curator",
+      "envVar": "CURATOR_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "audit",
+      "envVar": "AUDIT_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "arbitration",
+      "envVar": "ARBITRATION_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "extractor",
+      "envVar": "EXTRACTOR_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "matcher",
+      "envVar": "MATCHER_MODEL",
+      "model": "deepseek/deepseek-v4-flash",
+      "label": "DeepSeek V4 Flash"
+    }
+  ],
+  "judge": {
+    "model": "claude-sonnet-5",
+    "label": "Claude Sonnet 5"
+  },
+  "rates": {
+    "claude-fable-5-1": {
+      "inputPerMtok": 10,
+      "outputPerMtok": 50
+    },
+    "deepseek/deepseek-v4-flash": null,
+    "claude-sonnet-5": {
+      "inputPerMtok": 3,
+      "outputPerMtok": 15
+    }
+  },
+  "clusters": [
+    {
+      "key": "blackholes",
+      "kind": "web",
+      "posts": 4,
+      "words": 3380,
+      "description": "The LHC micro black hole safety case — one of the three FLF Epistack case studies (flf.org/epistack-competition). A mostly-closed, near-uncontested question ('Will CERN's Large Hadron Collider create a black hole that destroys the Earth?') that nevertheless rests on a large body of interacting physics. Chosen to stress how the system handles a settled-but-deep argument: heavy claim overlap between institutional reassurance, the rigorous safety derivation, and a published dissent, plus a few genuinely contested cruxes (does Hawking radiation exist? are the astrophysical bounds airtight?). Sources are ordered so the institutional and foundational safety arguments are ingested before the dissent that contests them.",
+      "source": "Curated, committed markdown assembled from public sources: CERN's LHC safety pages and the LHC Safety Assessment Group (LSAG) report; Wikipedia's 'Safety of high-energy particle collision experiments' (CC BY-SA 4.0); and two peer-reviewed/arXiv papers (Giddings & Mangano 2008; Plaga 2008). Each post's `url` records its provenance. This is a `web` cluster: the markdown is the pinned source of truth and is not refetched.",
+      "sources": [
+        {
+          "id": "cern-lhc-safety",
+          "title": "The safety of the LHC",
+          "author": "CERN / LHC Safety Assessment Group",
+          "url": "https://home.cern/science/accelerators/large-hadron-collider",
+          "role": "institutional-reassurance"
+        },
+        {
+          "id": "giddings-mangano-2008",
+          "title": "Astrophysical implications of hypothetical stable TeV-scale black holes",
+          "author": "Steven B. Giddings and Michelangelo L. Mangano",
+          "url": "https://arxiv.org/abs/0806.3381",
+          "role": "safety-derivation-foundational"
+        },
+        {
+          "id": "wikipedia-safety-overview",
+          "title": "Safety of high-energy particle collision experiments",
+          "author": "Wikipedia contributors (CC BY-SA 4.0)",
+          "url": "https://en.wikipedia.org/wiki/Safety_of_high-energy_particle_collision_experiments",
+          "role": "overview-of-the-dispute"
+        },
+        {
+          "id": "plaga-2008",
+          "title": "On the potential catastrophic risk from metastable quantum-black holes produced at particle colliders",
+          "author": "Rainer Plaga",
+          "url": "https://arxiv.org/abs/0808.1415",
+          "role": "published-dissent"
+        }
+      ]
+    },
+    {
+      "key": "eggs",
+      "kind": "web",
+      "posts": 3,
+      "words": 1617,
+      "description": "The health effects of eggs — one of the three FLF Epistack case studies (flf.org/epistack-competition). A deliberately mundane, open-ended question ('Are eggs good or bad to eat? For whom? How would we know?') that is really a question about ways of knowing: dietary cholesterol vs blood cholesterol, observational cohorts vs randomized trials, confounding and reverse causation, whole-diet context, and subgroup effects (notably diabetics). Chosen to stress how the system handles genuinely unresolved, methodology-driven disagreement where the cruxes are about evidence quality rather than a single fact. Sources span the mainstream-nuanced view, the conflicting meta-analytic evidence, and the guideline/epistemics angle.",
+      "source": "Curated, committed markdown assembled from public sources: the Harvard T.H. Chan School of Public Health 'Nutrition Source' page on eggs; Wikipedia's 'Egg as food' health/nutrition sections (CC BY-SA 4.0); and a synthesis of the dietary-cholesterol guideline history and study-design debate. Each post's `url` records its provenance. This is a `web` cluster: the markdown is the pinned source of truth and is not refetched.",
+      "sources": [
+        {
+          "id": "harvard-nutrition-source",
+          "title": "Eggs — The Nutrition Source",
+          "author": "Harvard T.H. Chan School of Public Health",
+          "url": "https://nutritionsource.hsph.harvard.edu/food-features/eggs/",
+          "role": "mainstream-nuanced-view"
+        },
+        {
+          "id": "wikipedia-egg-health",
+          "title": "Egg as food — nutrition and health effects",
+          "author": "Wikipedia contributors (CC BY-SA 4.0)",
+          "url": "https://en.wikipedia.org/wiki/Egg_as_food",
+          "role": "conflicting-evidence-overview"
+        },
+        {
+          "id": "dietary-cholesterol-debate",
+          "title": "Dietary cholesterol, guidelines, and the limits of the evidence",
+          "author": "Synthesis of US Dietary Guidelines history and the observational-vs-trial debate",
+          "url": "https://en.wikipedia.org/wiki/Dietary_cholesterol",
+          "role": "epistemics-and-guidelines"
+        }
+      ]
+    },
+    {
+      "key": "lableak",
+      "kind": "web",
+      "posts": 5,
+      "words": 3319,
+      "description": "The origin of SARS-CoV-2 (zoonosis vs. lab leak) — the hardest and most-contested of the three FLF Epistack case studies (flf.org/epistack-competition). A live, high-stakes dispute with a rich public record, anchored by the 2024 $100k Rootclaim debate (Saar Wilf vs. Peter Miller) that two expert judges ruled decisively for zoonosis, and where six independent Bayesian analyses of the same evidence spanned 23 orders of magnitude. Chosen to stress contested-claim handling, head-to-head disagreement, and cruxes at maximum difficulty. Sources are ordered overview → zoonosis case → zoonosis primary source → lab-leak case → lab-leak primary source, and both sides are steelmanned so the graph must hold genuine disagreement rather than collapse to one side. Each side's synthesis is followed by a faithful representation of a real primary source (Worobey et al. 2022 for zoonosis; the 2018 DEFUSE proposal for lab leak) so the load-bearing cruxes carry independent, citable instances rather than resting on the debate write-up alone.",
+      "source": "Curated, committed markdown assembled from public sources: Scott Alexander's writeup of the Rootclaim COVID-origins debate (the FLF starting material) and the FLF case description for the framing; Wikipedia's coverage of the origin investigations (CC BY-SA 4.0) and the published market-origin analyses (Worobey et al. and Pekar et al., Science 2022) for the zoonosis case; and the documented lab-leak arguments (WIV proximity, the DEFUSE proposal, the furin cleavage site, intelligence assessments) for the lab-leak case. Each post's `url` records its provenance. This is a `web` cluster: the markdown is the pinned source of truth and is not refetched.",
+      "sources": [
+        {
+          "id": "origins-debate-overview",
+          "title": "The COVID-origins dispute and the Rootclaim debate — an overview",
+          "author": "Overview after Scott Alexander's debate writeup and the FLF case description",
+          "url": "https://www.astralcodexten.com/p/practically-a-book-review-rootclaim",
+          "role": "neutral-overview"
+        },
+        {
+          "id": "zoonosis-market-case",
+          "title": "The case for a natural (zoonotic) origin at the Huanan market",
+          "author": "Synthesis of Worobey et al. and Pekar et al. (Science 2022) and the zoonosis arguments",
+          "url": "https://www.science.org/doi/10.1126/science.abp8715",
+          "role": "zoonosis-case"
+        },
+        {
+          "id": "worobey-market-epicenter",
+          "title": "The Huanan market as the early epicenter of the pandemic (Worobey et al., 2022)",
+          "author": "Faithful representation of Worobey et al., Science 377 (2022)",
+          "url": "https://www.science.org/doi/10.1126/science.abp8715",
+          "role": "zoonosis-primary-source"
+        },
+        {
+          "id": "lab-leak-case",
+          "title": "The case for a research-related (lab leak) origin",
+          "author": "Synthesis of the documented lab-leak arguments (DEFUSE, furin site, WIV proximity, intelligence assessments)",
+          "url": "https://en.wikipedia.org/wiki/COVID-19_lab_leak_theory",
+          "role": "lab-leak-case"
+        },
+        {
+          "id": "defuse-proposal",
+          "title": "The DEFUSE proposal and the case from laboratory capability (2018)",
+          "author": "Faithful representation of the 2018 DEFUSE proposal and the documented capability argument",
+          "url": "https://en.wikipedia.org/wiki/DEFUSE_(project)",
+          "role": "lab-leak-primary-source"
+        }
+      ]
+    },
+    {
+      "key": "lethalities",
+      "kind": "lesswrong",
+      "posts": 11,
+      "words": 88567,
+      "description": "The 2022 'List of Lethalities' AI-risk debate. Yudkowsky's AGI Ruin anchor post plus direct responses, the sharp-left-turn sub-thread, and the basic-x-risk-case sub-thread. Chosen for dense claim overlap and head-to-head disagreement, to stress disambiguation, canonicalization, and contested-claim handling. Posts are ordered so the anchor and foundational posts are ingested before the responses that argue against them.",
+      "source": "lesswrong.com GraphQL API (contents.markdown); IDs are pinned for reproducibility",
+      "sources": [
+        {
+          "id": "uMQ3cqWDPHhjtiesc",
+          "title": "AGI Ruin: A List of Lethalities",
+          "author": "Eliezer Yudkowsky",
+          "role": "anchor"
+        },
+        {
+          "id": "CoZhXrhpQxpy9xw9y",
+          "title": "Where I agree and disagree with Eliezer",
+          "author": "Paul Christiano",
+          "role": "response-to-anchor"
+        },
+        {
+          "id": "wAczufCpMdaamF9fy",
+          "title": "My Objections to \"We’re All Gonna Die with Eliezer Yudkowsky\"",
+          "author": "Quintin Pope",
+          "role": "response-to-anchor"
+        },
+        {
+          "id": "qJgz2YapqpFEDTLKn",
+          "title": "DeepMind alignment team opinions on AGI ruin arguments",
+          "author": "Victoria Krakovna et al.",
+          "role": "response-to-anchor"
+        },
+        {
+          "id": "GNhMPAWcfBCASy8e6",
+          "title": "A central AI alignment problem: capabilities generalization, and the sharp left turn",
+          "author": "Nate Soares",
+          "role": "sharp-left-turn-foundational"
+        },
+        {
+          "id": "usKXS5jGDzjwqv3FJ",
+          "title": "Refining the Sharp Left Turn threat model, part 1: claims and mechanisms",
+          "author": "Victoria Krakovna et al.",
+          "role": "response-to-sharp-left-turn"
+        },
+        {
+          "id": "2yLyT6kB7BQvTfEuZ",
+          "title": "“Sharp Left Turn” discourse: An opinionated review",
+          "author": "Steven Byrnes",
+          "role": "review-of-sharp-left-turn"
+        },
+        {
+          "id": "LDRQ5Zfqwi8GjzPYG",
+          "title": "Counterarguments to the basic AI x-risk case",
+          "author": "Katja Grace",
+          "role": "x-risk-case-foundational"
+        },
+        {
+          "id": "GQat3Nrd9CStHyGaq",
+          "title": "Response to Katja Grace's AI x-risk counterarguments",
+          "author": "Erik Jenner",
+          "role": "response-to-x-risk-case"
+        },
+        {
+          "id": "pRkFkzwKZ2zfa3R6H",
+          "title": "Without specific countermeasures, the easiest path to transformative AI likely leads to AI takeover",
+          "author": "Ajeya Cotra",
+          "role": "takeover-model"
+        },
+        {
+          "id": "keiYkaeoLHoKK4LYA",
+          "title": "Six Dimensions of Operational Adequacy in AGI Projects",
+          "author": "Eliezer Yudkowsky",
+          "role": "adequacy-framework"
+        }
+      ]
+    }
+  ],
+  "golden": {
+    "pairs": 30,
+    "byCategory": {
+      "paraphrase": 8,
+      "negation": 6,
+      "specification": 6,
+      "similar_but_different": 7,
+      "hard": 3
+    },
+    "version": 1,
+    "description": "Matcher golden pairs (#334 S1, from #137/#99 layer 1). Each pair seeds `existing` claims into the corpus DB and asks the Matcher whether `candidate` is one of them. Expectations follow the constitution: same proposition under any wording matches (§3); a claim and its denial are ONE node, so a negation matches with stance 'denies' (§2); specification/generalization and different-considerations claims do NOT match (§2's 'same considerations' test). existing[0] is the expected counterpart on match pairs; later entries are distractors. Grading is exact-match on (is_match, matched id, stance) — the Matcher's judgment saturates (§19), so near-deterministic grading is appropriate here and nowhere else."
+  },
+  "predictions": {
+    "count": 22,
+    "authoredAt": "2026-09-02",
+    "byDomain": {
+      "science": 4,
+      "politics": 4,
+      "climate": 3,
+      "economics": 5,
+      "markets": 2,
+      "technology": 1,
+      "health": 1,
+      "business": 1,
+      "sports": 1
+    },
+    "firstResolution": "2026-10-15",
+    "lastResolution": "2028-01-02"
+  },
+  "contributions": [
+    {
+      "scenario": "blackholes",
+      "cluster": "blackholes",
+      "personas": 4,
+      "contributions": 10,
+      "byType": {
+        "support": 2,
+        "challenge": 3,
+        "propose_edit": 2,
+        "propose_merge": 1,
+        "add_instance": 1,
+        "propose_argument": 1
+      },
+      "withAppeal": 2
+    }
+  ],
+  "reviews": [
+    {
+      "file": "blackholes-2026-08-09-832f7f15-review.md",
+      "cluster": "blackholes",
+      "evalRun": "832f7f15-3063-4c1a-8f2f-ccaf79cf92bb",
+      "reviewedOn": "2026-09-02"
+    }
+  ],
+  "scorecards": [
+    {
+      "cluster": "blackholes",
+      "file": "2026-08-09T15-47-32-753Z.json"
+    }
+  ],
+  "goldenRuns": [
+    "2026-08-08-deepseek-v4-flash.json"
+  ]
+}
