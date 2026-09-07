@@ -781,7 +781,6 @@ export interface MandateRegrantEdge {
 
 /** The mandate page's longer sections; each null when the mandate has none. */
 export interface MandateTextView {
-  how_it_works: string | null;
   scope: string | null;
   prize_policy: string | null;
   attempt_policy: string | null;

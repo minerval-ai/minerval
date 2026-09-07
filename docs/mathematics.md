@@ -1883,7 +1883,7 @@ judgment.
 
 **Mandate page.** A "Prizes" section after "Assessments this mandate funded"
 (`web/app/mandates/[id]/page.tsx`), on a page that also renders the
-mandate's own text in full, its "how it works" section first (section 10):
+mandate's own text in full (section 10):
 tiles for the escrow, the amount held
 in open bounties, the review reserve, the headroom, bounties posted (count,
 total), prizes paid (count, owls); the "Record" block of section 7.10; the
@@ -2600,12 +2600,10 @@ Grantmaker that executes it, the agents that read its disclosure, the
 auditors that hold it to its refusals, and the people deciding whether to
 fund it, most of whom will not have read the constitution first. So the
 text is written from first principles for a general reader rather than
-compressed for an agent. Each mandate carries, beside its objective and
-strategy, a "how it works" section that explains in plain words what the
-platform is, what owls are, who decides what the budget pays for, what
-funding buys and does not buy, and how to fund it and what a funder gets;
-and the policies below are written so that the numbers and the reasons for
-them can be read without the rest of this document. The mandate page
+compressed for an agent: the objective says what the mandate is for and
+what its money buys, and the policies are written so that the numbers and
+the reasons for them can be read without the rest of this document. The
+mandate page
 renders every section in full (`web/app/mandates/[id]/page.tsx`), and the
 seed prints any mandate as Markdown (`--print-mandate <key>`), which is how
 Appendix B is produced.
@@ -3680,27 +3678,16 @@ The text that goes into `scripts/seed-platform-mandates.ts` under the
 pages, generated from the seed with `--print-mandate <key>` so the two
 cannot drift. Numbers marked with brackets are read from the environment
 (section 10.7). Each mandate is written to stand alone for a reader who
-has read nothing else on the site: the objective says what it is for, the
-"how it works" section says from first principles how the money and the
-work move, and the policies bind the Grantmaker. The prize policy is
-common to both mandates from its second paragraph on; the seed carries it
-once.
+has read nothing else on the site: the objective says what it is for and
+what its money buys, and the policies bind the Grantmaker. The prize
+policy is common to both mandates from its second paragraph on; the seed
+carries it once.
 
 ### Mathematics
 
 **Title.** Mathematics
 
 **Objective.** To build and keep the graph's map of mathematics, and to direct attention to the open problems worth settling. The mandate pays for three kinds of work: recording what is settled, accurately and cheaply; holding what is open, each conjecture with its partial results, what would follow from it, and what the field expects; and making the problems that matter precise enough, and trying them hard enough, that when an answer comes it can be checked by a machine and trusted by anyone. Its worth is measured by the ordering it produces and the questions it poses, not by the theorems it proves.
-
-**How it works.** Minerval keeps a public map of what is known and believed, one claim at a time, with the reasons. In mathematics a claim is a proposition: a theorem, a conjecture, a special case, a lemma several results rest on. Each carries an assessment of its standing, the arguments for and against it, and links to what it rests on and what rests on it. This mandate pays for the mathematics part of that map.
-
-Money on Minerval is owls. One owl buys one dollar of metered computation, and owls are never redeemed for cash. Funding this mandate places owls in its budget. An agent called the Grantmaker, whose instructions are public on this site, decides each day what that budget pays for within the mission and the policies on this page, and every allocation it makes is recorded and published. The same agent reviews the mandate on a schedule, keeps a public note of its judgment, and can be talked to by the mandate's funders.
-
-The budget buys three things. The first is assessment: the platform's agents read the sources, judge each claim's standing, and record the reasons, so that a reader can see where a result stands and why. The second is formal statements. For a problem that matters, the platform writes the statement in Lean 4, a proof assistant, against a fixed version of Mathlib, its library of checked mathematics. The statement is reviewed twice and published for a review period before anything binds to it, and from then on the question of whether a proposed proof settles the problem is a mechanical one: a checker compiles the proof against the statement and says yes or no. The third is attempts. The platform's own prover, a strong model given the statement, Lean, and a computer-algebra sandbox, works on a problem alone within a fixed budget and writes a report: a checked proof, a checked disproof, a lead, or an honest account of where it got stuck. Every attempt is published, including the failures, with its cost.
-
-What the money never buys is a conclusion. No allocation changes how a claim is assessed or how important the graph judges it to be, and the agents that assess claims never see who paid. Funding buys scheduling: an assessment sooner, a deeper look at a subtree, a problem attempted. A prize for an outside solver is a separate thing with its own rules, and in this epoch it is posted by the Mathematics prizes mandate, not this one.
-
-Anyone can fund this mandate by contributing owls to it, and a mandate of your own can grant part of its budget to this one. What you get is the record: the assessments, the statements, the attempts, and their reports, all public, all attributed to this mandate. Funders are not named on the pages of the claims their money reached. When the mandate closes, its unspent budget returns to those who funded it, in proportion.
 
 **Strategy.** Cover the mathematical claims in scope with light assessments first, and spend depth where working mathematicians disagree. Write formal statements for the open problems of real standing and for the lemmas several of them rest on. Calibrate the prover on problems with known answers before pointing it at open ones. Attempt open problems in order of how much they matter times how tractable they look, and attempt the sub-results before the problems that rest on them. Publish every attempt, every statement, and every check. Post no prizes from this budget in this epoch; the Mathematics prizes mandate posts them. Revise this mandate's own numbers as live results replace the estimates.
 
@@ -3732,18 +3719,6 @@ Prizes are stated and paid in owls, each worth one dollar of metered work on the
 **Title.** Mathematics prizes
 
 **Objective.** To offer prizes, on terms fixed in advance, for proofs and disproofs of the open problems the platform has made precise and tried and could not settle, so that when someone finds the answer it becomes part of the public record. In this epoch the mandate funds nothing else: no assessments, no formal statements, no attempts. Its budget is the only source of its prizes, and each prize is the mandate's own judgment, stated publicly with the posting, about which settled answer the field would gain most from.
-
-**How it works.** A prize on Minerval is a public offer: a stated number of owls for the first accepted proof or disproof of one formal statement, on terms fixed in advance and published with the offer. The statement is written in Lean 4 against a fixed version of Mathlib, so that what counts as a solution is a mechanical question: a checker compiles the submitted proof against the statement and says yes or no. Before any prize can be offered on a problem, the platform has already published the statement for a review period and has tried the problem itself, at maximum effort, and failed; the attempt and its report are public.
-
-Money on Minerval is owls. One owl buys one dollar of metered computation on the platform, and owls are never redeemed for cash. Funding this mandate places owls in its budget, and that budget is the only place its prizes come from. From the day a prize opens, its amount is held against the budget until the prize is paid, expires, or is withdrawn, so the mandate never offers more than it holds. When a prize is paid, the winner receives owls and the hold is spent.
-
-An agent called the Grantmaker decides which problems get a prize and how large, within the policy on this page; its instructions are public on this site. It decides in two separate passes, so that no single judgment binds the platform, and a prize of 1,000 owls or more waits for a named person to confirm it. Every posting is published with its reasoning.
-
-A prize buys no attention and no conclusion. It does not change how the problem is assessed or how important the graph judges it to be, and the agents that assess claims never see it as a reason for anything. It says only that someone would like the question settled.
-
-A claim on a prize is judged in the open. The checker's verdict is mechanical and public. A steward then judges only one thing, whether the statement proved is the statement posted, and records it. An accepted claim is announced and stays open to challenge for a fixed window, during which an independent audit reviews the acceptance; larger prizes also need a named person's sign-off. Then the prize is paid, in owls, after the winner's identity, tax form, and screening are complete. The full rules are versioned and published, and every prize names the version it was posted under.
-
-Anyone can fund this mandate by contributing owls to it, and a mandate of your own can grant part of its budget to this one. Funders of this mandate cannot win its prizes. Owls held against an open prize cannot be withdrawn while it is open; when the mandate closes, after its last prize has resolved, the unspent budget returns to those who funded it, in proportion. What funders get is the record: the problems posted, the reasoning, the claims, the verdicts, and the proofs, all public.
 
 **Strategy.** Read the platform's record of attempts and post prizes only on published statements the prover tried at maximum effort and could not settle, after their review period, with the attempt's report public. Size each prize from what the field would gain from a settled answer, how much work the problem appears to demand, and how much of the budget is free and how many prizes are already open. Make the first prizes small and deliberately tractable, one of them on a problem chosen to exercise the whole path from posting to payment, and say so publicly. Renew a prize that still earns its place and withdraw, with notice, one that does not. Revise this mandate's own estimates as prizes are claimed, expire, or close.
 

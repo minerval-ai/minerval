@@ -355,12 +355,6 @@ export default async function MandatePage({
       </p>
       <h1>{mandate.title}</h1>
       {mandate.objective && <Paragraphs text={mandate.objective} />}
-      {mandate.text?.how_it_works && (
-        <section>
-          <h2>How this mandate works</h2>
-          <Paragraphs text={mandate.text.how_it_works} />
-        </section>
-      )}
       {mandate.strategy && (
         <section>
           <h2>Strategy</h2>

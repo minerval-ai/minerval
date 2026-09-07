@@ -210,7 +210,6 @@ export async function getMandatePipeline(
 
 /** The mandate page's longer sections (docs/mathematics.md §10.4): each null when the mandate has none. */
 export interface MandateText {
-  how_it_works: string | null;
   scope: string | null;
   prize_policy: string | null;
   attempt_policy: string | null;
@@ -765,7 +764,6 @@ export function mandateText(mandate: GrantMandate | null): MandateText {
     return typeof v === "string" && v.trim().length > 0 ? v : null;
   };
   return {
-    how_it_works: str("how_it_works"),
     scope: str("scope"),
     prize_policy: str("prize_policy"),
     attempt_policy: str("attempt_policy"),

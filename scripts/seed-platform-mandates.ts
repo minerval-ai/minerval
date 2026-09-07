@@ -66,8 +66,6 @@ interface PlatformMandate {
   allocationPolicy: Record<string, number> | null;
   /** The longer sections a mandate page carries beyond objective and strategy. */
   sections?: {
-    /** The mandate explained from first principles for a reader who has read nothing else; paragraphs separated by blank lines. */
-    how_it_works?: string;
     scope?: string;
     prize_policy?: string;
     attempt_policy?: string;
@@ -158,50 +156,6 @@ function mathematicsMandate(): PlatformMandate {
       "budget in this epoch; the Mathematics prizes mandate posts them. Revise " +
       "this mandate's own numbers as live results replace the estimates.",
     sections: {
-      how_it_works:
-        "Minerval keeps a public map of what is known and believed, one claim " +
-        "at a time, with the reasons. In mathematics a claim is a proposition: " +
-        "a theorem, a conjecture, a special case, a lemma several results rest " +
-        "on. Each carries an assessment of its standing, the arguments for and " +
-        "against it, and links to what it rests on and what rests on it. This " +
-        "mandate pays for the mathematics part of that map.\n\n" +
-        "Money on Minerval is owls. One owl buys one dollar of metered " +
-        "computation, and owls are never redeemed for cash. Funding this " +
-        "mandate places owls in its budget. An agent called the Grantmaker, " +
-        "whose instructions are public on this site, decides each day what " +
-        "that budget pays for within the mission and the policies on this " +
-        "page, and every allocation it makes is recorded and published. The " +
-        "same agent reviews the mandate on a schedule, keeps a public note of " +
-        "its judgment, and can be talked to by the mandate's funders.\n\n" +
-        "The budget buys three things. The first is assessment: the platform's " +
-        "agents read the sources, judge each claim's standing, and record the " +
-        "reasons, so that a reader can see where a result stands and why. The " +
-        "second is formal statements. For a problem that matters, the platform " +
-        "writes the statement in Lean 4, a proof assistant, against a fixed " +
-        "version of Mathlib, its library of checked mathematics. The statement " +
-        "is reviewed twice and published for a review period before anything " +
-        "binds to it, and from then on the question of whether a proposed " +
-        "proof settles the problem is a mechanical one: a checker compiles the " +
-        "proof against the statement and says yes or no. The third is " +
-        "attempts. The platform's own prover, a strong model given the " +
-        "statement, Lean, and a computer-algebra sandbox, works on a problem " +
-        "alone within a fixed budget and writes a report: a checked proof, a " +
-        "checked disproof, a lead, or an honest account of where it got stuck. " +
-        "Every attempt is published, including the failures, with its cost.\n\n" +
-        "What the money never buys is a conclusion. No allocation changes how " +
-        "a claim is assessed or how important the graph judges it to be, and " +
-        "the agents that assess claims never see who paid. Funding buys " +
-        "scheduling: an assessment sooner, a deeper look at a subtree, a " +
-        "problem attempted. A prize for an outside solver is a separate thing " +
-        "with its own rules, and in this epoch it is posted by the Mathematics " +
-        "prizes mandate, not this one.\n\n" +
-        "Anyone can fund this mandate by contributing owls to it, and a mandate " +
-        "of your own can grant part of its budget to this one. What you get is " +
-        "the record: the assessments, the statements, the attempts, and their " +
-        "reports, all public, all attributed to this mandate. Funders are not " +
-        "named on the pages of the claims their money reached. When the " +
-        "mandate closes, its unspent budget returns to those who funded it, in " +
-        "proportion.",
       scope:
         "Propositions of mathematics; the contested applications of " +
         "mathematical results elsewhere in the graph; and claims about the " +
@@ -295,52 +249,6 @@ function mathematicsPrizesMandate(): PlatformMandate {
       "that does not. Revise this mandate's own estimates as prizes are " +
       "claimed, expire, or close.",
     sections: {
-      how_it_works:
-        "A prize on Minerval is a public offer: a stated number of owls for " +
-        "the first accepted proof or disproof of one formal statement, on " +
-        "terms fixed in advance and published with the offer. The statement is " +
-        "written in Lean 4 against a fixed version of Mathlib, so that what " +
-        "counts as a solution is a mechanical question: a checker compiles the " +
-        "submitted proof against the statement and says yes or no. Before any " +
-        "prize can be offered on a problem, the platform has already published " +
-        "the statement for a review period and has tried the problem itself, " +
-        "at maximum effort, and failed; the attempt and its report are " +
-        "public.\n\n" +
-        "Money on Minerval is owls. One owl buys one dollar of metered " +
-        "computation on the platform, and owls are never redeemed for cash. " +
-        "Funding this mandate places owls in its budget, and that budget is " +
-        "the only place its prizes come from. From the day a prize opens, its " +
-        "amount is held against the budget until the prize is paid, expires, " +
-        "or is withdrawn, so the mandate never offers more than it holds. When " +
-        "a prize is paid, the winner receives owls and the hold is spent.\n\n" +
-        "An agent called the Grantmaker decides which problems get a prize and " +
-        "how large, within the policy on this page; its instructions are " +
-        "public on this site. It decides in two separate passes, so that no " +
-        "single judgment binds the platform, and a prize of " +
-        `${owls(config.bountyAutonomyThresholdOwls)} owls or more waits for a named person to confirm it. Every ` +
-        "posting is published with its reasoning.\n\n" +
-        "A prize buys no attention and no conclusion. It does not change how " +
-        "the problem is assessed or how important the graph judges it to be, " +
-        "and the agents that assess claims never see it as a reason for " +
-        "anything. It says only that someone would like the question " +
-        "settled.\n\n" +
-        "A claim on a prize is judged in the open. The checker's verdict is " +
-        "mechanical and public. A steward then judges only one thing, whether " +
-        "the statement proved is the statement posted, and records it. An " +
-        "accepted claim is announced and stays open to challenge for a fixed " +
-        "window, during which an independent audit reviews the acceptance; " +
-        "larger prizes also need a named person's sign-off. Then the prize is " +
-        "paid, in owls, after the winner's identity, tax form, and screening " +
-        "are complete. The full rules are versioned and published, and every " +
-        "prize names the version it was posted under.\n\n" +
-        "Anyone can fund this mandate by contributing owls to it, and a mandate " +
-        "of your own can grant part of its budget to this one. Funders of this " +
-        "mandate cannot win its prizes. Owls held against an open prize cannot " +
-        "be withdrawn while it is open; when the mandate closes, after its last " +
-        "prize has resolved, the unspent budget returns to those who funded " +
-        "it, in proportion. What funders get is the record: the problems " +
-        "posted, the reasoning, the claims, the verdicts, and the proofs, all " +
-        "public.",
       scope:
         "Published formal statements, in Lean 4 against a fixed version of " +
         "Mathlib, of open problems of mathematics that the platform's prover " +
@@ -769,7 +677,6 @@ function renderMandateMarkdown(m: PlatformMandate): string {
     `### ${m.title}`,
     `**Title.** ${m.title}`,
     ...block("Objective", m.objective),
-    ...block("How it works", m.sections?.how_it_works),
     ...block("Strategy", m.strategy),
     ...block("Scope", m.sections?.scope),
     ...block("Prize policy", m.sections?.prize_policy),
