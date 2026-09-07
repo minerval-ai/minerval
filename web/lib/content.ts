@@ -52,7 +52,15 @@ export interface SkillIndex {
   skills: SkillMeta[];
 }
 
-export function getDoc(name: "constitution" | "architecture" | "policies"): string {
+export function getDoc(
+  name:
+    | "constitution"
+    | "architecture"
+    | "policies"
+    | "rewards-policy"
+    | "contributor-terms"
+    | "terms-of-service"
+): string {
   return readFileSync(resolve(CONTENT, `${name}.md`), "utf-8");
 }
 

@@ -179,6 +179,9 @@ export function syncFrontendContent(contentDir: string): {
   copyFileSync(resolve(root, "admin_constitution.md"), resolve(contentDir, "constitution.md"));
   copyFileSync(resolve(root, "docs/architecture.md"), resolve(contentDir, "architecture.md"));
   copyFileSync(resolve(root, "docs/policies.md"), resolve(contentDir, "policies.md"));
+  copyFileSync(resolve(root, "docs/rewards-policy.md"), resolve(contentDir, "rewards-policy.md"));
+  copyFileSync(resolve(root, "docs/contributor-terms.md"), resolve(contentDir, "contributor-terms.md"));
+  copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
 
   const skills = listSkills();
 
