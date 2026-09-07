@@ -1,9 +1,10 @@
 import { completeStructuredList } from "../client.js";
 import {
-  getExtractorSystemPrompt,
+  getExtractorSystemPromptBlocks,
   getExtractionPrompt,
 } from "../prompts/extractor.js";
-import { withAgent } from "../usage-context.js";
+import { knownDomains, listSkills } from "../prompts/skills.js";
+import { withAgent, withSkills } from "../usage-context.js";
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
 
@@ -18,6 +19,37 @@ export interface ExtractedClaim {
   /** Provisional contestation prior (0-1); the Steward later overrides it (#172). */
   contestation: number;
   source_location: string | null;
+  /**
+   * Domain tags from the closed list of domains that have a skill (a prior;
+   * the Steward's set_claim_domains supersedes it). Selects which domain
+   * skills the claim's administrators carry.
+   */
+  domains: string[];
+}
+
+/**
+ * The structured-output schema for one extracted claim. Built per call so the
+ * `domains` enum is the closed list of domains the skills define at run time.
+ */
+export function getExtractedClaimSchema(): Record<string, unknown> {
+  const domains = knownDomains();
+  return {
+    ...EXTRACTED_CLAIM_SCHEMA,
+    properties: {
+      ...EXTRACTED_CLAIM_SCHEMA.properties,
+      domains: {
+        type: "array",
+        // An empty enum is not a valid schema; with no skills the list is
+        // open, and the ingest path drops anything outside the known set.
+        items: domains.length > 0 ? { type: "string", enum: domains } : { type: "string" },
+        description:
+          "Domain tags from the closed list of domains that have a skill" +
+          (domains.length > 0 ? ` (${domains.join(", ")})` : "") +
+          "; an empty array when none applies. A prior the Steward confirms or corrects.",
+      },
+    },
+    required: [...EXTRACTED_CLAIM_SCHEMA.required, "domains"],
+  };
 }
 
 const EXTRACTED_CLAIM_SCHEMA = {
@@ -59,12 +91,19 @@ async function extractClaimsImpl(input: {
   const userPrompt =
     getExtractionPrompt(input.sourceType, input.additionalContext, input.maxClaims) +
     input.content;
+  // The Extractor always carries every skill's "For the Extractor" view and
+  // the closed list of domain names (docs/mathematics.md §3.4): it cannot see
+  // the graph, so the domain prior it emits is what selects the skills the
+  // claim's administrators later carry. Funding never selects this prompt.
+  const skills = listSkills();
+  // One cached block for the constitution and role, plus one per skill.
+  const system = getExtractorSystemPromptBlocks({ skills });
   const run = (model: string | undefined) =>
     completeStructuredList<ExtractedClaim>({
       messages: [{ role: "user", content: userPrompt }],
-      itemSchema: EXTRACTED_CLAIM_SCHEMA,
+      itemSchema: getExtractedClaimSchema(),
       schemaName: "ExtractedClaim",
-      system: getExtractorSystemPrompt(),
+      system,
       ...(model ? { model } : {}),
       maxTokens: 16384,
     });
@@ -79,20 +118,24 @@ async function extractClaimsImpl(input: {
   // Without this, a mandate that funds "ingest this pathogen paper" pays for
   // the fetch and gets a cancelled ingest with no claims and no explanation.
   const primary = input.model ?? config.extractorModel;
-  let claims: ExtractedClaim[];
-  try {
-    claims = await run(primary);
-  } catch (err) {
-    if (!(err instanceof LlmRefusalError)) throw err;
-    const fallback = config.extractorFallbackModel;
-    if (!fallback || fallback === primary) throw err;
-    console.warn(
-      `[extractor] ${primary} refused the document` +
-        (err.category ? ` (category: ${err.category})` : "") +
-        `; retrying extraction on ${fallback}.`
-    );
-    claims = await run(fallback);
-  }
+  const claims = await withSkills(
+    skills.map((s) => s.name),
+    async (): Promise<ExtractedClaim[]> => {
+      try {
+        return await run(primary);
+      } catch (err) {
+        if (!(err instanceof LlmRefusalError)) throw err;
+        const fallback = config.extractorFallbackModel;
+        if (!fallback || fallback === primary) throw err;
+        console.warn(
+          `[extractor] ${primary} refused the document` +
+            (err.category ? ` (category: ${err.category})` : "") +
+            `; retrying extraction on ${fallback}.`
+        );
+        return await run(fallback);
+      }
+    }
+  );
 
   // Hard cap as a safety net in case the model exceeds the requested limit.
   return input.maxClaims && input.maxClaims > 0

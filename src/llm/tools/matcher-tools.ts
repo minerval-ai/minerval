@@ -44,7 +44,10 @@ export function getMatcherToolDefinition(): Tool {
 
 export async function executeMatcherTool(
   toolName: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  // The domains the caller knows (its own claim's tags): the Matcher
+  // receives the matching skills' view of identity in that domain.
+  opts: { domains?: readonly string[] } = {}
 ): Promise<string> {
   if (toolName !== "match_claim") {
     return `Error: Unknown matcher tool: ${toolName}`;
@@ -60,6 +63,9 @@ export async function executeMatcherTool(
       excludeClaimId: input.exclude_claim_id
         ? String(input.exclude_claim_id)
         : undefined,
+      ...(opts.domains && opts.domains.length > 0
+        ? { domains: [...opts.domains] }
+        : {}),
     });
     return JSON.stringify({
       is_match: decision.is_match,

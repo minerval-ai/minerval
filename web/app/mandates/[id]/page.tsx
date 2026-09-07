@@ -7,8 +7,14 @@ import {
   fetchMandateView,
   type MandateDetailView,
   type MandatePipelineRow,
+  type MandatePrizesView,
+  type MandateTextView,
 } from "../../../lib/account-api";
+import type { AttemptSummary } from "../../../lib/types";
+import { formatOwls } from "../../../lib/format";
+import { ATTEMPT_VARIANT_LABEL, BOUNTY_STATUS_LABEL, attemptOutcomeLabel } from "../../../lib/prizes";
 import { OwlMark } from "../../../components/OwlMark";
+import { MandateRecord } from "../../../components/MandateRecord";
 import { AllocationSection } from "./AllocationView";
 import { ContributeBox } from "./ContributeBox";
 import { MandateChat } from "./MandateChat";
@@ -61,6 +67,56 @@ function Histogram({ buckets }: { buckets: number[] }) {
   );
 }
 
+/** A mandate section written as prose: paragraphs separated by blank lines. */
+function Paragraphs({ text, muted = false }: { text: string; muted?: boolean }) {
+  const style = muted
+    ? { maxWidth: "44rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }
+    : { maxWidth: "44rem" };
+  return (
+    <>
+      {text
+        .split(/\n\s*\n/)
+        .map((para) => para.trim())
+        .filter((para) => para.length > 0)
+        .map((para, i) => (
+          <p key={i} style={style}>
+            {para}
+          </p>
+        ))}
+    </>
+  );
+}
+
+// The mandate's own text (docs/mathematics.md §10.4, Appendix B): a mandate
+// is a public document that must stand alone for a reader who has read
+// nothing else on the site, a funder deciding whether to back it included,
+// so every section it carries is rendered here in full.
+function MandateTextSection({ text }: { text: MandateTextView }) {
+  const policies: Array<[string, string | null]> = [
+    ["Scope", text.scope],
+    ["Prizes", text.prize_policy],
+    ["Attempts", text.attempt_policy],
+    ["What this mandate declines", text.refusals],
+    ["What every funded claim says", text.disclosure],
+  ];
+  if (!policies.some(([, body]) => body)) return null;
+  return (
+    <section>
+      <h2>The mandate in full</h2>
+      {policies
+        .filter((entry): entry is [string, string] => !!entry[1])
+        .map(([heading, body]) => (
+          <div key={heading} style={{ marginBottom: "1.2rem" }}>
+            <h3 style={{ fontFamily: "var(--sans)", fontSize: ".84rem", letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)", marginBottom: ".3rem" }}>
+              {heading}
+            </h3>
+            <Paragraphs text={body} />
+          </div>
+        ))}
+    </section>
+  );
+}
+
 function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
   return (
     <section>
@@ -109,6 +165,149 @@ function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
   );
 }
 
+// The prizes section (docs/mathematics.md §8.1, §8.3): the mandate's prize
+// numbers (a bounty is owls held against this mandate's own escrow from the
+// day it opens until it resolves, and the payout consumes the hold), the
+// house solver's attempts, and the claims with a bounty. Every amount is in
+// owls; the sentence under the heading says where the money comes from.
+function PrizesSection({
+  prizes, attempts,
+}: {
+  prizes: MandatePrizesView;
+  attempts: AttemptSummary[];
+}) {
+  const sorted = [...attempts].sort((a, b) =>
+    (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at),
+  );
+  return (
+    <section>
+      <h2>Prizes</h2>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
+        A prize is owls held against this mandate&rsquo;s own escrow from the
+        day it opens until it resolves, in the same committed money as its
+        attempts and formalizations; the payout consumes the hold. Prizes
+        reward proofs and disproofs of formal statements the steward has
+        published, and they buy no influence over any assessment.
+      </p>
+      <div className="alloc-tiles">
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">escrow</span>
+          <span className="alloc-tile-big">{formatOwls(prizes.escrow_micro_usd)}</span>
+          <span className="alloc-tile-sub">the mandate&rsquo;s budget, every prize&rsquo;s only source</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">held</span>
+          <span className="alloc-tile-big">{formatOwls(prizes.held_micro_usd)}</span>
+          <span className="alloc-tile-sub">in open prizes</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">paid</span>
+          <span className="alloc-tile-big">{formatOwls(prizes.paid_micro_usd)}</span>
+          <span className="alloc-tile-sub">in prizes, gross of withholding</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">review reserve</span>
+          <span className="alloc-tile-big">{formatOwls(prizes.review_reserve_micro_usd)}</span>
+          <span className="alloc-tile-sub">set aside for the review of submissions</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">headroom</span>
+          <span className="alloc-tile-big">{formatOwls(prizes.headroom_micro_usd)}</span>
+          <span className="alloc-tile-sub">what remains after every hold</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">prizes posted</span>
+          <span className="alloc-tile-big">{prizes.bounties_posted.toLocaleString("en-US")}</span>
+          <span className="alloc-tile-sub">{formatOwls(prizes.bounties_total_micro_usd)} in all</span>
+        </div>
+        <div className="alloc-tile">
+          <span className="alloc-tile-kind sc">prizes paid</span>
+          <span className="alloc-tile-big">{prizes.prizes_paid.toLocaleString("en-US")}</span>
+          <span className="alloc-tile-sub">
+            <OwlMark size={12} className="owl-mark" />
+            {owls(prizes.owls_paid)} owls granted, net of withholding
+          </span>
+        </div>
+      </div>
+
+      {sorted.length > 0 && (
+        <>
+          <h3>Attempts</h3>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem", maxWidth: "44rem" }}>
+            The house solver&rsquo;s runs against published statements, each
+            public with its cost and its report.
+          </p>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>claim</th>
+                <th>finished</th>
+                <th>variant</th>
+                <th>cost</th>
+                <th>outcome</th>
+                <th aria-label="report" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <Link href={`/claims/${a.claim_id}`}>view claim</Link>
+                    {a.is_calibration && <> <span className="tag">calibration</span></>}
+                  </td>
+                  <td>{dateish(a.finished_at ?? a.started_at)}</td>
+                  <td>{ATTEMPT_VARIANT_LABEL[a.variant] ?? a.variant}</td>
+                  <td>{formatOwls(a.spent_micro_usd)}</td>
+                  <td>{attemptOutcomeLabel(a)}</td>
+                  <td>
+                    {a.published_at ? (
+                      <Link href={`/claims/${a.claim_id}/attempts/${a.id}`}>report</Link>
+                    ) : (
+                      <span style={{ color: "var(--faint)" }}>not yet published</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {prizes.bounties.length > 0 && (
+        <>
+          <h3>Claims with a prize</h3>
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th>claim</th>
+                <th>amount</th>
+                <th>status</th>
+                <th>open since</th>
+                <th>submissions</th>
+                <th>outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prizes.bounties.map((b) => (
+                <tr key={`${b.claim_id}-${b.opened_at ?? ""}`}>
+                  <td className="alloc-label">
+                    <Link href={`/claims/${b.claim_id}`}>{b.text}</Link>
+                  </td>
+                  <td>{formatOwls(b.amount_micro_usd)}</td>
+                  <td>{BOUNTY_STATUS_LABEL[b.status] ?? String(b.status).replace(/_/g, " ")}</td>
+                  <td>{dateish(b.opened_at)}</td>
+                  <td>{b.submissions}</td>
+                  <td>{b.outcome ? b.outcome.replace(/_/g, " ") : "·"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default async function MandatePage({
   params,
 }: {
@@ -141,6 +340,7 @@ export default async function MandatePage({
   const hasPlan = mandate.plan_items.length > 0;
   const hasPipeline = mandate.pipeline.length > 0;
   const open = mandate.status === "active";
+  const prizes = mandate.prizes ?? null;
 
   return (
     <div className="col-wide account">
@@ -154,13 +354,12 @@ export default async function MandatePage({
         {mandate.status !== "active" && ` · ${mandate.status}`}
       </p>
       <h1>{mandate.title}</h1>
-      {mandate.objective && (
-        <p style={{ maxWidth: "44rem" }}>{mandate.objective}</p>
-      )}
+      {mandate.objective && <Paragraphs text={mandate.objective} />}
       {mandate.strategy && (
-        <p style={{ maxWidth: "44rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
-          {mandate.strategy}
-        </p>
+        <section>
+          <h2>Strategy</h2>
+          <Paragraphs text={mandate.strategy} muted />
+        </section>
       )}
 
       <div className="usage-chips">
@@ -184,6 +383,11 @@ export default async function MandatePage({
           <span className="summary-chip">
             {mandate.pipeline.length} source
             {mandate.pipeline.length === 1 ? "" : "s"} ingested
+          </span>
+        )}
+        {prizes && prizes.bounties_posted > 0 && (
+          <span className="summary-chip">
+            {prizes.bounties_posted} prize{prizes.bounties_posted === 1 ? "" : "s"} posted
           </span>
         )}
       </div>
@@ -295,6 +499,10 @@ export default async function MandatePage({
           </table>
         </section>
       )}
+
+      {prizes && <PrizesSection prizes={prizes} attempts={mandate.attempts ?? []} />}
+      {mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
+      {mandate.text && <MandateTextSection text={mandate.text} />}
 
       {mandate.is_manager && mandate.conversation_id && (
         <section>

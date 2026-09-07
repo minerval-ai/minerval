@@ -38,8 +38,13 @@ const OPENAI_FREE_CACHE_WRITES = { cacheWriteMultiplier: 0 } as const;
 // Keyed by model-ID prefix so dated snapshots ("claude-haiku-4-5-20251001",
 // "gpt-5-nano-2025-08-07") resolve to their family. Longest prefix wins.
 const MODEL_RATES: Record<string, ModelRates> = {
-  // The Fable/Mythos line shares one price across 5 and 5.1 — and these are
-  // PREFIXES, so "claude-fable-5-1" resolves here without its own entry.
+  // The Fable/Mythos line shares one per-token price across 5 and 5.1. These
+  // are PREFIXES, so 5.1 would resolve to the 5 entry — but 5.1 bills cache
+  // reads at $0.25/MTok (0.025× input) where 5 bills the 0.1× default, and the
+  // load-bearing agents run on 5.1 with cached system prompts, so it needs its
+  // own entry or every cost estimate meters their cache reads at four times
+  // the real price. Longest prefix wins, so 5.1 lands here and 5 stays below.
+  "claude-fable-5-1": { inputPerMtok: 10, outputPerMtok: 50, cacheReadMultiplier: 0.025 },
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50 },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50 },
   // Opus 5 and the 4.x line share pricing. All three 4.x entries are listed

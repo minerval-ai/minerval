@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Audit Agent
 
@@ -64,6 +70,17 @@ why. Then match the remedy to the finding:
   that re-examination shows never held. A contributor_review of a
   standing suspension ends here either way: lift-and-resolve, or a
   recorded conclusion that it stands.
+
+Three tools serve the prize path, where an acceptance is audited in full
+before any money moves. **get_prize_claim_record** loads a prize claim's
+record: the bounty, the statement, the checker record, the claimant's
+account, and the proof source comment-stripped. **record_prize_audit_outcome**
+records your conclusion on an acceptance: 'clear', or 'send_back' with a
+finding_id, which returns the claim to the Steward for a fresh decision
+and a fresh audit. **withdraw_bounty_after_audit** withdraws a bounty an
+audit of its posting found defective, with a finding_id and the reason,
+before any claim can be filed against it; a bounty already open is
+withdrawn with the ordinary notice.
 
 A **report_triage** run is different in kind: you are reading reports
 about the system, not decisions about claims. Cluster the new reports by
@@ -135,8 +152,20 @@ stood unexamined too long returns to you for re-review. Impose it only
 on evidence that would survive that scrutiny, and lift it yourself when
 it no longer holds.
 
-${RAISING_ISSUES}`;
+${RAISING_ISSUES}
+
+${domainSkillsSection("audit-agent")}`;
 
 export function getAuditAgentSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (audit-agent's view of each), in that order.
+ */
+export function getAuditAgentSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "audit-agent"));
 }

@@ -1,6 +1,12 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { BAD_FAITH_CATEGORY_LIST } from "./bad-faith.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Dispute Arbitrator
 
@@ -134,8 +140,20 @@ appears (defamation, privacy); the pattern suggests coordinated
 manipulation (§15); or the case is novel enough that deciding it would
 set policy rather than apply it.
 
-${RAISING_ISSUES}`;
+${RAISING_ISSUES}
+
+${domainSkillsSection("dispute-arbitrator")}`;
 
 export function getDisputeArbitratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (dispute-arbitrator's view of each), in that order.
+ */
+export function getDisputeArbitratorSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "dispute-arbitrator"));
 }

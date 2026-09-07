@@ -32,6 +32,42 @@ import {
   serializeBudgetJob,
 } from "../services/budget-job-service.js";
 import { getFundingLabelForJob } from "../services/grant-service.js";
+import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
+import { leanChecksByArgument } from "../services/formalization-service.js";
+import { claimTypeEnum } from "../schemas/common.js";
+
+// The mathematics read models beside the claim (docs/mathematics.md §11.1):
+// composed from the formalization, prize, and attempt slices. A failure in
+// one of them must not take the claim page down, so the loader degrades to
+// the empty shapes the web app already defaults to, loudly.
+async function claimExtrasOrEmpty(claimId: string) {
+  try {
+    return await loadClaimExtras(claimId);
+  } catch (err) {
+    console.error(
+      `[claims] mathematics extras failed for ${claimId}: ${err instanceof Error ? err.message : err}`
+    );
+    return emptyClaimExtras();
+  }
+}
+
+function parseWithPrizes(value: unknown): boolean {
+  return value === true || value === "true" || value === "1";
+}
+
+const looseObject = { type: "object", nullable: true, additionalProperties: true } as const;
+const looseArray = { type: "array", items: { type: "object", additionalProperties: true } } as const;
+
+// The list and search items gain the live bounty amount and the derived
+// machine-checked kind (§8.3), and the filters that read them.
+const prizeItemProperties = {
+  prize_micro_usd: { type: "number", nullable: true },
+  checked: { type: "string", nullable: true },
+} as const;
+const prizeFilterProperties = {
+  with_prizes: { type: "boolean", default: false },
+  claim_type: { type: "string", enum: [...claimTypeEnum.options] },
+} as const;
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -125,6 +161,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             state: { type: "string" },
             assessed: { type: "string", enum: ["all", "assessed", "unassessed"], default: "all" },
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
+            ...prizeFilterProperties,
           },
         },
         response: {
@@ -143,6 +180,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     importance: { type: "number", nullable: true },
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
+                    ...prizeItemProperties,
                   },
                 },
               },
@@ -153,12 +191,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
       handler: async (request, reply) => {
         const params = claimListParams.parse(request.query);
+        const query = request.query as Record<string, unknown>;
         const { results, next_cursor } = await listClaims({
           limit: params.limit,
           cursor: params.cursor,
           state: params.state,
           assessed: params.assessed,
           minImportance: params.min_importance,
+          withPrizes: parseWithPrizes(query.with_prizes),
+          claimType: typeof query.claim_type === "string" ? query.claim_type : undefined,
         });
         return reply.send({ results, next_cursor });
       },
@@ -185,6 +226,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             min_similarity: { type: "number", minimum: 0, maximum: 1, default: 0.3 },
             assessed: { type: "string", enum: ["all", "assessed", "unassessed"], default: "all" },
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
+            ...prizeFilterProperties,
           },
         },
         response: {
@@ -204,6 +246,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     importance: { type: "number", nullable: true },
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
+                    ...prizeItemProperties,
                   },
                 },
               },
@@ -215,12 +258,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       handler: async (request, reply) => {
         const { query } = request.params;
         const params = claimSearchParams.parse(request.query);
+        const raw = request.query as Record<string, unknown>;
 
         const { results, total } = await hybridSearch(query, {
           limit: params.limit,
           minSimilarity: params.min_similarity,
           assessed: params.assessed,
           minImportance: params.min_importance,
+          withPrizes: parseWithPrizes(raw.with_prizes),
+          claimType: typeof raw.claim_type === "string" ? raw.claim_type : undefined,
         });
 
         return reply.send({ results, total });
@@ -278,6 +324,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               arguments: { type: "array", nullable: true },
               instances: { type: "array", nullable: true },
               dependents: { type: "array", nullable: true },
+              // Mathematics (docs/mathematics.md §11.1): the published formal
+              // statement, the derived machine-checked badge, the claim's
+              // domain tags, the bounty pinned to the statement, the house
+              // solver's attempts, and the prize claims filed. Served at
+              // every depth; null or empty when the claim has none.
+              formalization: looseObject,
+              verification: looseObject,
+              domains: { type: "array", items: { type: "string" } },
+              bounty: looseObject,
+              attempts: looseArray,
+              prize_claims: looseArray,
             },
           },
           404: errorEnvelope,
@@ -307,11 +364,13 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           .limit(1);
 
         const subclaimCount = await getSubclaimCount(claim_id);
+        const extras = await claimExtrasOrEmpty(claim_id);
 
         const response: Record<string, unknown> = {
           claim: formatClaim(claim),
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
+          ...extras,
         };
 
         // Funding disclosure (§19): when the current assessment was paid
@@ -361,6 +420,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           const evalByArgument = new Map(
             evalStates.map((s) => [s.argument_id, s])
           );
+          // The checker record behind a machine-checked argument (§2.3):
+          // present when the argument cites an accepted check.
+          const checkByArgument = await leanChecksByArgument(claim_id).catch((err) => {
+            console.error(
+              `[claims] argument checks failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+            );
+            return new Map();
+          });
           response.arguments = args.map((a) => ({
             id: a.id,
             name: a.name,
@@ -372,6 +439,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             created_at: a.createdAt.toISOString(),
             verdict: evalByArgument.get(a.id)?.verdict ?? null,
             evaluation: evalByArgument.get(a.id)?.content ?? null,
+            lean_check: checkByArgument.get(a.id) ?? null,
           }));
 
           const instances = await db
@@ -567,6 +635,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_credence: { type: "number", nullable: true },
                     // How many edges up this dependent sits: 1 is direct.
                     depth: { type: "integer" },
+                    // Mathematics (§8.3): the live bounty, the derived
+                    // machine-checked kind, and whether a statement exists.
+                    bounty_micro_usd: { type: "number", nullable: true },
+                    checked: { type: "string", nullable: true },
+                    formal: { type: "boolean" },
                   },
                 },
               },
@@ -1282,6 +1355,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                         "appeal",
                         "arbitration",
                         "steward_note",
+                        // Mathematics (docs/mathematics.md §11.1).
+                        "formalization",
+                        "lean_check",
+                        "prize",
+                        "attempt",
                       ],
                     },
                     id: { type: "string" },

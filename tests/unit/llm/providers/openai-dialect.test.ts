@@ -6,6 +6,7 @@ import {
   isServerTool,
   mapFinishReason,
   sanitizeSchemaName,
+  joinSystemBlocks,
   toChatMessages,
   toChatTools,
   toStrictJsonSchema,
@@ -218,5 +219,34 @@ describe("schema names", () => {
   it("sanitizes to OpenAI's allowed character set", () => {
     expect(sanitizeSchemaName("ListOf ExtractedClaim!")).toBe("ListOf_ExtractedClaim_");
     expect(sanitizeSchemaName("")).toBe("response");
+  });
+});
+
+describe("system blocks on the OpenAI-compatible path", () => {
+  it("joins an array into one system message separated by blank lines", () => {
+    const out = toChatMessages(
+      [{ role: "user", content: "hi" }],
+      ["constitution and role", "domain skill"]
+    );
+    expect(out[0]).toEqual({
+      role: "system",
+      content: "constitution and role\n\ndomain skill",
+    });
+    expect(out[1]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("treats a plain string exactly as before", () => {
+    expect(joinSystemBlocks("solo")).toBe("solo");
+    const out = toChatMessages([{ role: "user", content: "hi" }], "solo");
+    expect(out[0]).toEqual({ role: "system", content: "solo" });
+  });
+
+  it("sends no system message for an empty array or empty strings", () => {
+    expect(joinSystemBlocks([])).toBeUndefined();
+    expect(joinSystemBlocks(["", ""])).toBeUndefined();
+    expect(joinSystemBlocks(undefined)).toBeUndefined();
+    expect(joinSystemBlocks(["", "kept"])).toBe("kept");
+    const out = toChatMessages([{ role: "user", content: "hi" }], []);
+    expect(out).toEqual([{ role: "user", content: "hi" }]);
   });
 });

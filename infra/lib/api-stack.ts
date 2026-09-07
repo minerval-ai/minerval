@@ -6,7 +6,23 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
+/**
+ * What the API needs to talk to the Lean checker (docs/mathematics.md 5.3):
+ * the warm lane's private URL and bearer token, and enough to launch and
+ * poll cold-lane tasks with RunTask. All optional: without it the API
+ * deploys with no LEAN_CHECKER_URL and the Steward's lean_* tools stay off.
+ */
+export interface LeanCheckerWiring {
+  url: string;
+  tokenSecret: secretsmanager.ISecret;
+  cluster: ecs.ICluster;
+  coldTaskDefinition: ecs.FargateTaskDefinition;
+  securityGroup: ec2.ISecurityGroup;
+  subnetIds: string[];
+}
 
 export interface ApiStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -23,6 +39,7 @@ export interface ApiStackProps extends cdk.StackProps {
   elicitApiKeySecret: secretsmanager.Secret;
   stripeSecretKeySecret: secretsmanager.Secret;
   stripeWebhookSecretSecret: secretsmanager.Secret;
+  leanChecker?: LeanCheckerWiring;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -55,6 +72,53 @@ export class ApiStack extends cdk.Stack {
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
+
+    // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
+    // service over private DNS, and the checker's own queue runs the cold
+    // lane today; prize checks are submitted to POST /v1/check and polled.
+    // The LEAN_CHECKER_COLD_* variables and the RunTask grant are RESERVED
+    // for a future path in which the API launches one cold-lane Fargate
+    // task per prize check itself: nothing in src/ reads them yet. RunTask
+    // needs the task definition, the cluster, and PassRole on the task's two
+    // roles; DescribeTasks and StopTask cover polling for the task's private
+    // address and cancelling a runaway. The checker never calls back.
+    const leanCheckerEnvironment: Record<string, string> = {};
+    if (props.leanChecker) {
+      const lc = props.leanChecker;
+      lc.tokenSecret.grantRead(taskDef.taskRole);
+      Object.assign(leanCheckerEnvironment, {
+        LEAN_CHECKER_URL: lc.url,
+        // Reserved for the RunTask path above; unread by src/ today.
+        LEAN_CHECKER_COLD_CLUSTER_ARN: lc.cluster.clusterArn,
+        LEAN_CHECKER_COLD_TASK_DEFINITION_ARN: lc.coldTaskDefinition.taskDefinitionArn,
+        LEAN_CHECKER_COLD_SUBNET_IDS: lc.subnetIds.join(","),
+        LEAN_CHECKER_COLD_SECURITY_GROUP_ID: lc.securityGroup.securityGroupId,
+      });
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["ecs:RunTask"],
+          resources: [lc.coldTaskDefinition.taskDefinitionArn],
+          conditions: { ArnEquals: { "ecs:cluster": lc.cluster.clusterArn } },
+        })
+      );
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["ecs:DescribeTasks", "ecs:StopTask"],
+          resources: ["*"],
+          conditions: { ArnEquals: { "ecs:cluster": lc.cluster.clusterArn } },
+        })
+      );
+      taskDef.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ["iam:PassRole"],
+          resources: [
+            lc.coldTaskDefinition.taskRole.roleArn,
+            lc.coldTaskDefinition.obtainExecutionRole().roleArn,
+          ],
+          conditions: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } },
+        })
+      );
+    }
 
     const container = taskDef.addContainer("api", {
       image: ecs.ContainerImage.fromAsset("..", {
@@ -95,6 +159,17 @@ export class ApiStack extends cdk.Stack {
         // on the top of the queue; the rest stay embedded stubs until budget
         // allows.
         STEWARD_MODEL: "claude-fable-5-1",
+        // The solver runs on the strong tier; config refuses production
+        // without it (docs/mathematics.md §7.8).
+        SOLVER_MODEL: "claude-fable-5-1",
+        // The Steward's six money triggers (formalize, formalization_review,
+        // prize_claim, prize_claim_voided, prize_window_closed,
+        // attempt_completed) run on this tier from the workers that own
+        // them, never on STEWARD_MODEL by way of the queue; config refuses
+        // production without it (docs/mathematics.md §6.4). Setting it also
+        // turns on model tiering: every assess/reassess group carries a
+        // 'strong' variant the allocators buy by marginal return.
+        STEWARD_STRONG_MODEL: "claude-fable-5-1",
         // The other load-bearing governance agents also run on Fable: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations
@@ -152,6 +227,7 @@ export class ApiStack extends cdk.Stack {
         // and the fan-out cost it stood in for is now bounded by the mandate
         // ledger instead of by a count. See src/config.ts.
         EXTENSION_MAX_CLAIMS: "10",
+        ...leanCheckerEnvironment,
         // Agent traces (#334 L0): the full tool-use transcript of every agent
         // run, persisted for the eval harness, debugging and the production
         // monitors. On by default now; this pin makes the choice visible.
@@ -192,6 +268,11 @@ export class ApiStack extends cdk.Stack {
         STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
           props.stripeWebhookSecretSecret
         ),
+        // Lean checker bearer token (docs/mathematics.md 5.3), generated in
+        // LeanCheckerStack and shared with the checker tasks.
+        ...(props.leanChecker
+          ? { LEAN_CHECKER_TOKEN: ecs.Secret.fromSecretsManager(props.leanChecker.tokenSecret) }
+          : {}),
       },
     });
 

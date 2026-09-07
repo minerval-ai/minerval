@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { sources, claims, claimInstances } from "../db/schema.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
+import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import { generateEmbedding } from "../services/embedding-service.js";
 import { updateJob, getJobById } from "../services/job-service.js";
 import { enqueueClaimPipeline } from "../services/queue-service.js";
@@ -221,6 +222,9 @@ async function processUrlExtraction(
       const matchResult = await matchClaim({
         extractedText: claim.original_text,
         proposedCanonical: claim.proposed_canonical_form,
+        // The Matcher receives the domains its caller knows: here, the
+        // Extractor's prior for this claim.
+        domains: sanitizeDomains(claim.domains),
       });
 
       let claimId: string;
@@ -251,6 +255,12 @@ async function processUrlExtraction(
         // eventual stakes/yield split has data. Read by nothing yet.
         const contestation = clampUnit(claim.contestation);
 
+        // The Extractor's domain prior (docs/mathematics.md §3.4): the tags
+        // that select which domain skills the claim's Steward carries.
+        // Filtered to the closed list of domains that have a skill; the
+        // Steward's set_claim_domains supersedes it.
+        const domains = sanitizeDomains(claim.domains);
+
         const [newClaim] = await db
           .insert(claims)
           .values({
@@ -258,6 +268,7 @@ async function processUrlExtraction(
             claimType: claim.claim_type,
             ...(importance !== undefined ? { importance } : {}),
             ...(contestation !== undefined ? { contestation } : {}),
+            ...(domains.length > 0 ? { domains, domainsSource: "extractor" } : {}),
             embedding,
             pipelineEpoch: loadConfig().pipelineEpoch,
             createdBy: "extractor",

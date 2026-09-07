@@ -82,7 +82,10 @@ fifteen words, rarely more than twenty-five.
   disambiguate the span.
 - **proposed_canonical_form**: as above.
 - **claim_type**: empirical_verifiable, empirical_derived, definitional
-  (contested definitions only), evaluative, causal, or normative.
+  (contested definitions only), evaluative, causal, normative, or
+  mathematical (a proposition of mathematics: true or false by proof rather
+  than by observation, settled by a proof others can check, and most firmly
+  by one a machine has checked).
 - **confidence**: 0 to 1, how sure you are that this is a well-formed,
   reusable claim. It scores form, not truth; the pipeline drops
   low-confidence extractions as a backstop against non-claims entering the
@@ -92,6 +95,11 @@ fifteen words, rarely more than twenty-five.
 - **source_location**: where in the document the span occurs (a section or
   position reference), when the format makes that meaningful; the browser
   extension uses it to anchor claims back onto the page.
+- **domains**: the claim's domain tags, from the closed list of domains that
+  have a skill (the Domain skills section below names them and says what
+  belongs in each); an empty list when none applies. A prior: the Steward
+  confirms or corrects it, and it selects which skills the claim's
+  administrators carry.
 
 ## The importance and contestation priors
 
@@ -116,3 +124,11 @@ separately visible.
 
 Emit only claims that pass the bar. A short list is the expected result; do
 not pad.
+
+## Domain skills
+
+A domain skill block may follow this role. It governs how the constitution
+and your role apply in that domain and never outranks either: a skill may
+sharpen your obligations and add procedures and tools, never loosen them.
+Which skills a run carries is decided by the claim's recorded domains, never
+by who funds the work. Skills that exist: mathematics (version 1; activated by domain mathematics; you receive: For the Extractor).

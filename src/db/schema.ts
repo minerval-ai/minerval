@@ -5,11 +5,13 @@ import {
   real,
   integer,
   bigint,
+  numeric,
   boolean,
   date,
   timestamp,
   jsonb,
   uniqueIndex,
+  unique,
   index,
   check,
   customType,
@@ -41,6 +43,14 @@ const vector = customType<{ data: number[]; driverParam: string }>({
 const tsvector = customType<{ data: string; driverParam: string }>({
   dataType() {
     return "tsvector";
+  },
+});
+
+// Raw bytes (attachment bodies). Postgres bytea round-trips as a Buffer
+// through node-postgres; Drizzle ships no bytea column, so this is the type.
+const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
+  dataType() {
+    return "bytea";
   },
 });
 
@@ -129,6 +139,16 @@ export const claims = pgTable(
       (): any => claims.id,
       { onDelete: "set null" }
     ),
+    // Domain tags (docs/mathematics.md §2.1, §3.4): the skill names whose
+    // domain skills (skills/<name>/SKILL.md) and tools a run on this claim
+    // carries. A recorded admin judgment, never a filter: the Extractor emits
+    // a prior, a new subclaim inherits its parent's tags, the Steward's
+    // set_claim_domains is authoritative, and the backfill script tags the
+    // pre-skills cohort by embedding centroid. Empty = no domain skill.
+    domains: text("domains").array().notNull().default([]),
+    // Which path wrote `domains`: extractor | matcher | inherited | steward |
+    // backfill. NULL = never tagged.
+    domainsSource: text("domains_source"),
     embedding: vector("embedding"),
     textSearch: tsvector("text_search").generatedAlwaysAs(
       (): SQL => sql`to_tsvector('english', ${claims.text})`
@@ -159,6 +179,9 @@ export const claims = pgTable(
     // Keyword search (`text_search @@ websearch_to_tsquery(...)`) scans this,
     // not the heap, as the graph grows.
     index("idx_claims_text_search").using("gin", table.textSearch),
+    // "Every claim tagged mathematics" is a query the skilled mandates and the
+    // backfill run; GIN serves the array-overlap operators.
+    index("idx_claims_domains").using("gin", table.domains),
   ]
 );
 
@@ -248,6 +271,11 @@ export const assessments = pgTable(
     // from the usage context (never by the agent), so "who funded this
     // verdict" is always answerable. NULL = ordinary system work.
     fundedByJobId: uuid("funded_by_job_id"),
+    // The domain skills the writing run carried (skill names), stamped from
+    // the usage context by update_claim_assessment, so "which assessments
+    // were made under the Mathematics skill" is a query. NULL = legacy rows
+    // from before skills existed; [] = an unskilled run.
+    skills: text("skills").array(),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
     trigger: text("trigger"),
@@ -466,6 +494,16 @@ export const contributors = pgTable("contributors", {
   owlsEarnedMicroUsd: bigint("owls_earned_micro_usd", { mode: "number" })
     .notNull()
     .default(0),
+  // Lifetime PRIZE owls (docs/mathematics.md §8.7): the owl_ledger's
+  // prize_award rows, kept apart from owlsEarnedMicroUsd so the leaderboard
+  // keeps its meaning — a prize is an answer bought, not standing earned.
+  // Excluded from the leaderboard sum.
+  owlsPrizedMicroUsd: bigint("owls_prized_micro_usd", { mode: "number" })
+    .notNull()
+    .default(0),
+  // Barred from filing prize claims (§8.4): mandate funders and program
+  // contractors, set by the operator. The route gate refuses with 403.
+  prizeIneligible: boolean("prize_ineligible").notNull().default(false),
   // Good-faith-free / bad-faith-pay standing (#71):
   //   'good'     — contribution is free (always, even when rejected on merits).
   //   'must_pay' — a suspected-bad-faith flag was recorded; contributing now
@@ -556,7 +594,12 @@ export const llmUsage = pgTable(
     model: text("model").notNull(),
     // Which backend served the call: anthropic | openai | openrouter (see
     // src/llm/providers/routing.ts). Defaults to anthropic so rows written
-    // before multi-provider support keep their true provider.
+    // before multi-provider support keep their true provider. Non-token
+    // spend (docs/mathematics.md §6.3) meters here too — provider `lean`,
+    // `elicit`, or `anthropic_code_execution`, model carrying the pinned
+    // identity (`lean-checker/<pin_id>`, `elicit/search_papers`) — so every
+    // escrow, budget-job, and cost-estimate query that sums cost_micro_usd
+    // sees real money the token columns cannot.
     provider: text("provider").notNull().default("anthropic"),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
@@ -568,6 +611,12 @@ export const llmUsage = pgTable(
     costMicroUsd: bigint("cost_micro_usd", { mode: "number" })
       .notNull()
       .default(0),
+    // External (non-token) usage, §6.3: how much of what was consumed —
+    // checker wall milliseconds, Elicit calls, container seconds — with the
+    // unit named so a per-provider cost query can be re-derived from units
+    // if a price changes. NULL on ordinary token rows.
+    externalUnits: numeric("external_units"),
+    externalUnitKind: text("external_unit_kind"),
     jobId: uuid("job_id"),
     // The claim whose stewardship this call served (#217): makes per-claim
     // cost a query instead of unrecoverable — the marginal-cost half of the
@@ -642,6 +691,9 @@ export const agentRuns = pgTable(
     // Step count at finish — a cheap completeness check against agent_steps
     // (fire-and-forget step inserts can individually fail).
     steps: integer("steps").notNull().default(0),
+    // The domain skills the run carried (skill names), recorded once the
+    // agent has resolved them; NULL until then or for runs that carry none.
+    skills: text("skills").array(),
   },
   (table) => [
     index("idx_agent_runs_agent_time").on(table.agent, table.startedAt),
@@ -1260,6 +1312,11 @@ export const grants = pgTable(
     // entirely by the agent; a mandate-scale mission is impossible
     // without durable working state between passes.
     workspace: text("workspace"),
+    // The domain skills this mandate's Grantmaker carries (skill names): its
+    // conversation and review passes splice these views in. They select the
+    // Grantmaker's view and nothing else; the agents that write to the graph
+    // take their skills from the claim, never from the funder.
+    skills: text("skills").array().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1539,6 +1596,21 @@ export const contributions = pgTable(
     // except through claim instances — so storing the submission verbatim
     // before review is safe.
     sourceId: uuid("source_id").references(() => sources.id),
+    // A `challenge` filed against a formal statement during its review
+    // period (docs/mathematics.md §5.6): which statement it names. An upheld
+    // challenge returns the statement to 'reviewed' and pays the review
+    // award. SET NULL so the contribution outlives a retired statement.
+    challengedFormalizationId: uuid("challenged_formalization_id").references(
+      (): any => claimFormalizations.id,
+      { onDelete: "set null" }
+    ),
+    // A `challenge` filed against an accepted prize claim inside its
+    // challenge window (§8.5): which prize claim it names. Admission by the
+    // Reviewer pauses that claim's window.
+    challengedPrizeClaimId: uuid("challenged_prize_claim_id").references(
+      (): any => prizeClaims.id,
+      { onDelete: "set null" }
+    ),
     // Crash-safe processing claim, mirroring the Steward's stewarded_at
     // reclaim (#218): the pipeline handler atomically stamps this before
     // running, so duplicate messages (recovery-sweep re-enqueues, SQS
@@ -1841,6 +1913,514 @@ export const auditFindings = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// claim_formalizations
+//
+// A claim's formal statement (docs/mathematics.md §5.1): its own table, not
+// columns on `claims`, because a statement has a lifecycle with more than
+// one live row (a draft beside the published one), prizes and attempts pin
+// it by id and by hash, the claims row is hot, and provenance needs columns
+// of its own. Statuses: draft | reviewed | published | retired. At most one
+// PUBLISHED statement per claim (uq_formalization_published); versions are
+// unique per claim and chain through superseded_by.
+//
+// Two hashes on purpose: source_hash is what a reader or an outside solver
+// recomputes from the published text and the pin; expr_hash is what the
+// checker compares. The prize terms cite both.
+// ---------------------------------------------------------------------------
+export const claimFormalizations = pgTable(
+  "claim_formalizations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // RESTRICT: a statement that prizes and attempts pin must not vanish
+    // under a claim delete; the claim is merged or archived, never dropped.
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "restrict" }),
+    version: integer("version").notNull(),
+    language: text("language").notNull().default("lean4"),
+    // The pin: e.g. 'mathlib-v4.33.1', 'leanprover/lean4:v4.33.1', the full
+    // Mathlib commit SHA, its tag when one exists, and the checker image
+    // digest the statement was elaborated in (§5.5).
+    pinId: text("pin_id").notNull(),
+    leanToolchain: text("lean_toolchain").notNull(),
+    mathlibRev: text("mathlib_rev").notNull(),
+    mathlibTag: text("mathlib_tag"),
+    imageDigest: text("image_digest").notNull(),
+    // 'Minerval.S<8 hex of claim id>_v<version>' (§5.4).
+    namespace: text("namespace").notNull(),
+    // The statement file, verbatim.
+    statementSource: text("statement_source").notNull(),
+    // sha256 over normalized source + pin, for the public record.
+    sourceHash: text("source_hash").notNull(),
+    // Structural hash of the elaborated body, for the checker.
+    exprHash: text("expr_hash").notNull(),
+    // Pretty-printed proposition.
+    ppType: text("pp_type").notNull(),
+    // Mathlib constants the statement references.
+    constants: jsonb("constants").notNull(),
+    // Axioms used by any definitions the statement introduces.
+    definitionsAxioms: jsonb("definitions_axioms").notNull(),
+    // An `example` witnessing satisfiable hypotheses elaborated.
+    witnessPresent: boolean("witness_present").notNull(),
+    // The statement introduces a definition Mathlib lacks, written by the
+    // Steward (or taken from a public formalization project) and declared
+    // as its own in the correspondence note (docs/mathematics.md §5.4).
+    ownDefinitions: boolean("own_definitions").notNull().default(false),
+    // Reader-facing note, graph voice.
+    correspondence: text("correspondence"),
+    // Audit-facing; may name tools and checks.
+    reviewNotes: text("review_notes"),
+    status: text("status").notNull().default("draft"),
+    // 'claim_steward' | 'contributor:<uuid>'
+    authoredBy: text("authored_by").notNull(),
+    model: text("model"),
+    createdByRunId: uuid("created_by_run_id"),
+    reviewedByRunId: uuid("reviewed_by_run_id"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    // published_at + FORMALIZATION_REVIEW_PERIOD_DAYS: no bounty binds
+    // before this (§5.6).
+    reviewPeriodEndsAt: timestamp("review_period_ends_at", {
+      withTimezone: true,
+    }),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    retireReason: text("retire_reason"),
+    supersededBy: uuid("superseded_by").references(
+      (): any => claimFormalizations.id
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("uq_claim_formalizations_claim_version").on(
+      table.claimId,
+      table.version
+    ),
+    uniqueIndex("uq_formalization_published")
+      .on(table.claimId)
+      .where(sql`status = 'published'`),
+    index("idx_claim_formalizations_claim").on(table.claimId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// lean_checks
+//
+// The server-side truth for every check the platform ever runs (§5.1) —
+// the Steward's scratch re-run, the solver's iteration, a prize verdict.
+// mode: prize | attempt | steward; kind: proof | disproof; verdict:
+// accepted | rejected | error (an error is never evidence, §5.2). The
+// unique constraint makes a re-run of the same submission under the same
+// checker version and mode a no-op, which is the dedup the tools rely on.
+// prize_claim_id and attempt_id are plain uuids: prize_claims points back
+// at this table by lean_check_id, and a check must be insertable before the
+// row that will cite it.
+// ---------------------------------------------------------------------------
+export const leanChecks = pgTable(
+  "lean_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    formalizationId: uuid("formalization_id")
+      .notNull()
+      .references(() => claimFormalizations.id),
+    mode: text("mode").notNull(),
+    kind: text("kind").notNull(),
+    submissionSha256: text("submission_sha256").notNull(),
+    // Verbatim, checker header excluded.
+    submissionSource: text("submission_source").notNull(),
+    // contributor:<uuid> | math_solver | claim_steward
+    submittedBy: text("submitted_by").notNull(),
+    prizeClaimId: uuid("prize_claim_id"),
+    attemptId: uuid("attempt_id"),
+    runId: uuid("run_id"),
+    verdict: text("verdict").notNull(),
+    // The per-gate record (§5.2).
+    checks: jsonb("checks").notNull(),
+    diagnostics: jsonb("diagnostics").notNull(),
+    truncated: boolean("truncated").notNull().default(false),
+    // wall_ms, cpu_ms, max_rss_mb, exit_code, killed
+    resource: jsonb("resource").notNull(),
+    pinId: text("pin_id").notNull(),
+    imageDigest: text("image_digest").notNull(),
+    checkerVersion: text("checker_version").notNull(),
+    // An outside checker's result when requested; never decisive.
+    secondOpinion: jsonb("second_opinion"),
+    costMicroUsd: bigint("cost_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("uq_lean_checks_submission").on(
+      table.formalizationId,
+      table.submissionSha256,
+      table.checkerVersion,
+      table.mode
+    ),
+    index("idx_lean_checks_formalization").on(table.formalizationId),
+    index("idx_lean_checks_submission_sha256").on(table.submissionSha256),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// proof_attempts
+//
+// One row per solver attempt on a published statement (§7.9): the ledger
+// action it ran under, its budget ceiling and spend, the notebook, the
+// report, and the check that verified its result if any. status: running |
+// completed | failed | cancelling | cancelled | refused | budget | orphaned |
+// stale_formalization; outcome: proof | disproof | partial | reduction |
+// negative | none. heartbeat_at is stamped every turn so the reopen sweep
+// can tell a dead worker from a long one.
+// ---------------------------------------------------------------------------
+export const proofAttempts = pgTable(
+  "proof_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id").notNull(),
+    formalizationId: uuid("formalization_id")
+      .notNull()
+      .references(() => claimFormalizations.id),
+    actionId: uuid("action_id").references(() => actions.id),
+    runId: uuid("run_id"),
+    grantId: uuid("grant_id"),
+    jobId: uuid("job_id"),
+    model: text("model").notNull(),
+    // standard | max (§7.2)
+    variant: text("variant").notNull(),
+    effort: text("effort").notNull(),
+    status: text("status").notNull().default("running"),
+    outcome: text("outcome"),
+    report: jsonb("report"),
+    leanProof: text("lean_proof"),
+    leanCheckId: uuid("lean_check_id").references(() => leanChecks.id),
+    notebook: jsonb("notebook").notNull().default({}),
+    // A calibration run on a settled problem (§7.5): exempt from the review
+    // period, never a result the claim's status depends on.
+    isCalibration: boolean("is_calibration").notNull().default(false),
+    // cost_est × (1 + ATTEMPT_OVERAGE_FRACTION): the beforeTurn hook stops
+    // the loop here (§7.3).
+    ceilingMicroUsd: bigint("ceiling_micro_usd", { mode: "number" }).notNull(),
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    turns: integer("turns").notNull().default(0),
+    compactions: integer("compactions").notNull().default(0),
+    servedModels: jsonb("served_models"),
+    // When the report and notebook became public.
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (table) => [
+    index("idx_proof_attempts_claim").on(table.claimId),
+    index("idx_proof_attempts_status").on(table.status),
+    index("idx_proof_attempts_formalization").on(table.formalizationId),
+    check("ck_proof_attempts_ceiling", sql`ceiling_micro_usd > 0`),
+    check("ck_proof_attempts_spent", sql`spent_micro_usd >= 0`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// platform_flags
+//
+// Operator switches read at runtime without a deploy (§7.3): a
+// `solver_paused` row polled by the solver's beforeTurn hook halts a run
+// mid-attempt. Key/value so a later switch is a row, not a migration.
+// ---------------------------------------------------------------------------
+export const platformFlags = pgTable("platform_flags", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// bounties
+//
+// A public offer bound to one formalization (§8.1): denominated in owls
+// (stored as micro-USD at cost, one owl per dollar of metered work), posted
+// by a mandate's Grantmaker in two passes and, at or above the autonomy
+// threshold, confirmed by a person, and held against that mandate's escrow
+// from the moment it opens until it resolves: its amount is a term in the
+// mandate's committed money (src/services/prize-commitment.ts), and the
+// payout row is what consumes it. Lifecycle: requested → confirm_pending →
+// open → claim_pending → paid | resolved_unpaid | open; open →
+// house_result_pending → resolved_internally | open | rebinding; open →
+// expired | withdrawn | rebinding. At most one LIVE bounty per claim
+// (uq_bounty_live_per_claim). No prize fund exists: the escrow the bounty
+// holds against is the only source of the prize.
+// ---------------------------------------------------------------------------
+export const bounties = pgTable(
+  "bounties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "restrict" }),
+    formalizationId: uuid("formalization_id")
+      .notNull()
+      .references(() => claimFormalizations.id, { onDelete: "restrict" }),
+    // lean_statement; reserved: steward_judgment | external_resolution
+    conditionType: text("condition_type").notNull().default("lean_statement"),
+    // proof | disproof | either
+    resolution: text("resolution").notNull().default("either"),
+    // Owls at cost (micro-USD).
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    // requested | confirm_pending | open | claim_pending |
+    // house_result_pending | rebinding | paid | resolved_internally |
+    // resolved_unpaid | expired | withdrawn
+    status: text("status").notNull().default("requested"),
+    // The official-rules version in force when posted (§8.10).
+    rulesVersion: text("rules_version").notNull(),
+    // The mandate whose escrow the bounty holds against (§8.1).
+    postedByGrantId: uuid("posted_by_grant_id")
+      .notNull()
+      .references(() => grants.id),
+    rationale: text("rationale").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    // Suspended while any prize claim on the bounty is non-terminal.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    humanConfirmedAt: timestamp("human_confirmed_at", { withTimezone: true }),
+    humanConfirmedBy: text("human_confirmed_by"),
+    // Withdrawal is prospective only, with notice (BOUNTY_NOTICE_DAYS).
+    withdrawEffectiveAt: timestamp("withdraw_effective_at", {
+      withTimezone: true,
+    }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolutionNote: text("resolution_note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_bounties_claim").on(table.claimId),
+    index("idx_bounties_status").on(table.status),
+    index("idx_bounties_formalization").on(table.formalizationId),
+    check("ck_bounties_amount", sql`amount_micro_usd > 0`),
+    uniqueIndex("uq_bounty_live_per_claim")
+      .on(table.claimId)
+      .where(
+        sql`status IN ('requested', 'confirm_pending', 'open', 'claim_pending', 'house_result_pending', 'rebinding')`
+      ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// prize_claims
+//
+// The money and verification state of one `claim_prize` contribution
+// (§8.4), one row per contribution: the contribution carries the written
+// account, the review pipeline, appeals, and audit; this row carries the
+// state machine. Statuses: queued | checking | check_error | checked |
+// in_review | in_challenge_window | payable | defect_award_pending | paid |
+// rejected (rejected_stage: check | review | steward) | voided | withdrawn |
+// superseded | forfeited. Priority is the contribution's submitted_at;
+// tie_group binds claims with equal submitted_at that split a prize. One
+// LIVE claim per claimant per statement version
+// (uq_prize_claim_live_per_claimant) is the gate's DUPLICATE_LIVE_CLAIM
+// refusal, enforced.
+// ---------------------------------------------------------------------------
+export const prizeClaims = pgTable(
+  "prize_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contributionId: uuid("contribution_id")
+      .notNull()
+      .unique()
+      .references(() => contributions.id),
+    bountyId: uuid("bounty_id")
+      .notNull()
+      .references(() => bounties.id),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "restrict" }),
+    formalizationId: uuid("formalization_id")
+      .notNull()
+      .references(() => claimFormalizations.id),
+    claimantId: uuid("claimant_id")
+      .notNull()
+      .references(() => contributors.id),
+    // proof | disproof
+    direction: text("direction").notNull(),
+    status: text("status").notNull().default("queued"),
+    rejectedStage: text("rejected_stage"),
+    leanCheckId: uuid("lean_check_id").references(() => leanChecks.id),
+    // Checker attempts consumed; `error` requeues up to
+    // PRIZE_CHECK_MAX_ATTEMPTS, then check_error holds the statement's queue.
+    checkAttempts: integer("check_attempts").notNull().default(0),
+    tieGroup: uuid("tie_group"),
+    // {decision, reason, result_category, statement_defect, run_id, at}
+    stewardDecision: jsonb("steward_decision"),
+    // new_result | formalization_of_known_proof | reference_to_prior_work |
+    // statement_defect
+    resultCategory: text("result_category"),
+    defectAwardMicroUsd: bigint("defect_award_micro_usd", { mode: "number" }),
+    // Set at acceptance: payment waits until this passes (§8.5). The window
+    // pauses only while an admitted challenge is open; the pause total is
+    // capped at twice the window.
+    windowEndsAt: timestamp("window_ends_at", { withTimezone: true }),
+    windowPausedMs: bigint("window_paused_ms", { mode: "number" })
+      .notNull()
+      .default(0),
+    auditOutcome: text("audit_outcome"),
+    signedOffAt: timestamp("signed_off_at", { withTimezone: true }),
+    signedOffBy: text("signed_off_by"),
+    // The winner's steps (§8.7): identity, residency, tax form kind,
+    // screening result, recorded by, at.
+    payee: jsonb("payee"),
+    creditName: text("credit_name"),
+    toolsDisclosure: text("tools_disclosure"),
+    declarations: jsonb("declarations"),
+    rulesVersion: text("rules_version").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_prize_claims_bounty_status").on(table.bountyId, table.status),
+    index("idx_prize_claims_claimant").on(table.claimantId),
+    index("idx_prize_claims_formalization_status").on(
+      table.formalizationId,
+      table.status
+    ),
+    uniqueIndex("uq_prize_claim_live_per_claimant")
+      .on(table.claimantId, table.formalizationId)
+      .where(
+        sql`status IN ('queued', 'checking', 'check_error', 'checked', 'in_review', 'in_challenge_window', 'payable', 'defect_award_pending')`
+      ),
+    check(
+      "ck_prize_claims_defect_award",
+      sql`defect_award_micro_usd IS NULL OR defect_award_micro_usd >= 0`
+    ),
+    check("ck_prize_claims_window_paused", sql`window_paused_ms >= 0`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// prize_payouts
+//
+// The discharge of a prize (§8.7, §8.8). v1 pays in owls (kind 'owls',
+// provider 'internal'); the row is written before the owl_ledger
+// prize_award row, carrying withholding, the tax form kind (w9 | w8ben),
+// and the sanctions screening result, so the grant is refused until all
+// three are recorded. `cash` is reserved for a rail; the idempotency key
+// (prize:<prize_claim_id>:owls | :cash) is what a provider would receive.
+// status: pending | sent | paid | failed | reversed.
+// ---------------------------------------------------------------------------
+export const prizePayouts = pgTable(
+  "prize_payouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    prizeClaimId: uuid("prize_claim_id")
+      .notNull()
+      .references(() => prizeClaims.id),
+    // owls | cash
+    kind: text("kind").notNull(),
+    amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+    withholdingMicroUsd: bigint("withholding_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
+    currency: text("currency").notNull().default("usd"),
+    payeeCountry: text("payee_country"),
+    taxFormKind: text("tax_form_kind"),
+    screeningResult: text("screening_result"),
+    provider: text("provider").notNull().default("internal"),
+    providerPayeeId: text("provider_payee_id"),
+    providerPayoutId: text("provider_payout_id"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_prize_payouts_claim").on(table.prizeClaimId),
+    check("ck_prize_payouts_amount", sql`amount_micro_usd > 0`),
+    check(
+      "ck_prize_payouts_withholding",
+      sql`withholding_micro_usd >= 0 AND withholding_micro_usd <= amount_micro_usd`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// attachments
+//
+// Uploaded files on contributions (§8.4): the Lean source, documents and
+// data, and a winner's tax form. Bodies live in Postgres for v1 with a
+// `storage` discriminator (db | s3) so an object-store path is a code
+// change, not a migration. kind: lean_source | document | dataset | code |
+// tax_form; visibility: restricted | public (a Lean source becomes public
+// when the Steward accepts the claim; a rejected source stays restricted
+// until the bounty closes). Content type is decided by magic bytes against
+// an allowlist, never from the client's header.
+// ---------------------------------------------------------------------------
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contributionId: uuid("contribution_id")
+      .notNull()
+      .references(() => contributions.id, { onDelete: "cascade" }),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => contributors.id),
+    kind: text("kind").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    storage: text("storage").notNull().default("db"),
+    body: bytea("body"),
+    storageKey: text("storage_key"),
+    visibility: text("visibility").notNull().default("restricted"),
+    // pending | clean | flagged | skipped
+    scanStatus: text("scan_status").notNull().default("pending"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_attachments_contribution").on(table.contributionId),
+    // Duplicate detection: the same file from another account.
+    index("idx_attachments_sha256").on(table.sha256),
+    check("ck_attachments_size", sql`size_bytes >= 0`),
+    // The body lives where `storage` says it does.
+    check(
+      "ck_attachments_body_location",
+      sql`(storage = 'db' AND body IS NOT NULL) OR (storage = 's3' AND storage_key IS NOT NULL)`
+    ),
+  ]
+);
+
 // agent_reports
 //
 // The agents' own bug tracker (#366): what raise_issue writes. Every agent
@@ -1986,5 +2566,20 @@ export type NewBudgetJob = typeof budgetJobs.$inferInsert;
 export type Grant = typeof grants.$inferSelect;
 export type NewGrant = typeof grants.$inferInsert;
 export type NewAuditFinding = typeof auditFindings.$inferInsert;
+export type ClaimFormalization = typeof claimFormalizations.$inferSelect;
+export type NewClaimFormalization = typeof claimFormalizations.$inferInsert;
+export type LeanCheck = typeof leanChecks.$inferSelect;
+export type NewLeanCheck = typeof leanChecks.$inferInsert;
+export type ProofAttempt = typeof proofAttempts.$inferSelect;
+export type NewProofAttempt = typeof proofAttempts.$inferInsert;
+export type PlatformFlag = typeof platformFlags.$inferSelect;
+export type Bounty = typeof bounties.$inferSelect;
+export type NewBounty = typeof bounties.$inferInsert;
+export type PrizeClaim = typeof prizeClaims.$inferSelect;
+export type NewPrizeClaim = typeof prizeClaims.$inferInsert;
+export type PrizePayout = typeof prizePayouts.$inferSelect;
+export type NewPrizePayout = typeof prizePayouts.$inferInsert;
+export type Attachment = typeof attachments.$inferSelect;
+export type NewAttachment = typeof attachments.$inferInsert;
 export type AgentReport = typeof agentReports.$inferSelect;
 export type NewAgentReport = typeof agentReports.$inferInsert;

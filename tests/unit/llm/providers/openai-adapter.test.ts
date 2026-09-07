@@ -575,3 +575,28 @@ describe("openai adapter — configuration", () => {
     vi.resetModules();
   });
 });
+
+describe("openai adapter — system blocks", () => {
+  it("joins a system array into one instructions string", async () => {
+    await openaiAdapter.complete({
+      messages,
+      model: "gpt-5-nano",
+      maxTokens: 64,
+      system: ["constitution and role", "domain skill"],
+    });
+    expect(sentBody().instructions).toBe("constitution and role\n\ndomain skill");
+    // Still not an input item.
+    expect(sentBody().input).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("sends no instructions for an empty array", async () => {
+    await openaiAdapter.complete({ messages, model: "gpt-5-nano", maxTokens: 64, system: [] });
+    expect(sentBody()).not.toHaveProperty("instructions");
+  });
+
+  it("ignores effort, which is Anthropic-only", async () => {
+    await openaiAdapter.complete({ messages, model: "gpt-5-nano", maxTokens: 64, effort: "xhigh" });
+    expect(sentBody()).not.toHaveProperty("effort");
+    expect(sentBody()).not.toHaveProperty("output_config");
+  });
+});

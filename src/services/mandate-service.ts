@@ -21,6 +21,9 @@ import {
   getJobSpentMicroUsd,
 } from "./budget-job-service.js";
 import { grantAllocationExposureMicroUsd } from "./allocation-service.js";
+import { serializeAttemptSummary, type AttemptRow } from "./attempt-service.js";
+import { LIVE_BOUNTY_STATUSES } from "./bounty-service.js";
+import type { AttemptSummary } from "./claim-extras-types.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import type { PlanItem } from "./grant-service.js";
 
@@ -53,13 +56,14 @@ interface GrantRow {
   job_status: string;
   funder_user_id: string;
   manager_name: string;
+  skills: string[] | null;
   created_at: Date | null;
 }
 
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
-         g.funder_user_id, g.created_at,
+         g.funder_user_id, g.skills, g.created_at,
          j.budget_micro_usd, j.status AS job_status,
          COALESCE(c.display_name, 'a Minerval user') AS manager_name
     FROM grants g
@@ -204,8 +208,19 @@ export async function getMandatePipeline(
   }));
 }
 
+/** The mandate page's longer sections (docs/mathematics.md §10.4): each null when the mandate has none. */
+export interface MandateText {
+  scope: string | null;
+  prize_policy: string | null;
+  attempt_policy: string | null;
+  refusals: string | null;
+  disclosure: string | null;
+}
+
 export interface MandateDetail extends MandateSummary {
   strategy: string | null;
+  /** The sections beyond objective and strategy, for the page to render in full. */
+  text: MandateText;
   notes: string | null;
   scope_claim_id: string | null;
   scope_query: string | null;
@@ -235,6 +250,8 @@ export interface MandateDetail extends MandateSummary {
   }>;
   /** Non-empty exactly when the mandate ingests: the pipeline view. */
   pipeline: SourcePipelineRow[];
+  /** The domain skills the mandate's Grantmaker carries (skill names). */
+  skills: string[];
   /** Set only for the manager: the conversation to keep talking in. */
   conversation_id?: string;
   is_manager?: boolean;
@@ -309,6 +326,7 @@ export async function getPublicMandate(
   return {
     ...summary,
     strategy: row.plan?.strategy ?? row.mandate?.plan?.strategy ?? null,
+    text: mandateText(row.mandate),
     notes: row.mandate?.notes ?? null,
     scope_claim_id: row.scope_claim_id,
     scope_query: row.scope_query,
@@ -332,10 +350,54 @@ export async function getPublicMandate(
       assessed_at: f.assessed_at?.toISOString() ?? null,
     })),
     pipeline,
+    skills: Array.isArray(row.skills) ? row.skills : [],
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
       : {}),
   };
+}
+
+/**
+ * The house solver's attempts under this mandate (docs/mathematics.md
+ * §7, §8.3), newest first, as the mandate page's Prizes section lists
+ * them. Each goes through the attempt log's own serializer, so an
+ * unpublished attempt on a claim with a live bounty stays opaque here
+ * exactly as it does on the claim page.
+ */
+export async function listMandateAttempts(grantId: string, limit = 100): Promise<AttemptSummary[]> {
+  const rows = await rawQuery<AttemptRow & { bounty_bearing: boolean }>(
+    `SELECT pa.id, pa.claim_id, pa.formalization_id, pa.action_id, pa.run_id, pa.grant_id,
+            pa.job_id, pa.model, pa.variant, pa.effort, pa.status, pa.outcome, pa.report,
+            pa.lean_proof, pa.lean_check_id, pa.notebook, pa.is_calibration,
+            pa.ceiling_micro_usd::bigint AS ceiling_micro_usd,
+            pa.spent_micro_usd::bigint AS spent_micro_usd,
+            pa.turns, pa.compactions, pa.served_models, pa.published_at, pa.started_at,
+            pa.heartbeat_at, pa.finished_at, pa.error,
+            EXISTS (SELECT 1 FROM bounties b
+                     WHERE b.claim_id = pa.claim_id AND b.status = ANY($2)) AS bounty_bearing
+       FROM proof_attempts pa
+      WHERE pa.grant_id = $1
+      ORDER BY pa.started_at DESC, pa.id ASC
+      LIMIT $3`,
+    [grantId, [...LIVE_BOUNTY_STATUSES], limit]
+  );
+  return rows.map(({ bounty_bearing, ...row }) =>
+    serializeAttemptSummary(
+      {
+        ...row,
+        ceiling_micro_usd: Number(row.ceiling_micro_usd),
+        spent_micro_usd: Number(row.spent_micro_usd),
+        turns: Number(row.turns),
+        compactions: Number(row.compactions),
+        notebook: (row.notebook ?? {}) as Record<string, string>,
+        served_models: Array.isArray(row.served_models) ? row.served_models : null,
+        started_at: new Date(row.started_at),
+        finished_at: row.finished_at ? new Date(row.finished_at) : null,
+        published_at: row.published_at ? new Date(row.published_at) : null,
+      },
+      { bountyBearing: bounty_bearing === true }
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -692,4 +754,20 @@ export async function contributeToMandate(input: {
   }
   const mandate = await getPublicMandate(input.grantId, input.userId);
   return { ok: true, mandate: mandate! };
+}
+
+/** Read the page's longer sections off the mandate JSON; only non-empty strings count. */
+export function mandateText(mandate: GrantMandate | null): MandateText {
+  const m = (mandate ?? {}) as Record<string, unknown>;
+  const str = (key: string): string | null => {
+    const v = m[key];
+    return typeof v === "string" && v.trim().length > 0 ? v : null;
+  };
+  return {
+    scope: str("scope"),
+    prize_policy: str("prize_policy"),
+    attempt_policy: str("attempt_policy"),
+    refusals: str("refusals"),
+    disclosure: str("disclosure"),
+  };
 }

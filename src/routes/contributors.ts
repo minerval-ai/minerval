@@ -97,6 +97,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                 reputation_score: { type: "number" },
                 trust_level: { type: "string" },
                 owls_earned: { type: "number" },
+                owls_prized: { type: "number" },
                 contribution_standing: { type: "string" },
                 is_verified: { type: "boolean" },
                 is_suspended: { type: "boolean" },
@@ -186,6 +187,9 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
             contributor.isSuspended
           ),
           owls_earned: microUsdToOwls(contributor.owlsEarnedMicroUsd),
+          // Prize owls (docs/mathematics.md §8.7): shown beside owls earned,
+          // never summed into them, so the leaderboard keeps its meaning.
+          owls_prized: microUsdToOwls(contributor.owlsPrizedMicroUsd ?? 0),
           contribution_standing: contributor.contributionStanding,
           is_verified: contributor.isVerified,
           is_suspended: contributor.isSuspended,

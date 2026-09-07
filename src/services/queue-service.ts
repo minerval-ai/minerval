@@ -377,7 +377,13 @@ export async function requestAudit(input: {
     | "scheduled_sweep"
     | "suspension_review"
     | "report_triage"
-    | "manual";
+    | "manual"
+    // The prize triggers (docs/mathematics.md §8.1, §8.4, §8.5): a bounty
+    // opened at or above the sign-off threshold, a Steward's acceptance of
+    // a prize claim, and a checker failure that holds a statement's queue.
+    | "bounty_posted"
+    | "prize_acceptance"
+    | "prize_check_error";
   dedupeKey?: string;
 }): Promise<string | null> {
   const rows = await rawQuery<{ id: string }>(

@@ -22,6 +22,7 @@ import {
 } from "../services/queue-service.js";
 import {
   MAX_REVIEW_ATTEMPTS,
+  ORDINARY_REVIEW_TYPE_FILTER,
   REVIEW_RECLAIM_MINUTES,
 } from "./contribution-pipeline.js";
 
@@ -64,9 +65,13 @@ export async function sweepStalledReviewWork(): Promise<SweepStats> {
   const stale = `(review_claimed_at IS NULL
                   OR review_claimed_at < now() - interval '${REVIEW_RECLAIM_MINUTES} minutes')`;
 
+  // A claim_prize contribution is reviewed by the prize-check worker under
+  // the bounty's reserve; re-enqueuing it here would run a second Reviewer
+  // attributed to the claimant (docs/mathematics.md §8.4).
   const pending = await rawQuery<{ id: string }>(
     `SELECT id FROM contributions
       WHERE review_status = 'pending'
+        AND ${ORDINARY_REVIEW_TYPE_FILTER}
         AND submitted_at < now() - interval '${SWEEP_GRACE_MINUTES} minutes'
         AND ${stale}
         AND review_attempts < ${MAX_REVIEW_ATTEMPTS}`

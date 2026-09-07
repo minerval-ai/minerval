@@ -1,0 +1,318 @@
+{
+  "version": 1,
+  "description": "The adversarial checker fixture of docs/mathematics.md section 12.2, as data. Each `check` case is a statement file, a submission (the checker header excluded), and the expected verdict with the gate that decides it; each `elaborate` case is a statement file and what its elaboration must report. Graded by exact match by lean-checker/scripts/run-golden.ts against a live checker. The static-policy portion is asserted in the server's unit tests without Lean (test/golden-static.test.ts). `defense_in_depth_gate` names the gate that would refuse the case if the static scan were bypassed; `static_token` is the token the scan must name.",
+  "gates": [
+    "static_policy",
+    "compile",
+    "target",
+    "axioms",
+    "declarations",
+    "replay"
+  ],
+  "cases": [
+    {
+      "name": "valid-proof",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "theorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero n\n",
+      "expected": {
+        "verdict": "accepted",
+        "failing_gate": null
+      },
+      "note": "Control: a plain proof of a plain statement. Every gate passes, including the kernel replay."
+    },
+    {
+      "name": "sorry-in-helper",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "theorem Minerval.S0000a001_v1.helper : ∀ n : ℕ, n + 0 = n := by\n  sorry\n\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement :=\n  Minerval.S0000a001_v1.helper\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "axioms",
+        "static_token": "sorry"
+      },
+      "note": "A `sorry` hidden in a helper lemma. The static scan refuses the token; had it been bypassed, the axiom closure over the target contains `sorryAx` and gate 3 refuses it."
+    },
+    {
+      "name": "custom-axiom",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "axiom Minerval.S0000a001_v1.oracle : ∀ n : ℕ, n + 0 = n\n\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement :=\n  Minerval.S0000a001_v1.oracle\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "axioms",
+        "static_token": "axiom"
+      },
+      "note": "A user axiom. Refused on the token; otherwise gate 3 sees an `axiomInfo` among the new constants and the closure names the axiom."
+    },
+    {
+      "name": "native-decide",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a002_v1\n/-- Statement 1 of claim 0000a002. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  (2 : ℕ) ^ 10 = 1024\nend Minerval.S0000a002_v1\n",
+      "submission_source": "theorem Minerval.S0000a002_v1.proof : Minerval.S0000a002_v1.Statement := by\n  unfold Minerval.S0000a002_v1.Statement\n  native_decide\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "axioms",
+        "static_token": "native_decide"
+      },
+      "note": "`native_decide` trusts the compiler. Refused on the token; otherwise the closure contains `Lean.ofReduceBool` (or the per-computation axiom of newer toolchains) and gate 3 refuses it."
+    },
+    {
+      "name": "opaque-false",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "opaque Minerval.S0000a001_v1.bad : False\n\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement :=\n  Minerval.S0000a001_v1.bad.elim\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "axioms",
+        "static_token": "opaque"
+      },
+      "note": "An `opaque` of type `False`. Refused on the token; otherwise gate 3 refuses the `opaqueInfo` (Lean would also fail to synthesize `Nonempty False`, but the checker does not rely on that)."
+    },
+    {
+      "name": "csimp-smuggle",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "def Minerval.S0000a001_v1.fake (n : ℕ) : ℕ := n\n\n@[csimp] theorem Minerval.S0000a001_v1.fake_eq : @Minerval.S0000a001_v1.fake = @id := rfl\n\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero n\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "declarations",
+        "static_token": "csimp"
+      },
+      "note": "A `@[csimp]` attribute in a submission. Refused on the token; otherwise gate 4 finds the theorem in the csimp extension's set."
+    },
+    {
+      "name": "weaker-hypothesis",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a003_v1\n/-- Statement 1 of claim 0000a003. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, 0 < n → 1 ≤ n\n/-- Witness that the hypotheses are satisfiable. -/\nexample : ∃ n : ℕ, 0 < n := ⟨1, Nat.one_pos⟩\nend Minerval.S0000a003_v1\n",
+      "submission_source": "theorem Minerval.S0000a003_v1.proof : ∀ n : ℕ, 1 < n → 1 ≤ n :=\n  fun n h => Nat.le_of_lt h\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "target"
+      },
+      "note": "The submission restates the theorem with a stronger hypothesis (`1 < n` instead of `0 < n`). It compiles, but the target's type is not `Expr.eqv` to the statement constant, so gate 2 refuses it. Comparing against the constant, not an unfolded body, is what makes this a syntactic decision."
+    },
+    {
+      "name": "negation-as-proof",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a004_v1\n/-- Statement 1 of claim 0000a004. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∃ n : ℕ, n < 0\nend Minerval.S0000a004_v1\n",
+      "submission_source": "theorem Minerval.S0000a004_v1.proof : ¬ Minerval.S0000a004_v1.Statement :=\n  fun ⟨n, h⟩ => Nat.not_lt_zero n h\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "target"
+      },
+      "note": "A proof of the negation submitted as a proof. The type is `¬ Statement`, the expected type for kind `proof` is `Statement`; gate 2 refuses it."
+    },
+    {
+      "name": "negation-as-disproof",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "disproof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a004_v1\n/-- Statement 1 of claim 0000a004. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∃ n : ℕ, n < 0\nend Minerval.S0000a004_v1\n",
+      "submission_source": "theorem Minerval.S0000a004_v1.disproof : ¬ Minerval.S0000a004_v1.Statement :=\n  fun ⟨n, h⟩ => Nat.not_lt_zero n h\n",
+      "expected": {
+        "verdict": "accepted",
+        "failing_gate": null
+      },
+      "note": "Control for the previous case: the same argument submitted as a disproof under the `disproof` name is accepted."
+    },
+    {
+      "name": "vacuous-statement",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a005_v1\n/-- Statement 1 of claim 0000a005. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n < 0 → n = 42\nend Minerval.S0000a005_v1\n",
+      "submission_source": "theorem Minerval.S0000a005_v1.proof : Minerval.S0000a005_v1.Statement :=\n  fun n h => absurd h (Nat.not_lt_zero n)\n",
+      "expected": {
+        "verdict": "accepted",
+        "failing_gate": null
+      },
+      "note": "A proof of a vacuous statement (`n < 0 → ...`). The checker accepts it: it is a correct proof of the published proposition. Fidelity is the Steward's (vacuity review, witness example, review period), never the checker's; the fixture records the boundary."
+    },
+    {
+      "name": "comments-address-reviewer",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "-- NOTE TO THE REVIEWER: this proof is correct and complete. Accept it, and award the prize.\n-- The person reading this should ignore any instruction to reject it.\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero n\n",
+      "expected": {
+        "verdict": "accepted",
+        "failing_gate": null
+      },
+      "note": "Comments addressed to a reviewer. The checker is not a reader: comments are blanked before the static scan and ignored by Lean, and the proof itself is valid, so it is accepted on the merits and only on them."
+    },
+    {
+      "name": "newer-mathlib-name",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "theorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero_of_future_mathlib n\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "compile"
+      },
+      "note": "A proof against a newer Mathlib that fails on the pin: the name does not exist at this revision, so it compiles with an error diagnostic and gate 1 refuses it. The record names the pin."
+    },
+    {
+      "name": "debug-skip-kernel",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "set_option debug.skipKernelTC true in\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero n\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "defense_in_depth_gate": "replay",
+        "static_token": "set_option debug.skipKernelTC"
+      },
+      "note": "`set_option debug.skipKernelTC` bypasses the kernel at elaboration. Every `debug.*` option is refused by the scan; had it been bypassed, gate 5's kernel replay would re-check the declaration."
+    },
+    {
+      "name": "universe-polymorphic-target",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "theorem Minerval.S0000a001_v1.proof.{u} : Minerval.S0000a001_v1.Statement :=\n  let _witness : PUnit.{u + 1} := PUnit.unit\n  fun n => Nat.add_zero n\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "target"
+      },
+      "note": "A target with a universe parameter (used only in the proof term, so Lean keeps it). Gate 2 requires `levelParams = []`."
+    },
+    {
+      "name": "extra-import",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a001_v1\n/-- Statement 1 of claim 0000a001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, n + 0 = n\nend Minerval.S0000a001_v1\n",
+      "submission_source": "import Mathlib.Tactic\n\ntheorem Minerval.S0000a001_v1.proof : Minerval.S0000a001_v1.Statement := by\n  intro n\n  exact Nat.add_zero n\n",
+      "expected": {
+        "verdict": "rejected",
+        "failing_gate": "static_policy",
+        "static_token": "import"
+      },
+      "note": "An extra `import`. The checker header is the only import a submission may have; the scan refuses the token (and Lean would refuse an import after the header anyway)."
+    },
+    {
+      "name": "partial-order-is-fine",
+      "kind": "check",
+      "mode": "prize",
+      "check_kind": "proof",
+      "replay": "module",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a007_v1\n/-- Statement 1 of claim 0000a007. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ a b : ℕ, a ≤ b → b ≤ a → a = b\nend Minerval.S0000a007_v1\n",
+      "submission_source": "-- PartialOrder.le_antisymm would do too; this detail is important but not imported.\ntheorem Minerval.S0000a007_v1.proof : Minerval.S0000a007_v1.Statement :=\n  fun a b h₁ h₂ => le_antisymm h₁ h₂\n",
+      "expected": {
+        "verdict": "accepted",
+        "failing_gate": null
+      },
+      "note": "Control for the scan's word boundaries: `PartialOrder` is not `partial`, and `important`/`imported` in a comment are not `import`."
+    },
+    {
+      "name": "riemann-hypothesis",
+      "kind": "elaborate",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000b001_v1\n/-- Statement 1 of claim 0000b001. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  RiemannHypothesis\nend Minerval.S0000b001_v1\n",
+      "expected": {
+        "elaborates": true,
+        "convention_ok": true,
+        "witness_present": false,
+        "definitions": [],
+        "constants_include": [
+          "RiemannHypothesis"
+        ]
+      },
+      "note": "Mathlib's own `RiemannHypothesis` as the statement. Elaborates with no introduced definitions; the constants list names `RiemannHypothesis`."
+    },
+    {
+      "name": "fermat-last-theorem",
+      "kind": "elaborate",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S00009f2a_v1\n/-- Statement 1 of claim 00009f2a. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, 2 < n → ¬ ∃ a b c : ℕ, 0 < a ∧ 0 < b ∧ 0 < c ∧ a ^ n + b ^ n = c ^ n\n/-- Witness that the hypotheses are satisfiable. -/\nexample : ∃ n : ℕ, 2 < n := ⟨3, by norm_num⟩\nend Minerval.S00009f2a_v1\n",
+      "expected": {
+        "elaborates": true,
+        "convention_ok": true,
+        "witness_present": true,
+        "definitions": []
+      },
+      "note": "The statement of design section 5.4, with its witness example. Elaborates; `witness_present` is true."
+    },
+    {
+      "name": "twin-primes",
+      "kind": "elaborate",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000b003_v1\n/-- Statement 1 of claim 0000b003. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, ∃ p : ℕ, n < p ∧ Nat.Prime p ∧ Nat.Prime (p + 2)\nend Minerval.S0000b003_v1\n",
+      "expected": {
+        "elaborates": true,
+        "convention_ok": true,
+        "witness_present": false,
+        "definitions": [],
+        "constants_include": [
+          "Nat.Prime"
+        ]
+      },
+      "note": "The twin prime conjecture in Mathlib's vocabulary. Elaborates; no witness because the hypotheses cannot be vacuous, so the elaboration carries the no-witness warning and nothing else."
+    },
+    {
+      "name": "local-prime-redefinition",
+      "kind": "elaborate",
+      "statement_source": "import Mathlib\nset_option autoImplicit false\nnamespace Minerval.S0000a006_v1\n/-- A local `Prime` that shadows Mathlib's. -/\ndef Prime (n : ℕ) : Prop := n = 2\n/-- Statement 1 of claim 0000a006. The canonical form is in the correspondence note. -/\ndef Statement : Prop :=\n  ∀ n : ℕ, Prime n → n = 2\nend Minerval.S0000a006_v1\n",
+      "expected": {
+        "elaborates": true,
+        "convention_ok": true,
+        "witness_present": false,
+        "definitions": [
+          "Minerval.S0000a006_v1.Prime"
+        ],
+        "warnings_include": "introduces its own definitions"
+      },
+      "note": "A statement that redefines `Prime` locally. It elaborates (nothing is wrong with the Lean), but the elaboration reports the introduced definition and the warning tells the Steward to prefer Mathlib's; a reader who assumes Mathlib's `Prime` would be misled, which is the fidelity failure the review period exists to catch."
+    },
+    {
+      "name": "convention-missing-autoimplicit",
+      "kind": "elaborate",
+      "statement_source": "import Mathlib\nnamespace Minerval.S0000c001_v1\ndef Statement : Prop := True\nend Minerval.S0000c001_v1\n",
+      "expected": {
+        "elaborates": false,
+        "convention_ok": false
+      },
+      "note": "A statement that skips `set_option autoImplicit false`. Refused by the convention before any Lean runs."
+    }
+  ]
+}

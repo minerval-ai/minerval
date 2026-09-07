@@ -21,9 +21,11 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
+import { listSkills } from "../prompts/skills.js";
+import { skillsForGrant } from "./skill-selection.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -37,6 +39,14 @@ import {
   getJobContributions,
   getJobSpentMicroUsd,
 } from "../../services/budget-job-service.js";
+import {
+  requestBounty,
+  openBounty,
+  withdrawBounty,
+  getBountyById,
+  getLiveBountyForClaim,
+  formatOwls,
+} from "../../services/bounty-service.js";
 
 export interface GrantMandate {
   /** Agent-written working title, shown only on the funder's dashboard. */
@@ -47,6 +57,12 @@ export interface GrantMandate {
   plan: { strategy: string; items: PlanItem[] };
   expected_cost_owls: number;
   notes?: string;
+  /**
+   * The domain skills this mandate's Grantmaker carries on its review passes
+   * (skill names). Selects the Grantmaker's own view and nothing else: the
+   * agents that write to the graph take their skills from the claim.
+   */
+  skills?: string[];
 }
 
 export interface GrantmakerTurnResult {
@@ -60,17 +76,42 @@ const PLAN_ITEM_SCHEMA = {
   properties: {
     action: {
       type: "string",
-      enum: ["assess", "reassess", "deepen", "ingest"],
+      enum: [
+        "assess",
+        "reassess",
+        "deepen",
+        "ingest",
+        "formalize",
+        "attempt_proof",
+      ],
     },
     claim_id: {
       type: "string",
-      description: "Required for assess/reassess/deepen; omit for ingest.",
+      description:
+        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
+        "for ingest.",
     },
     url: {
       type: "string",
       description: "Required for ingest; the source URL to extract and match.",
     },
     rationale: { type: "string" },
+    variant: {
+      type: "string",
+      enum: ["standard", "max"],
+      description: "attempt_proof only: the solver's effort variant.",
+    },
+    is_calibration: {
+      type: "boolean",
+      description:
+        "attempt_proof only: a calibration run on a settled problem.",
+    },
+    lifetime_cap_owls: {
+      type: "number",
+      description:
+        "attempt_proof only: raise this claim's lifetime attempt spend " +
+        "above the policy key (bounded at twice it).",
+    },
   },
   required: ["action", "rationale"],
 };
@@ -127,6 +168,15 @@ const MANDATE_SCHEMA = {
         "Anything the funder should know: uncertainties in the estimate, " +
         "what you deliberately left out, what a top-up would buy next.",
     },
+    skills: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "Optional: the domain skills you will carry on this mandate's review " +
+        "passes, from the closed list in your Domain skills section. Only " +
+        "your own view changes; the claims' administrators take their skills " +
+        "from each claim's recorded domains, never from the mandate.",
+    },
   },
   required: ["title", "objective", "plan", "expected_cost_owls"],
 };
@@ -136,6 +186,14 @@ const UUID_RE =
 
 /** Mechanical mandate validation; exported for tests. */
 export function validateMandate(raw: GrantMandate): string | null {
+  if (raw.skills !== undefined) {
+    if (!Array.isArray(raw.skills)) return "skills must be an array of skill names";
+    const known = new Set(listSkills().map((s) => s.name));
+    const unknown = raw.skills.filter((s) => !known.has(String(s)));
+    if (unknown.length > 0) {
+      return `unknown skills: ${unknown.join(", ")} (known: ${[...known].join(", ") || "none"})`;
+    }
+  }
   if (!raw.title?.trim()) return "title is required";
   if (!raw.objective?.trim()) return "objective is required";
   if (!raw.plan?.items?.length) return "the plan needs at least one item";
@@ -441,10 +499,15 @@ async function runGrantmakerTurnImpl(input: {
     },
   };
 
+  const bountyTools = getBountyToolDefinitions();
+
   let mandate: GrantMandate | undefined;
   let declined: { reason: string } | undefined;
 
   const managed = !!input.grantId;
+  // Anchors the two-pass posting rule for the chat path: a request recorded
+  // in an earlier turn is confirmable by a turn that started after it.
+  const passStartedAt = new Date();
   const model = input.model ?? config.grantmakerModel;
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -466,12 +529,19 @@ async function runGrantmakerTurnImpl(input: {
           regrantTool,
           spawnTool,
           rateTool,
+          ...bountyTools,
         ]
       : [proposeTool, declineTool]),
   ];
 
-  const system = managed
-    ? getGrantmakerSystemPrompt() +
+  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): a
+  // funded mandate's Grantmaker carries its skills; a conversation with no
+  // mandate yet carries none (load_skill, the fallback, is deferred).
+  const skills = input.grantId ? await skillsForGrant(input.grantId) : [];
+  const blocks = getGrantmakerSystemPromptBlocks({ skills });
+  if (managed) {
+    blocks[0] =
+      blocks[0] +
       `\n\n## Management mode\n\n` +
       `This conversation's mandate is funded and live. You have full ` +
       `visibility into its execution through your grant tools and ` +
@@ -481,10 +551,13 @@ async function runGrantmakerTurnImpl(input: {
       `govern new mandates govern adjustments equally. Answer data ` +
       `questions from tool results, never from memory; give real numbers. ` +
       `Discuss the technical setup as deeply as the funder wants: you can ` +
-      `see the pipeline, the sources, the claims, and the spend.`
-    : getGrantmakerSystemPrompt();
+      `see the pipeline, the sources, the claims, and the spend.`;
+  }
+  // One cached block for the constitution and role (management mode appended
+  // to it), plus one per skill the mandate carries.
+  const system = blocks;
 
-  const result = await toolUseLoop({
+  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: input.transcript.map((m) => ({
       role: m.role,
       content: m.content,
@@ -560,6 +633,9 @@ async function runGrantmakerTurnImpl(input: {
           plan: raw.plan,
           expected_cost_owls: raw.expected_cost_owls,
           ...(raw.notes ? { notes: String(raw.notes) } : {}),
+          ...(raw.skills && raw.skills.length > 0
+            ? { skills: [...new Set(raw.skills.map(String))].sort() }
+            : {}),
         };
         return JSON.stringify({
           success: true,
@@ -571,12 +647,17 @@ async function runGrantmakerTurnImpl(input: {
         return JSON.stringify({ success: true });
       }
       if (managed && input.grantId) {
-        const out = await executeManagementTool(input.grantId, name, toolInput);
+        const out = await executeManagementTool(input.grantId, name, toolInput, {
+          passStartedAt,
+          // The funder in the management chat is the person who can confirm
+          // a posting at or above the autonomy threshold (§8.1).
+          confirmedBy: "founder:management_chat",
+        });
         if (out != null) return out;
       }
       return `Unknown tool: ${name}`;
     },
-  });
+  }));
 
   const reply = (result?.content ?? "").trim();
   return {
@@ -598,11 +679,189 @@ async function runGrantmakerTurnImpl(input: {
  * a subset of these: one implementation, so a guard added here holds on
  * both paths rather than being reasoned about twice.
  */
+export function getBountyToolDefinitions(): Tool[] {
+  return [
+    {
+      name: "post_bounty",
+      description:
+        "Post a bounty (docs/mathematics.md §8.1, §10.4): owls from this " +
+        "mandate's own escrow, offered for a Lean proof or disproof of the " +
+        "claim's published formal statement and held against the escrow " +
+        "from the day it opens until it resolves. Mechanical bounds: the " +
+        "statement's review period has ended and the platform's solver " +
+        "attempted it without settling it; between the minimum and the " +
+        "maximum owls per claim; the per-pass and per-day fractions of the " +
+        "escrow; the mandate's headroom (budget less committed money) " +
+        "covers it; one live bounty per claim. Every posting is TWO-PASS: " +
+        "the first call records the request; only a call from a LATER pass " +
+        "(a fresh context re-judging the mission) opens it. At or above the " +
+        "autonomy threshold the posting waits for a person's confirmation. " +
+        "State the reasoning publicly in the rationale: the discourse's " +
+        "gain from a settled answer, the effort the problem appears to " +
+        "require, the mandate's headroom and open bounties, and, where this " +
+        "mandate also funds attempts, why a prize is the better use of " +
+        "those owls than another attempt. Amounts never feed back into " +
+        "importance.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string" },
+          owls: { type: "number", description: "The amount, in owls." },
+          expires_in_days: { type: "number" },
+          rationale: { type: "string" },
+        },
+        required: ["claim_id", "owls", "rationale"],
+      },
+    },
+    {
+      name: "withdraw_bounty",
+      description:
+        "Give notice that a bounty is withdrawn: prospective only, with " +
+        "BOUNTY_NOTICE_DAYS of public notice on the claim page and the prize " +
+        "listing; submissions received before the effective time are judged " +
+        "under the prior terms, and the withdrawal waits while any prize " +
+        "claim is live. A bounty not yet open withdraws at once.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          bounty_id: { type: "string" },
+          rationale: { type: "string" },
+        },
+        required: ["bounty_id", "rationale"],
+      },
+    },
+  ];
+}
+
+export interface ManagementToolOptions {
+  /** When this pass (review pass or chat turn) started: the two-pass anchor. */
+  passStartedAt?: Date;
+  /** A person present who can confirm a posting at or above the threshold. */
+  confirmedBy?: string | null;
+}
+
+/** How long a recorded bounty request stays confirmable by a later pass. */
+const BOUNTY_CONFIRM_WINDOW_DAYS = 7;
+
+/**
+ * post_bounty (§8.1): the first call records the request on the mandate
+ * and creates the `requested` bounty; a call from a later pass opens it
+ * (or parks it at confirm_pending). One implementation for the review
+ * pass and the management chat.
+ */
+async function executePostBounty(
+  grantId: string,
+  toolInput: Record<string, unknown>,
+  opts: ManagementToolOptions
+): Promise<string> {
+  const claimId = String(toolInput.claim_id ?? "");
+  const owls = Number(toolInput.owls ?? 0);
+  const rationale = String(toolInput.rationale ?? "").trim();
+  if (!UUID_RE.test(claimId)) return JSON.stringify({ success: false, problem: "claim_id must be a claim id from your survey" });
+  if (!rationale) return JSON.stringify({ success: false, problem: "rationale is required; it is the public reasoning for the posting" });
+  const passStartedAt = opts.passStartedAt ?? new Date();
+  const [pending] = await rawQuery<{ at: string | null; bounty_id: string | null }>(
+    `SELECT mandate->'bounty_requests'->$2->>'at' AS at,
+            mandate->'bounty_requests'->$2->>'bounty_id' AS bounty_id
+       FROM grants WHERE id = $1`,
+    [grantId, claimId]
+  );
+  const requestedAt = pending?.at ? Date.parse(pending.at) : null;
+  const live = await getLiveBountyForClaim(claimId);
+  const confirmable =
+    requestedAt !== null &&
+    requestedAt < passStartedAt.getTime() &&
+    requestedAt > Date.now() - BOUNTY_CONFIRM_WINDOW_DAYS * 86_400_000 &&
+    live !== null &&
+    live.id === pending?.bounty_id &&
+    (live.status === "requested" || live.status === "confirm_pending");
+  if (!confirmable) {
+    const res = await requestBounty({ claimId, owls, expiresInDays: Number(toolInput.expires_in_days) || null, rationale, grantId, passStartedAt });
+    if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
+    await rawQuery(
+      `UPDATE grants
+          SET mandate = jsonb_set(
+                COALESCE(mandate, '{}'::jsonb),
+                ARRAY['bounty_requests', $2::text],
+                jsonb_build_object('at', to_jsonb(now()), 'bounty_id', $3::text,
+                                   'owls', $4::numeric, 'rationale', $5::text),
+                true),
+              updated_at = now()
+        WHERE id = $1`,
+      [grantId, claimId, res.bounty_id, owls, rationale]
+    );
+    return JSON.stringify({
+      success: true,
+      opened: false,
+      bounty_id: res.bounty_id,
+      status: res.status,
+      note:
+        "Bounty REQUESTED and recorded on the mandate. Nothing is offered yet; if a later pass " +
+        "still judges the posting right, calling post_bounty again for this claim opens it " +
+        "(or waits for a person's confirmation at or above the autonomy threshold). Note the " +
+        "pending request in your workspace.",
+    });
+  }
+  const opened = await openBounty({ bountyId: live!.id, passStartedAt, confirmedBy: null });
+  if (!opened.ok) return JSON.stringify({ success: false, code: opened.code, problem: opened.message });
+  await rawQuery(
+    `UPDATE grants SET mandate = COALESCE(mandate, '{}'::jsonb) #- ARRAY['bounty_requests', $2::text], updated_at = now() WHERE id = $1`,
+    [grantId, claimId]
+  );
+  if (opened.status === "confirm_pending") {
+    return JSON.stringify({
+      success: true,
+      opened: false,
+      bounty_id: opened.bounty_id,
+      status: "confirm_pending",
+      note:
+        `${formatOwls(live!.amount_micro_usd)} is at or above the autonomy threshold; the posting waits for a ` +
+        `person's confirmation (POST /bounties/${opened.bounty_id}/confirm with the operator key` +
+        (opts.confirmedBy ? ", or the funder here" : "") +
+        `). Say so in your note.`,
+    });
+  }
+  return JSON.stringify({
+    success: true,
+    opened: true,
+    bounty_id: opened.bounty_id,
+    status: "open",
+    amount: formatOwls(live!.amount_micro_usd),
+    note: "Bounty OPEN: the offer is public on the claim page and the prize listing under the rules in force, and its amount is held against this mandate's escrow until it resolves.",
+  });
+}
+
 export async function executeManagementTool(
   grantId: string,
   name: string,
-  toolInput: Record<string, unknown>
+  toolInput: Record<string, unknown>,
+  opts: ManagementToolOptions = {}
 ): Promise<string | null> {
+  if (name === "post_bounty") {
+    return executePostBounty(grantId, toolInput, opts);
+  }
+  if (name === "confirm_bounty") {
+    // The funder in the management chat confirming a parked posting (§8.1).
+    if (!opts.confirmedBy) return JSON.stringify({ success: false, problem: "confirmation is a person's act; not available on this path" });
+    const bountyId = String(toolInput.bounty_id ?? "");
+    const bounty = await getBountyById(bountyId);
+    if (!bounty || bounty.posted_by_grant_id !== grantId) return JSON.stringify({ success: false, problem: "no such bounty on this mandate" });
+    const res = await openBounty({ bountyId, passStartedAt: opts.passStartedAt ?? null, confirmedBy: opts.confirmedBy });
+    return JSON.stringify(res.ok ? { success: true, ...res } : { success: false, code: res.code, problem: res.message });
+  }
+  if (name === "withdraw_bounty") {
+    const bountyId = String(toolInput.bounty_id ?? "");
+    const bounty = await getBountyById(bountyId);
+    if (!bounty || bounty.posted_by_grant_id !== grantId) {
+      return JSON.stringify({ success: false, problem: "no such bounty on this mandate" });
+    }
+    const res = await withdrawBounty({ bountyId, rationale: String(toolInput.rationale ?? ""), actor: `grantmaker:${grantId}` });
+    return JSON.stringify(
+      res.ok
+        ? { success: true, status: res.status, effective_at: res.effective_at, note: res.effective_at ? "Notice given; the withdrawal takes effect at effective_at unless a prize claim is live." : "Withdrawn before opening." }
+        : { success: false, code: res.code, problem: res.message }
+    );
+  }
   if (name === "grant_overview") {
     const [grant] = await rawQuery<{
       status: string;

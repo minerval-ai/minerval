@@ -17,6 +17,7 @@
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { prizeCommitmentSql } from "./prize-commitment.js";
 
 /** Total this grant has regranted to others (net of returned shares). */
 export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
@@ -33,9 +34,11 @@ export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
  * Everything this grant's escrow is already good for: consumed + outstanding
  * allocation shares, NON-LEDGER metered spend on its job (management
  * conversations etc. — llm_usage minus what ledger runs already consumed as
- * shares, so a self-funded run isn't counted twice), and regrants out.
- * Headroom for any new commitment is budget minus this. One statement, so
- * the snapshot is consistent.
+ * shares, so a self-funded run isn't counted twice), regrants out, and the
+ * prize term (prize-commitment.ts: bounties held against this escrow,
+ * prizes paid from it, and the prize-review reserve). Headroom for any new
+ * commitment is budget minus this. One statement, so the snapshot is
+ * consistent.
  */
 export async function grantCommittedMicroUsd(
   grant: {
@@ -51,6 +54,7 @@ export async function grantCommittedMicroUsd(
     outstanding: number;
     nonledger: number;
     regrants: number;
+    prizes: number;
   }>(
     `SELECT
        COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
@@ -75,14 +79,19 @@ export async function grantCommittedMicroUsd(
                       WHERE grant_id = $1), 0))::bigint AS nonledger,
        COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
                    FROM regrants WHERE from_grant_id = $1), 0)::bigint
-         AS regrants`,
+         AS regrants,
+       -- Bounties held against this escrow, prizes paid from it, and the
+       -- prize-review reserve: one fragment, shared with the settlement
+       -- statement so the two readings cannot drift.
+       ${prizeCommitmentSql("$1")} AS prizes`,
     [grant.id, grant.budgetJobId]
   );
   return (
     Number(row?.shares ?? 0) +
     Number(row?.outstanding ?? 0) +
     Number(row?.nonledger ?? 0) +
-    Number(row?.regrants ?? 0)
+    Number(row?.regrants ?? 0) +
+    Number(row?.prizes ?? 0)
   );
 }
 

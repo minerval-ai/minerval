@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc",
     "synth": "cdk synth",
-    "deploy": "cdk deploy --all --require-approval never"
+    "deploy": "cdk deploy --all --require-approval never",
+    "test": "ts-node test/lean-checker-stack.test.ts"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.239.0",

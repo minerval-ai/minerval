@@ -22,9 +22,10 @@ import {
 import { BuyOwls } from "./BuyOwls";
 import { KeyCreator } from "./KeyCreator";
 import { OwlMark } from "../../components/OwlMark";
+import { PrizeAward } from "../../components/account/PrizeAward";
 import { revokeKeyAction, signOutAction } from "./actions";
 import { fetchContributorProfile } from "../../lib/api";
-import type { ContributorProfile } from "../../lib/types";
+import type { ContributorProfile, OpenPrizeClaim } from "../../lib/types";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -46,6 +47,8 @@ const LEDGER_REASONS: Record<string, string> = {
   signup_grant: "signup grant",
   monthly_grant: "monthly grant",
   contribution_award: "earned by contribution",
+  prize_award: "prize, one owl per dollar",
+  owl_prize: "prize, one owl per dollar",
   refund: "refunded",
   escrow_hold: "escrowed for funded work",
   claim_contribution: "put toward a claim's assessment",
@@ -110,6 +113,7 @@ export default async function AccountPage({
   let packs: OwlPack[];
   let usage: UsageSummary;
   let keys: ApiKeyMeta[];
+  let prizeClaims: OpenPrizeClaim[];
   try {
     const [account, usageSummary, keyList] = await Promise.all([
       fetchAccount(externalId),
@@ -121,6 +125,7 @@ export default async function AccountPage({
     packs = account.packs ?? [];
     usage = usageSummary;
     keys = keyList;
+    prizeClaims = account.open_prize_claims ?? [];
   } catch (err) {
     const detail =
       err instanceof AccountApiError ? err.message : "Unexpected error.";
@@ -287,6 +292,21 @@ export default async function AccountPage({
           </>
         )}
       </section>
+
+      {/* ------------------------------------------------ prizes (§8.7) */}
+      {prizeClaims.length > 0 && (
+        <section>
+          <h2>Prizes</h2>
+          <p>
+            A prize is offered for a machine-checked proof or disproof of a
+            claim&rsquo;s formal statement. It is paid in owls, one owl per
+            dollar, once the checker, the claim&rsquo;s steward, and the
+            public challenge window have all passed it, and once the winner
+            has completed the three steps below.
+          </p>
+          <PrizeAward claims={prizeClaims} />
+        </section>
+      )}
 
       {/* ------------------------------------------------ grants */}
       <section>
@@ -524,6 +544,13 @@ export default async function AccountPage({
           <span className="summary-chip">
             {owls(user.owls_earned)} owls earned
           </span>
+          {/* prize owls beside, not inside, owls earned (§8.7): the
+              leaderboard sum excludes them */}
+          {typeof user.owls_prized === "number" && user.owls_prized > 0 && (
+            <span className="summary-chip">
+              {owls(user.owls_prized)} owls in prizes
+            </span>
+          )}
           <span className="summary-chip">
             reputation {user.reputation_score.toFixed(0)} ({user.trust_level})
           </span>

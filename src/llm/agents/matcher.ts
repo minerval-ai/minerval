@@ -1,11 +1,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
-import { getMatcherSystemPrompt, getMatchingPrompt } from "../prompts/matcher.js";
+import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matcher.js";
+import { skillsForDomains } from "../prompts/skills.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims } from "../../services/search-service.js";
 import { loadConfig } from "../../config.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 
 export interface MatchDecision {
@@ -67,10 +68,19 @@ async function matchClaimImpl(input: {
    * subclaim, so a claim can't match itself). Optional.
    */
   excludeClaimId?: string;
+  /**
+   * The domain tags the caller knows (the Steward's or Curator's claim, the
+   * Extractor's prior at ingestion). The matching skills' "For the Matcher"
+   * view is spliced in: identity is judged differently in some domains.
+   */
+  domains?: readonly string[];
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
   const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical);
+  const skills = skillsForDomains(input.domains);
+  // One cached block for the constitution and role, plus one per active skill.
+  const system = getMatcherSystemPromptBlocks({ skills });
 
   const searchTool: Tool = {
     name: "search_similar_claims",
@@ -100,10 +110,10 @@ async function matchClaimImpl(input: {
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
-  await toolUseLoop({
+  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userPrompt }],
     tools: [searchTool, submitTool, ...reportTools.definitions],
-    system: getMatcherSystemPrompt(),
+    system,
     model,
     maxTokens: 4096,
     maxIterations: 8,
@@ -149,7 +159,7 @@ async function matchClaimImpl(input: {
       }
       return null;
     },
-  });
+  }));
 
   if (finalResult) return finalResult;
 

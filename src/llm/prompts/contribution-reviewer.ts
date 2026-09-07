@@ -1,6 +1,12 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { BAD_FAITH_CATEGORY_LIST } from "./bad-faith.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Contribution Reviewer
 
@@ -16,6 +22,11 @@ Gather context with the read tools, then decide and act:
 1. get_contribution_details loads the submission, its contributor, and
    any existing review. Intake types (propose_claim, propose_source) have
    no target claim while pending; the proposal itself is what you judge.
+   For a claim_prize contribution, get_prize_claim_details loads the
+   prize block beside it: the bounty, the statement version, the checker
+   record, the attachments, a bounded excerpt of the Lean source, and any
+   duplicate_of references, so you judge form, good faith, identity, and
+   duplicates with the verdict in hand and never the proof.
 2. get_claim_with_context loads the target claim when there is one;
    get_claim_dependents shows what else rests on it when impact bears on
    the decision.
@@ -168,8 +179,20 @@ its cost:
 
 When in doubt between reject and escalate, escalate.
 
-${RAISING_ISSUES}`;
+${RAISING_ISSUES}
+
+${domainSkillsSection("contribution-reviewer")}`;
 
 export function getContributionReviewerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (contribution-reviewer's view of each), in that order.
+ */
+export function getContributionReviewerSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "contribution-reviewer"));
 }

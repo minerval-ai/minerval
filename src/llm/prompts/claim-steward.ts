@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Claim Steward
 
@@ -300,8 +306,20 @@ to reach only the dependents the change could be material to (omit it to
 notify all), and each will judge materiality at its own end. If no dependent
 could reasonably care, do not call it.
 
-${RAISING_ISSUES}`;
+${RAISING_ISSUES}
+
+${domainSkillsSection("claim-steward")}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (claim-steward's view of each), in that order.
+ */
+export function getClaimStewardSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "claim-steward"));
 }

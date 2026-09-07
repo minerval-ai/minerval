@@ -1,9 +1,10 @@
 import type {
-  AssessmentStatus, ClaimDetail, ClaimType, DependentClaim, RelationType,
+  AssessmentStatus, CheckKind, ClaimDetail, ClaimType, DependentClaim, RelationType,
   Stance, TreeNode,
 } from "@/lib/types";
 import { orderByMention } from "@/lib/claim-links";
 import { isAssumesRelation } from "@/lib/ontology";
+import { liveBountyMicro } from "@/lib/prizes";
 
 // ---------------------------------------------------------------------------
 // The map view's layout engine (issue #79, "The View from a Claim").
@@ -18,18 +19,22 @@ import { isAssumesRelation } from "@/lib/ontology";
 // focus card; GraphView scales the world to fit the stage.
 // ---------------------------------------------------------------------------
 
-export type BedrockKind = "fact" | "open" | "value";
+export type BedrockKind = "fact" | "open" | "value" | "theorem";
 
 // Bedrock is a property of the ontology, not a column: an atomic claim bottoms
-// out as a checkable fact, a genuinely open empirical question, or a value
-// premise (constitution §2). We infer the flavour from claim type + status and
-// only for leaves, so the marking never overstates what the graph knows.
+// out as a checkable fact, a genuinely open empirical question, a value
+// premise (constitution §2), or, in mathematics, a theorem whose proof a
+// machine has checked (docs/mathematics.md §8.3). We infer the flavour from
+// claim type + status (+ the check) and only for leaves, so the marking never
+// overstates what the graph knows.
 export function bedrockOf(
   claimType: ClaimType | null,
   status: AssessmentStatus | null,
   leaf: boolean,
+  checked: CheckKind | null = null,
 ): BedrockKind | null {
   if (!leaf) return null;
+  if (claimType === "mathematical" && checked === "proof") return "theorem";
   if (claimType === "normative" || claimType === "evaluative") return "value";
   if (claimType === "empirical_verifiable" && (status === "verified" || status === "contradicted")) {
     return "fact";
@@ -50,6 +55,10 @@ export const BEDROCK: Record<BedrockKind, { tag: string; note: string }> = {
   value: {
     tag: "bedrock · value premise",
     note: "Bedrock: a fundamental value premise. Disagreement here is not empirical; the graph makes that visible.",
+  },
+  theorem: {
+    tag: "bedrock · theorem",
+    note: "Bedrock: a theorem whose proof a machine has checked against its published formal statement. The checker confirms the proof; the verdict is still the steward's judgment of the claim as worded.",
   },
 };
 
@@ -73,6 +82,13 @@ export interface ClaimBits {
   argumentStance: Stance | null;
   childCount: number;
   bedrock: BedrockKind | null;
+  // Mathematics (docs/mathematics.md §8.3): a live bounty's amount, drawn as
+  // a double ring and a $ mark; an accepted machine check, drawn as ⊢; and
+  // whether a published formal statement exists. The amount is not painted
+  // on the node: the map orients, the claim page informs.
+  prizeMicroUsd: number | null;
+  checked: CheckKind | null;
+  formal: boolean;
   up: boolean;                     // true for dependents (edge points at the focus)
   // Zero children in the response does NOT always mean atomic (#160):
   // a shared subclaim's repeat occurrence carries its children only at the
@@ -128,6 +144,11 @@ export interface LayoutOptions {
   compact: boolean;         // narrow screens: tighter degree-of-interest caps
   plinthNote: string;       // empty-state copy under a leaf focus
   depsPending: boolean;     // dependents not yet loaded (optimistic recenter)
+  // The focus's prize, check, and statement marks while the optimistic
+  // recentre's partial detail has not fetched them: carried from the clicked
+  // node so a prized claim does not lose its ring for the 280 ms until the
+  // fetch lands. Null once the full detail is in.
+  focusMarks?: Pick<ClaimBits, "prizeMicroUsd" | "checked" | "formal"> | null;
 }
 
 // Node dimensions and gaps (world px). Detail falls off with distance: the
@@ -186,7 +207,11 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       n.claim_type,
       n.assessment_status,
       n.children.length === 0 && !n.subtree_collapsed && !n.children_truncated,
+      n.checked ?? null,
     ),
+    prizeMicroUsd: n.bounty_micro_usd ?? null,
+    checked: n.checked ?? null,
+    formal: !!n.formal,
     up: false,
     collapsed: !!n.subtree_collapsed,
     truncated: !!n.children_truncated,
@@ -241,6 +266,9 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
           argumentId: null, argumentName: null, argumentStance: null,
           childCount: 0,
           bedrock: null,
+          prizeMicroUsd: r.dep.bounty_micro_usd ?? null,
+          checked: r.dep.checked ?? null,
+          formal: !!r.dep.formal,
           up: true,
         },
       });
@@ -450,6 +478,11 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
   // ---- the focus card -------------------------------------------------------
   // Carries its own ClaimBits so hovering the centred claim fills the preview
   // panel just like any other node (no edge note — it is the vantage point).
+  const focusMarks = opts.focusMarks ?? {
+    prizeMicroUsd: liveBountyMicro(detail.bounty),
+    checked: detail.verification?.kind ?? null,
+    formal: !!detail.formalization,
+  };
   nodes.push({
     key: focusId, kind: "focus", x: 0, y: yFocus, w: W.focus, h: focusH,
     claim: {
@@ -468,7 +501,9 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
         detail.claim.claim_type,
         detail.assessment?.status ?? null,
         children.length === 0 && !detail.tree?.children_truncated,
+        focusMarks.checked,
       ),
+      ...focusMarks,
       up: false,
       truncated: !!detail.tree?.children_truncated,
     },
@@ -485,6 +520,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
         detail.claim.claim_type,
         detail.assessment?.status ?? null,
         !detail.tree?.children_truncated,
+        focusMarks.checked,
       ),
       note: opts.plinthNote,
     });

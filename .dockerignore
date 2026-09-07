@@ -15,3 +15,5 @@ cdk.out
 tests
 drizzle
 .context
+lean-checker
+web

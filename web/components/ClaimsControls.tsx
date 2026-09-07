@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { IMPORTANCE_FLOORS, type ImportanceFloor } from "@/lib/ontology";
-import type { AssessedFilter } from "@/lib/types";
+import { IMPORTANCE_FLOORS, claimTypeMeta, type ImportanceFloor } from "@/lib/ontology";
+import type { AssessedFilter, ClaimType } from "@/lib/types";
 import { useSuggestedClaim } from "@/components/useSuggestedClaim";
 
 // Defaults the browse feed lands on: only assessed claims, no importance floor.
@@ -11,6 +11,13 @@ import { useSuggestedClaim } from "@/components/useSuggestedClaim";
 // "/claims" means exactly this.
 const DEFAULT_ASSESSED: AssessedFilter = "assessed";
 const DEFAULT_IMP: ImportanceFloor = "any";
+
+type PrizeFilter = "any" | "with";
+
+const PRIZE_SEGMENTS: { value: PrizeFilter; label: string; title: string }[] = [
+  { value: "any", label: "Any", title: "Every claim, with or without a prize" },
+  { value: "with", label: "With a prize", title: "Claims with a live prize for a machine-checked proof or disproof" },
+];
 
 const ASSESSED_SEGMENTS: { value: AssessedFilter; label: string; title: string }[] = [
   { value: "assessed", label: "Assessed", title: "Claims that carry a current verdict" },
@@ -44,11 +51,16 @@ function Segmented<T extends string>({
 }
 
 export function ClaimsControls({
-  q, assessed, imp, resultCount,
+  q, assessed, imp, prizes = false, type, resultCount,
 }: {
   q: string;
   assessed: AssessedFilter;
   imp: ImportanceFloor;
+  // Only claims with a live prize (docs/mathematics.md §8.3; API with_prizes).
+  prizes?: boolean;
+  // A claim-type restriction, set by a territory's front door rather than a
+  // control of its own; shown as a removable lever while active.
+  type?: ClaimType;
   // Omitted on the pre-search overview (#206), where there is no result list to
   // count and a number would misrepresent the territory cards as a feed.
   resultCount?: number;
@@ -60,19 +72,26 @@ export function ClaimsControls({
   // Build a clean URL — only non-default levers appear. `next` overrides the
   // current value for whichever lever changed; the live search text comes along
   // so flipping a filter never discards what's been typed.
-  function go(next: Partial<{ q: string; assessed: AssessedFilter; imp: ImportanceFloor }>) {
+  function go(next: Partial<{
+    q: string; assessed: AssessedFilter; imp: ImportanceFloor; prizes: boolean; type: ClaimType | null;
+  }>) {
     const nq = (next.q ?? query).trim();
     const na = next.assessed ?? assessed;
     const ni = next.imp ?? imp;
+    const np = next.prizes ?? prizes;
+    const nt = next.type === undefined ? type : next.type;
     const p = new URLSearchParams();
     if (nq) p.set("q", nq);
     if (na !== DEFAULT_ASSESSED) p.set("assessed", na);
     if (ni !== DEFAULT_IMP) p.set("imp", ni);
+    if (np) p.set("prizes", "1");
+    if (nt) p.set("type", nt);
     const qs = p.toString();
     router.push(qs ? `/claims?${qs}` : "/claims");
   }
 
-  const isDefault = assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q;
+  const isDefault = assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q && !prizes && !type;
+  const typeMeta = type ? claimTypeMeta(type) : null;
 
   return (
     <div className="claims-controls">
@@ -106,6 +125,26 @@ export function ClaimsControls({
             onPick={(v) => go({ imp: v })}
           />
         </span>
+
+        <span className="filter-group">
+          <span className="sc">Prizes</span>
+          <Segmented
+            ariaLabel="Filter by prize"
+            value={prizes ? "with" : "any"}
+            segments={PRIZE_SEGMENTS}
+            onPick={(v) => go({ prizes: v === "with" })}
+          />
+        </span>
+
+        {type && (
+          <span className="filter-group">
+            <span className="sc">Type</span>
+            <span className="tag kind">{typeMeta?.label ?? type.replace(/_/g, " ")}</span>
+            <button type="button" className="filter-reset" onClick={() => go({ type: null })} aria-label="Remove the type filter">
+              ×
+            </button>
+          </span>
+        )}
 
         <span className="filter-meta">
           {typeof resultCount === "number" && (

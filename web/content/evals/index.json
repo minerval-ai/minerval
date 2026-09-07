@@ -1,10 +1,22 @@
 {
-  "syncedAt": "2026-09-04T15:33:35.592Z",
-  "gitCommit": "6e624a4",
+  "syncedAt": "2026-09-07T18:18:09.600Z",
+  "gitCommit": "960cd25",
   "pins": [
     {
       "agent": "steward",
       "envVar": "STEWARD_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "solver",
+      "envVar": "SOLVER_MODEL",
+      "model": "claude-fable-5-1",
+      "label": "Claude Fable 5.1"
+    },
+    {
+      "agent": "steward strong",
+      "envVar": "STEWARD_STRONG_MODEL",
       "model": "claude-fable-5-1",
       "label": "Claude Fable 5.1"
     },
@@ -46,7 +58,8 @@
   "rates": {
     "claude-fable-5-1": {
       "inputPerMtok": 10,
-      "outputPerMtok": 50
+      "outputPerMtok": 50,
+      "cacheReadMultiplier": 0.025
     },
     "deepseek/deepseek-v4-flash": null,
     "claude-sonnet-5": {

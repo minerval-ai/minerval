@@ -63,8 +63,16 @@ export interface RunAttribution {
   requestId?: string | null;
 }
 
-export function traceLevel(): "off" | "full" {
+/**
+ * The trace level in force, optionally for one agent. TRACE_ALWAYS_AGENTS
+ * (docs/mathematics.md §7.4; `math_solver` by default) forces tracing on
+ * for the named agents even where TRACE_LEVEL=off has switched it off: the
+ * solver's transcript is the evidence a prize review relies on. Otherwise
+ * the default is full everywhere but vitest.
+ */
+export function traceLevel(agent?: string): "off" | "full" {
   const config = loadConfig();
+  if (agent && (config.traceAlwaysAgents ?? []).includes(agent)) return "full";
   if (config.traceLevel) return config.traceLevel;
   if (process.env.VITEST) return "off";
   return "full";
@@ -78,9 +86,12 @@ export function traceLevel(): "off" | "full" {
  */
 const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
 
-/** Whether a run of `agent` may be recorded at all. */
+/**
+ * Whether a run of `agent` may be recorded at all. Never-traced wins over
+ * everything, including TRACE_ALWAYS_AGENTS.
+ */
 export function traceable(agent: string): boolean {
-  return !NEVER_TRACED.has(agent) && traceLevel() !== "off";
+  return !NEVER_TRACED.has(agent) && traceLevel(agent) !== "off";
 }
 
 // A step's content is capped so a pathological tool output can't bloat the
@@ -115,6 +126,31 @@ export function startAgentRun(
     }
   })();
   return { runId, seq: { n: 0 } };
+}
+
+/**
+ * Record the domain skills a run carried (skill names) once the agent has
+ * resolved them, which is after the run opened. Fire-and-forget like the
+ * rest; an empty list is recorded as [] so an unskilled run reads as such
+ * rather than as "unknown".
+ */
+export function recordAgentRunSkills(
+  trace: AgentTrace,
+  skills: readonly string[]
+): void {
+  void (async () => {
+    try {
+      await getDb()
+        .update(agentRuns)
+        .set({ skills: [...skills] })
+        .where(eq(agentRuns.id, trace.runId));
+    } catch (err) {
+      console.error(
+        "[trace] failed to record agent run skills:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  })();
 }
 
 /** Stamp the run finished. Fire-and-forget; safe to call exactly once. */

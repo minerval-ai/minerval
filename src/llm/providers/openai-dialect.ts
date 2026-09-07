@@ -32,10 +32,28 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 
-import type { LlmContentBlock, LlmMessage, LlmTool, ToolUse } from "./types.js";
+import type {
+  LlmContentBlock,
+  LlmMessage,
+  LlmTool,
+  SystemPrompt,
+  ToolUse,
+} from "./types.js";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
+
+/**
+ * Flatten the seam's system prompt to the single string these APIs have.
+ * Blocks are joined with a blank line, in order, so a domain skill still reads
+ * as a section after the role it qualifies. Empty when there is nothing to send.
+ */
+export function joinSystemBlocks(system: SystemPrompt | undefined): string | undefined {
+  if (system === undefined) return undefined;
+  const blocks = typeof system === "string" ? [system] : system;
+  const joined = blocks.filter((text) => text.length > 0).join("\n\n");
+  return joined.length > 0 ? joined : undefined;
+}
 
 /**
  * Anthropic server tools (web_search, code execution, …) carry a versioned
@@ -97,10 +115,11 @@ export function toolResultText(
  */
 export function toChatMessages(
   messages: LlmMessage[],
-  system?: string
+  system?: SystemPrompt
 ): ChatMessage[] {
   const out: ChatMessage[] = [];
-  if (system) out.push({ role: "system", content: system });
+  const systemText = joinSystemBlocks(system);
+  if (systemText) out.push({ role: "system", content: systemText });
 
   for (const message of messages) {
     if (typeof message.content === "string") {

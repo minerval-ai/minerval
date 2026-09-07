@@ -38,6 +38,7 @@ vi.mock("../../../src/config.js", () => ({
 
 vi.mock("../../../src/llm/prompts/extractor.js", () => ({
   getExtractorSystemPrompt: () => "system",
+  getExtractorSystemPromptBlocks: () => ["system"],
   getExtractionPrompt: () => "prompt:",
 }));
 

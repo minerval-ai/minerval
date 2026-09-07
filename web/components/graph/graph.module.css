@@ -229,6 +229,30 @@
   100% { outline-offset: 3px; }
 }
 
+/* A live prize (docs/mathematics.md §8.3): a double rule around the node,
+   paper between the node's own border and the outer line, in ink rather than
+   any status colour, and a different shape from the nudge ring's single
+   blue outline. Drawn as shadows so it composes with .nudged. */
+.prized {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink-soft);
+}
+/* the marks after a chip's status glyph: $ for a prize, ⊢ for a machine
+   check; text, so they survive the minims' size and any palette */
+.prizeMark {
+  font-family: var(--mono); font-weight: 700; font-size: 0.6rem; line-height: 1;
+  color: var(--ink-soft);
+}
+.checkMark {
+  font-family: var(--serif); font-weight: 700; font-size: 0.64rem; line-height: 1;
+  color: var(--st-verified);
+}
+/* the amount on the focus card's band, worded, at the band's far end */
+.focusPrize {
+  margin-left: auto;
+  font-family: var(--mono); font-size: 0.66rem; color: var(--ink-soft);
+  white-space: nowrap;
+}
+
 /* overflow chip */
 .more {
   background: var(--paper-sunk);
@@ -325,6 +349,12 @@
 .bedFact  { background: repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px); }
 .bedOpen  { background: repeating-linear-gradient(45deg, rgba(154, 109, 18, 0.6) 0 1px, transparent 1px 7px); }
 .bedValue { background-image: radial-gradient(circle, rgba(90, 74, 120, 0.65) 1px, transparent 1.4px); background-size: 6px 5px; }
+/* a machine-checked theorem (§8.3): the fact hatch crossed, proven ground */
+.bedTheorem {
+  background:
+    repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px);
+}
 .bedNone  { border-top: 1px dashed var(--faint); height: 0; }
 .bedTag {
   font-family: var(--sans); font-size: 0.48rem; font-weight: 600;
@@ -376,6 +406,12 @@
   padding-left: 9px; margin-bottom: 8px;
 }
 .previewNote .relLine { display: block; margin-bottom: 2px; }
+/* the prize row in the preview (§8.3): the amount, worded, in the same
+   quiet mono as the credence figure */
+.previewPrize {
+  font-family: var(--mono); font-size: 0.66rem; color: var(--ink-soft);
+  margin: -2px 0 8px;
+}
 /* #249: the steer shown when an argument pill is clicked — same shape as a
    note, but keyed to the ring it narrates. */
 .previewNudge {

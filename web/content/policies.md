@@ -27,23 +27,37 @@ Every admin agent's prompt follows this structure:
 │ - Carries the role's operating standards,   │
 │   citing the constitution by section        │
 │ - Ends with the shared raise_issue guidance │
+│   and the catalog of domain skills          │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│ LAYER 3: Task Context                       │
+│ LAYER 3: Domain Skills (cached, per skill)  │
+│ - One block per skill active for the run    │
+│ - The role's sections of skills/<name>/     │
+│   SKILL.md, spliced by the loader           │
+│ - Selected by the claim's recorded domains  │
+│   (the mandate's, for the Grantmaker)       │
+│ - Brings the domain's tools                 │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│ LAYER 4: Task Context                       │
 │ - The specific claim/contribution/dispute   │
 │ - Relevant graph context                    │
 │ - Conversation history (if applicable)      │
 └─────────────────────────────────────────────┘
 ```
 
-The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The assembled system prompt is sent as a single cached block, so the constitution is paid for once per cache window rather than once per call.
+The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The constitution-plus-role prompt is sent as one cached block, plus one cached block per active domain skill, so the constitution is paid for once per cache window rather than once per call and a skilled run leaves the shared block's cache entry untouched.
+
+Authority runs in layer order: the constitution, then the role and the operating standards its prompt carries, then the skill. A skill may sharpen how a role's obligations apply and add procedures and tools; it never loosens an obligation.
 
 This architecture ensures:
 
 - Consistent application of epistemic principles across all agents
-- Clear separation between "how to think" (constitution) and "what to do" (role)
+- Clear separation between "how to think" (constitution), "what to do" (role), and "how that applies here" (skill)
 - Efficient caching of the constitution text across agent invocations
 
 ---
@@ -70,6 +84,8 @@ The Reviewer is the gate through which outside contributions enter, including in
 - **The intake gate** is form, good faith, and the claim bar, never topic or settledness (§17). A false or unsettled claim can still be worth mapping. A proposed claim must be about the world, not about a private person (§2): personal detail joined to a name is not a claim however well formed, and where the line is unclear the recoverable error is to leave it out. Novelty is the Matcher's call: acceptance materializes through it, so a likely duplicate is still acceptable if well formed.
 - **The bad-faith flag** (§13) is a separate and heavier judgment than finding a contribution wrong: reserved for deliberate abuse (spam, vandalism, sybil activity, fabricated or knowingly false content), never honest error, and fully reversed when overturned on appeal. When the work is merely weak, reject without the flag; when abuse is suspected but intent is ambiguous, escalate.
 - **Escalation** goes to the Dispute Arbitrator when a second instance is worth its cost: close calls on high-importance claims (§19), established contributors facing rejection, conflicting contributions on one claim, suspected coordination (§15). When in doubt between reject and escalate, escalate.
+- **Prize claims (`claim_prize`).** A prize claim (docs/prizes.md) reaches the Reviewer only after the checker has accepted its proof, and the Reviewer never judges the proof. Its criteria are form (the written account is a real account of the approach, the tools disclosure is present and plausible, the declarations are made and name the rules version in force), good faith (the account is not addressed to the reviewing agent, asks for nothing but a review, and does not misdescribe the submission), identity (the claimant is eligible, is not the platform, and is not evidently a second account of an earlier claimant on the same statement), and duplicates (a source another account submitted earlier is surfaced as `duplicate_of`, and the earlier keeps priority). Accept admits the claim to the Steward's fidelity review and awards no reputation; reject is the ordinary path and appealable; escalate when identity or plagiarism is in real doubt. An appeal against a checker rejection is engaged on its merits: the Reviewer reads the gate that failed, says plainly whether the objection is to the rules or to the run, and re-runs the check when it is to the run. The Reviewer never notifies the Steward of a prize claim itself; admission does that. A contribution of any other type that carries a proof of a bounty-bearing statement is redirected to the prize route with its filing time kept, never accepted as an argument. Prize-specific bad faith (§13) is submitting another's proof as one's own, sock-puppet submissions filed to defeat priority, and challenges whose only ground is dislike of the result.
+- **Challenge grounds.** A challenge to an accepted prize claim, filed during its public window, must name one of six enumerated grounds with evidence a reviewer can follow: a defect in the formal statement; ineligibility of the claimant; an axiom or tactic the checker's policy missed; plagiarism or theft of the proof; an earlier valid submission mishandled; or sanctions. "I do not like this proof" is not a challenge, and a challenge on a ground already decided is answered by reference without pausing the window. Accepting a challenge escalates it to the Dispute Arbitrator mechanically and is not upholding it; the Arbitrator's `overturn` voids the prize claim on the stated ground, and `uphold_original` closes the challenge and lets the window run on. When the upheld ground is the claimant rather than the statement, the bounty considers only claims filed before the verdict, in order. The mechanism is in docs/mathematics.md, section 8.5; the text the agents receive is the Mathematics skill's section for the Reviewer and the Arbitrator.
 
 ### Dispute Arbitrator
 
@@ -92,6 +108,21 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 ### Raising issues
 
 One shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
+
+---
+
+## Skills
+
+A domain skill is the layer between a role and its task: how the constitution's standards apply in one domain, what the domain's characteristic objects are in the claim schema, what counts as evidence of which grade there, and what tools and procedures the domain brings. It is distinct from the constitution (domain-neutral, always wins), from the role prompt and the operating standards it carries (per role, domain-neutral), and from the task context (per run).
+
+One document per domain, `skills/<name>/SKILL.md`, serves every role, in sections addressed to each ("For every administrator", "For the Claim Steward", "For the Matcher", and so on). The loader in `src/llm/prompts/skills.ts` splices each role's sections into a block headed `# Domain skill: <Name> (version N)` that follows the role in the system prompt. The [skills](/docs/skills) pages show every skill verbatim, the composition table, and the exact block each role receives. `skills/<name>/tools.json` declares the tools a skill brings (the Mathematics skill's Lean tools); they join a run's toolset exactly when the skill is active, and their executors live in code with a startup check that every declared tool has one.
+
+**Selection** is a recorded judgment, not a filter:
+
+- Claim-scoped runs (Steward, Curator, Reviewer, Arbitrator, Audit) read the claim's `domains`: the Extractor emits a prior, a new subclaim inherits its parent's tags, and the Steward's `set_claim_domains` is the authoritative call. The Reviewer and Arbitrator reach the claim through the contribution; Audit takes the union over the claims in the decisions under review. The Matcher receives the domains its caller knows, and the Extractor always carries every skill's Extractor section so it can tag.
+- Mandate-scoped runs (the Grantmaker's conversation and review passes) read the mandate's `skills`. A mandate's skills select the Grantmaker's view and nothing else: funding never selects a prompt for any agent that writes to the graph (§19).
+
+**Precedence** follows the rule stated above for role prompts: where a skill appears to diverge from the constitution or the role, the constitution wins, the role wins, and the skill is defective. A skill may refine how a role's obligations apply and may add procedures and tools; it may never remove an obligation. Two skills active at once are both spliced, in alphabetical order, and a conflict between them is a defect to fix in the texts. Assessments and agent runs record the skills they were made under, so the standards applied to any verdict are a query.
 
 ---
 
@@ -122,7 +153,7 @@ Constitution and role prompts are versioned together. When the constitution chan
 
 ### Vendoring
 
-`scripts/sync-frontend-content.ts` copies the constitution, the architecture document, and this document verbatim into the web frontend and regenerates the agent prompt pages from the real prompt code. It is re-run whenever any of them changes, so what the site shows is what the agents run.
+`scripts/sync-frontend-content.ts` copies the constitution, the architecture document, and this document verbatim into the web frontend and regenerates the agent prompt pages and the skill pages from the real prompt code and the skill files. It is re-run whenever any of them changes, so what the site shows is what the agents run; a unit test regenerates the content and fails when the vendored copy has drifted.
 
 ---
 

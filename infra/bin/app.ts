@@ -6,6 +6,8 @@ import { DatabaseStack } from "../lib/database-stack";
 import { QueueStack } from "../lib/queue-stack";
 import { SecretsStack } from "../lib/secrets-stack";
 import { ApiStack } from "../lib/api-stack";
+import { LeanCheckerStack } from "../lib/lean-checker-stack";
+import { SolverStack } from "../lib/solver-stack";
 
 const app = new cdk.App();
 
@@ -26,6 +28,20 @@ const queues = new QueueStack(app, "EpistemeQueues", { env });
 
 const secrets = new SecretsStack(app, "EpistemeSecrets", { env });
 
+// The Lean checker (docs/mathematics.md 5.3, 5.8, 13.1): the image tag is
+// the pin id from lean-checker/pin.json unless overridden, and the pushed
+// image's digest is passed once it exists so verdicts can name it:
+//   cdk deploy -c leanCheckerImageDigest=sha256:... [-c leanCheckerImageTag=...] [-c loogleUrl=http://...]
+const leanChecker = new LeanCheckerStack(app, "EpistemeLeanChecker", {
+  env,
+  vpc: network.vpc,
+  apiSg: network.apiSg,
+  albSg: network.albSg,
+  imageTag: app.node.tryGetContext("leanCheckerImageTag"),
+  imageDigest: app.node.tryGetContext("leanCheckerImageDigest"),
+  loogleUrl: app.node.tryGetContext("loogleUrl"),
+});
+
 new ApiStack(app, "EpistemeApi", {
   env,
   vpc: network.vpc,
@@ -42,4 +58,33 @@ new ApiStack(app, "EpistemeApi", {
   elicitApiKeySecret: secrets.elicitApiKeySecret,
   stripeSecretKeySecret: secrets.stripeSecretKeySecret,
   stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
+  leanChecker: {
+    url: leanChecker.serviceUrl,
+    tokenSecret: leanChecker.tokenSecret,
+    cluster: leanChecker.cluster,
+    coldTaskDefinition: leanChecker.coldTaskDefinition,
+    securityGroup: leanChecker.checkerSg,
+    subnetIds: leanChecker.coldSubnetIds,
+  },
+});
+
+// The solver worker (docs/mathematics.md 7.9, 13.1): its own Fargate service
+// running `npm run worker:solver`, off unless the deploy says otherwise:
+//   cdk deploy -c solverEnabled=true [-c solverModel=claude-fable-5-1]
+new SolverStack(app, "EpistemeSolver", {
+  env,
+  vpc: network.vpc,
+  apiSg: network.apiSg,
+  dbInstance: database.dbInstance,
+  dbSecret: database.dbSecret,
+  openaiApiKeySecret: secrets.openaiApiKeySecret,
+  openrouterApiKeySecret: secrets.openrouterApiKeySecret,
+  anthropicApiKeySecret: secrets.anthropicApiKeySecret,
+  apiKeysSecret: secrets.apiKeysSecret,
+  elicitApiKeySecret: secrets.elicitApiKeySecret,
+  stripeSecretKeySecret: secrets.stripeSecretKeySecret,
+  stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
+  leanChecker: { url: leanChecker.serviceUrl, tokenSecret: leanChecker.tokenSecret },
+  solverEnabled: app.node.tryGetContext("solverEnabled"),
+  solverModel: app.node.tryGetContext("solverModel"),
 });

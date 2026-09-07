@@ -31,9 +31,10 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { resolveProvider } from "../providers/routing.js";
-import { withAgent } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { getGrantmakerSystemPrompt } from "../prompts/grantmaker.js";
+import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
+import { skillsByName } from "../prompts/skills.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -43,6 +44,7 @@ import {
   validateMandate,
   executeManagementTool,
   type GrantMandate,
+  getBountyToolDefinitions,
 } from "./grantmaker.js";
 import type { PlanItem } from "../../services/grant-service.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
@@ -58,6 +60,10 @@ import {
   grantCommittedMicroUsd,
 } from "../../services/regrant-service.js";
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
+import {
+  mandateClosureBlockers,
+  closureBlockedMessage,
+} from "../../services/bounty-service.js";
 
 export interface MandateReviewResult {
   note: string;
@@ -97,15 +103,21 @@ async function runMandateReviewImpl(input: {
     budget_micro_usd: number;
     workspace: string | null;
     funder_user_id: string;
+    skills: string[] | null;
   }>(
     `SELECT g.id, g.name, g.policy, g.mandate, g.plan, g.plan_cursor,
             g.daily_budget_micro_usd, g.budget_job_id, j.budget_micro_usd,
-            g.workspace, g.funder_user_id
+            g.workspace, g.funder_user_id, g.skills
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
     [input.grantId]
   );
   if (!grant) throw new Error(`mandate ${input.grantId} not found or not active`);
+
+  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): one
+  // cached block for the constitution and role, plus one per skill.
+  const skills = skillsByName(grant.skills ?? []);
+  const system = getGrantmakerSystemPromptBlocks({ skills });
 
   const committed = await grantCommittedMicroUsd({
     id: grant.id,
@@ -160,7 +172,15 @@ async function runMandateReviewImpl(input: {
           query: { type: "string" },
           kind: {
             type: "string",
-            enum: ["assess", "reassess", "ingest", "grant_planning"],
+            enum: [
+              "assess",
+              "reassess",
+              "ingest",
+              "grant_planning",
+              "formalize",
+              "attempt_proof",
+              "prize_review",
+            ],
           },
           valued_only: { type: "boolean" },
           offset: { type: "number" },
@@ -275,11 +295,21 @@ async function runMandateReviewImpl(input: {
               properties: {
                 action: {
                   type: "string",
-                  enum: ["assess", "reassess", "deepen", "ingest"],
+                  enum: [
+                    "assess",
+                    "reassess",
+                    "deepen",
+                    "ingest",
+                    "formalize",
+                    "attempt_proof",
+                  ],
                 },
                 claim_id: { type: "string" },
                 url: { type: "string" },
                 rationale: { type: "string" },
+                variant: { type: "string", enum: ["standard", "max"] },
+                is_calibration: { type: "boolean" },
+                lifetime_cap_owls: { type: "number" },
               },
               required: ["action", "rationale"],
             },
@@ -383,6 +413,9 @@ async function runMandateReviewImpl(input: {
       },
     },
  
+    // The bounty tools (docs/mathematics.md §8.1): the same implementation
+    // as the management chat, two-pass by construction.
+    ...getBountyToolDefinitions(),
     {
       name: "complete_mandate",
       description:
@@ -394,7 +427,9 @@ async function runMandateReviewImpl(input: {
         "this again, still judging the mission done. One pass — however " +
         "convinced — cannot irreversibly end the mandate, which also " +
         "means nothing you read during a single pass can. Exhausting the " +
-        "current plan is a waypoint, not by itself a reason to close.",
+        "current plan is a waypoint, not by itself a reason to close. A " +
+        "mandate with a live bounty cannot close at either pass: withdraw " +
+        "its bounties first (withdraw_bounty gives thirty days' notice).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -440,7 +475,7 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (metered + allocated + regranted), ` +
+    `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
     `(yours to set). Plan: ${items.length} items, ${grant.plan_cursor} executed.\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
@@ -513,12 +548,12 @@ async function runMandateReviewImpl(input: {
       : t.name !== "update_allocation_policy"
   );
 
-  const result = await toolUseLoop({
+  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
     tools: webSearchAvailable
       ? [webSearchTool, ...availableTools]
       : availableTools,
-    system: getGrantmakerSystemPrompt(),
+    system,
     model,
     maxTokens: 4096,
     maxIterations: 24,
@@ -565,7 +600,12 @@ async function runMandateReviewImpl(input: {
       // The management tools this pass shares with the owner-driven chat
       // (grant_overview, update_allocation_policy) run the same
       // implementation, honesty guard included. Null means "not mine".
-      const management = await executeManagementTool(grant.id, name, toolInput);
+      const management = await executeManagementTool(grant.id, name, toolInput, {
+        passStartedAt,
+        // No person is present on the autonomous pass: a posting at or
+        // above the autonomy threshold parks at confirm_pending.
+        confirmedBy: null,
+      });
       if (management !== null) return management;
       if (name === "estimate_costs") {
         const tiers = await stewardTierCostEstimates();
@@ -690,6 +730,19 @@ async function runMandateReviewImpl(input: {
         // older than the confirmation window go stale and start over.
         const CONFIRM_WINDOW_DAYS = 7;
         const reason = String(toolInput.reason ?? "").trim();
+        // A mandate with a live bounty cannot close at either pass (§8.1):
+        // the escrow that backs the prize is never refunded from under it.
+        const blockers = await mandateClosureBlockers(grant.id);
+        if (blockers.live_bounties > 0) {
+          return JSON.stringify({
+            success: false,
+            closed: false,
+            code: "LIVE_BOUNTIES",
+            live_bounties: blockers.live_bounties,
+            bounty_ids: blockers.bounty_ids,
+            problem: closureBlockedMessage(blockers.live_bounties),
+          });
+        }
         const [pending] = await rawQuery<{ at: string | null }>(
           `SELECT mandate->'close_requested'->>'at' AS at
              FROM grants WHERE id = $1`,
@@ -746,7 +799,7 @@ async function runMandateReviewImpl(input: {
       }
       return JSON.stringify({ error: `unknown tool ${name}` });
     },
-  });
+  }));
 
   const note = (result.content ?? "").trim().slice(0, 2000);
   // The review note is part of the mandate's public record.

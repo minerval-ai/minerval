@@ -1,0 +1,24 @@
+{
+  "name": "minerval-lean-checker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Minerval Lean checker service: warm-lane elaboration and cold-lane proof checks against a pinned Mathlib (docs/mathematics.md section 5).",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p ../scripts/tsconfig.json",
+    "test": "vitest run",
+    "golden": "tsx ../scripts/run-golden.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

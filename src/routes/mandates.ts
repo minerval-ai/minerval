@@ -19,7 +19,9 @@ import {
   getPublicMandate,
   getMandateAllocationView,
   contributeToMandate,
+  listMandateAttempts,
 } from "../services/mandate-service.js";
+import { mandatePrizesBlock } from "../services/bounty-service.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
@@ -74,7 +76,17 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Mandate not found", code: "NOT_FOUND" });
       }
-      return reply.send({ mandate });
+      // The Prizes section (docs/mathematics.md §8.3): the mandate's prize
+      // numbers (escrow, held in open bounties, paid, the review reserve,
+      // headroom), bounties posted, prizes paid, the bounty table, and the
+      // house solver's attempts under this mandate. A bounty holds against
+      // this mandate's own escrow; a failure in either must not hide the
+      // page.
+      const [prizes, attempts] = await Promise.all([
+        mandatePrizesBlock(request.params.id).catch(() => null),
+        listMandateAttempts(request.params.id).catch(() => []),
+      ]);
+      return reply.send({ mandate: { ...mandate, prizes, attempts } });
     },
   });
 
@@ -103,6 +115,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
               "ingest",
               "grant_planning",
               "mandate_review",
+              "formalize",
+              "attempt_proof",
+              "prize_review",
             ],
           },
           offset: { type: "integer", minimum: 0, default: 0 },

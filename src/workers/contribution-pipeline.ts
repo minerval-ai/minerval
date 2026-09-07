@@ -44,6 +44,15 @@ export const REVIEW_RECLAIM_MINUTES = 15;
 /** Attempt cap per phase; the recovery sweep stops re-driving a row past it. */
 export const MAX_REVIEW_ATTEMPTS = 3;
 
+/**
+ * A prize claim's review is the prize-check worker's (docs/mathematics.md
+ * §8.4): it runs under the bounty's reserve, never attributed to the
+ * claimant, and only after the checker accepted. This pipeline and the
+ * recovery sweep leave `claim_prize` alone, so a second Reviewer can never
+ * race the worker's.
+ */
+export const ORDINARY_REVIEW_TYPE_FILTER = `contribution_type <> 'claim_prize'`;
+
 export async function handleContributionMessage(
   message: ContributionMessage
 ): Promise<void> {
@@ -53,6 +62,7 @@ export async function handleContributionMessage(
             review_attempts = review_attempts + 1
       WHERE id = $1
         AND review_status = 'pending'
+        AND ${ORDINARY_REVIEW_TYPE_FILTER}
         AND (review_claimed_at IS NULL
              OR review_claimed_at < now() - interval '${REVIEW_RECLAIM_MINUTES} minutes')
         AND review_attempts < ${MAX_REVIEW_ATTEMPTS}

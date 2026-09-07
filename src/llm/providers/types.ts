@@ -23,9 +23,26 @@ export type LlmContentBlock = Anthropic.ContentBlock;
 export type ProviderName = "anthropic" | "openai" | "openrouter";
 
 export interface TokenUsage {
+  /** Uncached input tokens (cache reads and writes are reported separately). */
   inputTokens: number;
   outputTokens: number;
+  /** Input tokens served from the prompt cache. Set by the Anthropic adapter. */
+  cacheReadTokens?: number;
+  /** Input tokens written to the prompt cache. Set by the Anthropic adapter. */
+  cacheCreationTokens?: number;
 }
+
+/** Reasoning depth, sent as `output_config.effort` on Anthropic requests. */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * A system prompt: one string, or several blocks in order (constitution plus
+ * role, then domain skills). The Anthropic adapter caches each block
+ * separately so a skill appended after the role block leaves the role block's
+ * cache entry shared with unskilled runs; the other adapters join the blocks
+ * into the single system field their APIs have.
+ */
+export type SystemPrompt = string | string[];
 
 export interface ToolUse {
   id: string;
@@ -59,16 +76,27 @@ export interface ToolCompletionResult extends CompletionResult {
    * request — no agent reads this.
    */
   rawContent: LlmContentBlock[];
+  /**
+   * The model that actually produced the turn (`response.model`). Differs from
+   * `model` when a server-side refusal fallback re-served the request on
+   * another model; a fallback is sticky for about an hour, so later turns can
+   * carry it without a fallback block. Anthropic-only.
+   */
+  servedModel?: string;
+  /** True when `servedModel` differs from the requested model. Anthropic-only. */
+  fallbackRan?: boolean;
 }
 
 export interface CompleteRequest {
   messages: LlmMessage[];
   model: string;
   maxTokens: number;
-  system?: string;
+  system?: SystemPrompt;
   temperature?: number;
   tools?: LlmTool[];
   container?: string;
+  /** Anthropic `output_config.effort`; the other adapters ignore it. */
+  effort?: EffortLevel;
 }
 
 export interface ToolCompleteRequest extends CompleteRequest {
@@ -81,8 +109,33 @@ export interface StructuredRequest {
   schemaName: string;
   model: string;
   maxTokens: number;
-  system?: string;
+  system?: SystemPrompt;
   temperature?: number;
+  /** Anthropic `output_config.effort`; the other adapters ignore it. */
+  effort?: EffortLevel;
+}
+
+/**
+ * One turn of a long-running agent loop (client.ts longRunToolLoop). Served by
+ * the Anthropic adapter's streaming path only: streaming is what lets a turn
+ * run to 128K output tokens without an HTTP timeout, and the betas below have
+ * no equivalent elsewhere.
+ */
+export interface LongRunRequest extends ToolCompleteRequest {
+  effort?: EffortLevel;
+  /**
+   * Advisory token budget for the whole task (`output_config.task_budget`), so
+   * the model paces itself instead of being cut off. Minimum 20,000.
+   */
+  taskBudgetTokens?: number;
+  /**
+   * "server" opts into the server-side refusal fallback (the request is
+   * re-served on the Opus tier inside the same call when the model's safety
+   * classifiers decline); "none" lets a refusal surface as LlmRefusalError.
+   */
+  fallbacks: "none" | "server";
+  /** Extra `anthropic-beta` ids to send verbatim. */
+  betas?: string[];
 }
 
 /**
@@ -95,4 +148,11 @@ export interface ProviderAdapter {
   complete(req: CompleteRequest): Promise<CompletionResult>;
   completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult>;
   completeStructured<T>(req: StructuredRequest): Promise<T>;
+  /**
+   * The long-run path: a streamed tool turn with the long-run betas. Optional
+   * because only the Anthropic adapter has it; client.ts fails with a
+   * capability message when the routed adapter lacks it, the way the other
+   * adapters reject server tools today.
+   */
+  completeWithToolsStreaming?(req: LongRunRequest): Promise<ToolCompletionResult>;
 }

@@ -1,0 +1,9 @@
+{
+  "pin_id": "mathlib-v4.33.0",
+  "lean_toolchain": "leanprover/lean4:v4.33.0",
+  "mathlib_tag": "v4.33.0",
+  "mathlib_rev": "0000000000000000000000000000000000000000",
+  "repl_tag": "v4.33.0",
+  "checker_version": "0.1.0",
+  "_note": "The single source of truth for the pin. `mathlib_rev` is the full commit SHA of the Mathlib tag and is resolved at first deployment by scripts/resolve-pin.sh; the all-zero placeholder makes the image build fail on purpose until it is. lean-toolchain and lake-manifest.json must agree with this file; the Dockerfile checks."
+}

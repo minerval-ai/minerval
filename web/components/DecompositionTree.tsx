@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { TreeNode, Stance } from "@/lib/types";
+import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
 import {
   RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
@@ -13,6 +13,7 @@ import { buildClaimTextMap, hasClaimLinks } from "@/lib/claim-links";
 import { ArgumentText } from "./ArgumentText";
 import { Swatch } from "./Assessment";
 import { Term } from "./Term";
+import { fmtDate } from "@/lib/format";
 
 // A stable per-argument key, shared with the left rail's jump-list so a click
 // there scrolls the centre to the matching block (#204). There is one basis
@@ -118,13 +119,43 @@ function BasisNode({ node }: { node: TreeNode }) {
   );
 }
 
+// The one-line check record under a machine-checked argument's evaluation
+// (docs/mathematics.md §2.3, §11.4): what the checker confirmed, against which
+// pin, when, and the hash of what it checked. A rejected or errored check is
+// stated as such; the line never dresses a failed check as a proof.
+function CheckRecord({ check }: { check: LeanCheckSummary }) {
+  const what =
+    check.verdict === "accepted"
+      ? `${check.kind} accepted by the Lean checker`
+      : check.verdict === "rejected"
+        ? `${check.kind} rejected by the Lean checker`
+        : `${check.kind} check ended in an error`;
+  return (
+    <p className={`argcheck${check.verdict === "accepted" ? " accepted" : ""}`}>
+      <span className="argcheck-glyph" aria-hidden>⊢</span>
+      {what} · <span className="mono">{check.pin_id}</span> · {fmtDate(check.checked_at)}
+      {check.submission_sha256 && (
+        <>
+          {" · "}
+          <span className="mono" title={`submission sha256 ${check.submission_sha256}`}>
+            sha256 {check.submission_sha256.slice(0, 12)}…
+          </span>
+        </>
+      )}
+      {check.submitted_by && <> · submitted by {check.submitted_by.replace(/^contributor:/, "").replace(/_/g, " ")}</>}
+    </p>
+  );
+}
+
 // One top-level line of reasoning, stated as prose. A named argument leads with
 // its written form (issue #129) and the steward's evaluation (issue #173), the
 // subclaims linked inline with ↗ (#200); the redundant chip list beneath it is
 // gone (#204). An argument-less basis, or a legacy argument with no written
 // form, instead shows its subclaims as a quiet list, since it has no prose.
 // data-arg-anchor is the scroll target for the left rail's jump-list (#204).
-function ArgumentBlock({ group, texts }: { group: ArgumentGroup; texts: Map<string, string> }) {
+function ArgumentBlock({
+  group, texts, check,
+}: { group: ArgumentGroup; texts: Map<string, string>; check: LeanCheckSummary | null }) {
   const isBasis = !group.name;
   const written = group.content && hasClaimLinks(group.content) ? group.content : null;
   return (
@@ -153,6 +184,7 @@ function ArgumentBlock({ group, texts }: { group: ArgumentGroup; texts: Map<stri
               <ArgumentText content={group.evaluation} texts={texts} />
             </p>
           )}
+          {check && <CheckRecord check={check} />}
         </>
       ) : (
         <ul className="basis-list">
@@ -165,7 +197,14 @@ function ArgumentBlock({ group, texts }: { group: ArgumentGroup; texts: Map<stri
   );
 }
 
-export function DecompositionTree({ tree }: { tree: TreeNode }) {
+export function DecompositionTree({
+  tree, argumentChecks,
+}: {
+  tree: TreeNode;
+  // Checker records by argument id, from the deep payload's arguments, for
+  // when the tree edges do not carry them themselves.
+  argumentChecks?: Map<string, LeanCheckSummary>;
+}) {
   const texts = buildClaimTextMap(tree);
   if (tree.children.length === 0) {
     return (
@@ -183,7 +222,12 @@ export function DecompositionTree({ tree }: { tree: TreeNode }) {
   return (
     <div className="tree">
       {groups.map((g) => (
-        <ArgumentBlock group={g} texts={texts} key={argKey(g)} />
+        <ArgumentBlock
+          group={g}
+          texts={texts}
+          check={g.leanCheck ?? (g.id ? argumentChecks?.get(g.id) ?? null : null)}
+          key={argKey(g)}
+        />
       ))}
       {/* Structure lives on the map, where tracking how the pieces fit together
           is easier than in a nested list (#204, #192). */}

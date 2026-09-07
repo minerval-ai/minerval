@@ -15,6 +15,10 @@ import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
 import { OrderAssessment } from "./claim/OrderAssessment";
 import { FundDecomposition } from "./claim/FundDecomposition";
+import { FormalStatement } from "./claim/FormalStatement";
+import { MachineChecked } from "./claim/MachineChecked";
+import { Prize } from "./claim/Prize";
+import { AttemptLog } from "./claim/AttemptLog";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -25,6 +29,22 @@ function fmtDate(iso: string) {
 
 export function ClaimView({ detail }: { detail: ClaimDetail }) {
   const { claim, tree, instances, trajectory, record } = detail;
+  // Mathematics (docs/mathematics.md §8.3): the formal statement, the derived
+  // machine-checked badge, the bounty, the attempts, and the prize claims.
+  // Each is null or empty until the API serves it, and each section renders
+  // nothing then.
+  const formalization = detail.formalization ?? null;
+  const verification = detail.verification ?? null;
+  const bounty = detail.bounty ?? null;
+  const attempts = detail.attempts ?? [];
+  const prizeClaims = detail.prize_claims ?? [];
+  // The checker record behind each machine-checked argument, keyed by
+  // argument id, for the decomposition's one-line check record.
+  const argumentChecks = new Map(
+    (detail.arguments ?? [])
+      .filter((a) => a.lean_check)
+      .map((a) => [a.id, a.lean_check!] as const),
+  );
   // Live data can be mid-pipeline: an assessment row may exist with a null
   // status. Only treat it as a real assessment when the status is on-enum.
   const assessment =
@@ -112,6 +132,11 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {assessment && (
         <div className="claim-assess">
           <StatusBadge status={assessment.status} size="lg" />
+          {/* The derived machine-checked badge (§2.3), beside the status
+              rather than in place of it: the checker confirms the proof;
+              the verdict is still the steward's judgment of the claim as
+              worded. */}
+          {verification && <MachineChecked kind={verification.kind} size="lg" />}
           {/* Credence (P(claim true)) gets the meter, when the Steward stated
               one; verdict confidence is meta and stays a quiet labelled figure
               so the two are never mistaken for each other (#160). */}
@@ -167,6 +192,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         </section>
       )}
 
+      {/* formal statement, prize, attempts (docs/mathematics.md §8.3): the
+          statement sits between the assessment and the decomposition because
+          it is what a proof would be a proof of; the prize sits directly
+          beneath it because the bounty is pinned to the statement, below the
+          verdict and never in the assessment band; the attempt log follows
+          the prize, or the statement when there is no prize. Each is omitted
+          when its data is absent. */}
+      <FormalStatement claimId={claim.id} formalization={formalization} />
+      <Prize claimId={claim.id} bounty={bounty} prizeClaims={prizeClaims} />
+      <AttemptLog claimId={claim.id} attempts={attempts} />
+
       {/* decomposition */}
       <section>
         <h2>Decomposition</h2>
@@ -177,7 +213,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                 ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
                 : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
             </p>
-            <DecompositionTree tree={tree!} />
+            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} />
           </>
         ) : (
           <p style={{ color: "var(--muted)", fontStyle: "italic" }}>

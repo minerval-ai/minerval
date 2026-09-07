@@ -33,6 +33,7 @@ import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { refundUnspentBudget } from "../services/budget-job-service.js";
 import { grantCommittedMicroUsd } from "../services/regrant-service.js";
+import { mandateClosureBlockers } from "../services/bounty-service.js";
 import type { PlanItem } from "../services/grant-service.js";
 
 export type GrantDrainStatus =
@@ -285,7 +286,22 @@ export async function processNextGrantTask(
       ]);
       return { status: "empty" };
     }
-    // deepen: the scope is mechanically exhausted — settle and refund.
+    // deepen: the scope is mechanically exhausted, so settle and refund,
+    // unless a bounty is held against the escrow (docs/mathematics.md
+    // §8.1): the escrow that backs a public offer is never refunded from
+    // under it, so such a mandate stays live until its Grantmaker has
+    // withdrawn the bounties and the last has resolved.
+    const blockers = await mandateClosureBlockers(grant.id);
+    if (blockers.live_bounties > 0) {
+      console.log(
+        `[grant] ${grant.id} is exhausted but holds ${blockers.live_bounties} live ` +
+          `bount${blockers.live_bounties === 1 ? "y" : "ies"} against its escrow; leaving it live`
+      );
+      await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
+        grant.id,
+      ]);
+      return { status: "empty" };
+    }
     await refundUnspentBudget({
       id: grant.budget_job_id,
       userId: grant.funder_user_id,

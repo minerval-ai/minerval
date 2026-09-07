@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import {
   claims,
   assessments,
   arguments_,
+  bounties,
   claimInstances,
   sources,
   type NewClaim,
@@ -12,6 +13,7 @@ import { generateEmbedding } from "./embedding-service.js";
 import { createJob } from "./job-service.js";
 import { enqueueClaimPipeline } from "./queue-service.js";
 import { loadConfig } from "../config.js";
+import { LIVE_BOUNTY_STATUSES, checkedKindSql } from "./formalization-service.js";
 
 /**
  * Create a new claim with an initial argument, generate embedding, and enqueue for processing.
@@ -102,6 +104,10 @@ export async function listClaims(opts: {
   // the badge rule — a NULL status reads as unassessed, not as a verdict).
   assessed?: "all" | "assessed" | "unassessed";
   minImportance?: number;
+  // Mathematics (docs/mathematics.md §8.3): only claims with a live bounty,
+  // and only claims of one type (the Mathematics territory).
+  withPrizes?: boolean;
+  claimType?: string;
 }) {
   const db = getDb();
 
@@ -115,6 +121,8 @@ export async function listClaims(opts: {
   if (opts.minImportance && opts.minImportance > 0) {
     filters.push(gte(claims.importance, opts.minImportance));
   }
+  if (opts.withPrizes) filters.push(isNotNull(bounties.id));
+  if (opts.claimType) filters.push(eq(claims.claimType, opts.claimType));
 
   const cur = opts.cursor ? decodeCursor(opts.cursor) : null;
   if (cur) {
@@ -136,18 +144,29 @@ export async function listClaims(opts: {
       updated_at: claims.updatedAt,
       assessment_status: assessments.status,
       assessment_confidence: assessments.confidence,
+      prize_micro_usd: bounties.amountMicroUsd,
+      checked: sql<string | null>`${sql.raw(checkedKindSql(`"claims"."id"`))}`,
     })
     .from(claims)
     .leftJoin(
       assessments,
       and(eq(assessments.claimId, claims.id), eq(assessments.isCurrent, true))
     )
+    // The live bounty, at most one per claim by the partial unique index.
+    .leftJoin(
+      bounties,
+      and(eq(bounties.claimId, claims.id), inArray(bounties.status, [...LIVE_BOUNTY_STATUSES]))
+    )
     .where(and(...filters))
     .orderBy(desc(claims.updatedAt), desc(claims.id))
     .limit(opts.limit + 1);
 
   const hasMore = rows.length > opts.limit;
-  const results = hasMore ? rows.slice(0, opts.limit) : rows;
+  const results = (hasMore ? rows.slice(0, opts.limit) : rows).map((r) => ({
+    ...r,
+    prize_micro_usd: r.prize_micro_usd === null || r.prize_micro_usd === undefined ? null : Number(r.prize_micro_usd),
+    checked: r.checked === "proof" || r.checked === "disproof" ? r.checked : null,
+  }));
   const last = results[results.length - 1];
   const next_cursor =
     hasMore && last ? encodeCursor(last.updated_at, last.id) : null;

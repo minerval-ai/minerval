@@ -100,6 +100,62 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   }
 }
 
+export interface ExternalUsage {
+  /** `lean`, `elicit`, or `anthropic_code_execution` (docs/mathematics.md §6.3). */
+  provider: "lean" | "elicit" | "anthropic_code_execution";
+  /** The pinned identity, e.g. `lean-checker/mathlib-v4.33.0` or `elicit/search_papers`. */
+  model: string;
+  units: number;
+  unitKind: "wall_ms" | "call" | "container_seconds";
+  costMicroUsd: number;
+}
+
+/**
+ * Record one unit of real money the LLM meter does not see: a Lean checker
+ * call, an Elicit call, a code-execution container. It lands in the same
+ * table as LLM usage with zero tokens, so every escrow, budget-job, and
+ * cost-estimate query that sums llm_usage.cost_micro_usd by job or claim
+ * sees it without change. Feeds the live cost meter first and synchronously,
+ * exactly as meterLlmUsage does, and never throws.
+ */
+export async function meterExternalUsage(usage: ExternalUsage): Promise<void> {
+  const ctx = getUsageContext();
+  const billedMicroUsd = Math.max(0, Math.round(usage.costMicroUsd));
+  if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
+  if (!ctx.userId && !ctx.jobId && loadConfig().env === "production") {
+    console.warn(
+      `[usage] unattributed external usage from agent "${ctx.agent ?? "unknown"}" ` +
+        `(${usage.provider} ${usage.model}): no userId and no jobId in the usage context.`
+    );
+  }
+  try {
+    const db = getDb();
+    await db.insert(llmUsage).values({
+      userId: ctx.userId ?? null,
+      apiKeyId: ctx.apiKeyId ?? null,
+      jobId: ctx.jobId ?? null,
+      claimId: ctx.claimId ?? null,
+      runId: ctx.runId ?? null,
+      requestId: ctx.requestId ?? null,
+      agent: ctx.agent ?? "unknown",
+      model: usage.model,
+      provider: usage.provider,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costMicroUsd: billedMicroUsd,
+      externalUnits: String(usage.units),
+      externalUnitKind: usage.unitKind,
+    });
+  } catch (err) {
+    console.error(
+      "[usage] failed to record external usage:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 export interface UsageTotals {
   calls: number;
   inputTokens: number;

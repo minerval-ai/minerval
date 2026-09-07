@@ -1,5 +1,11 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import {
+  buildAdminPromptBlocks,
+  domainSkillsSection,
+  getSkillViews,
+  type Skill,
+} from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Grantmaker
 
@@ -123,8 +129,20 @@ be comfortable publishing, and tell the funder directly. If they redirect to
 an acceptable goal, continue the conversation; a declined conversation can
 recover.
 
-${RAISING_ISSUES}`;
+${RAISING_ISSUES}
+
+${domainSkillsSection("grantmaker")}`;
 
 export function getGrantmakerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
+}
+
+/**
+ * The prompt as system blocks: the constitution-plus-role block, then one
+ * block per active domain skill (grantmaker's view of each), in that order.
+ */
+export function getGrantmakerSystemPromptBlocks(
+  opts: { skills?: readonly Skill[] } = {}
+): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "grantmaker"));
 }

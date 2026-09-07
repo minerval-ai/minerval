@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     kudosReversed: 0,
     unsuspended: false,
   })),
+  withdrawBounty: vi.fn(async (input: { bountyId: string }) => ({ ok: true, status: "withdrawn", effective_at: null, bountyId: input.bountyId })),
 }));
 
 vi.mock("../../../../src/db/client.js", () => ({
@@ -55,6 +56,11 @@ vi.mock("../../../../src/db/client.js", () => ({
 
 vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueContribution: mocks.enqueueContribution,
+}));
+
+vi.mock("../../../../src/services/bounty-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../src/services/bounty-service.js")>()),
+  withdrawBounty: mocks.withdrawBounty,
 }));
 
 vi.mock("../../../../src/services/reputation-service.js", () => ({
@@ -88,7 +94,46 @@ beforeEach(() => {
   mocks.enqueueContribution.mockClear();
   mocks.adjustReputation.mockClear();
   mocks.neutralizeReviewOutcome.mockClear();
+  mocks.withdrawBounty.mockClear();
   primeFindings();
+});
+
+describe("withdraw_bounty_after_audit", () => {
+  it("withdraws through the bounty service with the finding and the audit actor, before opening or with notice", async () => {
+    const out = JSON.parse(
+      await executeAuditTool(
+        "withdraw_bounty_after_audit",
+        { bounty_id: "b-1", reason: "the statement proves a weaker theorem than the claim", finding_id: FINDING_ID },
+        { runId: RUN_ID }
+      )
+    );
+    expect(out).toMatchObject({ success: true, bounty_id: "b-1", status: "withdrawn", effective_at: null });
+    expect(out.message).toMatch(/before opening/);
+    expect(mocks.withdrawBounty).toHaveBeenCalledWith({
+      bountyId: "b-1",
+      rationale: `audit finding ${FINDING_ID}: the statement proves a weaker theorem than the claim`,
+      actor: `audit_agent:${RUN_ID}`,
+    });
+
+    mocks.withdrawBounty.mockResolvedValueOnce({ ok: true, status: "open", effective_at: "2026-10-04T00:00:00.000Z" } as never);
+    const noticed = JSON.parse(
+      await executeAuditTool("withdraw_bounty_after_audit", { bounty_id: "b-2", reason: "outside the mandate's bounds", finding_id: FINDING_ID }, {})
+    );
+    expect(noticed).toMatchObject({ success: true, status: "open", effective_at: "2026-10-04T00:00:00.000Z" });
+    expect(noticed.message).toMatch(/with notice/);
+  });
+
+  it("requires a persisted finding and passes the service's refusal through", async () => {
+    primeFindings({ exists: false });
+    const out = await executeAuditTool("withdraw_bounty_after_audit", { bounty_id: "b-1", reason: "r", finding_id: FINDING_ID }, {});
+    expect(out).toMatch(/requires the finding_id/);
+    expect(mocks.withdrawBounty).not.toHaveBeenCalled();
+
+    primeFindings();
+    mocks.withdrawBounty.mockResolvedValueOnce({ ok: false, code: "BAD_STATE", message: "bounty is already paid" } as never);
+    const refused = JSON.parse(await executeAuditTool("withdraw_bounty_after_audit", { bounty_id: "b-1", reason: "r", finding_id: FINDING_ID }, {}));
+    expect(refused).toEqual({ success: false, code: "BAD_STATE", message: "bounty is already paid" });
+  });
 });
 
 describe("flag_issue", () => {

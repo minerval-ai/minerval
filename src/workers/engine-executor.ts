@@ -19,6 +19,12 @@
  *    action's unit of work; the action stays 'running' and is completed
  *    by the extraction worker with the metered cost, so the funders'
  *    pro-rata split follows the real spend).
+ *  - formalize: the claim's formal statement (docs/mathematics.md §5.4,
+ *    §6.4): a direct Steward invocation on the strong tier with trigger
+ *    `formalize` drafts, elaborates, and records `reviewed`; when it did,
+ *    a second direct invocation in a fresh context with trigger
+ *    `formalization_review` publishes or returns it to draft. Completed
+ *    with the two passes' summed metered cost.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -29,6 +35,7 @@ import { runGrantor } from "../llm/agents/grantor.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
+import { invokeStewardDirect } from "./steward-direct.js";
 import {
   claimAction,
   completeAction,
@@ -81,11 +88,126 @@ export async function processNextEngineAction(
     "grant_planning",
     "mandate_review",
     "ingest",
+    "formalize",
   ]);
   if (!action || !(await claimAction(action.id))) return { status: "empty" };
 
   if (action.kind === "ingest") return runIngestAction(action);
+  if (action.kind === "formalize") return runFormalizeAction(action, opts);
   return runGrantAgentAction(action, opts);
+}
+
+/**
+ * formalize: two direct Steward passes on the strong tier under the
+ * action's largest funder (§6.4), the second only when the first left a
+ * `reviewed` statement, each metered against the funding job; the action
+ * completes with the summed cost.
+ */
+async function runFormalizeAction(
+  action: RunnableAction,
+  opts: { model?: string }
+): Promise<EngineProcessResult> {
+  const claimId = action.claim_id;
+  const [claim] = claimId
+    ? await rawQuery<{ id: string; state: string }>(
+        `SELECT id, state FROM claims WHERE id = $1`,
+        [claimId]
+      )
+    : [];
+  if (!claimId || !claim || claim.state !== "active") {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  let userId = funder.userId;
+  if (!userId && funder.grantId) {
+    const [grant] = await rawQuery<{ funder_user_id: string }>(
+      `SELECT funder_user_id FROM grants WHERE id = $1`,
+      [funder.grantId]
+    );
+    userId = grant?.funder_user_id;
+  }
+  const passOpts = {
+    claimId,
+    ...(funder.jobId ? { jobId: funder.jobId } : {}),
+    ...(userId ? { userId } : {}),
+    ...(opts.model ? { model: opts.model } : {}),
+  };
+  let billedMicroUsd = 0;
+  try {
+    const first = await invokeStewardDirect({
+      ...passOpts,
+      trigger: "formalize",
+      context:
+        "Write the claim's formal statement: draft, elaborate, review for vacuity, " +
+        "and record it with publish_formalization.",
+    });
+    billedMicroUsd += first.billedMicroUsd;
+
+    // The second pass runs only when the first left a statement to review.
+    const [reviewed] = await rawQuery<{ id: string }>(
+      `SELECT id FROM claim_formalizations
+        WHERE claim_id = $1 AND status = 'reviewed'
+        ORDER BY version DESC LIMIT 1`,
+      [claimId]
+    );
+    if (reviewed) {
+      const second = await invokeStewardDirect({
+        ...passOpts,
+        trigger: "formalization_review",
+        context: reviewed.id,
+      });
+      billedMicroUsd += second.billedMicroUsd;
+    }
+
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId ?? null,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "formalize",
+      grantId: funder.grantId,
+      ok: true,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return {
+        status: "transient",
+        actionId: action.id,
+        kind: "formalize",
+        grantId: funder.grantId,
+        error: msg,
+      };
+    }
+    // A genuine failure after spend: complete with what was metered so the
+    // money reaches the escrow, and let the reconcile sweep decide whether
+    // the claim still wants a statement on its own cadence.
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId ?? null,
+    }).catch(() => {});
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "formalize",
+      grantId: funder.grantId,
+      ok: false,
+      error: msg,
+    };
+  }
 }
 
 /**

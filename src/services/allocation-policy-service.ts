@@ -41,6 +41,24 @@ export interface AllocationPolicy {
   staleness_base_days: number;
   /** Max reassessments enqueued per sweep (bounded producer, #295). */
   staleness_max_per_sweep: number;
+  // --- Mathematics (docs/mathematics.md §10.5): cost priors for the three
+  // new action kinds until the live p80 exists, and the attempt bounds the
+  // Grantmaker plans within. Priors, not prices: the run costs what it
+  // costs, and the estimator replaces these after five live runs.
+  /** One `formalize` action (two Steward passes plus elaboration), in owls. */
+  est_formalize_cost_owls: number;
+  /** One `attempt_proof` at the standard variant (effort high), in owls. */
+  est_attempt_standard_cost_owls: number;
+  /** One `attempt_proof` at the max variant (effort max), in owls. */
+  est_attempt_max_cost_owls: number;
+  /** One `prize_review` (check, Reviewer, Steward, audit), in owls. */
+  est_prize_review_cost_owls: number;
+  /** Days after an attempt closes before the next one may open on the same
+   *  statement, absent a stated reason (§7.2). */
+  attempt_cooldown_days: number;
+  /** Per-claim lifetime attempt spend, in owls; a plan item's
+   *  lifetime_cap_owls may raise one claim's cap to at most twice this. */
+  attempt_claim_lifetime_cap_owls: number;
 }
 
 /** The bounds of the framework: what the Grantmaker may set each knob to. */
@@ -56,6 +74,12 @@ export const POLICY_BOUNDS: Record<
   est_steward_run_cost_strong_owls: { min: 0.001, max: 100 },
   staleness_base_days: { min: 1, max: 3650 },
   staleness_max_per_sweep: { min: 0, max: 1000 },
+  est_formalize_cost_owls: { min: 0.1, max: 100 },
+  est_attempt_standard_cost_owls: { min: 1, max: 1000 },
+  est_attempt_max_cost_owls: { min: 1, max: 2000 },
+  est_prize_review_cost_owls: { min: 0.1, max: 200 },
+  attempt_cooldown_days: { min: 0, max: 365 },
+  attempt_claim_lifetime_cap_owls: { min: 0, max: 10000 },
 };
 
 export interface GeneralMandate {
@@ -136,6 +160,16 @@ function defaultsFromConfig(): AllocationPolicy {
     est_steward_run_cost_strong_owls: c.estStewardRunCostStrongOwls ?? 1,
     staleness_base_days: c.stalenessBaseDays ?? 60,
     staleness_max_per_sweep: c.stalenessMaxPerSweep ?? 5,
+    // The mathematics priors are the design's (§10.5), not env knobs: a
+    // mandate that learns better figures amends them through its
+    // Grantmaker, and a stored policy from before these keys existed reads
+    // back with them filled in.
+    est_formalize_cost_owls: 8,
+    est_attempt_standard_cost_owls: 60,
+    est_attempt_max_cost_owls: 150,
+    est_prize_review_cost_owls: 12,
+    attempt_cooldown_days: 30,
+    attempt_claim_lifetime_cap_owls: 500,
   };
 }
 
