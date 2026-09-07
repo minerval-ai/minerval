@@ -10,8 +10,9 @@ import styles from "./home.module.css";
 // it explains what the visitor is looking at. No library: the backdrop is the
 // ring's box-shadow, so the page underneath stays clickable throughout.
 //
-// Strictly opt-in: nothing opens or invites on its own. The masthead's "tour"
-// entry (/?tour=1) is the only way in, from any page, as often as wanted.
+// Strictly opt-in: nothing opens or invites on its own. A "tour" entry
+// (/?tour=1) is the only way in, from any page, as often as wanted: the
+// masthead carries it above 640px, the footer nav everywhere (#367).
 
 const STEPS: { target: string; title: string; body: string }[] = [
   {

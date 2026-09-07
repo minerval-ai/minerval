@@ -66,8 +66,9 @@ export default async function Home() {
         </p>
       </div>
 
-      {/* guided walkthrough (#251), opened only from the masthead's "tour"
-          entry; Suspense because it watches ?tour=1 via useSearchParams */}
+      {/* guided walkthrough (#251), opened only from a "tour" entry (masthead
+          above 640px, footer below); Suspense because it watches ?tour=1 via
+          useSearchParams */}
       <Suspense fallback={null}>
         <HomeTour />
       </Suspense>
