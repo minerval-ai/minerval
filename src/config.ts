@@ -732,6 +732,26 @@ const configSchema = z.object({
   // under test — never let an agent grade its own trace with its own framing.
   // Default Sonnet; raise to Opus/Fable for a higher-confidence judge.
   judgeModel: modelId(MODELS.sonnet),
+  // The tagger (#272): the first agent on the nano tier. It labels what a
+  // claim is ABOUT (topic tags over the open vocabulary in `tags`), makes no
+  // epistemic judgment, carries no constitution, and runs over EVERY claim —
+  // so the cheapest capable model is the right default, and production keeps
+  // it. The saturating-task logic that put the Matcher on DeepSeek V4 Flash
+  // (#257: better than Haiku 4.5 on quality and price) applies with more
+  // force here: the whole judgment is "which of these existing tags, at what
+  // grain?" over candidates it retrieves itself, in the same tool-use loop.
+  // Same key requirement as the Matcher (OPENROUTER_API_KEY); set
+  // TAGGER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only. Pinned
+  // identically in infra/lib/api-stack.ts; the model guard covers it.
+  taggerModel: modelId(OPENROUTER_MODELS.deepseekFlash),
+  // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
+  // including the backfill — claims then stay untagged and the /tags surface
+  // is empty). Each tick tags up to taggingBatchSize claims, most important
+  // first, from the claim rows with tagged_at IS NULL. Small and frequent:
+  // a new claim is labelled within a tick of landing, and a backfill of the
+  // whole graph is the same mechanism run until the queue is empty.
+  taggingIntervalSeconds: z.coerce.number().min(0).default(30),
+  taggingBatchSize: z.coerce.number().int().min(1).max(200).default(5),
   enableContributions: z
     .string()
     .transform((s) => s === "true")
@@ -922,6 +942,9 @@ export function loadConfig(): Config {
     extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
+    taggerModel: process.env.TAGGER_MODEL,
+    taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
+    taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,

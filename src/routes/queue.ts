@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { rawQuery } from "../db/client.js";
 import { stewardQueueHealth } from "../workers/steward-pipeline.js";
+import { taggingQueueHealth } from "../services/tag-service.js";
 
 export async function queueRoutes(app: FastifyInstance): Promise<void> {
   app.get("/", {
@@ -18,8 +19,10 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
         "the allocation views live on GET /mandates/:id/allocation)",
     },
     handler: async (_request, reply) => {
-      const [health, actions] = await Promise.all([
+      const [health, tagging, actions] = await Promise.all([
         stewardQueueHealth(),
+        // The tagging lane (#272): untagged, parked, and done.
+        taggingQueueHealth(),
         rawQuery<{ kind: string; status: string; n: number }>(
           `SELECT kind, status, COUNT(*)::int AS n
              FROM actions
@@ -33,7 +36,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
         if (row.status === "open") entry.open = row.n;
         if (row.status === "running") entry.running = row.n;
       }
-      return reply.send({ depth: health, actions: ledger });
+      return reply.send({ depth: health, tagging, actions: ledger });
     },
   });
 }

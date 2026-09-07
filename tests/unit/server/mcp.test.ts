@@ -378,6 +378,7 @@ describe("MCP tools", () => {
       "get_contribution_status",
       "get_decomposition",
       "get_dependents",
+      "list_tags",
       "match_claim",
       "raise_issue",
       "search_claims",

@@ -112,6 +112,22 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
     }
   });
 
+  it("defaults the tagger to the model production pins (#272)", async () => {
+    // Same discipline as the Matcher: the nano tier's default and its pin
+    // are one ID, so dev and corpus runs tag on the model production tags on.
+    const saved = process.env.TAGGER_MODEL;
+    delete process.env.TAGGER_MODEL;
+    try {
+      const { loadConfig } = await import("../../../src/config.js");
+      const pin = productionPins().find((p) => p.envVar === "TAGGER_MODEL");
+      expect(pin?.model).toBe(OPENROUTER_MODELS.deepseekFlash);
+      expect(loadConfig().taggerModel).toBe(pin?.model);
+    } finally {
+      if (saved === undefined) delete process.env.TAGGER_MODEL;
+      else process.env.TAGGER_MODEL = saved;
+    }
+  });
+
   it("prices dated snapshot IDs through their family prefix", () => {
     // The registry's dated Haiku snapshot must resolve to Haiku rates, not the
     // fallback — prefix matching is what makes new snapshots price correctly.

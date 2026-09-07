@@ -344,6 +344,33 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 }
 .tag.kind { font-variant: small-caps; text-transform: none; letter-spacing: 0.02em; }
 
+/* topic tags (#272): what a claim is about. A chip is a link into the
+   filtered list, so it reads as ink rather than as the muted type/state
+   metadata beside it; the source of the tagging rides on the title. */
+.tag.topic {
+  color: var(--ink); text-transform: none; letter-spacing: 0.01em;
+  font-size: 0.7rem; border-radius: 999px; padding: 0.12rem 0.55rem;
+  position: relative; z-index: 1;
+}
+a.tag.topic { text-decoration: none; }
+a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
+.claim-topics {
+  display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;
+  margin: -0.2rem 0 1rem;
+}
+.claim-topics > .sc { color: var(--faint); margin-right: 0.15rem; }
+.topic-chips { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
+.topic-chips .tag.topic .count {
+  color: var(--faint); margin-left: 0.35rem; font-variant-numeric: tabular-nums;
+}
+/* the vocabulary listing on /tags and the strip on /claims */
+.topics-cloud { display: flex; gap: 0.5rem 0.45rem; flex-wrap: wrap; margin: 0.6rem 0 0.4rem; max-width: 46rem; }
+.topics-list { list-style: none; padding: 0; margin: 1.4rem 0; max-width: 46rem; display: grid; gap: 0.7rem; }
+.topics-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 1rem; align-items: baseline; }
+.topics-list .topic-name { font-weight: 600; }
+.topics-list .topic-desc { grid-column: 1 / -1; font-family: var(--sans); font-size: 0.86rem; color: var(--muted); }
+.topics-list .topic-count { font-family: var(--sans); font-size: 0.8rem; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 /* "Unassessed" — a non-verdict: a claim the Steward hasn't reached yet. Dashed
    and faint so it reads as "pending", not as one of the assessment statuses. */
 .badge.unassessed {

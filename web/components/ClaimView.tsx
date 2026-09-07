@@ -8,6 +8,7 @@ import { buildClaimTextMap } from "@/lib/claim-links";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
+import { TopicChips } from "./Topics";
 import { AssessmentText } from "./AssessmentText";
 import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
@@ -82,6 +83,16 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           </span>
         )}
       </div>
+
+      {/* topic tags (#272): what the claim is about, each opening the
+          filtered list; provenance on hover. Below the eyebrow so the
+          type/state/importance row stays the one it has always been. */}
+      {detail.tags && detail.tags.length > 0 && (
+        <div className="claim-topics">
+          <span className="sc">Topics</span>
+          <TopicChips tags={detail.tags} withProvenance />
+        </div>
+      )}
 
       {/* hero: the canonical claim */}
       <h1 className="claim-hero">{claim.text}</h1>

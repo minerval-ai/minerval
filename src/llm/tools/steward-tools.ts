@@ -1005,6 +1005,12 @@ export async function executeStewardTool(
             text: newText,
             ...(embedding ? { embedding } : {}),
             ...(claimType !== undefined ? { claimType } : {}),
+            // The wording changed, so the topic may have: return the claim
+            // to the tagging queue (#272). Existing tags stand until the
+            // tagger's next pass replaces its own.
+            taggedAt: null,
+            taggingLeasedAt: null,
+            taggingAttempts: 0,
             updatedAt: new Date(),
           })
           .where(eq(claims.id, claimId));

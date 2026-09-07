@@ -36,6 +36,13 @@ import type { PricedOp } from "../services/owl.js";
 import { runWithUsageContext, untraced } from "../llm/usage-context.js";
 import { hybridSearch } from "../services/search-service.js";
 import {
+  attachClaimTags,
+  getTagsForSubject,
+  listTags,
+  resolveTagBySlug,
+  searchTags,
+} from "../services/tag-service.js";
+import {
   getClaimById,
   getClaimInstances,
   listClaims,
@@ -234,8 +241,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "keyword search, ranked by similarity; each result carries its " +
         "current assessment status, the amount of any live prize offered " +
         "for a machine-checked proof or disproof of its formal statement " +
-        "(prize_micro_usd), whether such a check exists (checked), and a " +
-        "link to its minerval.ai page. Free.",
+        "(prize_micro_usd), whether such a check exists (checked), its " +
+        "topic tags, and a link to its minerval.ai page. Narrow to one " +
+        "topic with `tag` (a slug from list_tags). Free.",
       inputSchema: {
         query: z.string().min(1).max(500).describe("Free-text search query"),
         limit: z.number().int().min(1).max(50).default(10),
@@ -251,18 +259,31 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         claim_type: claimTypeEnum
           .optional()
           .describe("Only claims of this type; `mathematical` for propositions of mathematics"),
+        tag: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Only claims carrying this topic tag (slug); an unknown tag matches nothing"),
       },
     },
-    async ({ query, limit, assessed, min_importance, with_prizes, claim_type }) => {
+    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag }) => {
+      let tagId: string | undefined;
+      if (tag?.trim()) {
+        const resolved = await resolveTagBySlug(tag);
+        if (!resolved) return jsonResult({ results: [], note: `no tag "${tag}"` });
+        tagId = resolved.id;
+      }
       const { results } = await hybridSearch(query, {
         limit,
         assessed,
         minImportance: min_importance,
         withPrizes: with_prizes,
         claimType: claim_type,
+        tagId,
       });
+      const tagged = await attachClaimTags(results);
       return jsonResult({
-        results: results.map((r) => ({
+        results: tagged.map((r) => ({
           id: r.id,
           canonical_form: r.text,
           claim_type: r.claim_type,
@@ -273,7 +294,52 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           assessment_confidence: r.assessment_confidence,
           prize_micro_usd: r.prize_micro_usd ?? null,
           checked: r.checked ?? null,
+          tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
           page_url: claimPageUrl(r.id),
+        })),
+      });
+    }
+  );
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List topic tags",
+      description:
+        "The graph's topic vocabulary: the tags claims carry, with how many " +
+        "claims carry each. Tags say what a claim is ABOUT (a field, a " +
+        "subject, an entity) — never whether it is true. With `query`, " +
+        "ranks tags by meaning instead of by use, which is how to find the " +
+        "slug for a topic before passing it to search_claims. Free.",
+      inputSchema: {
+        query: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("A topic to look for; omit for the most-used tags"),
+        limit: z.number().int().min(1).max(200).default(50),
+      },
+    },
+    async ({ query, limit }) => {
+      if (query?.trim()) {
+        const hits = await searchTags(query, { limit: Math.min(50, limit) });
+        return jsonResult({
+          tags: hits.map((h) => ({
+            slug: h.slug,
+            name: h.name,
+            description: h.description,
+            claim_count: h.claim_count,
+            similarity: h.similarity,
+          })),
+        });
+      }
+      const rows = await listTags({ limit });
+      return jsonResult({
+        tags: rows.map((t) => ({
+          slug: t.slug,
+          name: t.name,
+          description: t.description,
+          claim_count: t.claim_count,
         })),
       });
     }
@@ -329,6 +395,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           decomposition_status: claim.decompositionStatus,
           importance: claim.importance,
           domains: claim.domains,
+          // Navigation, never the payload: a tag read failure is an empty
+          // list, not a failed claim.
+          tags: (await getTagsForSubject("claim", claim_id).catch(() => [])).map((t) => ({
+            slug: t.slug,
+            name: t.name,
+          })),
           created_at: claim.createdAt.toISOString(),
           updated_at: claim.updatedAt.toISOString(),
           page_url: claimPageUrl(claim.id),

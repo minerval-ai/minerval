@@ -35,6 +35,7 @@ import { getFundingLabelForJob } from "../services/grant-service.js";
 import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
 import { leanChecksByArgument } from "../services/formalization-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
+import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../services/tag-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -68,6 +69,31 @@ const prizeFilterProperties = {
   with_prizes: { type: "boolean", default: false },
   claim_type: { type: "string", enum: [...claimTypeEnum.options] },
 } as const;
+
+// Tags (#272): every list/search item carries the topic tags it holds, and
+// both accept a tag slug as a filter. An unknown slug matches nothing rather
+// than everything: a stale link to a retired topic should come up empty,
+// not silently widen to the whole graph.
+const tagRefSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string", format: "uuid" },
+    slug: { type: "string" },
+    name: { type: "string" },
+  },
+} as const;
+const tagItemProperties = {
+  tags: { type: "array", items: tagRefSchema },
+} as const;
+const tagFilterProperties = {
+  tag: { type: "string", description: "Only claims carrying this tag (slug)" },
+} as const;
+const NO_SUCH_TAG = "00000000-0000-0000-0000-000000000000";
+async function tagIdForFilter(raw: unknown): Promise<string | undefined> {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const tag = await resolveTagBySlug(raw);
+  return tag?.id ?? NO_SUCH_TAG;
+}
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -162,6 +188,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             assessed: { type: "string", enum: ["all", "assessed", "unassessed"], default: "all" },
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
             ...prizeFilterProperties,
+            ...tagFilterProperties,
           },
         },
         response: {
@@ -181,6 +208,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
                     ...prizeItemProperties,
+                    ...tagItemProperties,
                   },
                 },
               },
@@ -200,8 +228,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           minImportance: params.min_importance,
           withPrizes: parseWithPrizes(query.with_prizes),
           claimType: typeof query.claim_type === "string" ? query.claim_type : undefined,
+          tagId: await tagIdForFilter(query.tag),
         });
-        return reply.send({ results, next_cursor });
+        return reply.send({ results: await attachClaimTags(results), next_cursor });
       },
     }
   );
@@ -227,6 +256,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             assessed: { type: "string", enum: ["all", "assessed", "unassessed"], default: "all" },
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
             ...prizeFilterProperties,
+            ...tagFilterProperties,
           },
         },
         response: {
@@ -247,6 +277,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
                     ...prizeItemProperties,
+                    ...tagItemProperties,
                   },
                 },
               },
@@ -267,9 +298,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           minImportance: params.min_importance,
           withPrizes: parseWithPrizes(raw.with_prizes),
           claimType: typeof raw.claim_type === "string" ? raw.claim_type : undefined,
+          tagId: await tagIdForFilter(raw.tag),
         });
 
-        return reply.send({ results, total });
+        return reply.send({ results: await attachClaimTags(results), total });
       },
     }
   );
@@ -335,6 +367,20 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               bounty: looseObject,
               attempts: looseArray,
               prize_claims: looseArray,
+              // Topic tags (#272), each with the provenance of its tagging:
+              // who attached it (tagger, steward, operator…) and how sure.
+              tags: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    ...tagRefSchema.properties,
+                    description: { type: "string" },
+                    source: { type: "string" },
+                    confidence: { type: "number", nullable: true },
+                  },
+                },
+              },
             },
           },
           404: errorEnvelope,
@@ -365,12 +411,27 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         const subclaimCount = await getSubclaimCount(claim_id);
         const extras = await claimExtrasOrEmpty(claim_id);
+        // Tags degrade to none rather than failing the page.
+        const claimTags = await getTagsForSubject("claim", claim_id).catch((err) => {
+          console.error(
+            `[claims] tags failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+          );
+          return [];
+        });
 
         const response: Record<string, unknown> = {
           claim: formatClaim(claim),
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
           ...extras,
+          tags: claimTags.map((t) => ({
+            id: t.id,
+            slug: t.slug,
+            name: t.name,
+            description: t.description,
+            source: t.source,
+            confidence: t.confidence,
+          })),
         };
 
         // Funding disclosure (§19): when the current assessment was paid
