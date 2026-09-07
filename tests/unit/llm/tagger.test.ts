@@ -42,7 +42,7 @@ vi.mock("../../../src/services/tag-service.js", async (importOriginal) => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ taggerModel: "claude-haiku-4-5-20251001", agentReportsPerRun: 3 }),
+  loadConfig: () => ({ taggerModel: "deepseek/deepseek-v4-flash", agentReportsPerRun: 3 }),
 }));
 
 vi.mock("../../../src/llm/tools/report-tools.js", () => ({
@@ -77,7 +77,7 @@ describe("tagClaim", () => {
       "submit_tags",
       "raise_issue",
     ]);
-    expect(opts.model).toBe("claude-haiku-4-5-20251001");
+    expect(opts.model).toBe("deepseek/deepseek-v4-flash");
     // No constitution: the system prompt is the tagger's own, and short.
     expect(typeof opts.system).toBe("string");
     expect((opts.system as string).length).toBeLessThan(6000);

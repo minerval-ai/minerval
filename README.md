@@ -121,9 +121,8 @@ each bound by the constitution, each with a bounded domain:
   searches before extending, so readers and agents can navigate the graph
   by subject. Tags are navigation, never judgment.
 
-Model choice follows the value of the judgment: tagging runs on the cheapest
-capable model, matching is a saturating task
-and runs on DeepSeek V4 Flash via OpenRouter; the load-bearing epistemic work
+Model choice follows the value of the judgment: tagging and matching are
+saturating tasks and run on DeepSeek V4 Flash via OpenRouter; the load-bearing epistemic work
 — stewardship, structural adjudication, arbitration, audit, grantmaking — runs
 on the strongest available Claude models, and background assessments choose
 between a standard and a strong pass by marginal return on compute. Model ids

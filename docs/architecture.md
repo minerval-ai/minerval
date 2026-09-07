@@ -155,7 +155,8 @@ source's topics or a mandate's scope are the same relation, so a second
 kind needs no second table.
 
 Assignment is the work of the **tagger**, the first agent on the nano
-tier: a small, cheap loop (Haiku by default) with a semantic search over
+tier: a small, cheap loop (DeepSeek V4 Flash by default, the Matcher's
+tier) with a semantic search over
 the existing vocabulary and one submit tool, prompted to reuse before
 minting, to attach one broad field tag and one to three specific ones, and
 to name a new tag only when no existing one fits. It carries no
@@ -770,8 +771,7 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger | Claude Haiku 4.5 (the nano tier) |
-| Matcher | DeepSeek V4 Flash (via OpenRouter) |
+| Tagger · Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
@@ -780,8 +780,8 @@ The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
 non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
-every claim, so it defines the nano tier: the cheapest capable model,
-in production as in dev. The load-bearing epistemic work
+every claim, so it shares that tier: the cheapest capable model, in
+production as in dev. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a

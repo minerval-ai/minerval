@@ -44,7 +44,8 @@ export const MODELS = {
  *
  * DeepSeek V4 Flash is the Matcher's tier: its judgment is narrow ("same
  * proposition?") over candidates it retrieves itself, and it beats Haiku 4.5 on
- * both quality and price (issue #257). It is pinned identically on the ECS task
+ * both quality and price (issue #257). The tagger (#272) shares it for the
+ * same reason. It is pinned identically on the ECS task
  * definition (MATCHER_MODEL in infra/lib/api-stack.ts); the model guard asserts
  * the two agree, so a corpus or dev run scores the model production runs.
  */

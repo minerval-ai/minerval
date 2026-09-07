@@ -5,7 +5,7 @@
  * The first agent on the nano tier. Its judgment is narrow ("what is this
  * about, at what grain?"), it makes no epistemic call, and it runs over
  * every claim the graph holds, so it carries no constitution and defaults to
- * Haiku (config.taggerModel, TAGGER_MODEL). The shape is the Matcher's: a
+ * the Matcher's tier, DeepSeek V4 Flash (config.taggerModel, TAGGER_MODEL). The shape is the Matcher's: a
  * tool-use loop armed with a semantic search over the thing it must not
  * duplicate (here the tag vocabulary, there the claims), ending in one
  * submit call. Retrieval is the tool's; the decision is the model's; the
