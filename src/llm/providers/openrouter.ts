@@ -9,6 +9,14 @@
  *     than a json_schema response format. Native structured outputs are only
  *     available on some of the zoo; a forced tool call is the most portable
  *     mechanism across it.
+ *
+ *     Do not "modernize" this to response_format. OpenRouter routes one model
+ *     ID across many provider endpoints, and support differs BETWEEN THEM: of
+ *     the endpoints serving the Matcher's own pin, several advertise no
+ *     structured-output support while every one of them supports tool calling.
+ *     Switching would therefore fail intermittently, on a subset of calls,
+ *     decided by which endpoint routing happened to pick — the worst shape of
+ *     bug this codebase could buy for a cosmetic gain.
  *  2. `usage: {include: true}` makes every response carry token counts, cached
  *     tokens, and OpenRouter's own computed cost. That cost is authoritative —
  *     we cannot maintain a rate table for hundreds of third-party models — so

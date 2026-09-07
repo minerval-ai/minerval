@@ -47,9 +47,27 @@ export const MODELS = {
  * both quality and price (issue #257). It is pinned identically on the ECS task
  * definition (MATCHER_MODEL in infra/lib/api-stack.ts); the model guard asserts
  * the two agree, so a corpus or dev run scores the model production runs.
+ *
+ * The pin is the DATED `-0731` revision rather than the rolling
+ * `deepseek/deepseek-v4-flash` alias, for three reasons, in order of weight:
+ *
+ *  1. A rolling alias silently repoints. Every eval number we hold is a claim
+ *     about a specific model, and a scorecard whose model moved under it is a
+ *     measurement of nothing. Pinning dated snapshots is the same discipline
+ *     MODELS.haiku already follows ("claude-haiku-4-5-20251001").
+ *  2. It is cheaper on both directions ($0.08/$0.18 per Mtok against
+ *     $0.14/$0.28) and on cache reads ($0.016 against $0.028).
+ *  3. It supports `parallel_tool_calls`, which the undated alias does not
+ *     currently resolve to, and it is post-trained for agent workflows — both
+ *     of which matter for any agent we route here that fans out tool calls.
+ *
+ * One caveat worth knowing before leaning on it: OpenRouter serves this ID from
+ * many providers whose context windows differ (1M on most, 262k and 131k on
+ * some). An agent that genuinely needs the full 1M window must constrain
+ * provider routing, not just name the model.
  */
 export const OPENROUTER_MODELS = {
-  deepseekFlash: "deepseek/deepseek-v4-flash",
+  deepseekFlash: "deepseek/deepseek-v4-flash-0731",
 } as const;
 
 /** Default model for general completions when a caller doesn't specify one. */

@@ -13,6 +13,17 @@ describe("modelDisplayName", () => {
     expect(modelDisplayName("claude-opus-4-8")).toBe("Claude Opus 4.8");
     expect(modelDisplayName("claude-sonnet-5")).toBe("Claude Sonnet 5");
     expect(modelDisplayName("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+    expect(modelDisplayName("deepseek/deepseek-v4-flash-0731")).toBe(
+      "DeepSeek V4 Flash 0731"
+    );
+  });
+
+  it("keeps the superseded DeepSeek alias mapped, like the retired Fable", () => {
+    // The Matcher moved from the rolling alias to the dated revision. Rows
+    // written before that carry the alias, and the generic prettifier below
+    // only handles Anthropic-shaped ids — so dropping this entry would render
+    // a bare "deepseek/deepseek-v4-flash" on those assessments.
+    expect(modelDisplayName("deepseek/deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
   });
 
   it("prettifies an unmapped claude-family id instead of dropping it", () => {

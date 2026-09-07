@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-07T18:18:09.600Z",
-  "gitCommit": "960cd25",
+  "syncedAt": "2026-09-07T20:54:06.640Z",
+  "gitCommit": "403197f",
   "pins": [
     {
       "agent": "steward",
@@ -47,8 +47,8 @@
     {
       "agent": "matcher",
       "envVar": "MATCHER_MODEL",
-      "model": "deepseek/deepseek-v4-flash",
-      "label": "DeepSeek V4 Flash"
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "label": "DeepSeek V4 Flash 0731"
     }
   ],
   "judge": {
@@ -61,7 +61,7 @@
       "outputPerMtok": 50,
       "cacheReadMultiplier": 0.025
     },
-    "deepseek/deepseek-v4-flash": null,
+    "deepseek/deepseek-v4-flash-0731": null,
     "claude-sonnet-5": {
       "inputPerMtok": 3,
       "outputPerMtok": 15

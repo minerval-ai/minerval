@@ -13,6 +13,12 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+  // Both DeepSeek entries stay. The dated revision is what the Matcher runs
+  // now; the undated alias is what earlier rows recorded, and an assessment
+  // must keep naming the assessor that actually produced it. The generic
+  // prettifier below only handles Anthropic-shaped ids, so a missing entry
+  // here renders the raw "vendor/model" string.
+  "deepseek/deepseek-v4-flash-0731": "DeepSeek V4 Flash 0731",
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash",
 };
 

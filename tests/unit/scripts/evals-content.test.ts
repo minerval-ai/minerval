@@ -135,6 +135,11 @@ describe("evals content index", () => {
     expect(modelLabel("claude-fable-5-1")).toBe("Claude Fable 5.1");
     expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
     expect(modelLabel("deepseek/deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
+    // Longest prefix wins, so the dated revision must not label as the alias:
+    // on an evals page, which revision produced a number is the point.
+    expect(modelLabel("deepseek/deepseek-v4-flash-0731")).toBe(
+      "DeepSeek V4 Flash 0731"
+    );
     expect(modelLabel("mistral/large")).toBe("mistral/large");
   });
 

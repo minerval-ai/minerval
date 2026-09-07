@@ -134,6 +134,11 @@ const MODEL_LABELS: Array<[prefix: string, label: string]> = [
   ["claude-sonnet-5", "Claude Sonnet 5"],
   ["claude-sonnet-4-6", "Claude Sonnet 4.6"],
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
+  // Longest prefix wins, so the dated revision needs its own entry or it
+  // would label as the undated alias — and on an evals page, which revision
+  // produced a number is the whole point. The alias entry stays for the
+  // scorecards recorded before the pin moved.
+  ["deepseek/deepseek-v4-flash-0731", "DeepSeek V4 Flash 0731"],
   ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash"],
   ["gpt-5", "GPT-5"],
 ];

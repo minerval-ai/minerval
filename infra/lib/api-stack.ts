@@ -200,7 +200,10 @@ export class ApiStack extends cdk.Stack {
         // candidates. Pinned here AND as the config default
         // (OPENROUTER_MODELS.deepseekFlash) so corpus and dev runs match on the
         // model production matches on; the model guard asserts the two agree.
-        MATCHER_MODEL: "deepseek/deepseek-v4-flash",
+        // Dated revision, not the rolling alias: an eval number is a claim
+        // about a specific model, and an alias that repoints under a
+        // scorecard measures nothing (see OPENROUTER_MODELS).
+        MATCHER_MODEL: "deepseek/deepseek-v4-flash-0731",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses
