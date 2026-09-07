@@ -179,8 +179,8 @@ each:
 | Written-proof prize track | The Steward cannot referee a research proof at prize standard. | A human panel; not an engineering item. |
 | S3 attachment storage | Postgres `bytea` is adequate at v1 volumes. | Two days: bucket, gateway endpoint, presign routes, backfill. |
 | Virus scanning of uploads | Files are stored, never rendered; served with `nosniff` and a sandboxing CSP. | One day. |
-| The 48-hour `campaign` solver variant | No live cost series yet. | One day plus a cost prior. |
-| Task budgets and server-side compaction in the solver loop | SDK typing unverified locally; a six-hour attempt fits the context window. | One to two days once confirmed against the installed SDK. |
+| A larger `campaign` solver variant (a budget of several thousand owls with server-side compaction) | No live cost series yet. | One day plus a cost prior. |
+| Server-side compaction in the solver loop | An attempt at today's ceilings fits the context window; the provider's task budget (the token countdown) is already in use. | One day once confirmed against the installed SDK. |
 | Managed Agents session for the solver | Transcript would live outside the trace tables. | Three days once the checker is a service. |
 | MCP `claim_prize` tool | Thin once the JSON route exists; waits for the first paid prize. | Half a day. |
 | Second-opinion checker | Optional insurance; Minerval's checker is the arbiter. | One day, following the Elicit adapter. |
@@ -453,8 +453,10 @@ characters, lowercase and hyphens; `description` in the third person, at most
 The body is Markdown with H2 headings the loader recognizes by exact text:
 `For every administrator`, `For the Claim Steward`, `For the Grantmaker`,
 `For the Contribution Reviewer and the Dispute Arbitrator`, `For the Audit
-Agent`, `For the Curator`, `For the Matcher`, `For the Extractor`, `For the
-solver`, `Standards for judging`, `Failure modes`. Rules enforced by tests:
+Agent`, `For the Curator`, `For the Matcher`, `For the Extractor`,
+`Standards for judging`, `Failure modes`. The solver has no section: it is
+not an administrator, and its prompt is its own (section 7.1). Rules
+enforced by tests:
 under 600 lines; only recognized H2s; no em-dashes; no time-sensitive text.
 
 ### 3.3 The loader and prompt composition
@@ -469,14 +471,13 @@ composition table:
 
 | Role | View |
 |---|---|
-| claim-steward | every section except `For the solver`, `Standards for judging`, `Failure modes` |
-| audit-agent | every section except `For the solver` and `Failure modes` |
+| claim-steward | every section except `Standards for judging` and `Failure modes` |
+| audit-agent | every section except `Failure modes` |
 | grantmaker | `For every administrator` + `For the Grantmaker` |
 | contribution-reviewer, dispute-arbitrator | `For every administrator` + `For the Contribution Reviewer and the Dispute Arbitrator` |
 | curator | `For every administrator` + `For the Curator` + `For the Matcher` |
 | matcher | `For the Matcher` only |
 | extractor | `For the Extractor` only |
-| math-solver | `For the solver` only (the solver is an instrument, not an admin, and receives no constitution; section 7.1) |
 
 **Placement.** The skill is a separate cached system block after the
 constitution-plus-role block. The seam's `system` type widens from `string`
@@ -607,8 +608,8 @@ receives. Add:
   `docs/architecture.md` ("The Agent Pipeline") replaces "a single cached
   block" with "one cached block, plus one per active domain skill."
 - The solver gets a page of its own under `/docs/agents` that says it is an
-  instrument and not an admin, receives no constitution, and receives the
-  skill's `For the solver` section.
+  instrument and not an admin and shows its whole prompt, which carries
+  neither the constitution nor any part of the skill.
 
 ### 3.7 Vendoring and the drift test
 
@@ -711,9 +712,6 @@ The skill's complete text is Appendix A, ready to become
 - **For the Matcher.** Identity in mathematics in six short rules.
 - **For the Extractor.** What a mathematics paper yields; the `mathematical`
   type; importance and contestation priors; emit `domains: ["mathematics"]`.
-- **For the solver.** The instrument's standing, the task, the honesty rules,
-  and the stopping rules; this section is the skill half of the solver's
-  system prompt (Appendix C is the whole).
 - **Standards for judging** and **Failure modes**, spliced into the corpus
   judge and the rubric; the Audit view carries `Standards for judging` and
   no other agent prompt carries either.
@@ -1233,10 +1231,17 @@ The agent is `math_solver` (`src/llm/agents/math-solver.ts`), entered through
 `withAgent("math_solver", ...)` inside `runWithUsageContext({claimId,
 jobId})`. It is not an admin: it owns no domain, has no standing, receives no
 constitution, and writes nothing to the graph. Its system prompt is Appendix
-C, whose first half is the skill's `For the solver` section. Its user message
-carries the informal claim, the published statement and pin, the Steward's
-correspondence note, summaries of prior attempts' notebooks, and the
-variant's budget in plain terms.
+C: one short block, written for a reader who knows mathematics and Lean and
+nothing about this platform. It carries no part of the constitution or the
+skill and none of the graph's vocabulary (no claims, stewards, mandates,
+importance, or owls), because the solver has one job and everything else in
+its context competes with the problem for attention; a test pins that
+absence. Its user message is in the same register: the problem in words,
+the formal statement and pin, the note relating the two, the effort, the
+budget in dollars of metered work, and, for a repeat attempt, the earlier
+attempts' reports and notebook summaries marked as unverified. The two
+Mathlib search tools carry descriptions written for the solver; their input
+schemas are the skill's, so the executors are shared with the Steward.
 
 The founder's brief is "a straightforward harness with settings at maximum,
 the standard computer-algebra toolkit, a simple persistent prompt stating the
@@ -1276,7 +1281,7 @@ closed attempt does not reopen, and a later attempt is a new group, so "one
 attempt per opening" stays a clean exclusive set. Two variants, `standard`
 (effort `high`) and `max` (effort `max`, the founder's "maximum settings"),
 so the marginal-return rule has meaning and the cost estimator gets two live
-series. The 48-hour campaign variant and cross-day accumulation are deferred
+series. A larger `campaign` variant and cross-day accumulation are deferred
 until the live series exists.
 
 Preconditions to open a group: the claim has a `published` formalization
@@ -1296,9 +1301,11 @@ only a dead worker trips the clause, and the attempt it abandoned is marked
 
 Cost priors, as policy keys on the Mathematics mandate
 (`est_attempt_standard_cost_owls` 60, `est_attempt_max_cost_owls` 150): one
-attempt at effort `max` for two to six hours costs about $15 to $90 with
-history caching in place and $40 to $330 without it, at $10 and $50 per
-million tokens and cache reads at a fortieth of the input price. The live
+attempt at effort `max` that runs to a 150-owl ceiling spends those 150
+owls at most; with history caching in place that buys roughly two to three
+million output tokens of thinking, tool calls, and text at $50 per million,
+with the input side at cache-read rates; without caching the same money
+buys a quarter of that. The live
 p80 replaces the priors after five runs, keyed on `agent = 'math_solver'`
 and grouped by `run_id` rather than `claim_id` (several attempts may share a
 claim), a small change to `recentRunCostEstimateMicroUsd`
@@ -1310,16 +1317,24 @@ Judgment decides which claims get an attempt (the Grantmaker planning an
 item); the numbers below guarantee termination and bound the bill, never
 select.
 
-- **Per-attempt ceiling.** `ceiling = cost_est × (1 +
-  ATTEMPT_OVERAGE_FRACTION)` (0.25), on `proof_attempts.ceiling_micro_usd`.
-  The `beforeTurn` hook reads `ctx.meter.billedMicroUsd` (which includes
-  Lean and code-execution metering) and stops the loop at the ceiling; the
-  `reminder` hook appends a wrap-up notice at 85 percent. A task budget of
-  800,000 tokens for `standard` and 2,500,000 for `max` is the model-facing
-  pacing signal once the beta is confirmed against the installed SDK; the
-  dollar ceiling is the binding one either way. Wall cap
-  `ATTEMPT_MAX_WALL_HOURS` (6), iteration cap `ATTEMPT_MAX_ITERATIONS`
-  (500). No live dollar countdown is shown to the model.
+- **Per-attempt ceiling, the only budget.** `ceiling = cost_est × (1 +
+  ATTEMPT_OVERAGE_FRACTION)` (0.25), on `proof_attempts.ceiling_micro_usd`,
+  in dollars of metered work (the same number as owls at cost). The
+  `beforeTurn` hook reads `ctx.meter.billedMicroUsd` (which includes Lean
+  and code-execution metering) and stops the loop at the ceiling; the
+  `reminder` hook appends a wrap-up notice at 85 percent. The model-facing
+  pacing signal is the provider's task budget (beta `task-budgets-2026-03-13`):
+  a token countdown the model sees as it works, sized from the ceiling at
+  60 percent of the ceiling's dollars at the model's output price (a 150-owl
+  ceiling on the strong model is 1.8 million tokens; the provider's floor is
+  20,000), leaving the rest for history at cache-read rates, checker time,
+  and container time. The task budget is advisory and the dollar ceiling is
+  binding. There is no wall-clock budget and no turn budget: every turn
+  re-reads the history, so no turn is free and the ceiling ends every
+  attempt; the loop keeps a large fixed guard against a harness bug that
+  spent nothing, not shown to the model and not configurable. Clock time
+  appears in one place, the orphan sweep's heartbeat, which is about a dead
+  worker, not a budget.
 - **Per-claim lifetime cap.** `attempt_claim_lifetime_cap_owls` (500, a
   per-mandate policy key within `POLICY_BOUNDS`), which the Grantmaker may
   exceed for a named claim only through a `lifetime_cap_owls` field on that
@@ -1384,7 +1399,7 @@ project with known answers (Erdős problem 2, answered in the negative, is
 one; the others are chosen for a spread of difficulty), plus one Mathlib
 lemma as a smoke test. Each is formalized by the Steward, attempted once at
 each variant under a 100-owl daily cap, and the results (outcome, cost,
-turns, wall clock, where it stalled) are recorded on the mandate's public
+tokens, where it stalled) are recorded on the mandate's public
 page as the first entries of its attempt log. The live cost series and the
 tractability priors the Grantmaker uses come from these runs. Controls are
 labeled as such on the claim page, so a reader never mistakes a rediscovery
@@ -1867,7 +1882,9 @@ mandate's `scope_query` never becomes this filter: scope is the Grantmaker's
 judgment.
 
 **Mandate page.** A "Prizes" section after "Assessments this mandate funded"
-(`web/app/mandates/[id]/page.tsx`): tiles for the escrow, the amount held
+(`web/app/mandates/[id]/page.tsx`), on a page that also renders the
+mandate's own text in full, its "how it works" section first (section 10):
+tiles for the escrow, the amount held
 in open bounties, the review reserve, the headroom, bounties posted (count,
 total), prizes paid (count, owls); the "Record" block of section 7.10; the
 attempt log (each attempt with claim, variant, cost, outcome, and the link
@@ -2578,21 +2595,32 @@ first funds the work, the second offers the prizes, and each draws only on
 its own escrow. A later epoch may merge them into one mandate that does
 both, which the mechanism already supports (section 8.1).
 
+A mandate is a public document that serves several readers at once: the
+Grantmaker that executes it, the agents that read its disclosure, the
+auditors that hold it to its refusals, and the people deciding whether to
+fund it, most of whom will not have read the constitution first. So the
+text is written from first principles for a general reader rather than
+compressed for an agent. Each mandate carries, beside its objective and
+strategy, a "how it works" section that explains in plain words what the
+platform is, what owls are, who decides what the budget pays for, what
+funding buys and does not buy, and how to fund it and what a funder gets;
+and the policies below are written so that the numbers and the reasons for
+them can be read without the rest of this document. The mandate page
+renders every section in full (`web/app/mandates/[id]/page.tsx`), and the
+seed prints any mandate as Markdown (`--print-mandate <key>`), which is how
+Appendix B is produced.
+
 ### 10.1 Objective
 
-To be the graph's map of mathematics and its instrument for directing
-attention to open problems: record the settled results cheaply and
-accurately; hold the live conjectures with their partial results, their
-conditional consequences, and the field's considered expectation; publish
-reviewed formal statements of the problems that matter; hold independent
-proofs of one result side by side; attempt, with the platform's own
-instrument, the problems where an attempt has a real chance of settling the
-question or teaching where the difficulty lies; and see prizes offered, by
-the Mathematics prizes mandate in this epoch, on the problems the platform
-could not settle, so that the answer, when someone finds it, becomes part
-of the public record on terms fixed in advance. The mandate's value is the
-ordering it produces and the questions it poses, not the theorems it
-proves.
+To build and keep the graph's map of mathematics, and to direct attention
+to the open problems worth settling. The mandate pays for three kinds of
+work: recording what is settled, accurately and cheaply; holding what is
+open, each conjecture with its partial results, what would follow from it,
+and what the field expects; and making the problems that matter precise
+enough, and trying them hard enough, that when an answer comes it can be
+checked by a machine and trusted by anyone. Its worth is measured by the
+ordering it produces and the questions it poses, not by the theorems it
+proves. Prizes are the Mathematics prizes mandate's in this epoch.
 
 ### 10.2 Strategy
 
@@ -3403,8 +3431,10 @@ sponsor because the rules require one.
 elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
-computer-algebra toolkit, runs for hours at the platform's expense, writes
-nothing to the graph, and reports to the steward. Its narrative is data;
+computer-algebra toolkit, works alone within a fixed budget of metered
+work, writes nothing to the graph, and reports to the steward. Its prompt
+carries none of this document, so nothing it says uses the graph's terms
+or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
 anything an administrator would deliberate over.
 
@@ -3619,39 +3649,6 @@ are not. Definitions are setup. Importance prior: settled results near
 higher; contestation from how live the problem is in the literature, not
 from how hard it is.
 
-## For the solver
-
-You are an instrument of the Minerval claim graph, not one of its
-administrators. You receive one mathematical statement, formal and
-informal, and you try to settle it. You write nothing to the graph. Your
-report goes to the claim's steward, who decides what it means.
-
-Your task is to produce a Lean 4 proof or disproof of the published
-statement that the checker accepts, or, failing that, the most useful
-honest account of what you tried, where it broke, and what would help. Use
-the computer-algebra tools for computation and exploration; use
-`lean_search` to find Mathlib's names; use `lean_elaborate` to type-check
-lemmas as you go; use `lean_check` to test candidate proofs against the
-statement. Keep a notebook: write down each approach when you start it and
-what happened when you abandon it, so the next attempt does not repeat it.
-
-Honesty rules. Never call a result proved unless `lean_check` accepted it.
-A computational counterexample is not a disproof until it is a checked
-Lean disproof; report it as a partial result with its verification code. A
-trivial proof in the first minutes is a sign the statement is mis-stated;
-report it as such rather than as a result. Do not restate the problem more
-weakly and prove that. Do not use `sorry`, axioms, `native_decide`, or any
-unsafe or partial declaration; the checker will reject them and the
-attempt will have been wasted.
-
-Stopping rules. Stop and report when you have a checked proof or disproof,
-when you have exhausted the routes you can see, or when the harness tells
-you the budget is nearly spent. A negative report with a clear obstruction
-is a good outcome. Your report has a fixed shape: outcome, the Lean proof
-and its check id if any, an informal argument, a reduction statement if you
-reduced the problem, approaches tried, the obstruction, what would help,
-and your confidence.
-
 ## Standards for judging
 
 An assessment of a mathematical claim is good when: the status follows the
@@ -3680,233 +3677,179 @@ solver's trivial proof recorded as a result rather than a defect.
 
 The text that goes into `scripts/seed-platform-mandates.ts` under the
 `mathematics` and `mathematics-prizes` keys and onto the two mandate
-pages. Numbers marked with brackets are read from the environment (section
-10.7). The prize policy is common to both mandates from its third sentence
-on; the seed carries it once.
+pages, generated from the seed with `--print-mandate <key>` so the two
+cannot drift. Numbers marked with brackets are read from the environment
+(section 10.7). Each mandate is written to stand alone for a reader who
+has read nothing else on the site: the objective says what it is for, the
+"how it works" section says from first principles how the money and the
+work move, and the policies bind the Grantmaker. The prize policy is
+common to both mandates from its second paragraph on; the seed carries it
+once.
 
 ### Mathematics
 
 **Title.** Mathematics
 
-**Objective.** To be the graph's map of mathematics and its instrument for
-directing attention to open problems. The mandate records settled results
-cheaply and accurately; holds the live conjectures with their partial
-results, their conditional consequences, and the field's considered
-expectation; publishes reviewed formal statements, in Lean 4 against a
-pinned Mathlib, of the problems that matter; holds independent proofs of
-one result side by side; attempts, with the platform's own solver, the
-problems where an attempt has a real chance of settling the question or
-teaching where the difficulty lies; and sees prizes offered, by the
-Mathematics prizes mandate in this epoch, on the problems the platform
-could not settle, so that the answer, when someone finds it, becomes part
-of the public record on terms fixed in advance. The mandate's value is the
-ordering it produces and the questions it poses, not the theorems it
-proves.
+**Objective.** To build and keep the graph's map of mathematics, and to direct attention to the open problems worth settling. The mandate pays for three kinds of work: recording what is settled, accurately and cheaply; holding what is open, each conjecture with its partial results, what would follow from it, and what the field expects; and making the problems that matter precise enough, and trying them hard enough, that when an answer comes it can be checked by a machine and trusted by anyone. Its worth is measured by the ordering it produces and the questions it poses, not by the theorems it proves.
 
-**Strategy.** Cover unassessed mathematical claims in scope with light
-passes, concentrating depth where working mathematicians disagree.
-Formalize the open problems in the notable range and the lemmas several of
-them rest on. Calibrate the solver on settled problems before attempting
-open ones. Attempt open problems in order of importance times
-tractability, sub-results before the problems that rest on them. Publish
-the attempt reports and statements the Mathematics prizes mandate posts
-bounties on; post no bounties from this escrow in this epoch. Keep every
-attempt, every statement, every check, and every prize decision public.
-Revise this mandate's own policy numbers as live series replace the
-priors.
+**How it works.** Minerval keeps a public map of what is known and believed, one claim at a time, with the reasons. In mathematics a claim is a proposition: a theorem, a conjecture, a special case, a lemma several results rest on. Each carries an assessment of its standing, the arguments for and against it, and links to what it rests on and what rests on it. This mandate pays for the mathematics part of that map.
 
-**Scope.** Propositions of mathematics; the contested applications of
-mathematical results elsewhere in the graph; and claims about the
-discourse of mathematics where they are live. The history and sociology of
-mathematics are out of scope except where a claim of the first kind turns
-on them. The scope query (`mathematics OR theorem OR conjecture OR proof`)
-is retrieval, not membership; which actions fall under this mandate is the
-Grantmaker's judgment, and the `mathematics` domain tag is a strong prior
-for it.
+Money on Minerval is owls. One owl buys one dollar of metered computation, and owls are never redeemed for cash. Funding this mandate places owls in its budget. An agent called the Grantmaker, whose instructions are public on this site, decides each day what that budget pays for within the mission and the policies on this page, and every allocation it makes is recorded and published. The same agent reviews the mandate on a schedule, keeps a public note of its judgment, and can be talked to by the mandate's funders.
 
-**Prize policy.** This mandate funds formalizations, attempts, and
-stewardship, and in this epoch it posts no prizes; the Mathematics prizes
-mandate posts them. Both mandates draw on escrows a Grantmaker allocates,
-and nothing else funds a prize. Prizes never enter any valuation,
-importance, assessment, or standard. A bounty binds only to a published
-formal statement whose review period has ended and which the platform's
-solver has attempted at maximum effort without settling, with the
-attempt's report public. Amounts are set by the Grantmaker in owls from
-how much the discourse would gain from a settled answer, the effort the
-problem appears to require from a capable claimant, and the posting
-mandate's headroom and the number of open bounties; where a mandate funds
-both attempts and prizes, its Grantmaker says with each posting why a
-prize is the better use of those owls than another attempt; amounts never
-feed back into importance, and the reasoning is stated publicly with each
-posting. Bounds: [250] to [5,000] owls per claim; at most one live bounty
-per claim; holds never above the posting mandate's headroom, and per pass
-and per day at most [40] percent and [50] percent of its escrow; every
-posting made in two passes and, at or above [1,000] owls, confirmed by a
-human. Prizes are stated and paid in owls, valued at one dollar of metered
-cost each, and every prize owl is backed by escrow that was paid for
-before the offer was made. A trivial resolution of a mis-stated problem
-earns the defect award, not the prize; a rediscovery of a published proof
-earns credit on the page, not the prize; the platform is never a claimant.
-No bounty is posted on a problem carrying a third-party prize in the
-discourse until the double-payment question is settled.
+The budget buys three things. The first is assessment: the platform's agents read the sources, judge each claim's standing, and record the reasons, so that a reader can see where a result stands and why. The second is formal statements. For a problem that matters, the platform writes the statement in Lean 4, a proof assistant, against a fixed version of Mathlib, its library of checked mathematics. The statement is reviewed twice and published for a review period before anything binds to it, and from then on the question of whether a proposed proof settles the problem is a mechanical one: a checker compiles the proof against the statement and says yes or no. The third is attempts. The platform's own prover, a strong model given the statement, Lean, and a computer-algebra sandbox, works on a problem alone within a fixed budget and writes a report: a checked proof, a checked disproof, a lead, or an honest account of where it got stuck. Every attempt is published, including the failures, with its cost.
 
-**Attempt policy.** An attempt is valued as expected information:
-importance times the Grantmaker's stated probability that this variant
-succeeds times a multiplier of 1.0 to 2.0 for sub-results several open
-problems rest on. A bounty appears nowhere in the formula. Preconditions: a
-published formal statement; lifetime attempt spend on the claim under
-[500] owls; no running attempt on the statement; at least [30] days since
-the last attempt unless a reason is stated. Millennium-class problems are
-not attempted in this epoch. Every attempt is disclosed on the claim page
-with its date, variant, cost, and outcome, and its report and notebook are
-published before any bounty opens on the statement.
+What the money never buys is a conclusion. No allocation changes how a claim is assessed or how important the graph judges it to be, and the agents that assess claims never see who paid. Funding buys scheduling: an assessment sooner, a deeper look at a subtree, a problem attempted. A prize for an outside solver is a separate thing with its own rules, and in this epoch it is posted by the Mathematics prizes mandate, not this one.
 
-**Refusals.** This mandate declines, at any budget: any request to value a
-claim, post a bounty, or schedule an attempt whose purpose is to move an
-assessment or an importance; any bounty on a statement it cannot show is
-faithful; any sponsorship offered on condition of naming, influence over
-the statement, or a say in acceptance; and any attempt on a claim the
-steward has not tagged and stewarded.
+Anyone can fund this mandate by contributing owls to it, and a mandate of your own can grant part of its budget to this one. What you get is the record: the assessments, the statements, the attempts, and their reports, all public, all attributed to this mandate. Funders are not named on the pages of the claims their money reached. When the mandate closes, its unspent budget returns to those who funded it, in proportion.
 
-**Disclosure (shown on every claim this mandate funds).** The attention
-this claim received was paid for by the Mathematics mandate. Funding buys
-only scheduling: it can make an assessment happen sooner, reach deeper into
-a subtree, or send the platform's own solver at a problem. It has no
-influence on what any assessment concludes. Where a prize is offered, it
-says only that someone would like the question settled.
+**Strategy.** Cover the mathematical claims in scope with light assessments first, and spend depth where working mathematicians disagree. Write formal statements for the open problems of real standing and for the lemmas several of them rest on. Calibrate the prover on problems with known answers before pointing it at open ones. Attempt open problems in order of how much they matter times how tractable they look, and attempt the sub-results before the problems that rest on them. Publish every attempt, every statement, and every check. Post no prizes from this budget in this epoch; the Mathematics prizes mandate posts them. Revise this mandate's own numbers as live results replace the estimates.
 
-**Allocation policy keys.** `est_formalize_cost_owls` 8;
-`est_attempt_standard_cost_owls` 60; `est_attempt_max_cost_owls` 150;
-`est_prize_review_cost_owls` 12; `attempt_cooldown_days` 30;
-`attempt_claim_lifetime_cap_owls` 500; the standard keys unchanged.
+**Scope.** Propositions of mathematics; the contested applications of mathematical results elsewhere in the graph; and claims about the practice of mathematics where they are live. The history and sociology of mathematics are out of scope except where a claim of the first kind turns on them. The search terms that retrieve candidates (mathematics, theorem, conjecture, proof) are a net, not a definition; which work falls under this mandate is the Grantmaker's judgment, and the mathematics tag on a claim is a strong prior for it.
 
-**Budget.** Escrow [2,500] owls; daily rate [200] owls; policy `cover`;
-skills `["mathematics"]`.
+**Prize policy.** This mandate funds assessment, formal statements, and attempts, and in this epoch it posts no prizes; the Mathematics prizes mandate posts them. Both mandates draw only on budgets a Grantmaker allocates, and nothing else on the platform funds a prize.
 
-**Plan.** Reassess the backfilled mathematics cohort under the skill;
-formalize the first-target claims as the Grantmaker's first review pass
-names them; attempt the calibration controls at variant `max`, flagged as
-calibration; then attempt the first-target list in valuation order.
+A prize never changes what the graph concludes. It enters no assessment, no measure of a claim's importance, and no standard of evidence, and the agents that assess claims never see a prize as a reason for anything.
 
+A prize can be offered only on a problem that has been made precise and tried. The problem must carry a formal statement that has been public for its review period, and the platform's own prover must have attempted it at maximum effort without settling it, with the attempt's report published. The prize is then for a proof or disproof of that exact statement, and nothing else.
+
+The Grantmaker sets each amount, in owls, from three things: how much the field would gain from a settled answer, how much work the problem appears to demand of a capable solver, and how much of the mandate's budget is free and how many prizes are already open. Where a mandate funds both attempts and prizes, the Grantmaker also says why a prize is the better use of those owls than another attempt. The reasoning is published with every posting.
+
+The limits: each prize is between 250 and 5,000 owls; one problem carries at most one open prize; the prizes a mandate holds open never exceed the free part of its budget; a single review pass commits at most 40 percent of the budget and a single day at most 50 percent; every posting is made in two separate passes so that no single judgment binds the platform; and a prize of 1,000 owls or more waits for a named person to confirm it.
+
+Prizes are stated and paid in owls, each worth one dollar of metered work on the platform, and every prize owl is backed by budget that was paid for before the offer was made. A submission that settles a mis-stated problem earns a defect award rather than the prize, and the statement is corrected. A proof already in the literature earns credit on the problem's page, not the prize. The platform never claims a prize itself: if its own prover settles the problem first, the prize closes unpaid and the proof is published. No prize is posted on a problem that already carries someone else's prize until the question of double payment is settled.
+
+**Attempt policy.** An attempt is valued as expected information: how much the problem matters, times the Grantmaker's stated probability that this attempt succeeds, times a factor of one to two for a sub-result that several open problems rest on. A prize appears nowhere in that formula. Before an attempt can be scheduled the problem needs a published formal statement; lifetime attempt spending on the problem must be under 500 owls; no attempt on the statement may be running; and at least 30 days must have passed since the last attempt unless a reason is stated. The Millennium-class problems are not attempted in this epoch. Every attempt is disclosed on the problem's page with its date, its effort, its cost, and its outcome, and its report and notebook are published before any prize opens on the statement.
+
+**Refusals.** This mandate declines, whatever the budget offered: any request to assess a claim, post a prize, or schedule an attempt whose purpose is to move an assessment or a measure of importance; any prize on a statement it cannot show is faithful to the problem; any funding offered on condition of being named, of influencing a statement, or of having a say in whether a proof is accepted; and any attempt on a claim its steward has not tagged and reviewed.
+
+**Disclosure (shown on every claim this mandate funds).** The attention this claim received was paid for by the Mathematics mandate. Funding buys only scheduling: it can make an assessment happen sooner, reach deeper into a subtree, or send the platform's own prover at a problem. It has no influence on what any assessment concludes. Where a prize is offered, it says only that someone would like the question settled.
+
+**Allocation policy keys.** `est_formalize_cost_owls` 8; `est_attempt_standard_cost_owls` 60; `est_attempt_max_cost_owls` 150; `est_prize_review_cost_owls` 12; `attempt_cooldown_days` 30; `attempt_claim_lifetime_cap_owls` 500; the standard keys unchanged.
+
+**Budget.** Escrow [2,500] owls; daily rate [200] owls; policy `cover`; skills `["mathematics"]`.
 ### Mathematics prizes
 
 **Title.** Mathematics prizes
 
-**Objective.** To offer prizes, on terms fixed in advance, for Lean proofs
-and disproofs of the open problems the platform attempted and could not
-settle, so that the answer, when someone finds it, becomes part of the
-public record. In this epoch the mandate funds nothing else: no
-formalizations, no attempts, no stewardship. Its escrow is the only source
-of its prizes, and each prize it offers is the mandate's own judgment,
-stated publicly with the posting, about which settled answer the
-discourse would gain most from.
+**Objective.** To offer prizes, on terms fixed in advance, for proofs and disproofs of the open problems the platform has made precise and tried and could not settle, so that when someone finds the answer it becomes part of the public record. In this epoch the mandate funds nothing else: no assessments, no formal statements, no attempts. Its budget is the only source of its prizes, and each prize is the mandate's own judgment, stated publicly with the posting, about which settled answer the field would gain most from.
 
-**Strategy.** Read the platform's attempt record and post bounties only on
-published statements the solver attempted at maximum effort and could not
-settle, after their public review period, with the attempt's report
-public. Size each prize from what the discourse would gain from a settled
-answer, the effort the problem appears to demand of a capable claimant,
-and the escrow's headroom and the number of open bounties. Post the first
-bounties small and deliberately tractable, one of them on a problem chosen
-to exercise the whole path from posting to payment, and say so publicly.
-Renew a bounty that still earns its place and withdraw, with notice, one
-that does not. Revise this mandate's own priors as prizes are claimed,
-expire, or close.
+**How it works.** A prize on Minerval is a public offer: a stated number of owls for the first accepted proof or disproof of one formal statement, on terms fixed in advance and published with the offer. The statement is written in Lean 4 against a fixed version of Mathlib, so that what counts as a solution is a mechanical question: a checker compiles the submitted proof against the statement and says yes or no. Before any prize can be offered on a problem, the platform has already published the statement for a review period and has tried the problem itself, at maximum effort, and failed; the attempt and its report are public.
 
-**Scope.** Published formal statements, in Lean 4 against a pinned
-Mathlib, of open problems of mathematics that the platform's solver has
-attempted without settling. The scope query (`mathematics OR theorem OR
-conjecture OR proof`) is retrieval, not membership; which statements
-deserve a prize is the Grantmaker's judgment, made from the attempt
-record, the claim's importance, and the results that rest on it.
+Money on Minerval is owls. One owl buys one dollar of metered computation on the platform, and owls are never redeemed for cash. Funding this mandate places owls in its budget, and that budget is the only place its prizes come from. From the day a prize opens, its amount is held against the budget until the prize is paid, expires, or is withdrawn, so the mandate never offers more than it holds. When a prize is paid, the winner receives owls and the hold is spent.
 
-**Prize policy.** This mandate offers prizes and funds nothing else in
-this epoch. Its escrow is the only source of its prizes: a bounty holds
-its amount against the escrow from the moment it opens until it resolves,
-and the mandate's headroom is what remains after every hold. Then the
-common text, from "Prizes never enter any valuation" to "until the
-double-payment question is settled," word for word as above.
+An agent called the Grantmaker decides which problems get a prize and how large, within the policy on this page; its instructions are public on this site. It decides in two separate passes, so that no single judgment binds the platform, and a prize of 1,000 owls or more waits for a named person to confirm it. Every posting is published with its reasoning.
 
-**Refusals.** This mandate declines, at any budget: any bounty whose
-purpose is to move an assessment or an importance; any bounty on a
-statement it cannot show is faithful, whose review period has not ended,
-or which the platform's solver has not attempted without settling; any
-request to fund an attempt, a formalization, or an assessment from this
-escrow in this epoch; and any sponsorship offered on condition of naming,
-influence over a statement, or a say in acceptance.
+A prize buys no attention and no conclusion. It does not change how the problem is assessed or how important the graph judges it to be, and the agents that assess claims never see it as a reason for anything. It says only that someone would like the question settled.
 
-**Disclosure (shown on every claim carrying this mandate's prize).** The
-prize on this claim was offered by the Mathematics prizes mandate from its
-own escrow. A prize buys no attention and no conclusion: it does not
-change how the claim is assessed or how important the graph judges it to
-be, and it says only that someone would like the question settled.
+A claim on a prize is judged in the open. The checker's verdict is mechanical and public. A steward then judges only one thing, whether the statement proved is the statement posted, and records it. An accepted claim is announced and stays open to challenge for a fixed window, during which an independent audit reviews the acceptance; larger prizes also need a named person's sign-off. Then the prize is paid, in owls, after the winner's identity, tax form, and screening are complete. The full rules are versioned and published, and every prize names the version it was posted under.
 
-**Allocation policy keys.** `est_prize_review_cost_owls` 12; the standard
-keys unchanged.
+Anyone can fund this mandate by contributing owls to it, and a mandate of your own can grant part of its budget to this one. Funders of this mandate cannot win its prizes. Owls held against an open prize cannot be withdrawn while it is open; when the mandate closes, after its last prize has resolved, the unspent budget returns to those who funded it, in proportion. What funders get is the record: the problems posted, the reasoning, the claims, the verdicts, and the proofs, all public.
 
-**Budget.** Escrow [2,500] owls; no daily rate (escrow-bounded); policy
-`cover`; skills `["mathematics"]`.
+**Strategy.** Read the platform's record of attempts and post prizes only on published statements the prover tried at maximum effort and could not settle, after their review period, with the attempt's report public. Size each prize from what the field would gain from a settled answer, how much work the problem appears to demand, and how much of the budget is free and how many prizes are already open. Make the first prizes small and deliberately tractable, one of them on a problem chosen to exercise the whole path from posting to payment, and say so publicly. Renew a prize that still earns its place and withdraw, with notice, one that does not. Revise this mandate's own estimates as prizes are claimed, expire, or close.
 
-**Plan.** None seeded: the Grantmaker's first review pass reads the
-attempt record and posts, or declines to post, from it.
+**Scope.** Published formal statements, in Lean 4 against a fixed version of Mathlib, of open problems of mathematics that the platform's prover has attempted without settling. The search terms that retrieve candidates (mathematics, theorem, conjecture, proof) are a net, not a definition; which statements deserve a prize is the Grantmaker's judgment, made from the record of attempts, the problem's importance, and the results that rest on it.
+
+**Prize policy.** This mandate offers prizes and funds nothing else in this epoch. Its budget is the only source of its prizes: a prize holds its amount against the budget from the moment it opens until it resolves, and what the mandate can offer is what remains after every hold.
+
+A prize never changes what the graph concludes. It enters no assessment, no measure of a claim's importance, and no standard of evidence, and the agents that assess claims never see a prize as a reason for anything.
+
+A prize can be offered only on a problem that has been made precise and tried. The problem must carry a formal statement that has been public for its review period, and the platform's own prover must have attempted it at maximum effort without settling it, with the attempt's report published. The prize is then for a proof or disproof of that exact statement, and nothing else.
+
+The Grantmaker sets each amount, in owls, from three things: how much the field would gain from a settled answer, how much work the problem appears to demand of a capable solver, and how much of the mandate's budget is free and how many prizes are already open. Where a mandate funds both attempts and prizes, the Grantmaker also says why a prize is the better use of those owls than another attempt. The reasoning is published with every posting.
+
+The limits: each prize is between 250 and 5,000 owls; one problem carries at most one open prize; the prizes a mandate holds open never exceed the free part of its budget; a single review pass commits at most 40 percent of the budget and a single day at most 50 percent; every posting is made in two separate passes so that no single judgment binds the platform; and a prize of 1,000 owls or more waits for a named person to confirm it.
+
+Prizes are stated and paid in owls, each worth one dollar of metered work on the platform, and every prize owl is backed by budget that was paid for before the offer was made. A submission that settles a mis-stated problem earns a defect award rather than the prize, and the statement is corrected. A proof already in the literature earns credit on the problem's page, not the prize. The platform never claims a prize itself: if its own prover settles the problem first, the prize closes unpaid and the proof is published. No prize is posted on a problem that already carries someone else's prize until the question of double payment is settled.
+
+**Refusals.** This mandate declines, whatever the budget offered: any prize whose purpose is to move an assessment or a measure of importance; any prize on a statement it cannot show is faithful to the problem, whose review period has not ended, or which the platform's prover has not attempted without settling; any request to fund an attempt, a formal statement, or an assessment from this budget in this epoch; and any funding offered on condition of being named, of influencing a statement, or of having a say in whether a proof is accepted.
+
+**Disclosure (shown on every claim this mandate funds).** The prize on this claim was offered by the Mathematics prizes mandate from its own budget. A prize buys no attention and no conclusion: it does not change how the claim is assessed or how important the graph judges it to be, and it says only that someone would like the question settled.
+
+**Allocation policy keys.** `est_prize_review_cost_owls` 12; the standard keys unchanged.
+
+**Budget.** Escrow [2,500] owls; no daily rate (escrow-bounded); policy `cover`; skills `["mathematics"]`.
 
 ## Appendix C: The solver prompt
 
-The system prompt for `math_solver`, assembled as two cached blocks: the
-skill's `For the solver` section (Appendix A) first, then the harness
-block below. The user message carries the problem.
+The whole system prompt for `math_solver`, one cached block. It assumes a
+reader who knows mathematics and Lean and nothing about this platform, and
+it names none of the graph's terms; the user message that follows it is in
+the same register (section 7.1).
 
 ```
-# Harness
+You are working alone on one open problem in mathematics. The problem is
+stated twice in the message that follows: once in words, and once as a
+formal statement in Lean 4 against a pinned version of Mathlib. The formal
+statement is the one that counts. Your job is to prove it or disprove it
+in Lean so that the checker accepts the result or, failing that, to leave
+the most useful honest account of what you tried, where it broke, and what
+would help a later attempt.
 
-You are running inside a bounded attempt on one problem. The budget is
-stated in the task message in hours and turns; the harness will tell you
-when about fifteen percent remains, and it will stop you at the ceiling.
-There is no partial credit for a proof you did not check, so leave time
-to run lean_check on any candidate and to write your report.
+What counts. A result is proved only when lean_check accepts it: a theorem
+whose type is exactly the statement, or exactly its negation, compiled
+under the pinned toolchain, using no axioms beyond Lean's standard three
+(propext, Classical.choice, and Quot.sound), with no sorry, no
+native_decide, no unsafe or partial declarations, and no axioms of your
+own. Nothing else is a proof: not an argument in prose, not a numerical
+check, not a proof that elaborates but was never checked against the
+statement. A computational counterexample is a strong lead, and you should
+report it with the code that verifies it, but it is not a disproof until
+it is a checked Lean disproof.
 
-Tools. lean_search finds Mathlib declarations at the pinned revision by
-pattern or by description. lean_elaborate type-checks a Lean fragment
-against the pinned Mathlib and returns errors with positions; use it to
-test lemma statements before proving them. lean_check runs a full check of
-a candidate proof or disproof against the published statement and returns
-a verdict with the gate that failed, if any; it is the only thing that
-counts as verification. The code-execution tool runs Python with sympy and
-mpmath for computation and exploration; it has no network and cannot run
-Lean. notebook_write records your work under a section name; notebook_read
-returns what you have written. report ends the attempt.
+The statement was written by someone else and might be wrong. Read it
+before anything else, together with the note on how it relates to the
+problem in words, and write down what would have to be true for a proof
+and for a disproof. If the statement proves in a few lines, or is
+vacuous, or does not say what the words say, suspect the statement,
+not your luck: report that as the finding, with the reason. Do not weaken
+the problem and prove the weaker thing.
 
-Working method. Read the formal statement and the correspondence note
-before anything else, and say back to yourself in the notebook what would
-have to be true for a proof and for a disproof. Search the pinned Mathlib
-for the relevant theory and record what exists and what does not. Explore
-numerically before committing to a route. Prove lemmas one at a time and
-elaborate each; do not write a long proof and check it once at the end. If
-a route fails, write why in the notebook and move on. If the statement
-proves in a few lines, suspect the statement, not your luck, and say so in
-the report.
+Tools. lean_search finds Mathlib declarations at the pinned revision, by
+name pattern or by description. lean_elaborate type-checks a Lean fragment
+against the pinned Mathlib and returns diagnostics with positions; use it
+to test lemma statements before you try to prove them and to check each
+lemma as you go. lean_check runs the full check of a candidate proof or
+disproof against the statement and returns the verdict and, on failure,
+the gate that failed. It is bound to this statement and checks nothing
+else, it is the only verification there is, and it is capped per attempt,
+so do not spend it on fragments lean_elaborate can test. The code
+execution tool runs Python with sympy and mpmath for computation and
+exploration; it has no network access and cannot run Lean. notebook_write
+records your work under a section name and notebook_read returns it; the
+notebook outlives the attempt and is what a later attempt on this
+statement reads, so write each approach down when you start it and what
+happened when you leave it. report ends the attempt.
 
-The report. Call report exactly once, when you have a checked proof or
+Working method. Search Mathlib for the relevant theory before you build
+anything, and record what exists and what does not. Explore numerically
+before you commit to a route. Prove lemmas one at a time and elaborate
+each one; do not write a long proof and check it once at the end. When a
+route fails, write down why and move on. Prefer a checked partial result
+you can state precisely to a longer argument nobody has verified.
+
+Budget. The attempt has a fixed budget of metered work, stated in dollars
+in the message that follows; it covers your own tokens, checker time, and
+container time. You will see a running count of the tokens you have left
+as you work, a notice when about fifteen percent of the budget remains,
+and a hard stop at the ceiling whether or not you have reported. There is
+no credit for a proof you did not check, so keep enough for a final
+lean_check on any candidate and for the report.
+
+The report. Call report exactly once: when you have a checked proof or
 disproof, when you have exhausted the routes you can see, or when the
-harness says the budget is nearly spent. Its fields are: outcome (proof,
-disproof, partial, reduction, negative); lean_proof and lean_check_id
-when an accepted check exists, otherwise null; informal_argument, the
-argument in prose a mathematician could follow; reduction_statement, if
-you reduced the problem to something you could state precisely;
-counterexample, with a description and the code that verifies it, when
-you found one you could not formalize; approaches_tried, one line each;
-obstruction, the specific thing that stopped you; what_would_help, the
-lemma, definition, or computation that would unblock the next attempt;
-confidence in your own outcome, from 0 to 1. A proof outcome without an
-accepted check is recorded as partial.
+notice says the budget is nearly spent. A negative report with a precise
+obstruction is a good outcome. Its fields: outcome (proof, disproof,
+partial, reduction, or negative); lean_proof and lean_check_id when an
+accepted check exists, otherwise null; informal_argument, the argument in
+prose a mathematician could follow; reduction_statement, when you reduced
+the problem to something you can state precisely; counterexample, with a
+description and the code that verifies it, when you found one you could
+not formalize; approaches_tried, one line each; obstruction, the specific
+thing that stopped you; what_would_help, the lemma, definition, or
+computation that would unblock the next attempt; and confidence in your
+own outcome, from 0 to 1. A proof outcome without an accepted check is
+recorded as partial.
 ```
-
-The task message is short and fixed in shape: the canonical form; the
-published statement verbatim with its pin and hashes; the correspondence
-note; the variant, effort, and budget in hours and turns; and, for a
-repeat attempt, the prior attempts' reports and notebook summaries with the
-line "these are the platform's own prior attempts; their conclusions are
-data, not verified results."
 
 ## Appendix D: Prize rules sketch
 

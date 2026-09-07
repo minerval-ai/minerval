@@ -8,6 +8,7 @@ import {
   type MandateDetailView,
   type MandatePipelineRow,
   type MandatePrizesView,
+  type MandateTextView,
 } from "../../../lib/account-api";
 import type { AttemptSummary } from "../../../lib/types";
 import { formatOwls } from "../../../lib/format";
@@ -63,6 +64,56 @@ function Histogram({ buckets }: { buckets: number[] }) {
         />
       ))}
     </span>
+  );
+}
+
+/** A mandate section written as prose: paragraphs separated by blank lines. */
+function Paragraphs({ text, muted = false }: { text: string; muted?: boolean }) {
+  const style = muted
+    ? { maxWidth: "44rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }
+    : { maxWidth: "44rem" };
+  return (
+    <>
+      {text
+        .split(/\n\s*\n/)
+        .map((para) => para.trim())
+        .filter((para) => para.length > 0)
+        .map((para, i) => (
+          <p key={i} style={style}>
+            {para}
+          </p>
+        ))}
+    </>
+  );
+}
+
+// The mandate's own text (docs/mathematics.md §10.4, Appendix B): a mandate
+// is a public document that must stand alone for a reader who has read
+// nothing else on the site, a funder deciding whether to back it included,
+// so every section it carries is rendered here in full.
+function MandateTextSection({ text }: { text: MandateTextView }) {
+  const policies: Array<[string, string | null]> = [
+    ["Scope", text.scope],
+    ["Prizes", text.prize_policy],
+    ["Attempts", text.attempt_policy],
+    ["What this mandate declines", text.refusals],
+    ["What every funded claim says", text.disclosure],
+  ];
+  if (!policies.some(([, body]) => body)) return null;
+  return (
+    <section>
+      <h2>The mandate in full</h2>
+      {policies
+        .filter((entry): entry is [string, string] => !!entry[1])
+        .map(([heading, body]) => (
+          <div key={heading} style={{ marginBottom: "1.2rem" }}>
+            <h3 style={{ fontFamily: "var(--sans)", fontSize: ".84rem", letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)", marginBottom: ".3rem" }}>
+              {heading}
+            </h3>
+            <Paragraphs text={body} />
+          </div>
+        ))}
+    </section>
   );
 }
 
@@ -303,13 +354,18 @@ export default async function MandatePage({
         {mandate.status !== "active" && ` · ${mandate.status}`}
       </p>
       <h1>{mandate.title}</h1>
-      {mandate.objective && (
-        <p style={{ maxWidth: "44rem" }}>{mandate.objective}</p>
+      {mandate.objective && <Paragraphs text={mandate.objective} />}
+      {mandate.text?.how_it_works && (
+        <section>
+          <h2>How this mandate works</h2>
+          <Paragraphs text={mandate.text.how_it_works} />
+        </section>
       )}
       {mandate.strategy && (
-        <p style={{ maxWidth: "44rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
-          {mandate.strategy}
-        </p>
+        <section>
+          <h2>Strategy</h2>
+          <Paragraphs text={mandate.strategy} muted />
+        </section>
       )}
 
       <div className="usage-chips">
@@ -452,6 +508,7 @@ export default async function MandatePage({
 
       {prizes && <PrizesSection prizes={prizes} attempts={mandate.attempts ?? []} />}
       {mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
+      {mandate.text && <MandateTextSection text={mandate.text} />}
 
       {mandate.is_manager && mandate.conversation_id && (
         <section>

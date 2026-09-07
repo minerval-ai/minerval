@@ -66,6 +66,8 @@ interface PlatformMandate {
   allocationPolicy: Record<string, number> | null;
   /** The longer sections a mandate page carries beyond objective and strategy. */
   sections?: {
+    /** The mandate explained from first principles for a reader who has read nothing else; paragraphs separated by blank lines. */
+    how_it_works?: string;
     scope?: string;
     prize_policy?: string;
     attempt_policy?: string;
@@ -79,37 +81,47 @@ const percent = (fraction: number) => `${Math.round(fraction * 100)} percent`;
 
 /**
  * The sentences every mandate that carries the Mathematics skill states in
- * its prize policy (docs/mathematics.md §10.4), after the sentence that
- * says which mandate posts prizes in this epoch. The bounds are read from
+ * its prize policy (docs/mathematics.md §10.4), after the sentences that
+ * say which mandate posts prizes in this epoch. The bounds are read from
  * the environment so the text says what the mechanism enforces.
  */
 function commonPrizePolicy(): string {
   const config = loadConfig();
   return (
-    "Prizes never enter any valuation, importance, assessment, or standard. " +
-    "A bounty binds only to a published formal statement whose review period " +
-    "has ended and which the platform's solver has attempted at maximum " +
-    "effort without settling, with the attempt's report public. Amounts are " +
-    "set by the Grantmaker in owls from how much the discourse would gain " +
-    "from a settled answer, the effort the problem appears to require from a " +
-    "capable claimant, and the posting mandate's headroom and the number of " +
-    "open bounties; where a mandate funds both attempts and prizes, its " +
-    "Grantmaker says with each posting why a prize is the better use of " +
-    "those owls than another attempt; amounts never feed back into " +
-    "importance, and the reasoning is stated publicly with each posting. " +
-    `Bounds: ${owls(config.minBountyPerClaimOwls)} to ${owls(config.maxBountyPerClaimOwls)} owls per claim; ` +
-    "at most one live bounty per claim; holds never above the posting " +
-    "mandate's headroom, and per pass and per day at most " +
-    `${percent(config.bountyEscrowFractionPerPass)} and ${percent(config.bountyEscrowFractionPerDay)} of its escrow; ` +
-    "every posting made in two passes and, at or above " +
-    `${owls(config.bountyAutonomyThresholdOwls)} owls, confirmed by a human. ` +
-    "Prizes are stated and paid in owls, valued at one dollar of metered " +
-    "cost each, and every prize owl is backed by escrow that was paid for " +
-    "before the offer was made. A trivial resolution of a mis-stated problem " +
-    "earns the defect award, not the prize; a rediscovery of a published " +
-    "proof earns credit on the page, not the prize; the platform is never a " +
-    "claimant. No bounty is posted on a problem carrying a third-party prize " +
-    "in the discourse until the double-payment question is settled."
+    "A prize never changes what the graph concludes. It enters no assessment, " +
+    "no measure of a claim's importance, and no standard of evidence, and " +
+    "the agents that assess claims never see a prize as a reason for " +
+    "anything.\n\n" +
+    "A prize can be offered only on a problem that has been made precise and " +
+    "tried. The problem must carry a formal statement that has been public " +
+    "for its review period, and the platform's own prover must have " +
+    "attempted it at maximum effort without settling it, with the attempt's " +
+    "report published. The prize is then for a proof or disproof of that " +
+    "exact statement, and nothing else.\n\n" +
+    "The Grantmaker sets each amount, in owls, from three things: how much " +
+    "the field would gain from a settled answer, how much work the problem " +
+    "appears to demand of a capable solver, and how much of the mandate's " +
+    "budget is free and how many prizes are already open. Where a mandate " +
+    "funds both attempts and prizes, the Grantmaker also says why a prize is " +
+    "the better use of those owls than another attempt. The reasoning is " +
+    "published with every posting.\n\n" +
+    `The limits: each prize is between ${owls(config.minBountyPerClaimOwls)} and ${owls(config.maxBountyPerClaimOwls)} owls; ` +
+    "one problem carries at most one open prize; the prizes a mandate holds " +
+    "open never exceed the free part of its budget; a single review pass " +
+    `commits at most ${percent(config.bountyEscrowFractionPerPass)} of the budget and a single day at most ` +
+    `${percent(config.bountyEscrowFractionPerDay)}; every posting is made in two separate passes so that no single ` +
+    `judgment binds the platform; and a prize of ${owls(config.bountyAutonomyThresholdOwls)} owls or more waits for a ` +
+    "named person to confirm it.\n\n" +
+    "Prizes are stated and paid in owls, each worth one dollar of metered " +
+    "work on the platform, and every prize owl is backed by budget that was " +
+    "paid for before the offer was made. A submission that settles a " +
+    "mis-stated problem earns a defect award rather than the prize, and the " +
+    "statement is corrected. A proof already in the literature earns credit " +
+    "on the problem's page, not the prize. The platform never claims a prize " +
+    "itself: if its own prover settles the problem first, the prize closes " +
+    "unpaid and the proof is published. No prize is posted on a problem that " +
+    "already carries someone else's prize until the question of double " +
+    "payment is settled."
   );
 }
 
@@ -122,74 +134,117 @@ function mathematicsMandate(): PlatformMandate {
     key: "mathematics",
     title: "Mathematics",
     objective:
-      "To be the graph's map of mathematics and its instrument for directing " +
-      "attention to open problems. The mandate records settled results cheaply " +
-      "and accurately; holds the live conjectures with their partial results, " +
-      "their conditional consequences, and the field's considered expectation; " +
-      "publishes reviewed formal statements, in Lean 4 against a pinned Mathlib, " +
-      "of the problems that matter; holds independent proofs of one result side " +
-      "by side; attempts, with the platform's own solver, the problems where an " +
-      "attempt has a real chance of settling the question or teaching where the " +
-      "difficulty lies; and sees prizes offered, by the Mathematics prizes " +
-      "mandate in this epoch, on the problems the platform could not settle, so " +
-      "that the answer, when someone finds it, becomes part of the public " +
-      "record on terms fixed in advance. The mandate's value is the ordering it " +
-      "produces and the questions it poses, not the theorems it proves.",
+      "To build and keep the graph's map of mathematics, and to direct " +
+      "attention to the open problems worth settling. The mandate pays for " +
+      "three kinds of work: recording what is settled, accurately and cheaply; " +
+      "holding what is open, each conjecture with its partial results, what " +
+      "would follow from it, and what the field expects; and making the " +
+      "problems that matter precise enough, and trying them hard enough, that " +
+      "when an answer comes it can be checked by a machine and trusted by " +
+      "anyone. Its worth is measured by the ordering it produces and the " +
+      "questions it poses, not by the theorems it proves.",
     // websearch OR-form: a topical scope wants anything matching ANY of
     // its terms, not the conjunction of all of them.
     scopeQuery: "mathematics OR theorem OR conjecture OR proof",
     strategy:
-      "Cover unassessed mathematical claims in scope with light passes, " +
-      "concentrating depth where working mathematicians disagree. Formalize the " +
-      "open problems in the notable range and the lemmas several of them rest " +
-      "on. Calibrate the solver on settled problems before attempting open ones. " +
-      "Attempt open problems in order of importance times tractability, " +
-      "sub-results before the problems that rest on them. Publish the attempt " +
-      "reports and statements the Mathematics prizes mandate posts bounties on; " +
-      "post no bounties from this escrow in this epoch. Keep every attempt, " +
-      "every statement, every check, and every prize decision public. Revise " +
-      "this mandate's own policy numbers as live series replace the priors.",
+      "Cover the mathematical claims in scope with light assessments first, and " +
+      "spend depth where working mathematicians disagree. Write formal " +
+      "statements for the open problems of real standing and for the lemmas " +
+      "several of them rest on. Calibrate the prover on problems with known " +
+      "answers before pointing it at open ones. Attempt open problems in order " +
+      "of how much they matter times how tractable they look, and attempt the " +
+      "sub-results before the problems that rest on them. Publish every " +
+      "attempt, every statement, and every check. Post no prizes from this " +
+      "budget in this epoch; the Mathematics prizes mandate posts them. Revise " +
+      "this mandate's own numbers as live results replace the estimates.",
     sections: {
+      how_it_works:
+        "Minerval keeps a public map of what is known and believed, one claim " +
+        "at a time, with the reasons. In mathematics a claim is a proposition: " +
+        "a theorem, a conjecture, a special case, a lemma several results rest " +
+        "on. Each carries an assessment of its standing, the arguments for and " +
+        "against it, and links to what it rests on and what rests on it. This " +
+        "mandate pays for the mathematics part of that map.\n\n" +
+        "Money on Minerval is owls. One owl buys one dollar of metered " +
+        "computation, and owls are never redeemed for cash. Funding this " +
+        "mandate places owls in its budget. An agent called the Grantmaker, " +
+        "whose instructions are public on this site, decides each day what " +
+        "that budget pays for within the mission and the policies on this " +
+        "page, and every allocation it makes is recorded and published. The " +
+        "same agent reviews the mandate on a schedule, keeps a public note of " +
+        "its judgment, and can be talked to by the mandate's funders.\n\n" +
+        "The budget buys three things. The first is assessment: the platform's " +
+        "agents read the sources, judge each claim's standing, and record the " +
+        "reasons, so that a reader can see where a result stands and why. The " +
+        "second is formal statements. For a problem that matters, the platform " +
+        "writes the statement in Lean 4, a proof assistant, against a fixed " +
+        "version of Mathlib, its library of checked mathematics. The statement " +
+        "is reviewed twice and published for a review period before anything " +
+        "binds to it, and from then on the question of whether a proposed " +
+        "proof settles the problem is a mechanical one: a checker compiles the " +
+        "proof against the statement and says yes or no. The third is " +
+        "attempts. The platform's own prover, a strong model given the " +
+        "statement, Lean, and a computer-algebra sandbox, works on a problem " +
+        "alone within a fixed budget and writes a report: a checked proof, a " +
+        "checked disproof, a lead, or an honest account of where it got stuck. " +
+        "Every attempt is published, including the failures, with its cost.\n\n" +
+        "What the money never buys is a conclusion. No allocation changes how " +
+        "a claim is assessed or how important the graph judges it to be, and " +
+        "the agents that assess claims never see who paid. Funding buys " +
+        "scheduling: an assessment sooner, a deeper look at a subtree, a " +
+        "problem attempted. A prize for an outside solver is a separate thing " +
+        "with its own rules, and in this epoch it is posted by the Mathematics " +
+        "prizes mandate, not this one.\n\n" +
+        "Anyone can fund this mandate by contributing owls to it, and a mandate " +
+        "of your own can grant part of its budget to this one. What you get is " +
+        "the record: the assessments, the statements, the attempts, and their " +
+        "reports, all public, all attributed to this mandate. Funders are not " +
+        "named on the pages of the claims their money reached. When the " +
+        "mandate closes, its unspent budget returns to those who funded it, in " +
+        "proportion.",
       scope:
-        "Propositions of mathematics; the contested applications of mathematical " +
-        "results elsewhere in the graph; and claims about the discourse of " +
-        "mathematics where they are live. The history and sociology of " +
-        "mathematics are out of scope except where a claim of the first kind " +
-        "turns on them. The scope query (mathematics OR theorem OR conjecture OR " +
-        "proof) is retrieval, not membership; which actions fall under this " +
-        "mandate is the Grantmaker's judgment, and the mathematics domain tag is " +
-        "a strong prior for it.",
+        "Propositions of mathematics; the contested applications of " +
+        "mathematical results elsewhere in the graph; and claims about the " +
+        "practice of mathematics where they are live. The history and " +
+        "sociology of mathematics are out of scope except where a claim of the " +
+        "first kind turns on them. The search terms that retrieve candidates " +
+        "(mathematics, theorem, conjecture, proof) are a net, not a definition; " +
+        "which work falls under this mandate is the Grantmaker's judgment, and " +
+        "the mathematics tag on a claim is a strong prior for it.",
       prize_policy:
-        "This mandate funds formalizations, attempts, and stewardship, and in " +
+        "This mandate funds assessment, formal statements, and attempts, and in " +
         "this epoch it posts no prizes; the Mathematics prizes mandate posts " +
-        "them. Both mandates draw on escrows a Grantmaker allocates, and " +
-        "nothing else funds a prize. " +
+        "them. Both mandates draw only on budgets a Grantmaker allocates, and " +
+        "nothing else on the platform funds a prize.\n\n" +
         commonPrizePolicy(),
       attempt_policy:
-        "An attempt is valued as expected information: importance times the " +
-        "Grantmaker's stated probability that this variant succeeds times a " +
-        "multiplier of 1.0 to 2.0 for sub-results several open problems rest on. " +
-        "A bounty appears nowhere in the formula. Preconditions: a published " +
-        `formal statement; lifetime attempt spend on the claim under ${owls(lifetimeCapOwls)} ` +
-        `owls; no running attempt on the statement; at least ${cooldownDays} days since ` +
-        "the last attempt unless a reason is stated. Millennium-class problems " +
-        "are not attempted in this epoch. Every attempt is disclosed on the claim " +
-        "page with its date, variant, cost, and outcome, and its report and " +
-        "notebook are published before any bounty opens on the statement.",
+        "An attempt is valued as expected information: how much the problem " +
+        "matters, times the Grantmaker's stated probability that this attempt " +
+        "succeeds, times a factor of one to two for a sub-result that several " +
+        "open problems rest on. A prize appears nowhere in that formula. Before " +
+        "an attempt can be scheduled the problem needs a published formal " +
+        `statement; lifetime attempt spending on the problem must be under ${owls(lifetimeCapOwls)} ` +
+        "owls; no attempt on the statement may be running; and at least " +
+        `${cooldownDays} days must have passed since the last attempt unless a reason is ` +
+        "stated. The Millennium-class problems are not attempted in this epoch. " +
+        "Every attempt is disclosed on the problem's page with its date, its " +
+        "effort, its cost, and its outcome, and its report and notebook are " +
+        "published before any prize opens on the statement.",
       refusals:
-        "This mandate declines, at any budget: any request to value a claim, " +
-        "post a bounty, or schedule an attempt whose purpose is to move an " +
-        "assessment or an importance; any bounty on a statement it cannot show " +
-        "is faithful; any sponsorship offered on condition of naming, influence " +
-        "over the statement, or a say in acceptance; and any attempt on a claim " +
-        "the steward has not tagged and stewarded.",
+        "This mandate declines, whatever the budget offered: any request to " +
+        "assess a claim, post a prize, or schedule an attempt whose purpose is " +
+        "to move an assessment or a measure of importance; any prize on a " +
+        "statement it cannot show is faithful to the problem; any funding " +
+        "offered on condition of being named, of influencing a statement, or " +
+        "of having a say in whether a proof is accepted; and any attempt on a " +
+        "claim its steward has not tagged and reviewed.",
       disclosure:
         "The attention this claim received was paid for by the Mathematics " +
-        "mandate. Funding buys only scheduling: it can make an assessment happen " +
-        "sooner, reach deeper into a subtree, or send the platform's own solver " +
-        "at a problem. It has no influence on what any assessment concludes. " +
-        "Where a prize is offered, it says only that someone would like the " +
-        "question settled.",
+        "mandate. Funding buys only scheduling: it can make an assessment " +
+        "happen sooner, reach deeper into a subtree, or send the platform's own " +
+        "prover at a problem. It has no influence on what any assessment " +
+        "concludes. Where a prize is offered, it says only that someone would " +
+        "like the question settled.",
     },
     budgetOwls: config.mathMandateEscrowOwls,
     policy: "cover",
@@ -208,9 +263,9 @@ function mathematicsMandate(): PlatformMandate {
 
 /**
  * The Mathematics prizes mandate (docs/mathematics.md §8.1, §10.4, Appendix
- * B): a prizes-only mandate whose escrow is the only source of its prizes.
+ * B): a prizes-only mandate whose budget is the only source of its prizes.
  * No daily rate: its spend is prizes, paced by the per-pass and per-day
- * fractions of the escrow, and its own review passes.
+ * fractions of the budget, and its own review passes.
  */
 function mathematicsPrizesMandate(): PlatformMandate {
   const config = loadConfig();
@@ -218,55 +273,103 @@ function mathematicsPrizesMandate(): PlatformMandate {
     key: "mathematics-prizes",
     title: "Mathematics prizes",
     objective:
-      "To offer prizes, on terms fixed in advance, for Lean proofs and " +
-      "disproofs of the open problems the platform attempted and could not " +
-      "settle, so that the answer, when someone finds it, becomes part of the " +
-      "public record. In this epoch the mandate funds nothing else: no " +
-      "formalizations, no attempts, no stewardship. Its escrow is the only " +
-      "source of its prizes, and each prize it offers is the mandate's own " +
-      "judgment, stated publicly with the posting, about which settled answer " +
-      "the discourse would gain most from.",
+      "To offer prizes, on terms fixed in advance, for proofs and disproofs " +
+      "of the open problems the platform has made precise and tried and could " +
+      "not settle, so that when someone finds the answer it becomes part of " +
+      "the public record. In this epoch the mandate funds nothing else: no " +
+      "assessments, no formal statements, no attempts. Its budget is the only " +
+      "source of its prizes, and each prize is the mandate's own judgment, " +
+      "stated publicly with the posting, about which settled answer the field " +
+      "would gain most from.",
     scopeQuery: "mathematics OR theorem OR conjecture OR proof",
     strategy:
-      "Read the platform's attempt record and post bounties only on published " +
-      "statements the solver attempted at maximum effort and could not settle, " +
-      "after their public review period, with the attempt's report public. " +
-      "Size each prize from what the discourse would gain from a settled " +
-      "answer, the effort the problem appears to demand of a capable claimant, " +
-      "and the escrow's headroom and the number of open bounties. Post the " +
-      "first bounties small and deliberately tractable, one of them on a " +
-      "problem chosen to exercise the whole path from posting to payment, and " +
-      "say so publicly. Renew a bounty that still earns its place and withdraw, " +
-      "with notice, one that does not. Revise this mandate's own priors as " +
-      "prizes are claimed, expire, or close.",
+      "Read the platform's record of attempts and post prizes only on " +
+      "published statements the prover tried at maximum effort and could not " +
+      "settle, after their review period, with the attempt's report public. " +
+      "Size each prize from what the field would gain from a settled answer, " +
+      "how much work the problem appears to demand, and how much of the budget " +
+      "is free and how many prizes are already open. Make the first prizes " +
+      "small and deliberately tractable, one of them on a problem chosen to " +
+      "exercise the whole path from posting to payment, and say so publicly. " +
+      "Renew a prize that still earns its place and withdraw, with notice, one " +
+      "that does not. Revise this mandate's own estimates as prizes are " +
+      "claimed, expire, or close.",
     sections: {
+      how_it_works:
+        "A prize on Minerval is a public offer: a stated number of owls for " +
+        "the first accepted proof or disproof of one formal statement, on " +
+        "terms fixed in advance and published with the offer. The statement is " +
+        "written in Lean 4 against a fixed version of Mathlib, so that what " +
+        "counts as a solution is a mechanical question: a checker compiles the " +
+        "submitted proof against the statement and says yes or no. Before any " +
+        "prize can be offered on a problem, the platform has already published " +
+        "the statement for a review period and has tried the problem itself, " +
+        "at maximum effort, and failed; the attempt and its report are " +
+        "public.\n\n" +
+        "Money on Minerval is owls. One owl buys one dollar of metered " +
+        "computation on the platform, and owls are never redeemed for cash. " +
+        "Funding this mandate places owls in its budget, and that budget is " +
+        "the only place its prizes come from. From the day a prize opens, its " +
+        "amount is held against the budget until the prize is paid, expires, " +
+        "or is withdrawn, so the mandate never offers more than it holds. When " +
+        "a prize is paid, the winner receives owls and the hold is spent.\n\n" +
+        "An agent called the Grantmaker decides which problems get a prize and " +
+        "how large, within the policy on this page; its instructions are " +
+        "public on this site. It decides in two separate passes, so that no " +
+        "single judgment binds the platform, and a prize of " +
+        `${owls(config.bountyAutonomyThresholdOwls)} owls or more waits for a named person to confirm it. Every ` +
+        "posting is published with its reasoning.\n\n" +
+        "A prize buys no attention and no conclusion. It does not change how " +
+        "the problem is assessed or how important the graph judges it to be, " +
+        "and the agents that assess claims never see it as a reason for " +
+        "anything. It says only that someone would like the question " +
+        "settled.\n\n" +
+        "A claim on a prize is judged in the open. The checker's verdict is " +
+        "mechanical and public. A steward then judges only one thing, whether " +
+        "the statement proved is the statement posted, and records it. An " +
+        "accepted claim is announced and stays open to challenge for a fixed " +
+        "window, during which an independent audit reviews the acceptance; " +
+        "larger prizes also need a named person's sign-off. Then the prize is " +
+        "paid, in owls, after the winner's identity, tax form, and screening " +
+        "are complete. The full rules are versioned and published, and every " +
+        "prize names the version it was posted under.\n\n" +
+        "Anyone can fund this mandate by contributing owls to it, and a mandate " +
+        "of your own can grant part of its budget to this one. Funders of this " +
+        "mandate cannot win its prizes. Owls held against an open prize cannot " +
+        "be withdrawn while it is open; when the mandate closes, after its last " +
+        "prize has resolved, the unspent budget returns to those who funded " +
+        "it, in proportion. What funders get is the record: the problems " +
+        "posted, the reasoning, the claims, the verdicts, and the proofs, all " +
+        "public.",
       scope:
-        "Published formal statements, in Lean 4 against a pinned Mathlib, of " +
-        "open problems of mathematics that the platform's solver has attempted " +
-        "without settling. The scope query (mathematics OR theorem OR conjecture " +
-        "OR proof) is retrieval, not membership; which statements deserve a " +
-        "prize is the Grantmaker's judgment, made from the attempt record, the " +
-        "claim's importance, and the results that rest on it.",
+        "Published formal statements, in Lean 4 against a fixed version of " +
+        "Mathlib, of open problems of mathematics that the platform's prover " +
+        "has attempted without settling. The search terms that retrieve " +
+        "candidates (mathematics, theorem, conjecture, proof) are a net, not a " +
+        "definition; which statements deserve a prize is the Grantmaker's " +
+        "judgment, made from the record of attempts, the problem's importance, " +
+        "and the results that rest on it.",
       prize_policy:
         "This mandate offers prizes and funds nothing else in this epoch. Its " +
-        "escrow is the only source of its prizes: a bounty holds its amount " +
-        "against the escrow from the moment it opens until it resolves, and the " +
-        "mandate's headroom is what remains after every hold. " +
+        "budget is the only source of its prizes: a prize holds its amount " +
+        "against the budget from the moment it opens until it resolves, and " +
+        "what the mandate can offer is what remains after every hold.\n\n" +
         commonPrizePolicy(),
       refusals:
-        "This mandate declines, at any budget: any bounty whose purpose is to " +
-        "move an assessment or an importance; any bounty on a statement it " +
-        "cannot show is faithful, whose review period has not ended, or which " +
-        "the platform's solver has not attempted without settling; any request " +
-        "to fund an attempt, a formalization, or an assessment from this escrow " +
-        "in this epoch; and any sponsorship offered on condition of naming, " +
-        "influence over a statement, or a say in acceptance.",
+        "This mandate declines, whatever the budget offered: any prize whose " +
+        "purpose is to move an assessment or a measure of importance; any " +
+        "prize on a statement it cannot show is faithful to the problem, whose " +
+        "review period has not ended, or which the platform's prover has not " +
+        "attempted without settling; any request to fund an attempt, a formal " +
+        "statement, or an assessment from this budget in this epoch; and any " +
+        "funding offered on condition of being named, of influencing a " +
+        "statement, or of having a say in whether a proof is accepted.",
       disclosure:
         "The prize on this claim was offered by the Mathematics prizes mandate " +
-        "from its own escrow. A prize buys no attention and no conclusion: it " +
+        "from its own budget. A prize buys no attention and no conclusion: it " +
         "does not change how the claim is assessed or how important the graph " +
-        "judges it to be, and it says only that someone would like the question " +
-        "settled.",
+        "judges it to be, and it says only that someone would like the " +
+        "question settled.",
     },
     budgetOwls: config.mathPrizesEscrowOwls,
     policy: "cover",
@@ -357,6 +460,8 @@ function mandateJson(m: PlatformMandate, notes: string): Record<string, unknown>
 // ---------------------------------------------------------------------------
 
 interface Args {
+  /** Print one mandate's text as Markdown (the design's Appendix B) and exit; no database. */
+  printMandate: string | null;
   updateMandate: string | null;
   mandate: string | null;
   dailyOwls: number | null;
@@ -366,6 +471,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
+    printMandate: null,
     updateMandate: null,
     mandate: null,
     dailyOwls: null,
@@ -380,6 +486,9 @@ function parseArgs(argv: string[]): Args {
       return v;
     };
     switch (a) {
+      case "--print-mandate":
+        args.printMandate = next();
+        break;
       case "--update-mandate":
         args.updateMandate = next();
         break;
@@ -642,10 +751,45 @@ function mandateByKey(all: PlatformMandate[], key: string): PlatformMandate {
   return m;
 }
 
+/**
+ * The mandate as Markdown, in the shape of docs/mathematics.md Appendix B,
+ * so the design document is generated from the seed rather than copied.
+ */
+function renderMandateMarkdown(m: PlatformMandate): string {
+  const block = (heading: string, text: string | undefined) => {
+    if (!text) return [];
+    const [first, ...rest] = text.split("\n\n");
+    return [`**${heading}.** ${first}`, ...rest];
+  };
+  const keys = m.allocationPolicy
+    ? Object.entries(m.allocationPolicy).map(([k, v]) => `\`${k}\` ${v}`).join("; ")
+    : "none";
+  const rate = m.dailyBudgetOwls > 0 ? `daily rate [${owls(m.dailyBudgetOwls)}] owls` : "no daily rate (escrow-bounded)";
+  const parts = [
+    `### ${m.title}`,
+    `**Title.** ${m.title}`,
+    ...block("Objective", m.objective),
+    ...block("How it works", m.sections?.how_it_works),
+    ...block("Strategy", m.strategy),
+    ...block("Scope", m.sections?.scope),
+    ...block("Prize policy", m.sections?.prize_policy),
+    ...block("Attempt policy", m.sections?.attempt_policy),
+    ...block("Refusals", m.sections?.refusals),
+    ...block("Disclosure (shown on every claim this mandate funds)", m.sections?.disclosure),
+    `**Allocation policy keys.** ${keys}; the standard keys unchanged.`,
+    `**Budget.** Escrow [${owls(m.budgetOwls)}] owls; ${rate}; policy \`${m.policy}\`; skills \`${JSON.stringify(m.skills)}\`.`,
+  ];
+  return parts.join("\n\n") + "\n";
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const platformId = await ensurePlatformAccount();
   const all = mandates();
+  if (args.printMandate) {
+    process.stdout.write(renderMandateMarkdown(mandateByKey(all, args.printMandate)));
+    return;
+  }
+  const platformId = await ensurePlatformAccount();
 
   if (args.updateMandate) {
     await updateMandateText(mandateByKey(all, args.updateMandate), args, platformId);

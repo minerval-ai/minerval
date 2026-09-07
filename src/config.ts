@@ -504,7 +504,7 @@ const configSchema = z.object({
   // The solver runs only on the strong tier: the long-run loop needs a
   // family that takes `effort`, streams 128K-token turns, and carries the
   // long-run betas, so a deployment pointing it elsewhere fails at config
-  // load rather than hours into an attempt (§7.8). Joins the production
+  // load rather than deep into an attempt (§7.8). Joins the production
   // model-env guard below.
   solverModel: z
     .string()
@@ -544,11 +544,13 @@ const configSchema = z.object({
   solverLeanMaxChecks: z.coerce.number().min(0).default(60),
   solverLeanMaxElaborations: z.coerce.number().min(0).default(200),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
-  // the beforeTurn hook stops at, on top of which the wall and iteration
-  // caps guarantee termination whatever the model does.
+  // the beforeTurn hook stops at. It is the attempt's only budget: every
+  // turn re-reads the history, so no turn is free and the ceiling ends
+  // every attempt. There is no wall-clock or turn budget; the provider's
+  // task budget (a token countdown the model sees) is derived from the
+  // ceiling in the solver, and the orphan sweep's heartbeat is liveness,
+  // not budget.
   attemptOverageFraction: z.coerce.number().min(0).default(0.25),
-  attemptMaxWallHours: z.coerce.number().positive().default(6),
-  attemptMaxIterations: z.coerce.number().int().positive().default(500),
   // Agents whose transcripts are always traced regardless of TRACE_LEVEL
   // (comma-separated). The solver's transcript is the evidence a prize
   // review may rely on, so an operator switching TRACE_LEVEL off elsewhere
@@ -878,8 +880,6 @@ export function loadConfig(): Config {
     solverLeanMaxChecks: process.env.SOLVER_LEAN_MAX_CHECKS,
     solverLeanMaxElaborations: process.env.SOLVER_LEAN_MAX_ELABORATIONS,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
-    attemptMaxWallHours: process.env.ATTEMPT_MAX_WALL_HOURS,
-    attemptMaxIterations: process.env.ATTEMPT_MAX_ITERATIONS,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,
     minBountyPerClaimOwls: process.env.MIN_BOUNTY_PER_CLAIM_OWLS,

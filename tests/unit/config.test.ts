@@ -189,8 +189,6 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     "SOLVER_LEAN_MAX_CHECKS",
     "SOLVER_LEAN_MAX_ELABORATIONS",
     "ATTEMPT_OVERAGE_FRACTION",
-    "ATTEMPT_MAX_WALL_HOURS",
-    "ATTEMPT_MAX_ITERATIONS",
     "TRACE_ALWAYS_AGENTS",
     "MAX_BOUNTY_PER_CLAIM_OWLS",
     "MIN_BOUNTY_PER_CLAIM_OWLS",
@@ -256,8 +254,6 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.solverLeanMaxChecks).toBe(60);
     expect(c.solverLeanMaxElaborations).toBe(200);
     expect(c.attemptOverageFraction).toBe(0.25);
-    expect(c.attemptMaxWallHours).toBe(6);
-    expect(c.attemptMaxIterations).toBe(500);
     expect(c.traceAlwaysAgents).toEqual(["math_solver"]);
     // §8.1: bounties, in owls, bounded by the posting mandate's escrow.
     expect(c.maxBountyPerClaimOwls).toBe(5000);

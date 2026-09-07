@@ -145,8 +145,6 @@ const config = vi.hoisted(() => ({
   solverModel: "claude-fable-5-1",
   solverLeanMaxChecks: 60,
   solverLeanMaxElaborations: 200,
-  attemptMaxIterations: 500,
-  attemptMaxWallHours: 6,
   attemptOverageFraction: 0.25,
   leanCpuHourCostMicroUsd: 200_000,
   leanCheckOverheadMicroUsd: 20_000,
@@ -160,9 +158,12 @@ import {
   REPORT_TOOL,
   SOLVER_STOP_CANCELLED,
   SOLVER_STOP_CEILING,
+  SOLVER_MAX_TURNS_GUARD,
   SOLVER_STOP_PAUSED,
-  SOLVER_TASK_BUDGET_TOKENS,
+  SOLVER_TASK_BUDGET_MIN_TOKENS,
+  SOLVER_TOOL_DESCRIPTIONS,
   WRAP_UP_NOTICE,
+  solverTaskBudgetTokens,
   runMathSolver,
   validateSolverReport,
 } from "../../../src/llm/agents/math-solver.js";
@@ -259,7 +260,7 @@ beforeEach(() => {
 });
 
 describe("runMathSolver: the run shape", () => {
-  it("declares the fixed toolset, the effort, the task budget, and fallbacks off, on the two cached blocks", async () => {
+  it("declares the fixed toolset, the effort, the task budget from the ceiling, and fallbacks off, on the one block", async () => {
     script.turns = [{ tools: [report()] }];
     const { value } = await run();
     expect(value.status).toBe("completed");
@@ -277,16 +278,21 @@ describe("runMathSolver: the run shape", () => {
     expect((o.tools as unknown[])[6]).toBe(REPORT_TOOL);
     expect(o.fallbacks).toBe("none");
     expect(o.effort).toBe("max");
-    expect(o.taskBudgetTokens).toBe(SOLVER_TASK_BUDGET_TOKENS.max);
+    expect(o.taskBudgetTokens).toBe(solverTaskBudgetTokens(CEILING, "claude-fable-5-1"));
     expect(o.model).toBe("claude-fable-5-1");
-    expect(o.maxIterations).toBe(500);
-    expect(o.maxWallMs).toBe(6 * 3_600_000);
+    // No clock or turn budget: the guard is the loop's, not the attempt's.
+    expect(o.maxIterations).toBe(SOLVER_MAX_TURNS_GUARD);
+    expect(o.maxWallMs).toBeUndefined();
     const system = o.system as string[];
-    expect(system).toHaveLength(2);
-    expect(system[0]).toContain("## For the solver");
-    expect(system[1]).toMatch(/^# Harness/);
+    expect(system).toHaveLength(1);
+    expect(system[0]).toMatch(/^You are working alone on one open problem in mathematics\./);
     const initial = o.initialMessages as Array<{ role: string; content: string }>;
     expect(initial[0]!.content).toContain(formalization.statement_source);
+    expect(initial[0]!.content).toContain(`Budget: about $${CEILING / 1_000_000} of metered work`);
+    // The search tools carry the solver's own plain descriptions, not the Steward's.
+    const named = o.tools as Array<{ name: string; description: string }>;
+    expect(named[0]!.description).toBe(SOLVER_TOOL_DESCRIPTIONS.lean_search);
+    expect(named[1]!.description).toBe(SOLVER_TOOL_DESCRIPTIONS.lean_elaborate);
     // lean_check is bound to the statement: no formalization_id in its schema.
     const leanCheck = (o.tools as Array<{ name: string; input_schema: { properties: Record<string, unknown>; required: string[] } }>)[2]!;
     expect(Object.keys(leanCheck.input_schema.properties)).toEqual(["kind", "proof", "replay", "force"]);
@@ -639,5 +645,17 @@ describe("validateSolverReport", () => {
   it("accepts a proof with a matching accepted check", async () => {
     const v = await validateSolverReport({ outcome: "proof", lean_check_id: "ok" }, accepted);
     expect(v).toMatchObject({ outcome: "proof", leanCheckId: "ok", leanProof: "src" });
+  });
+});
+
+describe("solverTaskBudgetTokens", () => {
+  it("sizes the token countdown from the dollar ceiling at the model's output price, never below the provider minimum", () => {
+    // $150 ceiling, 60 percent of it at $50 per million output tokens: 1.8M tokens.
+    expect(solverTaskBudgetTokens(150_000_000, "claude-fable-5-1")).toBe(1_800_000);
+    // A cheaper model gets more tokens for the same dollars.
+    expect(solverTaskBudgetTokens(150_000_000, "claude-opus-5")).toBe(3_600_000);
+    // A tiny ceiling still meets the provider's floor.
+    expect(solverTaskBudgetTokens(100_000, "claude-fable-5-1")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
+    expect(solverTaskBudgetTokens(0, "claude-fable-5-1")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
   });
 });

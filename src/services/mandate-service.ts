@@ -208,8 +208,20 @@ export async function getMandatePipeline(
   }));
 }
 
+/** The mandate page's longer sections (docs/mathematics.md §10.4): each null when the mandate has none. */
+export interface MandateText {
+  how_it_works: string | null;
+  scope: string | null;
+  prize_policy: string | null;
+  attempt_policy: string | null;
+  refusals: string | null;
+  disclosure: string | null;
+}
+
 export interface MandateDetail extends MandateSummary {
   strategy: string | null;
+  /** The sections beyond objective and strategy, for the page to render in full. */
+  text: MandateText;
   notes: string | null;
   scope_claim_id: string | null;
   scope_query: string | null;
@@ -315,6 +327,7 @@ export async function getPublicMandate(
   return {
     ...summary,
     strategy: row.plan?.strategy ?? row.mandate?.plan?.strategy ?? null,
+    text: mandateText(row.mandate),
     notes: row.mandate?.notes ?? null,
     scope_claim_id: row.scope_claim_id,
     scope_query: row.scope_query,
@@ -742,4 +755,21 @@ export async function contributeToMandate(input: {
   }
   const mandate = await getPublicMandate(input.grantId, input.userId);
   return { ok: true, mandate: mandate! };
+}
+
+/** Read the page's longer sections off the mandate JSON; only non-empty strings count. */
+export function mandateText(mandate: GrantMandate | null): MandateText {
+  const m = (mandate ?? {}) as Record<string, unknown>;
+  const str = (key: string): string | null => {
+    const v = m[key];
+    return typeof v === "string" && v.trim().length > 0 ? v : null;
+  };
+  return {
+    how_it_works: str("how_it_works"),
+    scope: str("scope"),
+    prize_policy: str("prize_policy"),
+    attempt_policy: str("attempt_policy"),
+    refusals: str("refusals"),
+    disclosure: str("disclosure"),
+  };
 }

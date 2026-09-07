@@ -188,15 +188,8 @@
     "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
     "model": "Claude Fable 5.1",
     "hasConstitution": false,
-    "roleChars": 4583,
-    "fullChars": 4583,
-    "skills": [
-      {
-        "name": "mathematics",
-        "sections": [
-          "For the solver"
-        ]
-      }
-    ]
+    "roleChars": 4526,
+    "fullChars": 4526,
+    "skills": []
   }
 ]

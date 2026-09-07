@@ -89,7 +89,7 @@ describe("the Mathematics skill", () => {
     expect(m.description).toMatch(/Does not apply to claims that merely use a number or a model\.$/);
   });
 
-  it("carries all eleven sections in document order", () => {
+  it("carries all ten sections in document order", () => {
     const m = getSkill("mathematics");
     expect(m.sections.map((s) => s.heading)).toEqual([...SKILL_SECTIONS]);
     for (const s of m.sections) expect(s.body.length).toBeGreaterThan(50);
@@ -107,8 +107,9 @@ describe("the Mathematics skill", () => {
       "get_prize_claim",
       "decide_prize_claim",
     ]);
+    // The solver is not a skill role: it borrows these schemas under its own descriptions.
     for (const t of m.tools.slice(0, 3)) {
-      expect(t.roles).toEqual(["claim-steward", "math-solver"]);
+      expect(t.roles).toEqual(["claim-steward"]);
     }
     expect(m.tools[3]!.roles).toEqual(["claim-steward"]);
     expect(m.tools[4]!.roles).toEqual(["claim-steward", "audit-agent"]);
@@ -148,7 +149,6 @@ describe("ROLE_VIEW", () => {
     ]);
     expect(ROLE_VIEW.matcher).toEqual(["For the Matcher"]);
     expect(ROLE_VIEW.extractor).toEqual(["For the Extractor"]);
-    expect(ROLE_VIEW["math-solver"]).toEqual(["For the solver"]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
       "audit-agent",
@@ -158,7 +158,6 @@ describe("ROLE_VIEW", () => {
       "curator",
       "matcher",
       "extractor",
-      "math-solver",
     ]);
   });
 
@@ -194,11 +193,9 @@ describe("views", () => {
     expect(view).toContain(section.body);
   });
 
-  it("gives Audit the judging standards and the solver only its section", () => {
+  it("gives Audit the judging standards, and no role a solver section (the solver's prompt is its own)", () => {
     expect(getSkillView(m, "audit-agent")).toContain("## Standards for judging");
-    const solver = getSkillView(m, "math-solver");
-    expect(solver.split("\n").filter((l) => l.startsWith("## "))).toEqual(["## For the solver"]);
-    expect(sectionsForRole(m, "math-solver")).toEqual(["For the solver"]);
+    expect(m.body).not.toContain("## For the solver");
   });
 
   it("selects skills by domain, alphabetically, and none for unknown domains", () => {
@@ -234,11 +231,6 @@ describe("views", () => {
       "decide_prize_claim",
     ]);
     expect(Object.keys(steward[0]!).sort()).toEqual(["description", "input_schema", "name"]);
-    expect(getSkillToolDefinitions(m, "math-solver").map((t) => t.name)).toEqual([
-      "lean_search",
-      "lean_elaborate",
-      "lean_check",
-    ]);
     expect(getSkillToolDefinitions(m, "matcher")).toEqual([]);
   });
 });

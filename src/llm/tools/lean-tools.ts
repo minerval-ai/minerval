@@ -110,10 +110,13 @@ async function meterLean(
   });
 }
 
-function actorFor(ctx: SkillToolContext): { submittedBy: string; mode: CheckMode } {
-  return ctx.role === "math-solver"
-    ? { submittedBy: "math_solver", mode: "attempt" }
-    : { submittedBy: "claim_steward", mode: "steward" };
+/**
+ * Who submitted the check. The solver never reaches this executor (it
+ * calls the checker client itself, in attempt mode); every skill role that
+ * does is a Steward-side caller.
+ */
+function actorFor(_ctx: SkillToolContext): { submittedBy: string; mode: CheckMode } {
+  return { submittedBy: "claim_steward", mode: "steward" };
 }
 
 function storedCheckResult(row: LeanCheckRow, deduplicated: boolean): string {

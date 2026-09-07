@@ -19,7 +19,8 @@ import { loadConfig } from "../../config.js";
 import { longRunToolLoop, type LongRunLoopState, type ToolCompletionResult } from "../client.js";
 import { LlmRefusalError } from "../errors.js";
 import { getUsageContext, withAgent } from "../usage-context.js";
-import { getSkill, getSkillToolDefinitions } from "../prompts/skills.js";
+import { ratesForModel } from "../pricing.js";
+import { getSkill } from "../prompts/skills.js";
 import {
   buildMathSolverTaskMessage,
   getMathSolverSystemPromptBlocks,
@@ -67,11 +68,29 @@ export const SOLVER_STOP_CANCELLED = "cancelled";
 /** The reminder fraction (§7.3): the wrap-up notice goes out at 85 percent of the ceiling. */
 export const SOLVER_REMINDER_FRACTION = 0.85;
 
-/** Model-facing pacing signal per variant (§7.3); the dollar ceiling binds either way. */
-export const SOLVER_TASK_BUDGET_TOKENS: Record<"standard" | "max", number> = {
-  standard: 800_000,
-  max: 2_500_000,
-};
+/**
+ * The model-facing pacing signal (§7.3): the provider's task budget, a
+ * running token countdown the model sees, sized from the dollar ceiling.
+ * The fraction leaves room for the input side of every turn (history at
+ * cache-read rates), checker time, and container time; the dollar ceiling
+ * binds either way. The provider's minimum is 20,000 tokens.
+ */
+export const SOLVER_TASK_BUDGET_FRACTION = 0.6;
+export const SOLVER_TASK_BUDGET_MIN_TOKENS = 20_000;
+export function solverTaskBudgetTokens(ceilingMicroUsd: number, model: string): number {
+  const outputPerMtok = ratesForModel(model).outputPerMtok;
+  const usd = Math.max(0, ceilingMicroUsd) / 1_000_000;
+  const tokens = Math.floor((usd * SOLVER_TASK_BUDGET_FRACTION * 1_000_000) / outputPerMtok);
+  return Math.max(SOLVER_TASK_BUDGET_MIN_TOKENS, tokens);
+}
+
+/**
+ * A guard on the loop, not a budget: the dollar ceiling ends every attempt
+ * (each turn re-reads the whole history, so no turn is free), and this
+ * number only bounds a harness bug that somehow spent nothing. It is not
+ * shown to the model and not configurable.
+ */
+export const SOLVER_MAX_TURNS_GUARD = 10_000;
 
 /**
  * The published container rate for the code-execution tool, past the free
@@ -85,6 +104,23 @@ export const WRAP_UP_NOTICE =
   "Stop exploring. If you have a candidate proof or disproof, run lean_check on " +
   "it now; then write your notebook entry and call report. The harness stops " +
   "the attempt at the ceiling whether or not you have reported.";
+
+/** The search tools as the solver sees them: no graph vocabulary. */
+export const SOLVER_TOOL_DESCRIPTIONS: Record<"lean_search" | "lean_elaborate", string> = {
+  lean_search:
+    "Search Mathlib at the pinned revision for declarations, by pattern (?a " +
+    "metavariables and a ⊢ conclusion, for example \"?a + ?b = ?b + ?a\" or " +
+    "\"Nat.Prime, ⊢ Infinite\") or, when a natural-language backend is " +
+    "configured, by a sentence. Returns matching declarations with their types " +
+    "and module paths. The index may run ahead of the pin, so confirm any name " +
+    "with lean_elaborate before relying on it.",
+  lean_elaborate:
+    "Type-check a Lean 4 fragment against the pinned Mathlib. Returns the errors " +
+    "with positions, or the elaborated form and the constants it uses. Use it to " +
+    "test a lemma statement before proving it and to check each lemma as you go. " +
+    "It says nothing about whether a proof of the target statement would be " +
+    "accepted; only lean_check decides that.",
+};
 
 export const REPORT_OUTCOMES: readonly string[] = [
   "proof",
@@ -409,17 +445,22 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
 
   const checker = input.checker === undefined ? getLeanCheckerClient() : input.checker;
 
-  // Tools, declared once. The skill's definitions for lean_search and
-  // lean_elaborate travel verbatim; lean_check is bound to this attempt's
-  // statement, so the solver cannot check against another one.
+  // Tools, declared once. lean_search and lean_elaborate take their input
+  // schemas from the skill's definitions (the executors are shared with
+  // the Steward) under descriptions written for a reader who knows nothing
+  // of the graph; lean_check is bound to this attempt's statement, so the
+  // solver cannot check against another one.
   const skill = getSkill("mathematics");
-  const skillTools = getSkillToolDefinitions(skill, "math-solver");
+  const schemaOf = (name: string) => {
+    const def = skill.tools.find((t) => t.name === name);
+    if (!def) throw new Error(`the mathematics skill declares no ${name} tool`);
+    return def.input_schema;
+  };
   const leanTools: Tool[] = checker
-    ? skillTools
-        .filter((t) => t.name === "lean_search" || t.name === "lean_elaborate" || t.name === "lean_check")
-        .map((t) =>
-          t.name === "lean_check"
-            ? {
+    ? (["lean_search", "lean_elaborate", "lean_check"] as const).map((name) =>
+          name !== "lean_check"
+            ? { name, description: SOLVER_TOOL_DESCRIPTIONS[name], input_schema: schemaOf(name) }
+            : {
                 name: "lean_check",
                 description:
                   "Run a full cold-lane check of a candidate proof or disproof against " +
@@ -451,7 +492,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
                   additionalProperties: false,
                 },
               }
-            : t
         )
     : [];
   const tools: ToolUnion[] = [
@@ -462,8 +502,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     REPORT_TOOL,
   ];
 
-  const maxIterations = config.attemptMaxIterations;
-  const maxWallMs = config.attemptMaxWallHours * 3_600_000;
   const taskMessage = buildMathSolverTaskMessage({
     canonicalForm: input.claim.text,
     statement: {
@@ -481,7 +519,7 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     },
     variant: input.variant,
     effort: input.effort,
-    budget: { hours: config.attemptMaxWallHours, turns: maxIterations },
+    budget: { usd: Math.max(0, input.ceilingMicroUsd) / 1_000_000 },
     priorAttempts: input.priorAttempts ?? [],
     toolsNote: checker
       ? null
@@ -821,10 +859,9 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
       system: getMathSolverSystemPromptBlocks(),
       model,
       effort: input.effort,
-      taskBudgetTokens: SOLVER_TASK_BUDGET_TOKENS[input.variant],
+      taskBudgetTokens: solverTaskBudgetTokens(input.ceilingMicroUsd, model),
       fallbacks: "none",
-      maxIterations,
-      maxWallMs,
+      maxIterations: SOLVER_MAX_TURNS_GUARD,
       executeTool,
       onFinalTool: (name, toolInput) => {
         if (name !== "report") return null;

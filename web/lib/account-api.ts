@@ -779,8 +779,19 @@ export interface MandateRegrantEdge {
   note: string | null;
 }
 
+/** The mandate page's longer sections; each null when the mandate has none. */
+export interface MandateTextView {
+  how_it_works: string | null;
+  scope: string | null;
+  prize_policy: string | null;
+  attempt_policy: string | null;
+  refusals: string | null;
+  disclosure: string | null;
+}
+
 export interface MandateDetailView extends MandateSummaryView {
   strategy: string | null;
+  text?: MandateTextView;
   notes: string | null;
   scope_claim_id: string | null;
   scope_query: string | null;

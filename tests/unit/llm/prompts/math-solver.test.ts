@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
 /**
- * The solver's prompt (docs/mathematics.md §7.1, Appendix C): two cached
- * blocks, the skill's `For the solver` view and the harness verbatim, with
- * no constitution and no other role's section; and a task message of fixed
- * shape that carries the statement verbatim, its pin and hashes, the
- * correspondence note, the budget, and the prior attempts under the notice
- * that they are the platform's own unverified work.
+ * The solver's prompt (docs/mathematics.md §7.1, Appendix C): one short
+ * block written without the constitution, the skill, or the graph's
+ * vocabulary; and a task message of fixed shape that carries the statement
+ * verbatim, its pin and hashes, the note relating it to the words, the
+ * budget in dollars, and the earlier attempts under the notice that they
+ * are unverified.
  */
 import {
   PRIOR_ATTEMPTS_NOTICE,
-  SOLVER_HARNESS_BLOCK,
+  SOLVER_SYSTEM_PROMPT,
   buildMathSolverTaskMessage,
   getMathSolverSystemPrompt,
   getMathSolverSystemPromptBlocks,
@@ -21,16 +21,26 @@ import {
 beforeEach(() => resetMathSolverPromptForTests());
 
 describe("getMathSolverSystemPromptBlocks", () => {
-  it("is the skill's solver view first, then the harness block verbatim", () => {
+  it("is one block, the standalone prompt verbatim", () => {
     const blocks = getMathSolverSystemPromptBlocks();
-    expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toMatch(/^# Domain skill: Mathematics \(version \d+\)/);
-    expect(blocks[0]).toContain("## For the solver");
-    expect(blocks[0]).toContain("You are an instrument of the Minerval claim graph");
-    expect(blocks[1]).toBe(SOLVER_HARNESS_BLOCK);
-    expect(blocks[1]).toMatch(/^# Harness\n/);
-    expect(blocks[1]).toContain("report ends the attempt.");
-    expect(blocks[1]).toContain("A proof outcome without an\naccepted check is recorded as partial.");
+    expect(blocks).toEqual([SOLVER_SYSTEM_PROMPT]);
+    expect(blocks[0]).toMatch(/^You are working alone on one open problem in mathematics\./);
+    expect(blocks[0]).toContain("report ends the attempt.");
+    expect(blocks[0]).toContain("A proof outcome without an accepted check is\nrecorded as partial.");
+  });
+
+  it("assumes no knowledge of the platform: none of the graph's terms appear", () => {
+    const text = SOLVER_SYSTEM_PROMPT.toLowerCase();
+    for (const term of ["minerval", "claim graph", "steward", "constitution", "mandate", "owl", "importance", "bounty", "prize", "administrator", "skill"]) {
+      expect(text, term).not.toContain(term);
+    }
+    // No clock or turn budget: the budget is metered work in dollars, paced by a token countdown.
+    expect(text).not.toMatch(/\bhours?\b/);
+    expect(text).not.toMatch(/\bturns?\b/);
+    expect(text).toContain("stated in dollars");
+    expect(text).toContain("running count of the tokens you have left");
+    // Under 100 lines: short enough to leave the problem in front of it.
+    expect(SOLVER_SYSTEM_PROMPT.split("\n").length).toBeLessThan(100);
   });
 
   it("carries no constitution and no administrator's section", () => {
@@ -41,17 +51,13 @@ describe("getMathSolverSystemPromptBlocks", () => {
     expect(joined).not.toContain("## Standards for judging");
   });
 
-  it("is built once and reused", () => {
+  it("is one constant, reused across attempts so the cache entry never varies", () => {
     const a = getMathSolverSystemPromptBlocks();
     const b = getMathSolverSystemPromptBlocks();
     expect(a).toBe(b);
     resetMathSolverPromptForTests();
-    expect(getMathSolverSystemPromptBlocks()).not.toBe(a);
-  });
-
-  it("joins the blocks for the docs pages", () => {
-    const [skill, harness] = getMathSolverSystemPromptBlocks();
-    expect(getMathSolverSystemPrompt()).toBe(`${skill}\n\n---\n\n${harness}`);
+    expect(getMathSolverSystemPromptBlocks()).toBe(a);
+    expect(getMathSolverSystemPrompt()).toBe(SOLVER_SYSTEM_PROMPT);
   });
 });
 
@@ -77,7 +83,7 @@ describe("buildMathSolverTaskMessage", () => {
       statement,
       variant: "max",
       effort: "max",
-      budget: { hours: 6, turns: 500 },
+      budget: { usd: 187.5 },
     });
     expect(msg).toContain("For every natural number n, n + 0 = n.");
     expect(msg).toContain(statement.statementSource);
@@ -86,9 +92,13 @@ describe("buildMathSolverTaskMessage", () => {
     expect(msg).toContain("expr_hash: expr-hash");
     expect(msg).toContain("Namespace: Minerval.S0a1b2c3d_v2");
     expect(msg).toContain("The formal statement renders the informal claim exactly.");
-    expect(msg).toContain("Variant: max. Effort: max.");
-    expect(msg).toContain("about 6 hours of wall clock and at most 500 turns");
-    expect(msg).not.toContain("## Prior attempts");
+    expect(msg).toContain("Effort: max.");
+    expect(msg).toContain("Budget: about $187.50 of metered work");
+    expect(msg).not.toContain("Variant:");
+    expect(msg).not.toMatch(/\bhours?\b|\bturns?\b/);
+    expect(msg).toContain("## In words");
+    expect(msg).toContain("## How the formal statement relates to the words");
+    expect(msg).not.toContain("## Earlier attempts");
     expect(msg).not.toContain(PRIOR_ATTEMPTS_NOTICE);
   });
 
@@ -118,9 +128,9 @@ describe("buildMathSolverTaskMessage", () => {
         },
       ],
     });
-    expect(msg).toContain("## Prior attempts");
+    expect(msg).toContain("## Earlier attempts");
     expect(msg).toContain(PRIOR_ATTEMPTS_NOTICE);
-    expect(msg).toContain("Prior attempt 1 (a1; variant standard, effort high; status completed; outcome negative;");
+    expect(msg).toContain("Earlier attempt 1 (a1; effort high; status completed; outcome negative;");
     expect(msg).toContain("- induction on n");
     expect(msg).toContain("obstruction: the lemma Nat.add_zero was not found");
     expect(msg).toContain("[plan] try induction first");
@@ -133,11 +143,11 @@ describe("buildMathSolverTaskMessage", () => {
       statement: { ...statement, correspondence: null },
       variant: "standard",
       effort: "high",
-      budget: { hours: 1, turns: 10 },
+      budget: { usd: 75 },
       toolsNote: "No checker is configured this run.",
     });
-    expect(msg).toContain("(no correspondence note was recorded)");
+    expect(msg).toContain("(no note was recorded)");
+    expect(msg).toContain("Budget: about $75 of metered work");
     expect(msg).toContain("## Note\n\nNo checker is configured this run.");
-    expect(msg).toContain("about 1 hour of wall clock");
   });
 });

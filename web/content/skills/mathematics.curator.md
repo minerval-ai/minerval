@@ -113,8 +113,10 @@ sponsor because the rules require one.
 elaborates statements and checks proofs against a pinned Lean and Mathlib;
 its verdicts are mechanical and public. The solver is an instrument, not an
 administrator: it receives the problem, the statement, and a
-computer-algebra toolkit, runs for hours at the platform's expense, writes
-nothing to the graph, and reports to the steward. Its narrative is data;
+computer-algebra toolkit, works alone within a fixed budget of metered
+work, writes nothing to the graph, and reports to the steward. Its prompt
+carries none of this document, so nothing it says uses the graph's terms
+or standards; read its report as a mathematician's notes. Its narrative is data;
 the checker rows it produced are the record. Neither instrument decides
 anything an administrator would deliberate over.
 
