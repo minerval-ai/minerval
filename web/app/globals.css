@@ -147,8 +147,16 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
     margin-left: 0;
     width: 100%;
     flex-wrap: wrap;
-    gap: 0.55rem 1.1rem;
+    gap: 0.55rem 0.9rem;
   }
+  /* six entries no longer fit one phone line (#367), and a nav that wraps to
+     a two-item second line reads as broken. The phone masthead keeps the four
+     routes you navigate to — claims, mandates, docs, account — and drops the
+     two soft entries: `tour` only reopens the home walkthrough, `about` is a
+     footer route as well, and the footer nav carries both. Four labels plus
+     the tightened gap fit on one line down to 320px, with room for the next
+     entry rather than a wrap the next word would bring straight back. */
+  .masthead nav a.wide-only { display: none; }
 }
 
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
