@@ -149,6 +149,20 @@ export const claims = pgTable(
     // Which path wrote `domains`: extractor | matcher | inherited | steward |
     // backfill. NULL = never tagged.
     domainsSource: text("domains_source"),
+    // --- Tagging queue: the claim row IS the queue, as for the Steward ---
+    // NULL = awaiting the tagger (a new claim, a backfill candidate, or a
+    // claim whose canonical form changed and must be re-read). Set when a
+    // tagger run has attached its tags (or found none worth attaching). The
+    // tags themselves live in `taggings` (subject_kind = 'claim').
+    taggedAt: timestamp("tagged_at", { withTimezone: true }),
+    // The drain's lease: set when a worker takes the row, cleared when the
+    // run settles. A lease older than the reclaim window is a crashed worker
+    // and the row is retaken; a leased row never looks tagged.
+    taggingLeasedAt: timestamp("tagging_leased_at", { withTimezone: true }),
+    // Consecutive failed tagger attempts; a claim parks out of the drain at
+    // the cap (tagging-pipeline.ts), the same poison-row discipline as
+    // steward_attempts. Transient failures do not count.
+    taggingAttempts: integer("tagging_attempts").notNull().default(0),
     embedding: vector("embedding"),
     textSearch: tsvector("text_search").generatedAlwaysAs(
       (): SQL => sql`to_tsvector('english', ${claims.text})`
@@ -182,6 +196,109 @@ export const claims = pgTable(
     // "Every claim tagged mathematics" is a query the skilled mandates and the
     // backfill run; GIN serves the array-overlap operators.
     index("idx_claims_domains").using("gin", table.domains),
+    // The tagging drain: only the untagged live rows, highest importance
+    // first, so under a budget the load-bearing claims are labelled first.
+    index("idx_claims_tagging_queue")
+      .on(table.importance.desc(), table.updatedAt)
+      .where(sql`tagged_at IS NULL AND state = 'active'`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// tags — the graph's open topical vocabulary (#272)
+// ---------------------------------------------------------------------------
+// A tag names a topic claims are ABOUT ("Vaccine safety", "Prime numbers",
+// "Monetary policy"): the reader's and the agents' navigation layer over the
+// embedding space, which the decomposition graph does not provide. Three
+// things it is not: not `claims.claim_type` (the proposition-kind facet), not
+// `claims.domains` (the closed list of skill names that select an agent's
+// prompt and tools), and not a verdict of any kind. The vocabulary is open
+// and grows as claims land; each tag carries its own embedding so the tagger
+// can find an existing tag by meaning before minting a near-duplicate, and a
+// merge lifecycle (`merged_into`) so the vocabulary can be tidied without
+// rewriting history.
+export const tags = pgTable(
+  "tags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // URL-safe identity: lowercase, hyphenated, unique. The stable handle in
+    // filters (`?tag=vaccine-safety`) and links.
+    slug: text("slug").notNull(),
+    // Reader-facing name, Title Case noun phrase.
+    name: text("name").notNull(),
+    // One or two sentences delimiting the topic: what falls under it and,
+    // where it matters, what does not. Embedded together with the name.
+    description: text("description").notNull().default(""),
+    embedding: vector("embedding"),
+    // active | merged. A merged tag keeps its row (links resolve, history
+    // stays honest) and points at the survivor.
+    status: text("status").notNull().default("active"),
+    mergedInto: uuid("merged_into").references((): any => tags.id, {
+      onDelete: "set null",
+    }),
+    // Who minted it: tagger | cluster_seed | operator | steward | curator.
+    createdBy: text("created_by").notNull().default("system"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_tags_slug").on(table.slug),
+    index("idx_tags_status").on(table.status),
+    check("ck_tags_status", sql`${table.status} IN ('active', 'merged')`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// taggings — a tag attached to a subject, as a traced judgment
+// ---------------------------------------------------------------------------
+// Polymorphic on purpose: claims are the first subject, but a source's topics,
+// a mandate's scope, and an agent report's area are the same relation, and
+// one join table with a `subject_kind` serves them all without a migration
+// per kind. The cost is that the subject carries no FK; claims are never
+// deleted (they change state), so the rows cannot orphan in practice, and a
+// read always joins through the subject table it names. Every row records
+// which path attached it (`source`), how confident that path was, why, and
+// the agent run it came from, so "why is this claim tagged X" has an answer.
+export const TAG_SUBJECT_KINDS = ["claim", "source", "mandate"] as const;
+export type TagSubjectKind = (typeof TAG_SUBJECT_KINDS)[number];
+
+export const taggings = pgTable(
+  "taggings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    subjectKind: text("subject_kind").notNull(),
+    subjectId: uuid("subject_id").notNull(),
+    // tagger | cluster_seed | steward | curator | operator. The tagger
+    // replaces only its own rows on a re-run; a judgment recorded by an
+    // administrator or an operator stands until that path removes it.
+    source: text("source").notNull(),
+    confidence: real("confidence"),
+    reasoning: text("reasoning"),
+    // The agent_runs row that attached it (no FK, like llm_usage).
+    runId: uuid("run_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_taggings_tag_subject").on(
+      table.tagId,
+      table.subjectKind,
+      table.subjectId
+    ),
+    index("idx_taggings_subject").on(table.subjectKind, table.subjectId),
+    index("idx_taggings_tag").on(table.tagId, table.subjectKind),
+    check(
+      "ck_taggings_subject_kind",
+      sql`${table.subjectKind} IN ('claim', 'source', 'mandate')`
+    ),
   ]
 );
 
@@ -2583,3 +2700,7 @@ export type Attachment = typeof attachments.$inferSelect;
 export type NewAttachment = typeof attachments.$inferInsert;
 export type AgentReport = typeof agentReports.$inferSelect;
 export type NewAgentReport = typeof agentReports.$inferInsert;
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
+export type Tagging = typeof taggings.$inferSelect;
+export type NewTagging = typeof taggings.$inferInsert;

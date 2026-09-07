@@ -34,6 +34,11 @@ import {
   getSubclaimCount,
   listClaimDependents,
 } from "../../services/tree-service.js";
+import {
+  attachClaimTags,
+  getTagsForSubject,
+  resolveTagBySlug,
+} from "../../services/tag-service.js";
 
 /** Depth defaults shared with the MCP/REST surfaces: shallow unless asked. */
 const DEFAULT_TREE_DEPTH = 3;
@@ -57,14 +62,21 @@ export function getGraphReadToolDefinitions(): Tool[] {
         "the graph, ranked by similarity to your query — so a claim worded " +
         "differently from your search still surfaces. Each hit carries the " +
         "signals allocation turns on: importance, contestation, assessment " +
-        "status, and how many days since it was assessed. A search aid, not " +
-        "your scope: your scope is your mandate's words, and you judge what " +
-        "falls under them.",
+        "status, and how many days since it was assessed, plus its topic " +
+        "tags. A search aid, not your scope: your scope is your mandate's " +
+        "words, and you judge what falls under them.",
       input_schema: {
         type: "object" as const,
         properties: {
           query: { type: "string", description: "What you are looking for." },
           limit: { type: "number", description: "Max results, default 15." },
+          tag: {
+            type: "string",
+            description:
+              "Only claims carrying this topic tag (a slug, as returned on " +
+              "each hit's `tags`). Narrows a broad query to one area of the " +
+              "graph; an unknown tag matches nothing.",
+          },
         },
         required: ["query"],
       },
@@ -215,11 +227,27 @@ export async function executeGraphReadTool(
 ): Promise<string | null> {
   if (name === "search_claims") {
     const limit = Math.min(30, Math.max(1, Number(input.limit ?? 15)));
-    const { results } = await hybridSearch(String(input.query ?? ""), { limit });
-    const signals = await allocationSignals(results.map((r) => r.id));
+    let tagId: string | undefined;
+    if (typeof input.tag === "string" && input.tag.trim()) {
+      const tag = await resolveTagBySlug(input.tag);
+      if (!tag) return JSON.stringify({ count: 0, claims: [], note: `no tag "${input.tag}"` });
+      tagId = tag.id;
+    }
+    const { results } = await hybridSearch(String(input.query ?? ""), {
+      limit,
+      ...(tagId ? { tagId } : {}),
+    });
+    const [signals, tagged] = await Promise.all([
+      allocationSignals(results.map((r) => r.id)),
+      attachClaimTags(results),
+    ]);
     return JSON.stringify({
       count: results.length,
-      claims: results.map((r) => ({ ...r, ...(signals.get(r.id) ?? {}) })),
+      claims: tagged.map((r) => ({
+        ...r,
+        tags: r.tags.map((t) => t.slug),
+        ...(signals.get(r.id) ?? {}),
+      })),
     });
   }
 
@@ -236,6 +264,7 @@ export async function executeGraphReadTool(
         state: claim.state,
         decomposition_status: claim.decompositionStatus,
         importance: claim.importance,
+        tags: (await getTagsForSubject("claim", claimId).catch(() => [])).map((t) => t.slug),
       },
       assessment: formatAssessment(await getCurrentAssessment(claimId)),
       subclaim_count: await getSubclaimCount(claimId),

@@ -128,6 +128,59 @@ theorem is `mathematical` in type and `mathematics` in domain. The Steward
 sets both, and neither the funding mandate nor importance gates the tools a
 domain brings.
 
+### Tags
+
+A third kind of label sits beside those two and is deliberately neither
+(#272). A **tag** names what a claim is *about* — a field, a subject, an
+entity, a question people argue over ("Epidemiology", "SARS-CoV-2 origin",
+"Goldbach's conjecture") — and is the reader's and the agents' navigation
+layer over the embedding space, which the decomposition graph does not
+provide: a claim's subclaims tell you what it rests on, not what else in
+the graph is on the same subject. Tags are navigation, never judgment; a
+tag says nothing about whether a claim holds, and nothing reads a tag to
+decide anything epistemic.
+
+The vocabulary (`tags`) is open and grows as claims land. Each tag has a
+slug (its identity: two proposals that slugify alike are one tag), a
+Title Case name, a one- or two-sentence description delimiting the topic,
+its own embedding so the vocabulary can be searched by meaning, and a
+merge lifecycle (`merged_into`) so near-duplicates can be folded without
+breaking links. A tag is attached to a subject by a **tagging**
+(`taggings`), a row that records not just the pair but who attached it
+(`source`: the tagger, an administrator, an operator, the cluster seed),
+how confident that path was, why, and the agent run it came from — the
+same provenance discipline as every other judgment in the graph. The join
+is polymorphic on `subject_kind`: claims are the first subject, and a
+source's topics or a mandate's scope are the same relation, so a second
+kind needs no second table.
+
+Assignment is the work of the **tagger**, the first agent on the nano
+tier: a small, cheap loop (Haiku by default) with a semantic search over
+the existing vocabulary and one submit tool, prompted to reuse before
+minting, to attach one broad field tag and one to three specific ones, and
+to name a new tag only when no existing one fits. It carries no
+constitution, because it makes no epistemic call. Code applies its
+decision: the tag service resolves a proposal by slug, then by meaning
+(a proposal within a high cosine threshold of an existing tag reuses it,
+the backstop for a tagger that skipped its search), and only then mints.
+On a re-run the tagger replaces only its own taggings; one recorded by an
+administrator or an operator stands.
+
+The queue is the claim row: `claims.tagged_at IS NULL` on an active,
+embedded claim means "awaiting the tagger", so a new claim, the backfill
+of the existing graph, and a claim whose canonical form changed are all the
+same mechanism, drained a few claims per tick most-important-first
+(`TAGGING_INTERVAL_SECONDS`, `TAGGING_BATCH_SIZE`; the drain leases rows
+with a lease column so several tasks may run it). The vocabulary can be
+seeded before the first drain from clusters in the embedding space
+(`scripts/seed-tags-from-clusters.ts`: spherical k-means over every
+claim's embedding, each cluster named by the same model from its
+exemplars, so the first tags minted are the broad ones every later claim
+can reuse), and tidied afterwards by hand (`scripts/tags.ts`: list, show,
+merge, rename, re-tag). Tags surface on the claim page, as a filter on the
+claim list and search (`?tag=`), on `/tags`, on the MCP `search_claims`
+and `list_tags` tools, and on the agents' `search_claims` read.
+
 ### Arguments
 
 An **argument** groups decomposition edges into a coherent, named line of
@@ -717,6 +770,7 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
+| Tagger | Claude Haiku 4.5 (the nano tier) |
 | Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
@@ -724,7 +778,10 @@ Model choice follows the value of the judgment, not a single default:
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
-non-Anthropic model. The load-bearing epistemic work
+non-Anthropic model. The tagger's is narrower still ("which of these
+existing tags, at what grain?"), makes no epistemic call, and runs over
+every claim, so it defines the nano tier: the cheapest capable model,
+in production as in dev. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
@@ -833,7 +890,9 @@ that ledger cover (docs/allocation.md), claiming work with
 `FOR UPDATE SKIP LOCKED` so concurrent workers never collide. Prize checks
 and solver attempts are DB-backed jobs with workers of their own, never SQS
 messages: a check can run fifteen minutes and an attempt six hours, far past
-the queues' visibility timeout.
+the queues' visibility timeout. Tagging is a third DB-backed lane: an
+untagged claim row is the work item, a scheduler tick leases and tags a
+small batch most-important-first, and the same drain is the backfill.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
@@ -878,6 +937,7 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
   │                                         (inference verdicts; one is_current per argument)
   ├──▶ assessments        (verdict history; one is_current per claim)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
+  ├──< taggings >── tags             (topic vocabulary; polymorphic on subject_kind)
   └──▶ contributions ──▶ contribution_reviews ──▶ appeals ──▶ arbitration_results
                               contributors ─┘
 ```
@@ -932,7 +992,10 @@ hybrid search serves the public search API, the MCP `search_claims` tool, and
 the agents' general search tool. The Matcher's candidate retrieval is the
 exception: it uses embedding similarity alone, with a deliberately low floor,
 and widens recall by re-searching under multiple framings rather than by
-keyword rank.
+keyword rank. The tag vocabulary carries its own embeddings and is searched
+the same way (semantic with a lexical widening on the name), by the tagger
+before it mints and by `/tags?mode=search`; every claim search accepts a
+tag as a filter.
 
 ---
 

@@ -116,8 +116,13 @@ each bound by the constitution, each with a bounded domain:
 - **Extension Agent** lives outside governance, behind the browser extension:
   it judges on-page phrasings against graph state and powers the in-page chat.
   It never writes to the graph.
+- **Tagger** is an instrument rather than an administrator: a tiny agent
+  that labels every claim with topic tags from an open vocabulary it
+  searches before extending, so readers and agents can navigate the graph
+  by subject. Tags are navigation, never judgment.
 
-Model choice follows the value of the judgment: matching is a saturating task
+Model choice follows the value of the judgment: tagging runs on the cheapest
+capable model, matching is a saturating task
 and runs on DeepSeek V4 Flash via OpenRouter; the load-bearing epistemic work
 — stewardship, structural adjudication, arbitration, audit, grantmaking — runs
 on the strongest available Claude models, and background assessments choose

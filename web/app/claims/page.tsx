@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { loadClaims, loadOpenPrizes, loadTerritories } from "@/lib/data";
+import { loadClaims, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
 import { claimTypeMeta, DEFINED_IN, IMPORTANCE_FLOORS, importanceFloorMin } from "@/lib/ontology";
 import type { ImportanceFloor } from "@/lib/ontology";
 import { StatusBadge, Unassessed, Importance } from "@/components/Assessment";
 import { Term } from "@/components/Term";
 import { ClaimsControls } from "@/components/ClaimsControls";
 import { Territories, RecentClaims, OpenPrizes } from "@/components/Territories";
+import { TopicChips, Topics } from "@/components/Topics";
 import { ProposeClaim } from "@/components/ProposeClaim";
 import { PrizeChip } from "@/components/claim/PrizeChip";
 import { MachineChecked } from "@/components/claim/MachineChecked";
@@ -16,13 +17,16 @@ import type { AssessedFilter, ClaimType } from "@/lib/types";
 const RECENT_STRIP = 8;
 // How many open prizes the strip under the territories shows (§8.3).
 const PRIZE_STRIP = 8;
+// How many topic tags the strip shows (#272): the most-used ones, with the
+// whole vocabulary one click away.
+const TOPIC_STRIP = 24;
 
 export default async function ClaimsIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; assessed?: string; imp?: string; prizes?: string; type?: string }>;
+  searchParams: Promise<{ q?: string; assessed?: string; imp?: string; prizes?: string; type?: string; tag?: string }>;
 }) {
-  const { q, assessed: assessedRaw, imp: impRaw, prizes: prizesRaw, type: typeRaw } = await searchParams;
+  const { q, assessed: assessedRaw, imp: impRaw, prizes: prizesRaw, type: typeRaw, tag: tagRaw } = await searchParams;
 
   // The browse feed defaults to assessed-only (the unassessed long tail is mostly
   // queued stubs). "all" and "unassessed" are opt-in; anything else is the default.
@@ -37,7 +41,10 @@ export default async function ClaimsIndex({
   const withPrizes = prizesRaw === "1" || prizesRaw === "true";
   const claimType: ClaimType | undefined =
     typeRaw && claimTypeMeta(typeRaw) ? (typeRaw as ClaimType) : undefined;
-  const filtersActive = assessed !== "assessed" || minImportance > 0 || withPrizes || !!claimType;
+  // A topic-tag restriction (#272): the slug as given; the lever shows the
+  // live name when the tag resolves.
+  const tagSlug = tagRaw?.trim() || undefined;
+  const filtersActive = assessed !== "assessed" || minImportance > 0 || withPrizes || !!claimType || !!tagSlug;
 
   // Before any search or filter, /claims shows what the graph CONTAINS — a few
   // curated investigations — not a stack of newest claims that reads like search
@@ -46,10 +53,11 @@ export default async function ClaimsIndex({
   const overview = !q && !filtersActive;
 
   if (overview) {
-    const [territories, recent, prizes] = await Promise.all([
+    const [territories, recent, prizes, topics] = await Promise.all([
       loadTerritories(),
       loadClaims(undefined, { assessed, minImportance }),
       loadOpenPrizes(PRIZE_STRIP),
+      loadTags(TOPIC_STRIP),
     ]);
 
     return (
@@ -69,6 +77,8 @@ export default async function ClaimsIndex({
         <ClaimsControls q="" assessed={assessed} imp={impFloor} />
 
         <Territories territories={territories} />
+
+        <Topics items={topics.tags} />
 
         <OpenPrizes items={prizes.prizes.slice(0, PRIZE_STRIP)} />
 
@@ -93,9 +103,13 @@ export default async function ClaimsIndex({
     );
   }
 
-  const { results: claims, source } = await loadClaims(q, {
-    assessed, minImportance, withPrizes, claimType,
-  });
+  const [{ results: claims, source }, tagInfo] = await Promise.all([
+    loadClaims(q, { assessed, minImportance, withPrizes, claimType, tag: tagSlug }),
+    tagSlug ? loadTag(tagSlug) : Promise.resolve(null),
+  ]);
+  const tagLever = tagSlug
+    ? { slug: tagSlug, name: tagInfo?.name ?? tagSlug.replace(/-/g, " ") }
+    : undefined;
 
   return (
     <div className="col-wide">
@@ -112,8 +126,15 @@ export default async function ClaimsIndex({
         imp={impFloor}
         prizes={withPrizes}
         type={claimType}
+        tag={tagLever}
         resultCount={claims.length}
       />
+
+      {tagInfo?.description && (
+        <p style={{ marginTop: "-0.9rem", marginBottom: "1.2rem", fontFamily: "var(--sans)", fontSize: ".86rem", color: "var(--muted)", maxWidth: "40rem" }}>
+          {tagInfo.description}
+        </p>
+      )}
 
       {source === "fixture" && (
         <p style={{ marginTop: "-0.6rem", marginBottom: "1.4rem" }}>
@@ -126,7 +147,9 @@ export default async function ClaimsIndex({
       {claims.length === 0 ? (
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)" }}>
           {filtersActive
-            ? "No claims match these filters. Try widening the importance band or the assessment filter."
+            ? tagSlug && !tagInfo
+              ? "There is no topic by that name. Browse the topics the graph holds."
+              : "No claims match these filters. Try widening the importance band or the assessment filter."
             : q
               ? "No claims match that search. If it is a real claim the graph should hold, propose it below."
               : "No assessed claims yet."}
@@ -161,6 +184,9 @@ export default async function ClaimsIndex({
                       figure stays alone at the far right */}
                   {c.prize_micro_usd != null && <PrizeChip micro={c.prize_micro_usd} linkTo={claimHref} />}
                   {c.checked && <MachineChecked kind={c.checked} size="sm" linkTo={claimHref} />}
+                  {/* topic tags (#272): each chip narrows the list to its
+                      topic; the active one is not repeated */}
+                  <TopicChips tags={(c.tags ?? []).filter((t) => t.slug !== tagSlug)} limit={3} />
                   <span style={{ marginLeft: "auto" }}>
                     {/* No numbers in this corner. Verdict confidence sat here
                         as a bare figure and read as P(claim true) (#160); the

@@ -281,6 +281,9 @@ export interface ClaimDetail {
   // The public contribution record (#171); absent when the API predates the
   // /claims/:id/record endpoint or the fetch fails.
   record?: ContributionExchange[];
+  // Topic tags (#272) with the provenance of each; empty when the API omits
+  // them or none has been attached yet.
+  tags?: ClaimTag[];
   // --- mathematics (docs/mathematics.md §11.1) ------------------------------
   // The published formal statement, the derived machine-checked badge, the
   // bounty pinned to the statement, the house solver's attempts, and the
@@ -308,9 +311,36 @@ export interface SearchResultItem {
   // there is none or the API omits the fields.
   prize_micro_usd: number | null;
   checked: CheckKind | null;
+  // Topic tags (#272); empty when the API omits them.
+  tags?: TagRef[];
 }
 
 export type AssessedFilter = "all" | "assessed" | "unassessed";
+
+// --- topic tags (#272) -------------------------------------------------------
+
+// A tag names what a claim is ABOUT: the open topical vocabulary the tagger
+// grows over the graph. Never a verdict, and distinct from claim_type (the
+// proposition kind) and domains (the skill selector).
+export interface TagRef {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+// A tag as it sits on one claim, with the provenance of the tagging.
+export interface ClaimTag extends TagRef {
+  description: string;
+  // tagger | steward | curator | operator | cluster_seed
+  source: string;
+  confidence: number | null;
+}
+
+// A tag in the vocabulary listing, with how many active claims carry it.
+export interface TagSummary extends TagRef {
+  description: string;
+  claim_count: number;
+}
 
 // The browse/search filter levers, threaded from the URL through to the API.
 export interface ClaimFilters {
@@ -321,6 +351,8 @@ export interface ClaimFilters {
   // Restrict to one claim type (API: claim_type); the listing-backed
   // Mathematics territory reads through this.
   claimType?: ClaimType;
+  // Only claims carrying this topic tag, by slug (API: tag).
+  tag?: string;
 }
 
 // --- claim event history (#175) ----------------------------------------------

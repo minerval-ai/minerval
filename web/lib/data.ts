@@ -1,13 +1,13 @@
 import {
   apiConfigured, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
-  fetchList, fetchOpenPrizes, fetchSearch,
+  fetchList, fetchOpenPrizes, fetchSearch, fetchTag, fetchTags,
 } from "./api";
 import {
   getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizeMandates, listOpenPrizes,
 } from "./fixtures";
 import type {
   AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
-  SearchResultItem,
+  SearchResultItem, TagSummary,
 } from "./types";
 import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
@@ -24,6 +24,7 @@ function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): Search
     if (filters.minImportance && (c.importance ?? 0) < filters.minImportance) return false;
     if (filters.withPrizes && c.prize_micro_usd == null) return false;
     if (filters.claimType && c.claim_type !== filters.claimType) return false;
+    if (filters.tag && !(c.tags ?? []).some((t) => t.slug === filters.tag)) return false;
     return true;
   });
 }
@@ -135,4 +136,33 @@ export async function loadAttempt(
   }
   const a = await fetchAttempt(attemptId);
   return { attempt: a && a.claim_id === claimId ? a : null, source: "live" };
+}
+
+// --- topic tags (#272) -------------------------------------------------------
+
+// The vocabulary, most-used first: the /tags page and the topics strip on
+// the /claims overview. Offline there is no vocabulary to show; live, a
+// failure degrades to an empty strip rather than a failed page.
+export async function loadTags(
+  limit = 100,
+): Promise<{ tags: TagSummary[]; source: DataSource }> {
+  if (!apiConfigured()) return { tags: [], source: "fixture" };
+  try {
+    return { tags: await fetchTags(limit), source: "live" };
+  } catch (err) {
+    console.error("[minerval] live tags fetch failed:", err);
+    return { tags: [], source: "live" };
+  }
+}
+
+// One tag for the active-filter lever on /claims?tag=…; null when unknown
+// (the lever then shows the slug as typed).
+export async function loadTag(slug: string): Promise<TagSummary | null> {
+  if (!apiConfigured()) return null;
+  try {
+    return await fetchTag(slug);
+  } catch (err) {
+    console.error(`[minerval] tag "${slug}" fetch failed:`, err);
+    return null;
+  }
 }
