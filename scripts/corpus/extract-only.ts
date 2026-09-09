@@ -66,7 +66,7 @@ function printClaim(i: number, c: ExtractedClaim): void {
     `\n${String(i + 1).padStart(2)}. (${c.claim_type}, conf ${c.confidence}, imp ${c.importance}, cont ${c.contestation}, ${w}w)` +
       flags(c.proposed_canonical_form, c.claim_type)
   );
-  console.log(`    orig:  ${c.original_text.slice(0, 160)}`);
+  console.log(`    text:  ${c.verbatim_text.slice(0, 160)}`);
   console.log(`    canon: ${c.proposed_canonical_form}`);
 }
 

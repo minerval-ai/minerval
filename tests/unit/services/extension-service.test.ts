@@ -71,7 +71,7 @@ describe("buildAnnotations", () => {
     claimUrl: "https://minerval.ai/claims/22222222-2222-2222-2222-222222222222",
   };
   const base = {
-    original_text: "GDP dropped in 2020",
+    verbatim_text: "GDP dropped in 2020",
     context: null,
     source_location: null,
     stance: "affirms" as const,

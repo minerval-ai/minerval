@@ -165,7 +165,7 @@ export function getChatContextPrompt(input: {
   pageTitle: string | null;
   /** Annotated claims already found on the page, if the page was analyzed. */
   pageClaims: Array<{
-    original_text: string;
+    verbatim_text: string;
     verdict: string;
     claim_id: string | null;
     canonical_form: string | null;

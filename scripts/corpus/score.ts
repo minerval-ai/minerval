@@ -132,12 +132,12 @@ async function loadSnapshot(): Promise<GraphSnapshot> {
 
   const instances = await rawQuery<{
     claimId: string;
-    originalText: string;
+    verbatimText: string;
     stance: string;
     proposedCanonicalForm: string | null;
     createdAt: string;
   }>(
-    `SELECT claim_id AS "claimId", original_text AS "originalText", stance,
+    `SELECT claim_id AS "claimId", verbatim_text AS "verbatimText", stance,
             proposed_canonical_form AS "proposedCanonicalForm", created_at AS "createdAt"
        FROM claim_instances ORDER BY created_at`
   );
@@ -184,7 +184,7 @@ function pickSample(g: GraphSnapshot, n: number): JudgeInput[] {
   const instancesOf = new Map<string, JudgeInput["instances"]>();
   for (const i of g.instances) {
     (instancesOf.get(i.claimId) ?? instancesOf.set(i.claimId, []).get(i.claimId)!).push({
-      originalText: i.originalText ?? "",
+      verbatimText: i.verbatimText ?? "",
       stance: i.stance ?? "affirms",
       proposedCanonicalForm: i.proposedCanonicalForm ?? null,
     });

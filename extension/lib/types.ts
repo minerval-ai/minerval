@@ -18,7 +18,7 @@ export interface AnnotationClaim {
 }
 
 export interface PageAnnotation {
-  original_text: string;
+  verbatim_text: string;
   context: string | null;
   source_location: string | null;
   verdict: Verdict;
@@ -114,7 +114,7 @@ export type BackgroundRequest =
         url: string | null;
         title: string | null;
         claims: Array<{
-          original_text: string;
+          verbatim_text: string;
           verdict: string;
           claim_id: string | null;
           canonical_form: string | null;

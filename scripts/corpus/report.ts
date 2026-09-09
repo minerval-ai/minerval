@@ -95,16 +95,16 @@ export async function generateReport(cluster: string, outDir?: string): Promise<
   const instanceRows = await rawQuery<{
     claim_id: string;
     source_title: string;
-    original_text: string;
+    verbatim_text: string;
   }>(
-    `SELECT ci.claim_id, s.title AS source_title, ci.original_text
+    `SELECT ci.claim_id, s.title AS source_title, ci.verbatim_text
      FROM claim_instances ci JOIN sources s ON s.id = ci.source_id
      ORDER BY ci.claim_id, s.title`
   );
-  const instancesByClaim = new Map<string, Array<{ source_title: string; original_text: string }>>();
+  const instancesByClaim = new Map<string, Array<{ source_title: string; verbatim_text: string }>>();
   for (const r of instanceRows) {
     const list = instancesByClaim.get(r.claim_id) ?? [];
-    list.push({ source_title: r.source_title, original_text: r.original_text });
+    list.push({ source_title: r.source_title, verbatim_text: r.verbatim_text });
     instancesByClaim.set(r.claim_id, list);
   }
 
@@ -216,7 +216,7 @@ export async function generateReport(cluster: string, outDir?: string): Promise<
       `_${c.claim_type} · ${c.assessment_status ?? "unassessed"} · created_by ${c.created_by}${flags}_`
     );
     for (const inst of instancesByClaim.get(c.id) ?? []) {
-      w(`- _${trunc(inst.source_title, 40)}_: "${trunc(inst.original_text, 220)}"`);
+      w(`- _${trunc(inst.source_title, 40)}_: "${trunc(inst.verbatim_text, 220)}"`);
     }
     w();
   }

@@ -67,10 +67,13 @@ ${structureStep}
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
    Use web_search for external evidence where it would change the verdict.
-   Credible instances that BOTH affirm and deny the claim are a strong signal
-   toward CONTESTED. When a source you read itself asserts the claim (or its
-   negation) — not merely reports on the debate — record that sighting with
-   record_claim_instance as you go (see "Recording Instances").
+   Credible instances with differing stances are a strong signal toward
+   CONTESTED; an instance set that is lopsided is a signal too, and needs no
+   counterweight invented for it. The document the claim was extracted from
+   is one instance among the rest, not the claim's home (see "Provenance Is
+   Evidence, Not an Anchor"). When a source you read itself asserts the claim
+   (or its negation) — not merely reports on the debate — record that
+   sighting with record_claim_instance as you go (see "Recording Instances").
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit

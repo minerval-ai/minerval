@@ -330,7 +330,9 @@ claim as worded.
 
 A **source** is a retrieved document (URL, title, content hash, raw content,
 type). An **instance** links a canonical claim to one place it actually
-appeared: the exact `original_text` quote, the surrounding `context`, a brief
+appeared: the exact `verbatim_text` quote (the passage as that source stated
+it; every source's excerpt is equally verbatim to itself, and none has
+precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the

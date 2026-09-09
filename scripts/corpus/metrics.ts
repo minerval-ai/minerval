@@ -30,7 +30,7 @@ export interface GraphSnapshot {
    *  the judge (score.ts) also reads what the source said */
   instances: Array<{
     claimId: string;
-    originalText?: string;
+    verbatimText?: string;
     stance?: string;
     proposedCanonicalForm?: string | null;
     createdAt?: string | Date;

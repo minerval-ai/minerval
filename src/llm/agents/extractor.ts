@@ -9,7 +9,7 @@ import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
 
 export interface ExtractedClaim {
-  original_text: string;
+  verbatim_text: string;
   context: string | null;
   proposed_canonical_form: string;
   claim_type: string;
@@ -55,7 +55,7 @@ export function getExtractedClaimSchema(): Record<string, unknown> {
 const EXTRACTED_CLAIM_SCHEMA = {
   type: "object" as const,
   properties: {
-    original_text: { type: "string", description: "The exact text from the document" },
+    verbatim_text: { type: "string", description: "The exact span as this source states it: the author's wording, kept as provenance" },
     context: { type: ["string", "null"], description: "Surrounding text for disambiguation" },
     proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition as it is actually debated, about fifteen words, stated at the precision the discourse debates it" },
     claim_type: { type: "string", description: "One of: empirical_verifiable, empirical_derived, definitional, evaluative, causal, normative" },
@@ -67,7 +67,7 @@ const EXTRACTED_CLAIM_SCHEMA = {
   // Native structured outputs require additionalProperties: false and a
   // complete required array on every object; the nullable fields (context,
   // source_location) are now required but may be null.
-  required: ["original_text", "context", "proposed_canonical_form", "claim_type", "confidence", "importance", "contestation", "source_location"],
+  required: ["verbatim_text", "context", "proposed_canonical_form", "claim_type", "confidence", "importance", "contestation", "source_location"],
   additionalProperties: false,
 };
 

@@ -244,7 +244,7 @@ describe("steward record_claim_instance", () => {
       claim_id: CLAIM,
       url: "https://example.org/interview",
       title: "Interview transcript",
-      original_text: "The vaccine rollout, she said, plainly reduced mortality.",
+      verbatim_text: "The vaccine rollout, she said, plainly reduced mortality.",
       context: "A retrospective on the 2021 rollout.",
       stance: "affirms",
       speaker: "Jane Doe",
@@ -258,11 +258,11 @@ describe("steward record_claim_instance", () => {
     expect(parsed.success).toBe(true);
     expect(parsed.instance_id).toBeTruthy();
 
-    const row = insertedValues.find((r) => "originalText" in r);
+    const row = insertedValues.find((r) => "verbatimText" in r);
     expect(row).toMatchObject({
       claimId: CLAIM,
       sourceId: SOURCE_ID,
-      originalText: "The vaccine rollout, she said, plainly reduced mortality.",
+      verbatimText: "The vaccine rollout, she said, plainly reduced mortality.",
       context: "A retrospective on the 2021 rollout.",
       stance: "affirms",
       confidence: 0.9,
@@ -280,10 +280,10 @@ describe("steward record_claim_instance", () => {
     await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/oped",
-      original_text: "This is simply not true.",
+      verbatim_text: "This is simply not true.",
       stance: "DENIES",
     });
-    const row = insertedValues.find((r) => "originalText" in r);
+    const row = insertedValues.find((r) => "verbatimText" in r);
     expect(row?.stance).toBe("denies");
     expect(row?.confidence).toBe(1.0);
     // Metadata the steward didn't see stays unset (NULL), never guessed.
@@ -300,14 +300,14 @@ describe("steward record_claim_instance", () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/interview",
-      original_text: "Restating the same claim on a re-read.",
+      verbatim_text: "Restating the same claim on a re-read.",
       stance: "affirms",
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(true);
     expect(parsed.deduplicated).toBe(true);
     expect(parsed.instance_id).toBe("55555555-5555-5555-5555-555555555555");
-    expect(insertedValues.find((r) => "originalText" in r)).toBeUndefined();
+    expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
   });
 
   it("flags a stance conflict with the already-recorded instance instead of writing", async () => {
@@ -318,20 +318,20 @@ describe("steward record_claim_instance", () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/interview",
-      original_text: "Actually the source denies it here.",
+      verbatim_text: "Actually the source denies it here.",
       stance: "denies",
     });
     const parsed = JSON.parse(out);
     expect(parsed.deduplicated).toBe(true);
     expect(parsed.message).toMatch(/stance differs/);
-    expect(insertedValues.find((r) => "originalText" in r)).toBeUndefined();
+    expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
   });
 
   it("bounces an out-of-enum stance without writing anything", async () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/a",
-      original_text: "Some passage.",
+      verbatim_text: "Some passage.",
       stance: "mentions",
     });
     const parsed = JSON.parse(out);
@@ -343,7 +343,7 @@ describe("steward record_claim_instance", () => {
   it("requires an http(s) url — an instance without provenance is not recordable", async () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
-      original_text: "Some passage.",
+      verbatim_text: "Some passage.",
       stance: "affirms",
     });
     expect(JSON.parse(out).success).toBe(false);
@@ -355,7 +355,7 @@ describe("steward record_claim_instance", () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: "99999999-9999-9999-9999-999999999999",
       url: "https://example.org/a",
-      original_text: "Some passage.",
+      verbatim_text: "Some passage.",
       stance: "affirms",
     });
     const parsed = JSON.parse(out);
@@ -364,11 +364,11 @@ describe("steward record_claim_instance", () => {
     expect(insertedValues).toHaveLength(0);
   });
 
-  it("bounces a document-sized original_text (record the passage, not the page)", async () => {
+  it("bounces a document-sized verbatim_text (record the passage, not the page)", async () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,
       url: "https://example.org/a",
-      original_text: "x".repeat(2100),
+      verbatim_text: "x".repeat(2100),
       stance: "affirms",
     });
     expect(JSON.parse(out).success).toBe(false);

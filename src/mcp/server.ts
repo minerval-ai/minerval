@@ -645,11 +645,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         // races the same vector searches while multiplying peak LLM load.
         for (const c of extracted) {
           const match = await matchAssertion(
-            c.original_text,
+            c.verbatim_text,
             c.context ?? undefined
           );
           judgments.push({
-            original_text: c.original_text,
+            verbatim_text: c.verbatim_text,
             proposed_canonical_form: c.proposed_canonical_form,
             claim_type: c.claim_type,
             // "unknown": the graph has no canonical claim for this assertion.

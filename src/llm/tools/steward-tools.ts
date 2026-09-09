@@ -197,18 +197,19 @@ export function getStewardToolDefinitions(): Tool[] {
           url: {
             type: "string",
             description:
-              "URL of the source document you read. This is the instance's " +
+              "URL of the source you read. This is the instance's " +
               "provenance; sources are found-or-created by URL.",
           },
           title: {
             type: "string",
-            description: "Title of the source document",
+            description: "Title of the source",
           },
-          original_text: {
+          verbatim_text: {
             type: "string",
             description:
-              "The verbatim passage where the source states the claim (or " +
-              "its negation) — the statement itself, not your paraphrase.",
+              "The passage as this source states the claim (or its " +
+              "negation), verbatim — the statement itself, not your " +
+              "paraphrase.",
           },
           context: {
             type: "string",
@@ -257,7 +258,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "mention). Defaults to 1.",
           },
         },
-        required: ["claim_id", "url", "original_text", "stance"],
+        required: ["claim_id", "url", "verbatim_text", "stance"],
       },
     },
     {
@@ -270,7 +271,10 @@ export function getStewardToolDefinitions(): Tool[] {
         "keep a worse form because it came first. Do not change what the claim " +
         "IS: a rewording that different considerations would bear on is a " +
         "different claim, and rewording into the negation would flip every " +
-        "recorded stance. Escalate those to the Curator instead.",
+        "recorded stance. Escalate those to the Curator instead. The form's " +
+        "direction was chosen on the proposition's own terms (see the claim's " +
+        "canonical_direction_note in get_claim_details), never from whichever " +
+        "source arrived first; keep it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -849,9 +853,9 @@ export async function executeStewardTool(
       case "record_claim_instance": {
         const claimId = input.claim_id as string;
         const url = typeof input.url === "string" ? input.url.trim() : "";
-        const originalText =
-          typeof input.original_text === "string"
-            ? input.original_text.trim()
+        const verbatimText =
+          typeof input.verbatim_text === "string"
+            ? input.verbatim_text.trim()
             : "";
         // Same normalization as the assessment status: the prompt discusses
         // stances in prose, so a cased value must not escape the enum.
@@ -867,21 +871,21 @@ export async function executeStewardTool(
               "instance without provenance is not recordable.",
           });
         }
-        if (!originalText) {
+        if (!verbatimText) {
           return JSON.stringify({
             success: false,
             message:
-              "original_text is required: the verbatim passage where the " +
+              "verbatim_text is required: the verbatim passage where the " +
               "source states the claim (or its negation).",
           });
         }
         // A passage, not a document: an instance records where the claim was
         // stated, and the source row keeps the document.
-        if (originalText.length > 2000) {
+        if (verbatimText.length > 2000) {
           return JSON.stringify({
             success: false,
             message:
-              `original_text is ${originalText.length} chars; keep it under ` +
+              `verbatim_text is ${verbatimText.length} chars; keep it under ` +
               `2000. Record the passage that states the claim, not the ` +
               `surrounding document.`,
           });
@@ -947,7 +951,7 @@ export async function executeStewardTool(
           .values({
             claimId,
             sourceId: source.id,
-            originalText,
+            verbatimText,
             context: optText(input.context),
             stance,
             confidence: clampUnit(input.confidence) ?? 1.0,

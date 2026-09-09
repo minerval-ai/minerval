@@ -135,7 +135,7 @@ function Chat({ settings }: { settings: Settings }) {
           url: page?.url ?? null,
           title: page?.title ?? null,
           claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
-            original_text: a.original_text.slice(0, 2000),
+            verbatim_text: a.verbatim_text.slice(0, 2000),
             verdict: a.verdict,
             claim_id: a.claim?.id ?? null,
             canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
