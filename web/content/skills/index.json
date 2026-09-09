@@ -216,10 +216,9 @@
               "replay": {
                 "type": "string",
                 "enum": [
-                  "module",
-                  "fresh"
+                  "module"
                 ],
-                "description": "\"module\" replays against the compiled module; \"fresh\" rebuilds from the pinned toolchain and counts double against the per-run cap."
+                "description": "\"module\" replays the submission's own declarations against the compiled module."
               },
               "second_opinion": {
                 "type": "boolean",
@@ -409,7 +408,7 @@
           }
         }
       ],
-      "bodyChars": 21822
+      "bodyChars": 21750
     }
   ]
 }
