@@ -229,18 +229,14 @@ describe("per-run Lean caps", () => {
     expect(refused.message).toMatch(/elaborated 1 drafts, the per-run backstop \(1\)/);
   });
 
-  it("counts a fresh replay of lean_check double against STEWARD_LEAN_MAX_CHECKS_PER_RUN", async () => {
+  it("caps lean_check at STEWARD_LEAN_MAX_CHECKS_PER_RUN, one per check", async () => {
     const opts = await run(["mathematics"]);
     const base = { formalization_id: "f", kind: "proof" };
-    const fresh = JSON.parse(await opts.executeTool("lean_check", { ...base, replay: "fresh" }));
-    expect(fresh.message).toMatch(/stub executor reached/);
-    // 2 of 3 used: another fresh replay would need 4.
-    const secondFresh = JSON.parse(await opts.executeTool("lean_check", { ...base, replay: "fresh" }));
-    expect(secondFresh.success).toBe(false);
-    expect(secondFresh.message).toMatch(/used 2 of its 3 proof checks/);
-    // A module replay still fits (3 of 3), then nothing does.
-    const plain = JSON.parse(await opts.executeTool("lean_check", base));
-    expect(plain.message).toMatch(/stub executor reached/);
+    // Every check costs one: a fresh replay is not in v1, so nothing weighs more.
+    for (let i = 0; i < 3; i++) {
+      const out = JSON.parse(await opts.executeTool("lean_check", base));
+      expect(out.message).toMatch(/stub executor reached/);
+    }
     const over = JSON.parse(await opts.executeTool("lean_check", base));
     expect(over.success).toBe(false);
     expect(over.message).toMatch(/used 3 of its 3 proof checks/);

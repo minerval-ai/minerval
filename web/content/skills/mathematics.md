@@ -177,8 +177,7 @@ change no status on its strength. Independent proofs are parallel
 arguments; do not merge them.
 
 **When an attempt completes.** Read the `lean_checks` rows first; they were
-written by the server. For a prize-bearing claim, re-check the same proof
-with a fresh replay. Judge fidelity: does the published statement, as
+written by the server. Judge fidelity: does the published statement, as
 recorded, settle the informal claim as the discourse states it, and is the
 proof non-trivial in a way that suggests the statement is sound rather than
 vacuous? A trivial proof in the first minutes of an attempt is a statement

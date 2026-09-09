@@ -1,0 +1,15 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Expire untagged layers. Tagged pin images have no rule and are never expired: retired pins stay so any historical verdict can be re-run (section 5.5).",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 14
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}

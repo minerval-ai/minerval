@@ -822,10 +822,13 @@ never evidence:
 4. No new constant is `unsafe` or `partial`, and none carries
    `@[implemented_by]`, `@[extern]`, or `@[csimp]`.
 5. The submission's new declarations replay through the kernel (`lake env
-   leanchecker <Module>`, module scope). For prize verdicts, a `--fresh`
-   replay and an external-kernel comparator are an optional escalation the
-   Steward requests through `lean_check {replay: "fresh"}`, reserved for
-   large prizes.
+   leanchecker <Module>`, module scope). A `--fresh` replay, which re-runs
+   the kernel over every import including Mathlib, is not in v1: it costs
+   hours, and it runs inside the same image it would have to distrust, so
+   against a motivated attacker it adds little that the pinned image and the
+   checker's lack of egress do not already give. The defence with real teeth
+   there is an independent external-kernel comparator, which is also not
+   built. Both wait for evidence that they are needed.
 
 Which gate failed is public in plain words on the contribution page ("the
 proof compiled but used the axiom `Foo.bar`, which the rules do not allow").
@@ -1100,7 +1103,7 @@ that kills the run.
   `definitions_axioms`, `witness_present`) plus vacuity warnings. The
   intended loop is draft, elaborate, fix, repeat, then publish.
 - `lean_check {formalization_id, kind, proof?, lean_check_id?, attempt_id?,
-  replay?: "module" | "fresh", second_opinion?: boolean, force?: boolean}`: a
+  replay?: "module", second_opinion?: boolean, force?: boolean}`: a
   cold-lane check of a proof against a stored statement. Accepts the proof
   text, or a reference to an existing `lean_checks` row or a solver attempt,
   so the Steward can re-check an artifact without pasting it. Repeated
@@ -1133,7 +1136,7 @@ result (`verdict: "error"`), not an exception.
 Per-run caps in the Steward's `executeTool` dispatcher, beside the Elicit cap
 (`src/llm/agents/claim-steward.ts:207-223`):
 `STEWARD_LEAN_MAX_SEARCHES_PER_RUN` (12), `STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN`
-(10), `STEWARD_LEAN_MAX_CHECKS_PER_RUN` (3; a `fresh` replay counts double).
+(10), `STEWARD_LEAN_MAX_CHECKS_PER_RUN` (3).
 Each refusal is a JSON tool result telling the agent what to do instead. The
 caps are backstops in the constitution's sense; the judgment about whether a
 check is worth its cost lives in the skill text.
@@ -1415,16 +1418,14 @@ never the raw transcript by default.
 
 The verification protocol, fixed in the skill text: (1) read the
 `lean_checks` rows, which the server wrote; a `proof` outcome is only as good
-as a row with `verdict = accepted`; (2) for a prize-bearing claim, call
-`lean_check {lean_check_id, replay: "fresh"}` on the same proof, the tamper
-check; (3) judge fidelity: does the published statement, as recorded with
-its correspondence note, settle the informal claim as the discourse states
-it, and is the proof non-trivial in a way that suggests the statement is
-sound rather than vacuous; (4) record an argument (`add_argument`,
+as a row with `verdict = accepted`; (2) judge fidelity: does the published
+statement, as recorded with its correspondence note, settle the informal
+claim as the discourse states it, and is the proof non-trivial in a way that
+suggests the statement is sound rather than vacuous; (3) record an argument (`add_argument`,
 `write_argument`, `evaluate_argument`), then `update_claim_assessment`
 (typically `verified` for a faithful compiled proof, `contradicted` for a
 faithful compiled disproof), `log_stewardship_decision`, and
-`notify_dependent_stewards`; (5) if a bounty is bound to the formalization,
+`notify_dependent_stewards`; (4) if a bounty is bound to the formalization,
 the worker has already moved it to `house_result_pending` (section 8.1); the
 Steward either calls `mark_problem_solved_by_platform {formalization_id,
 attempt_id, lean_check_id}`, a mechanical tool that moves the bounty to
@@ -3497,8 +3498,7 @@ change no status on its strength. Independent proofs are parallel
 arguments; do not merge them.
 
 **When an attempt completes.** Read the `lean_checks` rows first; they were
-written by the server. For a prize-bearing claim, re-check the same proof
-with a fresh replay. Judge fidelity: does the published statement, as
+written by the server. Judge fidelity: does the published statement, as
 recorded, settle the informal claim as the discourse states it, and is the
 proof non-trivial in a way that suggests the statement is sound rather than
 vacuous? A trivial proof in the first minutes of an attempt is a statement

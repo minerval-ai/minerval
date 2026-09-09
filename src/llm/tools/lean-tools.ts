@@ -376,7 +376,8 @@ async function leanCheck(
   if (kindInput && kindInput !== "proof" && kindInput !== "disproof") {
     return refuse(`kind must be "proof" or "disproof", not "${kindInput}".`);
   }
-  const replay = input.replay === "fresh" ? "fresh" : "module";
+  // A fresh replay is not in v1 (docs/mathematics.md 5.2, gate 5): module scope always.
+  const replay = "module" as const;
   const force = input.force === true;
 
   const formalization = await getFormalizationById(formalizationId);

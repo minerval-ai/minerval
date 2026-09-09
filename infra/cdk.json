@@ -14,6 +14,8 @@
     ]
   },
   "context": {
+    "//leanCheckerImageDigest": "The digest of the pushed pin image, reported on every verdict as image_digest (docs/mathematics.md 5.3). Update it whenever a new pin image is pushed; without it verdicts report the unknown-until-pushed placeholder.",
+    "leanCheckerImageDigest": "sha256:dec61b38eaae2811fb659ec2f16601605112ba9cff515f27cd637a95fcf6cd53",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws"]
