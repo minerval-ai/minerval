@@ -150,7 +150,7 @@ async function extensionChatImpl(input: {
   pageUrl: string | null;
   pageTitle: string | null;
   pageClaims: Array<{
-    original_text: string;
+    verbatim_text: string;
     verdict: string;
     claim_id: string | null;
     canonical_form: string | null;

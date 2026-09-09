@@ -3,7 +3,7 @@
  *
  * The content script sends the server READABLE TEXT built by walking the
  * page's visible text nodes. Annotations come back as exact quotes
- * (`original_text`). Because capture and anchoring share the same index, a
+ * (`verbatim_text`). Because capture and anchoring share the same index, a
  * quote can be mapped back to precise (text node, offset) positions and
  * highlighted with a Range — no DOM rewriting, robust to dynamic pages
  * (rebuild the index and re-anchor on mutation).

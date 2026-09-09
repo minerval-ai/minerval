@@ -139,6 +139,16 @@ export const claims = pgTable(
       (): any => claims.id,
       { onDelete: "set null" }
     ),
+    // Why the canonical form is stated in the direction it is (#360). A claim
+    // and its denial are one node, so the form has a polarity and every
+    // instance's stance is read against it. The direction is chosen on the
+    // proposition's own terms (the affirmative form of the question as the
+    // discourse poses it), never inherited from whichever source arrived
+    // first; this note records the Matcher's one-sentence reason so a later
+    // agent re-judging the wording does not silently re-invert it and flip
+    // every recorded stance. NULL for claims minted before the note existed
+    // or by paths that do not run the Matcher's direction judgment.
+    canonicalDirectionNote: text("canonical_direction_note"),
     // Domain tags (docs/mathematics.md §2.1, §3.4): the skill names whose
     // domain skills (skills/<name>/SKILL.md) and tools a run on this claim
     // carries. A recorded admin judgment, never a filter: the Extractor emits
@@ -506,7 +516,13 @@ export const claimInstances = pgTable(
     sourceId: uuid("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
-    originalText: text("original_text").notNull(),
+    // The passage as THIS source stated it: provenance, the author's wording
+    // and framing (§4). Every source's excerpt is equally verbatim to itself;
+    // the column was `original_text` until #360, a name that implied the
+    // first source's wording had precedence over the others' and that the
+    // canonical form derived from it. Neither is true: the canonical form
+    // states the proposition, and each instance records one voice on it.
+    verbatimText: text("verbatim_text").notNull(),
     // The canonical form the EXTRACTOR proposed for this passage (§3), kept
     // next to the verbatim text it was proposed for. The Matcher has the
     // last word on a new claim's wording (url-extraction.ts stores its

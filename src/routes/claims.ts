@@ -507,7 +507,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             .select({
               id: claimInstances.id,
               source_id: claimInstances.sourceId,
-              original_text: claimInstances.originalText,
+              verbatim_text: claimInstances.verbatimText,
               context: claimInstances.context,
               confidence: claimInstances.confidence,
               source_title: sources.title,

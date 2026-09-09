@@ -213,7 +213,7 @@ export const claimDetailResponse = z.object({
       z.object({
         id: uuidSchema,
         source_id: uuidSchema,
-        original_text: z.string(),
+        verbatim_text: z.string(),
         context: z.string().nullable(),
         confidence: z.number(),
         source_title: z.string(),

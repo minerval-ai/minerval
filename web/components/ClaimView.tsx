@@ -254,7 +254,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           </p>
           {instances.map((inst) => (
             <div className="instance" key={inst.id}>
-              <blockquote>{inst.original_text}</blockquote>
+              <blockquote>{inst.verbatim_text}</blockquote>
               <div className="instance-cite">
                 {inst.source_url ? (
                   <a href={inst.source_url}>{inst.source_title}</a>

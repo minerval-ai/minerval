@@ -246,7 +246,7 @@ const FLAGSHIP: ClaimDetail = {
     {
       id: "inst-1",
       source_id: "src-bls",
-      original_text:
+      verbatim_text:
         "The Consumer Price Index for All Urban Consumers (CPI-U) rose 6.5 percent over the 12 months ending December 2022.",
       context: "From the BLS monthly CPI news release, summary table for the 2022 calendar year.",
       confidence: 0.99,
@@ -257,7 +257,7 @@ const FLAGSHIP: ClaimDetail = {
     {
       id: "inst-2",
       source_id: "src-news",
-      original_text: "Inflation hit a 40-year high in 2022, squeezing households across the country.",
+      verbatim_text: "Inflation hit a 40-year high in 2022, squeezing households across the country.",
       context: "Lede of a retrospective news analysis on the 2022 cost-of-living crisis.",
       confidence: 0.82,
       source_title: "A year of soaring prices, in charts",
@@ -901,7 +901,7 @@ const LEGENDRE: ClaimDetail = {
     {
       id: "inst-m1",
       source_id: "src-oeis",
-      original_text:
+      verbatim_text:
         "Legendre's conjecture states that there is a prime number between n² and (n + 1)² for every positive integer n.",
       context: "The opening sentence of the conjecture's encyclopedia entry.",
       confidence: 0.98,

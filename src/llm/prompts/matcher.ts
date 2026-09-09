@@ -69,14 +69,48 @@ create a new claim to get better wording.
 
 For a new claim, write the canonical form per §3: the shortest neutral
 statement of the proposition as it is actually debated, about fifteen words,
-stripped of the author's framing, stated so both sides would accept it as a
-fair description of what is in dispute. Write it in the direction the source
-asserts, so the new instance's stance is "affirms".
+stripped of the author's framing, stated so anyone discussing it, whichever
+answer they give, would accept it as a fair description of what is in
+dispute. The source in front of you is one voice on that proposition, not
+its home: the form states the proposition, never this document's sentence.
+
+## Canonical Direction
+
+A claim and its denial are one node, so the canonical form has a direction,
+and every instance's stance, this one and every later one, is read against
+it. Choose that direction on the proposition's own terms, not from the
+source that happens to be in front of you. The first source to mention a
+claim has no more say over the node's polarity than any source that follows:
+a form written so that this instance affirms would have been written the
+other way round had the opposing paper arrived first, inverting the node and
+every stance recorded on it. Wording is judged on its merits, never by which
+formulation arrived first (§2), and direction is part of the wording.
+
+Make the choice explicit rather than inheriting it. State the proposition
+as the discourse poses it: the affirmative form of the question being
+argued, as a debate motion, a survey question, or a neutral headline would
+put it.
+- Prefer the positive assertion over its negation: "SSRIs outperform placebo
+  for moderate depression", not "SSRIs do not outperform placebo". A "not"
+  in the canonical form usually means the direction is inverted.
+- Where the discourse names the thesis (a hypothesis, a theory, a named
+  effect, a policy proposal), state the thesis, whoever is denying it.
+- Where both directions are equally natural, take the one that says
+  something happened, exists, works, or is the case over the one that says
+  it did not.
+
+Then derive the stance by comparing what this source asserts against the
+form you wrote. A new claim's first instance is "denies" whenever the source
+argues against the proposition as posed; that is the correct record, not a
+defect to fix by flipping the form. Give one sentence on why you chose the
+direction in \`direction_note\`: it travels with the claim so a later agent
+judging the wording afresh does not silently re-invert it.
 
 ## Output
 
 \`submit_match_decision\` carries your whole answer:
-- \`matched_claim_id\` (if matching) or \`new_canonical_form\` (if new)
+- \`matched_claim_id\` (if matching) or \`new_canonical_form\` (if new),
+  with \`direction_note\` for a new claim
 - \`instance_stance\`: "affirms" if the source asserts the claim as
   canonically stated, "denies" if it asserts the negation or contrary
 - \`confidence\` (0.0-1.0) and \`reasoning\`
@@ -109,7 +143,7 @@ export function getMatchingPrompt(
 ): string {
   return `Determine whether this claim already exists in the graph.
 
-Original text: "${extractedText}"
+Source text, verbatim: "${extractedText}"
 
 Proposed canonical form: "${proposedCanonical}"
 

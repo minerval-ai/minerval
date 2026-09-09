@@ -357,7 +357,7 @@ export function syncEvalsContent(contentDir: string): {
     confidence: 0.8,
     reasoningTrace: "<the Steward's reasoning trace, verbatim>",
     subclaims: [{ relation: "<relation>", text: "<a direct subclaim's text>", status: "<its status>" }],
-    instances: [{ originalText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
+    instances: [{ verbatimText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
   });
   writeFileSync(resolve(evalsDir, "judge-prompt.md"), judgePromptSample + "\n");
   writeFileSync(resolve(evalsDir, "judge-standards.md"), CONSTITUTION_STANDARDS + "\n");

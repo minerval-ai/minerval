@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 7359,
-    "fullChars": 55863,
+    "roleChars": 8145,
+    "fullChars": 56833,
     "skills": [
       {
         "name": "mathematics",
@@ -28,8 +28,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "DeepSeek V4 Flash",
     "hasConstitution": true,
-    "roleChars": 6092,
-    "fullChars": 54596,
+    "roleChars": 8096,
+    "fullChars": 56784,
     "skills": [
       {
         "name": "mathematics",
@@ -49,7 +49,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 11653,
-    "fullChars": 60157,
+    "fullChars": 60341,
     "skills": [
       {
         "name": "mathematics",
@@ -69,8 +69,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19999,
-    "fullChars": 68503,
+    "roleChars": 22782,
+    "fullChars": 71470,
     "skills": [
       {
         "name": "mathematics",
@@ -97,7 +97,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 5775,
-    "fullChars": 54279,
+    "fullChars": 54463,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 9252,
-    "fullChars": 57756,
+    "fullChars": 57940,
     "skills": [
       {
         "name": "mathematics",
@@ -140,7 +140,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 9772,
-    "fullChars": 58276,
+    "fullChars": 58460,
     "skills": [
       {
         "name": "mathematics",
@@ -168,7 +168,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 8908,
-    "fullChars": 57412,
+    "fullChars": 57596,
     "skills": [
       {
         "name": "mathematics",

@@ -43,7 +43,7 @@ vi.mock("../../../src/llm/prompts/extractor.js", () => ({
 }));
 
 const claim = (text: string) => ({
-  original_text: text,
+  verbatim_text: text,
   context: null,
   proposed_canonical_form: text,
   claim_type: "empirical_verifiable",
@@ -93,7 +93,7 @@ describe("extractor refusal fallback", () => {
     const claims = await extractClaims({ content: "a pathogen paper" });
     expect(state.calls).toEqual(["claude-fable-5-1", "claude-sonnet-5"]);
     // The document is not lost: the fallback's claims come back.
-    expect(claims[0]!.original_text).toBe("from claude-sonnet-5");
+    expect(claims[0]!.verbatim_text).toBe("from claude-sonnet-5");
   });
 
   it("still honours maxClaims on the fallback path", async () => {

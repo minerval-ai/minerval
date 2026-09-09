@@ -38,7 +38,7 @@ const HASH = pageCacheKey(INPUT.url, INPUT.content);
 
 const EXTRACTED = [
   {
-    original_text: "a claim",
+    verbatim_text: "a claim",
     context: null,
     proposed_canonical_form: "A claim.",
     claim_type: "empirical_verifiable",

@@ -52,7 +52,7 @@ vi.mock("../../../src/llm/agents/extractor.js", async () => {
         mocks.seen.push({ ...getUsageContext() });
         return [
           {
-            original_text: "Dear Jane, the lockdowns did more harm than good.",
+            verbatim_text: "Dear Jane, the lockdowns did more harm than good.",
             context: null,
             proposed_canonical_form: "Lockdowns did more harm than good.",
             claim_type: "evaluative",

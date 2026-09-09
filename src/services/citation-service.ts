@@ -250,7 +250,7 @@ export async function assembleEvidenceRecord(
 
   const instanceRows = await rawQuery<{
     id: string;
-    original_text: string;
+    verbatim_text: string;
     context: string | null;
     stance: string;
     source_id: string;
@@ -258,7 +258,7 @@ export async function assembleEvidenceRecord(
     url: string | null;
     source_type: string;
   }>(
-    `SELECT ci.id, ci.original_text, ci.context, ci.stance,
+    `SELECT ci.id, ci.verbatim_text, ci.context, ci.stance,
             s.id AS source_id, s.title, s.url, s.source_type
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
@@ -306,7 +306,7 @@ export async function assembleEvidenceRecord(
     })),
     instances: instanceRows.map((i) => ({
       id: i.id,
-      quote: i.original_text,
+      quote: i.verbatim_text,
       context: i.context,
       stance: i.stance,
       source: {

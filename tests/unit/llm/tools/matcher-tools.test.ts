@@ -28,6 +28,8 @@ describe("match_claim tool wrapper", () => {
       reasoning: "No exact match; two near-misses considered.",
       alternative_matches: ["aaaaaaaa-0000-0000-0000-000000000001"],
       relationship_notes: "Near-miss is a broader claim about employment effects.",
+      direction_note:
+        "Stated as the employment-effect thesis the literature argues over, not its denial.",
     });
 
     const out = JSON.parse(
@@ -38,6 +40,12 @@ describe("match_claim tool wrapper", () => {
     ]);
     expect(out.relationship_notes).toBe(
       "Near-miss is a broader claim about employment effects."
+    );
+    // Why the new form runs in the direction it does (#360) reaches the
+    // caller that mints the claim, so the polarity is recorded, not inferred
+    // from whichever source arrived first.
+    expect(out.direction_note).toBe(
+      "Stated as the employment-effect thesis the literature argues over, not its denial."
     );
   });
 
@@ -58,6 +66,7 @@ describe("match_claim tool wrapper", () => {
     );
     expect(out.alternative_matches).toEqual([]);
     expect(out.relationship_notes).toBeNull();
+    expect(out.direction_note).toBeNull();
   });
 
   it("still rejects empty text", async () => {
