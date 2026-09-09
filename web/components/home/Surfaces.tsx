@@ -171,8 +171,7 @@ export function Surfaces({
           <p>
             Read anything with the graph switched on. The extension recognises claims on
             the page and underlines each by its verdict; hover one to see the canonical
-            claim it matches, its reasoning, and the subclaims beneath it. Pre-computed,
-            not hallucinated: the decomposition is checked once and applied live.
+            claim it matches, its reasoning, and the subclaims beneath it.
           </p>
           <a className={styles.cta} href="https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci">
             Get the extension →
