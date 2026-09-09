@@ -71,15 +71,22 @@ export const TERRITORIES: TerritoryConfig[] = [
       "Regular egg consumption increases cardiovascular disease risk in healthy people",
   },
   {
-    key: "mathematics",
-    name: "Mathematics",
-    kicker: "Domain",
-    question: "Which propositions are proven, which are open, and what has each been checked against?",
-    // The offline sample theorem (lib/fixtures.ts); live, the lead claim of
-    // the mathematical listing fronts the card.
-    anchorId: "legendre-conjecture",
-    coreText: "For every positive integer n there is a prime between n² and (n+1)².",
-    listing: { claimType: "mathematical" },
+    key: "jacobian",
+    name: "The Jacobian conjecture",
+    question: "Did the 2026 counterexample settle the conjecture, or does the plane case still stand?",
+    // Keller's 1939 conjecture over ℂⁿ, contradicted in July 2026 by Alpöge's
+    // explicit ℂ³ counterexample, with the original two-variable case contested
+    // and open beneath it. This replaces the "Mathematics" domain card, which
+    // pointed nowhere real: its anchor was a fixture-only theorem id (404 in
+    // production) and its listing front door filters on the mathematical claim
+    // type, which no claim in the live graph carries yet. The mathematics the
+    // graph actually holds is this investigation, so the card names it, the way
+    // the other three name theirs. When formal statements land, a listing-backed
+    // Mathematics card can sit beside this one: the listing branch of
+    // loadTerritories and computeListingStats stay in place for it.
+    anchorId: "a3029e96-2c0b-41d4-858a-ab45906c4cc8",
+    coreText:
+      "Every polynomial map of ℂⁿ with nonzero constant Jacobian determinant has a polynomial inverse",
   },
 ];
 
