@@ -214,9 +214,9 @@
       "submission_source": "theorem Minerval.S0000a001_v1.proof.{u} : Minerval.S0000a001_v1.Statement :=\n  let _witness : PUnit.{u + 1} := PUnit.unit\n  fun n => Nat.add_zero n\n",
       "expected": {
         "verdict": "rejected",
-        "failing_gate": "target"
+        "failing_gate": "compile"
       },
-      "note": "A target with a universe parameter (used only in the proof term, so Lean keeps it). Gate 2 requires `levelParams = []`."
+      "note": "A target with a universe parameter used only in the proof term. Lean 4.33 rejects this at compile time ('unused universe parameter'), so it never reaches gate 2; the submission cannot suppress that error because the static-policy option allowlist admits only maxHeartbeats and maxRecDepth. Still rejected, one gate earlier than when this fixture was written. Gate 2's levelParams check is therefore defence in depth rather than a branch this fixture exercises: for the type to stay alpha-equivalent to a universe-free Statement the parameter must be unused, which no longer compiles. Revisit if a later toolchain relaxes that."
     },
     {
       "name": "extra-import",

@@ -117,19 +117,33 @@ the first time by the image build. Expect to adjust:
 
 ## The first measurements
 
-Nobody has made these yet (section 5.8); make them on the first build and
-record them here.
+First build, 2026-09-09, `mathlib-v4.33.0` on an m7i.2xlarge (8 vCPU, 32 GB).
+Where a row still says "not measured", it was not measured; do not read a
+blank as a small number.
 
 | Measurement | How | Value |
 | --- | --- | --- |
-| Image size | `docker image ls minerval/lean-checker` | |
-| Cache-fetch duration | time of the `lake exe cache get` step in the build log | |
-| `import Mathlib` warm start | `POST /v1/scratch {"source": "example : True := trivial"}` on a fresh container; `resource.wall_ms` | |
-| Peak memory of a check | `resource.max_rss_mb` on the golden `valid-proof` case, and `docker stats` | |
-| `leanchecker` runtime | `checks.replay` step: compare `resource.wall_ms` of a check with `LEAN_CHECKER_REPLAY_TOOL=none` against the default | |
-| `--fresh` replay runtime | one `replay: "fresh"` check; expect hours | |
-| Statement compile, cached vs not | second check of the same statement: `statement_compile.cached` | |
-| Cold-lane start to first check | RunTask to `/health` answering, in the API's logs | |
+| Image size | `docker image ls minerval/lean-checker` | 11.4 GB |
+| Cache-fetch duration | time of the `lake exe cache get` step in the build log | 115 s |
+| Image export (rebuild cost) | the `exporting layers` step | 164 s, and it dominates any rebuild |
+| `import Mathlib` warm start | statement compile through `lean`, wall clock | 3.1 s (7.0 GB peak RSS) |
+| `minerval_check elaborate` | one call against a compiled statement | 6-8 s (6.4 GB peak RSS) |
+| Whole `check`, incl. gate 5 replay | golden `valid-proof`, statement uncached | 20 s |
+| Whole `check`, statement cached | golden cases sharing a statement | 10-15 s |
+| Peak memory of a check | `docker stats` during the golden run | under the 12 GB container limit; both Lean processes peak near 7 GB, so the limit is not far off |
+| `leanchecker` runtime | isolated `checks.replay` against `LEAN_CHECKER_REPLAY_TOOL=none` | not measured separately; it is inside the 20 s above |
+| Statement compile, cached vs not | second check of the same statement: `statement_compile.cached` | cache hits, via the `.done` marker |
+| Cold-lane start to first check | RunTask to `/health` answering, in the API's logs | not measured; no cold-lane task has run |
+
+A `--fresh` replay is not in v1 (docs/mathematics.md section 5.2), so its
+cost is unmeasured and no fixture exercises it.
+
+Two things the first build settled, both of which cost a cycle to find:
+`lake env` cannot run under the read-only root (it tries to re-resolve the
+manifest and re-clone Mathlib), so `LEAN_PATH` is baked at build time and the
+binaries are invoked directly; and `lake exe cache get` unpacks the oleans
+`0600`, which `COPY` preserves, so the tree needs `chmod -R a+rX` in the
+`checker` stage or the service user cannot read Mathlib at all.
 
 What the numbers decide: whether the warm lane moves `elaborate`/`scratch`
 onto the persistent REPL (`/opt/minerval/bin/repl`) instead of one `lean`

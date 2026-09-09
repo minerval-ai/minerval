@@ -24,7 +24,7 @@
  * after its own entries) and passed to minerval_check as --search-path.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile, access } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile, access, link, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseCheckerJson, parseLeanMessages, parseTimeOutput } from "./lean-output.js";
 import { STATEMENT_MODULE, SUBMISSION_MODULE, SCRATCH_MODULE } from "./statement.js";
@@ -73,6 +73,12 @@ export class ProcessLeanRunner implements LeanRunner {
   private readonly outputCap: number;
   private readonly diagnosticsCap: number;
   private readonly childEnv: Record<string, string>;
+  /** `["lake", "env"]`, or empty when LEAN_PATH is baked into the image.
+   * Under a read-only project directory `lake env` tries to re-resolve the
+   * manifest and re-clone Mathlib, which fails; the README's
+   * first-deployment checklist prescribes a baked LEAN_PATH and calling the
+   * binaries directly. */
+  private readonly lakePrefix: string[];
   private readonly inFlightStatements = new Map<string, Promise<CompileStep>>();
 
   constructor(private readonly opts: ProcessRunnerOptions) {
@@ -82,6 +88,7 @@ export class ProcessLeanRunner implements LeanRunner {
     this.outputCap = opts.outputCapBytes ?? OUTPUT_CAP_BYTES;
     this.diagnosticsCap = opts.diagnosticsCap ?? DIAGNOSTICS_CAP;
     const src = opts.env ?? process.env;
+    this.lakePrefix = src.LEAN_PATH ? [] : [this.lakeBin, "env"];
     // The allowlist. Nothing else from the service's environment, and in
     // particular not LEAN_CHECKER_TOKEN, is visible to a Lean process.
     this.childEnv = {
@@ -94,6 +101,23 @@ export class ProcessLeanRunner implements LeanRunner {
       ...(src.ELAN_TOOLCHAIN ? { ELAN_TOOLCHAIN: src.ELAN_TOOLCHAIN } : {}),
       ...(src.LEAN_PATH ? { LEAN_PATH: src.LEAN_PATH } : {}),
     };
+  }
+
+  /**
+   * Make the cached statement module visible inside `root`, so one search
+   * path entry holds both `MinervalCheck.Statement` and the module being
+   * compiled. Lean resolves a module by its first component: it commits to
+   * the first search path entry containing a `MinervalCheck` directory and
+   * does not fall through, so passing the statement root and the working
+   * root as two entries resolves everything into the statement root.
+   */
+  private async linkStatementInto(stmtRoot: string, root: string): Promise<void> {
+    const from = join(stmtRoot, "MinervalCheck", "Statement.olean");
+    const to = join(root, "MinervalCheck", "Statement.olean");
+    await link(from, to).catch(async (e: NodeJS.ErrnoException) => {
+      if (e?.code === "EEXIST") return;
+      await copyFile(from, to);
+    });
   }
 
   private statementRoot(source: string): { root: string; key: string } {
@@ -198,8 +222,7 @@ export class ProcessLeanRunner implements LeanRunner {
     headerLines: number
   ): Promise<CompileStep> {
     const argv = [
-      this.lakeBin,
-      "env",
+      ...this.lakePrefix,
       "lean",
       "--json",
       `--root=${root}`,
@@ -259,7 +282,7 @@ export class ProcessLeanRunner implements LeanRunner {
   }
 
   private async analyze<T extends { ok: boolean }>(args: string[], timeoutS: number, extraLeanPath: string[]): Promise<{ process: ProcessOutcome; result: T | { ok: false; error: string } }> {
-    const argv = [this.lakeBin, "env", this.opts.checkerBin, ...args, ...extraLeanPath.flatMap((p) => ["--search-path", p])];
+    const argv = [...this.lakePrefix, this.opts.checkerBin, ...args, ...extraLeanPath.flatMap((p) => ["--search-path", p])];
     const process_ = await this.runProcess(argv, { cwd: this.opts.projectDir, timeoutS, extraLeanPath });
     if (process_.spawn_error || process_.timed_out || process_.killed) {
       return { process: process_, result: { ok: false, error: process_.spawn_error ?? "minerval_check did not finish" } };
@@ -294,6 +317,11 @@ export class ProcessLeanRunner implements LeanRunner {
     const root = join(this.opts.workRoot, "scratch", id);
     const dir = join(root, "MinervalCheck");
     await mkdir(dir, { recursive: true });
+    if (statementStep) {
+      await this.linkStatementInto(extra[0]!, root);
+      extra.length = 0;
+      extra.push(root);
+    }
     const file = join(dir, `${SCRATCH_MODULE.split(".").pop()}.lean`);
     await writeFile(file, input.source, "utf8");
     try {
@@ -313,8 +341,9 @@ export class ProcessLeanRunner implements LeanRunner {
     await mkdir(dir, { recursive: true });
     const file = join(dir, "Submission.lean");
     await writeFile(file, input.submission_file, "utf8");
+    await this.linkStatementInto(stmtRoot, root);
     try {
-      const compile = await this.compile(file, root, join(dir, "Submission.olean"), input.limits, [stmtRoot], "submission", input.header_lines);
+      const compile = await this.compile(file, root, join(dir, "Submission.olean"), input.limits, [root], "submission", input.header_lines);
       if (compile.error_count > 0 || compile.exit_code !== 0) return { statement_compile, compile };
 
       const { process: analysis_process, result: analysis } = await this.analyze<CheckAnalysis>(
@@ -327,7 +356,7 @@ export class ProcessLeanRunner implements LeanRunner {
           "--kind", input.kind,
         ],
         input.limits.timeout_s,
-        [stmtRoot, root]
+        [root]
       );
       if (analysis.ok === false || !analysis.all_pass) return { statement_compile, compile, analysis, analysis_process };
 
@@ -335,9 +364,9 @@ export class ProcessLeanRunner implements LeanRunner {
       // Gate 5: `lake env leanchecker [--fresh] MinervalCheck.Submission`.
       // `--fresh` replays every import too (Mathlib included: hours), which
       // is why it is an escalation the Steward requests, not the default.
-      const replayArgv = [this.lakeBin, "env", "leanchecker", ...(input.replay === "fresh" ? ["--fresh"] : []), SUBMISSION_MODULE];
+      const replayArgv = [...this.lakePrefix, "leanchecker", ...(input.replay === "fresh" ? ["--fresh"] : []), SUBMISSION_MODULE];
       const replayTimeout = input.replay === "fresh" ? input.limits.timeout_s * 24 : input.limits.timeout_s;
-      const replay = await this.runProcess(replayArgv, { cwd: this.opts.projectDir, timeoutS: replayTimeout, extraLeanPath: [stmtRoot, root] });
+      const replay = await this.runProcess(replayArgv, { cwd: this.opts.projectDir, timeoutS: replayTimeout, extraLeanPath: [root] });
       return { statement_compile, compile, analysis, analysis_process, replay: { ...replay, mode: input.replay } };
     } finally {
       if (!this.opts.keepWork) await rm(root, { recursive: true, force: true }).catch(() => undefined);
