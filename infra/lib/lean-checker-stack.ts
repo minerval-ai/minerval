@@ -72,7 +72,7 @@ export function readPin(): { pin_id: string; mathlib_tag: string; lean_toolchain
 }
 
 export class LeanCheckerStack extends cdk.Stack {
-  public readonly repository: ecr.Repository;
+  public readonly repository: ecr.IRepository;
   public readonly tokenSecret: secretsmanager.Secret;
   public readonly checkerSg: ec2.SecurityGroup;
   public readonly cluster: ecs.Cluster;
@@ -92,24 +92,33 @@ export class LeanCheckerStack extends cdk.Stack {
     const imageTag = props.imageTag ?? pin.pin_id;
 
     // ---- Registry ---------------------------------------------------------
-    this.repository = new ecr.Repository(this, "LeanCheckerRepo", {
-      repositoryName: "minerval/lean-checker",
-      // A pin tag names exactly one image forever; pushing a different image
-      // under the same tag is refused.
-      imageTagMutability: ecr.TagMutability.IMMUTABLE,
-      imageScanOnPush: true,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      emptyOnDelete: false,
-      lifecycleRules: [
-        {
-          rulePriority: 1,
-          description:
-            "Expire untagged layers. Tagged pin images have no rule and are never expired: retired pins stay so any historical verdict can be re-run (section 5.5).",
-          tagStatus: ecr.TagStatus.UNTAGGED,
-          maxImageAge: cdk.Duration.days(14),
-        },
-      ],
-    });
+    // The repository is a prerequisite of this stack, not a member of it, and
+    // it has to be that way round. This stack also creates a service that
+    // pulls an image from the repository, so a stack that created the
+    // repository could never deploy from clean: the repository would be
+    // empty, the service would have nothing to pull, the deployment circuit
+    // breaker would trip, and the stack would roll back. That is what
+    // happened on the first attempt, and because the repository carries
+    // RETAIN it survived the rollback, after which every later deploy failed
+    // change-set validation with "already exists" -- including deploys of
+    // unrelated stacks, because `cdk deploy --all` stops at the first
+    // failure. Create it once, push a pin image, then deploy:
+    //
+    //   aws ecr create-repository --repository-name minerval/lean-checker \
+    //     --image-tag-mutability IMMUTABLE \
+    //     --image-scanning-configuration scanOnPush=true
+    //   aws ecr put-lifecycle-policy --repository-name minerval/lean-checker \
+    //     --lifecycle-policy-text file://lean-checker/ecr-lifecycle.json
+    //
+    // IMMUTABLE tags matter: a pin tag names exactly one image forever, so
+    // pushing a different image under the same tag is refused. The lifecycle
+    // policy expires untagged layers only; tagged pin images are never
+    // expired, so any historical verdict can be re-run (section 5.5).
+    this.repository = ecr.Repository.fromRepositoryName(
+      this,
+      "LeanCheckerRepo",
+      "minerval/lean-checker"
+    );
 
     // ---- Bearer token -----------------------------------------------------
     // Generated here, never typed by a person, read by the API task (as

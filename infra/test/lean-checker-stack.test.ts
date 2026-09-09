@@ -23,18 +23,18 @@ function synth(): { template: Template; stack: LeanCheckerStack; network: Networ
   return { template: Template.fromStack(stack), stack, network };
 }
 
-test("the ECR repository expires only untagged images and keeps every pin", () => {
-  const { template } = synth();
-  template.resourceCountIs("AWS::ECR::Repository", 1);
-  template.hasResourceProperties("AWS::ECR::Repository", {
-    RepositoryName: "minerval/lean-checker",
-    ImageTagMutability: "IMMUTABLE",
-  });
-  const repo = Object.values(template.findResources("AWS::ECR::Repository"))[0]!;
-  const policy = JSON.parse(repo.Properties.LifecyclePolicy.LifecyclePolicyText);
-  assert.equal(policy.rules.length, 1);
-  assert.equal(policy.rules[0].selection.tagStatus, "untagged");
-  assert.equal(repo.DeletionPolicy, "Retain");
+test("the ECR repository is a prerequisite, not a member of this stack", () => {
+  const { template, stack } = synth();
+  // The stack creates a service that pulls from this repository, so a stack
+  // that also created it could never deploy from clean: empty repository,
+  // nothing to pull, circuit breaker, rollback. Worse, the repository carries
+  // RETAIN, so it survives that rollback and every later deploy then fails
+  // change-set validation with "already exists" -- taking unrelated stacks
+  // down with it, because `cdk deploy --all` stops at the first failure.
+  // It is created and populated out of band; see the comment in the stack and
+  // lean-checker/ecr-lifecycle.json.
+  template.resourceCountIs("AWS::ECR::Repository", 0);
+  assert.equal(stack.repository.repositoryName, "minerval/lean-checker");
 });
 
 test("the bearer token is a generated secret injected as LEAN_CHECKER_TOKEN, never plain environment", () => {
