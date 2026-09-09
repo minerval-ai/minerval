@@ -51,7 +51,7 @@ function Segmented<T extends string>({
 }
 
 export function ClaimsControls({
-  q, assessed, imp, prizes = false, type, resultCount,
+  q, assessed, imp, prizes = false, type, tag, resultCount,
 }: {
   q: string;
   assessed: AssessedFilter;
@@ -61,6 +61,10 @@ export function ClaimsControls({
   // A claim-type restriction, set by a territory's front door rather than a
   // control of its own; shown as a removable lever while active.
   type?: ClaimType;
+  // A topic-tag restriction (#272), set by a tag chip or the /tags page;
+  // shown as a removable lever while active. `name` is the live tag name,
+  // falling back to the slug when the tag is unknown.
+  tag?: { slug: string; name: string };
   // Omitted on the pre-search overview (#206), where there is no result list to
   // count and a number would misrepresent the territory cards as a feed.
   resultCount?: number;
@@ -74,23 +78,26 @@ export function ClaimsControls({
   // so flipping a filter never discards what's been typed.
   function go(next: Partial<{
     q: string; assessed: AssessedFilter; imp: ImportanceFloor; prizes: boolean; type: ClaimType | null;
+    tag: string | null;
   }>) {
     const nq = (next.q ?? query).trim();
     const na = next.assessed ?? assessed;
     const ni = next.imp ?? imp;
     const np = next.prizes ?? prizes;
     const nt = next.type === undefined ? type : next.type;
+    const ng = next.tag === undefined ? tag?.slug : next.tag;
     const p = new URLSearchParams();
     if (nq) p.set("q", nq);
     if (na !== DEFAULT_ASSESSED) p.set("assessed", na);
     if (ni !== DEFAULT_IMP) p.set("imp", ni);
     if (np) p.set("prizes", "1");
     if (nt) p.set("type", nt);
+    if (ng) p.set("tag", ng);
     const qs = p.toString();
     router.push(qs ? `/claims?${qs}` : "/claims");
   }
 
-  const isDefault = assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q && !prizes && !type;
+  const isDefault = assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q && !prizes && !type && !tag;
   const typeMeta = type ? claimTypeMeta(type) : null;
 
   return (
@@ -141,6 +148,16 @@ export function ClaimsControls({
             <span className="sc">Type</span>
             <span className="tag kind">{typeMeta?.label ?? type.replace(/_/g, " ")}</span>
             <button type="button" className="filter-reset" onClick={() => go({ type: null })} aria-label="Remove the type filter">
+              ×
+            </button>
+          </span>
+        )}
+
+        {tag && (
+          <span className="filter-group">
+            <span className="sc">Topic</span>
+            <span className="tag topic">{tag.name}</span>
+            <button type="button" className="filter-reset" onClick={() => go({ tag: null })} aria-label="Remove the topic filter">
               ×
             </button>
           </span>

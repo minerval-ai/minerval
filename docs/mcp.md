@@ -84,16 +84,20 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | LLM tokens metered per account; rate-limited and gated on the monthly free-tier grant (402 `QUOTA_EXCEEDED` when exhausted) |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — new/low-reputation accounts get a tighter hourly cap (`CONTRIBUTION_RATE_LIMITED`), and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
 
 ## Tools
 
-- **`search_claims`** `{query, limit?, assessed?, min_importance?}` — hybrid
+- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?}` — hybrid
   vector + keyword search over canonical claims. Each result carries its
-  current assessment status/confidence and a `minerval.ai` page link.
+  current assessment status/confidence, its topic `tags`, and a
+  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic.
+- **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
+  claims carry, with how many claims carry each; with `query`, ranked by
+  meaning. A tag says what a claim is about, never whether it holds.
   Each result also carries `prize_micro_usd` (the live bounty on the claim,
   or null) and `checked` (`proof`, `disproof`, or null: whether a
   machine-checked argument stands on the claim, the same derivation as the

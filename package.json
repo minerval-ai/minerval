@@ -33,6 +33,8 @@
     "corpus:property": "tsx scripts/corpus/property.ts",
     "predictions": "tsx scripts/predictions.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts",
+    "tags": "tsx scripts/tags.ts",
+    "tags:seed": "tsx scripts/seed-tags-from-clusters.ts",
     "worker:solver": "tsx src/workers/solver-executor.ts"
   },
   "dependencies": {

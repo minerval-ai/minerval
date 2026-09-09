@@ -3,7 +3,7 @@ import Link from "next/link";
 import { FLAGSHIP_ID } from "@/lib/fixtures";
 import { apiConfigured } from "@/lib/api";
 import { loadClaim } from "@/lib/data";
-import { TERRITORIES } from "@/lib/territories";
+import { TERRITORIES, territoryHref } from "@/lib/territories";
 import { SearchInput } from "@/components/home/SearchInput";
 import { Surfaces } from "@/components/home/Surfaces";
 import { HomeTour } from "@/components/home/Tour";
@@ -52,13 +52,14 @@ export default async function Home() {
             search makes a broader promise than that. Name what's mapped, at the
             point of action, rendered from TERRITORIES so a fourth cluster shows
             up here without a copy edit. Each name is the same front door the
-            /claims cards use. */}
+            /claims cards use — territoryHref, so a listing-backed territory
+            opens its filtered list rather than a map. */}
         <p className={styles.coverage}>
           Mapped so far:{" "}
           {TERRITORIES.map((t, i) => (
             <span key={t.key}>
               {i > 0 && " · "}
-              <Link href={`/claims/${t.anchorId}/map`}>{t.name}</Link>
+              <Link href={territoryHref(t)}>{t.name}</Link>
             </span>
           ))}
           . The graph grows as claims are ingested; a search outside these areas
@@ -66,8 +67,9 @@ export default async function Home() {
         </p>
       </div>
 
-      {/* guided walkthrough (#251), opened only from the masthead's "tour"
-          entry; Suspense because it watches ?tour=1 via useSearchParams */}
+      {/* guided walkthrough (#251), opened only from a "tour" entry (masthead
+          above 640px, footer below); Suspense because it watches ?tour=1 via
+          useSearchParams */}
       <Suspense fallback={null}>
         <HomeTour />
       </Suspense>

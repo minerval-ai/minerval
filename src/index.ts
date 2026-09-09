@@ -13,6 +13,7 @@ import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
+import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -135,6 +136,11 @@ async function main() {
   // in-memory message was lost (restart, dropped on error). The pipeline
   // handlers' atomic claims dedupe, so running it in every task is safe.
   pollers.push(startRecoverySweep({ logger }));
+
+  // The tagging drain (#272) labels untagged claims a few at a time, most
+  // important first — new claims as they land and the backfill of the rest
+  // through the same queue. Row leases make it safe in every task.
+  pollers.push(startTaggingScheduler({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {

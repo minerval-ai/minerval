@@ -201,6 +201,10 @@ export class ApiStack extends cdk.Stack {
         // (OPENROUTER_MODELS.deepseekFlash) so corpus and dev runs match on the
         // model production matches on; the model guard asserts the two agree.
         MATCHER_MODEL: "deepseek/deepseek-v4-flash",
+        // The tagger (#272): topic tags over every claim, no epistemic
+        // judgment — the Matcher's tier for the Matcher's reasons (#257).
+        // Pinned to the config default so the model guard covers it.
+        TAGGER_MODEL: "deepseek/deepseek-v4-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

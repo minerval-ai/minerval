@@ -108,6 +108,8 @@ export async function listClaims(opts: {
   // and only claims of one type (the Mathematics territory).
   withPrizes?: boolean;
   claimType?: string;
+  // Only claims carrying this tag (#272), by tag id (resolve a slug first).
+  tagId?: string;
 }) {
   const db = getDb();
 
@@ -123,6 +125,12 @@ export async function listClaims(opts: {
   }
   if (opts.withPrizes) filters.push(isNotNull(bounties.id));
   if (opts.claimType) filters.push(eq(claims.claimType, opts.claimType));
+  if (opts.tagId) {
+    filters.push(
+      sql`EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
+                   AND tg.subject_id = ${claims.id} AND tg.tag_id = ${opts.tagId}::uuid)`
+    );
+  }
 
   const cur = opts.cursor ? decodeCursor(opts.cursor) : null;
   if (cur) {

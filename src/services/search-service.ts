@@ -39,6 +39,8 @@ export interface SearchFilters {
   withPrizes?: boolean;
   /** Only claims of this claim_type (the Mathematics territory reads `mathematical`). */
   claimType?: string;
+  /** Only claims carrying this tag (#272), by tag id — resolve a slug first. */
+  tagId?: string;
 }
 
 // The live bounty joined per claim (at most one, by the partial unique
@@ -61,6 +63,11 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
   if (filters.claimType) {
     params.push(filters.claimType);
     sql += `\n      AND c.claim_type = $${params.length}`;
+  }
+  if (filters.tagId) {
+    params.push(filters.tagId);
+    sql += `\n      AND EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
+                       AND tg.subject_id = c.id AND tg.tag_id = $${params.length})`;
   }
   return sql;
 }
@@ -96,8 +103,9 @@ export async function hybridSearch(
     minImportance = 0,
     withPrizes = false,
     claimType,
+    tagId,
   } = options;
-  const filters: SearchFilters = { assessed, minImportance, withPrizes, claimType };
+  const filters: SearchFilters = { assessed, minImportance, withPrizes, claimType, tagId };
 
   let embedding: number[] | null = null;
   try {

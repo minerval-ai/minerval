@@ -296,9 +296,10 @@
 }
 
 /* ----- guided tour (#251) -----
-   Opt-in from the masthead's "tour" entry only. A ring around the anchored
-   element (its box-shadow doubles as the page dim, so the page stays
-   clickable) and a small card in the Term-popover register. */
+   Opt-in from a "tour" entry only (masthead above 640px, footer below). A
+   ring around the anchored element (its box-shadow doubles as the page dim,
+   so the page stays clickable) and a small card in the Term-popover
+   register. */
 .tourDismiss {
   appearance: none; background: none; border: none; cursor: pointer;
   font-family: var(--sans); font-size: 0.72rem; color: var(--faint);

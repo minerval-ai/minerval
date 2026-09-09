@@ -12,6 +12,7 @@ import type {
   LeaderboardContributor,
   PrizeListItem, PrizeMandateNumbers,
   SearchResultItem,
+  TagSummary,
   TrajectoryPoint,
 } from "./types";
 
@@ -70,6 +71,7 @@ function withMathDefaults(raw: RawDetail): ClaimDetail {
     bounty: raw.bounty ?? null,
     attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
     prize_claims: Array.isArray(raw.prize_claims) ? raw.prize_claims : [],
+    tags: Array.isArray(raw.tags) ? raw.tags : [],
   };
 }
 
@@ -78,6 +80,7 @@ function withListDefaults(items: SearchResultItem[]): SearchResultItem[] {
     ...c,
     prize_micro_usd: c.prize_micro_usd ?? null,
     checked: c.checked ?? null,
+    tags: Array.isArray(c.tags) ? c.tags : [],
   }));
 }
 
@@ -137,7 +140,36 @@ function filterParams(filters?: ClaimFilters): URLSearchParams {
   }
   if (filters?.withPrizes) p.set("with_prizes", "true");
   if (filters?.claimType) p.set("claim_type", filters.claimType);
+  if (filters?.tag) p.set("tag", filters.tag);
   return p;
+}
+
+// --- topic tags (#272) -------------------------------------------------------
+
+// The vocabulary, most-used first (GET /tags). An API without the route
+// yields an empty listing rather than a failed page.
+export async function fetchTags(limit = 100, q?: string): Promise<TagSummary[]> {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (q) p.set("q", q);
+  try {
+    const r = await apiGet<{ tags: TagSummary[] }>(`/tags?${p.toString()}`);
+    return r.tags;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+// One tag by slug (GET /tags/:slug); null when there is none. A merged slug
+// resolves to its survivor, so the name shown is the live one.
+export async function fetchTag(slug: string): Promise<TagSummary | null> {
+  try {
+    const r = await apiGet<{ tag: TagSummary }>(`/tags/${encodeURIComponent(slug)}`);
+    return r.tag;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function fetchSearch(
