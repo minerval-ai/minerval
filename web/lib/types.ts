@@ -284,6 +284,9 @@ export interface ClaimDetail {
   // Topic tags (#272) with the provenance of each; empty when the API omits
   // them or none has been attached yet.
   tags?: ClaimTag[];
+  // Notable findings noted on this claim (#394); empty when the API omits
+  // the route or nothing has been noted.
+  findings?: Finding[];
   // --- mathematics (docs/mathematics.md §11.1) ------------------------------
   // The published formal statement, the derived machine-checked badge, the
   // bounty pinned to the statement, the house solver's attempts, and the
@@ -334,6 +337,42 @@ export interface ClaimTag extends TagRef {
   // tagger | steward | curator | operator | cluster_seed
   source: string;
   confidence: number | null;
+}
+
+// A notable finding (#394): what an administrator found that people who hold
+// the question would be better for knowing, in the graph's voice, published
+// as written. `stale` means a cited assessment is no longer the claim's
+// current one; the page says so beside the note.
+export interface FindingRef {
+  kind: "claim" | "assessment" | "argument" | "contribution" | "lean_check" | "proof_attempt" | "formalization";
+  id: string;
+}
+export interface Finding {
+  id: string;
+  headline: string;
+  account: string;
+  claim_id: string;
+  claim_text: string | null;
+  refs: FindingRef[];
+  importance: number;
+  agent: string;
+  model: string | null;
+  skills: string[];
+  status: "published" | "withdrawn";
+  withdrawn_note: string | null;
+  sighting_count: number;
+  first_noted_at: string;
+  last_noted_at: string;
+  stale: boolean;
+}
+export interface FindingSighting {
+  id: string;
+  account: string;
+  refs: FindingRef[];
+  importance: number | null;
+  agent: string;
+  model: string | null;
+  noted_at: string;
 }
 
 // A tag in the vocabulary listing, with how many active claims carry it.

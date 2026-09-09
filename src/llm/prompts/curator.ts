@@ -1,5 +1,6 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -79,6 +80,8 @@ Together). Whatever you do, say why in the reasoning fields; the tools handle
 the bookkeeping.
 
 ${RAISING_ISSUES}
+
+${NOTING_FINDINGS}
 
 ${domainSkillsSection("curator")}`;
 

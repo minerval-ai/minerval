@@ -163,6 +163,10 @@ export const reportSeverityEnum = z.enum([
 
 export const reportOriginEnum = z.enum(["internal", "external"]);
 
+// Agent findings (#394): published as written; withdrawn is the operator's
+// reversal, kept on the row so the id still resolves.
+export const findingStatusEnum = z.enum(["published", "withdrawn"]);
+
 export const reportStatusEnum = z.enum([
   "new",
   "triaged",

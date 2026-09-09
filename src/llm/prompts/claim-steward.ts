@@ -1,5 +1,6 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -307,6 +308,8 @@ notify all), and each will judge materiality at its own end. If no dependent
 could reasonably care, do not call it.
 
 ${RAISING_ISSUES}
+
+${NOTING_FINDINGS}
 
 ${domainSkillsSection("claim-steward")}`;
 

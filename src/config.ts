@@ -775,6 +775,16 @@ const configSchema = z.object({
   // skipped when no new reports arrived. 0 disables triage sweeps (reports
   // still record; the /reports API still serves them).
   reportTriageIntervalHours: z.coerce.number().default(24),
+  // Agent findings (#394). note_finding searches the findings on record by
+  // meaning before it writes; a candidate at or above this cosine similarity
+  // (headline + account against headline + account) is shown to the agent
+  // instead of being written, and the agent answers with joins or
+  // distinct_from. Findings are longer than tags, so their embeddings sit
+  // further apart than tag names do (TAG_DEDUP_SIMILARITY is 0.92).
+  findingMatchSimilarity: z.coerce.number().default(0.8),
+  // The same, for candidates on the SAME claim, where a lower bar is safe:
+  // two findings on one claim are far likelier to be one finding.
+  findingMatchSimilaritySameClaim: z.coerce.number().default(0.65),
 
   // SQS governance queues
   sqsContributionQueue: z.string().default(""),
@@ -951,6 +961,9 @@ export function loadConfig(): Config {
     agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
+    findingMatchSimilarity: process.env.FINDING_MATCH_SIMILARITY,
+    findingMatchSimilaritySameClaim:
+      process.env.FINDING_MATCH_SIMILARITY_SAME_CLAIM,
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,

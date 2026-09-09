@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-07T18:18:09.600Z",
-  "gitCommit": "960cd25",
+  "syncedAt": "2026-09-09T22:45:21.573Z",
+  "gitCommit": "81ec33c",
   "pins": [
     {
       "agent": "steward",
@@ -47,6 +47,12 @@
     {
       "agent": "matcher",
       "envVar": "MATCHER_MODEL",
+      "model": "deepseek/deepseek-v4-flash",
+      "label": "DeepSeek V4 Flash"
+    },
+    {
+      "agent": "tagger",
+      "envVar": "TAGGER_MODEL",
       "model": "deepseek/deepseek-v4-flash",
       "label": "DeepSeek V4 Flash"
     }

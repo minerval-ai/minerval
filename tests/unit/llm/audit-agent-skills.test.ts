@@ -94,8 +94,8 @@ describe("Audit toolset with the mathematics domain", () => {
     const names = opts.tools.map((t) => t.name);
     const own = names.indexOf("record_prize_audit_outcome");
     // The skill's tools follow the Audit's own; the report channel (#366)
-    // closes the toolset.
-    expect(names.slice(-3)).toEqual(["get_proof_attempt", "get_prize_claim", "raise_issue"]);
+    // and the finding channel (#394) close the toolset.
+    expect(names.slice(-4)).toEqual(["get_proof_attempt", "get_prize_claim", "raise_issue", "note_finding"]);
     expect(own).toBeGreaterThan(-1);
     expect(own).toBeLessThan(names.indexOf("get_prize_claim"));
     // No Steward-only tool leaks in.

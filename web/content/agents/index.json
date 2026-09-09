@@ -48,8 +48,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 11653,
-    "fullChars": 60157,
+    "roleChars": 17635,
+    "fullChars": 66139,
     "skills": [
       {
         "name": "mathematics",
@@ -69,8 +69,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 19999,
-    "fullChars": 68503,
+    "roleChars": 25981,
+    "fullChars": 74485,
     "skills": [
       {
         "name": "mathematics",
@@ -96,8 +96,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 5775,
-    "fullChars": 54279,
+    "roleChars": 11757,
+    "fullChars": 60261,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 9252,
-    "fullChars": 57756,
+    "roleChars": 15234,
+    "fullChars": 63738,
     "skills": [
       {
         "name": "mathematics",
@@ -139,8 +139,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 9772,
-    "fullChars": 58276,
+    "roleChars": 15754,
+    "fullChars": 64258,
     "skills": [
       {
         "name": "mathematics",
@@ -167,8 +167,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 8908,
-    "fullChars": 57412,
+    "roleChars": 14890,
+    "fullChars": 63394,
     "skills": [
       {
         "name": "mathematics",

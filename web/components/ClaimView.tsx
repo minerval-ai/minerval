@@ -10,6 +10,7 @@ import { StatusBadge, Credence, VerdictConfidence, Swatch, Importance } from "./
 import { Term } from "./Term";
 import { TopicChips } from "./Topics";
 import { AssessmentText } from "./AssessmentText";
+import { FindingCard } from "./Findings";
 import { DecompositionTree } from "./DecompositionTree";
 import { ContributionRecord } from "./claim/ContributionRecord";
 import { Contribute } from "./claim/Contribute";
@@ -200,6 +201,23 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             )}
           {/* Reassessment on demand: quiet, but always available. */}
           <OrderAssessment claimId={claim.id} variant="reassess" />
+        </section>
+      )}
+
+      {/* findings (#394): what an administrator found on this claim that
+          people who hold the question would be better for knowing, published
+          as written. Below the verdict because a finding rests on it and is
+          never a verdict itself; omitted when nothing has been noted. */}
+      {detail.findings && detail.findings.length > 0 && (
+        <section className="claim-findings">
+          <h2>Findings</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+            Noted by the graph&apos;s administrators in the course of their work, in their own
+            words; <Link href="/findings">all findings</Link>.
+          </p>
+          {detail.findings.map((f) => (
+            <FindingCard key={f.id} finding={f} showClaim={false} headingLevel={3} />
+          ))}
         </section>
       )}
 

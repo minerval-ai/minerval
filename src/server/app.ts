@@ -31,6 +31,7 @@ import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
 import { mandateRoutes } from "../routes/mandates.js";
 import { reportRoutes } from "../routes/reports.js";
+import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 
 export async function buildApp() {
@@ -81,6 +82,7 @@ export async function buildApp() {
   });
   await app.register(mandateRoutes, { prefix: "/mandates" });
   await app.register(reportRoutes, { prefix: "/reports" });
+  await app.register(findingRoutes, { prefix: "/findings" });
   await app.register(tagRoutes, { prefix: "/tags" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,

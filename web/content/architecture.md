@@ -128,6 +128,60 @@ theorem is `mathematical` in type and `mathematics` in domain. The Steward
 sets both, and neither the funding mandate nor importance gates the tools a
 domain brings.
 
+### Tags
+
+A third kind of label sits beside those two and is deliberately neither
+(#272). A **tag** names what a claim is *about* — a field, a subject, an
+entity, a question people argue over ("Epidemiology", "SARS-CoV-2 origin",
+"Goldbach's conjecture") — and is the reader's and the agents' navigation
+layer over the embedding space, which the decomposition graph does not
+provide: a claim's subclaims tell you what it rests on, not what else in
+the graph is on the same subject. Tags are navigation, never judgment; a
+tag says nothing about whether a claim holds, and nothing reads a tag to
+decide anything epistemic.
+
+The vocabulary (`tags`) is open and grows as claims land. Each tag has a
+slug (its identity: two proposals that slugify alike are one tag), a
+Title Case name, a one- or two-sentence description delimiting the topic,
+its own embedding so the vocabulary can be searched by meaning, and a
+merge lifecycle (`merged_into`) so near-duplicates can be folded without
+breaking links. A tag is attached to a subject by a **tagging**
+(`taggings`), a row that records not just the pair but who attached it
+(`source`: the tagger, an administrator, an operator, the cluster seed),
+how confident that path was, why, and the agent run it came from — the
+same provenance discipline as every other judgment in the graph. The join
+is polymorphic on `subject_kind`: claims are the first subject, and a
+source's topics or a mandate's scope are the same relation, so a second
+kind needs no second table.
+
+Assignment is the work of the **tagger**, the first agent on the nano
+tier: a small, cheap loop (DeepSeek V4 Flash by default, the Matcher's
+tier) with a semantic search over
+the existing vocabulary and one submit tool, prompted to reuse before
+minting, to attach one broad field tag and one to three specific ones, and
+to name a new tag only when no existing one fits. It carries no
+constitution, because it makes no epistemic call. Code applies its
+decision: the tag service resolves a proposal by slug, then by meaning
+(a proposal within a high cosine threshold of an existing tag reuses it,
+the backstop for a tagger that skipped its search), and only then mints.
+On a re-run the tagger replaces only its own taggings; one recorded by an
+administrator or an operator stands.
+
+The queue is the claim row: `claims.tagged_at IS NULL` on an active,
+embedded claim means "awaiting the tagger", so a new claim, the backfill
+of the existing graph, and a claim whose canonical form changed are all the
+same mechanism, drained a few claims per tick most-important-first
+(`TAGGING_INTERVAL_SECONDS`, `TAGGING_BATCH_SIZE`; the drain leases rows
+with a lease column so several tasks may run it). The vocabulary can be
+seeded before the first drain from clusters in the embedding space
+(`scripts/seed-tags-from-clusters.ts`: spherical k-means over every
+claim's embedding, each cluster named by the same model from its
+exemplars, so the first tags minted are the broad ones every later claim
+can reuse), and tidied afterwards by hand (`scripts/tags.ts`: list, show,
+merge, rename, re-tag). Tags surface on the claim page, as a filter on the
+claim list and search (`?tag=`), on `/tags`, on the MCP `search_claims`
+and `list_tags` tools, and on the agents' `search_claims` read.
+
 ### Arguments
 
 An **argument** groups decomposition edges into a coherent, named line of
@@ -492,6 +546,29 @@ Audit Agent clusters them by underlying gap, ranks by frequency and
 severity, and records a reading through `triage_report` that the
 service-scoped `/reports` API exposes to maintainers.
 
+The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
+Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
+sibling channel for the other thing an agent notices in the course of its
+work: something people who hold a question would be better for knowing,
+because what most of them believe is wrong, or missing, or true for reasons
+the record now supplies. A finding is written in the graph's voice, rests on
+typed refs into the graph (claim, assessment, argument, contribution, check,
+attempt, formalization) that are checked to exist on write, carries an
+importance of its own from 1 to 10, and is published as written on the
+public findings page (`/findings`), where the platform's later writing draws
+from it. There is no cap and no triage queue; the restraint is the bar in
+the prompt block, and a run that notes nothing is the norm. What the tool
+does that the prompt cannot is check the record before it writes: the
+finding is embedded and searched against every finding on record, and on a
+near match nothing is written until the agent answers with `joins` (a
+sighting, counted and kept in its own words) or `distinct_from` (a new
+finding, saying what the earlier one lacks). Findings live in
+`agent_findings` with the same no-FK attribution snapshot as reports, so a
+note outlives the trace it came from; the read side computes a `stale`
+flag when a cited assessment is no longer the claim's current one. The
+extension chat, the MCP surface, the Extractor, the Matcher, and the solver
+do not carry the tool: an outside agent's discovery is a contribution.
+
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
 live web page against graph state (verdicts range from "egregious" to "fine")
@@ -717,14 +794,17 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Matcher | DeepSeek V4 Flash (via OpenRouter) |
+| Tagger · Matcher | DeepSeek V4 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
-non-Anthropic model. The load-bearing epistemic work
+non-Anthropic model. The tagger's is narrower still ("which of these
+existing tags, at what grain?"), makes no epistemic call, and runs over
+every claim, so it shares that tier: the cheapest capable model, in
+production as in dev. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
@@ -833,7 +913,9 @@ that ledger cover (docs/allocation.md), claiming work with
 `FOR UPDATE SKIP LOCKED` so concurrent workers never collide. Prize checks
 and solver attempts are DB-backed jobs with workers of their own, never SQS
 messages: a check can run fifteen minutes and an attempt six hours, far past
-the queues' visibility timeout.
+the queues' visibility timeout. Tagging is a third DB-backed lane: an
+untagged claim row is the work item, a scheduler tick leases and tags a
+small batch most-important-first, and the same drain is the backfill.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
@@ -878,6 +960,7 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
   │                                         (inference verdicts; one is_current per argument)
   ├──▶ assessments        (verdict history; one is_current per claim)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
+  ├──< taggings >── tags             (topic vocabulary; polymorphic on subject_kind)
   └──▶ contributions ──▶ contribution_reviews ──▶ appeals ──▶ arbitration_results
                               contributors ─┘
 ```
@@ -888,7 +971,9 @@ model call, `reputation_events` and `kudos_events` are the append-only score
 ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
-run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
+run ledger doubles as the dedupe gate for audit triggers), `agent_reports`
+and `agent_findings` are the agents' own two channels to the outside (issues
+with the machinery; what they found about the world), and `jobs` tracks
 queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
 formal statements and every check), `proof_attempts` (the solver's runs),
 `bounties` (owls held against the escrow of the mandate that posted each
@@ -932,7 +1017,10 @@ hybrid search serves the public search API, the MCP `search_claims` tool, and
 the agents' general search tool. The Matcher's candidate retrieval is the
 exception: it uses embedding similarity alone, with a deliberately low floor,
 and widens recall by re-searching under multiple framings rather than by
-keyword rank.
+keyword rank. The tag vocabulary carries its own embeddings and is searched
+the same way (semantic with a lexical widening on the name), by the tagger
+before it mints and by `/tags?mode=search`; every claim search accepts a
+tag as a filter.
 
 ---
 
@@ -942,7 +1030,8 @@ keyword rank.
 
 A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
-contributor profiles. Anything that writes or spends model tokens
+contributor profiles, the topic vocabulary, and the findings feed
+(`GET /findings`, filterable by claim, tag, and importance). Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
 graph directly: proposed claims and submitted sources become pending intake

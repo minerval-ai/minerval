@@ -1,5 +1,6 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -130,6 +131,8 @@ an acceptable goal, continue the conversation; a declined conversation can
 recover.
 
 ${RAISING_ISSUES}
+
+${NOTING_FINDINGS}
 
 ${domainSkillsSection("grantmaker")}`;
 

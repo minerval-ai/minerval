@@ -11,6 +11,8 @@ import type {
   ContributorProfile,
   LeaderboardContributor,
   PrizeListItem, PrizeMandateNumbers,
+  Finding,
+  FindingSighting,
   SearchResultItem,
   TagSummary,
   TrajectoryPoint,
@@ -95,15 +97,18 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
   // Detail (deep), trajectory, and the contribution record (#171) are separate
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
-  const [detail, trajectory, record] = await Promise.all([
+  const [detail, trajectory, record, findings] = await Promise.all([
     apiGet<RawDetail>(`/claims/${id}?information_depth=deep`),
     apiGet<TrajectoryResponse>(`/claims/${id}/assessments/trajectory`).catch(() => null),
     apiGet<{ record: ContributionExchange[] }>(`/claims/${id}/record`).catch(() => null),
+    // Findings noted on this claim (#394); absent rather than failing the page.
+    fetchFindings({ claimId: id, limit: 10 }).catch(() => [] as Finding[]),
   ]);
   return {
     ...withMathDefaults(detail),
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
+    findings,
   };
 }
 
@@ -156,6 +161,38 @@ export async function fetchTags(limit = 100, q?: string): Promise<TagSummary[]> 
     return r.tags;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+// The findings feed (#394): public, newest first by default. A 404 (an API
+// that predates the route) reads as an empty feed so the page renders.
+export async function fetchFindings(
+  opts: { claimId?: string; tag?: string; minImportance?: number; order?: "recent" | "importance"; limit?: number } = {},
+): Promise<Finding[]> {
+  const p = new URLSearchParams({ limit: String(opts.limit ?? 50) });
+  if (opts.claimId) p.set("claim_id", opts.claimId);
+  if (opts.tag) p.set("tag", opts.tag);
+  if (typeof opts.minImportance === "number") p.set("min_importance", String(opts.minImportance));
+  if (opts.order) p.set("order", opts.order);
+  try {
+    const r = await apiGet<{ findings: Finding[] }>(`/findings?${p.toString()}`);
+    return r.findings;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+export async function fetchFinding(
+  id: string,
+): Promise<{ finding: Finding; sightings: FindingSighting[] } | null> {
+  try {
+    return await apiGet<{ finding: Finding; sightings: FindingSighting[] }>(
+      `/findings/${encodeURIComponent(id)}`,
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
 }
