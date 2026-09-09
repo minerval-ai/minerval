@@ -47,6 +47,7 @@ import {
   getClaimInstances,
   listClaims,
 } from "../services/claim-service.js";
+import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getCurrentAssessment } from "../services/assessment-service.js";
 import {
   getClaimTree,
@@ -413,7 +414,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         subclaim_count: await getSubclaimCount(claim_id),
       };
       if (include.includes("provenance")) {
-        payload.instances = await getClaimInstances(claim_id);
+        // The instances, each with the reading recorded from opening its
+        // source against the claim (#286), and the claim's source map when
+        // one has been written: the account of what the support rests on.
+        const [instances, sourceMap] = await Promise.all([
+          getClaimInstances(claim_id),
+          getClaimSourceMap(claim_id).catch(() => null),
+        ]);
+        payload.instances = instances.map((inst) => ({
+          ...inst,
+          reading: sourceMap?.readings[inst.id] ?? null,
+        }));
+        payload.source_map = sourceMap?.map ?? null;
+        payload.provenance_edges = sourceMap?.edges ?? [];
+        payload.source_relationships = sourceMap?.source_relationships ?? [];
       }
       if (include.includes("arguments")) {
         const args = await getArgumentsForClaim(claim_id);

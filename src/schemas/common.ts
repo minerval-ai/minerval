@@ -173,7 +173,7 @@ export const reportStatusEnum = z.enum([
 // ---------------------------------------------------------------------------
 // Provenance vocabulary (#286)
 //
-// The edges the Source Mapper records. The load-bearing ones are CLAIM-SCOPED:
+// The edges the provenance tools record. The load-bearing ones are CLAIM-SCOPED:
 // they run from one source's assertion of a claim to the document that
 // assertion draws on. That scoping is the whole design. A paper cites forty
 // references; at most a couple bear on any one proposition, and a

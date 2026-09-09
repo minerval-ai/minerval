@@ -24,6 +24,7 @@ import {
 import { trustLevelFor } from "../../services/reputation-service.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import { hasWrittenForm } from "../../services/argument-service.js";
+import { getClaimSourceMap } from "../../services/source-map-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
@@ -235,9 +236,11 @@ async function getClaimWithContext(claimId: string) {
     [claimId]
   );
 
-  // Instances
+  // Instances, with the ids the provenance tools take (#286).
   const instances = await db
     .select({
+      id: claimInstances.id,
+      sourceId: claimInstances.sourceId,
       originalText: claimInstances.originalText,
       context: claimInstances.context,
       stance: claimInstances.stance,
@@ -281,6 +284,12 @@ async function getClaimWithContext(claimId: string) {
   const evaluationByArgument = new Map(
     evaluations.map((e) => [e.argument_id, e])
   );
+
+  // What the support rests on (#286): the readings recorded for each
+  // instance and the claim's source map, so a re-running Steward sees what
+  // an earlier pass found before deciding how much more to read. A failure
+  // here degrades to no provenance, never a failed read (§20).
+  const sourceMap = await getClaimSourceMap(claim.id).catch(() => null);
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left when
   // it minted this claim. Served only while the claim has no current
@@ -328,7 +337,12 @@ async function getClaimWithContext(claimId: string) {
       argument_id: sc.argument_id,
       argument_name: sc.argument_name,
     })),
+    // The claim's source map (#286): null until a Steward has written one.
+    // Refresh it with provenance_write_map when the instances have changed.
+    source_map: sourceMap?.map ?? null,
     instances: instances.map((inst) => ({
+      id: inst.id,
+      source_id: inst.sourceId,
       original_text: inst.originalText,
       context: inst.context,
       // Whether this source affirms or denies the canonical claim — credible
@@ -344,6 +358,18 @@ async function getClaimWithContext(claimId: string) {
       source_title: inst.sourceTitle,
       source_type: inst.sourceType,
       source_url: inst.sourceUrl,
+      // The reading recorded from opening this source against the claim
+      // (#286), null until one has been; and the documents this assertion
+      // was recorded as drawing on. Details through provenance_get_map.
+      reading: sourceMap?.readings[inst.id] ?? null,
+      draws_on: (sourceMap?.edges ?? [])
+        .filter((e) => e.from_instance_id === inst.id)
+        .map((e) => ({
+          source_title: e.to_source.title,
+          source_url: e.to_source.url,
+          relation_type: e.relation_type,
+          fidelity: e.fidelity,
+        })),
     })),
     arguments: args.map((a) => {
       const evaluation = evaluationByArgument.get(a.id) ?? null;

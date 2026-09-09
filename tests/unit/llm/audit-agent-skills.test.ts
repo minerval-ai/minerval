@@ -75,7 +75,7 @@ beforeEach(() => {
 });
 
 describe("Audit toolset without a domain", () => {
-  it("carries the Audit's own prize tools and no skill tools", async () => {
+  it("carries the Audit's own prize tools, the Provenance method skill's reads, and no domain skill tools", async () => {
     const opts = await run([]);
     const names = opts.tools.map((t) => t.name);
     expect(names).toContain("get_prize_claim_record");
@@ -83,8 +83,14 @@ describe("Audit toolset without a domain", () => {
     expect(names).toContain("withdraw_bounty_after_audit");
     expect(names).not.toContain("get_prize_claim");
     expect(names).not.toContain("get_proof_attempt");
-    expect(opts.system).toHaveLength(1);
-    expect(opts.initialMessages[0]!.content).not.toContain("Domain skills active");
+    // The method skill (#286) brings Audit its two read tools and nothing
+    // that writes.
+    expect(names.slice(-3)).toEqual(["provenance_get_map", "provenance_read_source", "raise_issue"]);
+    expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
+    expect(opts.system).toHaveLength(2);
+    expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
+    expect(opts.system[1]).toContain("## For the Audit Agent");
+    expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance");
   });
 });
 
@@ -93,18 +99,25 @@ describe("Audit toolset with the mathematics domain", () => {
     const opts = await run(["mathematics"]);
     const names = opts.tools.map((t) => t.name);
     const own = names.indexOf("record_prize_audit_outcome");
-    // The skill's tools follow the Audit's own; the report channel (#366)
-    // closes the toolset.
-    expect(names.slice(-3)).toEqual(["get_proof_attempt", "get_prize_claim", "raise_issue"]);
+    // The skills' tools follow the Audit's own, in skill order; the report
+    // channel (#366) closes the toolset.
+    expect(names.slice(-5)).toEqual([
+      "get_proof_attempt",
+      "get_prize_claim",
+      "provenance_get_map",
+      "provenance_read_source",
+      "raise_issue",
+    ]);
     expect(own).toBeGreaterThan(-1);
     expect(own).toBeLessThan(names.indexOf("get_prize_claim"));
     // No Steward-only tool leaks in.
     for (const n of ["decide_prize_claim", "publish_formalization", "lean_check", "mark_problem_solved_by_platform"]) {
       expect(names).not.toContain(n);
     }
-    expect(opts.system).toHaveLength(2);
+    expect(opts.system).toHaveLength(3);
     expect(opts.system[1]).toContain("# Domain skill:");
-    expect(opts.initialMessages[0]!.content).toContain("Domain skills active for this run: mathematics");
+    expect(opts.system[2]).toContain("# Method skill:");
+    expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: mathematics, provenance");
     expect(opts.initialMessages[0]!.content).toContain("get_proof_attempt, get_prize_claim");
   });
 

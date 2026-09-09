@@ -46,7 +46,7 @@ async function runContributionReviewImpl(input: {
 
   // Domain skills come from the contribution's target claim (docs/
   // mathematics.md §3.4); an intake proposal with no claim yet carries none.
-  const skills = skillsForDomains(await domainsForContribution(input.contributionId));
+  const skills = skillsForDomains(await domainsForContribution(input.contributionId), "contribution-reviewer");
   // One cached block for the constitution and role, plus one per active skill.
   const system = getContributionReviewerSystemPromptBlocks({ skills });
 

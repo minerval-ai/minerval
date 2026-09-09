@@ -78,7 +78,7 @@ async function matchClaimImpl(input: {
 }): Promise<MatchDecision> {
   const config = loadConfig();
   const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical);
-  const skills = skillsForDomains(input.domains);
+  const skills = skillsForDomains(input.domains, "matcher");
   // One cached block for the constitution and role, plus one per active skill.
   const system = getMatcherSystemPromptBlocks({ skills });
 

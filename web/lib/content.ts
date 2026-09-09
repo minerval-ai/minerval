@@ -39,6 +39,8 @@ export interface SkillMeta {
   description: string;
   version: number;
   sinceEpoch: string;
+  /** A domain skill is activated by a claim's domains; a method skill is carried on every run. */
+  kind?: "domain" | "method";
   domains: string[];
   /** Every role that receives at least one section, with those sections. */
   roles: Array<{ key: string; sections: string[] }>;

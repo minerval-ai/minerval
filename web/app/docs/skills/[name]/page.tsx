@@ -66,19 +66,25 @@ export default async function SkillPage({ params }: { params: Promise<{ name: st
       >
         <div className="doc">
           <p className="sc" style={{ marginBottom: ".5rem" }}>
-            Domain skill · version {skill.version} · since epoch {skill.sinceEpoch}
+            {skill.kind === "method" ? "Method skill" : "Domain skill"} · version {skill.version} · since epoch {skill.sinceEpoch}
           </p>
           <h1>{skill.displayName}</h1>
           <p className="lede">{skill.description}</p>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)" }}>
-            <strong style={{ color: "var(--ink-soft)" }}>Activated by:</strong> a claim whose
-            recorded domains include{" "}
-            {skill.domains.map((d, i) => (
-              <span key={d}>
-                {i > 0 ? ", " : ""}
-                <code>{d}</code>
-              </span>
-            ))}
+            <strong style={{ color: "var(--ink-soft)" }}>Activated by:</strong>{" "}
+            {skill.kind === "method" ? (
+              <>every run of the roles it addresses; it claims no domain</>
+            ) : (
+              <>
+                a claim whose recorded domains include{" "}
+                {skill.domains.map((d, i) => (
+                  <span key={d}>
+                    {i > 0 ? ", " : ""}
+                    <code>{d}</code>
+                  </span>
+                ))}
+              </>
+            )}
             . Source: <code>skills/{skill.name}/SKILL.md</code>.
           </p>
         </div>

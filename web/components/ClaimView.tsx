@@ -20,6 +20,7 @@ import { FormalStatement } from "./claim/FormalStatement";
 import { MachineChecked } from "./claim/MachineChecked";
 import { Prize } from "./claim/Prize";
 import { AttemptLog } from "./claim/AttemptLog";
+import { SourceMapNote, InstanceReadingLine, ProvenanceRecord } from "./claim/SourceMap";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -252,6 +253,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
             Where this claim has been said, linked to its canonical form.
           </p>
+          {/* What the support rests on (#286): the Steward's account, shown
+              only when it judged the structure of the support material. */}
+          <SourceMapNote map={detail.source_map} />
           {instances.map((inst) => (
             <div className="instance" key={inst.id}>
               <blockquote>{inst.original_text}</blockquote>
@@ -261,7 +265,12 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                 ) : (
                   <span>{inst.source_title}</span>
                 )}
-                {inst.source_type && <span className="tag">{inst.source_type.replace(/_/g, " ")}</span>}
+                {inst.stance === "denies" && (
+                  <span className="tag" title="This source denies the claim as stated.">denies</span>
+                )}
+                {inst.source_type && inst.source_type !== "unknown" && (
+                  <span className="tag">{inst.source_type.replace(/_/g, " ")}</span>
+                )}
                 {/* This score is the Extractor's, not the Matcher's: it says
                     "this passage states a genuine, well-formed claim", not how
                     well the passage matches the canonical form (#160). */}
@@ -277,8 +286,15 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
                   {inst.context}
                 </p>
               )}
+              {/* The Steward's reading of this source (#286), when recorded. */}
+              <InstanceReadingLine reading={inst.reading} />
             </div>
           ))}
+          <ProvenanceRecord
+            instances={instances}
+            edges={detail.provenance_edges}
+            relationships={detail.source_relationships}
+          />
         </section>
       )}
 

@@ -239,7 +239,7 @@ async function runClaimStewardImpl(input: {
   // when a check is worth its cost, and the per-run caps below are the
   // backstop.
   const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
-  const skills = skillsForDomains(claimDomains);
+  const skills = skillsForDomains(claimDomains, "claim-steward");
   // The Lean tools are present exactly when the skill is active AND a
   // checker is configured (docs/mathematics.md §6.2); without a checker the
   // run is told the formal tools are unavailable and assesses on the
@@ -308,9 +308,9 @@ insufficient for a verdict that turns on the scientific literature.`
     skills.length > 0
       ? `
 
-Domain skills active for this run: ${skills
+Skills active for this run: ${skills
           .map((s) => `${s.name} (version ${s.version})`)
-          .join(", ")}. Each follows your role in the system prompt${
+          .join(", ")}. Each follows your role in the system prompt as its own block${
           skillTools.length > 0
             ? `, and the tools it brings (${skillTools.map((t) => t.name).join(", ")}) are in your toolset`
             : ""

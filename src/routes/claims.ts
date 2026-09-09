@@ -12,6 +12,7 @@ import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
+import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
 import {
   addArgument,
@@ -355,6 +356,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               tree: { type: "object", nullable: true, additionalProperties: true },
               arguments: { type: "array", nullable: true },
               instances: { type: "array", nullable: true },
+              // Source provenance (#286), deep only: the Steward's account of
+              // what the support rests on (null until written; shown to
+              // readers only when `material`), the edges from instances to
+              // the documents they draw on, and the relations among the
+              // documents involved. Each instance carries its `reading`.
+              source_map: looseObject,
+              provenance_edges: { type: "array", nullable: true },
+              source_relationships: { type: "array", nullable: true },
               dependents: { type: "array", nullable: true },
               // Mathematics (docs/mathematics.md §11.1): the published formal
               // statement, the derived machine-checked badge, the claim's
@@ -509,15 +518,35 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               source_id: claimInstances.sourceId,
               original_text: claimInstances.originalText,
               context: claimInstances.context,
+              stance: claimInstances.stance,
               confidence: claimInstances.confidence,
+              speaker: claimInstances.speaker,
+              publication: claimInstances.publication,
+              source_date: claimInstances.sourceDate,
+              link: claimInstances.link,
               source_title: sources.title,
               source_url: sources.url,
+              source_type: sources.sourceType,
             })
             .from(claimInstances)
             .innerJoin(sources, eq(claimInstances.sourceId, sources.id))
             .where(eq(claimInstances.claimId, claim_id));
 
-          response.instances = instances;
+          // What the support rests on (#286). A failure here loses the map,
+          // never the page.
+          const sourceMap = await getClaimSourceMap(claim_id).catch((err) => {
+            console.error(
+              `[claims] source map failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+            );
+            return null;
+          });
+          response.instances = instances.map((inst) => ({
+            ...inst,
+            reading: sourceMap?.readings[inst.id] ?? null,
+          }));
+          response.source_map = sourceMap?.map ?? null;
+          response.provenance_edges = sourceMap?.edges ?? [];
+          response.source_relationships = sourceMap?.source_relationships ?? [];
 
           // Reverse decomposition edges: the claims that depend on this one.
           response.dependents = await getClaimDependents(claim_id);

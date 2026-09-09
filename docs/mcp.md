@@ -105,7 +105,15 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   restrict results to claims with an open bounty.
 - **`get_claim`** `{claim_id, include?: ["provenance"|"arguments"|"dependents"]}`
   — canonical form, current assessment (status, confidence, reasoning),
-  source instances, arguments, dependents, page link. `formalization` is
+  source instances, arguments, dependents, page link. With `"provenance"`,
+  each instance carries the Steward's `reading` of its source (whether the
+  source's own evidence bears its assertion, the mechanical quote check,
+  whether it is worth reading closely; null until recorded), and the payload
+  carries `source_map` (the Steward's account of what the support rests on,
+  with `material` saying whether the claim page shows it), `provenance_edges`
+  (which assertions draw on which documents, with fidelity), and
+  `source_relationships` (documents that are one voice), per #286. None of
+  it is a score. `formalization` is
   returned beside `assessment`: the published Lean 4 statement, its pin
   (toolchain and Mathlib revision), both hashes, the correspondence note,
   and the review-period end, or null when the claim has none. A formal

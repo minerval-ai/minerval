@@ -579,13 +579,11 @@ export const claimProvenanceEdges = pgTable(
   "claim_provenance_edges",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Denormalized from from_instance_id for query cost: every read of this
-    // table is "the provenance of one claim", and joining through instances
-    // to get there on every read is the wrong trade.
-    claimId: uuid("claim_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
-    // The asserting side: this source's assertion of this claim.
+    // The asserting side: this source's assertion of this claim. The claim
+    // is reached through the instance and is deliberately not denormalized
+    // here: a merge or a split moves instances between claims (§5), and an
+    // edge is a property of the assertion, so it must move with it rather
+    // than keep a stale claim of its own.
     fromInstanceId: uuid("from_instance_id")
       .notNull()
       .references(() => claimInstances.id, { onDelete: "cascade" }),
@@ -610,11 +608,18 @@ export const claimProvenanceEdges = pgTable(
     // write rather than merely discouraged.
     evidence: text("evidence").notNull(),
     reasoning: text("reasoning").notNull(),
-    // How sure the mapper is that the dependency is real and this is its
-    // kind. Capped mechanically for edges recorded without reading the target
-    // (see recordProvenanceEdge) — a backstop on blast radius, not a verdict.
+    // How sure the recording agent is that the dependency is real and this
+    // is its kind. A judgment, never adjusted by mechanism: whether the
+    // target was opened is recorded beside it instead, so a reader can
+    // discount for themselves.
     confidence: real("confidence").notNull().default(0.5),
-    createdBy: text("created_by").notNull().default("source_mapper"),
+    // Whether the agent opened the target document, or judged the edge from
+    // the asserting source's own description of it. Recorded rather than
+    // used to cap confidence (Part VIII): the fact is what the Steward and
+    // the reader need, and the confidence stays the agent's.
+    targetRead: boolean("target_read").notNull().default(false),
+    // The agent key of the writer: the Steward, or an instrument it launched.
+    createdBy: text("created_by").notNull().default("claim_steward"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -625,7 +630,6 @@ export const claimProvenanceEdges = pgTable(
       table.toSourceId,
       table.relationType
     ),
-    index("idx_cpe_claim").on(table.claimId),
     index("idx_cpe_to_source").on(table.toSourceId),
   ]
 );
@@ -655,7 +659,7 @@ export const sourceRelationships = pgTable(
     relationType: text("relation_type").notNull(),
     reasoning: text("reasoning").notNull(),
     confidence: real("confidence").notNull().default(0.5),
-    createdBy: text("created_by").notNull().default("source_mapper"),
+    createdBy: text("created_by").notNull().default("claim_steward"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -678,13 +682,15 @@ export const sourceRelationships = pgTable(
 // ---------------------------------------------------------------------------
 // claim_instance_readings (#286)
 //
-// What the Source Mapper concluded from actually opening one source and
-// reading it against one claim. Kept off claim_instances deliberately: an
-// instance is the Extractor's record of what a document said, and this is a
-// later agent's judgment about it. Same separation as assessments and claims.
+// What the Steward (or an instrument working for it) concluded from actually
+// opening one source and reading it against the claim it is an instance of.
+// Kept off claim_instances deliberately: an instance is the Extractor's record
+// of what a document said, and this is a later agent's judgment about it. Same
+// separation as assessments and claims. The claim is reached through the
+// instance, so a reading follows its instance through merges and splits.
 //
 // This is the richest thing the map produces and the main payload the Steward
-// reads. A stance count treats every instance as one vote; this says which of
+// weighs. A stance count treats every instance as one vote; this says which of
 // those votes rest on evidence the source actually has.
 // ---------------------------------------------------------------------------
 export const claimInstanceReadings = pgTable(
@@ -694,9 +700,6 @@ export const claimInstanceReadings = pgTable(
     instanceId: uuid("instance_id")
       .notNull()
       .references(() => claimInstances.id, { onDelete: "cascade" }),
-    claimId: uuid("claim_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
     // INSTANCE_SUPPORT_READINGS: whether the source's OWN evidence bears the
     // assertion it makes. Explicitly not whether the claim is true — that
     // judgment stays with the Steward (§9).
@@ -705,7 +708,7 @@ export const claimInstanceReadings = pgTable(
     // Prose, because the interesting cases are not enumerable ("cited in
     // passing to motivate a policy proposal it does not otherwise argue for").
     deployment: text("deployment"),
-    // The mapper's note on this appearance, in reader-facing register (§12).
+    // The reader's note on this appearance, in reader-facing register (§12).
     note: text("note"),
     // QUOTE_CHECK_RESULTS — mechanical, never model-written.
     quoteCheck: text("quote_check").notNull().default("no_stored_content"),
@@ -714,12 +717,13 @@ export const claimInstanceReadings = pgTable(
     // handing this to assessment.
     worthReading: boolean("worth_reading").notNull().default(false),
     worthReadingReason: text("worth_reading_reason"),
-    // Whether the mapper actually read the source's stored content, or was
-    // working from metadata and the excerpt alone. Read paths and the
-    // confidence cap key off this: a map that could not open its sources
-    // should say so rather than look complete.
+    // Whether the agent actually read the source's stored content, or was
+    // working from metadata and the excerpt alone. A map that could not open
+    // its sources should say so rather than look complete.
     sourceRead: boolean("source_read").notNull().default(false),
+    // The model that produced the reading and the agent key that wrote it.
     model: text("model"),
+    createdBy: text("created_by").notNull().default("claim_steward"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -731,7 +735,6 @@ export const claimInstanceReadings = pgTable(
     // One current reading per instance; a re-map overwrites in place. The
     // edges and the map summary carry the durable record.
     uniqueIndex("idx_cir_instance").on(table.instanceId),
-    index("idx_cir_claim").on(table.claimId),
   ]
 );
 
@@ -765,7 +768,7 @@ export const claimSourceMaps = pgTable(
     sourcesRead: integer("sources_read").notNull().default(0),
     edgesRecorded: integer("edges_recorded").notNull().default(0),
     model: text("model"),
-    mappedBy: text("mapped_by").notNull().default("source_mapper"),
+    mappedBy: text("mapped_by").notNull().default("claim_steward"),
     mappedAt: timestamp("mapped_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
