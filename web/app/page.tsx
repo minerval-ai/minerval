@@ -36,14 +36,11 @@ export default async function Home() {
     <div>
       {/* hero: one line, one search box */}
       <div className={styles.hero}>
-        <p className={`sc ${styles.eyebrow}`}>An open repository of claims</p>
         <h1 className={styles.heroTitle}>
-          Knowledge that compounds instead of starting over.
+          A new constitution of knowledge
         </h1>
         <p className={styles.heroLede}>
-          Every claim decomposed to its bedrock, weighed against the evidence, and kept
-          current as the world changes, by AI administrators bound by a public
-          constitution.
+          Building the epistemic stack for the AI age
         </p>
         <form className={styles.search} role="search" action="/claims" method="get" data-tour="search">
           <SearchInput />
