@@ -324,6 +324,7 @@ describe("steward record_claim_instance", () => {
     const parsed = JSON.parse(out);
     expect(parsed.deduplicated).toBe(true);
     expect(parsed.message).toMatch(/stance differs/);
+    expect(parsed.message).toMatch(/update_claim_instance/);
     expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
   });
 
@@ -373,6 +374,139 @@ describe("steward record_claim_instance", () => {
     });
     expect(JSON.parse(out).success).toBe(false);
     expect(insertedValues).toHaveLength(0);
+  });
+});
+
+describe("steward update_claim_instance", () => {
+  const CLAIM = "22222222-2222-2222-2222-222222222222";
+  const INSTANCE = "55555555-5555-5555-5555-555555555555";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    insertedValues.length = 0;
+    updatedValues.length = 0;
+  });
+
+  /** The ownership check finds the instance on this claim. */
+  const instanceExists = () =>
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      {
+        id: INSTANCE,
+        stance: "affirms",
+        confidence: 0.97,
+        speaker: null,
+        source_url: "https://example.org/report",
+      },
+    ]);
+
+  it("re-stances an instance and writes the reason to the audit trail (#420)", async () => {
+    instanceExists();
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "DENIES",
+      speaker: "Peter Scholze",
+      reasoning: "The passage quotes Scholze denying the proof, not affirming it.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.instance_id).toBe(INSTANCE);
+    expect(parsed.updated).toEqual(["stance", "speaker"]);
+
+    // Stance is enum-normalized like record_claim_instance's; untouched
+    // fields are absent from the patch, never reset.
+    expect(updatedValues).toHaveLength(1);
+    expect(updatedValues[0]).toEqual({ stance: "denies", speaker: "Peter Scholze" });
+
+    const audit = insertedValues.find((r) => r.action === "updated_claim_instance");
+    expect(audit).toMatchObject({ claimId: CLAIM, createdBy: "claim_steward" });
+    expect(audit?.reasoning).toMatch(/was stance=affirms, confidence=0.97/);
+    expect(audit?.reasoning).toMatch(/quotes Scholze denying/);
+  });
+
+  it("lowers a mention's confidence toward 0 without touching its stance", async () => {
+    instanceExists();
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      confidence: 0.05,
+      reasoning: "A neutral report ('supposedly prove'), not an assertion.",
+    });
+    expect(JSON.parse(out).success).toBe(true);
+    expect(updatedValues[0]).toEqual({ confidence: 0.05 });
+  });
+
+  it("clamps confidence into [0, 1]", async () => {
+    instanceExists();
+    await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      confidence: -3,
+      reasoning: "Mention only.",
+    });
+    expect(updatedValues[0]).toEqual({ confidence: 0 });
+  });
+
+  it("requires a reasoning note — a correction without its reason is not written", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "denies",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/reasoning/);
+    expect(updatedValues).toHaveLength(0);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces an out-of-enum stance without writing anything", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "mentions",
+      reasoning: "It only mentions the claim.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/confidence near 0/);
+    expect(updatedValues).toHaveLength(0);
+  });
+
+  it("bounces a call with nothing to change", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      reasoning: "No change.",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(updatedValues).toHaveLength(0);
+  });
+
+  it("bounces an instance that is not on this claim (no edit to another claim's record)", async () => {
+    // The ownership check finds nothing (default rawQuery mock returns []).
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: "99999999-9999-9999-9999-999999999999",
+      stance: "denies",
+      reasoning: "Wrong stance.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/not found/i);
+    expect(updatedValues).toHaveLength(0);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces a document-sized verbatim_text", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      verbatim_text: "x".repeat(2100),
+      reasoning: "Whole page pasted.",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(updatedValues).toHaveLength(0);
   });
 });
 
