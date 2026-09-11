@@ -76,8 +76,6 @@ export const claims = pgTable(
     decompositionStatus: text("decomposition_status")
       .notNull()
       .default("pending"),
-    childrenAssessed: integer("children_assessed").notNull().default(0),
-    childrenTotal: integer("children_total").notNull().default(0),
     // How load-bearing the claim is (0..1), a revisable judgment set by the
     // Steward. Scales proportional effort and orders the Steward work queue so
     // important claims are processed first under a run budget (§"Claim Importance
