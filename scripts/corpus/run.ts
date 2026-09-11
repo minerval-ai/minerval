@@ -59,6 +59,8 @@ import { resolveProvider } from "../../src/llm/providers/routing.js";
 import { getJobById } from "../../src/services/job-service.js";
 import { buildApp } from "../../src/server/app.js";
 import { drainLocalQueues } from "../../src/workers/local-runner.js";
+import { pendingStewardCount } from "../../src/workers/steward-pipeline.js";
+import { getGeneralMandate } from "../../src/services/allocation-policy-service.js";
 import type { DrainStats, RunnerEvent } from "../../src/workers/local-runner.js";
 import { resetCorpusDb } from "./reset.js";
 import { generateReport } from "./report.js";
@@ -304,6 +306,28 @@ async function main(): Promise<void> {
     );
   }
 
+  // Stewardship is funded work: the lane runs only actions a General mandate
+  // covers, or, with BACKGROUND_FALLBACK_LANE_ENABLED=true, direct budgeted
+  // runs with no mandate behind them. A reset corpus DB has no mandate, so
+  // without the flag every claim sits pending and the run assesses nothing —
+  // say so up front rather than after the spend on extraction and matching.
+  if (!(await getGeneralMandate()) && !loadConfig().backgroundFallbackLaneEnabled) {
+    console.warn(
+      "  WARNING: no active General mandate and BACKGROUND_FALLBACK_LANE_ENABLED is not " +
+        "\"true\" — claims will be extracted and matched but NOT stewarded (no " +
+        "decomposition, no assessment). Set BACKGROUND_FALLBACK_LANE_ENABLED=true for a " +
+        "corpus run, or seed a mandate and use --no-reset."
+    );
+  }
+
+  // STEWARD_MAX_RUNS bounds Steward invocations for the WHOLE run (the README's
+  // main spend guardrail). drainLocalQueues applies it per drain, and this
+  // loop drains once per post, so the cap is handed down as what remains.
+  const stewardMaxRuns = loadConfig().stewardMaxRuns;
+  const stewardTasksSoFar = () => trace.filter((e) => e.queue === "steward").length;
+  const stewardTasksRemaining = () =>
+    stewardMaxRuns > 0 ? Math.max(0, stewardMaxRuns - stewardTasksSoFar()) : undefined;
+
   // The actual production app, pointed at the corpus DB.
   const app = await buildApp();
   let succeeded = 0;
@@ -337,7 +361,10 @@ async function main(): Promise<void> {
 
         // Drive the whole organization to a stable state, tracing every message.
         const before = trace.length;
-        const stats = await drainLocalQueues({ onEvent: (e) => trace.push(e) });
+        const stats = await drainLocalQueues({
+          onEvent: (e) => trace.push(e),
+          maxStewardTasks: stewardTasksRemaining(),
+        });
 
         if (stats.capped) anyCapped = true;
 
@@ -355,7 +382,10 @@ async function main(): Promise<void> {
         console.log(` ✗ ${msg}`);
         // Drain whatever this post already enqueued so partial work is processed
         // and attributed here, not orphaned or leaked into the next post.
-        await drainLocalQueues({ onEvent: (e) => trace.push(e) }).catch(() => {});
+        await drainLocalQueues({
+          onEvent: (e) => trace.push(e),
+          maxStewardTasks: stewardTasksRemaining(),
+        }).catch(() => {});
         if (/budget/i.test(msg)) {
           console.log("\nLLM budget exceeded — stopping early. Report covers what was ingested.");
           break;
@@ -405,6 +435,17 @@ async function main(): Promise<void> {
     if (models.length > 1) {
       console.log(`  note: ${agent} ran on more than one model (${models.join(", ")}) — a fallback fired.`);
     }
+  }
+
+  // Claims left pending are work the run did not do: either the cap above
+  // stopped it (expected on a bounded test run) or nothing funded it.
+  const stillPending = await pendingStewardCount().catch(() => 0);
+  if (stillPending > 0) {
+    const why =
+      stewardMaxRuns > 0 && stewardTasksSoFar() >= stewardMaxRuns
+        ? `STEWARD_MAX_RUNS=${stewardMaxRuns} reached`
+        : "unfunded: no active General mandate and BACKGROUND_FALLBACK_LANE_ENABLED is not \"true\"";
+    console.log(`  note: ${stillPending} claim(s) still pending stewardship (${why}).`);
   }
 
   console.log(`\n${succeeded}/${posts.length} posts ingested. Generating report…`);
