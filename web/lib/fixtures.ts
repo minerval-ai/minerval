@@ -263,8 +263,52 @@ const FLAGSHIP: ClaimDetail = {
       source_title: "A year of soaring prices, in charts",
       source_url: "https://example.com/2022-inflation-charts",
       source_type: "news_secondary",
+      // The Steward's reading (#286): the analysis reports the official
+      // figure and adds no measurement of its own.
+      reading: {
+        support: "asserts_without_evidence",
+        deployment: "Sets up a retrospective on household budgets; the figure is background, not the argument.",
+        note: "The analysis reports the Bureau of Labor Statistics figure and adds no measurement of its own.",
+        quote_check: "verbatim",
+        worth_reading: false,
+        worth_reading_reason: null,
+        source_read: true,
+        read_at: "2025-08-30T14:00:00Z",
+      },
     },
   ],
+  // What the support rests on (#286). Material here because a reader might
+  // otherwise count two sources where there is one measurement.
+  source_map: {
+    summary:
+      "Both appearances rest on one measurement: the Bureau of Labor Statistics release. The news analysis restates the official figure and adds no evidence of its own, so the claim has one primary source, not two independent ones.",
+    material: true,
+    sources_considered: 2,
+    sources_read: 2,
+    edges_recorded: 1,
+    mapped_by: "claim_steward",
+    mapped_at: "2025-08-30T14:00:00Z",
+  },
+  provenance_edges: [
+    {
+      id: "edge-1",
+      from_instance_id: "inst-2",
+      to_source: {
+        id: "src-bls",
+        title: "Consumer Price Index — December 2022 (BLS)",
+        url: "https://www.bls.gov/news.release/archives/cpi_01122023.htm",
+      },
+      to_instance_id: "inst-1",
+      relation_type: "derives_from",
+      fidelity: "faithful",
+      evidence: "\"Inflation hit a 40-year high in 2022\", with the CPI release linked in the same sentence.",
+      reasoning: "The analysis links the release directly and quotes its headline figure.",
+      confidence: 0.9,
+      target_read: true,
+      created_by: "claim_steward",
+    },
+  ],
+  source_relationships: [],
   tree: {
     id: "inflation-2022",
     text: "US CPI inflation in 2022 exceeded the threshold for “high” inflation.",

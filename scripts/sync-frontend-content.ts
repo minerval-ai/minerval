@@ -148,6 +148,8 @@ export interface SkillIndexEntry {
   description: string;
   version: number;
   sinceEpoch: string;
+  /** "domain": activated by a claim's domains; "method": carried on every run. */
+  kind: "domain" | "method";
   domains: string[];
   /** Every role in ROLE_VIEW that receives at least one section, with those sections. */
   roles: Array<{ key: SkillRole; sections: string[] }>;
@@ -227,6 +229,7 @@ export function syncFrontendContent(contentDir: string): {
       description: s.description,
       version: s.version,
       sinceEpoch: s.sinceEpoch,
+      kind: s.kind,
       domains: s.domains,
       roles,
       tools: s.tools.map((t) => ({

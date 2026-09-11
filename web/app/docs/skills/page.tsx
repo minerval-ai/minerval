@@ -60,9 +60,13 @@ export default function SkillsIndex() {
                 )}
               </p>
               <div className="card-foot">
-                {s.domains.map((d) => (
-                  <span className="tag" key={d}>domain: {d}</span>
-                ))}
+                {s.kind === "method" ? (
+                  <span className="tag">method skill: every run</span>
+                ) : (
+                  s.domains.map((d) => (
+                    <span className="tag" key={d}>domain: {d}</span>
+                  ))
+                )}
                 <span className="sc" style={{ marginLeft: "auto", color: "var(--link)" }}>
                   read skill →
                 </span>

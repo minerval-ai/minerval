@@ -72,7 +72,7 @@ async function runCuratorImpl(input: {
   // Domain skills come from the anchor claim's recorded domains (docs/
   // mathematics.md §3.4).
   const claimDomains = await domainsForClaim(input.claimId);
-  const skills = skillsForDomains(claimDomains);
+  const skills = skillsForDomains(claimDomains, "curator");
   // One cached block for the constitution and role, plus one per active skill.
   const system = getCuratorSystemPromptBlocks({ skills });
 

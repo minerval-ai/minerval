@@ -1409,3 +1409,25 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 .rules-list > li { margin-bottom: 0.4rem; }
 .rules-list h2 { font-size: 1.15rem; margin-top: 1.6rem; border-bottom: none; padding-bottom: 0; }
 .rules-num { color: var(--faint); font-weight: 500; margin-right: 0.2rem; }
+
+/* ----- source provenance (#286) ----- */
+/* The Steward's account of what the support rests on: a quiet box above the
+   instances, shown only when the Steward judged it material. */
+.source-map {
+  font-size: 0.96rem; color: var(--ink-soft);
+  background: var(--paper-sunk); border-left: 2px solid var(--rule);
+  padding: 0.7rem 1rem; border-radius: 0 3px 3px 0; margin: 0.4rem 0 1.4rem;
+}
+.instance-reading {
+  font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft);
+  margin: 0.35rem 0 0;
+}
+.instance-reading .caution, .provenance-record .caution {
+  color: var(--muted); font-style: italic;
+}
+.provenance-record ul {
+  margin: 0.5rem 0 0; padding-left: 1.1rem;
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+}
+.provenance-record li { margin: 0 0 0.4rem; }
+.provenance-record .provenance-why { color: var(--muted); }

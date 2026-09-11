@@ -39,6 +39,7 @@ import { ELICIT_TOOL_PREFIX } from "./elicit-tools.js";
 import { registerLeanTools } from "./lean-tools.js";
 import { registerAttemptTools } from "./attempt-tools.js";
 import { registerPrizeTools } from "./prize-tools.js";
+import { registerProvenanceTools } from "./provenance-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -84,6 +85,9 @@ for (const name of ["lean_search", "lean_elaborate", "lean_check", "publish_form
 registerLeanTools(registerSkillTool);
 registerAttemptTools(registerSkillTool);
 registerPrizeTools(registerSkillTool);
+// The Provenance skill's tools (#286): a method skill, so every Steward run
+// carries them.
+registerProvenanceTools(registerSkillTool);
 
 /** Every tool name declared by any skill's tools.json. */
 export function declaredSkillToolNames(): Set<string> {
