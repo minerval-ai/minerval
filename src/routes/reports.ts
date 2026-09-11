@@ -15,8 +15,10 @@ import {
 } from "../schemas/common.js";
 import {
   formatAgentReport,
+  formatReportSighting,
   getAgentReportById,
   listAgentReports,
+  listReportSightings,
   triageAgentReport,
 } from "../services/report-service.js";
 
@@ -53,9 +55,23 @@ const REPORT_SCHEMA = {
     origin: { type: "string" },
     agent: { type: "string" },
     status: { type: "string" },
+    github_issue_number: { type: "integer", nullable: true },
+    github_issue_url: { type: "string", nullable: true },
     occurrence_count: { type: "integer" },
     first_seen_at: { type: "string", format: "date-time" },
     last_seen_at: { type: "string", format: "date-time" },
+  },
+} as const;
+
+const SIGHTING_SCHEMA = {
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    id: { type: "string", format: "uuid" },
+    kind: { type: "string" },
+    body: { type: "string" },
+    agent: { type: "string" },
+    seen_at: { type: "string", format: "date-time" },
   },
 } as const;
 
@@ -114,13 +130,19 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     preHandler: [app.authenticate, app.requireService],
     schema: {
       tags: ["reports"],
-      summary: "Get one agent report",
+      summary: "Get one agent report, with its sightings and notes",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
       },
       response: {
-        200: { type: "object", properties: { report: REPORT_SCHEMA } },
+        200: {
+          type: "object",
+          properties: {
+            report: REPORT_SCHEMA,
+            sightings: { type: "array", items: SIGHTING_SCHEMA },
+          },
+        },
         403: ERROR_SCHEMA,
         404: ERROR_SCHEMA,
       },
@@ -132,7 +154,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Report not found", code: "NOT_FOUND" });
       }
-      return reply.send({ report: formatAgentReport(row) });
+      const sightings = await listReportSightings(row.id);
+      return reply.send({
+        report: formatAgentReport(row),
+        sightings: sightings.map(formatReportSighting),
+      });
     },
   });
 

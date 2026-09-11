@@ -880,6 +880,79 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  it("raise_issue answers a near match as possible_duplicate and passes joins through", async () => {
+    mocks.raiseIssue.mockResolvedValueOnce({
+      acknowledged: true,
+      reportId: null,
+      occurrenceCount: null,
+      deduplicated: false,
+      matches: [
+        {
+          id: OTHER_ID,
+          title: "get_claim omits the reasoning",
+          kind: "tool_gap",
+          severity: "degraded",
+          status: "triaged",
+          triage_note: "internal reading, not for external callers",
+          agent: "mcp",
+          occurrence_count: 3,
+          first_seen_at: "2026-08-01T00:00:00.000Z",
+          last_seen_at: "2026-08-02T00:00:00.000Z",
+          github_issue_url: "https://github.com/minerval-ai/minerval/issues/9",
+          similarity: 0.9,
+        },
+      ],
+    });
+    const first = await client.callTool({
+      name: "raise_issue",
+      arguments: { kind: "tool_gap", severity: "degraded", title: "reasoning missing", body: "b" },
+    });
+    expect(first.isError).toBeFalsy();
+    const parsed = parseText(first);
+    expect(parsed.status).toBe("possible_duplicate");
+    // An external caller sees what it needs to answer, not the triage note
+    // or the tracker link.
+    expect(parsed.matches).toEqual([
+      {
+        id: OTHER_ID,
+        title: "get_claim omits the reasoning",
+        kind: "tool_gap",
+        severity: "degraded",
+        status: "triaged",
+        occurrence_count: 3,
+        last_seen_at: "2026-08-02T00:00:00.000Z",
+      },
+    ]);
+
+    mocks.raiseIssue.mockResolvedValueOnce({
+      acknowledged: true,
+      reportId: OTHER_ID,
+      occurrenceCount: 4,
+      deduplicated: true,
+      existing: { status: "triaged", triageNote: null, githubIssueUrl: null, reopened: false },
+    });
+    const second = await client.callTool({
+      name: "raise_issue",
+      arguments: {
+        kind: "tool_gap",
+        severity: "degraded",
+        title: "reasoning missing",
+        body: "b",
+        joins: OTHER_ID,
+      },
+    });
+    expect(parseText(second).report).toMatchObject({
+      id: OTHER_ID,
+      status: "triaged",
+      occurrence_count: 4,
+      deduplicated: true,
+    });
+    expect(mocks.raiseIssue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ joins: OTHER_ID, origin: "external" })
+    );
+    await client.close();
+  });
+
   it("raise_issue requires a contributor identity and rejects suspended accounts", async () => {
     const anonymous = await connect({ Authorization: "Bearer freekey" });
     const anon = await anonymous.callTool({

@@ -107,7 +107,7 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 
 ### Raising issues
 
-One shared block, **Raising Issues**, goes to every agent that carries the `raise_issue` tool (#366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
+One shared block, **Raising Issues**, goes to every agent that carries the issue tools (`raise_issue`, `update_issue`, `search_issues`; #366). It says when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), that the record is checked before anything is written and a maintainers' note on a known report is guidance for the current task, that the agent can correct itself (re-rate, add what it found, withdraw its own mistake), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate.
 
 ---
 

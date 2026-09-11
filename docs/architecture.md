@@ -599,23 +599,46 @@ These act through tools over the life of a claim and the graph:
   suspension whose basis an appeal dissolves.
 
 Every one of these agents, the Matcher and the Extension Agent's chat
-included, also carries a **`raise_issue`** tool: one channel, in the agent's
-own words, for a system failure, a gap in its own tools, or a concrete
-improvement idea arrived at from having just done the work. It is
-fire-and-forget (it always acknowledges and can never fail a run) and the
-policies say it is never a substitute for acting. Reports land in
-`agent_reports`, not `audit_log`: they are about the machinery, not the
-graph, so they carry ids rather than content, collapse repeats into one row
-with an occurrence count, and are retained and purged separately. Inside
-untraced work (the extension, the MCP's on-demand analysis) a report keeps
-its title, surface, and ids but its body is withheld, so the #356 rule
-holds for this channel too. External
-agents on the MCP surface get the same tool, attributed and rate-limited, and
-their reports triage as testimony rather than findings. The audit scheduler
-requests a `report_triage` audit for each period that saw new reports; the
-Audit Agent clusters them by underlying gap, ranks by frequency and
-severity, and records a reading through `triage_report` that the
-service-scoped `/reports` API exposes to maintainers.
+included, also carries the **issue tools**: `raise_issue`, one channel, in
+the agent's own words, for a system failure, a gap in its own tools, or a
+concrete improvement idea arrived at from having just done the work;
+`update_issue`, the reporter's own edit path (re-rate the severity, add
+what it found since, or withdraw a report that was its own mistake); and
+`search_issues`, a search of the reports on record by meaning, for an agent
+that wants to know whether a failure is known and what the maintainers
+said before it works around it. All three are fire-and-forget (they always
+acknowledge and can never fail a run) and the policies say raising is never
+a substitute for acting. Reports land in `agent_reports`, not `audit_log`:
+they are about the machinery, not the graph, so they carry ids rather than
+content and are retained and purged separately. Repeats collapse: a
+verbatim repeat onto the dedupe key, and a paraphrase through the same
+match-before-write the findings channel uses — the report is embedded and
+searched against the reports on record, and a near match is shown to the
+agent with its status and triage note before anything is written, the
+agent answering with `joins` (a sighting, recorded in
+`agent_report_sightings` with its own account) or `distinct_from`. A
+sighting of a report already `actioned` is a regression and reopens it.
+Inside untraced work (the extension, the MCP's on-demand analysis) a report
+keeps its title, surface, and ids but its body is withheld, so the #356
+rule holds for this channel too. External agents on the MCP surface get
+`raise_issue` only, attributed and rate-limited, matched against
+external-origin reports only, and their reports triage as testimony rather
+than findings.
+
+The far end of the channel is GitHub. Every report written on first
+sighting is filed as an issue in `GITHUB_ISSUES_REPO`, labelled
+`agent-generated` with its kind and severity (`github-issue-service.ts`);
+a `joins` with an account, an `update_issue` note, a regression, and every
+milestone count follow it there as comments, and a triage decision or a
+withdrawal closes it with the note. The filing is asynchronous and the
+report never waits on it; the `github-issue-sync` worker files the backlog
+— every open report with no issue yet, the ones raised before the sync
+existed included — a bounded batch per tick, and retries any filing that
+failed. The audit scheduler still requests a `report_triage` audit for each
+period that saw new reports; the Audit Agent clusters them by underlying
+gap, ranks by frequency and severity, and records a reading through
+`triage_report` that the service-scoped `/reports` API exposes to
+maintainers and that closes or annotates the issue.
 
 The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
 Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
@@ -1047,9 +1070,9 @@ ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
 run ledger doubles as the dedupe gate for audit triggers), `agent_reports`
-and `agent_findings` are the agents' own two channels to the outside (issues
-with the machinery; what they found about the world), and `jobs` tracks
-queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
+(with `agent_report_sightings`) and `agent_findings` are the agents' own two
+channels to the outside (issues with the machinery, mirrored to GitHub;
+what they found about the world), and `jobs` tracks queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
 formal statements and every check), `proof_attempts` (the solver's runs),
 `bounties` (owls held against the escrow of the mandate that posted each
 one; there is no prize fund), `prize_claims`, `prize_payouts`,

@@ -2838,8 +2838,10 @@ export const agentReports = pgTable(
     runId: uuid("run_id"),
     jobId: uuid("job_id"),
     claimId: uuid("claim_id"),
-    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' —
-    // reportStatusEnum.
+    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' |
+    // 'withdrawn' — reportStatusEnum. A sighting on an actioned report is a
+    // regression and moves it back to new; withdrawn is the reporter's own
+    // reversal through update_issue.
     status: text("status").notNull().default("new"),
     triageNote: text("triage_note"),
     // Who moved the status last: an audit run id, a service caller, a name.
@@ -2852,6 +2854,19 @@ export const agentReports = pgTable(
     // surface, and the normalized title. Computed server-side, never by
     // the reporter.
     dedupeKey: text("dedupe_key").notNull(),
+    // Match-before-write (the findings mechanism, applied here): the
+    // report's title + body embedded, so a new report is searched against
+    // the reports on record before it is written and the agent is shown a
+    // near match instead of minting a paraphrase. Null when embedding was
+    // unavailable at write time; the exact-title dedupe key still holds.
+    embedding: vector("embedding"),
+    // The GitHub issue this report was filed as, on first sighting, when the
+    // sync is configured (GITHUB_TOKEN + GITHUB_ISSUES_REPO). Null until the
+    // filing succeeds; a report that never made it to GitHub is still a
+    // report, so the write never waits on this.
+    githubIssueNumber: integer("github_issue_number"),
+    githubIssueUrl: text("github_issue_url"),
+    githubSyncedAt: timestamp("github_synced_at", { withTimezone: true }),
     occurrenceCount: integer("occurrence_count").notNull().default(1),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
@@ -2865,6 +2880,51 @@ export const agentReports = pgTable(
     index("idx_agent_reports_status_seen").on(table.status, table.lastSeenAt),
     index("idx_agent_reports_agent_seen").on(table.agent, table.lastSeenAt),
     index("idx_agent_reports_origin_status").on(table.origin, table.status),
+    // The GitHub sync worker's backlog scan: open reports with no issue yet.
+    index("idx_agent_reports_github_pending").on(
+      table.githubIssueNumber,
+      table.status,
+      table.firstSeenAt
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// agent_report_sightings
+//
+// Every time a report is seen again — an exact repeat collapsing onto the
+// dedupe key, a `joins` answer to the match-before-write search, or a note
+// the reporter adds through update_issue — this records who saw it, in what
+// run, and what they said. The parent row keeps the count; this keeps the
+// accounts, so a maintainer reading the issue sees the new case and not a
+// counter, and the Audit Agent can tell a report that recurs across roles
+// from one agent repeating itself. Mirrors agent_finding_sightings.
+// ---------------------------------------------------------------------------
+export const agentReportSightings = pgTable(
+  "agent_report_sightings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => agentReports.id, { onDelete: "cascade" }),
+    // 'sighting' (the problem occurred again; bumps occurrence_count) |
+    // 'note' (an amendment from update_issue; does not).
+    kind: text("kind").notNull().default("sighting"),
+    // The reporter's account of this occurrence, capped like a report body.
+    // Empty for an exact repeat that carried no body.
+    body: text("body").notNull().default(""),
+    contextRefs: jsonb("context_refs").notNull().default({}),
+    agent: text("agent").notNull(),
+    model: text("model"),
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    claimId: uuid("claim_id"),
+    seenAt: timestamp("seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_report_sightings_report").on(table.reportId, table.seenAt),
   ]
 );
 

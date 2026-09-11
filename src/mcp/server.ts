@@ -802,6 +802,21 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         context_refs: z
           .record(z.union([z.string().max(500), z.number(), z.boolean()]))
           .optional(),
+        joins: z
+          .string()
+          .uuid()
+          .optional()
+          .describe(
+            "The id of a report the tool showed you, when yours is the same " +
+              "problem: your body is added to it as a sighting."
+          ),
+        distinct_from: z
+          .array(z.string().uuid())
+          .optional()
+          .describe(
+            "The ids of reports the tool showed you that yours is not, when " +
+              "you are raising despite them."
+          ),
       },
     },
     async (input) => {
@@ -843,7 +858,30 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         origin: "external",
         agent: "mcp",
         reporterContributorId: contributor.id,
+        joins: input.joins ?? null,
+        distinctFrom: input.distinct_from ?? null,
       });
+      if (result.matches) {
+        // Match-before-write: nothing recorded until the caller says whether
+        // this is one of the reports on record (joins) or not (distinct_from).
+        return jsonResult({
+          status: "possible_duplicate",
+          matches: result.matches.map((m) => ({
+            id: m.id,
+            title: m.title,
+            kind: m.kind,
+            severity: m.severity,
+            status: m.status,
+            occurrence_count: m.occurrence_count,
+            last_seen_at: m.last_seen_at,
+          })),
+          message:
+            "Not yet recorded: a report already on record may be the same " +
+            "problem. Call again with joins set to its id to add yours as a " +
+            "sighting, or with distinct_from listing these ids to raise a " +
+            "new report.",
+        });
+      }
       if (!result.reportId) {
         return errorResult(
           "REPORT_NOT_RECORDED",
@@ -853,7 +891,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       return jsonResult({
         report: {
           id: result.reportId,
-          status: "new",
+          status: result.existing?.status ?? "new",
           occurrence_count: result.occurrenceCount,
           deduplicated: result.deduplicated,
         },

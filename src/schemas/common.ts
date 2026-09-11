@@ -167,12 +167,15 @@ export const reportOriginEnum = z.enum(["internal", "external"]);
 // reversal, kept on the row so the id still resolves.
 export const findingStatusEnum = z.enum(["published", "withdrawn"]);
 
+// withdrawn is the reporter's own reversal (update_issue): the agent that
+// raised it found it was its mistake, so nobody triages a non-issue.
 export const reportStatusEnum = z.enum([
   "new",
   "triaged",
   "duplicate",
   "actioned",
   "wontfix",
+  "withdrawn",
 ]);
 // ---------------------------------------------------------------------------
 // Provenance vocabulary (#286)
