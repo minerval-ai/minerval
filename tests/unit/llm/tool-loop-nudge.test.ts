@@ -87,3 +87,34 @@ describe("toolUseLoop finalToolNudge", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("toolUseLoop malformed tool arguments", () => {
+  it("answers the call with the parse message instead of executing the tool", async () => {
+    const malformed = {
+      content: [
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "submit",
+          input: { __malformed_arguments: "Tool call \"submit\" returned arguments that are not valid JSON." },
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5 },
+      stop_reason: "tool_use",
+      container: null,
+    };
+    createMock.mockResolvedValueOnce(malformed).mockResolvedValueOnce(decision);
+    const executeTool = vi.fn(async () => "ok");
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 4,
+      executeTool,
+      onFinalTool: (name, input) => ("is_match" in input ? input : null),
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    const second = createMock.mock.calls[1]![0];
+    expect(JSON.stringify(second.messages.at(-1).content)).toContain("not valid JSON");
+  });
+});

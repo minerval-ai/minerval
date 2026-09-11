@@ -27,6 +27,7 @@ import { DEFAULT_MODEL } from "./models.js";
 import { getUsageContext } from "./usage-context.js";
 import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
+import { malformedToolArguments } from "./providers/openai-dialect.js";
 import type {
   CompletionResult,
   EffortLevel,
@@ -353,7 +354,9 @@ export async function toolUseLoop(options: {
     const toolResults: ToolResultBlockParam[] = [];
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
-      const output = await options.executeTool(tu.name, tu.input);
+      const output =
+        malformedToolArguments(tu.input) ??
+        (await options.executeTool(tu.name, tu.input));
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
@@ -598,7 +601,9 @@ export async function longRunToolLoop(options: {
     const toolResults: ToolResultBlockParam[] = [];
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
-      const output = await options.executeTool(tu.name, tu.input);
+      const output =
+        malformedToolArguments(tu.input) ??
+        (await options.executeTool(tu.name, tu.input));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: output });
       executedTools.push({ name: tu.name, input: tu.input, output });
     }

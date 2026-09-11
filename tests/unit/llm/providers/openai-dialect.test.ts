@@ -250,3 +250,35 @@ describe("system blocks on the OpenAI-compatible path", () => {
     expect(out).toEqual([{ role: "user", content: "hi" }]);
   });
 });
+
+import {
+  fromChatMessage as fromChatMessageForMalformed,
+  malformedToolArguments,
+  MALFORMED_TOOL_ARGUMENTS_KEY,
+} from "../../../../src/llm/providers/openai-dialect.js";
+
+describe("malformed tool-call arguments", () => {
+  it("marks the call instead of throwing, so the loop can answer it", () => {
+    const turn = fromChatMessageForMalformed({
+      role: "assistant",
+      content: "deciding",
+      refusal: null,
+      tool_calls: [
+        {
+          id: "c1",
+          type: "function",
+          function: { name: "submit_match_decision", arguments: '{"is_match": tru' },
+        },
+      ],
+    } as never);
+    expect(turn.toolUses).toHaveLength(1);
+    const input = turn.toolUses[0]!.input;
+    expect(input).toHaveProperty(MALFORMED_TOOL_ARGUMENTS_KEY);
+    expect(malformedToolArguments(input)).toContain("not valid JSON");
+    expect(malformedToolArguments(input)).toContain("submit_match_decision");
+  });
+
+  it("reports nothing for well-formed arguments", () => {
+    expect(malformedToolArguments({ is_match: true })).toBeNull();
+  });
+});
