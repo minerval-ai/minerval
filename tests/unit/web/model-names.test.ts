@@ -13,6 +13,14 @@ describe("modelDisplayName", () => {
     expect(modelDisplayName("claude-opus-4-8")).toBe("Claude Opus 4.8");
     expect(modelDisplayName("claude-sonnet-5")).toBe("Claude Sonnet 5");
     expect(modelDisplayName("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+    expect(modelDisplayName("z-ai/glm-5.3-flash")).toBe("GLM 5.3 Flash");
+  });
+
+  it("keeps the cheap tier's former occupant mapped, like the retired Fable", () => {
+    // Rows written while the Matcher ran DeepSeek still carry that id, and
+    // the generic prettifier only handles Anthropic-shaped ids — dropping
+    // this entry would render a bare slug on every one of them.
+    expect(modelDisplayName("deepseek/deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
   });
 
   it("prettifies an unmapped claude-family id instead of dropping it", () => {

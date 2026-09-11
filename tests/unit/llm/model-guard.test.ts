@@ -15,7 +15,7 @@
  *     a new pin is guarded the moment it lands in the task definition).
  *
  * It also asserts the Matcher's config DEFAULT equals its production pin. That
- * pair silently diverged once — default Haiku, production DeepSeek — and every
+ * pair silently diverged once — default Haiku, production the cheap tier — and every
  * corpus run scored, and every scorecard recorded, a Matcher production had
  * already moved off (#257).
  */
@@ -104,7 +104,7 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
     try {
       const { loadConfig } = await import("../../../src/config.js");
       const pin = productionPins().find((p) => p.envVar === "MATCHER_MODEL");
-      expect(pin?.model).toBe(OPENROUTER_MODELS.deepseekFlash);
+      expect(pin?.model).toBe(OPENROUTER_MODELS.flash);
       expect(loadConfig().matcherModel).toBe(pin?.model);
     } finally {
       if (saved === undefined) delete process.env.MATCHER_MODEL;
@@ -120,7 +120,7 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
     try {
       const { loadConfig } = await import("../../../src/config.js");
       const pin = productionPins().find((p) => p.envVar === "TAGGER_MODEL");
-      expect(pin?.model).toBe(OPENROUTER_MODELS.deepseekFlash);
+      expect(pin?.model).toBe(OPENROUTER_MODELS.flash);
       expect(loadConfig().taggerModel).toBe(pin?.model);
     } finally {
       if (saved === undefined) delete process.env.TAGGER_MODEL;

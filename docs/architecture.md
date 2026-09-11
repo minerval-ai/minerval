@@ -55,7 +55,7 @@ search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
 Fable 5.1. Any agent can be pointed at OpenAI or OpenRouter instead with a
-single env var — the Matcher runs on DeepSeek V4 Flash this way — see
+single env var — the Matcher runs on GLM 5.3 Flash this way — see
 [Providers](#providers).
 
 ---
@@ -155,7 +155,7 @@ source's topics or a mandate's scope are the same relation, so a second
 kind needs no second table.
 
 Assignment is the work of the **tagger**, the first agent on the nano
-tier: a small, cheap loop (DeepSeek V4 Flash by default, the Matcher's
+tier: a small, cheap loop (GLM 5.3 Flash by default, the Matcher's
 tier) with a semantic search over
 the existing vocabulary and one submit tool, prompted to reuse before
 minting, to attach one broad field tag and one to three specific ones, and
@@ -796,7 +796,7 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger · Matcher | DeepSeek V4 Flash (via OpenRouter) |
+| Tagger · Matcher | GLM 5.3 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |

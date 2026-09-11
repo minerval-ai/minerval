@@ -75,7 +75,7 @@ production seed set, and all three are built.
 
 - Postgres running (`docker compose up -d`).
 - `.env` with `ANTHROPIC_API_KEY` (claims), `OPENAI_API_KEY` (embeddings) and
-  `OPENROUTER_API_KEY` (the Matcher, which defaults to DeepSeek V4 Flash — set
+  `OPENROUTER_API_KEY` (the Matcher, which defaults to GLM 5.3 Flash — set
   `MATCHER_MODEL=claude-haiku-4-5-20251001` to run a cluster Anthropic-only,
   but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
@@ -375,6 +375,6 @@ dump for deeper digging.
   `MATCHING_TOP_K` candidates (default 20) above a deliberately low 0.4 cosine
   floor, and the Matcher LLM makes the final match-vs-new call after searching
   multiple framings (including the negation). The disambiguation knobs are
-  `MATCHING_TOP_K` and `MATCHER_MODEL` (default DeepSeek V4 Flash, the model
+  `MATCHING_TOP_K` and `MATCHER_MODEL` (default GLM 5.3 Flash, the model
   production runs — it routes to OpenRouter); the 0.4 retrieval floor
   is hardcoded in `matcher.ts`, so changing it means editing that file.

@@ -26,7 +26,7 @@
     "group": "processing",
     "tagline": "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    "model": "DeepSeek V4 Flash",
+    "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 8096,
     "fullChars": 56784,

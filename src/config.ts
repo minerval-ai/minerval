@@ -663,14 +663,15 @@ const configSchema = z.object({
   // Governance — model IDs. Any provider-resolvable ID works (see
   // src/llm/providers/routing.ts); the defaults below come from
   // src/llm/models.ts — Anthropic (MODELS) except the Matcher, which defaults
-  // to its production DeepSeek pin (OPENROUTER_MODELS).
+  // to its production cheap-tier pin (OPENROUTER_MODELS.flash).
   // The Matcher is an agentic search loop; a small model suffices since the
-  // judgment is "same proposition?" over candidates it retrieves itself, and
-  // DeepSeek V4 Flash beats Haiku 4.5 on both quality and price (#257).
+  // judgment is "same proposition?" over candidates it retrieves itself. The
+  // tier moved off Haiku 4.5 on quality and price (#257) and is now GLM 5.3
+  // Flash; which model fills it is decided in OPENROUTER_MODELS, not here.
   //
   // This default IS the production pin (MATCHER_MODEL in
   // infra/lib/api-stack.ts), deliberately: the default used to be Haiku while
-  // production ran DeepSeek, so everything that does not go through the ECS
+  // production ran the cheap tier, so everything that does not go through the ECS
   // task definition — corpus runs, the golden matcher suite, dev — silently
   // matched on a model production had already moved off, and stamped that
   // model into its scorecard (corpus/scorecards/blackholes/2026-08-09…json is
@@ -679,7 +680,7 @@ const configSchema = z.object({
   // Consequence: the Matcher routes to OpenRouter, so OPENROUTER_API_KEY is
   // required for anything that matches. The adapter fails loudly naming the
   // key; set MATCHER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only.
-  matcherModel: modelId(OPENROUTER_MODELS.deepseekFlash),
+  matcherModel: modelId(OPENROUTER_MODELS.flash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
   // STEWARD_MODEL=claude-fable-5-1 so the most important claims get the deepest
@@ -736,14 +737,13 @@ const configSchema = z.object({
   // claim is ABOUT (topic tags over the open vocabulary in `tags`), makes no
   // epistemic judgment, carries no constitution, and runs over EVERY claim —
   // so the cheapest capable model is the right default, and production keeps
-  // it. The saturating-task logic that put the Matcher on DeepSeek V4 Flash
-  // (#257: better than Haiku 4.5 on quality and price) applies with more
-  // force here: the whole judgment is "which of these existing tags, at what
+  // it. The saturating-task logic that moved the Matcher off Haiku 4.5 onto
+  // the cheap tier (#257) applies with more force here: the whole judgment is "which of these existing tags, at what
   // grain?" over candidates it retrieves itself, in the same tool-use loop.
   // Same key requirement as the Matcher (OPENROUTER_API_KEY); set
   // TAGGER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only. Pinned
   // identically in infra/lib/api-stack.ts; the model guard covers it.
-  taggerModel: modelId(OPENROUTER_MODELS.deepseekFlash),
+  taggerModel: modelId(OPENROUTER_MODELS.flash),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
