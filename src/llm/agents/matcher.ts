@@ -116,6 +116,32 @@ async function matchClaimImpl(input: {
 
   let finalResult: MatchDecision | null = null;
   const model = input.model ?? config.matcherModel;
+
+  // A submitted decision is accepted only when it is whole. The schema marks
+  // is_match required, but not every provider enforces tool schemas: GLM 5.3
+  // Flash on OpenRouter has submitted decisions whose reasoning names the
+  // matched claim with 0.9+ confidence and that carry neither is_match nor
+  // matched_claim_id — read as-is, `undefined` is falsy and a match the model
+  // made becomes a duplicate node. Refuse the call instead and let the model
+  // resubmit; it costs one more turn and keeps the decision the model made.
+  const decisionDefect = (raw: Record<string, unknown>): string | null => {
+    if (typeof raw.is_match !== "boolean") return "is_match must be true or false";
+    if (raw.is_match && typeof raw.matched_claim_id !== "string") {
+      return "matched_claim_id is required when is_match is true";
+    }
+    if (raw.instance_stance !== "affirms" && raw.instance_stance !== "denies") {
+      return 'instance_stance must be "affirms" or "denies"';
+    }
+    return null;
+  };
+  const rejectDecision = (defect: string): string =>
+    JSON.stringify({
+      success: false,
+      message:
+        `Decision NOT recorded: ${defect}. Call submit_match_decision again with ` +
+        `every required field set explicitly: is_match, matched_claim_id (when ` +
+        `is_match is true), instance_stance, confidence, reasoning.`,
+    });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
@@ -131,6 +157,8 @@ async function matchClaimImpl(input: {
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       if (name === "submit_match_decision") {
+        const defect = decisionDefect(toolInput);
+        if (defect) return rejectDecision(defect);
         finalResult = toolInput as unknown as MatchDecision;
         return JSON.stringify({ success: true });
       }
@@ -163,6 +191,9 @@ async function matchClaimImpl(input: {
     },
     onFinalTool: (name, toolInput) => {
       if (name === "submit_match_decision") {
+        // A defective submission is not final: executeTool answers it with
+        // the refusal above and the loop continues.
+        if (decisionDefect(toolInput)) return null;
         finalResult = toolInput as unknown as MatchDecision;
         return finalResult;
       }
