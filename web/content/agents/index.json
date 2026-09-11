@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 31574,
-    "fullChars": 80262,
+    "roleChars": 31915,
+    "fullChars": 80603,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 16681,
-    "fullChars": 65369,
+    "roleChars": 17386,
+    "fullChars": 66074,
     "skills": [
       {
         "name": "mathematics",
@@ -232,9 +232,35 @@
     ]
   },
   {
+    "key": "lookout",
+    "name": "Lookout",
+    "stage": 9,
+    "group": "governance",
+    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
+    "model": "Claude Haiku 4.5",
+    "hasConstitution": true,
+    "roleChars": 9661,
+    "fullChars": 58349,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
+  },
+  {
     "key": "math-solver",
     "name": "Solver",
-    "stage": 9,
+    "stage": 10,
     "group": "instruments",
     "tagline": "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",

@@ -100,8 +100,9 @@ export default async function MandatesPage() {
         A mandate is a funded program of work on the graph: claims to assess,
         subtrees to deepen, sources to bring in, areas to keep fresh. Each is
         stewarded by its own Grantmaker agent, which reviews its territory,
-        grows its plan, and can put budget behind peer mandates; its funder
-        steers it in conversation. And each is public: anyone can put owls
+        grows its plan, posts cheap lookouts to keep watch between its
+        passes, and can put budget behind peer mandates; its funder steers
+        it in conversation. And each is public: anyone can put owls
         behind a mandate they want to see go further. Unspent budgets return
         to everyone who funded them, and funding buys scheduling only, never
         conclusions.

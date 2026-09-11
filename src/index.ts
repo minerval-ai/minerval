@@ -14,6 +14,7 @@ import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
+import { startLookoutTriggers } from "./workers/lookout-triggers.js";
 import { startGithubIssueSync } from "./workers/github-issue-sync.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
@@ -148,6 +149,11 @@ async function main() {
   // that failed — a bounded batch per tick. The row records the issue
   // number, so every task may run it. Silent no-op unless configured.
   pollers.push(startGithubIssueSync({ logger }));
+
+  // Lookout triggers (docs/allocation.md, "Lookouts"): the daily Crossref
+  // retraction poll that queues inputs for the mandates' standing watches.
+  // High-water-marked in platform_flags, so every task may run it.
+  pollers.push(startLookoutTriggers({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {

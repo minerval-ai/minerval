@@ -417,7 +417,8 @@ export async function runGeneralAllocator(): Promise<MandateAllocationResult | n
 /**
  * Grants fund their OWN work through the same ledger as everything else:
  * a planning grant covers its grant_planning action, an active mandate
- * covers its periodic valuation pass, and an agent-policy mandate covers
+ * covers its periodic valuation pass and the runs of the lookouts it
+ * stands up, and an agent-policy mandate covers
  * its plan's unexecuted ingest items — all from its escrow, all fully
  * (the money is the grant's own; there is nothing to co-fund). The engine
  * executor then runs whatever is covered.
@@ -490,6 +491,12 @@ export async function fundGrantSelfActions(): Promise<number> {
        FROM actions a
        JOIN grants g
          ON (a.kind IN ('grant_planning', 'mandate_review') AND a.target_ref = g.id::text)
+         -- A lookout run is the funding mandate's own work too: the row
+         -- names the lookout, the lookout names its mandate.
+         OR (a.kind = 'lookout_run' AND EXISTS (
+              SELECT 1 FROM lookouts l
+               WHERE l.id::text = a.target_ref AND l.grant_id = g.id
+                 AND l.status = 'active'))
          OR (a.kind = 'ingest' AND EXISTS (
               SELECT 1
                 FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb))
@@ -499,19 +506,25 @@ export async function fundGrantSelfActions(): Promise<number> {
                  AND t.item->>'url' = a.target_ref))
        JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE a.status = 'open'
-        AND a.kind IN ('grant_planning', 'mandate_review', 'ingest')
+        AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest')
         AND g.status IN ('planning', 'active')
         AND j.status = 'running'
         -- Review passes are chainable but not unbounded: fund at most the
         -- configured passes per mandate per UTC day (each pass consumes
         -- one allocation on its review group, so counting today's
-        -- allocations counts today's funded passes).
-        AND (a.kind <> 'mandate_review'
+        -- allocations counts today's funded passes). Lookout runs carry
+        -- the same bound with their own cap: a burst of queued events is
+        -- read by the next funded run, never turned into a burst of runs.
+        AND (a.kind NOT IN ('mandate_review', 'lookout_run')
              OR (SELECT COUNT(*) FROM action_allocations al
                   WHERE al.exclusion_group = a.exclusion_group
-                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') < $1)
+                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+                < (CASE WHEN a.kind = 'mandate_review' THEN $1::int ELSE $2::int END))
       LIMIT 100`,
-    [loadConfig().mandateReviewMaxPassesPerDay ?? 12]
+    [
+      loadConfig().mandateReviewMaxPassesPerDay ?? 12,
+      loadConfig().lookoutMaxRunsPerDay ?? 6,
+    ]
   );
   let placed = 0;
   // Both rooms are a snapshot from one query, so a call that funds several

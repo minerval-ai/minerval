@@ -24,6 +24,7 @@ const KIND_LABEL: Record<string, string> = {
   ingest: "ingestions",
   grant_planning: "mandate planning",
   mandate_review: "mandate reviews",
+  lookout_run: "lookout runs",
   // mathematics (docs/mathematics.md §8.3): compute, not prize money
   formalize: "formal statements",
   attempt_proof: "proof attempts",

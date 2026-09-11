@@ -113,6 +113,13 @@ each bound by the constitution, each with a bounded domain:
   territory (graph and web), writes its mandate's valuations over the shared
   action ledger, grows its own plan, moves budget between peer mandates, and
   may refuse money that would warp the graph.
+- **Lookout** is a mandate's standing watch: the cheapest agent with the
+  narrowest question. Posted by a Grantmaker with a brief and woken by a
+  heartbeat or a trigger (the daily retraction poll, a poke), it reads the
+  graph, the retraction record, and the open web and raises candidates: a
+  claim to reassess, a source to ingest, a note for its Grantmaker. It
+  judges relevance, never truth, and can neither write an assessment nor
+  move money; its precision is on the record.
 - **Extension Agent** lives outside governance, behind the browser extension:
   it judges on-page phrasings against graph state and powers the in-page chat.
   It never writes to the graph.
@@ -122,7 +129,8 @@ each bound by the constitution, each with a bounded domain:
   by subject. Tags are navigation, never judgment.
 
 Model choice follows the value of the judgment: tagging and matching are
-saturating tasks and run on GLM 5.3 Flash via OpenRouter; the load-bearing epistemic work
+saturating tasks and run on GLM 5.3 Flash via OpenRouter; the Lookout's
+relevance call runs on Haiku; the load-bearing epistemic work
 — stewardship, structural adjudication, arbitration, audit, grantmaking — runs
 on the strongest available Claude models, and background assessments choose
 between a standard and a strong pass by marginal return on compute. Model ids
@@ -143,7 +151,8 @@ flagship domain (formal statements, the Lean checker, the solver, prizes) is in
   contribution history.
 - **Mandates** — [minerval.ai/mandates](https://minerval.ai/mandates):
   public funded programs of work on the graph, each stewarded by its own
-  Grantmaker agent and open to anyone's contribution.
+  Grantmaker agent, watched between passes by the lookouts it posts, and
+  open to anyone's contribution.
 - **API** — Fastify at `api.claimgraph.io`. Reads are public; anything that
   writes or spends model tokens requires a key. Interactive OpenAPI docs at
   `/docs` on the API host.

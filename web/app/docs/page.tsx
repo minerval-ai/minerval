@@ -146,7 +146,7 @@ export default function DocsPage() {
           <Link href="/docs/agents" className="card">
             <div className="card-claim" style={{ fontWeight: 600 }}>The agents</div>
             <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
-              The eight administrators, each with its role, its model, and its complete
+              The nine administrators, each with its role, its model, and its complete
               system prompt.
             </p>
           </Link>

@@ -25,6 +25,10 @@ const { state } = vi.hoisted(() => ({
     cancelled: [] as unknown[][],
     grantSources: [] as unknown[][],
     fundCalls: 0,
+    lookout: null as null | Record<string, unknown>,
+    lookoutRuns: 0,
+    lookoutFail: null as null | Error,
+    lookoutStamps: [] as Array<Record<string, unknown>>,
   },
 }));
 
@@ -32,6 +36,9 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     if (q.includes("FROM grants g JOIN budget_jobs")) {
       return state.grant ? [state.grant] : [];
+    }
+    if (q.includes("FROM lookouts l JOIN grants g")) {
+      return state.lookout ? [state.lookout] : [];
     }
     if (q.includes("FROM grants WHERE id = $1")) {
       return state.grant ? [state.grant] : [];
@@ -86,6 +93,20 @@ vi.mock("../../../src/llm/agents/mandate-review.js", () => ({
   runMandateReview: vi.fn(async () => {
     state.reviewRuns++;
     return state.reviewResult;
+  }),
+}));
+
+vi.mock("../../../src/llm/agents/lookout.js", () => ({
+  runLookout: vi.fn(async () => {
+    state.lookoutRuns++;
+    if (state.lookoutFail) throw state.lookoutFail;
+    return { note: "nothing to report", flagsRaised: 2, ingestsProposed: 0, notesLeft: 0, eventsConsumed: 1 };
+  }),
+}));
+
+vi.mock("../../../src/services/lookout-service.js", () => ({
+  recordLookoutRun: vi.fn(async (input: Record<string, unknown>) => {
+    state.lookoutStamps.push(input);
   }),
 }));
 
@@ -150,6 +171,17 @@ beforeEach(() => {
   state.cancelled = [];
   state.grantSources = [];
   state.fundCalls = 0;
+  state.lookout = {
+    id: "l-1",
+    status: "active",
+    grant_id: "g-1",
+    grant_status: "active",
+    funder_user_id: "u-1",
+    budget_job_id: "job-1",
+  };
+  state.lookoutRuns = 0;
+  state.lookoutFail = null;
+  state.lookoutStamps = [];
 });
 
 describe("processNextEngineAction", () => {
@@ -192,6 +224,34 @@ describe("processNextEngineAction", () => {
     expect(state.completed).toHaveLength(0);
     // The funding mandate records the source in its pipeline.
     expect(state.grantSources).toHaveLength(1);
+  });
+
+  it("runs a covered lookout, stamps the run on the lookout, and completes with metered cost", async () => {
+    state.action = action({ kind: "lookout_run", exclusion_group: "lookout:l-1", target_ref: "l-1" });
+    const r = await processNextEngineAction();
+    expect(r).toMatchObject({ status: "processed", ok: true, kind: "lookout_run", grantId: "g-1" });
+    expect(state.lookoutRuns).toBe(1);
+    expect(state.lookoutStamps).toEqual([{ lookoutId: "l-1", note: "nothing to report", flagsRaised: 2 }]);
+    expect(state.completed).toEqual([{ id: "act-1", metered: 123_000 }]);
+  });
+
+  it("a failed lookout run backs the lookout off and retires the group instead of spinning", async () => {
+    state.action = action({ kind: "lookout_run", exclusion_group: "lookout:l-1", target_ref: "l-1" });
+    state.lookoutFail = new Error("model returned garbage");
+    const r = await processNextEngineAction();
+    expect(r).toMatchObject({ status: "processed", ok: false, kind: "lookout_run" });
+    expect(state.lookoutStamps[0]).toMatchObject({ lookoutId: "l-1", failed: true, flagsRaised: 0 });
+    expect(state.cancelled).toHaveLength(1);
+    expect(state.completed).toHaveLength(0);
+  });
+
+  it("cancels a lookout run whose lookout is paused or whose mandate is not active", async () => {
+    state.action = action({ kind: "lookout_run", exclusion_group: "lookout:l-1", target_ref: "l-1" });
+    state.lookout!.status = "paused";
+    const r = await processNextEngineAction();
+    expect(r.status).toBe("empty");
+    expect(state.cancelled).toHaveLength(1);
+    expect(state.lookoutRuns).toBe(0);
   });
 
   it("cancels the group when the grant's status no longer matches", async () => {
