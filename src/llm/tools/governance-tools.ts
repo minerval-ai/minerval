@@ -25,6 +25,7 @@ import { trustLevelFor } from "../../services/reputation-service.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import { hasWrittenForm } from "../../services/argument-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
+import { listFindings } from "../../services/finding-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -295,6 +296,13 @@ async function getClaimWithContext(claimId: string) {
         }
       : null;
 
+  // Findings already noted on this claim (#394): one line each, a courtesy
+  // for the Steward's common case. The check that prevents a repeat lives in
+  // note_finding itself, for every role; this list is passive and carries no
+  // instruction. `stale` marks a note whose cited assessment is no longer
+  // current, so the Steward knows the graph has moved since it was written.
+  const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
+
   return {
     claim: {
       id: claim.id,
@@ -322,6 +330,16 @@ async function getClaimWithContext(claimId: string) {
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    findings_noted: findingsNoted.map((f) => ({
+      id: f.id,
+      noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,
+      agent: f.agent,
+      importance: Number(f.importance),
+      sighting_count: Number(f.sighting_count),
+      headline: f.headline,
+      cites: (Array.isArray(f.refs) ? f.refs : []).map((r) => `${r.kind} ${r.id}`),
+      ...(f.stale ? { stale: "cites an assessment that is no longer current" } : {}),
+    })),
     subclaims: subclaims.map((sc) => ({
       id: sc.child_id,
       text: sc.child_text,

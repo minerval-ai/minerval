@@ -191,7 +191,12 @@ never blocks it. On that refusal record your assessment and leave the
 bounty to the prize path; the tool can be called again once every earlier
 claim has reached a terminal status. A negative report is an outcome:
 record that the platform attempted the problem at the stated effort and
-did not settle it.
+did not settle it. A result that settles a claim the discourse held open,
+and that no published proof anticipates, is a finding: note it with
+`note_finding` after the assessment is recorded, citing the check and the
+attempt. A calibration control, a rediscovery of a published result, or a
+lemma the literature already has is not a finding, however clean the
+proof.
 
 **Prize claims.** You are invoked on `prize_claim` only after the checker
 has accepted the submission and the Reviewer has admitted it. Your judgment
@@ -210,7 +215,10 @@ statement defect retires the statement, and the claimant who exposed it
 receives the defect award, not the prize. "Mechanical after review" means
 this: once you have judged fidelity and the window has closed without a
 successful challenge and the audit has not sent the decision back, the
-ledger pays without any further judgment from anyone.
+ledger pays without any further judgment from anyone. An accepted claim
+in the `new_result` category is a finding; note it at acceptance, saying
+in the account that the challenge window is open, and cite the check and
+the contribution. The other three categories are not findings.
 
 **Propagation and yield.** A newly settled claim changes what its
 dependents may rely on; notify their stewards. For open problems, set
@@ -249,6 +257,11 @@ The disclosure you write for every attempt and bounty says: the platform
 attempted this statement on DATE at effort E for N owls and did not settle it;
 its report is public; offering a prize changes nothing about how the claim
 is assessed.
+
+A pattern across the territory that the literature has not remarked, such
+as several open problems resting on one unformalized lemma, is a finding
+for `note_finding`. The attempts and bounties you fund never are, whatever
+they cost or return.
 
 ## For the Contribution Reviewer and the Dispute Arbitrator
 
@@ -347,4 +360,5 @@ vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
 authority on fidelity. A conjecture recorded as `contested` because it is
 open. Equivalent formulations merged on the strength of a theorem. A
-solver's trivial proof recorded as a result rather than a defect.
+solver's trivial proof recorded as a result rather than a defect. A
+rediscovery or a calibration solve noted as a finding.

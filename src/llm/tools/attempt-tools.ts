@@ -98,10 +98,16 @@ export const executeMarkProblemSolvedByPlatform: SkillToolExecutor = async (inpu
     outcome: result.outcome,
     bounty: result.bounty,
     published_at: result.published_at,
-    message: result.bounty
-      ? `Bounty ${result.bounty.id} moved from ${result.bounty.previous_status} to ` +
-        `resolved_internally; no prize is paid, and the attempt's report is published.`
-      : "No live bounty was bound to the statement; the attempt's report is published.",
+    message:
+      (result.bounty
+        ? `Bounty ${result.bounty.id} moved from ${result.bounty.previous_status} to ` +
+          `resolved_internally; no prize is paid, and the attempt's report is published.`
+        : "No live bounty was bound to the statement; the attempt's report is published.") +
+      // The one moment a proof finding can arise (#394): a reminder, never an
+      // emitter, so a calibration control or a rediscovery is not made one.
+      " If this settled a problem the discourse held open and no published proof " +
+      "anticipates it, it is a finding for note_finding, citing the check and the " +
+      "attempt. A rediscovery is not.",
   });
 };
 

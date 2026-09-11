@@ -1,6 +1,7 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { BAD_FAITH_CATEGORY_LIST } from "./bad-faith.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
+import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   domainSkillsSection,
@@ -141,6 +142,8 @@ manipulation (§15); or the case is novel enough that deciding it would
 set policy rather than apply it.
 
 ${RAISING_ISSUES}
+
+${NOTING_FINDINGS}
 
 ${domainSkillsSection("dispute-arbitrator")}`;
 

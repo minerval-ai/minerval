@@ -50,6 +50,7 @@ import {
 import { loadConfig } from "../../config.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createFindingTools } from "../tools/finding-tools.js";
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -256,6 +257,8 @@ async function runClaimStewardImpl(input: {
 
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
+  // ...and the finding channel (#394), the same shape without a cap.
+  const findingTools = createFindingTools({ model });
 
   const tools = [
     ...graphTools,
@@ -264,7 +267,7 @@ async function runClaimStewardImpl(input: {
     getMatcherToolDefinition(),
     ...elicitTools,
     ...skillTools,
-    ...reportTools.definitions,
+    ...reportTools.definitions, ...findingTools.definitions,
     webSearchTool,
   ];
 
@@ -427,6 +430,8 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const finding = await findingTools.execute(name, toolInput);
+      if (finding !== null) return finding;
       if (name === "match_claim") {
         // The Matcher receives the domains its caller knows.
         return executeMatcherTool(name, toolInput, { domains: claimDomains });

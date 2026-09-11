@@ -548,6 +548,29 @@ Audit Agent clusters them by underlying gap, ranks by frequency and
 severity, and records a reading through `triage_report` that the
 service-scoped `/reports` API exposes to maintainers.
 
+The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
+Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
+sibling channel for the other thing an agent notices in the course of its
+work: something people who hold a question would be better for knowing,
+because what most of them believe is wrong, or missing, or true for reasons
+the record now supplies. A finding is written in the graph's voice, rests on
+typed refs into the graph (claim, assessment, argument, contribution, check,
+attempt, formalization) that are checked to exist on write, carries an
+importance of its own from 1 to 10, and is published as written on the
+public findings page (`/findings`), where the platform's later writing draws
+from it. There is no cap and no triage queue; the restraint is the bar in
+the prompt block, and a run that notes nothing is the norm. What the tool
+does that the prompt cannot is check the record before it writes: the
+finding is embedded and searched against every finding on record, and on a
+near match nothing is written until the agent answers with `joins` (a
+sighting, counted and kept in its own words) or `distinct_from` (a new
+finding, saying what the earlier one lacks). Findings live in
+`agent_findings` with the same no-FK attribution snapshot as reports, so a
+note outlives the trace it came from; the read side computes a `stale`
+flag when a cited assessment is no longer the claim's current one. The
+extension chat, the MCP surface, the Extractor, the Matcher, and the solver
+do not carry the tool: an outside agent's discovery is a contribution.
+
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
 live web page against graph state (verdicts range from "egregious" to "fine")
@@ -950,7 +973,9 @@ model call, `reputation_events` and `kudos_events` are the append-only score
 ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
-run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
+run ledger doubles as the dedupe gate for audit triggers), `agent_reports`
+and `agent_findings` are the agents' own two channels to the outside (issues
+with the machinery; what they found about the world), and `jobs` tracks
 queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
 formal statements and every check), `proof_attempts` (the solver's runs),
 `bounties` (owls held against the escrow of the mandate that posted each
@@ -1007,7 +1032,8 @@ tag as a filter.
 
 A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
-contributor profiles. Anything that writes or spends model tokens
+contributor profiles, the topic vocabulary, and the findings feed
+(`GET /findings`, filterable by claim, tag, and importance). Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
 graph directly: proposed claims and submitted sources become pending intake
