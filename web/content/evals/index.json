@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-11T13:58:01.228Z",
-  "gitCommit": "4b20e28",
+  "syncedAt": "2026-09-11T14:19:10.300Z",
+  "gitCommit": "980251c",
   "pins": [
     {
       "agent": "steward",
@@ -47,14 +47,14 @@
     {
       "agent": "matcher",
       "envVar": "MATCHER_MODEL",
-      "model": "deepseek/deepseek-v4-flash",
-      "label": "DeepSeek V4 Flash"
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
     },
     {
       "agent": "tagger",
       "envVar": "TAGGER_MODEL",
-      "model": "deepseek/deepseek-v4-flash",
-      "label": "DeepSeek V4 Flash"
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
     }
   ],
   "judge": {
@@ -67,7 +67,7 @@
       "outputPerMtok": 50,
       "cacheReadMultiplier": 0.025
     },
-    "deepseek/deepseek-v4-flash": null,
+    "z-ai/glm-5.3-flash": null,
     "claude-sonnet-5": {
       "inputPerMtok": 3,
       "outputPerMtok": 15

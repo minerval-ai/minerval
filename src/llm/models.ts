@@ -42,15 +42,39 @@ export const MODELS = {
  * OPENROUTER_API_KEY — the Anthropic key alone will not serve it (the adapter
  * fails loudly naming the missing key).
  *
- * DeepSeek V4 Flash is the Matcher's tier: its judgment is narrow ("same
- * proposition?") over candidates it retrieves itself, and it beats Haiku 4.5 on
- * both quality and price (issue #257). The tagger (#272) shares it for the
- * same reason. It is pinned identically on the ECS task
- * definition (MATCHER_MODEL in infra/lib/api-stack.ts); the model guard asserts
- * the two agree, so a corpus or dev run scores the model production runs.
+ * The cheap tier. The Matcher's judgment is narrow ("same proposition?") over
+ * candidates it retrieves itself, and the tagger (#272) labels topics with no
+ * epistemic call at all, so both run the cheapest capable model. The tier
+ * moved off Haiku 4.5 on quality and price (#257), held DeepSeek V4 Flash, and
+ * now holds GLM 5.3 Flash. The key is named for the ROLE, not the vendor, so
+ * the next supersession is a one-line id change here and nowhere else.
+ *
+ * It is pinned identically on the ECS task definitions (MATCHER_MODEL and
+ * TAGGER_MODEL in infra/lib/api-stack.ts, MATCHER_MODEL in solver-stack.ts);
+ * the model guard asserts default and pin agree, so a corpus or dev run scores
+ * the model production runs.
+ *
+ * Why the versioned id and not `~z-ai/glm-flash-latest`: every eval number in
+ * this repo is a claim about a specific model, and an alias that repoints when
+ * the vendor ships makes a scorecard a measurement of nothing. Same discipline
+ * as the dated Haiku snapshot in MODELS. Z.ai publishes no dated revisions on
+ * OpenRouter, so the version is the most specific stable id available.
+ *
+ * Two operational facts, verified against OpenRouter's endpoint list and one
+ * live call at the time of pinning:
+ *  - Routing under the adapter's `data_collection: "deny"` constraint resolves
+ *    (to Together, at $0.15/$0.50 per Mtok list; several endpoints serve it
+ *    cheaper, and OpenRouter reports the actual cost per call, which is what
+ *    we meter). Context is 1M on all but one endpoint (Reka, 262k), so an
+ *    agent that needs the full window must constrain provider routing.
+ *  - No endpoint advertises `parallel_tool_calls`, and the model writes its
+ *    reasoning into `content` ahead of a tool call. Neither breaks the adapter
+ *    (a tool loop sequences calls per turn; structured output reads only the
+ *    forced tool's arguments), but the reasoning is billed output on every
+ *    call, and a fan-out agent cannot batch tool calls within one turn.
  */
 export const OPENROUTER_MODELS = {
-  deepseekFlash: "deepseek/deepseek-v4-flash",
+  flash: "z-ai/glm-5.3-flash",
 } as const;
 
 /** Default model for general completions when a caller doesn't specify one. */
