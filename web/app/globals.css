@@ -1237,8 +1237,12 @@ textarea.contribute-field { resize: vertical; line-height: 1.45; }
 .mandate-review-note {
   border-left: 3px solid var(--rule); margin: 0.5rem 0 0; padding: 0.2rem 0 0.2rem 1rem;
   color: var(--ink-soft); font-size: 0.9rem; max-width: 42rem;
-  white-space: pre-wrap;
 }
+.mandate-review-note p, .mandate-review-note ul, .mandate-review-note ol {
+  margin: 0 0 0.7rem;
+}
+.mandate-review-note > :last-child { margin-bottom: 0; }
+.mandate-review-note pre { overflow-x: auto; }
 
 /* ==========================================================================
    Mathematics (docs/mathematics.md) — the formal statement, the derived
