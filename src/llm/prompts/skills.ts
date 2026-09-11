@@ -1,8 +1,13 @@
 /**
- * Domain skills: the layer between an administrator's role and its task.
+ * Skills: the layer between an administrator's role and its task.
  *
  * A skill (`skills/<name>/SKILL.md`, see `skills/README.md`) says how the
- * constitution and a role apply in one domain, in role-addressed H2 sections.
+ * constitution and a role apply to one body of work, in role-addressed H2
+ * sections. Two kinds exist. A DOMAIN skill covers one subject (mathematics)
+ * and is activated by a claim's recorded domains. A METHOD skill covers one
+ * kind of work every claim can call for (tracing what a claim's sources rest
+ * on) and is carried on every run of the roles it addresses; it claims no
+ * domain and never appears in the domain list the Extractor tags from.
  * This module loads every skill once per process, the way constitution.ts
  * loads the constitution, and owns ROLE_VIEW: which sections each role
  * receives. Each view is spliced into the prompt as its own system block
@@ -96,15 +101,22 @@ export interface SkillToolDefinition {
   roles: SkillRole[];
 }
 
+/**
+ * A domain skill is activated by a claim's recorded domains; a method skill
+ * is carried on every run of the roles it has a section for.
+ */
+export type SkillKind = "domain" | "method";
+
 export interface Skill {
-  /** Frontmatter `name`; also the directory name and the activating domain. */
+  /** Frontmatter `name`; also the directory name and, for a domain skill, the activating domain. */
   name: string;
   /** Reader-facing name used in the block heading ("Mathematics"). */
   displayName: string;
   description: string;
   version: number;
   sinceEpoch: string;
-  /** The `claims.domains` values that activate this skill. */
+  kind: SkillKind;
+  /** The `claims.domains` values that activate this skill; empty for a method skill. */
   domains: string[];
   /** The Markdown body after the frontmatter, verbatim. */
   body: string;
@@ -115,9 +127,14 @@ export interface Skill {
   path: string;
 }
 
-/** The sentence of standing every spliced view opens with. */
+/** The sentence of standing every spliced domain-skill view opens with. */
 export const SKILL_STANDING =
   "This skill says how the constitution and your role apply in this domain. " +
+  "It never outranks either.";
+
+/** The same sentence for a method skill, which is about a kind of work rather than a subject. */
+export const METHOD_SKILL_STANDING =
+  "This skill says how the constitution and your role apply to one kind of work. " +
   "It never outranks either.";
 
 // ---------------------------------------------------------------------------
@@ -334,14 +351,24 @@ export function parseSkill(input: {
   if (!sinceEpoch) {
     throw new Error(`${path}: metadata.minerval.since_epoch is required`);
   }
+  const kindRaw = typeof minerval.kind === "string" ? minerval.kind.trim() : "domain";
+  if (kindRaw !== "domain" && kindRaw !== "method") {
+    throw new Error(`${path}: metadata.minerval.kind must be "domain" or "method" (got "${kindRaw}")`);
+  }
+  const kind: SkillKind = kindRaw;
   const domainsRaw = minerval.domains;
   const domains = Array.isArray(domainsRaw)
     ? domainsRaw.map((d) => String(d).trim()).filter(Boolean)
     : typeof domainsRaw === "string" && domainsRaw.trim()
       ? [domainsRaw.trim()]
       : [];
-  if (domains.length === 0) {
+  if (kind === "domain" && domains.length === 0) {
     throw new Error(`${path}: metadata.minerval.domains must list at least one domain`);
+  }
+  if (kind === "method" && domains.length > 0) {
+    throw new Error(
+      `${path}: a method skill claims no domain; drop metadata.minerval.domains or set kind: domain`
+    );
   }
 
   const sections = splitSections(body, path);
@@ -392,6 +419,7 @@ export function parseSkill(input: {
     description,
     version,
     sinceEpoch,
+    kind,
     domains,
     body: body.replace(/^\n+/, ""),
     sections,
@@ -476,11 +504,29 @@ export function knownDomains(): string[] {
   return [...new Set(listSkills().flatMap((s) => s.domains))].sort();
 }
 
-/** The skills a claim's domains activate, alphabetical by name (two active skills are both spliced). */
-export function skillsForDomains(domains: readonly string[] | null | undefined): Skill[] {
-  if (!domains || domains.length === 0) return [];
-  const wanted = new Set(domains);
-  return listSkills().filter((s) => s.domains.some((d) => wanted.has(d)));
+/** The method skills, which every claim-scoped run carries. */
+export function methodSkills(): Skill[] {
+  return listSkills().filter((s) => s.kind === "method");
+}
+
+/**
+ * The skills a claim-scoped run carries, alphabetical by name: the domain
+ * skills the claim's domains activate, plus every method skill. When `role`
+ * is given, a method skill that has no section for that role is left out,
+ * so a run never carries an empty block or records a skill that said nothing
+ * to it. Two active skills are both spliced.
+ */
+export function skillsForDomains(
+  domains: readonly string[] | null | undefined,
+  role?: SkillRole
+): Skill[] {
+  const wanted = new Set(domains ?? []);
+  return listSkills().filter((s) => {
+    if (s.kind === "method") {
+      return role ? sectionsForRole(s, role).length > 0 : true;
+    }
+    return s.domains.some((d) => wanted.has(d));
+  });
 }
 
 /** The skills of those names (unknown names throw). */
@@ -509,9 +555,11 @@ export function getSkillView(skill: Skill, role: SkillRole): string {
   const parts = skill.sections
     .filter((s) => wanted.has(s.heading))
     .map((s) => `## ${s.heading}\n\n${s.body}`);
+  const label = skill.kind === "method" ? "Method skill" : "Domain skill";
+  const standing = skill.kind === "method" ? METHOD_SKILL_STANDING : SKILL_STANDING;
   return (
-    `# Domain skill: ${skill.displayName} (version ${skill.version})\n\n` +
-    `${SKILL_STANDING}\n\n` +
+    `# ${label}: ${skill.displayName} (version ${skill.version})\n\n` +
+    `${standing}\n\n` +
     parts.join("\n\n")
   );
 }
@@ -531,24 +579,30 @@ export function getSkillCatalog(role: SkillRole): string {
       sections.length > 0
         ? `you receive: ${sections.join(", ")}`
         : "you receive none of its sections";
-    return `${s.name} (version ${s.version}; activated by domain ${s.domains.join(", ")}; ${view})`;
+    const activation =
+      s.kind === "method"
+        ? "a method skill, carried on every run"
+        : `activated by domain ${s.domains.join(", ")}`;
+    return `${s.name} (version ${s.version}; ${activation}; ${view})`;
   });
   return `Skills that exist: ${entries.join("; ")}.`;
 }
 
 /**
  * The `## Domain skills` section every role prompt that can receive a skill
- * carries: the forward reference to the block that may follow, and the
+ * carries: the forward reference to the blocks that may follow, and the
  * catalog.
  */
 export function domainSkillsSection(role: SkillRole): string {
   return `## Domain skills
 
-A domain skill block may follow this role. It governs how the constitution
-and your role apply in that domain and never outranks either: a skill may
-sharpen your obligations and add procedures and tools, never loosen them.
-Which skills a run carries is decided by the claim's recorded domains, never
-by who funds the work. ${getSkillCatalog(role)}`;
+One or more skill blocks may follow this role. A domain skill governs how the
+constitution and your role apply in one domain; a method skill governs one
+kind of work any claim can call for. A skill never outranks either the
+constitution or your role: it may sharpen your obligations and add
+procedures and tools, never loosen them. Which domain skills a run carries
+is decided by the claim's recorded domains, never by who funds the work; a
+method skill is carried on every run. ${getSkillCatalog(role)}`;
 }
 
 /** The tool definitions `skill` brings to `role`'s toolset, in the Anthropic shape. */

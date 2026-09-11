@@ -34,9 +34,16 @@ describe("skill tool registry", () => {
       "lean_elaborate",
       "lean_search",
       "mark_problem_solved_by_platform",
+      "provenance_get_map",
+      "provenance_read_source",
+      "provenance_record_edge",
+      "provenance_record_reading",
+      "provenance_record_source_relationship",
+      "provenance_write_map",
       "publish_formalization",
     ]);
     expect(isSkillTool("lean_search")).toBe(true);
+    expect(isSkillTool("provenance_get_map")).toBe(true);
     expect(isSkillTool("web_search")).toBe(false);
     expect(isSkillTool("update_claim_assessment")).toBe(false);
   });

@@ -27,6 +27,18 @@ const modelId = (defaultId: string) =>
     })
     .default(defaultId);
 
+/**
+ * A PEM private key arrives from Secrets Manager with its newlines intact,
+ * but an operator pasting it into a .env line writes "\n" and some tools
+ * hand it over base64-encoded whole. Accept all three.
+ */
+function normalizePrivateKey(raw: string): string {
+  const unescaped = raw.replace(/\\n/g, "\n").trim();
+  if (!unescaped || unescaped.includes("-----BEGIN")) return unescaped;
+  const decoded = Buffer.from(unescaped, "base64").toString("utf8");
+  return decoded.includes("-----BEGIN") ? decoded.trim() : unescaped;
+}
+
 const configSchema = z.object({
   env: z
     .enum(["development", "staging", "production"])
@@ -801,6 +813,40 @@ const configSchema = z.object({
   // skipped when no new reports arrived. 0 disables triage sweeps (reports
   // still record; the /reports API still serves them).
   reportTriageIntervalHours: z.coerce.number().default(24),
+  // Match-before-write for reports (the findings mechanism, #394, applied
+  // to raise_issue): a report on record at or above this cosine similarity
+  // (title + body against title + body) is shown to the agent instead of
+  // being written, and the agent answers with joins or distinct_from. The
+  // exact-title dedupe key catches verbatim repeats before this runs.
+  reportMatchSimilarity: z.coerce.number().default(0.8),
+  // GitHub issue filing for agent reports: every report written on first
+  // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
+  // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
+  // from human ones. Off unless a credential and the repo are set; never
+  // blocks or fails the report write. The credential is the minerval-agents
+  // GitHub App (id, installation id, private key; production) or a plain
+  // token (a fine-grained PAT; local runs). The App wins when both are set.
+  // See services/github-app-auth.ts.
+  githubToken: z.string().default(""),
+  githubAppId: z.string().default(""),
+  githubAppInstallationId: z.string().default(""),
+  githubAppPrivateKey: z.string().default("").transform(normalizePrivateKey),
+  githubIssuesRepo: z.string().default(""),
+  githubIssuesLabel: z.string().default("agent-generated"),
+  githubApiBaseUrl: z.string().default("https://api.github.com"),
+  // External (MCP) reports are testimony from someone else's agent; their
+  // bodies are not filed to GitHub unless this is on, so an outside caller
+  // cannot write into the maintainers' tracker by default.
+  githubIssuesIncludeExternal: z
+    .string()
+    .transform((s) => s === "true")
+    .default("false"),
+  // The GitHub sync worker: every tick files issues for open reports that
+  // have none yet (the backlog from before the sync existed, and any filing
+  // that failed at raise time), at most this many per tick so a first run
+  // is a bounded burst. 0 disables the worker; raise-time filing still runs.
+  githubIssuesBackfillPerTick: z.coerce.number().default(20),
+  githubIssuesSyncIntervalSeconds: z.coerce.number().default(300),
   // Agent findings (#394). note_finding searches the findings on record by
   // meaning before it writes; a candidate at or above this cosine similarity
   // (headline + account against headline + account) is shown to the agent
@@ -991,6 +1037,18 @@ export function loadConfig(): Config {
     agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
+    reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
+    githubToken: process.env.GITHUB_TOKEN,
+    githubAppId: process.env.GITHUB_APP_ID,
+    githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,
+    githubAppPrivateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+    githubIssuesRepo: process.env.GITHUB_ISSUES_REPO,
+    githubIssuesLabel: process.env.GITHUB_ISSUES_LABEL,
+    githubApiBaseUrl: process.env.GITHUB_API_BASE_URL,
+    githubIssuesIncludeExternal: process.env.GITHUB_ISSUES_INCLUDE_EXTERNAL,
+    githubIssuesBackfillPerTick: process.env.GITHUB_ISSUES_BACKFILL_PER_TICK,
+    githubIssuesSyncIntervalSeconds:
+      process.env.GITHUB_ISSUES_SYNC_INTERVAL_SECONDS,
     findingMatchSimilarity: process.env.FINDING_MATCH_SIMILARITY,
     findingMatchSimilaritySameClaim:
       process.env.FINDING_MATCH_SIMILARITY_SAME_CLAIM,

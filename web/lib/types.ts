@@ -160,6 +160,83 @@ export interface ArgumentItem {
   lean_check?: LeanCheckSummary | null;
 }
 
+// --- source provenance (#286) ---------------------------------------------
+// What the Steward concluded from opening one instance's source against the
+// claim. `support` is whether the source's OWN evidence bears the assertion
+// it makes, never whether the claim is true. `quote_check` is mechanical:
+// whether the recorded passage is present in the stored text of the source.
+export type InstanceSupport =
+  | "supports"
+  | "overstates"
+  | "understates"
+  | "asserts_without_evidence"
+  | "contradicts_own_evidence"
+  | "unclear";
+export type QuoteCheck = "verbatim" | "normalized_match" | "not_found" | "no_stored_content";
+
+export interface InstanceReading {
+  support: InstanceSupport;
+  deployment: string | null;
+  note: string | null;
+  quote_check: QuoteCheck;
+  worth_reading: boolean;
+  worth_reading_reason: string | null;
+  source_read: boolean;
+  read_at: string;
+}
+
+// The Steward's account of what the claim's support rests on. Shown to
+// readers only when `material`; kept for the audit trail otherwise.
+export interface SourceMapSummary {
+  summary: string;
+  material: boolean;
+  sources_considered: number;
+  sources_read: number;
+  edges_recorded: number;
+  mapped_by: string;
+  mapped_at: string;
+}
+
+export type ProvenanceRelation =
+  | "repeats"
+  | "derives_from"
+  | "reanalyzes"
+  | "republishes"
+  | "cites_as_evidence"
+  | "responds_to";
+export type ProvenanceFidelity =
+  | "faithful"
+  | "strengthened"
+  | "weakened"
+  | "distorted"
+  | "misattributed"
+  | "unclear";
+
+// One source's assertion of the claim (an instance) drawing on a document.
+export interface ProvenanceEdge {
+  id: string;
+  from_instance_id: string;
+  to_source: { id: string; title: string; url: string | null };
+  to_instance_id: string | null;
+  relation_type: ProvenanceRelation;
+  fidelity: ProvenanceFidelity;
+  evidence: string;
+  reasoning: string;
+  confidence: number;
+  target_read: boolean;
+  created_by: string;
+}
+
+// A relation between two documents that holds whatever claim is traced.
+export interface SourceRelationship {
+  id: string;
+  parent_source: { id: string; title: string; url: string | null };
+  child_source: { id: string; title: string; url: string | null };
+  relation_type: "shares_authorship" | "republishes" | "version_of";
+  reasoning: string;
+  confidence: number;
+}
+
 export interface Instance {
   id: string;
   source_id: string;
@@ -172,6 +249,16 @@ export interface Instance {
   source_title: string;
   source_url: string | null;
   source_type?: SourceType;
+  // Whether the source affirms or denies the canonical claim; absent when
+  // the API predates the field.
+  stance?: "affirms" | "denies";
+  speaker?: string | null;
+  publication?: string | null;
+  source_date?: string | null;
+  link?: string | null;
+  // The Steward's reading of this source (#286); null or absent until one
+  // has been recorded.
+  reading?: InstanceReading | null;
 }
 
 export interface TrajectoryPoint {
@@ -271,6 +358,13 @@ export interface ClaimDetail {
   tree?: TreeNode;
   arguments?: ArgumentItem[];
   instances?: Instance[];
+  // Source provenance (#286): the Steward's account of what the support
+  // rests on, the dependencies recorded between instances and the documents
+  // they draw on, and the relations among those documents. Absent or empty
+  // when the API predates the fields or nothing has been recorded.
+  source_map?: SourceMapSummary | null;
+  provenance_edges?: ProvenanceEdge[];
+  source_relationships?: SourceRelationship[];
   dependents?: DependentClaim[];
   trajectory?: {
     current: TrajectoryPoint | null;

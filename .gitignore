@@ -7,6 +7,8 @@ dist/
 # Environment
 .env
 .envrc
+# GitHub App private keys (downloaded from github.com; live in Secrets Manager)
+*.private-key.pem
 
 # Logs
 *.log

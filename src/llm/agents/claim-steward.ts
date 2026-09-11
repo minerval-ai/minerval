@@ -74,7 +74,9 @@ ${structureStep}
    is one instance among the rest, not the claim's home (see "Provenance Is
    Evidence, Not an Anchor"). When a source you read itself asserts the claim
    (or its negation) — not merely reports on the debate — record that
-   sighting with record_claim_instance as you go (see "Recording Instances").
+   sighting with record_claim_instance as you go (see "Recording Instances");
+   when an instance already on the claim misrepresents what its source says,
+   correct it with update_claim_instance and give the reason.
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit
@@ -243,7 +245,7 @@ async function runClaimStewardImpl(input: {
   // when a check is worth its cost, and the per-run caps below are the
   // backstop.
   const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
-  const skills = skillsForDomains(claimDomains);
+  const skills = skillsForDomains(claimDomains, "claim-steward");
   // The Lean tools are present exactly when the skill is active AND a
   // checker is configured (docs/mathematics.md §6.2); without a checker the
   // run is told the formal tools are unavailable and assesses on the
@@ -314,9 +316,9 @@ insufficient for a verdict that turns on the scientific literature.`
     skills.length > 0
       ? `
 
-Domain skills active for this run: ${skills
+Skills active for this run: ${skills
           .map((s) => `${s.name} (version ${s.version})`)
-          .join(", ")}. Each follows your role in the system prompt${
+          .join(", ")}. Each follows your role in the system prompt as its own block${
           skillTools.length > 0
             ? `, and the tools it brings (${skillTools.map((t) => t.name).join(", ")}) are in your toolset`
             : ""
@@ -493,16 +495,18 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       // Same runaway-guard shape for instance recording (#278): capturing
       // sightings is a cheap side effect of evidence reading, and this cap
       // only stops a loop from farming instances instead of assessing.
-      if (name === "record_claim_instance") {
+      // Corrections (#420) share the counter: one budget for touching the
+      // instance set, however it is touched.
+      if (name === "record_claim_instance" || name === "update_claim_instance") {
         const cap = config.stewardMaxInstancesPerRun;
         if (cap > 0 && instancesRecordedThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already recorded ${instancesRecordedThisRun} ` +
-              `instances, the per-run backstop (${cap}). Do not record more ` +
-              `in this pass: note any remaining sightings in your ` +
-              `reasoning_trace and proceed to your assessment.`,
+              `This run has already recorded or corrected ${instancesRecordedThisRun} ` +
+              `instances, the per-run backstop (${cap}). Do not record or ` +
+              `correct more in this pass: note any remaining sightings in ` +
+              `your reasoning_trace and proceed to your assessment.`,
           });
         }
         instancesRecordedThisRun++;

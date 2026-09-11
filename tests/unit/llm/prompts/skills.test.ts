@@ -15,6 +15,8 @@ import {
   getSkillView,
   knownDomains,
   listSkills,
+  methodSkills,
+  METHOD_SKILL_STANDING,
   parseSkill,
   sectionsForRole,
   skillsForDomains,
@@ -73,7 +75,9 @@ describe("skill authoring rules", () => {
       expect(skill.description.length).toBeLessThanOrEqual(1024);
       expect(Number.isInteger(skill.version) && skill.version >= 1).toBe(true);
       expect(skill.sinceEpoch).toMatch(/^\d{4}-\d{2}-/);
-      expect(skill.domains.length).toBeGreaterThan(0);
+      // A domain skill claims at least one domain; a method skill claims none.
+      if (skill.kind === "domain") expect(skill.domains.length).toBeGreaterThan(0);
+      else expect(skill.domains).toEqual([]);
     });
   }
 });
@@ -116,8 +120,48 @@ describe("the Mathematics skill", () => {
     expect(m.tools[6]!.roles).toEqual(["claim-steward", "audit-agent"]);
   });
 
-  it("is the only skill and owns the only known domain", () => {
+  it("owns the only known domain (the method skill claims none)", () => {
     expect(knownDomains()).toEqual(["mathematics"]);
+    expect(getSkill("mathematics").kind).toBe("domain");
+  });
+});
+
+describe("the Provenance skill", () => {
+  const p = getSkill("provenance");
+
+  it("is a method skill with no domain, carried by the roles it addresses", () => {
+    expect(p.kind).toBe("method");
+    expect(p.domains).toEqual([]);
+    expect(methodSkills().map((s) => s.name)).toEqual(["provenance"]);
+    expect(p.sections.map((s) => s.heading)).toEqual([
+      "For every administrator",
+      "For the Claim Steward",
+      "For the Audit Agent",
+      "For the Curator",
+      "For the Extractor",
+      "Standards for judging",
+      "Failure modes",
+    ]);
+  });
+
+  it("declares its six tools for the Steward, the two reads also for Audit", () => {
+    expect(p.tools.map((t) => t.name)).toEqual([
+      "provenance_get_map",
+      "provenance_read_source",
+      "provenance_record_reading",
+      "provenance_record_edge",
+      "provenance_record_source_relationship",
+      "provenance_write_map",
+    ]);
+    expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent"]);
+    expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent"]);
+    for (const t of p.tools.slice(2)) expect(t.roles).toEqual(["claim-steward"]);
+  });
+
+  it("is headed as a method skill with its own sentence of standing", () => {
+    const view = getSkillView(p, "claim-steward");
+    expect(view.startsWith("# Method skill: Provenance (version 1)\n\n" + METHOD_SKILL_STANDING)).toBe(true);
+    expect(view).not.toContain("## Failure modes");
   });
 });
 
@@ -202,11 +246,27 @@ describe("views", () => {
     expect(m.body).not.toContain("## For the solver");
   });
 
-  it("selects skills by domain, alphabetically, and none for unknown domains", () => {
-    expect(skillsForDomains(["mathematics"]).map((s) => s.name)).toEqual(["mathematics"]);
-    expect(skillsForDomains(["economics"])).toEqual([]);
-    expect(skillsForDomains([])).toEqual([]);
-    expect(skillsForDomains(undefined)).toEqual([]);
+  it("selects domain skills by domain and carries method skills on every run, alphabetically", () => {
+    expect(skillsForDomains(["mathematics"]).map((s) => s.name)).toEqual([
+      "mathematics",
+      "provenance",
+    ]);
+    expect(skillsForDomains(["economics"]).map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([]).map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains(undefined).map((s) => s.name)).toEqual(["provenance"]);
+  });
+
+  it("leaves a method skill out of a run whose role it has no section for", () => {
+    expect(skillsForDomains([], "claim-steward").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "audit-agent").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "curator").map((s) => s.name)).toEqual(["provenance"]);
+    // The Reviewer, Arbitrator, and Grantmaker receive "For every
+    // administrator", so they carry the skill's shared section; the Matcher
+    // receives only its own section, which the skill does not have.
+    expect(skillsForDomains([], "contribution-reviewer").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "grantmaker").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "matcher")).toEqual([]);
+    expect(skillsForDomains(["mathematics"], "matcher").map((s) => s.name)).toEqual(["mathematics"]);
   });
 
   it("fails loudly for a skill that does not exist", () => {
@@ -215,7 +275,12 @@ describe("views", () => {
 
   it("lists the skills in the catalog with the role's sections", () => {
     const catalog = getSkillCatalog("grantmaker");
-    expect(catalog).toMatch(/^Skills that exist: mathematics \(version 1; activated by domain mathematics; you receive: For every administrator, For the Grantmaker\)\.$/);
+    expect(catalog).toMatch(
+      /^Skills that exist: mathematics \(version 1; activated by domain mathematics; you receive: For every administrator, For the Grantmaker\); provenance \(version 1; a method skill, carried on every run; you receive: For every administrator\)\.$/
+    );
+    expect(getSkillCatalog("claim-steward")).toContain(
+      "provenance (version 1; a method skill, carried on every run; you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
+    );
     const section = domainSkillsSection("claim-steward");
     expect(section.startsWith("## Domain skills\n")).toBe(true);
     expect(section).toContain("never outranks either");
@@ -314,6 +379,36 @@ metadata:
         expectedName: "other",
       })
     ).toThrow(/does not match its directory/);
+  });
+
+  it("reads the kind, and refuses a method skill with domains or a domain skill without", () => {
+    const method = frontmatter.replace("    domains: [sample, samples]\n", "    kind: method\n");
+    const skill = parseSkill({ raw: method + "\n## For the Matcher\n\nMatch.\n", path: "sample/SKILL.md" });
+    expect(skill.kind).toBe("method");
+    expect(skill.domains).toEqual([]);
+    expect(getSkillView(skill, "matcher").startsWith("# Method skill: Sample (version 2)")).toBe(true);
+    expect(
+      parseSkill({ raw: frontmatter + "\n## For the Matcher\n\nMatch.\n", path: "sample/SKILL.md" }).kind
+    ).toBe("domain");
+    expect(() =>
+      parseSkill({
+        raw: frontmatter.replace("    domains: [sample, samples]\n", "    kind: method\n    domains: [sample]\n") +
+          "\n## For the Matcher\n\nMatch.\n",
+        path: "sample/SKILL.md",
+      })
+    ).toThrow(/a method skill claims no domain/);
+    expect(() =>
+      parseSkill({
+        raw: frontmatter.replace("    domains: [sample, samples]\n", "") + "\n## For the Matcher\n\nMatch.\n",
+        path: "sample/SKILL.md",
+      })
+    ).toThrow(/must list at least one domain/);
+    expect(() =>
+      parseSkill({
+        raw: frontmatter.replace("    domains: [sample, samples]\n", "    kind: habit\n") + "\n## For the Matcher\n\nMatch.\n",
+        path: "sample/SKILL.md",
+      })
+    ).toThrow(/kind must be "domain" or "method"/);
   });
 
   it("rejects a file without frontmatter and a tool naming an unknown role", () => {

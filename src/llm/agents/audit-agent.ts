@@ -48,7 +48,7 @@ async function runAuditImpl(input: {
   // Domain skills: the union over the claims in the decisions under review
   // (docs/mathematics.md §3.4), found through the claims and contributions
   // the context names. A pattern analysis names none and runs unskilled.
-  const skills = skillsForDomains(await domainsForAuditContext(input.context));
+  const skills = skillsForDomains(await domainsForAuditContext(input.context), "audit-agent");
   // The tools a skill declares for this role (§3.5): the Mathematics skill
   // brings get_prize_claim and get_proof_attempt, so an audit of a prize
   // acceptance reads the same record the Steward decided on. The Audit's
@@ -70,7 +70,7 @@ async function runAuditImpl(input: {
 
   const skillsNote =
     skills.length > 0
-      ? `\n\nDomain skills active for this run: ${skills.map((s) => s.name).join(", ")}` +
+      ? `\n\nSkills active for this run: ${skills.map((s) => s.name).join(", ")}` +
         (skillTools.length > 0
           ? `; the tools they bring (${skillTools.map((t) => t.name).join(", ")}) are in your toolset.`
           : ".")

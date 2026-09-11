@@ -35,6 +35,7 @@ const ROW = {
 const mocks = vi.hoisted(() => ({
   listAgentReports: vi.fn(),
   getAgentReportById: vi.fn(),
+  listReportSightings: vi.fn(),
   triageAgentReport: vi.fn(),
 }));
 
@@ -44,6 +45,7 @@ vi.mock("../../../src/services/report-service.js", async (importOriginal) => ({
   >()),
   listAgentReports: mocks.listAgentReports,
   getAgentReportById: mocks.getAgentReportById,
+  listReportSightings: mocks.listReportSightings,
   triageAgentReport: mocks.triageAgentReport,
 }));
 
@@ -74,6 +76,21 @@ async function buildApp(isService: boolean) {
 beforeEach(() => {
   mocks.listAgentReports.mockReset().mockResolvedValue([ROW]);
   mocks.getAgentReportById.mockReset().mockResolvedValue(ROW);
+  mocks.listReportSightings.mockReset().mockResolvedValue([
+    {
+      id: "e5e5e5e5-5555-4555-8555-555555555555",
+      report_id: REPORT_ID,
+      kind: "sighting",
+      body: "seen on a merged pair",
+      context_refs: {},
+      agent: "curator",
+      model: null,
+      run_id: null,
+      job_id: null,
+      claim_id: null,
+      seen_at: new Date("2026-08-02T00:00:00Z"),
+    },
+  ]);
   mocks.triageAgentReport.mockReset().mockResolvedValue({
     ...ROW,
     status: "triaged",
@@ -126,6 +143,31 @@ describe("GET /reports", () => {
 });
 
 describe("GET /reports/:id", () => {
+  it("returns the report with its GitHub issue and its sightings", async () => {
+    mocks.getAgentReportById.mockResolvedValue({
+      ...ROW,
+      github_issue_number: 41,
+      github_issue_url: "https://github.com/minerval-ai/minerval/issues/41",
+    });
+    const app = await buildApp(true);
+    const res = await app.inject({ method: "GET", url: `/reports/${REPORT_ID}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.report).toMatchObject({
+      id: REPORT_ID,
+      github_issue_number: 41,
+      github_issue_url: "https://github.com/minerval-ai/minerval/issues/41",
+    });
+    expect(body.sightings).toHaveLength(1);
+    expect(body.sightings[0]).toMatchObject({
+      kind: "sighting",
+      body: "seen on a merged pair",
+      agent: "curator",
+      seen_at: "2026-08-02T00:00:00.000Z",
+    });
+    expect(mocks.listReportSightings).toHaveBeenCalledWith(REPORT_ID);
+  });
+
   it("404s on an unknown report", async () => {
     mocks.getAgentReportById.mockResolvedValue(null);
     const app = await buildApp(true);

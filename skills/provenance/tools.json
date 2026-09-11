@@ -1,0 +1,246 @@
+[
+  {
+    "name": "provenance_get_map",
+    "description": "Everything recorded about what this claim's support rests on: each instance with its id, its source's id and whether the graph holds the source's text, any reading already recorded for it, and the documents it has been recorded as drawing on; the relations among the documents involved; and the current source map summary, if one has been written. Call it before any provenance work, and take instance and source ids from it. Nothing it returns is a score.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "description": "The claim. Defaults to the claim of the current run; required only outside one."
+        }
+      },
+      "required": []
+    },
+    "roles": [
+      "claim-steward",
+      "audit-agent"
+    ]
+  },
+  {
+    "name": "provenance_read_source",
+    "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "description": "A source id from provenance_get_map or get_claim_with_context."
+        },
+        "url": {
+          "type": "string",
+          "description": "Alternatively, the document's URL, for a document not yet in the graph."
+        },
+        "offset": {
+          "type": "number",
+          "description": "Character offset to start from. Defaults to 0."
+        },
+        "max_chars": {
+          "type": "number",
+          "description": "Characters to return, at most 20,000. Defaults to 12,000."
+        }
+      },
+      "required": []
+    },
+    "roles": [
+      "claim-steward",
+      "audit-agent"
+    ]
+  },
+  {
+    "name": "provenance_record_reading",
+    "description": "Record what you concluded from reading one instance's source against the claim: whether the source's own evidence bears the assertion it makes, what the source is using the claim for, a reader-facing note, and whether a later Steward should open this source closely and why. One current reading per instance; calling again replaces it. Whether the instance's recorded passage is actually present in the source's stored text is checked mechanically and returned; you never supply it. Record a reading only for a source you have actually read (source_read true) or, where you could not open it, say so with source_read false and support 'unclear'.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string",
+          "description": "The instance, from provenance_get_map."
+        },
+        "support": {
+          "type": "string",
+          "enum": [
+            "supports",
+            "overstates",
+            "understates",
+            "asserts_without_evidence",
+            "contradicts_own_evidence",
+            "unclear"
+          ],
+          "description": "Whether the source's OWN evidence and argument bear the claim as this source states it. This is not whether the claim is true: that is your judgment as Steward, made elsewhere. 'supports': the source shows what it asserts. 'overstates': the assertion outruns the source's evidence. 'understates': the source's evidence would bear a stronger statement. 'asserts_without_evidence': stated as given, with no supporting evidence offered; ordinary and not itself a fault, but worth recording. 'contradicts_own_evidence': the source's own material cuts against its assertion. 'unclear': you could not tell from what you read."
+        },
+        "deployment": {
+          "type": "string",
+          "description": "What this source is using the claim for: the context of deployment, in a sentence. 'Cited in passing to motivate a policy proposal it does not otherwise argue for.'"
+        },
+        "note": {
+          "type": "string",
+          "description": "A note on this appearance in the graph's voice: plain, third person, no identifiers, no tool or edge names, no em-dashes. Shown to readers beside the quotation when present."
+        },
+        "worth_reading": {
+          "type": "boolean",
+          "description": "Whether a Steward assessing this claim should open this source and read it closely."
+        },
+        "worth_reading_reason": {
+          "type": "string",
+          "description": "Required when worth_reading is true: what a close reading would settle."
+        },
+        "source_read": {
+          "type": "boolean",
+          "description": "True only if you read the source's text (with provenance_read_source or by opening it), not merely its excerpt and metadata."
+        }
+      },
+      "required": [
+        "instance_id",
+        "support",
+        "source_read"
+      ]
+    },
+    "roles": [
+      "claim-steward"
+    ]
+  },
+  {
+    "name": "provenance_record_edge",
+    "description": "Record that one source's assertion of this claim draws on another document: the load-bearing edge of the source map. The edge runs from an instance (the asserting side) to a source (the document drawn upon), which need not assert the claim itself; where it does, the link to that instance is found for you. Name the target by source_id when it is already in the graph, otherwise by to_source_url. Every edge is a judgment from reading: evidence must hold the located passage in the asserting source where it draws on the target, quoted or unambiguously located. Never copy an edge out of a bibliography or a citation index you did not read against the claim. Recording the same (instance, source, relation) again replaces the earlier record.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "from_instance_id": {
+          "type": "string",
+          "description": "The asserting instance, from provenance_get_map."
+        },
+        "to_source_id": {
+          "type": "string",
+          "description": "The document drawn upon, when already in the graph."
+        },
+        "to_source_url": {
+          "type": "string",
+          "description": "Otherwise, the document's URL; it is recorded as a source."
+        },
+        "to_source_title": {
+          "type": "string",
+          "description": "With to_source_url: the document's title."
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "repeats",
+            "derives_from",
+            "reanalyzes",
+            "republishes",
+            "cites_as_evidence",
+            "responds_to"
+          ],
+          "description": "What this source's assertion of the claim takes from the upstream document. Decide by asking what would be lost if the upstream document did not exist. 'repeats': it takes the assertion itself and restates it, adding no evidence of its own. 'derives_from': it takes a finding or result and states the claim on that basis, as a news write-up states what a study found. 'reanalyzes': it takes the underlying data or results and does new work on them. 'republishes': the whole document is the upstream one, syndicated or mirrored. 'cites_as_evidence': it offers the upstream document in support without depending on it for the assertion's content. 'responds_to': it engages with, qualifies, or rebuts the upstream document's assertion of this claim."
+        },
+        "fidelity": {
+          "type": "string",
+          "enum": [
+            "faithful",
+            "strengthened",
+            "weakened",
+            "distorted",
+            "misattributed",
+            "unclear"
+          ],
+          "description": "How the claim fared crossing this edge. 'faithful': the assertion says what the upstream document supports. 'strengthened': stated more confidently, more generally, or with qualifications dropped; the commonest failure and the one worth catching. 'weakened': hedged beyond what the upstream document warrants. 'distorted': not what the upstream document supports, through misreading rather than invention. 'misattributed': the upstream document is credited with something it does not say, or the wrong party is credited. 'unclear': you could not establish this from what you read; prefer it to a guess."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "The located passage in the asserting source where it draws on the target: a quotation, or an unambiguous locator such as a section and sentence. Required."
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Why this is the relation and the fidelity you recorded."
+        },
+        "confidence": {
+          "type": "number",
+          "description": "0 to 1: how sure you are that the dependency is real and is of this kind. Defaults to 0.5."
+        },
+        "target_read": {
+          "type": "boolean",
+          "description": "True only if you opened the target document. False when you judged the edge from the asserting source's own description of what it relies on; the fact is recorded beside the edge."
+        }
+      },
+      "required": [
+        "from_instance_id",
+        "relation_type",
+        "fidelity",
+        "evidence",
+        "reasoning",
+        "target_read"
+      ]
+    },
+    "roles": [
+      "claim-steward"
+    ]
+  },
+  {
+    "name": "provenance_record_source_relationship",
+    "description": "Record a relation between two documents that holds whatever claim is being traced: shared authorship, republication, or one being a version of the other. These are what let a map say that five sources are three voices. Both sources must already be in the graph; take their ids from provenance_get_map. Recording the same pair and relation again replaces the earlier record.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "parent_source_id": {
+          "type": "string",
+          "description": "The first document. For version_of, the later one; for republishes, the original."
+        },
+        "child_source_id": {
+          "type": "string",
+          "description": "The second document."
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "shares_authorship",
+            "republishes",
+            "version_of"
+          ],
+          "description": "A relation between two documents that holds regardless of which claim is being traced. 'shares_authorship': an author in common; symmetric. 'republishes': the child document is the parent's text, syndicated or mirrored. 'version_of': the same work at a different stage (preprint and published article, draft and final); record the LATER document as the parent."
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "How you know: the byline, the masthead, the preprint notice."
+        },
+        "confidence": {
+          "type": "number",
+          "description": "0 to 1. Defaults to 0.5."
+        }
+      },
+      "required": [
+        "parent_source_id",
+        "child_source_id",
+        "relation_type",
+        "reasoning"
+      ]
+    },
+    "roles": [
+      "claim-steward"
+    ]
+  },
+  {
+    "name": "provenance_write_map",
+    "description": "Write the claim's source map: the reader-facing account of what the support rests on, and whether that structure is material enough to show. One map per claim, replaced in place; the readings and edges remain the durable record beneath it. The summary is in the graph's voice: plain third-person prose that refers to sources by what they say, with no identifiers, no relation names, no counts presented as scores, and no em-dashes. Set material true only when the structure bears on how a reader should weigh the evidence (much of the support traces to one reanalysis; the strongest-sounding source overstates its own evidence; several outlets are one syndicated story). Most claims' provenance is unremarkable, and for them write a short summary and set material false.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "The account, one to four sentences in the graph's voice."
+        },
+        "material": {
+          "type": "boolean",
+          "description": "Whether to show the summary on the claim page."
+        }
+      },
+      "required": [
+        "summary",
+        "material"
+      ]
+    },
+    "roles": [
+      "claim-steward"
+    ]
+  }
+]

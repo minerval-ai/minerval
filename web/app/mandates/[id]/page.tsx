@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { auth } from "../../../auth";
 import {
   accountApiConfigured,
@@ -473,7 +475,7 @@ export default async function MandatePage({
               {owls(m.owls)} owls)
             </span>
           ))}
-          {" — "}mandates are peers: money moves between them, judgment
+          . Mandates are peers: money moves between them, judgment
           never does.
         </p>
       )}
@@ -482,13 +484,15 @@ export default async function MandatePage({
         <section>
           <h2>The Grantmaker&rsquo;s latest review</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-            This mandate stewards itself: its Grantmaker takes autonomous
-            review passes — surveying its territory, revising its
-            valuations, growing its plan — and leaves a note each time.
+            This mandate stewards itself. Its Grantmaker takes autonomous
+            review passes, surveying its territory, revising its
+            valuations and growing its plan, and leaves a note each time.
             Last pass: {dateish(mandate.last_review.at)}.
           </p>
           <blockquote className="mandate-review-note">
-            {mandate.last_review.note}
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {mandate.last_review.note}
+            </ReactMarkdown>
           </blockquote>
         </section>
       )}

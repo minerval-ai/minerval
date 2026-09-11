@@ -76,8 +76,6 @@ export const claims = pgTable(
     decompositionStatus: text("decomposition_status")
       .notNull()
       .default("pending"),
-    childrenAssessed: integer("children_assessed").notNull().default(0),
-    childrenTotal: integer("children_total").notNull().default(0),
     // How load-bearing the claim is (0..1), a revisable judgment set by the
     // Steward. Scales proportional effort and orders the Steward work queue so
     // important claims are processed first under a run budget (§"Claim Importance
@@ -564,6 +562,232 @@ export const claimInstances = pgTable(
     index("idx_instances_claim").on(table.claimId),
     index("idx_instances_source").on(table.sourceId),
   ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_provenance_edges (#286)
+//
+// Graph-shaped provenance, done PER CLAIM. The edge runs from one source's
+// assertion of a claim (a claim_instances row) to the document that assertion
+// draws on (a sources row).
+//
+// Why not source-to-source, as #286's sketch proposed: a bibliography is a
+// document-level fact and our question is claim-level. A paper cites forty
+// works; at most a couple bear on any one proposition, and a document-level
+// edge cannot say which. Scoping the edge to the claim is what keeps the map
+// about the claim instead of about the literature.
+//
+// Why the target is a SOURCE and not another instance: the upstream document
+// frequently does not assert the claim at all. A news article asserting C
+// commonly rests on a study that states only the narrower finding C was built
+// from, so requiring the target to be an instance would drop exactly the edge
+// the map exists to show. Where the target does also assert the claim,
+// to_instance_id carries it and the propagation chain (#280) is a join away.
+//
+// Every edge is a JUDGMENT recorded by an agent that read both documents, never
+// an import of a citation index. `evidence` is the structural guard: it holds
+// the located passage in the asserting source where it draws on the target, so
+// an edge copied from declared metadata has nothing to put in the field.
+// ---------------------------------------------------------------------------
+export const claimProvenanceEdges = pgTable(
+  "claim_provenance_edges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The asserting side: this source's assertion of this claim. The claim
+    // is reached through the instance and is deliberately not denormalized
+    // here: a merge or a split moves instances between claims (§5), and an
+    // edge is a property of the assertion, so it must move with it rather
+    // than keep a stale claim of its own.
+    fromInstanceId: uuid("from_instance_id")
+      .notNull()
+      .references(() => claimInstances.id, { onDelete: "cascade" }),
+    // The document drawn upon.
+    toSourceId: uuid("to_source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // Set when the upstream document ALSO asserts this claim, so the chain of
+    // who-said-it-after-whom is directly traversable. SET NULL, not cascade:
+    // losing the instance must not silently delete a real dependency edge.
+    toInstanceId: uuid("to_instance_id").references(() => claimInstances.id, {
+      onDelete: "set null",
+    }),
+    // CLAIM_PROVENANCE_RELATION_TYPES in src/schemas/common.ts.
+    relationType: text("relation_type").notNull(),
+    // PROVENANCE_FIDELITY: what survived the crossing. The field no citation
+    // index anywhere holds, and the reason this map is worth building.
+    fidelity: text("fidelity").notNull().default("unclear"),
+    // The located passage in the asserting source where it draws on the
+    // target — a quotation or an unambiguous locator. notNull by design: it
+    // is what makes an unread, metadata-copied edge structurally awkward to
+    // write rather than merely discouraged.
+    evidence: text("evidence").notNull(),
+    reasoning: text("reasoning").notNull(),
+    // How sure the recording agent is that the dependency is real and this
+    // is its kind. A judgment, never adjusted by mechanism: whether the
+    // target was opened is recorded beside it instead, so a reader can
+    // discount for themselves.
+    confidence: real("confidence").notNull().default(0.5),
+    // Whether the agent opened the target document, or judged the edge from
+    // the asserting source's own description of it. Recorded rather than
+    // used to cap confidence (Part VIII): the fact is what the Steward and
+    // the reader need, and the confidence stays the agent's.
+    targetRead: boolean("target_read").notNull().default(false),
+    // The agent key of the writer: the Steward, or an instrument it launched.
+    createdBy: text("created_by").notNull().default("claim_steward"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_cpe_unique").on(
+      table.fromInstanceId,
+      table.toSourceId,
+      table.relationType
+    ),
+    index("idx_cpe_to_source").on(table.toSourceId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// source_relationships (#286)
+//
+// The thin claim-INDEPENDENT layer: facts about a pair of documents that stay
+// true whatever proposition is being traced. Deliberately short. These are
+// what let a map say that five sources are three voices, which is exactly the
+// concentration a reader should see and which no claim-scoped edge can state.
+//
+// `shares_authorship` is symmetric and stored canonically (smaller uuid as
+// parent) so one relation cannot enter twice as its own mirror.
+// ---------------------------------------------------------------------------
+export const sourceRelationships = pgTable(
+  "source_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    parentSourceId: uuid("parent_source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    childSourceId: uuid("child_source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // SOURCE_RELATION_TYPES in src/schemas/common.ts.
+    relationType: text("relation_type").notNull(),
+    reasoning: text("reasoning").notNull(),
+    confidence: real("confidence").notNull().default(0.5),
+    createdBy: text("created_by").notNull().default("claim_steward"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_sr_unique").on(
+      table.parentSourceId,
+      table.childSourceId,
+      table.relationType
+    ),
+    index("idx_sr_parent").on(table.parentSourceId),
+    index("idx_sr_child").on(table.childSourceId),
+    check(
+      "sr_no_self_reference",
+      sql`${table.parentSourceId} != ${table.childSourceId}`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_instance_readings (#286)
+//
+// What the Steward (or an instrument working for it) concluded from actually
+// opening one source and reading it against the claim it is an instance of.
+// Kept off claim_instances deliberately: an instance is the Extractor's record
+// of what a document said, and this is a later agent's judgment about it. Same
+// separation as assessments and claims. The claim is reached through the
+// instance, so a reading follows its instance through merges and splits.
+//
+// This is the richest thing the map produces and the main payload the Steward
+// weighs. A stance count treats every instance as one vote; this says which of
+// those votes rest on evidence the source actually has.
+// ---------------------------------------------------------------------------
+export const claimInstanceReadings = pgTable(
+  "claim_instance_readings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    instanceId: uuid("instance_id")
+      .notNull()
+      .references(() => claimInstances.id, { onDelete: "cascade" }),
+    // INSTANCE_SUPPORT_READINGS: whether the source's OWN evidence bears the
+    // assertion it makes. Explicitly not whether the claim is true — that
+    // judgment stays with the Steward (§9).
+    support: text("support").notNull().default("unclear"),
+    // What this source is USING the claim for: the context of deployment.
+    // Prose, because the interesting cases are not enumerable ("cited in
+    // passing to motivate a policy proposal it does not otherwise argue for").
+    deployment: text("deployment"),
+    // The reader's note on this appearance, in reader-facing register (§12).
+    note: text("note"),
+    // QUOTE_CHECK_RESULTS — mechanical, never model-written.
+    quoteCheck: text("quote_check").notNull().default("no_stored_content"),
+    // Whether a Steward should open this source itself, and why. The direct
+    // answer to "what should I read closely", which is the whole point of
+    // handing this to assessment.
+    worthReading: boolean("worth_reading").notNull().default(false),
+    worthReadingReason: text("worth_reading_reason"),
+    // Whether the agent actually read the source's stored content, or was
+    // working from metadata and the excerpt alone. A map that could not open
+    // its sources should say so rather than look complete.
+    sourceRead: boolean("source_read").notNull().default(false),
+    // The model that produced the reading and the agent key that wrote it.
+    model: text("model"),
+    createdBy: text("created_by").notNull().default("claim_steward"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // One current reading per instance; a re-map overwrites in place. The
+    // edges and the map summary carry the durable record.
+    uniqueIndex("idx_cir_instance").on(table.instanceId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_source_maps (#286)
+//
+// The per-claim READING: what the support rests on, in the graph's voice
+// (§12). One row per claim, refreshed in place — it is a derived account of
+// the current edges, and the edges plus readings are the durable record.
+//
+// `material` is the gate on the claim page: most claims' provenance is
+// unremarkable and saying so on every page would be clutter. The reader-facing
+// prose surfaces only where the structure actually bears on how the evidence
+// should be read.
+// ---------------------------------------------------------------------------
+export const claimSourceMaps = pgTable(
+  "claim_source_maps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // Reader-facing account of what the support rests on. Plain prose, no
+    // edge-type names, no counts presented as scores (§12, and #286's
+    // no-scoring constraint).
+    summary: text("summary").notNull(),
+    // Whether the structure is worth surfacing on the claim page at all.
+    material: boolean("material").notNull().default(false),
+    // Bookkeeping, for the audit-minded view and for staleness decisions.
+    sourcesConsidered: integer("sources_considered").notNull().default(0),
+    sourcesRead: integer("sources_read").notNull().default(0),
+    edgesRecorded: integer("edges_recorded").notNull().default(0),
+    model: text("model"),
+    mappedBy: text("mapped_by").notNull().default("claim_steward"),
+    mappedAt: timestamp("mapped_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_csm_claim").on(table.claimId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -2793,8 +3017,10 @@ export const agentReports = pgTable(
     runId: uuid("run_id"),
     jobId: uuid("job_id"),
     claimId: uuid("claim_id"),
-    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' —
-    // reportStatusEnum.
+    // 'new' | 'triaged' | 'duplicate' | 'actioned' | 'wontfix' |
+    // 'withdrawn' — reportStatusEnum. A sighting on an actioned report is a
+    // regression and moves it back to new; withdrawn is the reporter's own
+    // reversal through update_issue.
     status: text("status").notNull().default("new"),
     triageNote: text("triage_note"),
     // Who moved the status last: an audit run id, a service caller, a name.
@@ -2807,6 +3033,19 @@ export const agentReports = pgTable(
     // surface, and the normalized title. Computed server-side, never by
     // the reporter.
     dedupeKey: text("dedupe_key").notNull(),
+    // Match-before-write (the findings mechanism, applied here): the
+    // report's title + body embedded, so a new report is searched against
+    // the reports on record before it is written and the agent is shown a
+    // near match instead of minting a paraphrase. Null when embedding was
+    // unavailable at write time; the exact-title dedupe key still holds.
+    embedding: vector("embedding"),
+    // The GitHub issue this report was filed as, on first sighting, when the
+    // sync is configured (GITHUB_TOKEN + GITHUB_ISSUES_REPO). Null until the
+    // filing succeeds; a report that never made it to GitHub is still a
+    // report, so the write never waits on this.
+    githubIssueNumber: integer("github_issue_number"),
+    githubIssueUrl: text("github_issue_url"),
+    githubSyncedAt: timestamp("github_synced_at", { withTimezone: true }),
     occurrenceCount: integer("occurrence_count").notNull().default(1),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
@@ -2820,6 +3059,51 @@ export const agentReports = pgTable(
     index("idx_agent_reports_status_seen").on(table.status, table.lastSeenAt),
     index("idx_agent_reports_agent_seen").on(table.agent, table.lastSeenAt),
     index("idx_agent_reports_origin_status").on(table.origin, table.status),
+    // The GitHub sync worker's backlog scan: open reports with no issue yet.
+    index("idx_agent_reports_github_pending").on(
+      table.githubIssueNumber,
+      table.status,
+      table.firstSeenAt
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// agent_report_sightings
+//
+// Every time a report is seen again — an exact repeat collapsing onto the
+// dedupe key, a `joins` answer to the match-before-write search, or a note
+// the reporter adds through update_issue — this records who saw it, in what
+// run, and what they said. The parent row keeps the count; this keeps the
+// accounts, so a maintainer reading the issue sees the new case and not a
+// counter, and the Audit Agent can tell a report that recurs across roles
+// from one agent repeating itself. Mirrors agent_finding_sightings.
+// ---------------------------------------------------------------------------
+export const agentReportSightings = pgTable(
+  "agent_report_sightings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => agentReports.id, { onDelete: "cascade" }),
+    // 'sighting' (the problem occurred again; bumps occurrence_count) |
+    // 'note' (an amendment from update_issue; does not).
+    kind: text("kind").notNull().default("sighting"),
+    // The reporter's account of this occurrence, capped like a report body.
+    // Empty for an exact repeat that carried no body.
+    body: text("body").notNull().default(""),
+    contextRefs: jsonb("context_refs").notNull().default({}),
+    agent: text("agent").notNull(),
+    model: text("model"),
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    claimId: uuid("claim_id"),
+    seenAt: timestamp("seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_report_sightings_report").on(table.reportId, table.seenAt),
   ]
 );
 
