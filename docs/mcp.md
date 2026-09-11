@@ -149,12 +149,16 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   the claim carries no live bounty. An outside solver needs nothing else
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
-- **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?}` —
-  report a problem with this server or its tools (`system_failure`,
-  `tool_gap`) or a concrete improvement idea (`improvement`), never a
-  judgment about a claim. Severity is `blocking` / `degraded` / `annoyance` /
-  `idea`. Repeats of the same title collapse into one report with an
-  occurrence count. Free, attributed, rate-limited; returns the report id.
+- **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
+  joins?, distinct_from?}` — report a problem with this server or its tools
+  (`system_failure`, `tool_gap`) or a concrete improvement idea
+  (`improvement`), never a judgment about a claim. Severity is `blocking` /
+  `degraded` / `annoyance` / `idea`. Repeats of the same title collapse into
+  one report with an occurrence count, and a report that reads like one
+  already on record is not written: the response is `possible_duplicate`
+  with the candidates, and the caller answers on a second call with `joins`
+  (its body is added as a sighting) or `distinct_from`. Free, attributed,
+  rate-limited; returns the report id.
 
 Claiming a prize over MCP (`claim_prize`) is deferred until the first prize
 has been paid. The tool is thin once the JSON route exists (Lean source as
