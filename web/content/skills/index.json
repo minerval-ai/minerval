@@ -25,6 +25,9 @@
       "For every administrator",
       "For the Grantmaker"
     ],
+    "lookout": [
+      "For every administrator"
+    ],
     "contribution-reviewer": [
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator"
@@ -88,6 +91,12 @@
           "sections": [
             "For every administrator",
             "For the Grantmaker"
+          ]
+        },
+        {
+          "key": "lookout",
+          "sections": [
+            "For every administrator"
           ]
         },
         {

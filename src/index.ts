@@ -14,6 +14,7 @@ import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
+import { startLookoutTriggers } from "./workers/lookout-triggers.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -141,6 +142,11 @@ async function main() {
   // important first — new claims as they land and the backfill of the rest
   // through the same queue. Row leases make it safe in every task.
   pollers.push(startTaggingScheduler({ logger }));
+
+  // Lookout triggers (docs/allocation.md, "Lookouts"): the daily Crossref
+  // retraction poll that queues inputs for the mandates' standing watches.
+  // High-water-marked in platform_flags, so every task may run it.
+  pollers.push(startLookoutTriggers({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {

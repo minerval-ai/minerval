@@ -137,6 +137,9 @@ describe("ROLE_VIEW", () => {
     expect(ROLE_VIEW["claim-steward"]).toEqual(every);
     expect(ROLE_VIEW["audit-agent"]).toEqual([...every, "Standards for judging"]);
     expect(ROLE_VIEW.grantmaker).toEqual(["For every administrator", "For the Grantmaker"]);
+    // The Lookout judges relevance on a mandate's behalf, never truth: the
+    // section addressed to everyone, and nothing role-specific.
+    expect(ROLE_VIEW.lookout).toEqual(["For every administrator"]);
     expect(ROLE_VIEW["contribution-reviewer"]).toEqual([
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator",
@@ -153,6 +156,7 @@ describe("ROLE_VIEW", () => {
       "claim-steward",
       "audit-agent",
       "grantmaker",
+      "lookout",
       "contribution-reviewer",
       "dispute-arbitrator",
       "curator",

@@ -1544,6 +1544,187 @@ export const grantSources = pgTable(
 export type GrantSource = typeof grantSources.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// lookouts
+//
+// A standing watch a mandate funds: a cheap agent with a brief (scope in
+// words, where to look, what to look out for), a set of triggers, and a
+// bounded, delegated slice of the mandate's spending judgment. It runs
+// when a trigger fires (a heartbeat on its own cadence, an input event
+// queued by a poller or a person), reads the graph and the open web, and
+// answers one question: has anything happened that warrants work in
+// scope? Its outputs are CANDIDATES on the ledger, never conclusions —
+// a reassess valued on the mandate's behalf (capped by max_value), an
+// ingest appended to the mandate's plan (capped per run), a note for the
+// Grantmaker's next review pass. Money, importance, and assessments are
+// beyond its reach by construction.
+//
+// Scope is the brief's words: "this claim and what it turns on" is one
+// shape, "the retraction record for sources behind the nutrition claims"
+// or "new arXiv preprints on X" are others. Which happenings fall under
+// the brief is the lookout's judgment, never a keyword filter's.
+// ---------------------------------------------------------------------------
+export const lookouts = pgTable(
+  "lookouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The funding mandate. Every run is a `lookout_run` action covered
+    // from its escrow (fundGrantSelfActions), so a lookout can never
+    // outspend the mandate that stands it up.
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    // The brief, written by the Grantmaker: scope, where to look, what
+    // to look out for, what to leave alone. Read in full every run.
+    brief: text("brief").notNull(),
+    // active | paused | retired
+    status: text("status").notNull().default("active"),
+    // Heartbeat cadence in hours; 0 = event-driven only.
+    heartbeatHours: integer("heartbeat_hours").notNull().default(24),
+    // Input kinds beyond the heartbeat this lookout wakes on:
+    // ["retraction", "manual", ...] — see LOOKOUT_TRIGGER_KINDS.
+    triggers: jsonb("triggers").notNull().default([]),
+    // Per-lookout model override; null = config.lookoutModel.
+    model: text("model"),
+    // The ceiling on the valuation a flag may write on the mandate's
+    // behalf (0–10). The Grantmaker delegates this much of its spending
+    // judgment and no more.
+    maxValue: real("max_value").notNull().default(6),
+    // How many ingests one run may append to the mandate's plan.
+    maxIngestsPerRun: integer("max_ingests_per_run").notNull().default(3),
+    // The lookout's own durable notes, read back every run: what it has
+    // already seen and flagged, sources checked and when, what to watch.
+    workspace: text("workspace"),
+    // The run-end note, recorded on the mandate's public page.
+    lastNote: text("last_note"),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    // When the heartbeat next falls due. The reconcile sweep opens a
+    // lookout_run row when this has passed or an unconsumed event waits.
+    nextDueAt: timestamp("next_due_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    runs: integer("runs").notNull().default(0),
+    flags: integer("flags").notNull().default(0),
+    // Who set it up: 'grantmaker:review' | 'grantmaker:chat' | 'seed'.
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_lookouts_grant").on(table.grantId, table.createdAt),
+    index("idx_lookouts_due")
+      .on(table.nextDueAt)
+      .where(sql`status = 'active'`),
+    check(
+      "ck_lookouts_status",
+      sql`${table.status} IN ('active', 'paused', 'retired')`
+    ),
+    check(
+      "ck_lookouts_max_value",
+      sql`${table.maxValue} >= 0 AND ${table.maxValue} <= 10`
+    ),
+    check("ck_lookouts_heartbeat", sql`${table.heartbeatHours} >= 0`),
+  ]
+);
+
+export type Lookout = typeof lookouts.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// lookout_events
+//
+// Inputs queued for a lookout by something other than its heartbeat: a
+// retraction the Crossref poller matched to a source in the graph, a note
+// a Grantmaker or funder poked it with. Unconsumed events make the lookout
+// due; the run reads them all and they are stamped consumed when it ends.
+// ---------------------------------------------------------------------------
+export const lookoutEvents = pgTable(
+  "lookout_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_lookout_events_pending")
+      .on(table.lookoutId, table.createdAt)
+      .where(sql`consumed_at IS NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// lookout_flags
+//
+// What a lookout produced: one row per candidate it raised. A `reassess`
+// flag points at the claim's assess/reassess action and snapshots the
+// assessment at flag time, so the record can later say whether the funded
+// pass moved anything — the lookout's precision, read by its Grantmaker
+// when deciding whether to keep paying for it. An `ingest` flag records the
+// URL appended to the mandate's plan; a `note` is a message for the next
+// review pass. A flag stays OPEN while its action is still open or running,
+// and a second flag on the same target is folded into it (no duplicates,
+// no re-flagging the same retraction every heartbeat).
+// ---------------------------------------------------------------------------
+export const lookoutFlags = pgTable(
+  "lookout_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    // reassess | ingest | note
+    kind: text("kind").notNull(),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    url: text("url"),
+    // The ledger row the flag opened or valued (reassess: the standard
+    // variant; ingest: null until the reconcile sweep opens it).
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    rationale: text("rationale").notNull(),
+    // The lookout's urgency 0–10, before the mandate's max_value clamp.
+    urgency: real("urgency"),
+    // The value actually written on the mandate's behalf, after the clamp.
+    valueWritten: real("value_written"),
+    // The assessment at flag time (reassess flags), for the precision read.
+    statusAtFlag: text("status_at_flag"),
+    credenceAtFlag: real("credence_at_flag"),
+    assessmentIdAtFlag: uuid("assessment_id_at_flag"),
+    // Folded duplicates: how many times the lookout raised this again while
+    // it was still open.
+    repeats: integer("repeats").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_lookout_flags_lookout").on(table.lookoutId, table.createdAt),
+    index("idx_lookout_flags_claim").on(table.claimId),
+    check(
+      "ck_lookout_flags_kind",
+      sql`${table.kind} IN ('reassess', 'ingest', 'note')`
+    ),
+  ]
+);
+
+export type LookoutFlag = typeof lookoutFlags.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // grant_conversations
 //
 // Grantmaking is a conversation, not a form: a funder talks a mandate

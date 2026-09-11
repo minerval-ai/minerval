@@ -6,6 +6,7 @@ import {
   accountApiConfigured,
   fetchMandateView,
   type MandateDetailView,
+  type MandateLookoutView,
   type MandatePipelineRow,
   type MandatePrizesView,
   type MandateTextView,
@@ -113,6 +114,50 @@ function MandateTextSection({ text }: { text: MandateTextView }) {
             <Paragraphs text={body} />
           </div>
         ))}
+    </section>
+  );
+}
+
+const TRIGGER_LABEL: Record<string, string> = {
+  retraction: "retraction poll",
+  manual: "pokes",
+};
+
+function LookoutsSection({ lookouts }: { lookouts: MandateLookoutView[] }) {
+  return (
+    <section>
+      <h2>Lookouts</h2>
+      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
+        Standing watches this mandate funds: a cheap agent with a brief, woken
+        on a heartbeat and on triggers, that reads the graph, the retraction
+        record, and the open web and raises candidates for the mandate to
+        fund: a claim to look at again, a source to bring in, a note for the
+        Grantmaker. It writes no assessment and moves no money. Precision is
+        how often the passes it asked for changed a verdict.
+      </p>
+      <ul className="mandate-items">
+        {lookouts.map((l) => (
+          <li key={l.id} data-state={l.status === "active" ? "current" : "done"}>
+            <span className="tag">{l.status}</span>{" "}
+            <strong>{l.title}</strong>
+            <span className="mandate-state sc">
+              {" "}
+              {l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-driven"}
+              {l.triggers.length > 0
+                ? ` · ${l.triggers.map((t) => TRIGGER_LABEL[t] ?? t).join(", ")}`
+                : ""}
+              {` · ${l.runs} run${l.runs === 1 ? "" : "s"}`}
+              {` · ${l.precision.moved}/${l.precision.ran} passes moved a verdict (${l.precision.flagged} asked)`}
+            </span>
+            <p className="mandate-rationale" style={{ margin: ".35rem 0 0" }}>{l.brief}</p>
+            {l.last_note && (
+              <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
+                {l.last_note}
+              </blockquote>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -446,6 +491,10 @@ export default async function MandatePage({
             {mandate.last_review.note}
           </blockquote>
         </section>
+      )}
+
+      {(mandate.lookouts?.length ?? 0) > 0 && (
+        <LookoutsSection lookouts={mandate.lookouts ?? []} />
       )}
 
       {open && <AllocationSection mandateId={mandate.id} />}

@@ -122,6 +122,10 @@ const configSchema = z.object({
   capExtensionAnalysisOwls: z.coerce.number().default(0.1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
   capTextAnalysisOwls: z.coerce.number().default(0.1),
+  // One lookout run (kind 'lookout_run'): a cheap-tier agent reading its
+  // brief, the graph, and the open web, and raising candidates. Set near
+  // the average cost of a run that finds nothing, which is most of them.
+  capLookoutRunOwls: z.coerce.number().default(0.05),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
@@ -406,6 +410,18 @@ const configSchema = z.object({
   // Grantmaker chat is not bound by them (a human is in the loop).
   mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
   mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
+  // Lookout runs (kind 'lookout_run'): the cap on how many runs a day the
+  // ledger will FUND per lookout, the same shape as the review-pass cap. A
+  // lookout wakes on its heartbeat and on queued events, and a burst of
+  // events (a poller matching many retractions at once) must not turn into
+  // a burst of runs; the events wait for the next funded run, which reads
+  // them all. 0 is the off-switch: no lookout runs get funded.
+  lookoutMaxRunsPerDay: z.coerce.number().int().min(0).default(6),
+  // The retraction poller (workers/lookout-triggers.ts): how often to ask
+  // Crossref for retractions and corrections added since the last poll and
+  // match them against the graph's sources (0 disables). Each match queues
+  // an event on every active lookout that watches for retractions.
+  lookoutRetractionPollHours: z.coerce.number().min(0).default(24),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -744,6 +760,16 @@ const configSchema = z.object({
   // TAGGER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only. Pinned
   // identically in infra/lib/api-stack.ts; the model guard covers it.
   taggerModel: modelId(OPENROUTER_MODELS.flash),
+  // The Lookout: a standing watch a mandate funds (docs/allocation.md,
+  // "Lookouts"). Its judgment is "did something happen that warrants work
+  // in my scope?" — relevance, not truth — and it runs often, so it belongs
+  // on a cheap model. It defaults to Haiku rather than the OpenRouter cheap
+  // tier because its main instrument is web search, an Anthropic server
+  // tool: on any other provider the run degrades to graph reads, Crossref
+  // and direct fetches, which is still useful for a retraction watch but
+  // blind for "what is new on X". Per-lookout overrides (lookouts.model)
+  // let a Grantmaker pay for a stronger watch where the brief warrants it.
+  lookoutModel: modelId(MODELS.haiku),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
@@ -831,6 +857,7 @@ export function loadConfig(): Config {
     capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
+    capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
@@ -879,6 +906,8 @@ export function loadConfig(): Config {
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
     mandateReviewMoveFractionPerDay:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
+    lookoutMaxRunsPerDay: process.env.LOOKOUT_MAX_RUNS_PER_DAY,
+    lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
@@ -953,6 +982,7 @@ export function loadConfig(): Config {
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
+    lookoutModel: process.env.LOOKOUT_MODEL,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,

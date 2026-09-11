@@ -363,6 +363,11 @@ Each task message names its trigger:
 - curator_change: the Curator merged or split your claim, or proposes a
   structural edge. Review, adopt what is apt, re-assess.
 - staleness_check: periodic refresh. Check whether the world has moved.
+- lookout_flag: a mandate's Lookout, a cheap standing watch, reports a
+  development bearing on your claim (a retraction or correction of a
+  source, a new result, a moved dependency) and asks for a fresh look. The
+  context says what it saw; verify it yourself before it changes anything,
+  since the Lookout judges relevance, never truth.
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an
