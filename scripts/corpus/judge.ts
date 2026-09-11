@@ -167,25 +167,48 @@ ${subs}`;
 
 }
 
+function verdictIsWhole(v: Partial<JudgeVerdict>): boolean {
+  return (
+    typeof v.readability === "number" &&
+    typeof v.reasoning_fit === "number" &&
+    typeof v.impartiality === "number" &&
+    typeof v.importance_judged === "number" &&
+    typeof v.claim_bar === "string"
+  );
+}
+
 export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
   const prompt = buildJudgePrompt(input);
 
   const model = loadConfig().judgeModel;
   // Tagged "judge" so its llm_usage rows are attributable and separable from
   // the agents under test — the judge is an agent like any other to the meter.
-  const verdict = await withAgent("judge", () =>
-    completeStructured<Omit<JudgeVerdict, "id" | "text" | "importanceStored" | "status">>({
-      messages: [{ role: "user", content: prompt }],
-      schema: JUDGE_SCHEMA,
-      schemaName: "ClaimQualityVerdict",
-      model,
-      // Claude-5 judge models think before answering, and thinking counts against
-      // max_tokens: too low a budget is spent thinking and the structured JSON
-      // output is truncated. Give comfortable headroom for a small JSON verdict —
-      // the cap is a backstop, not a budget.
-      maxTokens: 8192,
-    })
-  );
+  const ask = () =>
+    withAgent("judge", () =>
+      completeStructured<Omit<JudgeVerdict, "id" | "text" | "importanceStored" | "status">>({
+        messages: [{ role: "user", content: prompt }],
+        schema: JUDGE_SCHEMA,
+        schemaName: "ClaimQualityVerdict",
+        model,
+        // Claude-5 judge models think before answering, and thinking counts against
+        // max_tokens: too low a budget is spent thinking and the structured JSON
+        // output is truncated. Give comfortable headroom for a small JSON verdict —
+        // the cap is a backstop, not a budget.
+        maxTokens: 8192,
+      })
+    );
+  // Not every provider enforces the schema: GLM 5.3 Flash has returned an
+  // empty verdict (every field missing), which the summary averaged into NaN.
+  // One retry, then the item is skipped by judgeSample rather than poisoning
+  // the means of the ones that came back whole.
+  let verdict = await ask();
+  if (!verdictIsWhole(verdict)) verdict = await ask();
+  if (!verdictIsWhole(verdict)) {
+    throw new Error(
+      `judge (${model}) returned an incomplete verdict twice for ${input.id.slice(0, 8)} ` +
+        `(missing one of readability / reasoning_fit / impartiality / importance_judged / claim_bar)`
+    );
+  }
 
   // The schema marks `flags` required, but not every provider enforces tool
   // schemas (GLM 5.3 Flash returned a verdict with no flags array and the

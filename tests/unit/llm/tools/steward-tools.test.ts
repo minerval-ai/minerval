@@ -635,6 +635,34 @@ describe("steward update_claim_assessment", () => {
     expect(row?.status).toBe("verified");
   });
 
+  it("bounces a write whose status is missing instead of persisting \"undefined\"", async () => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        confidence: 0.7,
+        assessment: "Supported on the evidence.",
+        reasoning_trace: "Trace.",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain("status is missing");
+    expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
+  });
+
+  it("bounces an out-of-enum status", async () => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        status: "probably",
+        confidence: 0.7,
+        assessment: "x",
+        reasoning_trace: "y",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain('"probably" is not one of');
+  });
+
   it("records the run's actual trigger and context on the assessment row (#182)", async () => {
     await executeStewardTool(
       "update_claim_assessment",
