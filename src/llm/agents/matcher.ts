@@ -151,7 +151,11 @@ async function matchClaimImpl(input: {
     tools: [searchTool, submitTool, ...reportTools.definitions],
     system,
     model,
-    maxTokens: 4096,
+    // A cap, not a target: the decision itself is a few hundred tokens. But a
+    // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
+    // mid-thought on a third of the golden pairs, and a turn cut at
+    // max_tokens ends the loop with no decision — a duplicate node.
+    maxTokens: 16384,
     maxIterations: 8,
     // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
     // refused submission: "Resubmitting with every required field." and then
