@@ -10,6 +10,7 @@ export class SecretsStack extends cdk.Stack {
   public readonly elicitApiKeySecret: secretsmanager.Secret;
   public readonly stripeSecretKeySecret: secretsmanager.Secret;
   public readonly stripeWebhookSecretSecret: secretsmanager.Secret;
+  public readonly githubTokenSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -94,6 +95,24 @@ export class SecretsStack extends cdk.Stack {
           "Stripe webhook signing secret (whsec_…) for POST /billing/webhook " +
           "(#309). Must be manually populated after creating the webhook " +
           "endpoint in the Stripe dashboard.",
+      }
+    );
+
+    // GitHub issue filing for agent reports (#366): the raise_issue channel's
+    // far end. A fine-grained PAT (or GitHub App installation token) with
+    // Issues: read/write on GITHUB_ISSUES_REPO. Holds a CDK-generated
+    // placeholder until populated; the sync is off until the token is real
+    // — githubIssuesConfigured() only checks that it is non-empty, so a
+    // placeholder fails at GitHub (401) and is logged, never thrown. Populate,
+    // then force a new service deployment.
+    this.githubTokenSecret = new secretsmanager.Secret(
+      this,
+      "GithubTokenSecret",
+      {
+        secretName: "episteme/github-token",
+        description:
+          "GitHub token with Issues read/write on the agent-reports repo " +
+          "(#366). Must be manually populated after deploy.",
       }
     );
 

@@ -39,6 +39,7 @@ export interface ApiStackProps extends cdk.StackProps {
   elicitApiKeySecret: secretsmanager.Secret;
   stripeSecretKeySecret: secretsmanager.Secret;
   stripeWebhookSecretSecret: secretsmanager.Secret;
+  githubTokenSecret: secretsmanager.Secret;
   leanChecker?: LeanCheckerWiring;
 }
 
@@ -71,6 +72,7 @@ export class ApiStack extends cdk.Stack {
     props.apiKeysSecret.grantRead(taskDef.taskRole);
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
+    props.githubTokenSecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
     // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
@@ -240,6 +242,10 @@ export class ApiStack extends cdk.Stack {
         // run_id and cost indefinitely.
         TRACE_LEVEL: "full",
         TRACE_RETENTION_DAYS: "30",
+        // Agent reports (#366) are filed as GitHub issues in this repo,
+        // labelled agent-generated, on first sighting; the sync worker files
+        // the backlog. Inert until episteme/github-token is populated.
+        GITHUB_ISSUES_REPO: "minerval-ai/minerval",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
@@ -269,6 +275,7 @@ export class ApiStack extends cdk.Stack {
         STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(
           props.stripeSecretKeySecret
         ),
+        GITHUB_TOKEN: ecs.Secret.fromSecretsManager(props.githubTokenSecret),
         STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
           props.stripeWebhookSecretSecret
         ),

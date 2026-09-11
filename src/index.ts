@@ -14,6 +14,7 @@ import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
+import { startGithubIssueSync } from "./workers/github-issue-sync.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -141,6 +142,12 @@ async function main() {
   // important first — new claims as they land and the backfill of the rest
   // through the same queue. Row leases make it safe in every task.
   pollers.push(startTaggingScheduler({ logger }));
+
+  // The GitHub issue sync (#366) files the agents' reports that have no
+  // issue yet — the backlog from before the sync, and raise-time filings
+  // that failed — a bounded batch per tick. The row records the issue
+  // number, so every task may run it. Silent no-op unless configured.
+  pollers.push(startGithubIssueSync({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {

@@ -775,6 +775,34 @@ const configSchema = z.object({
   // skipped when no new reports arrived. 0 disables triage sweeps (reports
   // still record; the /reports API still serves them).
   reportTriageIntervalHours: z.coerce.number().default(24),
+  // Match-before-write for reports (the findings mechanism, #394, applied
+  // to raise_issue): a report on record at or above this cosine similarity
+  // (title + body against title + body) is shown to the agent instead of
+  // being written, and the agent answers with joins or distinct_from. The
+  // exact-title dedupe key catches verbatim repeats before this runs.
+  reportMatchSimilarity: z.coerce.number().default(0.8),
+  // GitHub issue filing for agent reports: every report written on first
+  // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
+  // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
+  // from human ones. Off unless both the token and the repo are set;
+  // never blocks or fails the report write.
+  githubToken: z.string().default(""),
+  githubIssuesRepo: z.string().default(""),
+  githubIssuesLabel: z.string().default("agent-generated"),
+  githubApiBaseUrl: z.string().default("https://api.github.com"),
+  // External (MCP) reports are testimony from someone else's agent; their
+  // bodies are not filed to GitHub unless this is on, so an outside caller
+  // cannot write into the maintainers' tracker by default.
+  githubIssuesIncludeExternal: z
+    .string()
+    .transform((s) => s === "true")
+    .default("false"),
+  // The GitHub sync worker: every tick files issues for open reports that
+  // have none yet (the backlog from before the sync existed, and any filing
+  // that failed at raise time), at most this many per tick so a first run
+  // is a bounded burst. 0 disables the worker; raise-time filing still runs.
+  githubIssuesBackfillPerTick: z.coerce.number().default(20),
+  githubIssuesSyncIntervalSeconds: z.coerce.number().default(300),
   // Agent findings (#394). note_finding searches the findings on record by
   // meaning before it writes; a candidate at or above this cosine similarity
   // (headline + account against headline + account) is shown to the agent
@@ -961,6 +989,15 @@ export function loadConfig(): Config {
     agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
+    reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
+    githubToken: process.env.GITHUB_TOKEN,
+    githubIssuesRepo: process.env.GITHUB_ISSUES_REPO,
+    githubIssuesLabel: process.env.GITHUB_ISSUES_LABEL,
+    githubApiBaseUrl: process.env.GITHUB_API_BASE_URL,
+    githubIssuesIncludeExternal: process.env.GITHUB_ISSUES_INCLUDE_EXTERNAL,
+    githubIssuesBackfillPerTick: process.env.GITHUB_ISSUES_BACKFILL_PER_TICK,
+    githubIssuesSyncIntervalSeconds:
+      process.env.GITHUB_ISSUES_SYNC_INTERVAL_SECONDS,
     findingMatchSimilarity: process.env.FINDING_MATCH_SIMILARITY,
     findingMatchSimilaritySameClaim:
       process.env.FINDING_MATCH_SIMILARITY_SAME_CLAIM,
