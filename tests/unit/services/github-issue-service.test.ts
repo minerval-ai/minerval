@@ -6,12 +6,16 @@
  * and on milestones only otherwise, and closes with the triage decision.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
 
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
   fetch: vi.fn(),
   config: {
     githubToken: "ghp_test",
+    githubAppId: "",
+    githubAppInstallationId: "",
+    githubAppPrivateKey: "",
     githubIssuesRepo: "minerval-ai/minerval",
     githubIssuesLabel: "agent-generated",
     githubApiBaseUrl: "https://api.github.test/",
@@ -32,6 +36,7 @@ import {
   syncSightingToIssue,
   syncTriageToIssue,
 } from "../../../src/services/github-issue-service.js";
+import { resetGithubAppTokenCache } from "../../../src/services/github-app-auth.js";
 import type { AgentReportRow } from "../../../src/services/report-service.js";
 
 const REPORT_ID = "a1a1a1a1-1111-4111-8111-111111111111";
@@ -103,20 +108,94 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", mocks.fetch);
   resetGithubLabelCache();
+  resetGithubAppTokenCache();
   mocks.config.githubToken = "ghp_test";
+  mocks.config.githubAppId = "";
+  mocks.config.githubAppInstallationId = "";
+  mocks.config.githubAppPrivateKey = "";
   mocks.config.githubIssuesRepo = "minerval-ai/minerval";
   mocks.config.githubIssuesIncludeExternal = false;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 describe("githubIssuesConfigured", () => {
-  it("needs both a token and an owner/repo", () => {
+  it("needs a credential (token or App) and an owner/repo", () => {
     expect(githubIssuesConfigured()).toBe(true);
     mocks.config.githubToken = "";
     expect(githubIssuesConfigured()).toBe(false);
-    mocks.config.githubToken = "ghp_test";
+    configureApp();
+    expect(githubIssuesConfigured()).toBe(true);
     mocks.config.githubIssuesRepo = "not-a-repo";
     expect(githubIssuesConfigured()).toBe(false);
+  });
+});
+
+const APP_KEY = generateKeyPairSync("rsa", { modulusLength: 2048 })
+  .privateKey.export({ type: "pkcs1", format: "pem" }) as string;
+
+function configureApp() {
+  mocks.config.githubAppId = "4911585";
+  mocks.config.githubAppInstallationId = "160924398";
+  mocks.config.githubAppPrivateKey = APP_KEY;
+}
+
+function installationTokenResponse(token: string) {
+  return response(201, { token, expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+}
+
+describe("as the GitHub App", () => {
+  beforeEach(() => {
+    configureApp();
+    const plain = mocks.fetch.getMockImplementation()!;
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) => {
+      if (init.method === "POST" && String(url).endsWith("/access_tokens")) {
+        return installationTokenResponse("ghs_installation");
+      }
+      return plain(url, init);
+    });
+  });
+
+  it("exchanges once for an installation token and files with it, over the plain token", async () => {
+    const ref = await fileIssueForReport(ROW);
+    expect(ref?.number).toBe(41);
+    const reqs = requests();
+    expect(reqs[0]![1]).toBe("/app/installations/160924398/access_tokens");
+    const exchange = mocks.fetch.mock.calls[0]![1] as RequestInit;
+    expect((exchange.headers as Record<string, string>).Authorization).toMatch(/^Bearer eyJ/);
+    for (const [, init] of mocks.fetch.mock.calls.slice(1) as Array<[string, RequestInit]>) {
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer ghs_installation");
+    }
+
+    mocks.fetch.mockClear();
+    await syncTriageToIssue({ ...WITH_ISSUE, status: "wontfix" });
+    expect(requests().filter(([, p]) => p.endsWith("/access_tokens"))).toHaveLength(0);
+  });
+
+  it("drops the installation token on a 401 and mints again for the next filing", async () => {
+    await fileIssueForReport(ROW);
+    const base = mocks.fetch.getMockImplementation()!;
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) => {
+      if (init.method === "POST" && String(url).endsWith("/issues")) {
+        return response(401, { message: "Bad credentials" });
+      }
+      if (init.method === "POST" && String(url).endsWith("/access_tokens")) {
+        return installationTokenResponse("ghs_fresh");
+      }
+      return base(url, init);
+    });
+    expect(await fileIssueForReport(ROW)).toBeNull();
+
+    mocks.fetch.mockClear();
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) => {
+      if (init.method === "POST" && String(url).endsWith("/access_tokens")) {
+        return installationTokenResponse("ghs_fresh");
+      }
+      return base(url, init);
+    });
+    await fileIssueForReport(ROW);
+    expect(requests()[0]![1]).toBe("/app/installations/160924398/access_tokens");
+    const issue = mocks.fetch.mock.calls.find(([u]) => String(u).endsWith("/issues"))![1] as RequestInit;
+    expect((issue.headers as Record<string, string>).Authorization).toBe("Bearer ghs_fresh");
   });
 });
 

@@ -627,7 +627,11 @@ than findings.
 
 The far end of the channel is GitHub. Every report written on first
 sighting is filed as an issue in `GITHUB_ISSUES_REPO`, labelled
-`agent-generated` with its kind and severity (`github-issue-service.ts`);
+`agent-generated` with its kind and severity (`github-issue-service.ts`),
+written as the minerval-agents GitHub App: `github-app-auth.ts` signs a
+JWT with the App's private key and exchanges it for an hourly installation
+token, so the service never holds a long-lived credential (a plain
+`GITHUB_TOKEN` serves local runs);
 a `joins` with an account, an `update_issue` note, a regression, and every
 milestone count follow it there as comments, and a triage decision or a
 withdrawal closes it with the note. The filing is asynchronous and the

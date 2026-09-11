@@ -20,8 +20,10 @@
  *     the report stays a report. The issue number is recorded on the row
  *     only once GitHub has confirmed it, so a filing that failed is visible
  *     as a null github_issue_number and can be retried by hand.
- *   - Off unless configured. Both GITHUB_TOKEN and GITHUB_ISSUES_REPO must
- *     be set; local runs and tests never reach the network.
+ *   - Off unless configured. A credential (the minerval-agents GitHub App's
+ *     key, or a plain GITHUB_TOKEN; see github-app-auth.ts) and
+ *     GITHUB_ISSUES_REPO must both be set; local runs and tests never reach
+ *     the network.
  *
  * External-origin reports (the MCP surface) are testimony from someone
  * else's agent, and their bodies are not filed unless
@@ -35,6 +37,11 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import {
+  getGithubBearer,
+  githubAuthConfigured,
+  resetGithubAppTokenCache,
+} from "./github-app-auth.js";
 import type { AgentReportRow } from "./report-service.js";
 
 const GITHUB_API_VERSION = "2022-11-28";
@@ -76,7 +83,7 @@ export interface GithubIssueRef {
 
 export function githubIssuesConfigured(): boolean {
   const config = loadConfig();
-  return Boolean(config.githubToken && /^[^/\s]+\/[^/\s]+$/.test(config.githubIssuesRepo));
+  return githubAuthConfigured() && /^[^/\s]+\/[^/\s]+$/.test(config.githubIssuesRepo);
 }
 
 /** Labels the process has already confirmed exist in the repo. */
@@ -103,10 +110,11 @@ async function githubRequest<T>(
   body?: unknown
 ): Promise<T> {
   const config = loadConfig();
+  const bearer = await getGithubBearer();
   const res = await fetch(`${config.githubApiBaseUrl.replace(/\/$/, "")}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${config.githubToken}`,
+      Authorization: `Bearer ${bearer}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": GITHUB_API_VERSION,
       "User-Agent": USER_AGENT,
@@ -116,6 +124,9 @@ async function githubRequest<T>(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
+    // An installation token GitHub no longer honours (key rotated, App
+    // reinstalled) is not worth keeping; the next request mints afresh.
+    if (res.status === 401) resetGithubAppTokenCache();
     throw new GithubApiError(res.status, path, await res.text().catch(() => ""));
   }
   return (await res.json()) as T;

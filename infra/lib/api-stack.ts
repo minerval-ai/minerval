@@ -40,6 +40,7 @@ export interface ApiStackProps extends cdk.StackProps {
   stripeSecretKeySecret: secretsmanager.Secret;
   stripeWebhookSecretSecret: secretsmanager.Secret;
   githubTokenSecret: secretsmanager.Secret;
+  githubAppPrivateKeySecret: secretsmanager.ISecret;
   leanChecker?: LeanCheckerWiring;
 }
 
@@ -73,6 +74,7 @@ export class ApiStack extends cdk.Stack {
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.githubTokenSecret.grantRead(taskDef.taskRole);
+    props.githubAppPrivateKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
     // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
@@ -246,8 +248,12 @@ export class ApiStack extends cdk.Stack {
         TRACE_RETENTION_DAYS: "30",
         // Agent reports (#366) are filed as GitHub issues in this repo,
         // labelled agent-generated, on first sighting; the sync worker files
-        // the backlog. Inert until episteme/github-token is populated.
+        // the backlog. Written as the minerval-agents GitHub App: these two
+        // ids plus the private key secret below (github-app-auth.ts). The
+        // installation id is the App's installation on the minerval-ai org.
         GITHUB_ISSUES_REPO: "minerval-ai/minerval",
+        GITHUB_APP_ID: "4911585",
+        GITHUB_APP_INSTALLATION_ID: "160924398",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
@@ -278,6 +284,9 @@ export class ApiStack extends cdk.Stack {
           props.stripeSecretKeySecret
         ),
         GITHUB_TOKEN: ecs.Secret.fromSecretsManager(props.githubTokenSecret),
+        GITHUB_APP_PRIVATE_KEY: ecs.Secret.fromSecretsManager(
+          props.githubAppPrivateKeySecret
+        ),
         STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
           props.stripeWebhookSecretSecret
         ),
