@@ -47,16 +47,20 @@ The namespace is **registered** (perma-id/w3id.org PR merged 2026-08-03,
 submitted from Jackson's fork; the submitted files live in `infra/w3id/`):
 `https://w3id.org/minerval/claim/<claim-id>` → `minerval.ai/claims/<claim-id>`,
 and `https://w3id.org/minerval/vocab` → the `mv:` vocabulary docs.
+The cutover is done (#322):
 `CITATION_URL_BASE=https://w3id.org/minerval/claim` is set in
-`infra/lib/api-stack.ts` (#322), so citations and nanopub claim IRIs carry the
-permanent form from the next API deploy. Verify after deploying:
-`curl -sI https://w3id.org/minerval/claim/test` should 302 to the claim page,
-and `GET /claims/:id/citation` should return `w3id.org` URLs.
+`infra/lib/api-stack.ts` and `infra/lib/solver-stack.ts`, and the deployed API
+serves the permanent form. Confirmed in prod on 2026-09-09:
+`curl -sI https://w3id.org/minerval/claim/test` 302s to the claim page, and
+`GET /claims/:id/citation` returns `w3id.org` URLs in `citation.url` and in the
+text, BibTeX, and CSL renderings.
 
-The nanopublication export (#292, `GET /claims/:id/nanopub`) already mints
-its `mv:` vocabulary IRIs under `https://w3id.org/minerval/vocab#` (see
-`docs/vocab.md`), and its claim IRIs follow `CITATION_URL_BASE` like
-citations do — both resolve fully once the namespace is registered.
+The nanopublication export (#292, `GET /claims/:id/nanopub`) mints its `mv:`
+vocabulary IRIs under `https://w3id.org/minerval/vocab#` (see `docs/vocab.md`),
+and its claim, assertion, argument, and instance IRIs follow
+`CITATION_URL_BASE`. Only `dct:source` in pubinfo stays on the `minerval.ai`
+claim page, which is what it should point at: the human-readable source
+document, not the permanent identifier.
 
 ### Email on `minerval.ai` (Google Workspace)
 

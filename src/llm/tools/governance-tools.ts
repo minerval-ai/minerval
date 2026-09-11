@@ -26,6 +26,7 @@ import { microUsdToOwls } from "../../services/owl.js";
 import { hasWrittenForm } from "../../services/argument-service.js";
 import { getClaimSourceMap } from "../../services/source-map-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
+import { listFindings } from "../../services/finding-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -241,7 +242,7 @@ async function getClaimWithContext(claimId: string) {
     .select({
       id: claimInstances.id,
       sourceId: claimInstances.sourceId,
-      originalText: claimInstances.originalText,
+      verbatimText: claimInstances.verbatimText,
       context: claimInstances.context,
       stance: claimInstances.stance,
       confidence: claimInstances.confidence,
@@ -304,6 +305,13 @@ async function getClaimWithContext(claimId: string) {
         }
       : null;
 
+  // Findings already noted on this claim (#394): one line each, a courtesy
+  // for the Steward's common case. The check that prevents a repeat lives in
+  // note_finding itself, for every role; this list is passive and carries no
+  // instruction. `stale` marks a note whose cited assessment is no longer
+  // current, so the Steward knows the graph has moved since it was written.
+  const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
+
   return {
     claim: {
       id: claim.id,
@@ -314,6 +322,11 @@ async function getClaimWithContext(claimId: string) {
       importance: claim.importance,
       children_total: claim.childrenTotal,
       children_assessed: claim.childrenAssessed,
+      // Why the canonical form runs in the direction it does (#360): chosen
+      // on the proposition's terms when the claim was minted, so a Steward
+      // improving the wording keeps the polarity every stance is read
+      // against. Null for claims minted before the note existed.
+      canonical_direction_note: claim.canonicalDirectionNote ?? null,
     },
     // The parent Steward's preliminary prior, when one exists and the claim is
     // still unassessed: one input among many, superseded by a real assessment.
@@ -326,6 +339,16 @@ async function getClaimWithContext(claimId: string) {
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    findings_noted: findingsNoted.map((f) => ({
+      id: f.id,
+      noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,
+      agent: f.agent,
+      importance: Number(f.importance),
+      sighting_count: Number(f.sighting_count),
+      headline: f.headline,
+      cites: (Array.isArray(f.refs) ? f.refs : []).map((r) => `${r.kind} ${r.id}`),
+      ...(f.stale ? { stale: "cites an assessment that is no longer current" } : {}),
+    })),
     subclaims: subclaims.map((sc) => ({
       id: sc.child_id,
       text: sc.child_text,
@@ -343,10 +366,12 @@ async function getClaimWithContext(claimId: string) {
     instances: instances.map((inst) => ({
       id: inst.id,
       source_id: inst.sourceId,
-      original_text: inst.originalText,
+      verbatim_text: inst.verbatimText,
       context: inst.context,
       // Whether this source affirms or denies the canonical claim — credible
-      // sources on both sides is a strong CONTESTED signal (#28/#30).
+      // sources with differing stances are a strong CONTESTED signal
+      // (#28/#30); the ingesting document is one instance among these, with
+      // no precedence (#360).
       stance: inst.stance,
       confidence: inst.confidence,
       // Null where unrecorded — most extraction-era instances carry none of

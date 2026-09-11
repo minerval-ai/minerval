@@ -139,6 +139,16 @@ export const claims = pgTable(
       (): any => claims.id,
       { onDelete: "set null" }
     ),
+    // Why the canonical form is stated in the direction it is (#360). A claim
+    // and its denial are one node, so the form has a polarity and every
+    // instance's stance is read against it. The direction is chosen on the
+    // proposition's own terms (the affirmative form of the question as the
+    // discourse poses it), never inherited from whichever source arrived
+    // first; this note records the Matcher's one-sentence reason so a later
+    // agent re-judging the wording does not silently re-invert it and flip
+    // every recorded stance. NULL for claims minted before the note existed
+    // or by paths that do not run the Matcher's direction judgment.
+    canonicalDirectionNote: text("canonical_direction_note"),
     // Domain tags (docs/mathematics.md §2.1, §3.4): the skill names whose
     // domain skills (skills/<name>/SKILL.md) and tools a run on this claim
     // carries. A recorded admin judgment, never a filter: the Extractor emits
@@ -506,7 +516,13 @@ export const claimInstances = pgTable(
     sourceId: uuid("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
-    originalText: text("original_text").notNull(),
+    // The passage as THIS source stated it: provenance, the author's wording
+    // and framing (§4). Every source's excerpt is equally verbatim to itself;
+    // the column was `original_text` until #360, a name that implied the
+    // first source's wording had precedence over the others' and that the
+    // canonical form derived from it. Neither is true: the canonical form
+    // states the proposition, and each instance records one voice on it.
+    verbatimText: text("verbatim_text").notNull(),
     // The canonical form the EXTRACTOR proposed for this passage (§3), kept
     // next to the verbatim text it was proposed for. The Matcher has the
     // last word on a new claim's wording (url-extraction.ts stores its
@@ -2852,6 +2868,111 @@ export const agentReports = pgTable(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// agent_findings
+//
+// The notable-finding channel (#394): what note_finding writes. A finding is
+// something an administrator found in the course of its work that people who
+// hold the question would be better for knowing (what most of them believe
+// is wrong, or missing, or true for reasons the record now supplies), in
+// the graph's voice, published as written on the findings page. It is the
+// sibling of agent_reports (the same fire-and-forget channel shape, the same
+// no-FK attribution snapshot so a row outlives the trace-retention sweep),
+// but a finding is about the world, not the machinery, so it is public, it
+// carries typed refs into the graph (checked on write), and it is matched by
+// meaning before it is written: the embedding is what lets note_finding show
+// an agent the finding already on record instead of minting a paraphrase.
+//
+// A repeat sighting (an agent answering the match with `joins`) is a row in
+// agent_finding_sightings and a bumped sighting_count here; the finding keeps
+// its first wording, and the sighting keeps its account.
+// ---------------------------------------------------------------------------
+export const agentFindings = pgTable(
+  "agent_findings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // One sentence in the graph's voice, stating the result as a claim about
+    // the world.
+    headline: text("headline").notNull(),
+    // One to three paragraphs in the graph's voice: what is generally
+    // believed, what the record shows, what decides it. Published as written.
+    account: text("account").notNull(),
+    // The claim the finding is chiefly about. RESTRICT: a published note
+    // must not lose its subject; claims change state rather than vanish.
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "restrict" }),
+    // The records the finding rests on, as [{kind, id}] with kind in
+    // FINDING_REF_KINDS (finding-service.ts). Every id was checked to exist
+    // when written; unresolved refs were dropped and named to the agent.
+    refs: jsonb("refs").notNull().default([]),
+    // 1..10, the importance of the finding (not of the claim): the ladder is
+    // in the noting-findings prompt block.
+    importance: integer("importance").notNull(),
+    // Embedding of headline + account, for the match-before-write search.
+    embedding: vector("embedding"),
+    // Attribution snapshotted from the usage context: plain columns, no FKs,
+    // as agent_reports does, so the row survives trace retention.
+    agent: text("agent").notNull(),
+    model: text("model"),
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    // The domain skills the noting run carried (assessments.skills likewise).
+    skills: text("skills").array(),
+    // 'published' | 'withdrawn' — findingStatusEnum in src/schemas/common.ts.
+    // Published as written is the rule; withdrawn is the operator's reversal
+    // of a note that should not have been made, kept on the row so the id
+    // still resolves.
+    status: text("status").notNull().default("published"),
+    withdrawnNote: text("withdrawn_note"),
+    sightingCount: integer("sighting_count").notNull().default(1),
+    firstNotedAt: timestamp("first_noted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastNotedAt: timestamp("last_noted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_findings_claim").on(table.claimId, table.lastNotedAt),
+    index("idx_agent_findings_status_noted").on(table.status, table.lastNotedAt),
+    index("idx_agent_findings_importance").on(table.importance, table.lastNotedAt),
+    check(
+      "ck_agent_findings_importance",
+      sql`${table.importance} BETWEEN 1 AND 10`
+    ),
+    check(
+      "ck_agent_findings_status",
+      sql`${table.status} IN ('published', 'withdrawn')`
+    ),
+  ]
+);
+
+// A later run that met the same finding and said so (`joins`). The account
+// it wrote is kept: corroboration in its own words, beside the original.
+export const agentFindingSightings = pgTable(
+  "agent_finding_sightings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    findingId: uuid("finding_id")
+      .notNull()
+      .references(() => agentFindings.id, { onDelete: "cascade" }),
+    account: text("account").notNull().default(""),
+    refs: jsonb("refs").notNull().default([]),
+    importance: integer("importance"),
+    agent: text("agent").notNull(),
+    model: text("model"),
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    notedAt: timestamp("noted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_finding_sightings_finding").on(table.findingId, table.notedAt),
+  ]
+);
+
 // Type exports
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
@@ -2926,6 +3047,9 @@ export type Attachment = typeof attachments.$inferSelect;
 export type NewAttachment = typeof attachments.$inferInsert;
 export type AgentReport = typeof agentReports.$inferSelect;
 export type NewAgentReport = typeof agentReports.$inferInsert;
+export type AgentFinding = typeof agentFindings.$inferSelect;
+export type NewAgentFinding = typeof agentFindings.$inferInsert;
+export type AgentFindingSighting = typeof agentFindingSightings.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type Tagging = typeof taggings.$inferSelect;

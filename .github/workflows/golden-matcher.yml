@@ -12,7 +12,7 @@ name: Matcher golden suite
 # guards in ci.yml.
 #
 # Needs two repository secrets: OPENAI_API_KEY (embeddings) and
-# OPENROUTER_API_KEY (the production Matcher is deepseek/deepseek-v4-flash via
+# OPENROUTER_API_KEY (the production Matcher is z-ai/glm-5.3-flash via
 # OpenRouter). PRs from forks see no secrets; the job then reports that it
 # skipped rather than failing, so it can become a required check without
 # blocking outside contributors on a suite they cannot run.

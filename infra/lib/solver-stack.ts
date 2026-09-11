@@ -95,7 +95,7 @@ export class SolverStack extends cdk.Stack {
         AUDIT_MODEL: "claude-fable-5-1",
         ARBITRATION_MODEL: "claude-fable-5-1",
         EXTRACTOR_MODEL: "claude-fable-5-1",
-        MATCHER_MODEL: "deepseek/deepseek-v4-flash",
+        MATCHER_MODEL: "z-ai/glm-5.3-flash",
         PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
         CITATION_URL_BASE: "https://w3id.org/minerval/claim",
         ...(props.leanChecker ? { LEAN_CHECKER_URL: props.leanChecker.url } : {}),

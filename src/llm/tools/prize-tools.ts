@@ -85,7 +85,10 @@ export async function executeDecidePrizeClaim(input: Record<string, unknown>, ct
       next:
         "The challenge window is open and the acceptance is audited. Record the provisional assessment now with " +
         "update_claim_assessment (verified or contradicted as the proof warrants), say in the reasoning trace that it " +
-        "is provisional until the window closes, and log the decision with log_stewardship_decision.",
+        "is provisional until the window closes, and log the decision with log_stewardship_decision." +
+        (category === "new_result"
+          ? " A new_result is a finding for note_finding, citing the check and the contribution; say in the account that the window is open."
+          : ""),
     });
   }
   const res = await rejectPrizeClaimBySteward({

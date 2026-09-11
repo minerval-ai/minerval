@@ -36,11 +36,11 @@ Questions, commands, meta-text, stipulative definitions, and hedged non-assertio
   rather than the propositions it turns on.
 - **Type skew** — extracts only empirical claims and drops normative/evaluative/causal ones. This violates
   uniform treatment (§8) and quietly biases the whole graph toward "facts."
-- **Fidelity loss** — `original_text` is paraphrased rather than an exact quote, breaking provenance (§4).
+- **Fidelity loss** — `verbatim_text` is paraphrased rather than an exact quote, breaking provenance (§4).
 - **Granularity drift** — one claim shattered into fragments, or several distinct claims fused into one
-  `original_text` span.
+  `verbatim_text` span.
 
-**Where to look.** The per-source extraction counts; the list of `original_text` → `proposed_canonical_form`
+**Where to look.** The per-source extraction counts; the list of `verbatim_text` → `proposed_canonical_form`
 pairs for a couple of posts you've read.
 
 ---

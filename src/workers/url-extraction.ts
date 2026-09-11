@@ -220,7 +220,7 @@ async function processUrlExtraction(
       // its own (multi-framing, ungated) search, so we no longer pre-fetch
       // candidates here (#25).
       const matchResult = await matchClaim({
-        extractedText: claim.original_text,
+        extractedText: claim.verbatim_text,
         proposedCanonical: claim.proposed_canonical_form,
         // The Matcher receives the domains its caller knows: here, the
         // Extractor's prior for this claim.
@@ -272,6 +272,10 @@ async function processUrlExtraction(
             embedding,
             pipelineEpoch: loadConfig().pipelineEpoch,
             createdBy: "extractor",
+            // The Matcher's reason for the form's direction (#360): chosen
+            // on the proposition's terms, not this source's, so the first
+            // source to mention a claim does not set the node's polarity.
+            canonicalDirectionNote: cleanNote(matchResult.direction_note),
           })
           .returning();
 
@@ -304,8 +308,10 @@ async function processUrlExtraction(
       }
 
       // Create instance linking claim to source. stance records whether this
-      // source asserts the canonical claim or its negation, so a claim merged
-      // with its counterpart still shows which side each source takes. The
+      // source asserts the canonical claim or its negation, judged against
+      // the canonical direction rather than assumed: a new claim's first
+      // instance can be "denies" (#360). A claim merged with its counterpart
+      // thus still shows which side each source takes. The
       // extractor's proposed canonical form rides along: on a new claim the
       // Matcher may have reworded it (claims.text is the Matcher's), on a
       // match it is the wording this source would have given the existing
@@ -313,7 +319,7 @@ async function processUrlExtraction(
       await db.insert(claimInstances).values({
         claimId,
         sourceId: source.id,
-        originalText: claim.original_text,
+        verbatimText: claim.verbatim_text,
         proposedCanonicalForm: claim.proposed_canonical_form,
         context: claim.context,
         stance: matchResult.instance_stance ?? "affirms",
@@ -339,6 +345,11 @@ async function processUrlExtraction(
     });
     throw err;
   }
+}
+
+/** A trimmed non-empty string, else undefined (the column stays NULL). */
+function cleanNote(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
 /** Coerce an extractor unit-interval score to [0, 1], or undefined (→ DB default) if absent/invalid. */

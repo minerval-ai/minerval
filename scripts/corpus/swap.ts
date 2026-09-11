@@ -16,7 +16,7 @@
  *       [--confirm]               # judge the ambiguous pairs in the comparison
  *       [--dry-run]               # print the arm commands and exit
  *
- * Example — is DeepSeek's Matcher faithful to a Haiku Matcher on lableak?
+ * Example — is the cheap-tier Matcher faithful to a Haiku Matcher on lableak?
  *   npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production
  *
  * Both arms are real runs: budget accordingly (two full drains of the

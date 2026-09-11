@@ -303,13 +303,13 @@ interface InstanceRow {
   id: string;
   claim_id: string;
   source_id: string;
-  original_text: string;
+  verbatim_text: string;
   raw_content: string | null;
 }
 
 async function instanceOfClaim(instanceId: string, claimId: string): Promise<InstanceRow> {
   const [row] = await rawQuery<InstanceRow>(
-    `SELECT ci.id, ci.claim_id, ci.source_id, ci.original_text, s.raw_content
+    `SELECT ci.id, ci.claim_id, ci.source_id, ci.verbatim_text, s.raw_content
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
       WHERE ci.id = $1`,
@@ -364,7 +364,7 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       "worth_reading_reason is required when worth_reading is true: say what a close reading would settle."
     );
   }
-  const check = quoteCheck(instance.original_text, instance.raw_content);
+  const check = quoteCheck(instance.verbatim_text, instance.raw_content);
   const rows = await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_instance_readings
        (instance_id, support, deployment, note, quote_check, worth_reading,
@@ -853,7 +853,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
   Array<{
     instance_id: string;
     source: { id: string; title: string; url: string | null; source_type: string; has_stored_text: boolean };
-    original_text: string;
+    verbatim_text: string;
     context: string | null;
     stance: string;
     speaker: string | null;
@@ -870,7 +870,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
     url: string | null;
     source_type: string;
     has_stored_text: boolean;
-    original_text: string;
+    verbatim_text: string;
     context: string | null;
     stance: string;
     speaker: string | null;
@@ -881,7 +881,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
   }>(
     `SELECT ci.id, ci.source_id, s.title, s.url, s.source_type,
             (s.raw_content IS NOT NULL AND s.raw_content <> '') AS has_stored_text,
-            ci.original_text, ci.context, ci.stance, ci.speaker, ci.publication,
+            ci.verbatim_text, ci.context, ci.stance, ci.speaker, ci.publication,
             ci.source_date, ci.link, ci.created_by
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
@@ -898,7 +898,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
       source_type: r.source_type,
       has_stored_text: r.has_stored_text,
     },
-    original_text: r.original_text,
+    verbatim_text: r.verbatim_text,
     context: r.context,
     stance: r.stance,
     speaker: r.speaker,

@@ -157,3 +157,8 @@ The disclosure you write for every attempt and bounty says: the platform
 attempted this statement on DATE at effort E for N owls and did not settle it;
 its report is public; offering a prize changes nothing about how the claim
 is assessed.
+
+A pattern across the territory that the literature has not remarked, such
+as several open problems resting on one unformalized lemma, is a finding
+for `note_finding`. The attempts and bounties you fund never are, whatever
+they cost or return.

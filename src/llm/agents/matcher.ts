@@ -19,6 +19,14 @@ export interface MatchDecision {
    * one canonical node while preserving which side each source takes.
    */
   instance_stance: "affirms" | "denies";
+  /**
+   * For a new claim: one sentence on why the canonical form is stated in the
+   * direction it is (#360). The direction is chosen on the proposition's own
+   * terms, the affirmative form of the question as the discourse poses it,
+   * never inherited from the source that arrived first; the note is stored
+   * on the claim so a later agent does not silently re-invert the form.
+   */
+  direction_note?: string | null;
   confidence: number;
   reasoning: string;
   alternative_matches: string[];
@@ -31,7 +39,8 @@ const MATCH_DECISION_SCHEMA = {
     is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
     matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
-    instance_stance: { type: "string", enum: ["affirms", "denies"], description: "Whether this source asserts the canonical claim (affirms) or its negation/contrary (denies)" },
+    instance_stance: { type: "string", enum: ["affirms", "denies"], description: "Whether this source asserts the canonical claim as stated (affirms) or its negation/contrary (denies), judged against the canonical direction, not assumed from the source" },
+    direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
     alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered" },
@@ -165,11 +174,14 @@ async function matchClaimImpl(input: {
 
   // The matcher never submitted a decision (e.g. hit the iteration cap). Treat
   // the claim as novel so ingestion proceeds; the steward can re-match later.
+  // The stance is a guess here, not a judgment: no direction was chosen, so
+  // nothing was compared, and the low confidence says so.
   return {
     is_match: false,
     matched_claim_id: null,
     new_canonical_form: input.proposedCanonical,
     instance_stance: "affirms",
+    direction_note: null,
     confidence: 0.3,
     reasoning:
       "Matcher did not submit a decision within the search budget; defaulting to a new claim.",

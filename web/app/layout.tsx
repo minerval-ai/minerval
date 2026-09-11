@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
               {/* reopens the home walkthrough (#251) */}
+              <Link className="wide-only" href="/findings">findings</Link>
               <Link className="wide-only" href="/?tour=1">tour</Link>
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
@@ -49,6 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   drops its wide-only entries (#367) */}
               <Link href="/?tour=1">tour</Link>
               <Link href="/about">about</Link>
+              {/* the findings feed (#394): the record of what the
+                  administrators found worth telling people */}
+              <Link href="/findings">findings</Link>
               {/* /contributors stays reachable by URL but is not linked until
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>

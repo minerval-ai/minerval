@@ -816,7 +816,7 @@ delete. Agent transcripts from source ingestion expire within thirty days.
 The Services depend on providers acting on Minerval's behalf under their own
 terms: Stripe for payments and, when the Contributor Rewards Policy takes
 effect, payouts; large-language-model providers, currently Anthropic, OpenAI
-for embeddings, and DeepSeek through OpenRouter, which process content to
+for embeddings, and Z.ai (Zhipu AI) through OpenRouter, which process content to
 run the agents under API terms that exclude training on your data; AWS, on
 which the API runs; Vercel, which hosts the website; Cloudflare, which
 serves DNS and fronts the API; GitHub and Google, which authenticate you;

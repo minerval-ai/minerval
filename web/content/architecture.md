@@ -55,7 +55,7 @@ search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
 Fable 5.1. Any agent can be pointed at OpenAI or OpenRouter instead with a
-single env var — the Matcher runs on DeepSeek V4 Flash this way — see
+single env var — the Matcher runs on GLM 5.3 Flash this way — see
 [Providers](#providers).
 
 ---
@@ -155,7 +155,7 @@ source's topics or a mandate's scope are the same relation, so a second
 kind needs no second table.
 
 Assignment is the work of the **tagger**, the first agent on the nano
-tier: a small, cheap loop (DeepSeek V4 Flash by default, the Matcher's
+tier: a small, cheap loop (GLM 5.3 Flash by default, the Matcher's
 tier) with a semantic search over
 the existing vocabulary and one submit tool, prompted to reuse before
 minting, to attach one broad field tag and one to three specific ones, and
@@ -330,7 +330,9 @@ claim as worded.
 
 A **source** is a retrieved document (URL, title, content hash, raw content,
 type). An **instance** links a canonical claim to one place it actually
-appeared: the exact `original_text` quote, the surrounding `context`, a brief
+appeared: the exact `verbatim_text` quote (the passage as that source stated
+it; every source's excerpt is equally verbatim to itself, and none has
+precedence), the surrounding `context`, a brief
 `summary_context` describing the circumstances ("said during a Senate hearing
 on banking regulation, in response to questioning about derivatives
 oversight"), a `stance` recording whether the quote affirms or denies the
@@ -360,7 +362,7 @@ source's own evidence bears the assertion it makes (`supports`,
 claim is true; `deployment`, what the source is using the claim for; a
 reader-facing `note`; `worth_reading` with its reason; `source_read`, whether
 the text was actually opened; and `quote_check`, the one mechanical field,
-computed by normalized substring matching of the instance's `original_text`
+computed by normalized substring matching of the instance's `verbatim_text`
 against the source's stored text (`verbatim`, `normalized_match`,
 `not_found`, `no_stored_content`) and never written by a model. One reading
 per instance, replaced in place. `claim_provenance_edges` is the load-bearing
@@ -615,6 +617,29 @@ Audit Agent clusters them by underlying gap, ranks by frequency and
 severity, and records a reading through `triage_report` that the
 service-scoped `/reports` API exposes to maintainers.
 
+The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
+Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
+sibling channel for the other thing an agent notices in the course of its
+work: something people who hold a question would be better for knowing,
+because what most of them believe is wrong, or missing, or true for reasons
+the record now supplies. A finding is written in the graph's voice, rests on
+typed refs into the graph (claim, assessment, argument, contribution, check,
+attempt, formalization) that are checked to exist on write, carries an
+importance of its own from 1 to 10, and is published as written on the
+public findings page (`/findings`), where the platform's later writing draws
+from it. There is no cap and no triage queue; the restraint is the bar in
+the prompt block, and a run that notes nothing is the norm. What the tool
+does that the prompt cannot is check the record before it writes: the
+finding is embedded and searched against every finding on record, and on a
+near match nothing is written until the agent answers with `joins` (a
+sighting, counted and kept in its own words) or `distinct_from` (a new
+finding, saying what the earlier one lacks). Findings live in
+`agent_findings` with the same no-FK attribution snapshot as reports, so a
+note outlives the trace it came from; the read side computes a `stale`
+flag when a cited assessment is no longer the claim's current one. The
+extension chat, the MCP surface, the Extractor, the Matcher, and the solver
+do not carry the tool: an outside agent's discovery is a contribution.
+
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
 live web page against graph state (verdicts range from "egregious" to "fine")
@@ -840,7 +865,7 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger · Matcher | DeepSeek V4 Flash (via OpenRouter) |
+| Tagger · Matcher | GLM 5.3 Flash (via OpenRouter) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
@@ -1021,7 +1046,9 @@ model call, `reputation_events` and `kudos_events` are the append-only score
 ledgers, `reconciliation_events` is the Curator's reversible audit log,
 `audit_log` is the Steward's append-only decision trail, `audit_runs` and
 `audit_findings` are the Audit Agent's run ledger and durable findings (the
-run ledger doubles as the dedupe gate for audit triggers), and `jobs` tracks
+run ledger doubles as the dedupe gate for audit triggers), `agent_reports`
+and `agent_findings` are the agents' own two channels to the outside (issues
+with the machinery; what they found about the world), and `jobs` tracks
 queued work. Mathematics adds `claim_formalizations` and `lean_checks` (the
 formal statements and every check), `proof_attempts` (the solver's runs),
 `bounties` (owls held against the escrow of the mandate that posted each
@@ -1078,7 +1105,8 @@ tag as a filter.
 
 A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
-contributor profiles. Anything that writes or spends model tokens
+contributor profiles, the topic vocabulary, and the findings feed
+(`GET /findings`, filterable by claim, tag, and importance). Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
 graph directly: proposed claims and submitted sources become pending intake

@@ -74,6 +74,9 @@ export async function executeMatcherTool(
       // node is the same claim stated in the opposite direction.
       instance_stance: decision.instance_stance,
       new_canonical_form: decision.new_canonical_form,
+      // Why the new form runs in the direction it does (#360): the caller
+      // minting the claim stores it so the polarity is not re-litigated.
+      direction_note: decision.direction_note ?? null,
       confidence: decision.confidence,
       reasoning: decision.reasoning,
       // The near-misses the Matcher weighed and its notes on how they relate —

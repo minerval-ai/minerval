@@ -35,7 +35,7 @@ async function seedSource(input: { title: string; content?: string | null }): Pr
 
 async function seedInstance(input: { claimId: string; sourceId: string; text: string }): Promise<string> {
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO claim_instances (claim_id, source_id, original_text) VALUES ($1, $2, $3) RETURNING id`,
+    `INSERT INTO claim_instances (claim_id, source_id, verbatim_text) VALUES ($1, $2, $3) RETURNING id`,
     [input.claimId, input.sourceId, input.text]
   );
   return rows[0]!.id;

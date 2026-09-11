@@ -92,7 +92,7 @@ const AGENTS: AgentMeta[] = [
   { key: "matcher", name: "Matcher", stage: 2, group: "processing",
     tagline: "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     invokedWhen: "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    model: "DeepSeek V4 Flash", fn: getMatcherSystemPrompt },
+    model: "GLM 5.3 Flash", fn: getMatcherSystemPrompt },
   { key: "contribution-reviewer", name: "Contribution Reviewer", stage: 3, group: "governance",
     tagline: "Evaluates incoming contributions against policy — accept, reject, or escalate.",
     invokedWhen: "A contributor submits a challenge, support, merge, edit, instance, or argument.",
@@ -360,7 +360,7 @@ export function syncEvalsContent(contentDir: string): {
     confidence: 0.8,
     reasoningTrace: "<the Steward's reasoning trace, verbatim>",
     subclaims: [{ relation: "<relation>", text: "<a direct subclaim's text>", status: "<its status>" }],
-    instances: [{ originalText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
+    instances: [{ verbatimText: "<a verbatim passage from a source>", stance: "<affirms | denies>", proposedCanonicalForm: "<the Extractor's proposed canonical form>" }],
   });
   writeFileSync(resolve(evalsDir, "judge-prompt.md"), judgePromptSample + "\n");
   writeFileSync(resolve(evalsDir, "judge-standards.md"), CONSTITUTION_STANDARDS + "\n");

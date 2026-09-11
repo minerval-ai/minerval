@@ -29,8 +29,8 @@ describe("migration sanity", () => {
     const [count] = await rawQuery<{ n: string }>(
       `SELECT COUNT(*) AS n FROM drizzle.__drizzle_migrations`
     );
-    // 0000..0045 — at least the full current chain applied.
-    expect(Number(count!.n)).toBeGreaterThanOrEqual(46);
+    // 0000..0050 — at least the full current chain applied.
+    expect(Number(count!.n)).toBeGreaterThanOrEqual(51);
   });
 
   it("installed the money constraints and partial unique indexes", async () => {

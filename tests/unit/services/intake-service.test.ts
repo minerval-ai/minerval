@@ -203,6 +203,34 @@ describe("materializeAcceptedIntake — propose_claim", () => {
       claimId: result.claimId,
       jobId: "job-1",
     });
+    // No direction note from the Matcher: the column stays unset, never "".
+    expect(claimInsert.values).not.toHaveProperty("canonicalDirectionNote");
+  });
+
+  it("stores the Matcher's direction note on a novel claim (#360)", async () => {
+    // The proposal argued AGAINST the proposition as the discourse poses it;
+    // the Matcher keeps the discourse direction and records why, and the
+    // first instance's stance follows from the comparison rather than
+    // flipping the form to make the first source affirm.
+    state.selectResults.push([pendingContribution()]);
+    mocks.matchClaim.mockResolvedValue({
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: "The daytime clear sky appears blue",
+      instance_stance: "denies",
+      direction_note:
+        "  Posed as the positive observation; the proposal denies it.  ",
+    });
+
+    const result = await materializeAcceptedIntake("contrib-1");
+    expect(result.action).toBe("created_claim");
+
+    const claimInsert = state.inserts.find((i) => i.table === claims)!;
+    expect(claimInsert.values).toMatchObject({
+      text: "The daytime clear sky appears blue",
+      canonicalDirectionNote:
+        "Posed as the positive observation; the proposal denies it.",
+    });
   });
 
   it("attaches to the existing claim when the Matcher finds a match (no new claim)", async () => {

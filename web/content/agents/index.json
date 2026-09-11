@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 7609,
-    "fullChars": 56113,
+    "roleChars": 8395,
+    "fullChars": 57083,
     "skills": [
       {
         "name": "mathematics",
@@ -32,10 +32,10 @@
     "group": "processing",
     "tagline": "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    "model": "DeepSeek V4 Flash",
+    "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 6344,
-    "fullChars": 54848,
+    "roleChars": 8348,
+    "fullChars": 57036,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 11909,
-    "fullChars": 60413,
+    "roleChars": 17891,
+    "fullChars": 66579,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 20335,
-    "fullChars": 68839,
+    "roleChars": 29100,
+    "fullChars": 77788,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 6048,
-    "fullChars": 54552,
+    "roleChars": 12030,
+    "fullChars": 60718,
     "skills": [
       {
         "name": "mathematics",
@@ -147,8 +147,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 9508,
-    "fullChars": 58012,
+    "roleChars": 15490,
+    "fullChars": 64178,
     "skills": [
       {
         "name": "mathematics",
@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 10131,
-    "fullChars": 58635,
+    "roleChars": 16113,
+    "fullChars": 64801,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 9164,
-    "fullChars": 57668,
+    "roleChars": 15146,
+    "fullChars": 63834,
     "skills": [
       {
         "name": "mathematics",

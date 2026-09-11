@@ -62,7 +62,7 @@ const instanceRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
   id: INSTANCE,
   claim_id: CLAIM,
   source_id: SOURCE_A,
-  original_text: "Inflation rose 6.5 percent over the year.",
+  verbatim_text: "Inflation rose 6.5 percent over the year.",
   raw_content: "<html><body><p>Inflation rose 6.5 percent over the year.</p></body></html>",
   ...overrides,
 });

@@ -239,7 +239,7 @@ beforeEach(async () => {
   });
   mocks.extractClaims.mockReset().mockResolvedValue([
     {
-      original_text: "Inflation was caused by supply chains",
+      verbatim_text: "Inflation was caused by supply chains",
       context: null,
       proposed_canonical_form: CLAIM_ROW.text,
       claim_type: "causal",
@@ -415,7 +415,7 @@ describe("MCP tools", () => {
       {
         id: "i-1",
         source_id: "s-1",
-        original_text: "quoted text",
+        verbatim_text: "quoted text",
         context: null,
         confidence: 0.9,
         source_title: "A paper",
@@ -561,7 +561,7 @@ describe("MCP tools", () => {
   it("assess_text composes extract → match → graph verdicts", async () => {
     mocks.extractClaims.mockResolvedValueOnce([
       {
-        original_text: "Inflation was caused by supply chains",
+        verbatim_text: "Inflation was caused by supply chains",
         context: null,
         proposed_canonical_form: CLAIM_ROW.text,
         claim_type: "causal",
@@ -570,7 +570,7 @@ describe("MCP tools", () => {
         source_location: null,
       },
       {
-        original_text: "The moon is made of cheese",
+        verbatim_text: "The moon is made of cheese",
         context: null,
         proposed_canonical_form: "The moon is made of cheese",
         claim_type: "empirical_verifiable",

@@ -194,17 +194,19 @@ export class ApiStack extends cdk.Stack {
         // document.
         EXTRACTOR_MODEL: "claude-fable-5-1",
         // The Matcher's judgment is narrow (same proposition?) over candidates
-        // it retrieves itself, and DeepSeek V4 Flash beats Haiku 4.5 on both
-        // quality and price (#257). First agent routed off Anthropic; the rest
-        // keep their defaults until the eval apparatus (#273/#297) can rank
-        // candidates. Pinned here AND as the config default
-        // (OPENROUTER_MODELS.deepseekFlash) so corpus and dev runs match on the
-        // model production matches on; the model guard asserts the two agree.
-        MATCHER_MODEL: "deepseek/deepseek-v4-flash",
+        // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on
+        // quality and price (#257), now GLM 5.3 Flash (see OPENROUTER_MODELS
+        // for why that id and not the rolling alias). First agent routed off
+        // Anthropic; the rest keep their defaults until the eval apparatus
+        // (#273/#297) can rank candidates. Pinned here AND as the config
+        // default (OPENROUTER_MODELS.flash) so corpus and dev runs match on
+        // the model production matches on; the model guard asserts the two
+        // agree.
+        MATCHER_MODEL: "z-ai/glm-5.3-flash",
         // The tagger (#272): topic tags over every claim, no epistemic
         // judgment — the Matcher's tier for the Matcher's reasons (#257).
         // Pinned to the config default so the model guard covers it.
-        TAGGER_MODEL: "deepseek/deepseek-v4-flash",
+        TAGGER_MODEL: "z-ai/glm-5.3-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

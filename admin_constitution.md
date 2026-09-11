@@ -54,7 +54,7 @@ Canonical form is the foundation of claim individuation. Two superficially ident
 
 ### 4. Instances
 
-When a statement in a source is matched to a canonical claim, the admin creates an instance linking the utterance, with its original text and context, to the canonical claim. This preserves exactly what was said while enabling aggregation across sources.
+When a statement in a source is matched to a canonical claim, the admin creates an instance linking the utterance, with its verbatim text and context, to the canonical claim. This preserves exactly what was said while enabling aggregation across sources. Every instance is one voice on the proposition: the source that happened to state a claim first has no precedence over those recorded after it, in wording, in direction, or in weight.
 
 Interpretation at ingestion is governed by fidelity: the reading recorded is the one the author most plausibly meant, judged from context. Not the weakest available reading, and not a more defensible reading the author did not intend. If a statement is ambiguous among several canonical claims, the admin selects the most plausible interpretation and documents the reasoning, creates instances to multiple claims with reduced confidence, or notes the ambiguity explicitly.
 

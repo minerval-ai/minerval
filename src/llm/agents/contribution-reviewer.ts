@@ -19,6 +19,7 @@ import {
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createFindingTools } from "../tools/finding-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -37,11 +38,13 @@ async function runContributionReviewImpl(input: {
 
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
+  // ...and the finding channel (#394), the same shape without a cap.
+  const findingTools = createFindingTools({ model });
 
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
-    ...reportTools.definitions,
+    ...reportTools.definitions, ...findingTools.definitions,
   ];
 
   // Domain skills come from the contribution's target claim (docs/
@@ -74,6 +77,8 @@ Please review this contribution:
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const finding = await findingTools.execute(name, toolInput);
+      if (finding !== null) return finding;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);

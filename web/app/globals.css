@@ -363,6 +363,41 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .topic-chips .tag.topic .count {
   color: var(--faint); margin-left: 0.35rem; font-variant-numeric: tabular-nums;
 }
+/* ==========================================================================
+   Findings (#394): published as written; the page adds only footing
+   ========================================================================== */
+.finding-list { display: grid; gap: 2.2rem; margin-top: 1.4rem; }
+.finding { border-top: 1px solid var(--rule); padding-top: 1.1rem; }
+.claim-findings .finding { border-top: 1px solid var(--rule-soft); padding-top: 0.9rem; margin-top: 0.6rem; }
+.finding-eyebrow {
+  display: flex; gap: 0.9rem; align-items: baseline; flex-wrap: wrap;
+  font-family: var(--sans); font-size: 0.76rem; color: var(--muted);
+}
+.finding-importance { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.finding-importance .sc { margin-right: 0.3rem; }
+.finding-importance .of { color: var(--faint); }
+.finding-meta { font-family: var(--sans); font-size: 0.76rem; color: var(--muted); margin: 0; }
+.finding-headline { font-size: 1.32rem; line-height: 1.25; margin: 0.35rem 0 0.6rem; letter-spacing: -0.01em; }
+.claim-findings .finding-headline { font-size: 1.1rem; }
+.finding-headline a.plain { color: inherit; text-decoration: none; }
+.finding-headline a.plain:hover { text-decoration: underline; }
+.finding-notice {
+  font-family: var(--sans); font-size: 0.78rem; color: var(--st-contested);
+  background: var(--st-contested-tint); border-radius: 2px; padding: 0.4rem 0.6rem; margin: 0 0 0.7rem;
+}
+.finding-notice .sc { color: inherit; }
+.finding-account p { margin: 0 0 0.7rem; }
+.finding-footing {
+  font-family: var(--sans); font-size: 0.76rem; color: var(--muted); margin: 0.2rem 0 0;
+  display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: baseline;
+}
+.finding-footing .sc { color: var(--faint); }
+.finding-refs { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.finding-controls { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }
+.finding-controls .sc { color: var(--faint); }
+.finding-sightings { margin-top: 2rem; }
+.finding-sighting { border-top: 1px solid var(--rule-soft); padding-top: 0.7rem; margin-top: 0.7rem; }
+
 /* the vocabulary listing on /tags and the strip on /claims */
 .topics-cloud { display: flex; gap: 0.5rem 0.45rem; flex-wrap: wrap; margin: 0.6rem 0 0.4rem; max-width: 46rem; }
 .topics-list { list-style: none; padding: 0; margin: 1.4rem 0; max-width: 46rem; display: grid; gap: 0.7rem; }

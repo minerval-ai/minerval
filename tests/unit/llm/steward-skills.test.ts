@@ -139,7 +139,7 @@ describe("Steward toolset without a domain tag", () => {
     const first = names.indexOf("provenance_get_map");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     expect(names.slice(first, first + PROVENANCE_TOOLS.length)).toEqual(PROVENANCE_TOOLS);
-    expect(names.slice(-2)).toEqual(["raise_issue", "web_search"]);
+    expect(names.slice(-3)).toEqual(["raise_issue", "note_finding", "web_search"]);
     // Two blocks: the constitution and role, then the method skill's view.
     expect(opts.system).toHaveLength(2);
     expect(opts.system[0]).not.toContain("# Domain skill:");
@@ -168,8 +168,8 @@ describe("Steward toolset with the mathematics tag", () => {
     const opts = await run(["mathematics"]);
     const names = opts.tools.map((t) => t.name);
     // The skill's tools sit as one block after match_claim (and the Elicit
-    // tools, absent here) and before raise_issue and web_search, the Lean
-    // four first.
+    // tools, absent here) and before raise_issue, note_finding, and
+    // web_search, the Lean four first.
     const first = names.indexOf("lean_search");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     expect(names.slice(first, first + 4)).toEqual([
@@ -178,13 +178,13 @@ describe("Steward toolset with the mathematics tag", () => {
       "lean_check",
       "publish_formalization",
     ]);
-    expect(names.slice(-2)).toEqual(["raise_issue", "web_search"]);
+    expect(names.slice(-3)).toEqual(["raise_issue", "note_finding", "web_search"]);
     // The skills' tools, in skill order: mathematics then provenance.
     const skillTools = [
       ...getSkill("mathematics").tools.map((t) => t.name),
       ...PROVENANCE_TOOLS,
     ];
-    expect(names.slice(first, -2)).toEqual(skillTools);
+    expect(names.slice(first, -3)).toEqual(skillTools);
 
     // Three cached blocks: the constitution-plus-role block, unchanged, then
     // each skill's Steward view as its own block, in skill order.

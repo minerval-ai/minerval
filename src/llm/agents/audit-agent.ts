@@ -25,6 +25,7 @@ import {
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createFindingTools } from "../tools/finding-tools.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -55,12 +56,14 @@ async function runAuditImpl(input: {
   const skillTools = getActiveSkillToolDefinitions(skills, "audit-agent");
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
+  // ...and the finding channel (#394), the same shape without a cap.
+  const findingTools = createFindingTools({ model });
 
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getAuditToolDefinitions(),
     ...skillTools,
-    ...reportTools.definitions,
+    ...reportTools.definitions, ...findingTools.definitions,
   ];
   // One cached block for the constitution and role, plus one per active skill.
   const system = getAuditAgentSystemPromptBlocks({ skills });
@@ -99,6 +102,8 @@ when the decisions under review hold up.${skillsNote}`;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const finding = await findingTools.execute(name, toolInput);
+      if (finding !== null) return finding;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);
