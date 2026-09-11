@@ -45,7 +45,7 @@ export interface JudgeInput {
    * are judged against — without it the judge cannot tell an assessment
    * that weighed the evidence from one that echoed the document.
    */
-  instances: Array<{ originalText: string; stance: string; proposedCanonicalForm: string | null }>;
+  instances: Array<{ verbatimText: string; stance: string; proposedCanonicalForm: string | null }>;
 }
 
 export interface JudgeVerdict {
@@ -137,7 +137,7 @@ export function buildJudgePrompt(input: JudgeInput): string {
           .slice(0, MAX_INSTANCES_SHOWN)
           .map(
             (i) =>
-              `- [${i.stance}] "${i.originalText.slice(0, MAX_INSTANCE_CHARS)}"` +
+              `- [${i.stance}] "${i.verbatimText.slice(0, MAX_INSTANCE_CHARS)}"` +
               (i.proposedCanonicalForm ? `\n  extractor's proposed form: ${i.proposedCanonicalForm}` : "")
           )
           .join("\n") +

@@ -1,3 +1,5 @@
+import Lean
+
 /-!
 # `minerval_check`: the checker executable of design section 5.3
 
@@ -34,7 +36,6 @@ This file is compiled at first deployment against the pinned toolchain, not
 in the repository's CI, so each place where an API name may have moved
 between Lean releases is marked with `API:` in a comment.
 -/
-import Lean
 
 open Lean Meta
 
@@ -81,7 +82,7 @@ def parseArgs : List String → Args → Except String Args
   | "--target" :: v :: rest, a => parseArgs rest { a with target := v.toName }
   | "--kind" :: v :: rest, a => parseArgs rest { a with kind := v }
   | "--search-path" :: v :: rest, a =>
-      parseArgs rest { a with searchPaths := a.searchPaths ++ [v] }
+      parseArgs rest { a with searchPaths := a.searchPaths ++ [System.FilePath.mk v] }
   | "--load-exts" :: rest, a => parseArgs rest { a with loadExts := true }
   | mode :: rest, a =>
       if a.mode.isEmpty && !mode.startsWith "--" then
@@ -107,7 +108,7 @@ not running initialisers means nothing from the submission executes here
 even if the static gate were bypassed. `--load-exts` exists in case the
 pinned toolchain refuses to import Mathlib without them; the README's
 first-deployment checklist covers it. -/
-def loadEnv (args : Args) (mods : Array Name) : IO Environment := do
+unsafe def loadEnv (args : Args) (mods : Array Name) : IO Environment := do
   -- API: `addSearchPathFromEnv` and `initSearchPath` live in Lean.Util.Path.
   let sp ← addSearchPathFromEnv args.searchPaths
   initSearchPath (← findSysroot) sp
@@ -124,7 +125,7 @@ def loadEnv (args : Args) (mods : Array Name) : IO Environment := do
 
 /-- Run a `MetaM` computation for pretty-printing against a loaded
 environment, outside of any elaboration context. -/
-def runMeta (env : Environment) (opts : Options) (x : MetaM α) : IO α := do
+def runMeta {α : Type} (env : Environment) (opts : Options) (x : MetaM α) : IO α := do
   let ctx : Core.Context :=
     { fileName := "<minerval_check>", fileMap := default, options := opts }
   -- API: `MetaM.toIO (x) (ctxCore) (sCore) (ctx := {}) (s := {})`.
@@ -149,15 +150,24 @@ def ppAllOptions : Options :=
 API: `Lean.CollectAxioms.collect : Name → ReaderT Environment (StateM State) Unit`
 with `State.axioms : Array Name`; `Lean.collectAxioms` is a monadic wrapper
 over the same walk. -/
+local instance : MonadEnv (StateM Environment) where
+  getEnv := get
+  modifyEnv f := modify f
+
 def axiomClosure (env : Environment) (c : Name) : Array Name :=
-  let ((), s) := Id.run (((CollectAxioms.collect c).run env).run {})
-  s.axioms
+  (Lean.collectAxioms c : StateM Environment (Array Name)).run' env
 
 /-- The module a constant came from, by name.
 API: `Environment.getModuleFor?` (name of the module) wraps
 `getModuleIdxFor?` and `header.moduleNames`. -/
 def moduleOf (env : Environment) (c : Name) : Option Name :=
-  env.getModuleFor? c
+  match env.getModuleIdxFor? c with
+  -- `header.moduleNames` is a computed def (`modules.map (·.module)`), so
+  -- reading it here would rebuild an array over every imported module on
+  -- each call, and constantsOfModule calls this once per constant in the
+  -- environment. Index `modules` directly instead.
+  | some idx => (env.header.modules[idx.toNat]?).map (·.module)
+  | none     => none
 
 /-- Every constant that a module contributed, in declaration order as far
 as the constant map preserves it (it does not; the array is sorted by name
@@ -211,7 +221,7 @@ def kindJson (ci : ConstantInfo) : String :=
 
 /-! ## `elaborate` -/
 
-def runElaborate (args : Args) : IO UInt32 := do
+unsafe def runElaborate (args : Args) : IO UInt32 := do
   if args.statementModule.isAnonymous || args.ns.isAnonymous then
     return (← failWith 2 "elaborate needs --statement-module and --namespace")
   let env ← loadEnv args #[args.statementModule]
@@ -279,7 +289,7 @@ def evalTargetGate (env : Environment) (args : Args) (expected : Expr) : IO Gate
 
 /-! ## `check` -/
 
-def runCheck (args : Args) : IO UInt32 := do
+unsafe def runCheck (args : Args) : IO UInt32 := do
   if args.statementModule.isAnonymous || args.submissionModule.isAnonymous
       || args.ns.isAnonymous || args.target.isAnonymous then
     return (← failWith 2 "check needs --statement-module, --submission-module, --namespace, --target")
@@ -368,7 +378,7 @@ def usage : String :=
 end Minerval.Check
 
 open Minerval.Check in
-def main (argv : List String) : IO UInt32 := do
+unsafe def main (argv : List String) : IO UInt32 := do
   match parseArgs argv {} with
   | .error e => failWith 2 s!"{e}\n{usage}"
   | .ok args =>

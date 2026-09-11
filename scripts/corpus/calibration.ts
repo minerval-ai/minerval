@@ -123,8 +123,8 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
         WHERE r.parent_claim_id = $1`,
       [item.id]
     );
-    const instances = await rawQuery<{ original_text: string; stance: string; proposed: string | null }>(
-      `SELECT original_text, stance, proposed_canonical_form AS proposed
+    const instances = await rawQuery<{ verbatim_text: string; stance: string; proposed: string | null }>(
+      `SELECT verbatim_text, stance, proposed_canonical_form AS proposed
          FROM claim_instances WHERE claim_id = $1 ORDER BY created_at LIMIT 5`,
       [item.id]
     );
@@ -158,7 +158,7 @@ async function makeReviewSheet(ref: string | undefined): Promise<void> {
     w();
     w(`**What the sources said (${instances.length} shown):**`);
     for (const i of instances) {
-      w(`- [${i.stance}] "${i.original_text.slice(0, 600)}"` + (i.proposed ? ` — extractor proposed: ${i.proposed}` : ""));
+      w(`- [${i.stance}] "${i.verbatim_text.slice(0, 600)}"` + (i.proposed ? ` — extractor proposed: ${i.proposed}` : ""));
     }
     if (instances.length === 0) w(`- (no source instances: minted during decomposition)`);
     w();

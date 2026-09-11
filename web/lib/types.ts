@@ -163,7 +163,7 @@ export interface ArgumentItem {
 export interface Instance {
   id: string;
   source_id: string;
-  original_text: string;
+  verbatim_text: string;
   context: string | null;
   // The Extractor's confidence that the passage states a genuine, well-formed
   // claim (see src/workers/url-extraction.ts). NOT the Matcher's match

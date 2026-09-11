@@ -126,7 +126,7 @@ export default function FlfPage() {
           </p>
           <Quote cite="§4">
             When a statement in a source is matched to a canonical claim, the admin creates an
-            instance linking the utterance, with its original text and context, to the canonical
+            instance linking the utterance, with its verbatim text and context, to the canonical
             claim. This preserves exactly what was said while enabling aggregation across sources.
           </Quote>
           <p className={s.see}>
@@ -309,7 +309,7 @@ export default function FlfPage() {
             proposition that both sides would accept, so a persuasive framing does not survive into
             the claim. The division of roles means the agent that reads the source and might be swayed
             by it, the extractor, is not the agent that judges whether the claim is true. And the
-            Claim Steward assesses the canonical claim on its evidence, outside the original
+            Claim Steward assesses the canonical claim on its evidence, outside any one
             source&rsquo;s framing, under a constitution that binds it to weigh evidence rather than
             authority or presentation.
           </p>

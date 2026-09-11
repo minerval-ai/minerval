@@ -16,6 +16,11 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY admin_constitution.md* ./
+# The domain skills, read from disk at boot: src/llm/prompts/skills.ts
+# resolves them at ../../../skills from dist/llm/prompts, i.e. /app/skills.
+# Without them the process throws before it serves anything, so this COPY is
+# load-bearing, not packaging.
+COPY skills/ ./skills/
 # The operational scripts (seeds, backfills) and the TypeScript they import.
 # They run under tsx and import `../src/...`, not the compiled dist, so src/
 # has to be here for scripts/ to be anything other than dead weight in the

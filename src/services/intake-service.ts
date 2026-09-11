@@ -272,6 +272,10 @@ async function materializeProposedClaim(contribution: {
       // context, so unlike the Extractor it has no basis for a prior; the
       // Steward records the first real value (#172 phase 1).
       pipelineEpoch,
+      // Why the form runs in the direction it does (#360), from the Matcher.
+      ...(typeof match.direction_note === "string" && match.direction_note.trim()
+        ? { canonicalDirectionNote: match.direction_note.trim() }
+        : {}),
     })
     .returning();
 

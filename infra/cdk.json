@@ -14,6 +14,10 @@
     ]
   },
   "context": {
+    "//solverEnabled": "The solver worker's kill switch (docs/mathematics.md 7.9). It must live here rather than be passed as -c at deploy time: the CI deploy does not pass context flags, so a manually enabled solver would be switched back off by the next push to main. Set to \"false\" and merge to stop it.",
+    "solverEnabled": "true",
+    "//leanCheckerImageDigest": "The digest of the pushed pin image, reported on every verdict as image_digest (docs/mathematics.md 5.3). Update it whenever a new pin image is pushed; without it verdicts report the unknown-until-pushed placeholder.",
+    "leanCheckerImageDigest": "sha256:dec61b38eaae2811fb659ec2f16601605112ba9cff515f27cd637a95fcf6cd53",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws"]

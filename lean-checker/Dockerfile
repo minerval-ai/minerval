@@ -101,6 +101,8 @@ RUN .lake/build/bin/minerval_check 2>/dev/null | grep -q '"ok":false'
 # it now so `lake env` at run time reads the cache and never needs to write
 # into the read-only project directory.
 RUN lake env true
+RUN lake env printenv LEAN_PATH > /opt/minerval/checker/.lake/lean-path
+RUN chmod -R a+rX /opt/minerval/checker
 # The community REPL at the matching tag, for the warm lane's future
 # persistent-process mode (the server shells out per request in v0; the
 # README's measurements decide when the REPL takes over).
@@ -159,7 +161,8 @@ RUN node -e ' \
 # A dedicated unprivileged user. /work is the only writable path: statement
 # oleans, per-check directories, and the children's HOME and TMPDIR live
 # there, on a tmpfs or an ephemeral volume mounted at run time.
-RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin checker \
+# Absolute path: the base stage's PATH deliberately omits /usr/sbin.
+RUN /usr/sbin/useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin checker \
  && mkdir -p /work && chown checker:checker /work
 ENV ELAN_HOME=/opt/elan \
     PATH=/opt/minerval/bin:/opt/elan/bin:/usr/local/bin:/usr/bin:/bin \
@@ -172,10 +175,14 @@ ENV ELAN_HOME=/opt/elan \
     LEAN_CHECKER_LANE=warm \
     NODE_ENV=production
 WORKDIR /opt/minerval/checker
+RUN printf '#!/bin/sh\nexport LEAN_PATH="$(cat /opt/minerval/checker/.lake/lean-path)"\nexec "$@"\n' \
+      > /usr/local/bin/with-lean-path \
+ && chmod 0755 /usr/local/bin/with-lean-path
 USER checker
 EXPOSE 8080
 VOLUME ["/work"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD curl -sf http://localhost:8080/health || exit 1
 # The server refuses to start without LEAN_CHECKER_TOKEN; there is no default.
+ENTRYPOINT ["/usr/local/bin/with-lean-path"]
 CMD ["node", "/opt/minerval/server/dist/index.js"]

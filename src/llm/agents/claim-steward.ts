@@ -68,10 +68,13 @@ ${structureStep}
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
    Use web_search for external evidence where it would change the verdict.
-   Credible instances that BOTH affirm and deny the claim are a strong signal
-   toward CONTESTED. When a source you read itself asserts the claim (or its
-   negation) — not merely reports on the debate — record that sighting with
-   record_claim_instance as you go (see "Recording Instances").
+   Credible instances with differing stances are a strong signal toward
+   CONTESTED; an instance set that is lopsided is a signal too, and needs no
+   counterweight invented for it. The document the claim was extracted from
+   is one instance among the rest, not the claim's home (see "Provenance Is
+   Evidence, Not an Anchor"). When a source you read itself asserts the claim
+   (or its negation) — not merely reports on the debate — record that
+   sighting with record_claim_instance as you go (see "Recording Instances").
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit
@@ -355,9 +358,8 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
   const system = getClaimStewardSystemPromptBlocks({ skills });
 
   // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
-  // the Elicit cap: each refusal tells the agent what to do instead. A
-  // "fresh" replay of lean_check counts double.
-  const leanCapRefusal = (name: string, toolInput: Record<string, unknown>): string | null => {
+  // the Elicit cap: each refusal tells the agent what to do instead.
+  const leanCapRefusal = (name: string): string | null => {
     if (name === "lean_search") {
       const cap = config.stewardLeanMaxSearchesPerRun;
       if (cap > 0 && leanSearchesThisRun >= cap) {
@@ -386,18 +388,17 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       leanElaborationsThisRun++;
     } else if (name === "lean_check") {
       const cap = config.stewardLeanMaxChecksPerRun;
-      const weight = toolInput.replay === "fresh" ? 2 : 1;
-      if (cap > 0 && leanChecksThisRun + weight > cap) {
+      if (cap > 0 && leanChecksThisRun + 1 > cap) {
         return JSON.stringify({
           success: false,
           message:
-            `This run has used ${leanChecksThisRun} of its ${cap} proof checks ` +
-            `(a fresh replay counts double). Do not check further in this pass: ` +
+            `This run has used ${leanChecksThisRun} of its ${cap} proof checks. ` +
+            `Do not check further in this pass: ` +
             `assess on the checks already recorded and the informal evidence, ` +
             `say so in your reasoning, and set marginal_yield honestly.`,
         });
       }
-      leanChecksThisRun += weight;
+      leanChecksThisRun += 1;
     }
     return null;
   };
@@ -438,7 +439,7 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       // Skill tools (docs/mathematics.md §3.5): present exactly when the
       // skill is active for this claim, capped per run beside the Elicit cap.
       if (isSkillTool(name)) {
-        const refusal = leanCapRefusal(name, toolInput);
+        const refusal = leanCapRefusal(name);
         if (refusal) return refusal;
         return executeSkillTool(name, toolInput, {
           role: "claim-steward",

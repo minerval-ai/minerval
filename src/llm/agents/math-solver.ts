@@ -679,7 +679,8 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     const proof = asString(toolInput.proof);
     if (!kind) return JSON.stringify({ success: false, message: 'kind must be "proof" or "disproof".' });
     if (!proof.trim()) return JSON.stringify({ success: false, message: "proof is required." });
-    const replay = toolInput.replay === "fresh" ? "fresh" : "module";
+    // A fresh replay is not in v1 (docs/mathematics.md 5.2, gate 5).
+    const replay = "module" as const;
     const force = toolInput.force === true;
     const hash = sha256(proof);
 

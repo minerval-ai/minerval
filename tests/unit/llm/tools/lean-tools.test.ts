@@ -421,7 +421,8 @@ describe("lean_check", () => {
       )
     );
     expect(byRow.verdict).toBe("accepted");
-    expect(fake.submissions[0]).toMatchObject({ replay: "fresh", submission_source: PROOF });
+    // A fresh replay is not in v1: the request is served at module scope.
+    expect(fake.submissions[0]).toMatchObject({ replay: "module", submission_source: PROOF });
 
     const byAttempt = JSON.parse(
       await executeLeanTool(

@@ -69,14 +69,26 @@ fifteen words, rarely more than twenty-five.
   document-relative references. Resolve "last year" or "this country" from
   context when the document fixes them; a reusable proposition cannot point
   back at its source.
-- Keep it neutral. An author on the other side should accept your wording as
-  a fair statement of what is in dispute. Qualifications and framing belong
-  in original_text and context, not in the canonical form.
+- Keep it neutral. Anyone discussing the proposition, whichever answer they
+  give, should accept your wording as a fair statement of what is in
+  dispute. Qualifications and framing belong in verbatim_text and context,
+  not in the canonical form.
+- State the proposition, not this document's sentence. The canonical form
+  is a statement of a proposition many sources address, of which this
+  document is one voice, not a derivative of this document's wording, and
+  the document is not the claim's home. Write it in the direction the
+  discourse poses the question (the affirmative form of what is argued, as
+  a debate motion or a neutral headline would put it), even when this
+  document argues against it; whether this document affirms or denies is
+  recorded on the instance, never by bending the form toward the author.
+  The Matcher settles direction with the graph in view; give it a form
+  that does not need flipping.
 
 ## Fields
 
-- **original_text**: the exact span from the document. This is provenance;
-  the author's wording and framing live here. Keep the span to the
+- **verbatim_text**: the exact span, as this source states it. This is
+  provenance; the author's wording and framing live here, and every
+  source's excerpt is equally verbatim to itself. Keep the span to the
   assertion: it carries no personal detail the claim itself leaves out.
 - **context**: one or two surrounding sentences, only when needed to
   disambiguate the span.

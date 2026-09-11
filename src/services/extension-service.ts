@@ -49,7 +49,7 @@ export type AnnotationVerdict =
 
 export interface PageAnnotation {
   /** Exact text from the page, used by the extension to anchor markup. */
-  original_text: string;
+  verbatim_text: string;
   context: string | null;
   source_location: string | null;
   verdict: AnnotationVerdict;
@@ -181,7 +181,7 @@ async function mapWithConcurrency<T, R>(
  */
 export function buildAnnotations(input: {
   claims: Array<{
-    original_text: string;
+    verbatim_text: string;
     context: string | null;
     source_location: string | null;
     stance: "affirms" | "denies";
@@ -204,7 +204,7 @@ export function buildAnnotations(input: {
       // from here would persist page-derived text; see the module comment
       // (#356) before adding such a path.
       return {
-        original_text: c.original_text,
+        verbatim_text: c.verbatim_text,
         context: c.context,
         source_location: c.source_location,
         verdict: "unknown" as const,
@@ -216,7 +216,7 @@ export function buildAnnotations(input: {
     }
     const v = input.verdicts.get(i);
     return {
-      original_text: c.original_text,
+      verbatim_text: c.verbatim_text,
       context: c.context,
       source_location: c.source_location,
       // If the assessor dropped the claim, fail safe to no markup.
@@ -257,7 +257,7 @@ export async function chatAboutPage(input: {
     url: string | null;
     title: string | null;
     claims: Array<{
-      original_text: string;
+      verbatim_text: string;
       verdict: string;
       claim_id: string | null;
       canonical_form: string | null;
@@ -438,12 +438,12 @@ async function analyzePageUncached(
   // parallelism comfortably; 8 roughly halves page-analysis latency vs 4 (#92).
   const matchStages = await mapWithConcurrency(candidates, 8, async (c) => {
     const decision = await matchClaim({
-      extractedText: c.original_text,
+      extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,
     });
 
     const base = {
-      original_text: c.original_text,
+      verbatim_text: c.verbatim_text,
       context: c.context,
       source_location: c.source_location,
       stance: decision.instance_stance,
@@ -484,7 +484,7 @@ async function analyzePageUncached(
     if (!s.matched) return;
     forAssessment.push({
       index: i,
-      on_page_text: s.original_text,
+      on_page_text: s.verbatim_text,
       canonical_form: s.matched.canonicalForm,
       stance: s.stance,
       match_confidence: s.matchConfidence,

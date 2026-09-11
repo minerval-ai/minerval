@@ -231,21 +231,21 @@ async function openPanel(a: PageAnnotation): Promise<void> {
     <div class="ep-status" style="margin-bottom:8px">
       <span class="ep-badge ep-s-${esc(status)}">${esc(status)}</span>
     </div>
-    <h1>${esc(a.claim?.canonical_form ?? a.original_text)}</h1>
+    <h1>${esc(a.claim?.canonical_form ?? a.verbatim_text)}</h1>
     <div class="ep-muted">${esc(verdictLabel(a.verdict))}${
       a.stance === "denies" ? " · this page argues against the claim above" : ""
     }</div>
     <h2>On this page</h2>
-    <div class="ep-quote">${esc(a.original_text)}</div>
+    <div class="ep-quote">${esc(a.verbatim_text)}</div>
     <h2>Assessment</h2>
     <div>${esc(a.why)}</div>
     <div class="ep-detail"><p class="ep-muted">Loading decomposition & evidence…</p></div>
     ${
       a.claim
         ? `<p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on minerval.ai →</a><br>
-           <a href="${esc(contributeUrl(a.claim.url, a.original_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
+           <a href="${esc(contributeUrl(a.claim.url, a.verbatim_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
         : `<p class="ep-muted">This claim isn't in the Minerval graph yet.
-           <a href="${esc(proposeUrl(a.original_text))}" target="_blank" rel="noopener">Propose it →</a></p>`
+           <a href="${esc(proposeUrl(a.verbatim_text))}" target="_blank" rel="noopener">Propose it →</a></p>`
     }`;
   panel.querySelector(".ep-close")!.addEventListener("click", closePanel);
   document.documentElement.appendChild(panel);
@@ -362,7 +362,7 @@ function anchorAnnotations(index?: TextIndex): void {
 
   for (const annotation of state.analysis?.annotations ?? []) {
     if (!show.has(annotation.verdict)) continue;
-    const occurrences = findOccurrences(normalized, annotation.original_text, 3);
+    const occurrences = findOccurrences(normalized, annotation.verbatim_text, 3);
     const ranges = occurrences
       .map((occ) => occurrenceToRange(idx, occ))
       .filter((r): r is Range => r !== null);

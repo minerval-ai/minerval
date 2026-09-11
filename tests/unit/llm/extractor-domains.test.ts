@@ -28,7 +28,7 @@ describe("extracted-claim schema", () => {
 
   it("keeps every field the pipeline already reads", () => {
     for (const f of [
-      "original_text",
+      "verbatim_text",
       "context",
       "proposed_canonical_form",
       "claim_type",

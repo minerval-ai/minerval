@@ -239,7 +239,7 @@ async function getClaimWithContext(claimId: string) {
   // Instances
   const instances = await db
     .select({
-      originalText: claimInstances.originalText,
+      verbatimText: claimInstances.verbatimText,
       context: claimInstances.context,
       stance: claimInstances.stance,
       confidence: claimInstances.confidence,
@@ -313,6 +313,11 @@ async function getClaimWithContext(claimId: string) {
       importance: claim.importance,
       children_total: claim.childrenTotal,
       children_assessed: claim.childrenAssessed,
+      // Why the canonical form runs in the direction it does (#360): chosen
+      // on the proposition's terms when the claim was minted, so a Steward
+      // improving the wording keeps the polarity every stance is read
+      // against. Null for claims minted before the note existed.
+      canonical_direction_note: claim.canonicalDirectionNote ?? null,
     },
     // The parent Steward's preliminary prior, when one exists and the claim is
     // still unassessed: one input among many, superseded by a real assessment.
@@ -347,10 +352,12 @@ async function getClaimWithContext(claimId: string) {
       argument_name: sc.argument_name,
     })),
     instances: instances.map((inst) => ({
-      original_text: inst.originalText,
+      verbatim_text: inst.verbatimText,
       context: inst.context,
       // Whether this source affirms or denies the canonical claim — credible
-      // sources on both sides is a strong CONTESTED signal (#28/#30).
+      // sources with differing stances are a strong CONTESTED signal
+      // (#28/#30); the ingesting document is one instance among these, with
+      // no precedence (#360).
       stance: inst.stance,
       confidence: inst.confidence,
       // Null where unrecorded — most extraction-era instances carry none of
