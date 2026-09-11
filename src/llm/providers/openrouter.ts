@@ -146,6 +146,54 @@ function firstChoice(
   return choice;
 }
 
+/**
+ * An upstream host failing mid-generation comes back as HTTP 200 with
+ * `finish_reason: "error"` and an `error` on the choice, which the SDK's own
+ * retry (on HTTP status) never sees. It says nothing about the request — the
+ * same call succeeds on the next host — so retry it here, and when the
+ * retries are spent throw it as the transient failure it is (a status of
+ * 502 is what isTransientApiError keys off), naming the upstream message.
+ */
+const UPSTREAM_ERROR_RETRIES = Number(process.env.LLM_MAX_RETRIES ?? 4);
+
+function upstreamError(
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice
+): string | null {
+  const err = (choice as { error?: { message?: string; code?: number } }).error;
+  if (choice.finish_reason === ("error" as string) || err) {
+    return err?.message ?? "finish_reason: error";
+  }
+  return null;
+}
+
+async function createWithUpstreamRetry(
+  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  model: string
+): Promise<{
+  completion: OpenAI.Chat.Completions.ChatCompletion;
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice;
+}> {
+  let lastError = "";
+  for (let attempt = 0; attempt <= UPSTREAM_ERROR_RETRIES; attempt++) {
+    const completion = await getClient().chat.completions.create(params);
+    const choice = firstChoice(completion, model);
+    const err = upstreamError(choice);
+    if (err === null) return { completion, choice };
+    lastError = err;
+    // The failed attempt is still billed for what it produced.
+    meter(completion, model);
+    if (attempt < UPSTREAM_ERROR_RETRIES) {
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
+  const error = new Error(
+    `OpenRouter upstream error for "${model}" after ${UPSTREAM_ERROR_RETRIES + 1} ` +
+      `attempts (bad gateway): ${lastError}`
+  );
+  (error as { status?: number }).status = 502;
+  throw error;
+}
+
 function checkRefusal(
   choice: OpenAI.Chat.Completions.ChatCompletion.Choice,
   model: string
@@ -163,15 +211,14 @@ export const openrouterAdapter: ProviderAdapter = {
   async complete(req: CompleteRequest): Promise<CompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
 
-    const completion = await getClient().chat.completions.create({
+    const { completion, choice } = await createWithUpstreamRetry({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       ...(req.tools && req.tools.length > 0
         ? { tools: toChatTools(req.tools) }
         : {}),
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
 
-    const choice = firstChoice(completion, req.model);
     checkRefusal(choice, req.model);
     const usage = meter(completion, req.model);
 
@@ -187,14 +234,13 @@ export const openrouterAdapter: ProviderAdapter = {
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
 
-    const completion = await getClient().chat.completions.create({
+    const { completion, choice } = await createWithUpstreamRetry({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       tools: toChatTools(req.tools),
       tool_choice: "auto",
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
 
-    const choice = firstChoice(completion, req.model);
     checkRefusal(choice, req.model);
     const usage = meter(completion, req.model);
     const turn = fromChatMessage(choice.message);
@@ -211,7 +257,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async completeStructured<T>(req: StructuredRequest): Promise<T> {
-    const completion = await getClient().chat.completions.create({
+    const { completion, choice } = await createWithUpstreamRetry({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       tools: [
@@ -225,9 +271,8 @@ export const openrouterAdapter: ProviderAdapter = {
         },
       ],
       tool_choice: { type: "function", function: { name: "respond" } },
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
 
-    const choice = firstChoice(completion, req.model);
     checkRefusal(choice, req.model);
     meter(completion, req.model);
 
