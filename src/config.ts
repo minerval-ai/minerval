@@ -27,6 +27,18 @@ const modelId = (defaultId: string) =>
     })
     .default(defaultId);
 
+/**
+ * A PEM private key arrives from Secrets Manager with its newlines intact,
+ * but an operator pasting it into a .env line writes "\n" and some tools
+ * hand it over base64-encoded whole. Accept all three.
+ */
+function normalizePrivateKey(raw: string): string {
+  const unescaped = raw.replace(/\\n/g, "\n").trim();
+  if (!unescaped || unescaped.includes("-----BEGIN")) return unescaped;
+  const decoded = Buffer.from(unescaped, "base64").toString("utf8");
+  return decoded.includes("-----BEGIN") ? decoded.trim() : unescaped;
+}
+
 const configSchema = z.object({
   env: z
     .enum(["development", "staging", "production"])
@@ -784,9 +796,15 @@ const configSchema = z.object({
   // GitHub issue filing for agent reports: every report written on first
   // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
   // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
-  // from human ones. Off unless both the token and the repo are set;
-  // never blocks or fails the report write.
+  // from human ones. Off unless a credential and the repo are set; never
+  // blocks or fails the report write. The credential is the minerval-agents
+  // GitHub App (id, installation id, private key; production) or a plain
+  // token (a fine-grained PAT; local runs). The App wins when both are set.
+  // See services/github-app-auth.ts.
   githubToken: z.string().default(""),
+  githubAppId: z.string().default(""),
+  githubAppInstallationId: z.string().default(""),
+  githubAppPrivateKey: z.string().default("").transform(normalizePrivateKey),
   githubIssuesRepo: z.string().default(""),
   githubIssuesLabel: z.string().default("agent-generated"),
   githubApiBaseUrl: z.string().default("https://api.github.com"),
@@ -991,6 +1009,9 @@ export function loadConfig(): Config {
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
     githubToken: process.env.GITHUB_TOKEN,
+    githubAppId: process.env.GITHUB_APP_ID,
+    githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,
+    githubAppPrivateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     githubIssuesRepo: process.env.GITHUB_ISSUES_REPO,
     githubIssuesLabel: process.env.GITHUB_ISSUES_LABEL,
     githubApiBaseUrl: process.env.GITHUB_API_BASE_URL,
