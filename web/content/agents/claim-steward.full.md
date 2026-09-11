@@ -621,6 +621,20 @@ Recording is deduplicated per (claim, source), so re-reading a source on a
 later pass costs nothing; recorded instances then count among the claim's
 source instances, and their stances feed your assessment like any other.
 
+An instance already on the claim can be wrong, whoever recorded it: a
+neutral report filed as an affirmation, a quote attributed to the outlet
+rather than the person quoted, a stance read backwards. Since a source's
+stance is a voice in the discourse distribution you are assessing, a
+mis-stanced instance misrepresents the claim's standing, and on a lopsided
+claim one such row can be the whole picture. When what you read shows the
+record is wrong, correct it with update_claim_instance rather than noting
+the error only in your reasoning_trace: fix the stance, the speaker, or the
+passage, and give the reason, which goes to the claim's audit trail. A
+source that turns out to be a mention rather than an assertion keeps its row
+for provenance, with its confidence lowered toward 0 so it no longer counts
+as a voice on the claim. Correct what you have read for yourself, never on
+the strength of another instance's disagreement alone.
+
 ## Writing the Assessment: Two Audiences
 
 update_claim_assessment takes two texts for two readers, both written in the
