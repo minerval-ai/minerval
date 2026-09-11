@@ -187,11 +187,20 @@ export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
     })
   );
 
+  // The schema marks `flags` required, but not every provider enforces tool
+  // schemas (GLM 5.3 Flash returned a verdict with no flags array and the
+  // summary crashed after the whole run was paid for). A missing or malformed
+  // list is an empty one; the scalar dimensions are left to the schema.
+  const flags = Array.isArray(verdict.flags)
+    ? verdict.flags.filter((f): f is string => typeof f === "string")
+    : [];
+
   return {
     id: input.id,
     text: input.text,
     importanceStored: input.importance,
     status: input.status,
     ...verdict,
+    flags,
   };
 }
