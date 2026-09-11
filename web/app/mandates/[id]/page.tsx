@@ -43,6 +43,9 @@ const STATE_LABEL: Record<string, string> = {
   done: "done",
   current: "in progress",
   queued: "planned",
+  waiting: "waiting",
+  blocked: "blocked",
+  cancelled: "cancelled",
 };
 
 // The importance histogram as inline CSS bars: four buckets, peripheral to
@@ -471,7 +474,10 @@ export default async function MandatePage({
                   </Link>
                 )}
                 <span className="mandate-rationale"> {item.rationale}</span>
-                <span className="mandate-state sc"> {STATE_LABEL[item.state]}</span>
+                <span className="mandate-state sc"> {STATE_LABEL[item.state] ?? item.state}</span>
+                {(item.state === "blocked" || item.state === "waiting") && item.ledger?.reason && (
+                  <span className="mandate-rationale"> ({item.ledger.reason})</span>
+                )}
               </li>
             ))}
           </ul>

@@ -257,6 +257,25 @@ route is visible. `prize_review` is self-funded when a bounty draws a claim
 and is never billed to the claimant. A bounty appears nowhere in any
 valuation. Quote attempts honestly, Lean checks included.
 
+**How a plan item becomes work.** A `formalize` item opens one ledger row
+per claim only when the claim is active, has no published statement, and
+its recorded domains carry the Steward's `publish_formalization` tool:
+the mathematics domain. A claim typed or discussed as mathematical but not
+tagged with the domain is `blocked`, and the item says so; a Steward pass
+with `set_claim_domains` (or a `reassess` item asking for one) unblocks
+it, and a formalize run on such a claim would be refused rather than
+spent. The row is priced at two strong passes; a run that ends without a
+published statement closes the row and the sweep reopens it a day later
+while the claim still lacks one. An `attempt_proof` item is `waiting`, not
+blocked, until a statement is published; the n-th item on a claim
+entitles the n-th attempt group, an earlier open group holds the next one
+back, and the mandate's attempt cooldown holds it back too unless the
+entitling item's rationale states a reason of at least twenty characters.
+Every item's standing (open, running, done, cancelled, waiting, blocked,
+with the reason) comes back from `extend_plan` in the same turn and from
+`grant_overview` at any time; read it before valuing, and before filing a
+report that work never appeared.
+
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it

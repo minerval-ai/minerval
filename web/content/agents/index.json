@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 30635,
-    "fullChars": 79323,
+    "roleChars": 30916,
+    "fullChars": 79604,
     "skills": [
       {
         "name": "mathematics",

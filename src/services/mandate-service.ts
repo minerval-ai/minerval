@@ -26,6 +26,8 @@ import { LIVE_BOUNTY_STATUSES } from "./bounty-service.js";
 import type { AttemptSummary } from "./claim-extras-types.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import type { PlanItem } from "./grant-service.js";
+import type { PlanItemLedger } from "./action-service.js";
+import { describePlanItems, type PlanItemState } from "./plan-state.js";
 
 export interface MandateSummary {
   id: string;
@@ -240,7 +242,12 @@ export interface MandateDetail extends MandateSummary {
   }>;
   /** The Grantmaker's latest autonomous review of this mandate. */
   last_review: { at: string; note: string } | null;
-  plan_items: Array<PlanItem & { state: "done" | "current" | "queued" }>;
+  /**
+   * The plan with each item's state and ledger standing (plan-state.ts):
+   * `state` is the dashboard word, `ledger` the row or the reason there is
+   * none (null before the item's first materialization).
+   */
+  plan_items: Array<PlanItem & { state: PlanItemState; ledger: PlanItemLedger | null }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
   funded_assessments: Array<{
     claim_id: string;
@@ -292,14 +299,9 @@ export async function getPublicMandate(
     [row.budget_job_id]
   );
 
-  const items = (row.plan?.items ?? []).map((item, i) => ({
-    ...item,
-    state: (i < row.plan_cursor
-      ? "done"
-      : i === row.plan_cursor
-        ? "current"
-        : "queued") as "done" | "current" | "queued",
-  }));
+  // Each item's standing on the ledger (plan-state.ts), not its position
+  // against the cursor: a blocked or waiting item says why (#416).
+  const items = describePlanItems(row.plan?.items ?? [], row.plan_cursor);
 
   const hasIngest = items.some((i) => i.action === "ingest");
   const pipeline = hasIngest ? await getMandatePipeline(row.id) : [];

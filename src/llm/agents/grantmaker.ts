@@ -34,7 +34,9 @@ import {
 import { surveyScope } from "./grantor.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
-import type { PlanItem } from "../../services/grant-service.js";
+import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
+import { materializePlanItems } from "../../services/action-service.js";
+import { describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
 import {
   getJobContributions,
@@ -90,7 +92,8 @@ const PLAN_ITEM_SCHEMA = {
       type: "string",
       description:
         "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
-        "for ingest.",
+        "for ingest. " +
+        PLAN_KIND_RULES,
     },
     url: {
       type: "string",
@@ -895,15 +898,10 @@ export async function executeManagementTool(
       ),
       contributors: contributions.length,
       strategy: grant.plan?.strategy ?? null,
-      plan: (grant.plan?.items ?? []).map((item, i) => ({
-        ...item,
-        state:
-          i < grant.plan_cursor
-            ? "done"
-            : i === grant.plan_cursor
-              ? "current"
-              : "queued",
-      })),
+      // Each item's standing on the ledger (plan-state.ts): a blocked or
+      // waiting item says why, so a slow queue and a dead one read
+      // differently (#416).
+      plan: describePlanItems(grant.plan?.items ?? [], grant.plan_cursor),
     });
   }
   if (name === "list_funded_assessments") {
@@ -1110,10 +1108,28 @@ export async function executeManagementTool(
         problem: "grant is not active; the plan can no longer be amended",
       });
     }
+    // The new items materialize now, so the owner's chat sees each one's
+    // standing in the same turn (#416); a failure here never loses the
+    // amendment, the sweep retries on cadence.
+    const kept = Number(rows[0]!.plan_cursor);
+    let materialized: unknown[] = [];
+    let materializeProblem: string | null = null;
+    try {
+      materialized = await materializePlanItems(
+        grantId,
+        items.map((_, i) => kept + i)
+      );
+    } catch (err) {
+      materializeProblem = err instanceof Error ? err.message : String(err);
+    }
     return JSON.stringify({
       success: true,
-      executed_items_kept: rows[0]!.plan_cursor,
+      executed_items_kept: kept,
       new_remaining_items: items.length,
+      items: materialized,
+      ...(materializeProblem
+        ? { note: `amended, but not yet materialized onto the ledger: ${materializeProblem}` }
+        : {}),
       note_recorded: note,
     });
   }

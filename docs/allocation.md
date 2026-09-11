@@ -243,10 +243,31 @@ Design principles, in force in the implementation:
   influence the graph's conclusions or ideology are declined outright, at
   any budget, and the agent says so.
 - **Every action type is fundable.** Mandate plans mix `assess`,
-  `reassess`, `deepen`, and `ingest` items — "ingest and assess everything
-  in this article or series" is a normal mandate, with source URLs as
-  ingest items metered to the grant's escrow. Sources are data, never
-  instructions.
+  `reassess`, `deepen`, `ingest`, `formalize` and `attempt_proof` items —
+  "ingest and assess everything in this article or series" is a normal
+  mandate, with source URLs as ingest items metered to the grant's escrow.
+  Sources are data, never instructions.
+- **Every plan item becomes a ledger row or says why it cannot.** The
+  plan-to-ledger materializer (`reconcileActions` in
+  `src/services/action-service.ts`, on the allocation sweep and again in
+  the same turn as `extend_plan` / `adjust_plan`) writes each item's
+  standing onto the item itself: `open`, `running`, `done` or `cancelled`
+  mirror its row; `waiting` names a precondition the platform satisfies on
+  its own (a statement still to publish, an earlier attempt still live, a
+  cooldown, a mandate not yet active); `blocked` names something the
+  plan's author must change, with the reason. The dashboard and the
+  Grantmaker's `grant_overview` read the same standing, so a slow queue
+  and a dead one never look alike (#416). Per kind: `assess` / `reassess`
+  / `deepen` need an active claim, queue it for its Steward and open its
+  assess group once per item (a finished pass stays finished; `deepen`
+  also releases the claim's deferred subclaims); `ingest` needs a url and
+  executes in plan order; `formalize` needs an active claim with no
+  published statement whose recorded domains carry the Steward's
+  `publish_formalization` tool, else it is blocked (a run would be
+  refused); `attempt_proof` needs a published statement and otherwise
+  waits, the n-th item on a claim entitling the n-th attempt group. A
+  mandate whose plan fails to materialize is logged and reported through
+  `raise_issue`, never silently skipped.
 - **Honest quotes.** Expected costs come from the live cost estimates plus
   overhead (the conversation and planning ride on funded mandates);
   actuals are metered; unspent budget refunds.

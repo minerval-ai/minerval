@@ -799,11 +799,19 @@ export interface MandateDetailView extends MandateSummaryView {
   regrants_out: MandateRegrantEdge[];
   last_review: { at: string; note: string } | null;
   plan_items: Array<{
-    action: "assess" | "reassess" | "deepen" | "ingest";
+    action: "assess" | "reassess" | "deepen" | "ingest" | "formalize" | "attempt_proof";
     claim_id?: string;
     url?: string;
     rationale: string;
-    state: "done" | "current" | "queued";
+    state: "done" | "current" | "queued" | "waiting" | "blocked" | "cancelled";
+    /** The item's ledger standing; null before its first materialization. */
+    ledger: {
+      status: "open" | "running" | "done" | "cancelled" | "waiting" | "blocked";
+      reason?: string;
+      action_id?: string;
+      exclusion_group?: string;
+      checked_at: string;
+    } | null;
   }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
   funded_assessments: Array<{

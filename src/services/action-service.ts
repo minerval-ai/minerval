@@ -157,6 +157,8 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
 export async function reconcileActions(): Promise<{
   assessEnsured: number;
   cancelled: number;
+  /** Mandates whose plan could not be materialized this sweep (logged). */
+  plansFailed: number;
 }> {
   const pending = await rawQuery<{ id: string }>(
     `SELECT c.id FROM claims c
@@ -167,33 +169,26 @@ export async function reconcileActions(): Promise<{
       LIMIT 500`
   );
   for (const row of pending) {
-    await ensureAssessActions(row.id);
+    // One claim's failure (a bad row, a transient DB error) must not take
+    // the rest of the sweep with it: log and move on (#416).
+    try {
+      await ensureAssessActions(row.id);
+    } catch (err) {
+      console.error(
+        `[reconcile] ensureAssessActions failed for claim ${row.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
   // Ingest + planning + valuation actions from live grants.
-  const grants = await rawQuery<{
-    id: string;
-    name: string;
-    status: string;
-    policy: string;
-    plan: {
-      items?: Array<{ action: string; url?: string; claim_id?: string; variant?: string; rationale?: string }>;
-    } | null;
-    plan_cursor: number;
-  }>(
+  const grants = await rawQuery<PlanGrantRow>(
     `SELECT id, name, status, policy, plan, plan_cursor FROM grants
       WHERE status IN ('active', 'planning')`
   );
-  const ingestCost = capMicroUsd("source_ingest");
-  // The strong-tier estimate the formalize rows carry (two strong passes),
-  // computed once per sweep and only when some plan asks for one.
-  let strongPassMicroUsd: number | null = null;
-  const formalizeCostMicroUsd = async (): Promise<number> => {
-    if (strongPassMicroUsd === null) {
-      strongPassMicroUsd = (await stewardTierCostEstimates()).strongMicroUsd;
-    }
-    return Math.round(strongPassMicroUsd * 2);
-  };
+  const ctx = newMaterializeContext();
+  let plansFailed = 0;
   for (const g of grants) {
     if (g.status === "planning") {
       await rawQuery(
@@ -240,85 +235,15 @@ export async function reconcileActions(): Promise<{
       );
     }
 
-    // Plan cursor bookkeeping + ingest rows. An ingest item whose ledger
-    // action is DONE is finished work: the cursor moves past it. An
-    // unexecuted one gets (or keeps) its open row, funded by the grant's
-    // own escrow (fundGrantSelfActions).
-    const items = g.plan?.items ?? [];
-    let cursor = g.plan_cursor;
-    while (cursor < items.length) {
-      const item = items[cursor]!;
-      if (item.action !== "ingest" || !item.url) break;
-      // Done AND cancelled both move the cursor: a cancelled ingest (a
-      // poison URL the executor retired) must not wedge the plan forever
-      // behind it. A group with only open/running rows still blocks.
-      const [closed] = await rawQuery<{ id: string }>(
-        `SELECT id FROM actions
-          WHERE exclusion_group = $1 AND status IN ('done', 'cancelled')
-            AND NOT EXISTS (SELECT 1 FROM actions o
-                             WHERE o.exclusion_group = $1
-                               AND o.status IN ('open', 'running'))
-          LIMIT 1`,
-        [INGEST_GROUP(item.url)]
-      );
-      if (!closed) break;
-      cursor++;
-    }
-    if (cursor !== g.plan_cursor) {
-      await rawQuery(
-        `UPDATE grants SET plan_cursor = $2, updated_at = now()
-          WHERE id = $1 AND plan_cursor = $3`,
-        [g.id, cursor, g.plan_cursor]
-      );
-    }
-    for (let i = cursor; i < items.length; i++) {
-      const item = items[i]!;
-      if (item.action !== "ingest" || !item.url) continue;
-      await rawQuery(
-        `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
-         VALUES ('ingest', $1, 'standard', $2, $3, $4)
-         ON CONFLICT (exclusion_group, variant) DO NOTHING`,
-        [INGEST_GROUP(item.url), item.url, `Ingest ${item.url}`, ingestCost]
-      );
-    }
-
-    // Formal statements and solver attempts from an active mandate's plan
-    // (docs/mathematics.md §5.4, §7.2). Both cost strong-tier money, so a
-    // plan still awaiting approval opens nothing.
-    if (g.status === "active") {
-      const formalizeClaims = new Set(
-        items
-          .filter((it) => it.action === "formalize" && it.claim_id)
-          .map((it) => it.claim_id!)
-      );
-      for (const claimId of formalizeClaims) {
-        await ensureFormalizeAction(claimId, await formalizeCostMicroUsd());
-      }
-      // One entry per attempt_proof item, in plan order, carrying its
-      // rationale: the n-th item entitles the n-th group, and its rationale
-      // is what may waive the cooldown (§7.2).
-      const attemptItems = new Map<string, string[]>();
-      for (const it of items) {
-        if (it.action !== "attempt_proof" || !it.claim_id) continue;
-        const list = attemptItems.get(it.claim_id) ?? [];
-        list.push(typeof it.rationale === "string" ? it.rationale : "");
-        attemptItems.set(it.claim_id, list);
-      }
-      if (attemptItems.size > 0) {
-        const policy = await getMandateAllocationPolicy(g.id);
-        const owl = loadConfig().owlCostMicroUsd;
-        const costs = {
-          standard: Math.round(policy.est_attempt_standard_cost_owls * owl),
-          max: Math.round(policy.est_attempt_max_cost_owls * owl),
-        };
-        for (const [claimId, rationales] of attemptItems) {
-          await ensureAttemptActions(claimId, rationales.length, costs, {
-            cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
-            rationales,
-          });
-        }
-      }
+    // The plan itself: every item becomes a ledger row or carries a stated
+    // reason why it cannot (materializeGrantPlan). One mandate's failure is
+    // logged and reported, never allowed to abort the other mandates' plans
+    // (#416: a silent abort here left plan items "queued" for days).
+    try {
+      await materializeGrantPlan(g, ctx);
+    } catch (err) {
+      plansFailed++;
+      await reportPlanFailure(g, err);
     }
   }
 
@@ -367,7 +292,7 @@ export async function reconcileActions(): Promise<{
              OR (kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
-  return { assessEnsured: pending.length, cancelled: cancelled.length };
+  return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
 }
 
 /**
@@ -416,18 +341,38 @@ export const ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS = 20;
  * group waits out the mandate's `attempt_cooldown_days` after the last
  * closed attempt unless the item entitling it states a reason (§7.2).
  */
+export interface EnsureAttemptResult {
+  /** The published statement the groups hang off, when there is one. */
+  formalizationId: string | null;
+  /** Attempt groups on that statement after this call. */
+  groups: number;
+  /** True when this call opened a new group. */
+  opened: boolean;
+  /** Why no group was opened, in words the plan's author can act on. */
+  reason: string | null;
+}
+
 export async function ensureAttemptActions(
   claimId: string,
   wantedGroups: number,
   costs: { standard: number; max: number },
   opts: { cooldownDays?: number; rationales?: readonly string[] } = {}
-): Promise<void> {
+): Promise<EnsureAttemptResult> {
   const [formalization] = await rawQuery<{ id: string }>(
     `SELECT id FROM claim_formalizations
       WHERE claim_id = $1 AND status = 'published'`,
     [claimId]
   );
-  if (!formalization) return;
+  if (!formalization) {
+    return {
+      formalizationId: null,
+      groups: 0,
+      opened: false,
+      reason:
+        "the claim has no published formal statement; an attempt opens only " +
+        "once a formalize item has published one (docs/mathematics.md §7.2)",
+    };
+  }
   const [state] = await rawQuery<{ groups: number; live: number }>(
     `SELECT COUNT(DISTINCT exclusion_group)::int AS groups,
             COUNT(*) FILTER (WHERE status IN ('open', 'running'))::int AS live
@@ -437,7 +382,14 @@ export async function ensureAttemptActions(
   );
   const groups = Number(state?.groups ?? 0);
   const live = Number(state?.live ?? 0);
-  if (live > 0 || groups >= wantedGroups) return;
+  const base = { formalizationId: formalization.id, groups, opened: false };
+  if (live > 0) {
+    return {
+      ...base,
+      reason: "an earlier attempt on this statement is still open or running; the next group opens when it closes",
+    };
+  }
+  if (groups >= wantedGroups) return { ...base, reason: null };
   const cooldownDays = Math.max(0, Number(opts.cooldownDays ?? 0));
   if (cooldownDays > 0) {
     const [last] = await rawQuery<{ finished_at: Date }>(
@@ -451,7 +403,15 @@ export async function ensureAttemptActions(
     if (withinCooldown) {
       const rationales = opts.rationales ?? [];
       const rationale = rationales[groups] ?? rationales[rationales.length - 1] ?? "";
-      if (rationale.trim().length < ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS) return;
+      if (rationale.trim().length < ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS) {
+        return {
+          ...base,
+          reason:
+            `the last attempt closed within the mandate's ${cooldownDays}-day cooldown; ` +
+            `the entitling item's rationale must state at least ${ATTEMPT_COOLDOWN_RATIONALE_MIN_CHARS} ` +
+            "characters of reason (a new lemma formalized, a route the prior report could not pursue) to waive it",
+        };
+      }
     }
   }
   const n = groups + 1;
@@ -472,6 +432,494 @@ export async function ensureAttemptActions(
         Math.round(costs[variant]),
         claimId,
       ]
+    );
+  }
+  return { formalizationId: formalization.id, groups: n, opened: true, reason: null };
+}
+
+// ---------------------------------------------------------------------------
+// Plan-to-ledger materialization: every plan item becomes a ledger row or
+// carries a stated reason why it cannot, written back onto the item itself
+// (`ledger`) so the mandate's Grantmaker, the dashboard, and the Audit
+// Agent all read the same state (#416).
+// ---------------------------------------------------------------------------
+
+/**
+ * A plan item's standing on the ledger, as stored on the item:
+ *  - open / running / done / cancelled mirror the row (superseded reads as
+ *    done: a sibling won);
+ *  - waiting: a precondition the platform satisfies on its own (a statement
+ *    still to be published, a live earlier attempt, a cooldown);
+ *  - blocked: something the plan's author must change (a claim that is not
+ *    active, a formalize item on a claim whose domains carry no
+ *    publish_formalization tool, a materializer error).
+ */
+export type PlanItemLedgerStatus =
+  | "open"
+  | "running"
+  | "done"
+  | "cancelled"
+  | "waiting"
+  | "blocked";
+
+export interface PlanItemLedger {
+  status: PlanItemLedgerStatus;
+  /** For waiting/blocked (always) and closed rows (when useful): why. */
+  reason?: string;
+  action_id?: string;
+  exclusion_group?: string;
+  /** ISO timestamp of the sweep or call that last wrote this. */
+  checked_at: string;
+}
+
+/** The plan item shape the materializer reads (a loose PlanItem). */
+export interface MaterializablePlanItem {
+  action: string;
+  url?: string;
+  claim_id?: string;
+  variant?: string;
+  rationale?: string;
+  ledger?: PlanItemLedger;
+  [key: string]: unknown;
+}
+
+export interface PlanGrantRow {
+  id: string;
+  name: string;
+  status: string;
+  policy: string;
+  plan: { strategy?: string; items?: MaterializablePlanItem[] } | null;
+  plan_cursor: number;
+}
+
+export interface PlanItemOutcome {
+  index: number;
+  action: string;
+  claim_id?: string;
+  url?: string;
+  ledger: PlanItemLedger;
+}
+
+/** Per-sweep memo of the cost estimates the rows carry. */
+interface MaterializeContext {
+  ingestCostMicroUsd: number;
+  formalizeCostMicroUsd: () => Promise<number>;
+}
+
+function newMaterializeContext(): MaterializeContext {
+  // The strong-tier estimate the formalize rows carry (two strong passes),
+  // computed once per sweep and only when some plan asks for one.
+  let strongPassMicroUsd: number | null = null;
+  return {
+    ingestCostMicroUsd: capMicroUsd("source_ingest"),
+    formalizeCostMicroUsd: async () => {
+      if (strongPassMicroUsd === null) {
+        strongPassMicroUsd = (await stewardTierCostEstimates()).strongMicroUsd;
+      }
+      return Math.round(strongPassMicroUsd * 2);
+    },
+  };
+}
+
+/** How far the Steward's publishing tool is from a claim: the formalize gate. */
+async function formalizeToolGap(claimId: string): Promise<string | null> {
+  // Lazy: steward-direct pulls the LLM tool registry in, which this
+  // mechanism module must not load at import time (queue-service imports
+  // us; the registry imports the services).
+  const { missingTriggerTools } = await import("../workers/steward-direct.js");
+  const { skills, missing } = await missingTriggerTools("formalize", claimId);
+  if (missing.length === 0) return null;
+  return (
+    `the claim's recorded domains activate ${
+      skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"
+    }, none of which carries ${missing.join(", ")} for the Steward; a formalize ` +
+    "run would be refused. Tag the claim with the domain whose skill declares " +
+    "the tool (mathematics; a Steward pass with set_claim_domains) or drop the item"
+  );
+}
+
+/** The ledger status one exclusion group (or one row) reads as. */
+async function groupLedger(
+  where: { group: string } | { actionId: string }
+): Promise<{ status: "open" | "running" | "done" | "cancelled"; action_id: string; exclusion_group: string } | null> {
+  const rows =
+    "group" in where
+      ? await rawQuery<{ id: string; status: string; exclusion_group: string }>(
+          `SELECT id, status, exclusion_group FROM actions
+            WHERE exclusion_group = $1
+            ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
+                                 WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
+                                 ELSE 4 END, updated_at DESC
+            LIMIT 1`,
+          [where.group]
+        )
+      : await rawQuery<{ id: string; status: string; exclusion_group: string }>(
+          `SELECT id, status, exclusion_group FROM actions WHERE id = $1`,
+          [where.actionId]
+        );
+  const row = rows[0];
+  if (!row) return null;
+  const status =
+    row.status === "running" || row.status === "open" || row.status === "cancelled"
+      ? row.status
+      : "done";
+  return { status, action_id: row.id, exclusion_group: row.exclusion_group };
+}
+
+interface ClaimStanding {
+  id: string;
+  state: string;
+  steward_state: string;
+  published: boolean;
+}
+
+async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
+  const [row] = await rawQuery<ClaimStanding>(
+    `SELECT c.id, c.state, c.steward_state,
+            EXISTS (SELECT 1 FROM claim_formalizations f
+                     WHERE f.claim_id = c.id AND f.status = 'published') AS published
+       FROM claims c WHERE c.id = $1`,
+    [claimId]
+  );
+  return row ?? null;
+}
+
+const nowIso = () => new Date().toISOString();
+const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
+const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
+const fromRow = (
+  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string },
+  reason?: string
+): PlanItemLedger => ({
+  status: row.status,
+  action_id: row.action_id,
+  exclusion_group: row.exclusion_group,
+  ...(reason ? { reason } : {}),
+  checked_at: nowIso(),
+});
+
+/**
+ * Materialize one mandate's whole plan: cursor bookkeeping and ingest rows
+ * (any live grant), and the stewarding, formal-statement and attempt rows
+ * (an active mandate only, since they cost strong-tier money), then write
+ * each item's ledger standing back onto the plan. Returns every item's
+ * outcome in plan order. Throws only on a failure outside any one item
+ * (loading the grant, the plan write); a single item's error becomes that
+ * item's `blocked` reason.
+ */
+export async function materializeGrantPlan(
+  g: PlanGrantRow,
+  ctx: MaterializeContext = newMaterializeContext()
+): Promise<PlanItemOutcome[]> {
+  const items = g.plan?.items ?? [];
+  const outcomes: PlanItemOutcome[] = [];
+
+  // Plan cursor bookkeeping. An ingest item whose ledger action is DONE is
+  // finished work: the cursor moves past it. Done AND cancelled both move
+  // the cursor: a cancelled ingest (a poison URL the executor retired) must
+  // not wedge the plan forever behind it. A group with only open/running
+  // rows still blocks. Only ingest items are cursor-driven: every other
+  // kind reports through its own ledger standing below.
+  let cursor = g.plan_cursor;
+  while (cursor < items.length) {
+    const item = items[cursor]!;
+    if (item.action !== "ingest" || !item.url) break;
+    const [closed] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions
+        WHERE exclusion_group = $1 AND status IN ('done', 'cancelled')
+          AND NOT EXISTS (SELECT 1 FROM actions o
+                           WHERE o.exclusion_group = $1
+                             AND o.status IN ('open', 'running'))
+        LIMIT 1`,
+      [INGEST_GROUP(item.url)]
+    );
+    if (!closed) break;
+    cursor++;
+  }
+  if (cursor !== g.plan_cursor) {
+    await rawQuery(
+      `UPDATE grants SET plan_cursor = $2, updated_at = now()
+        WHERE id = $1 AND plan_cursor = $3`,
+      [g.id, cursor, g.plan_cursor]
+    );
+  }
+
+  const active = g.status === "active";
+  const notActive = waiting(
+    `the mandate is ${g.status}, not active; this work opens once it is`
+  );
+
+  // attempt_proof entitlement is per claim across items: the n-th item on a
+  // claim entitles the n-th group, and its rationale is what may waive the
+  // cooldown (§7.2). Resolve each claim once, then read every item's group.
+  const attemptItems = new Map<string, number[]>();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]!;
+    if (it.action !== "attempt_proof" || !it.claim_id) continue;
+    const list = attemptItems.get(it.claim_id) ?? [];
+    list.push(i);
+    attemptItems.set(it.claim_id, list);
+  }
+  const attemptResults = new Map<string, EnsureAttemptResult>();
+  if (active && attemptItems.size > 0) {
+    const policy = await getMandateAllocationPolicy(g.id);
+    const owl = loadConfig().owlCostMicroUsd;
+    const costs = {
+      standard: Math.round(policy.est_attempt_standard_cost_owls * owl),
+      max: Math.round(policy.est_attempt_max_cost_owls * owl),
+    };
+    for (const [claimId, indices] of attemptItems) {
+      try {
+        attemptResults.set(
+          claimId,
+          await ensureAttemptActions(claimId, indices.length, costs, {
+            cooldownDays: Number(policy.attempt_cooldown_days ?? 0),
+            rationales: indices.map((i) => String(items[i]!.rationale ?? "")),
+          })
+        );
+      } catch (err) {
+        console.error(
+          `[reconcile] ensureAttemptActions failed for claim ${claimId} (mandate ${g.id}): ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
+  }
+
+  const ensuredFormalize = new Set<string>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    let ledger: PlanItemLedger;
+    try {
+      ledger = await materializePlanItem(g, item, i, {
+        ctx,
+        cursor,
+        active,
+        notActive,
+        ensuredFormalize,
+        attemptOrdinal: attemptItems.get(item.claim_id ?? "")?.indexOf(i) ?? -1,
+        attemptResult: attemptResults.get(item.claim_id ?? "") ?? null,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[reconcile] plan item ${i} (${item.action}) of mandate ${g.id} failed: ${msg}`);
+      ledger = blocked(`the materializer failed on this item: ${msg}`);
+    }
+    outcomes.push({
+      index: i,
+      action: item.action,
+      ...(item.claim_id ? { claim_id: item.claim_id } : {}),
+      ...(item.url ? { url: item.url } : {}),
+      ledger,
+    });
+    if (!sameLedger(item.ledger, ledger)) {
+      // One item at a time, by path: an extend_plan append racing this
+      // sweep must not be overwritten by a whole-array write.
+      await rawQuery(
+        `UPDATE grants
+            SET plan = jsonb_set(plan, $2::text[], $3::jsonb)
+          WHERE id = $1 AND jsonb_array_length(COALESCE(plan->'items', '[]'::jsonb)) > $4`,
+        [g.id, ["items", String(i), "ledger"], JSON.stringify(ledger), i]
+      );
+    }
+  }
+  return outcomes;
+}
+
+function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
+  if (!a) return false;
+  return (
+    a.status === b.status &&
+    (a.reason ?? null) === (b.reason ?? null) &&
+    (a.action_id ?? null) === (b.action_id ?? null) &&
+    (a.exclusion_group ?? null) === (b.exclusion_group ?? null)
+  );
+}
+
+async function materializePlanItem(
+  g: PlanGrantRow,
+  item: MaterializablePlanItem,
+  index: number,
+  o: {
+    ctx: MaterializeContext;
+    cursor: number;
+    active: boolean;
+    notActive: PlanItemLedger;
+    attemptOrdinal: number;
+    attemptResult: EnsureAttemptResult | null;
+    ensuredFormalize: Set<string>;
+  }
+): Promise<PlanItemLedger> {
+  const kind = item.action;
+
+  if (kind === "ingest") {
+    if (!item.url) return blocked("an ingest item needs a url");
+    if (index < o.cursor) {
+      const row = await groupLedger({ group: INGEST_GROUP(item.url) });
+      return row ? fromRow({ ...row, status: "done" }) : { status: "done", checked_at: nowIso() };
+    }
+    // An unexecuted one gets (or keeps) its open row, funded by the grant's
+    // own escrow (fundGrantSelfActions).
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+       VALUES ('ingest', $1, 'standard', $2, $3, $4)
+       ON CONFLICT (exclusion_group, variant) DO NOTHING`,
+      [INGEST_GROUP(item.url), item.url, `Ingest ${item.url}`, o.ctx.ingestCostMicroUsd]
+    );
+    const row = await groupLedger({ group: INGEST_GROUP(item.url) });
+    return row ? fromRow(row) : blocked("no ingest row could be opened for this url");
+  }
+
+  if (!item.claim_id) return blocked(`a ${kind} item needs a claim_id`);
+  const claim = await claimStanding(item.claim_id);
+  if (!claim) return blocked(`claim ${item.claim_id} does not exist`);
+  if (claim.state !== "active") {
+    return blocked(`claim ${item.claim_id} is ${claim.state}, not active; the ledger only carries work on active claims`);
+  }
+
+  if (kind === "assess" || kind === "reassess" || kind === "deepen") {
+    // A stewarding item is consumed once its pass has run: a finished row
+    // stays finished (re-enqueueing on every sweep would loop the claim
+    // through the Steward forever). Otherwise the claim's steward_state IS
+    // the queue: not pending → enqueue, then mirror the assess group's row.
+    if (item.ledger?.action_id) {
+      const prior = await groupLedger({ actionId: item.ledger.action_id });
+      if (prior && (prior.status === "done" || prior.status === "cancelled")) {
+        return fromRow(prior);
+      }
+    }
+    if (!o.active) return o.notActive;
+    if (kind === "deepen") {
+      // The claim plus its deferred subtree: promote the held-out
+      // subclaims so the drain reaches them too (#98's brake, released for
+      // this subtree by a funder's say-so). Idempotent, so it runs whether
+      // or not the claim itself still needs queueing (an earlier item on
+      // the same claim may have queued it already).
+      await rawQuery(
+        `UPDATE claims SET steward_state = 'pending', updated_at = now()
+          WHERE state = 'active' AND steward_state = 'deferred'
+            AND id IN (SELECT child_claim_id FROM claim_relationships
+                        WHERE parent_claim_id = $1)`,
+        [claim.id]
+      );
+    }
+    if (claim.steward_state !== "pending" && claim.steward_state !== "running") {
+      const { enqueueSteward } = await import("./queue-service.js");
+      await enqueueSteward({
+        claimId: claim.id,
+        trigger: "mandate_plan",
+        context:
+          `${kind} requested by the mandate "${g.name}": ` +
+          `${String(item.rationale ?? "").trim() || "no rationale given"}`,
+      });
+    }
+    await ensureAssessActions(claim.id);
+    const row = await groupLedger({ group: ASSESS_GROUP(claim.id) });
+    return row ? fromRow(row) : blocked("no assess row could be opened for this claim");
+  }
+
+  if (kind === "formalize") {
+    if (claim.published) {
+      const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });
+      const reason = "the claim already carries a published formal statement";
+      return row
+        ? fromRow({ ...row, status: "done" }, reason)
+        : { status: "done", reason, checked_at: nowIso() };
+    }
+    if (!o.active) return o.notActive;
+    const gap = await formalizeToolGap(claim.id);
+    if (gap) return blocked(gap);
+    // One statement per claim at a time (§5.4): a second formalize item on
+    // the same claim reads the same row rather than upserting it again.
+    if (!o.ensuredFormalize.has(claim.id)) {
+      await ensureFormalizeAction(claim.id, await o.ctx.formalizeCostMicroUsd());
+      o.ensuredFormalize.add(claim.id);
+    }
+    const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });
+    if (!row) return blocked("no formalize row could be opened for this claim");
+    if (row.status === "done" || row.status === "cancelled") {
+      return fromRow(
+        row,
+        `the last formalize run ended ${row.status} without a published statement; ` +
+          `the sweep reopens the row ${FORMALIZE_RETRY_HOURS} hours after it closed while the claim still lacks one`
+      );
+    }
+    return fromRow(row);
+  }
+
+  if (kind === "attempt_proof") {
+    if (!o.active) return o.notActive;
+    const res = o.attemptResult;
+    if (!res || !res.formalizationId) {
+      return waiting(
+        res?.reason ??
+          "the claim has no published formal statement; an attempt opens only " +
+            "once a formalize item has published one (docs/mathematics.md §7.2)"
+      );
+    }
+    const n = o.attemptOrdinal + 1;
+    if (n <= res.groups) {
+      const row = await groupLedger({ group: ATTEMPT_GROUP(res.formalizationId, n) });
+      if (row) return fromRow(row);
+    }
+    return waiting(
+      res.reason ??
+        "this item's attempt group opens when the earlier groups on the statement have closed"
+    );
+  }
+
+  return blocked(`unknown plan item kind "${kind}"`);
+}
+
+/**
+ * Materialize one mandate's plan now, outside the sweep: the extend_plan
+ * and adjust_plan tools call this so the Grantmaker learns, in the same
+ * turn, whether each item became work and if not why. Returns the outcomes
+ * for the requested item indices (all items when none are given).
+ */
+export async function materializePlanItems(
+  grantId: string,
+  indices?: readonly number[]
+): Promise<PlanItemOutcome[]> {
+  const [g] = await rawQuery<PlanGrantRow>(
+    `SELECT id, name, status, policy, plan, plan_cursor FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  if (!g) return [];
+  const outcomes = await materializeGrantPlan(g);
+  if (!indices) return outcomes;
+  const wanted = new Set(indices);
+  return outcomes.filter((o) => wanted.has(o.index));
+}
+
+/** A mandate whose plan failed to materialize: log it and file a report. */
+async function reportPlanFailure(g: PlanGrantRow, err: unknown): Promise<void> {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[reconcile] plan materialization failed for mandate ${g.id} ("${g.name}"): ${msg}`);
+  try {
+    // The agents' own channel (#366), used by the machinery for itself:
+    // repeats collapse onto one row, so a sweep failing every six hours is
+    // one issue with a rising count, not a flood.
+    const { raiseIssue } = await import("./report-service.js");
+    await raiseIssue({
+      agent: "allocation_scheduler",
+      origin: "internal",
+      kind: "system_failure",
+      severity: "degraded",
+      surface: "reconcileActions / plan-to-ledger materialization",
+      title: `plan materialization failed for mandate ${g.id}`,
+      body:
+        `The reconcile sweep could not materialize the plan of the mandate "${g.name}" ` +
+        `(${g.id}); its items keep whatever ledger standing they last had. Error: ${msg.slice(0, 2000)}`,
+      contextRefs: { grant_id: g.id },
+    });
+  } catch (reportErr) {
+    console.error(
+      `[reconcile] could not file the report for mandate ${g.id}: ${
+        reportErr instanceof Error ? reportErr.message : String(reportErr)
+      }`
     );
   }
 }

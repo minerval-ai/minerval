@@ -32,6 +32,10 @@ Each task message names its trigger:
 - curator_change: the Curator merged or split your claim, or proposes a
   structural edge. Review, adopt what is apt, re-assess.
 - staleness_check: periodic refresh. Check whether the world has moved.
+- mandate_plan: a mandate's Grantmaker planned a pass on your claim (an
+  assess, reassess or deepen item); the context carries the mandate's name
+  and its rationale. Do the pass the rationale asks for; a deepen item also
+  released the claim's deferred subclaims into the queue.
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an
