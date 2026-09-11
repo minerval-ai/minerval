@@ -138,9 +138,10 @@ async function matchClaimImpl(input: {
     JSON.stringify({
       success: false,
       message:
-        `Decision NOT recorded: ${defect}. Call submit_match_decision again with ` +
-        `every required field set explicitly: is_match, matched_claim_id (when ` +
-        `is_match is true), instance_stance, confidence, reasoning.`,
+        `Decision NOT recorded: ${defect}. Call submit_match_decision again NOW, ` +
+        `in this turn, with every required field set explicitly: is_match, ` +
+        `matched_claim_id (when is_match is true), instance_stance, confidence, ` +
+        `reasoning. Do not end your turn without the call.`,
     });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -152,6 +153,16 @@ async function matchClaimImpl(input: {
     model,
     maxTokens: 4096,
     maxIterations: 8,
+    // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
+    // refused submission: "Resubmitting with every required field." and then
+    // end_turn) would otherwise default the claim to novel. One nudge.
+    finalToolNudge: {
+      max: 1,
+      message:
+        "No decision has been recorded. Call submit_match_decision now with " +
+        "every required field (is_match, matched_claim_id when is_match is " +
+        "true, instance_stance, confidence, reasoning).",
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);

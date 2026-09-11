@@ -251,10 +251,20 @@ export async function toolUseLoop(options: {
    * off mid-task at maxIterations. The string is the agent-facing wording.
    */
   iterationBudgetNotice?: { warnWithin: number; message: (remaining: number) => string };
+  /**
+   * When the agent's whole output is one final tool call (the Matcher's
+   * decision), a turn that ends in prose instead — "resubmitting now", and
+   * then nothing — loses the run. With this set, such a turn is answered with
+   * `message` as a user turn and the loop continues, at most `max` times per
+   * loop; each nudge still counts against maxIterations. Only turns with NO
+   * tool use are nudged; a final tool the loop accepted ends it as before.
+   */
+  finalToolNudge?: { message: string; max: number };
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
   let lastResult: ToolCompletionResult | null = null;
+  let nudges = 0;
   // Trace handle from the enclosing withAgent, when tracing is enabled: the
   // loop is where the transcript exists, so it's where steps are recorded
   // (#334 L0). Absent handle = record nothing, zero overhead.
@@ -309,6 +319,23 @@ export async function toolUseLoop(options: {
     }
 
     if (result.stopReason === "end_turn" || result.toolUses.length === 0) {
+      const nudge = options.finalToolNudge;
+      if (
+        nudge &&
+        result.toolUses.length === 0 &&
+        nudges < nudge.max &&
+        i < maxIter - 1
+      ) {
+        nudges++;
+        messages.push({ role: "assistant", content: result.rawContent });
+        messages.push({ role: "user", content: [{ type: "text", text: nudge.message }] });
+        if (trace) {
+          recordAgentStep(trace, "tool_results", [
+            { name: "final_tool_nudge", input: {}, output: nudge.message },
+          ]);
+        }
+        continue;
+      }
       return result;
     }
 
