@@ -43,6 +43,9 @@
     ],
     "extractor": [
       "For the Extractor"
+    ],
+    "researcher": [
+      "For the researcher"
     ]
   },
   "skills": [
@@ -131,7 +134,8 @@
           "name": "lean_search",
           "description": "Search Mathlib for declarations. The default backend is the platform's own Loogle mirror pinned to the platform's Mathlib: patterns use ?a metavariables and a ⊢ conclusion, for example \"?a + ?b = ?b + ?a\" or \"Nat.Prime, ⊢ Infinite\". When configured, a natural-language backend accepts a sentence instead. A hosted index may run ahead of the pin, so confirm any name you intend to use with lean_elaborate before relying on it. Returns matching declarations with their types and module paths.",
           "roles": [
-            "claim-steward"
+            "claim-steward",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -162,7 +166,8 @@
           "name": "lean_elaborate",
           "description": "Type-check a candidate Lean 4 statement file against the pinned Mathlib on the warm lane. Returns either the errors with positions, or the elaborated form (pp_type, expr_hash, constants, definitions_axioms, witness_present) plus any vacuity warnings. The intended loop is draft, elaborate, fix, repeat, then publish. Elaboration checks that the statement is well-typed; it says nothing about whether it is faithful to the canonical form, which is your judgment.",
           "roles": [
-            "claim-steward"
+            "claim-steward",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -471,6 +476,12 @@
           "sections": [
             "For the Extractor"
           ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For the researcher"
+          ]
         }
       ],
       "tools": [
@@ -479,7 +490,8 @@
           "description": "Everything recorded about what this claim's support rests on: each instance with its id, its source's id and whether the graph holds the source's text, any reading already recorded for it, and the documents it has been recorded as drawing on; the relations among the documents involved; and the current source map summary, if one has been written. Call it before any provenance work, and take instance and source ids from it. Nothing it returns is a score.",
           "roles": [
             "claim-steward",
-            "audit-agent"
+            "audit-agent",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -497,7 +509,8 @@
           "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt.",
           "roles": [
             "claim-steward",
-            "audit-agent"
+            "audit-agent",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -526,7 +539,8 @@
           "name": "provenance_record_reading",
           "description": "Record what you concluded from reading one instance's source against the claim: whether the source's own evidence bears the assertion it makes, what the source is using the claim for, a reader-facing note, and whether a later Steward should open this source closely and why. One current reading per instance; calling again replaces it. Whether the instance's recorded passage is actually present in the source's stored text is checked mechanically and returned; you never supply it. Record a reading only for a source you have actually read (source_read true) or, where you could not open it, say so with source_read false and support 'unclear'.",
           "roles": [
-            "claim-steward"
+            "claim-steward",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -579,7 +593,8 @@
           "name": "provenance_record_edge",
           "description": "Record that one source's assertion of this claim draws on another document: the load-bearing edge of the source map. The edge runs from an instance (the asserting side) to a source (the document drawn upon), which need not assert the claim itself; where it does, the link to that instance is found for you. Name the target by source_id when it is already in the graph, otherwise by to_source_url. Every edge is a judgment from reading: evidence must hold the located passage in the asserting source where it draws on the target, quoted or unambiguously located. Never copy an edge out of a bibliography or a citation index you did not read against the claim. Recording the same (instance, source, relation) again replaces the earlier record.",
           "roles": [
-            "claim-steward"
+            "claim-steward",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -655,7 +670,8 @@
           "name": "provenance_record_source_relationship",
           "description": "Record a relation between two documents that holds whatever claim is being traced: shared authorship, republication, or one being a version of the other. These are what let a map say that five sources are three voices. Both sources must already be in the graph; take their ids from provenance_get_map. Recording the same pair and relation again replaces the earlier record.",
           "roles": [
-            "claim-steward"
+            "claim-steward",
+            "researcher"
           ],
           "input_schema": {
             "type": "object",
@@ -719,7 +735,7 @@
           }
         }
       ],
-      "bodyChars": 12042
+      "bodyChars": 13432
     }
   ]
 }

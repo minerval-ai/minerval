@@ -376,6 +376,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               bounty: looseObject,
               attempts: looseArray,
               prize_claims: looseArray,
+              // Research runs (#298): the investigations the Steward
+              // delegated, disclosed with their brief, model, and cost.
+              research_runs: looseArray,
               // Topic tags (#272), each with the provenance of its tagging:
               // who attached it (tagger, steward, operator…) and how sure.
               tags: {

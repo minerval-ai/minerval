@@ -543,6 +543,47 @@ const configSchema = z.object({
   // Per-attempt caps on the solver's Lean tool calls (§7.1); 0 = uncapped.
   solverLeanMaxChecks: z.coerce.number().min(0).default(60),
   solverLeanMaxElaborations: z.coerce.number().min(0).default(200),
+  // The researcher (#298): the instrument an administrator launches for one
+  // bounded investigation. The launcher picks a tier; these say what each
+  // tier runs. Strong: the long-run loop (effort, streaming), for work
+  // where the best model class pays (a proof attempt, a replication).
+  // Standard: the ordinary loop on a Claude model, with web search and the
+  // sandbox. Cheap: the cheap tier, client tools only, for reading and
+  // mapping a large literature. Same guard as the solver on the strong id.
+  researcherStrongModel: z
+    .string()
+    .superRefine((id, ctx) => {
+      if (!isSupportedModelId(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: unresolvableModelIdMessage(id) });
+      } else if (!modelSupportsLongRun(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            `RESEARCHER_STRONG_MODEL "${id}" is not a strong-tier model the long-run ` +
+            "loop can drive (claude-fable, claude-mythos, claude-opus-5 families).",
+        });
+      }
+    })
+    .default(MODELS.fable),
+  researcherStandardModel: modelId(MODELS.sonnet),
+  researcherCheapModel: modelId(OPENROUTER_MODELS.flash),
+  // Kill switch for launching new runs; a run in flight also polls the
+  // researcher_paused platform flag each turn.
+  researcherEnabled: z
+    .string()
+    .transform((s) => s === "true")
+    .default("true"),
+  // Backstops, never decisions: the durable daily cap on researcher spend
+  // across processes, the most one run may be given, the most runs one
+  // launching administrator's run may start, and the wall and turn caps on
+  // one run. The launcher allocates within these.
+  researcherDailyCapOwls: z.coerce.number().min(0).default(50),
+  researcherMaxCeilingOwls: z.coerce.number().min(0).default(3),
+  researcherMaxRunsPerLauncherRun: z.coerce.number().min(0).default(3),
+  researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
+  researcherMaxTurns: z.coerce.number().min(1).default(60),
+  researcherWebSearchMaxUses: z.coerce.number().min(0).default(15),
+  researcherElicitMaxCalls: z.coerce.number().min(0).default(5),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
@@ -937,6 +978,17 @@ export function loadConfig(): Config {
     solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
     solverLeanMaxChecks: process.env.SOLVER_LEAN_MAX_CHECKS,
     solverLeanMaxElaborations: process.env.SOLVER_LEAN_MAX_ELABORATIONS,
+    researcherStrongModel: process.env.RESEARCHER_STRONG_MODEL,
+    researcherStandardModel: process.env.RESEARCHER_STANDARD_MODEL,
+    researcherCheapModel: process.env.RESEARCHER_CHEAP_MODEL,
+    researcherEnabled: process.env.RESEARCHER_ENABLED,
+    researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
+    researcherMaxCeilingOwls: process.env.RESEARCHER_MAX_CEILING_OWLS,
+    researcherMaxRunsPerLauncherRun: process.env.RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN,
+    researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
+    researcherMaxTurns: process.env.RESEARCHER_MAX_TURNS,
+    researcherWebSearchMaxUses: process.env.RESEARCHER_WEB_SEARCH_MAX_USES,
+    researcherElicitMaxCalls: process.env.RESEARCHER_ELICIT_MAX_CALLS,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,

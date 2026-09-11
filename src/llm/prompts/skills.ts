@@ -40,6 +40,7 @@ export const SKILL_SECTIONS = [
   "For the Curator",
   "For the Matcher",
   "For the Extractor",
+  "For the researcher",
   "Standards for judging",
   "Failure modes",
 ] as const;
@@ -62,7 +63,10 @@ const ALL_ADMIN_SECTIONS: readonly SkillSection[] = [
  * document order. Keys are the agent keys the site uses (`web/content/
  * agents/index.json`). The solver is not among them: it is an instrument,
  * not an administrator, and its prompt (src/llm/prompts/math-solver.ts)
- * is written without the skill or the constitution.
+ * is written without the skill or the constitution. The researcher (#298)
+ * is an instrument too, but one an administrator briefs and equips, so it
+ * receives exactly the sections addressed to it and the tools a skill
+ * declares for it.
  */
 export const ROLE_VIEW = {
   "claim-steward": ALL_ADMIN_SECTIONS,
@@ -79,6 +83,7 @@ export const ROLE_VIEW = {
   curator: ["For every administrator", "For the Curator", "For the Matcher"],
   matcher: ["For the Matcher"],
   extractor: ["For the Extractor"],
+  researcher: ["For the researcher"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;

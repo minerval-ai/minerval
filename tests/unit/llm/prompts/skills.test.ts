@@ -93,9 +93,11 @@ describe("the Mathematics skill", () => {
     expect(m.description).toMatch(/Does not apply to claims that merely use a number or a model\.$/);
   });
 
-  it("carries all ten sections in document order", () => {
+  it("carries every administrator section in document order (the researcher's is the Provenance skill's)", () => {
     const m = getSkill("mathematics");
-    expect(m.sections.map((s) => s.heading)).toEqual([...SKILL_SECTIONS]);
+    expect(m.sections.map((s) => s.heading)).toEqual(
+      SKILL_SECTIONS.filter((h) => h !== "For the researcher")
+    );
     for (const s of m.sections) expect(s.body.length).toBeGreaterThan(50);
   });
 
@@ -111,10 +113,12 @@ describe("the Mathematics skill", () => {
       "get_prize_claim",
       "decide_prize_claim",
     ]);
-    // The solver is not a skill role: it borrows these schemas under its own descriptions.
-    for (const t of m.tools.slice(0, 3)) {
-      expect(t.roles).toEqual(["claim-steward"]);
-    }
+    // The solver is not a skill role: it borrows these schemas under its own
+    // descriptions. The researcher (#298) is one, and gets the two search and
+    // elaboration tools on a mathematical claim, never a check.
+    expect(m.tools[0]!.roles).toEqual(["claim-steward", "researcher"]);
+    expect(m.tools[1]!.roles).toEqual(["claim-steward", "researcher"]);
+    expect(m.tools[2]!.roles).toEqual(["claim-steward"]);
     expect(m.tools[3]!.roles).toEqual(["claim-steward"]);
     expect(m.tools[4]!.roles).toEqual(["claim-steward", "audit-agent"]);
     expect(m.tools[6]!.roles).toEqual(["claim-steward", "audit-agent"]);
@@ -139,12 +143,13 @@ describe("the Provenance skill", () => {
       "For the Audit Agent",
       "For the Curator",
       "For the Extractor",
+      "For the researcher",
       "Standards for judging",
       "Failure modes",
     ]);
   });
 
-  it("declares its six tools for the Steward, the two reads also for Audit", () => {
+  it("declares its six tools: five for the researcher too, the two reads also for Audit, the map for the Steward alone", () => {
     expect(p.tools.map((t) => t.name)).toEqual([
       "provenance_get_map",
       "provenance_read_source",
@@ -153,9 +158,10 @@ describe("the Provenance skill", () => {
       "provenance_record_source_relationship",
       "provenance_write_map",
     ]);
-    expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent"]);
-    expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent"]);
-    for (const t of p.tools.slice(2)) expect(t.roles).toEqual(["claim-steward"]);
+    expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
+    expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
+    for (const t of p.tools.slice(2, 5)) expect(t.roles).toEqual(["claim-steward", "researcher"]);
+    expect(p.tools[5]!.roles).toEqual(["claim-steward"]);
   });
 
   it("is headed as a method skill with its own sentence of standing", () => {
@@ -193,6 +199,7 @@ describe("ROLE_VIEW", () => {
     ]);
     expect(ROLE_VIEW.matcher).toEqual(["For the Matcher"]);
     expect(ROLE_VIEW.extractor).toEqual(["For the Extractor"]);
+    expect(ROLE_VIEW.researcher).toEqual(["For the researcher"]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
       "audit-agent",
@@ -202,6 +209,7 @@ describe("ROLE_VIEW", () => {
       "curator",
       "matcher",
       "extractor",
+      "researcher",
     ]);
   });
 

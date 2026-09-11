@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 8395,
-    "fullChars": 57083,
+    "fullChars": 58150,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 9883,
-    "fullChars": 58571,
+    "fullChars": 59638,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 19426,
-    "fullChars": 68114,
+    "fullChars": 69181,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 30635,
-    "fullChars": 79323,
+    "roleChars": 32741,
+    "fullChars": 82496,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 13565,
-    "fullChars": 62253,
+    "fullChars": 63320,
     "skills": [
       {
         "name": "mathematics",
@@ -148,7 +148,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 17025,
-    "fullChars": 65713,
+    "fullChars": 66780,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 17648,
-    "fullChars": 66336,
+    "fullChars": 67403,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 16681,
-    "fullChars": 65369,
+    "roleChars": 17647,
+    "fullChars": 67402,
     "skills": [
       {
         "name": "mathematics",
@@ -243,5 +243,25 @@
     "roleChars": 4526,
     "fullChars": 4526,
     "skills": []
+  },
+  {
+    "key": "researcher",
+    "name": "Researcher",
+    "stage": 10,
+    "group": "instruments",
+    "tagline": "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
+    "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
+    "model": "Chosen per launch: Claude Fable 5.1 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
+    "hasConstitution": true,
+    "roleChars": 4180,
+    "fullChars": 53935,
+    "skills": [
+      {
+        "name": "provenance",
+        "sections": [
+          "For the researcher"
+        ]
+      }
+    ]
   }
 ]

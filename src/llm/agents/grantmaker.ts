@@ -24,6 +24,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { createResearchTools } from "../tools/research-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
 import { skillsForGrant } from "./skill-selection.js";
@@ -514,9 +515,16 @@ async function runGrantmakerTurnImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  // The delegation channel (#298): a survey or a check the mandate needs,
+  // launched from this run and funded by it; a claim may be named per call.
+  const researchTools = createResearchTools({
+    requestedBy: "grantmaker",
+    grantId: input.grantId ?? null,
+  });
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
+    ...researchTools.definitions,
     surveyTool,
     costTool,
     ...(managed
@@ -576,6 +584,8 @@ async function runGrantmakerTurnImpl(input: {
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      const research = await researchTools.execute(name, toolInput);
+      if (research !== null) return research;
       // Shared graph reads first; returns null for anything it doesn't own,
       // so the mandate-specific handlers below still get their turn.
       const graphRead = await executeGraphReadTool(name, toolInput);

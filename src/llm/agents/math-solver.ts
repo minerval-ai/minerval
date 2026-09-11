@@ -19,8 +19,21 @@ import { loadConfig } from "../../config.js";
 import { longRunToolLoop, type LongRunLoopState, type ToolCompletionResult } from "../client.js";
 import { LlmRefusalError } from "../errors.js";
 import { getUsageContext, withAgent } from "../usage-context.js";
-import { ratesForModel } from "../pricing.js";
 import { getSkill } from "../prompts/skills.js";
+import {
+  CODE_EXECUTION_TOOL,
+  CODE_EXECUTION_USD_PER_HOUR,
+  MAX_TURNS_GUARD,
+  REMINDER_FRACTION,
+  STOP_CANCELLED,
+  STOP_CEILING,
+  STOP_PAUSED,
+  TASK_BUDGET_FRACTION,
+  TASK_BUDGET_MIN_TOKENS,
+  meterCodeExecution,
+  taskBudgetTokens,
+  turnUsedCodeExecution,
+} from "../instrument-harness.js";
 import {
   buildMathSolverTaskMessage,
   getMathSolverSystemPromptBlocks,
@@ -60,44 +73,20 @@ type ToolUnion = Anthropic.Messages.ToolUnion;
 
 export const SOLVER_AGENT = "math_solver";
 
-/** Why the harness stopped the loop, as `hookStop` reports it. */
-export const SOLVER_STOP_CEILING = "ceiling";
-export const SOLVER_STOP_PAUSED = "paused";
-export const SOLVER_STOP_CANCELLED = "cancelled";
-
-/** The reminder fraction (§7.3): the wrap-up notice goes out at 85 percent of the ceiling. */
-export const SOLVER_REMINDER_FRACTION = 0.85;
-
-/**
- * The model-facing pacing signal (§7.3): the provider's task budget, a
- * running token countdown the model sees, sized from the dollar ceiling.
- * The fraction leaves room for the input side of every turn (history at
- * cache-read rates), checker time, and container time; the dollar ceiling
- * binds either way. The provider's minimum is 20,000 tokens.
- */
-export const SOLVER_TASK_BUDGET_FRACTION = 0.6;
-export const SOLVER_TASK_BUDGET_MIN_TOKENS = 20_000;
-export function solverTaskBudgetTokens(ceilingMicroUsd: number, model: string): number {
-  const outputPerMtok = ratesForModel(model).outputPerMtok;
-  const usd = Math.max(0, ceilingMicroUsd) / 1_000_000;
-  const tokens = Math.floor((usd * SOLVER_TASK_BUDGET_FRACTION * 1_000_000) / outputPerMtok);
-  return Math.max(SOLVER_TASK_BUDGET_MIN_TOKENS, tokens);
-}
-
-/**
- * A guard on the loop, not a budget: the dollar ceiling ends every attempt
- * (each turn re-reads the whole history, so no turn is free), and this
- * number only bounds a harness bug that somehow spent nothing. It is not
- * shown to the model and not configurable.
- */
-export const SOLVER_MAX_TURNS_GUARD = 10_000;
-
-/**
- * The published container rate for the code-execution tool, past the free
- * allowance: $0.05 per container-hour. The allowance is not tracked here,
- * so the meter errs on the side of counting it.
- */
-export const CODE_EXECUTION_USD_PER_HOUR = 0.05;
+// The solver is the first instrument and a special case of the general
+// harness (src/llm/instrument-harness.ts, #298): the stop reasons, the
+// reminder fraction, the task budget, the turn guard, and the container
+// rate are shared with the researcher and re-exported here under the names
+// the solver's tests and worker use.
+export const SOLVER_STOP_CEILING = STOP_CEILING;
+export const SOLVER_STOP_PAUSED = STOP_PAUSED;
+export const SOLVER_STOP_CANCELLED = STOP_CANCELLED;
+export const SOLVER_REMINDER_FRACTION = REMINDER_FRACTION;
+export const SOLVER_TASK_BUDGET_FRACTION = TASK_BUDGET_FRACTION;
+export const SOLVER_TASK_BUDGET_MIN_TOKENS = TASK_BUDGET_MIN_TOKENS;
+export const solverTaskBudgetTokens = taskBudgetTokens;
+export const SOLVER_MAX_TURNS_GUARD = MAX_TURNS_GUARD;
+export { CODE_EXECUTION_USD_PER_HOUR, CODE_EXECUTION_TOOL };
 
 export const WRAP_UP_NOTICE =
   "Harness notice: about fifteen percent of this attempt's budget remains. " +
@@ -230,15 +219,6 @@ const NOTEBOOK_READ_TOOL: Tool = {
   input_schema: { type: "object", properties: {}, additionalProperties: false },
 };
 
-/**
- * The code-execution server tool: the computer-algebra toolkit (sympy and
- * mpmath are preinstalled; one CPU, no network, and it cannot run Lean).
- * The installed SDK types it on the Messages endpoint.
- */
-export const CODE_EXECUTION_TOOL: Anthropic.Messages.CodeExecutionTool20260120 = {
-  type: "code_execution_20260120",
-  name: "code_execution",
-};
 
 // ---------------------------------------------------------------------------
 // The report validator
@@ -411,19 +391,6 @@ function trimDiagnostics(diagnostics: unknown): { diagnostics: unknown[]; trunca
   return { diagnostics: shown, truncated: diagnostics.length > shown.length };
 }
 
-/** Container time metered from a turn's wall clock when it used code execution. */
-function turnUsedCodeExecution(result: ToolCompletionResult): boolean {
-  return result.rawContent.some((block) => {
-    const type = (block as { type?: string }).type ?? "";
-    const name = (block as { name?: string }).name ?? "";
-    return (
-      (type === "server_tool_use" && name === "code_execution") ||
-      type === "code_execution_tool_result" ||
-      type === "bash_code_execution_tool_result" ||
-      type === "text_editor_code_execution_tool_result"
-    );
-  });
-}
 
 /**
  * Run one attempt. Enter through withAgent("math_solver") so every LLM,
@@ -823,14 +790,7 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     if (served) accounting.servedModels.add(served);
     const endedAt = now();
     if (turnUsedCodeExecution(result)) {
-      const seconds = Math.max(0, (endedAt - accounting.lastTurnEndedAt) / 1000);
-      await meterExternalUsage({
-        provider: "anthropic_code_execution",
-        model: "anthropic/code_execution",
-        units: seconds,
-        unitKind: "container_seconds",
-        costMicroUsd: (seconds / 3600) * CODE_EXECUTION_USD_PER_HOUR * 1_000_000,
-      });
+      await meterCodeExecution((endedAt - accounting.lastTurnEndedAt) / 1000);
     }
     accounting.lastTurnEndedAt = endedAt;
     await updateAttemptProgress({

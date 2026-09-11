@@ -2504,6 +2504,70 @@ export const platformFlags = pgTable("platform_flags", {
 });
 
 // ---------------------------------------------------------------------------
+// research_runs (#298)
+//
+// One bounded investigation by the researcher: an instrument an administrator
+// (the Claim Steward, or a Grantmaker for its mandate) launches with a task,
+// a model tier, and a dollar ceiling, and that answers only to the agent that
+// launched it. The row is the durable record of the delegation: what was
+// asked, on which model, what it cost, how it ended, the report it returned,
+// and the notebook it kept. The researcher writes nothing to the graph
+// beyond the provenance tables the Provenance skill gives it; its report is
+// context the launching administrator weighs, never a verdict of its own.
+// Same shape as proof_attempts, whose solver is the special case of this
+// instrument that runs with Lean, no network, and no constitution.
+// ---------------------------------------------------------------------------
+export const researchRuns = pgTable(
+  "research_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The claim the investigation serves, when it serves one. Cascade: a
+    // deleted claim takes its research record with it, as it takes its
+    // instances and assessments.
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
+    // The mandate whose Grantmaker launched it, when one did.
+    grantId: uuid("grant_id"),
+    // The agent key of the launcher (claim_steward, grantmaker) and its
+    // agent_runs row, so a report is traceable to the run that asked for it.
+    requestedBy: text("requested_by").notNull(),
+    requesterRunId: uuid("requester_run_id"),
+    // The researcher's own agent_runs row, and the job the spend rides on.
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    // The launcher's brief, verbatim: the question, the context, and the
+    // guidance it wrote for the instrument.
+    task: text("task").notNull(),
+    model: text("model").notNull(),
+    // strong | standard | cheap: the tier the launcher chose.
+    modelTier: text("model_tier").notNull(),
+    effort: text("effort"),
+    // Whether the constitution was prepended to the instrument's prompt.
+    includeConstitution: boolean("include_constitution").notNull().default(true),
+    // running | completed | budget | paused | timeout | refused | failed
+    status: text("status").notNull().default("running"),
+    // The tools the run was offered, by name, so a reader of the report knows
+    // what the instrument could and could not do.
+    tools: jsonb("tools").notNull().default([]),
+    ceilingMicroUsd: bigint("ceiling_micro_usd", { mode: "number" }).notNull(),
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" }).notNull().default(0),
+    turns: integer("turns").notNull().default(0),
+    servedModels: jsonb("served_models"),
+    report: jsonb("report"),
+    notebook: jsonb("notebook").notNull().default({}),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (table) => [
+    index("idx_research_runs_claim").on(table.claimId),
+    index("idx_research_runs_grant").on(table.grantId),
+    index("idx_research_runs_status").on(table.status),
+    check("ck_research_runs_ceiling", sql`ceiling_micro_usd > 0`),
+    check("ck_research_runs_spent", sql`spent_micro_usd >= 0`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // bounties
 //
 // A public offer bound to one formalization (§8.1): denominated in owls

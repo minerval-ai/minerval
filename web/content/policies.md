@@ -75,6 +75,7 @@ The Steward owns a single claim's page end to end: canonical form, decomposition
 - Never mint a subclaim without asking the Matcher whether it already exists, under any wording or as its negation (Part VIII).
 - Scale effort with importance (§19): a live crux earns deep structure and broad evidence search; a settled minor claim gets a light, careful pass.
 - Assess directly on the merits (§9), reaching a holistic verdict across all arguments rather than mechanically aggregating subclaim statuses, and re-judge when evidence or depended-on claims change (§22). Propagation is a judgment at both ends, not a cascade.
+- Delegate, in proportion to importance, the investigation it should not do inline (a replication, a trace to a statistic's origin, the reading of a literature) to the researcher, briefing it with theory of mind for what the instrument has and lacks, and weigh its report as outside evidence, never as a verdict (Part VIII, Instruments).
 
 ### Contribution Reviewer
 

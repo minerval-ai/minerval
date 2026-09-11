@@ -392,6 +392,8 @@ export interface ClaimDetail {
   bounty: BountySummary | null;
   attempts: AttemptSummary[];
   prize_claims: PrizeClaimSummary[];
+  // Research runs (#298); absent or empty until the API serves them.
+  research_runs?: ResearchRunSummary[];
 }
 
 export interface SearchResultItem {
@@ -774,6 +776,21 @@ export interface PrizeClaimSummary {
 }
 
 export type AttemptOutcome = "proof" | "disproof" | "partial" | "reduction" | "negative" | "none";
+
+// A research run (#298): an investigation the Steward delegated to the
+// researcher, disclosed on the claim page with its brief, model, and cost.
+export interface ResearchRunSummary {
+  id: string;
+  requested_by: string;
+  task: string;
+  model: string;
+  model_tier: string;
+  status: string;
+  spent_micro_usd: number;
+  turns: number;
+  started_at: string;
+  finished_at: string | null;
+}
 
 export interface AttemptSummary {
   id: string;

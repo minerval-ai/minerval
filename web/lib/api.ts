@@ -73,6 +73,7 @@ function withMathDefaults(raw: RawDetail): ClaimDetail {
     bounty: raw.bounty ?? null,
     attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
     prize_claims: Array.isArray(raw.prize_claims) ? raw.prize_claims : [],
+    research_runs: Array.isArray(raw.research_runs) ? raw.research_runs : [],
     tags: Array.isArray(raw.tags) ? raw.tags : [],
   };
 }

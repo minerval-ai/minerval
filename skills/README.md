@@ -83,6 +83,7 @@ else is allowed at that level:
 - `For the Curator`
 - `For the Matcher`
 - `For the Extractor`
+- `For the researcher`
 - `Standards for judging`
 - `Failure modes`
 
@@ -91,7 +92,9 @@ Which role receives which sections is the `ROLE_VIEW` table in
 view is wrapped with a heading the agent can cite, `# Domain skill: <Name>
 (version N)` or `# Method skill: <Name> (version N)`, and one sentence of
 standing. The solver receives no skill: it is an instrument, and its prompt
-is written without one.
+is written without one. The researcher, the instrument an administrator
+briefs and launches, receives only `For the researcher` and the tools a
+skill declares for the `researcher` role.
 
 Rules enforced by `tests/unit/llm/prompts/skills.test.ts`: the file is under
 600 lines; only the headings above appear as H2s; the text contains no

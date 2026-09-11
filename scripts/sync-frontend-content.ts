@@ -45,6 +45,7 @@ import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arb
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
+import { getResearcherSystemPrompt } from "../src/llm/prompts/researcher.js";
 import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
 import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
 import {
@@ -125,6 +126,15 @@ const AGENTS: AgentMeta[] = [
     tagline: "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     invokedWhen: "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
     model: "Claude Fable 5.1", fn: getMathSolverSystemPrompt },
+  // The researcher (#298): the general instrument, of which the solver is
+  // the special case. An administrator briefs it, picks its tier and budget,
+  // and chooses whether it carries the constitution (the default). It
+  // writes only provenance rows and its notebook; its report is context the
+  // launcher weighs.
+  { key: "researcher", name: "Researcher", stage: 10, group: "instruments",
+    tagline: "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
+    invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
+    model: "Chosen per launch: Claude Fable 5.1 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)", fn: getResearcherSystemPrompt },
 ];
 
 export interface AgentIndexEntry {

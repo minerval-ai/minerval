@@ -40,6 +40,7 @@ import { registerLeanTools } from "./lean-tools.js";
 import { registerAttemptTools } from "./attempt-tools.js";
 import { registerPrizeTools } from "./prize-tools.js";
 import { registerProvenanceTools } from "./provenance-tools.js";
+import { getResearchToolDefinitions } from "./research-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -189,6 +190,7 @@ export function builtinToolNames(): Set<string> {
     getArbitratorToolDefinitions(),
     getAuditToolDefinitions(),
     getGraphReadToolDefinitions(),
+    getResearchToolDefinitions({ claimScoped: false }),
   ];
   const names = new Set<string>(AGENT_INLINE_TOOL_NAMES);
   for (const family of families) for (const tool of family) names.add(tool.name);

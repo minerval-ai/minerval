@@ -56,6 +56,7 @@ const FLAGSHIP: ClaimDetail = {
   verification: null,
   bounty: null,
   attempts: [],
+  research_runs: [],
   prize_claims: [],
   assessment: {
     id: "a-1",
@@ -841,6 +842,7 @@ const LEGENDRE: ClaimDetail = {
   attempts: [LEGENDRE_ATTEMPT_MAX, LEGENDRE_ATTEMPT_STD],
   // Every submission stays on the record, rejected and withdrawn included
   // (§8.10); the checker's gate summary is public on each contribution page.
+  research_runs: [],
   prize_claims: [
     {
       id: "pc-legendre-3",
@@ -1058,6 +1060,7 @@ const BERTRAND: ClaimDetail = {
   // A theorem with a proof gets no bounty.
   bounty: null,
   attempts: [BERTRAND_ATTEMPT_CAL],
+  research_runs: [],
   prize_claims: [],
   assessment: {
     id: "a-b1",
