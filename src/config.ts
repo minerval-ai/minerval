@@ -298,6 +298,12 @@ const configSchema = z.object({
   // obvious non-claims ("i am"), not a quality judgment — judging claim
   // well-formedness belongs to agents (the intake reviewer, the Steward),
   // per the constitution's "Judgment over Mechanism". 0 disables.
+  // Output budget for one extraction call. A document's claims fit in far
+  // less, but a reasoning model that writes its thinking into the same
+  // budget (GLM 5.3 Flash does, see OPENROUTER_MODELS) can exhaust 16k on a
+  // long post before the structured list is emitted, and the whole source
+  // then fails to extract. Raise it for such a model; the tokens are billed.
+  extractionMaxTokens: z.coerce.number().int().min(1024).default(16384),
   extractionMinConfidence: z.coerce.number().default(0.3),
   // Importance prior for user-proposed claims admitted through intake review
   // (#157). Deliberately below the 0.5 default: an approved suggestion enters
@@ -904,6 +910,7 @@ export function loadConfig(): Config {
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
+    extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
     valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
