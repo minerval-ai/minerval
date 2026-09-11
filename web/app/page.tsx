@@ -40,7 +40,8 @@ export default async function Home() {
           A new constitution of knowledge
         </h1>
         <p className={styles.heroLede}>
-          Building the epistemic stack for the AI age
+          An open repository of claims, assessed and maintained by AI administrators
+          under a public constitution.
         </p>
         <form className={styles.search} role="search" action="/claims" method="get" data-tour="search">
           <SearchInput />
