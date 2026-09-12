@@ -133,3 +133,57 @@ describe("toolUseLoop finalToolNudge.when", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("toolUseLoop max_tokens recovery", () => {
+  const cut = {
+    content: [{ type: "text", text: "Reasoning at length about the" }],
+    usage: { input_tokens: 10, output_tokens: 4096 },
+    stop_reason: "max_tokens",
+    container: null,
+  };
+
+  it("replays the cut turn with a note and continues when no server tools are in play", async () => {
+    createMock.mockResolvedValueOnce(cut).mockResolvedValueOnce(decision);
+    let final: unknown = null;
+    const result = await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 4,
+      executeTool: async () => "ok",
+      onFinalTool: (name, input) => (name === "submit" ? (final = input) : null),
+    });
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const second = createMock.mock.calls[1]![0];
+    expect(second.messages.at(-2).role).toBe("assistant");
+    expect(JSON.stringify(second.messages.at(-1).content)).toContain("cut off at the output limit");
+    expect(final).toEqual({ is_match: true });
+    expect(result.stopReason).toBe("tool_use");
+  });
+
+  it("gives up after two recoveries", async () => {
+    createMock.mockResolvedValue(cut);
+    const result = await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 8,
+      executeTool: async () => "ok",
+    });
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(result.stopReason).toBe("max_tokens");
+  });
+
+  it("still stops at once when a server tool could be half-emitted", async () => {
+    createMock.mockResolvedValue(cut);
+    const result = await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools: [...tools, { type: "web_search_20260209", name: "web_search", max_uses: 5 } as never],
+      model: MODELS.haiku,
+      maxIterations: 4,
+      executeTool: async () => "ok",
+    });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(result.stopReason).toBe("max_tokens");
+  });
+});

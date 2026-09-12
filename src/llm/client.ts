@@ -28,6 +28,7 @@ import { getUsageContext } from "./usage-context.js";
 import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
+import { resolveProvider } from "./providers/routing.js";
 import type {
   CompletionResult,
   EffortLevel,
@@ -271,6 +272,7 @@ export async function toolUseLoop(options: {
   const maxIter = options.maxIterations ?? 5;
   let lastResult: ToolCompletionResult | null = null;
   let nudges = 0;
+  let maxTokensRecoveries = 0;
   // Trace handle from the enclosing withAgent, when tracing is enabled: the
   // loop is where the transcript exists, so it's where steps are recorded
   // (#334 L0). Absent handle = record nothing, zero overhead.
@@ -321,6 +323,37 @@ export async function toolUseLoop(options: {
     // best-effort result instead — the caller (e.g. the Steward) has already
     // been told to record its conclusion before the budget runs out.
     if (result.stopReason === "max_tokens") {
+      // Without server tools there is nothing half-emitted to strand, and a
+      // cutoff is recoverable: a model that reasons in its output (GLM 5.3
+      // Flash) hit the cap on most Steward turns and a majority of Matcher
+      // turns in the corpus run, and every one of those runs ended with no
+      // assessment or decision. Tell it what happened and let it finish, at
+      // most twice per loop; the assistant turn is replayed only when it has
+      // content (an empty one the Anthropic API rejects).
+      const hasServerTools = options.tools.some((t) => !("input_schema" in t));
+      const provider = resolveProvider(options.model ?? DEFAULT_MODEL);
+      const canResume =
+        !hasServerTools &&
+        maxTokensRecoveries < 2 &&
+        i < maxIter - 1 &&
+        (result.rawContent.length > 0 || provider !== "anthropic");
+      if (canResume) {
+        maxTokensRecoveries++;
+        if (result.rawContent.length > 0) {
+          messages.push({ role: "assistant", content: result.rawContent });
+        }
+        const note =
+          "Your previous turn was cut off at the output limit (max_tokens) before " +
+          "it finished, and nothing from it was recorded. Do not repeat it. Continue " +
+          "from here far more concisely: decide, and make the tool call now.";
+        messages.push({ role: "user", content: [{ type: "text", text: note }] });
+        if (trace) {
+          recordAgentStep(trace, "tool_results", [
+            { name: "max_tokens_recovery", input: {}, output: note },
+          ]);
+        }
+        continue;
+      }
       return result;
     }
 
