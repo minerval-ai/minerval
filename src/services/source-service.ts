@@ -22,7 +22,25 @@ export async function getOrCreateSource(input: {
     .from(sources)
     .where(eq(sources.url, input.url))
     .limit(1);
-  if (existing) return existing;
+  if (existing) {
+    // A row can exist with no content before anyone submits the document:
+    // the Steward records the URLs it cites as sources. A later submission
+    // that carries the text fills it in (and a placeholder title), or the
+    // extraction worker re-fetches a URL the caller already had the text
+    // for — arxiv answered that fetch with a 403 and a corpus post was lost.
+    if (!existing.rawContent && input.content) {
+      const [updated] = await db
+        .update(sources)
+        .set({
+          rawContent: input.content,
+          ...(input.title && existing.title === existing.url ? { title: input.title } : {}),
+        })
+        .where(eq(sources.id, existing.id))
+        .returning();
+      return updated ?? existing;
+    }
+    return existing;
+  }
 
   const [source] = await db
     .insert(sources)
