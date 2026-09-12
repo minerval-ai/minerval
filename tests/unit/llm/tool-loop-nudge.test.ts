@@ -118,3 +118,18 @@ describe("toolUseLoop malformed tool arguments", () => {
     expect(JSON.stringify(second.messages.at(-1).content)).toContain("not valid JSON");
   });
 });
+
+describe("toolUseLoop finalToolNudge.when", () => {
+  it("does not nudge once the caller says the work is done", async () => {
+    createMock.mockResolvedValue(prose);
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 4,
+      finalToolNudge: { max: 1, message: "Call submit now.", when: () => false },
+      executeTool: async () => "ok",
+    });
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+});

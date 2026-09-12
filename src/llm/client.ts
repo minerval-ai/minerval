@@ -260,7 +260,12 @@ export async function toolUseLoop(options: {
    * loop; each nudge still counts against maxIterations. Only turns with NO
    * tool use are nudged; a final tool the loop accepted ends it as before.
    */
-  finalToolNudge?: { message: string; max: number };
+  finalToolNudge?: {
+    message: string;
+    max: number;
+    /** Nudge only while this holds (e.g. "no decision recorded yet"); default always. */
+    when?: () => boolean;
+  };
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
@@ -325,7 +330,8 @@ export async function toolUseLoop(options: {
         nudge &&
         result.toolUses.length === 0 &&
         nudges < nudge.max &&
-        i < maxIter - 1
+        i < maxIter - 1 &&
+        (nudge.when?.() ?? true)
       ) {
         nudges++;
         messages.push({ role: "assistant", content: result.rawContent });
