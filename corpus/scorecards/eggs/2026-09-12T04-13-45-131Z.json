@@ -1,0 +1,227 @@
+{
+  "generatedAt": "2026-09-12T04:13:45.131Z",
+  "cluster": "eggs",
+  "database": "episteme_corpus_golden",
+  "config": {
+    "pipelineEpoch": "2026-09-domain-skills",
+    "gitCommit": "b45fc09",
+    "profile": null,
+    "swap": null,
+    "order": null,
+    "models": {
+      "extractor": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "curator": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "caps": {
+      "stewardMaxRuns": 3,
+      "stewardMaxIterations": 25,
+      "curatorMaxRuns": 0,
+      "curatorSweepRate": 0,
+      "llmDailyTokenLimit": 3000000,
+      "llmHourlyTokenLimit": 0
+    },
+    "observed": {
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "modelsSource": "run"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 10,
+      "instances": 10,
+      "totalClaims": 16,
+      "claimsPer1kWords": 30.65134099616858,
+      "typeDistribution": {
+        "empirical_derived": 9,
+        "empirical_verifiable": 1,
+        "causal": 6
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 15,
+        "p90": 22,
+        "max": 24,
+        "mean": 15.1
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1
+    },
+    "decomposition": {
+      "maxDepth": 2,
+      "depthHistogram": {
+        "0": 8,
+        "1": 1,
+        "2": 1
+      },
+      "atomicShare": 0.813,
+      "meanChildrenPerParent": 3
+    },
+    "crossDoc": {
+      "sharedSubclaims": 0
+    },
+    "assessment": {
+      "statusDistribution": {
+        "contested": 2,
+        "supported": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 3100
+    },
+    "importance": {
+      "mean": 0.434,
+      "histogram": {
+        "0.6-0.8": 3,
+        "0.0-0.2": 1,
+        "0.4-0.6": 10,
+        "0.2-0.4": 2
+      },
+      "meanAtomic": 0.404,
+      "meanCompound": 0.567
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 10,
+      "withProposal": 10,
+      "rewriteRate": 0.3,
+      "rewriteMagnitude": 0.206,
+      "meanWordDelta": 0.667,
+      "matched": {
+        "count": 0,
+        "deniesShare": null,
+        "meanProposalDistance": null
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 3,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.57,
+      "meanJudged": 0.55,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.33,
+      "reasoningFit": 4.17,
+      "impartiality": 4.17
+    },
+    "granularity": {
+      "too_granular": 1,
+      "good": 2
+    },
+    "flags": {
+      "other": 2,
+      "hallucination_risk": 3,
+      "status_miscalibrated": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 3
+      },
+      "hedging": {
+        "calibrated": 3
+      },
+      "canonicalForm": {
+        "frame_bound": 1,
+        "good": 1,
+        "overstated": 1
+      },
+      "politicalBias": {
+        "none": 3
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0.67,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "25ece226-6383-44e7-9349-3269258d37f4",
+        "text": "Cohort studies link egg intake of up to one egg per day to higher cardiovascular disease risk in healthy adults",
+        "importanceStored": 0.5,
+        "status": "contested",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "too_granular",
+        "importance_judged": 0.5,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "frame_bound",
+        "political_bias": "none",
+        "flags": [
+          "other",
+          "hallucination_risk"
+        ],
+        "note": "The reasoning is careful and genuinely independent, but the second subclaim is minted in the opposite direction from what the reasoning itself finds: it states meta-analyses DO find a significant positive association, while the prose says they report nulls — the graph now contains a child that, if ever funded, would \"support\" the claim by asserting something the steward concluded is false. This is a decomposition defect, not merely a stub. Secondary issues: the canonical form is ambiguous in exactly the way the assessment admits (\"link\" — whole literature vs. one pooled analysis), which a §3 rewrite should resolve rather than note; and with no web search, the verdict rests on recalled estimates (12%/16%, specific meta-analyses) that are hallucination-prone, though honestly flagged. Status contested at 0.7 with no credence is well calibrated for the live, split egg-CVD literature, and the importance of 0.5 is defensible."
+      },
+      {
+        "id": "beb7baf2-e599-40bf-90c8-73a529e76824",
+        "text": "Dietary cholesterol adversely affects the blood lipid profile.",
+        "importanceStored": 0.6,
+        "status": "supported",
+        "readability": 5,
+        "reasoning_fit": 4.5,
+        "impartiality": 4.5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.55,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "note": "The supported@0.85 verdict is honestly calibrated to an incomplete examination — the reasoning explicitly names why verified was not available, how skeptics were weighed without false parity, and what would flip the result — and the two requires-children are legitimate claims whose unassessed status costs nothing under §19. The real residual defect is that the load-bearing quantitative backbone (Hegsted/Keys equations, Clarke 1997, Mensink 2003, trial counts, mg/dL figures, the AHA/DGAC characterizations) is asserted from memory rather than examined sources, a contained but genuine hallucination risk the prose itself does not flag beyond the generic incompleteness disclaimer; stored importance 0.6 is also mildly high for a direction question that is close to settled among experts even if live in public discourse."
+      },
+      {
+        "id": "9726ebc4-f869-4eb9-8548-6d910b0b518d",
+        "text": "Eating up to one egg a day increases cardiovascular disease risk in healthy people.",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.6,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "overstated",
+        "political_bias": "none",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk",
+          "other"
+        ],
+        "note": "The contested verdict and credence-vs-confidence split are well argued, but the stored claim text asserts harm causally at the affirmative pole while the assessment itself leans toward null (credence 0.3) — the text is stronger than the graph's own reading. Also, the reasoning rests on remembered meta-analyses with no evidence directly examined this run (\"no web search was possible\"), so 'contested' is grounded on background knowledge rather than examined sources; that is a defensible call but should be flagged as a verification gap."
+      }
+    ]
+  },
+  "cost": {
+    "calls": 4,
+    "usd": 0.01
+  }
+}

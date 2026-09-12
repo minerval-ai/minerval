@@ -1,0 +1,228 @@
+{
+  "generatedAt": "2026-09-12T00:37:51.997Z",
+  "cluster": "lableak",
+  "database": "episteme_corpus_lableak",
+  "config": {
+    "pipelineEpoch": "2026-09-domain-skills",
+    "gitCommit": "08be745",
+    "profile": null,
+    "swap": null,
+    "order": null,
+    "models": {
+      "extractor": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "curator": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "caps": {
+      "stewardMaxRuns": 8,
+      "stewardMaxIterations": 25,
+      "curatorMaxRuns": 3,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 8000000,
+      "llmHourlyTokenLimit": 0
+    },
+    "observed": {
+      "curator": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "modelsSource": "run"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 36,
+      "instances": 48,
+      "totalClaims": 48,
+      "claimsPer1kWords": 17.524644030668128,
+      "typeDistribution": {
+        "empirical_verifiable": 22,
+        "empirical_derived": 21,
+        "causal": 5
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 14,
+        "p90": 18,
+        "max": 21,
+        "mean": 14.4
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1.3333333333333333
+    },
+    "decomposition": {
+      "maxDepth": 3,
+      "depthHistogram": {
+        "0": 34,
+        "2": 1,
+        "3": 1
+      },
+      "atomicShare": 0.938,
+      "meanChildrenPerParent": 7.67
+    },
+    "crossDoc": {
+      "sharedSubclaims": 4
+    },
+    "assessment": {
+      "statusDistribution": {
+        "contested": 2,
+        "unsupported": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 3962
+    },
+    "importance": {
+      "mean": 0.451,
+      "histogram": {
+        "0.6-0.8": 6,
+        "0.2-0.4": 19,
+        "0.4-0.6": 17,
+        "0.8-1.0": 5,
+        "0.0-0.2": 1
+      },
+      "meanAtomic": 0.431,
+      "meanCompound": 0.75
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 35,
+      "withProposal": 35,
+      "rewriteRate": 0.086,
+      "rewriteMagnitude": 0.171,
+      "meanWordDelta": 3.667,
+      "matched": {
+        "count": 7,
+        "deniesShare": 0,
+        "meanProposalDistance": 0.441
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 3,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.75,
+      "meanJudged": 0.73,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.33,
+      "reasoningFit": 4,
+      "impartiality": 4.33
+    },
+    "granularity": {
+      "good": 3
+    },
+    "flags": {
+      "status_miscalibrated": 2,
+      "hallucination_risk": 2,
+      "opaque_ids": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 3
+      },
+      "hedging": {
+        "overconfident": 1,
+        "calibrated": 2
+      },
+      "canonicalForm": {
+        "good": 3
+      },
+      "politicalBias": {
+        "none": 3
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0.33,
+    "canonicalFormMissShare": 0,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "d26780aa-32f4-4e12-8e19-cabb269cb952",
+        "text": "SARS-CoV-2 entered humans through a research-related accident, plausibly at the Wuhan Institute of Virology.",
+        "importanceStored": 0.85,
+        "status": "contested",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.85,
+        "sycophancy": "independent",
+        "hedging": "overconfident",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk"
+        ],
+        "note": "Contested is the right status and the reasoning is genuinely two-sided and followable, but confidence 0.85 is hard to defend when the author states no web search was possible and the key affirmative/denying passages were read unverified — this run rests heavily on background knowledge plus one whole source."
+      },
+      {
+        "id": "80510c3e-9d53-4b01-9900-a15623d7dcc1",
+        "text": "SARS-CoV-2's furin cleavage site is evidence of laboratory engineering.",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.5,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "note": "A well-weighed contested verdict: both the affirmative strands and the specific technical rebuttals are laid out with a clear account of what would change the conclusion, and omitting credence under the standard-of-evidence ambiguity is handled correctly per §10. The one real defect is evidence base: every major source fetch failed, so the weighing rests on background knowledge and the one neutral overview actually read — an honest caveat, but it caps how much the reasoning can actually have \"examined,\" and the 0.7 confidence is at the optimistic end given that. The unassessed children are correctly not penalized, and the \"is evidence of\" framing is defensible since the dispute genuinely is over whether the site constitutes such evidence."
+      },
+      {
+        "id": "64f6e2ce-3794-4022-bcd5-e17c7a94cbdd",
+        "text": "A human-transmissible progenitor of SARS-CoV-2 was present at the Wuhan Institute of Virology before the outbreak",
+        "importanceStored": 0.8,
+        "status": "unsupported",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.85,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "opaque_ids",
+          "status_miscalibrated"
+        ],
+        "note": "The claim text, decomposition, and status alternatives analysis are strong, but \"unsupported\" sits on a knife edge with \"contested\" — DEFUSE plus researcher illness are affirmative indirect evidence the discourse treats as a live side — and the verdict rests on one overview source plus background knowledge with no search and no primary documents read, which strains confidence 0.75. The opaque claim ids are described in prose, which rescues readability, but inline ids should be named claims."
+      }
+    ]
+  },
+  "cost": {
+    "calls": 3,
+    "usd": 0
+  }
+}
