@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-11T16:01:44.148Z",
-  "gitCommit": "637c61b",
+  "syncedAt": "2026-09-11T22:11:01.777Z",
+  "gitCommit": "e07b919",
   "pins": [
     {
       "agent": "steward",
@@ -55,6 +55,12 @@
       "envVar": "TAGGER_MODEL",
       "model": "z-ai/glm-5.3-flash",
       "label": "GLM 5.3 Flash"
+    },
+    {
+      "agent": "lookout",
+      "envVar": "LOOKOUT_MODEL",
+      "model": "claude-haiku-4-5-20251001",
+      "label": "Claude Haiku 4.5"
     }
   ],
   "judge": {
@@ -68,6 +74,10 @@
       "cacheReadMultiplier": 0.025
     },
     "z-ai/glm-5.3-flash": null,
+    "claude-haiku-4-5-20251001": {
+      "inputPerMtok": 1,
+      "outputPerMtok": 5
+    },
     "claude-sonnet-5": {
       "inputPerMtok": 3,
       "outputPerMtok": 15

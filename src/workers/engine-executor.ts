@@ -1,6 +1,6 @@
 /**
  * The engine executor — the drain over the action ledger's non-steward
- * kinds: grant_planning, ingest, mandate_review.
+ * kinds: grant_planning, ingest, mandate_review, lookout_run, formalize.
  *
  * Same posture as the steward executor: a dumb loop over covered rows.
  * Grants fund their own planning, review, and ingest actions from escrow
@@ -15,6 +15,10 @@
  *    (llm/agents/mandate-review.ts) — surveying graph and web, writing
  *    the mandate's valuations, growing its plan, moving money. Metered
  *    and consumed the same way.
+ *  - lookout_run: run one of a mandate's lookouts (llm/agents/lookout.ts)
+ *    — a cheap standing watch reading its brief, the queued inputs, the
+ *    graph and the web, and raising candidates. Metered and consumed the
+ *    same way; the lookout's next due time is stamped after the run.
  *  - ingest: enqueue the source for extraction (the enqueue is this
  *    action's unit of work; the action stays 'running' and is completed
  *    by the extraction worker with the metered cost, so the funders'
@@ -33,6 +37,8 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
+import { runLookout } from "../llm/agents/lookout.js";
+import { recordLookoutRun } from "../services/lookout-service.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
@@ -87,6 +93,7 @@ export async function processNextEngineAction(
   const action = await nextRunnableAction([
     "grant_planning",
     "mandate_review",
+    "lookout_run",
     "ingest",
     "formalize",
   ]);
@@ -94,6 +101,7 @@ export async function processNextEngineAction(
 
   if (action.kind === "ingest") return runIngestAction(action);
   if (action.kind === "formalize") return runFormalizeAction(action, opts);
+  if (action.kind === "lookout_run") return runLookoutAction(action, opts);
   return runGrantAgentAction(action, opts);
 }
 
@@ -204,6 +212,104 @@ async function runFormalizeAction(
       actionId: action.id,
       kind: "formalize",
       grantId: funder.grantId,
+      ok: false,
+      error: msg,
+    };
+  }
+}
+
+/**
+ * lookout_run: one run of the lookout named in target_ref, under its
+ * mandate's funder and budget job, metered and consumed against the
+ * covering allocation. The run's end is stamped on the lookout (next due
+ * time, counters, note) whatever happened, so a failing lookout backs off
+ * rather than reopening on every sweep.
+ */
+async function runLookoutAction(
+  action: RunnableAction,
+  opts: { model?: string }
+): Promise<EngineProcessResult> {
+  const lookoutId = action.target_ref ?? "";
+  const [lookout] = await rawQuery<{
+    id: string;
+    status: string;
+    grant_id: string;
+    grant_status: string;
+    funder_user_id: string;
+    budget_job_id: string;
+  }>(
+    `SELECT l.id, l.status, g.id AS grant_id, g.status AS grant_status,
+            g.funder_user_id, g.budget_job_id
+       FROM lookouts l JOIN grants g ON g.id = l.grant_id
+      WHERE l.id = $1`,
+    [lookoutId]
+  );
+  if (!lookout || lookout.status !== "active" || lookout.grant_status !== "active") {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  try {
+    let note: string | null = null;
+    let flagsRaised = 0;
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: lookout.funder_user_id, jobId: funder.jobId ?? null },
+      () =>
+        withCostMeter(async () => {
+          const run = await runLookout({ lookoutId: lookout.id, model: opts.model });
+          note = run.note;
+          flagsRaised = run.flagsRaised;
+        })
+    );
+    await recordLookoutRun({ lookoutId: lookout.id, note, flagsRaised }).catch(() => {});
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId ?? null,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "lookout_run",
+      grantId: lookout.grant_id,
+      ok: true,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return {
+        status: "transient",
+        actionId: action.id,
+        kind: "lookout_run",
+        grantId: lookout.grant_id,
+        error: msg,
+      };
+    }
+    // A genuine failure: stamp the run as failed (the lookout backs off to
+    // at least six hours before it is due again) and retire the group; the
+    // reconcile sweep reopens it when the lookout is next due.
+    await recordLookoutRun({
+      lookoutId: lookout.id,
+      note: `(run failed: ${msg.slice(0, 300)})`,
+      flagsRaised: 0,
+      failed: true,
+    }).catch(() => {});
+    await cancelGroup(action.exclusion_group);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "lookout_run",
+      grantId: lookout.grant_id,
       ok: false,
       error: msg,
     };

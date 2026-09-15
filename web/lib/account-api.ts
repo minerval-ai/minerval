@@ -788,6 +788,27 @@ export interface MandateTextView {
   disclosure: string | null;
 }
 
+export interface MandateLookoutView {
+  id: string;
+  title: string;
+  brief: string;
+  status: "active" | "paused" | "retired";
+  heartbeat_hours: number;
+  triggers: string[];
+  model: string | null;
+  max_value: number;
+  max_ingests_per_run: number;
+  runs: number;
+  flags: number;
+  last_run_at: string | null;
+  next_due_at: string | null;
+  last_note: string | null;
+  pending_events: number;
+  precision: { flagged: number; ran: number; moved: number; ingests: number; notes: number };
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface MandateDetailView extends MandateSummaryView {
   strategy: string | null;
   text?: MandateTextView;
@@ -798,6 +819,8 @@ export interface MandateDetailView extends MandateSummaryView {
   funded_by_mandates: MandateRegrantEdge[];
   regrants_out: MandateRegrantEdge[];
   last_review: { at: string; note: string } | null;
+  // The standing watches the mandate funds (docs/allocation.md, "Lookouts").
+  lookouts?: MandateLookoutView[];
   plan_items: Array<{
     action: "assess" | "reassess" | "deepen" | "ingest";
     claim_id?: string;

@@ -48,6 +48,10 @@ import {
   getLiveBountyForClaim,
   formatOwls,
 } from "../../services/bounty-service.js";
+import {
+  executeLookoutManagementTool,
+  getLookoutManagementToolDefinitions,
+} from "../tools/lookout-management-tools.js";
 
 export interface GrantMandate {
   /** Agent-written working title, shown only on the funder's dashboard. */
@@ -501,6 +505,9 @@ async function runGrantmakerTurnImpl(input: {
   };
 
   const bountyTools = getBountyToolDefinitions();
+  // The lookout tools (docs/allocation.md, "Lookouts"): standing watches
+  // the mandate funds, shared with the review pass.
+  const lookoutTools = getLookoutManagementToolDefinitions();
 
   let mandate: GrantMandate | undefined;
   let declined: { reason: string } | undefined;
@@ -533,6 +540,7 @@ async function runGrantmakerTurnImpl(input: {
           spawnTool,
           rateTool,
           ...bountyTools,
+          ...lookoutTools,
         ]
       : [proposeTool, declineTool]),
   ];
@@ -743,6 +751,8 @@ export interface ManagementToolOptions {
   passStartedAt?: Date;
   /** A person present who can confirm a posting at or above the threshold. */
   confirmedBy?: string | null;
+  /** Which path is acting, recorded on lookouts it stands up. */
+  actor?: string;
 }
 
 /** How long a recorded bounty request stays confirmable by a later pass. */
@@ -842,6 +852,12 @@ export async function executeManagementTool(
   toolInput: Record<string, unknown>,
   opts: ManagementToolOptions = {}
 ): Promise<string | null> {
+  // The lookout tools (spawn_lookout, list_lookouts, lookout_report,
+  // update_lookout, poke_lookout); null means "not one of them".
+  const lookout = await executeLookoutManagementTool(grantId, name, toolInput, {
+    createdBy: opts.actor ?? (opts.confirmedBy ? "grantmaker:chat" : "grantmaker:review"),
+  });
+  if (lookout !== null) return lookout;
   if (name === "post_bounty") {
     return executePostBounty(grantId, toolInput, opts);
   }

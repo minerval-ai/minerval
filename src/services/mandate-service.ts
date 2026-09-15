@@ -26,6 +26,7 @@ import { LIVE_BOUNTY_STATUSES } from "./bounty-service.js";
 import type { AttemptSummary } from "./claim-extras-types.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import type { PlanItem } from "./grant-service.js";
+import { summarizeLookouts, type LookoutSummary } from "./lookout-service.js";
 
 export interface MandateSummary {
   id: string;
@@ -250,6 +251,8 @@ export interface MandateDetail extends MandateSummary {
   }>;
   /** Non-empty exactly when the mandate ingests: the pipeline view. */
   pipeline: SourcePipelineRow[];
+  /** The standing watches this mandate funds (docs/allocation.md, "Lookouts"). */
+  lookouts: LookoutSummary[];
   /** The domain skills the mandate's Grantmaker carries (skill names). */
   skills: string[];
   /** Set only for the manager: the conversation to keep talking in. */
@@ -303,6 +306,7 @@ export async function getPublicMandate(
 
   const hasIngest = items.some((i) => i.action === "ingest");
   const pipeline = hasIngest ? await getMandatePipeline(row.id) : [];
+  const lookouts = await summarizeLookouts(row.id).catch(() => []);
 
   const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
   let conversationId: string | undefined;
@@ -350,6 +354,7 @@ export async function getPublicMandate(
       assessed_at: f.assessed_at?.toISOString() ?? null,
     })),
     pipeline,
+    lookouts,
     skills: Array.isArray(row.skills) ? row.skills : [],
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
