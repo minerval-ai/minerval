@@ -41,7 +41,7 @@ vi.mock("../../../src/db/client.js", () => ({
   }),
 }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ lookoutModel: "claude-haiku-4-5-20251001" }),
+  loadConfig: () => ({ lookoutModel: "z-ai/glm-5.3-flash" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
   withAgent: (_a: string, fn: () => unknown) => fn(),
@@ -178,6 +178,7 @@ describe("runLookout", () => {
   });
 
   it("carries the watcher's toolset, with web search only on an Anthropic model", async () => {
+    state.lookout = lookout({ model: "claude-sonnet-5" });
     await runLookout({ lookoutId: LOOKOUT });
     const names = state.loop!.tools.map((t) => t.name);
     expect(names).toEqual([
@@ -187,9 +188,10 @@ describe("runLookout", () => {
       "survey_scope", "scope_sources", "check_doi", "recent_retractions", "read_page",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
-    expect(state.loop!.model).toBe("claude-haiku-4-5-20251001");
+    expect(state.loop!.model).toBe("claude-sonnet-5");
 
-    state.lookout = lookout({ model: "z-ai/glm-5.3-flash" });
+    // No pin: the cheap-tier default, which has no web search.
+    state.lookout = lookout({ model: null });
     await runLookout({ lookoutId: LOOKOUT });
     expect(state.loop!.tools.map((t) => t.name)).not.toContain("web_search");
     expect(state.loop!.model).toBe("z-ai/glm-5.3-flash");

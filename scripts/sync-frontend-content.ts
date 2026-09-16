@@ -121,7 +121,7 @@ const AGENTS: AgentMeta[] = [
   { key: "lookout", name: "Lookout", stage: 9, group: "governance",
     tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
-    model: "Claude Haiku 4.5", fn: getLookoutSystemPrompt },
+    model: "GLM 5.3 Flash", fn: getLookoutSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the

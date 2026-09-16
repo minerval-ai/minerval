@@ -141,8 +141,8 @@ mandate's escrow like a review pass, capped per run
 (`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) and bounded
 per day (`LOOKOUT_MAX_RUNS_PER_DAY`): a burst of events waits for the
 next funded run, which reads them all. The engine executor runs it on
-the cheap tier (`LOOKOUT_MODEL`, Haiku by default because web search is
-an Anthropic server tool; a lookout may carry its own model). It reads
+the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model, and
+needs an Anthropic one for web search, an Anthropic server tool). It reads
 its brief, its own workspace, and the queued inputs; then the graph
 (search, open, walk down, walk up, survey_scope, scope_sources), the
 retraction record (check_doi, recent_retractions), and the open web

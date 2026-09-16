@@ -15,6 +15,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
+import { MODELS } from "../models.js";
 import {
   createLookout,
   updateLookout,
@@ -96,8 +97,11 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           model: {
             type: "string",
             description:
-              "Optional model id for a stronger watch; default is the cheap tier. " +
-              "Web search needs an Anthropic model.",
+              "Optional model id; default is the cheap tier, which has no web " +
+              "search (an Anthropic server tool). Set an Anthropic model such " +
+              `as ${MODELS.sonnet} where the brief needs the open web; a ` +
+              "lookout without one works from the graph, the retraction " +
+              "record, and direct page reads.",
           },
         },
         required: ["title", "brief"],

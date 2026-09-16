@@ -713,7 +713,7 @@ const configSchema = z.object({
   //
   // Consequence: the Matcher routes to OpenRouter, so OPENROUTER_API_KEY is
   // required for anything that matches. The adapter fails loudly naming the
-  // key; set MATCHER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only.
+  // key; set MATCHER_MODEL=claude-sonnet-5 to run Anthropic-only.
   matcherModel: modelId(OPENROUTER_MODELS.flash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
@@ -775,19 +775,20 @@ const configSchema = z.object({
   // the cheap tier (#257) applies with more force here: the whole judgment is "which of these existing tags, at what
   // grain?" over candidates it retrieves itself, in the same tool-use loop.
   // Same key requirement as the Matcher (OPENROUTER_API_KEY); set
-  // TAGGER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only. Pinned
+  // TAGGER_MODEL=claude-sonnet-5 to run Anthropic-only. Pinned
   // identically in infra/lib/api-stack.ts; the model guard covers it.
   taggerModel: modelId(OPENROUTER_MODELS.flash),
   // The Lookout: a standing watch a mandate funds (docs/allocation.md,
   // "Lookouts"). Its judgment is "did something happen that warrants work
   // in my scope?" — relevance, not truth — and it runs often, so it belongs
-  // on a cheap model. It defaults to Haiku rather than the OpenRouter cheap
-  // tier because its main instrument is web search, an Anthropic server
-  // tool: on any other provider the run degrades to graph reads, Crossref
-  // and direct fetches, which is still useful for a retraction watch but
-  // blind for "what is new on X". Per-lookout overrides (lookouts.model)
-  // let a Grantmaker pay for a stronger watch where the brief warrants it.
-  lookoutModel: modelId(MODELS.haiku),
+  // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
+  // tagger's model. Web search is an Anthropic server tool, so on the tier
+  // the run works from graph reads, Crossref and direct page fetches, which
+  // covers a retraction watch but not "what is new on X"; a Grantmaker that
+  // wants the open web pins an Anthropic model on the lookout itself
+  // (lookouts.model). Pinned identically in infra/lib/api-stack.ts; the
+  // model guard covers it.
+  lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important

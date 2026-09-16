@@ -911,8 +911,7 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger · Matcher | GLM 5.3 Flash (via OpenRouter) |
-| Lookout | Claude Haiku 4.5 (`LOOKOUT_MODEL`; per-lookout override) |
+| Tagger · Matcher · Lookout | GLM 5.3 Flash (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
