@@ -347,8 +347,9 @@ a fallback-served acceptance is always a send-back.
 
 ## For the Curator
 
-Equivalent formulations whose equivalence is a theorem stay two nodes with
-the equivalence recorded as an argument on each; watch such pairs. Problem
+Where the discourse keeps two equivalent formulations as distinct
+propositions, record the equivalence as an argument on each rather than
+merging them. Problem
 families (an Erdős problem and its variants) are distinct claims joined by
 `specifies` where one is a special case, otherwise laterally. A merge keeps
 the survivor's published formal statement and retires the absorbed one; a
@@ -358,13 +359,14 @@ to republish.
 
 ## For the Matcher
 
-Notational variants are one claim. A theorem and its negation are one node.
-A generalization and its special case are different claims. The same
-proposition over different structures is a different claim when the
-discourse treats it so. "X holds," "X has been proven," and "X is provable
-in ZFC" are three claims. Equivalent formulations whose equivalence is a
-theorem are two claims. A problem-list number is a strong identity signal;
-search it before concluding a claim is new.
+The node is the proposition as the discourse consults it. Notational
+variants, and a named conjecture stated in another base field, wording, or
+generality, are one claim. A theorem and its negation are one node. A
+generalization and its special case are different claims. Whether two
+formulations the discourse treats as distinct are one claim or two is the
+same-considerations test, judged by how the discourse treats them, not by
+whether a proof connects them. A problem-list number is a strong identity
+signal; search it before concluding a claim is new.
 
 ## For the Extractor
 
@@ -396,6 +398,7 @@ unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
 authority on fidelity. A conjecture recorded as `contested` because it is
-open. Equivalent formulations merged on the strength of a theorem. A
+open. Claim identity decided by whether a proof connects two formulations
+rather than by how the discourse treats them. A
 solver's trivial proof recorded as a result rather than a defect. A
 rediscovery or a calibration solve noted as a finding.
