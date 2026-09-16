@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 11252,
-    "fullChars": 60171,
+    "roleChars": 11507,
+    "fullChars": 60426,
     "skills": [
       {
         "name": "mathematics",

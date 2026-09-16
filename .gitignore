@@ -32,8 +32,11 @@ cdk.out/
 infra/dist/
 infra/node_modules/
 
-# Claude Code
-.claude/
+# Claude Code: per-user state stays local; the shared settings and the
+# SessionStart hook for the web are committed so every session gets them.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 # Corpus harness — per-run outputs (post markdown IS committed)
 runs/

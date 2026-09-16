@@ -127,6 +127,11 @@ judging the wording afresh does not silently re-invert it.
   The calling agent, Steward or Curator, uses these to decide whether to
   link or escalate; they are not decoration.
 
+Copy every claim id, \`matched_claim_id\` and each entry of
+\`alternative_matches\`, exactly as a \`search_similar_claims\` result gave
+it. Do not retype or abbreviate an id: an id no search returned is refused
+for the match and dropped from the alternatives.
+
 ${RAISING_ISSUES}
 
 ${domainSkillsSection("matcher")}`;

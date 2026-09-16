@@ -25,7 +25,11 @@ vi.mock("../../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async () => [0.1, 0.2]),
 }));
 vi.mock("../../../src/services/search-service.js", () => ({
-  findSimilarClaims: vi.fn(async () => []),
+  // The id every SUBMISSION names: a submission may only name ids the run's
+  // searches returned (#470), so each script searches once before deciding.
+  findSimilarClaims: vi.fn(async () => [
+    { id: "43d6b1fa-0289-4f4c-b3bf-39567ab24629", text: "IUT structures.", similarity_score: 0.9 },
+  ]),
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
@@ -68,6 +72,7 @@ beforeEach(() => {
 describe("matchClaim", () => {
   it("warns the Matcher before its search budget runs out", async () => {
     script = async (opts) => {
+      await opts.executeTool("search_similar_claims", { query: "IUT" });
       await opts.executeTool("submit_match_decision", SUBMISSION);
     };
     await matchClaim(INPUT);
@@ -79,6 +84,7 @@ describe("matchClaim", () => {
 
   it("returns a decided outcome from a submission, derived from the ids", async () => {
     script = async (opts) => {
+      await opts.executeTool("search_similar_claims", { query: "IUT" });
       await opts.executeTool("submit_match_decision", SUBMISSION);
     };
     const d = await matchClaim(INPUT);
@@ -101,6 +107,7 @@ describe("matchClaim", () => {
 
   it("retries once, short and told to decide, when the first loop never submits", async () => {
     script = async (opts, index) => {
+      if (index === 0) await opts.executeTool("search_similar_claims", { query: "IUT" });
       if (index === 1) opts.onFinalTool("submit_match_decision", SUBMISSION);
     };
     const d = await matchClaim(INPUT);
@@ -113,14 +120,17 @@ describe("matchClaim", () => {
   });
 
   it("hands the retry the first run's searches and top hits (#467)", async () => {
-    vi.mocked(findSimilarClaims).mockResolvedValueOnce([
-      { id: "c1", text: "Convex Wolff axioms imply the Kakeya conjecture.", similarity_score: 0.8123 },
-    ] as any);
+    vi.mocked(findSimilarClaims)
+      .mockResolvedValueOnce([
+        { id: "c1", text: "Convex Wolff axioms imply the Kakeya conjecture.", similarity_score: 0.8123 },
+      ] as any)
+      .mockResolvedValueOnce([]);
     script = async (opts, index) => {
       if (index === 0) {
         await opts.executeTool("search_similar_claims", { query: "Kakeya via Wolff axioms" });
         await opts.executeTool("search_similar_claims", { query: "Kakeya conjecture fails" });
       } else {
+        await opts.executeTool("search_similar_claims", { query: "IUT" });
         opts.onFinalTool("submit_match_decision", SUBMISSION);
       }
     };
@@ -139,6 +149,7 @@ describe("matchClaim", () => {
 
   it("tells the Matcher its turn budget up front and that searches batch (#467)", async () => {
     script = async (opts) => {
+      await opts.executeTool("search_similar_claims", { query: "IUT" });
       await opts.executeTool("submit_match_decision", SUBMISSION);
     };
     await matchClaim(INPUT);
