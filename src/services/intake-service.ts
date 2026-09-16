@@ -22,6 +22,7 @@ import { getDb } from "../db/client.js";
 import { claims, arguments_, contributions } from "../db/schema.js";
 import { intakeContributionTypeEnum, type InstanceStance } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
+import { inferDomainPrior } from "../llm/agents/domain-prior.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { createJob } from "./job-service.js";
 import {
@@ -213,10 +214,13 @@ async function materializeProposedClaim(contribution: {
   // Only canonical claims enter: the Matcher is the single decider of claim
   // identity (any wording, or the negation), exactly as on the extraction
   // path. A duplicate proposal lands on the existing node instead of forking
-  // the debate.
+  // the debate. A proposal never passed through extraction, so the domain
+  // prior that selects the Matcher's skills is made here (#469).
+  const domains = await inferDomainPrior({ text: claimText });
   const match = await matchClaim({
     extractedText: claimText,
     proposedCanonical: claimText,
+    domains,
   });
 
   // No verdict (#419): neither link nor mint. The call is idempotent and runs
@@ -282,6 +286,9 @@ async function materializeProposedClaim(contribution: {
       // context, so unlike the Extractor it has no basis for a prior; the
       // Steward records the first real value (#172 phase 1).
       pipelineEpoch,
+      // The prior that selected this run's skills, recorded as the
+      // Extractor's would be; the Steward's set_claim_domains supersedes it.
+      ...(domains.length > 0 ? { domains, domainsSource: "extractor" } : {}),
       // Why the form runs in the direction it does (#360), from the Matcher.
       ...(typeof match.direction_note === "string" && match.direction_note.trim()
         ? { canonicalDirectionNote: match.direction_note.trim() }

@@ -27,6 +27,7 @@ import crypto from "crypto";
 import { loadConfig } from "../config.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
+import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import type { InstanceStance } from "../schemas/common.js";
 import {
   assessPageClaims,
@@ -446,6 +447,8 @@ async function analyzePageUncached(
     const decision = await matchClaim({
       extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,
+      // The Extractor's domain prior selects the Matcher's skills (#469).
+      domains: sanitizeDomains(c.domains),
     });
 
     const base = {

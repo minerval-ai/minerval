@@ -50,6 +50,7 @@ function fakeDb() {
 
 const mocks = vi.hoisted(() => ({
   matchClaim: vi.fn(),
+  inferDomainPrior: vi.fn(async () => [] as string[]),
   generateEmbedding: vi.fn(async () => [0.1, 0.2]),
   createJob: vi.fn(async () => ({ id: "job-1" })),
   enqueueClaimPipeline: vi.fn(),
@@ -64,6 +65,9 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 vi.mock("../../../src/llm/agents/matcher.js", () => ({
   matchClaim: mocks.matchClaim,
+}));
+vi.mock("../../../src/llm/agents/domain-prior.js", () => ({
+  inferDomainPrior: mocks.inferDomainPrior,
 }));
 vi.mock("../../../src/services/embedding-service.js", () => ({
   generateEmbedding: mocks.generateEmbedding,
@@ -107,6 +111,7 @@ beforeEach(() => {
   state.inserts = [];
   state.updates = [];
   mocks.matchClaim.mockReset();
+  mocks.inferDomainPrior.mockReset().mockResolvedValue([]);
   mocks.createJob.mockReset().mockResolvedValue({ id: "job-1" });
   mocks.enqueueClaimPipeline.mockReset();
   mocks.enqueueContribution.mockReset();
@@ -198,6 +203,14 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     });
     // The contribution now points at what it became.
     expect(state.updates[0]!.values).toMatchObject({ claimId: result.claimId });
+    // A proposal never passed through extraction: its domain prior is made
+    // here and handed to the Matcher, so a mathematics proposal carries the
+    // mathematics skill (#469). None here, so nothing is recorded.
+    expect(mocks.inferDomainPrior).toHaveBeenCalledWith({ text: "The sky is blue" });
+    expect(mocks.matchClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ domains: [] })
+    );
+    expect(claimInsert.values).not.toHaveProperty("domains");
     // Only now is the Steward pipeline engaged.
     expect(mocks.enqueueClaimPipeline).toHaveBeenCalledWith({
       claimId: result.claimId,
@@ -205,6 +218,32 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     });
     // No direction note from the Matcher: the column stays unset, never "".
     expect(claimInsert.values).not.toHaveProperty("canonicalDirectionNote");
+  });
+
+  it("hands the Matcher the proposal's domain prior and records it on a novel claim (#469)", async () => {
+    state.selectResults.push([
+      pendingContribution({
+        proposedCanonicalForm: "Every polynomial map with nonzero constant Jacobian is invertible",
+      }),
+    ]);
+    mocks.inferDomainPrior.mockResolvedValue(["mathematics"]);
+    mocks.matchClaim.mockResolvedValue({
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "poses",
+    });
+
+    await materializeAcceptedIntake("contrib-1");
+
+    expect(mocks.matchClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ domains: ["mathematics"] })
+    );
+    const claimInsert = state.inserts.find((i) => i.table === claims)!;
+    expect(claimInsert.values).toMatchObject({
+      domains: ["mathematics"],
+      domainsSource: "extractor",
+    });
   });
 
   it("stores the Matcher's direction note on a novel claim (#360)", async () => {

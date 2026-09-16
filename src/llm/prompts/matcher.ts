@@ -145,21 +145,41 @@ export function getMatcherSystemPromptBlocks(
   return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "matcher"));
 }
 
+/**
+ * The user turn. `domains` are the recorded domains the caller handed the
+ * run and `skills` the domain skills they activated: the prompt names both
+ * so the Matcher can tell an untagged claim (no skill block by design) from
+ * a delivery fault (#469), since the role's catalog only says what exists.
+ */
 export function getMatchingPrompt(
   extractedText: string,
   proposedCanonical: string,
   /**
-   * The run's tool-use turn budget (#467): stated up front so the Matcher
-   * can pace its searches instead of learning the limit two turns before
-   * the cut. Omitted means the prompt says nothing about a budget.
+   * What this run carries: its recorded domains and spliced skills (#469),
+   * and its tool-use turn budget (#467), stated up front so the Matcher can
+   * pace its searches instead of learning the limit two turns before the
+   * cut. A budget left out means the prompt says nothing about one.
    */
-  opts: { turnBudget?: number } = {}
+  run: { domains?: readonly string[]; skills?: readonly Skill[]; turnBudget?: number } = {}
 ): string {
+  const domains = [...new Set(run.domains ?? [])].sort();
+  const spliced = (run.skills ?? []).filter((s) => s.kind === "domain");
+  const domainsLine =
+    domains.length > 0
+      ? `Recorded domains for this run: ${domains.join(", ")}.`
+      : "Recorded domains for this run: none.";
+  const skillsLine =
+    spliced.length > 0
+      ? `Domain skill blocks spliced after your role: ${spliced
+          .map((s) => `${s.displayName} (version ${s.version})`)
+          .join(", ")}.`
+      : "No domain skill block follows your role on this run; judge under the " +
+        "constitution and your role alone.";
   const budget =
-    opts.turnBudget === undefined
+    run.turnBudget === undefined
       ? ""
       : `
-You have ${opts.turnBudget} tool-use turns in this run, including the one
+You have ${run.turnBudget} tool-use turns in this run, including the one
 that submits. A turn may carry several \`search_similar_claims\` calls at
 once, so issue your framings together (the claim, the canonical form, a
 paraphrase, the negation) rather than one per turn, and keep at least one
@@ -170,6 +190,8 @@ turn for the decision.
 Source text, verbatim: "${extractedText}"
 
 Proposed canonical form: "${proposedCanonical}"
+
+${domainsLine} ${skillsLine}
 ${budget}
 Search with \`search_similar_claims\` under several framings, including the
 negation, then call \`submit_match_decision\` with your reasoning.

@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => ({
   listLeanChecksForClaim: vi.fn(async () => [] as unknown[]),
   getBountyTerms: vi.fn(async () => null as unknown),
   matchClaim: vi.fn(),
+  inferDomainPrior: vi.fn(async () => [] as string[]),
   extractClaims: vi.fn(),
   createContribution: vi.fn(),
   getContributionById: vi.fn(),
@@ -103,6 +104,9 @@ vi.mock("../../../src/llm/agents/matcher.js", () => ({
 }));
 vi.mock("../../../src/llm/agents/extractor.js", () => ({
   extractClaims: mocks.extractClaims,
+}));
+vi.mock("../../../src/llm/agents/domain-prior.js", () => ({
+  inferDomainPrior: mocks.inferDomainPrior,
 }));
 vi.mock("../../../src/services/contribution-service.js", () => ({
   createContribution: mocks.createContribution,
@@ -222,6 +226,7 @@ beforeEach(async () => {
     text: CLAIM_ROW.text,
     children: [],
   });
+  mocks.inferDomainPrior.mockReset().mockResolvedValue([]);
   mocks.matchClaim.mockReset().mockImplementation(async () => {
     const { getUsageContext } = await import(
       "../../../src/llm/usage-context.js"
@@ -559,6 +564,25 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  it("match_claim makes a domain prior for the bare assertion and hands it to the Matcher (#469)", async () => {
+    mocks.inferDomainPrior.mockResolvedValueOnce(["mathematics"]);
+    await client.callTool({
+      name: "match_claim",
+      arguments: {
+        assertion: "Every polynomial map with nonzero constant Jacobian is invertible",
+        context: "From a survey of the Jacobian conjecture",
+      },
+    });
+    expect(mocks.inferDomainPrior).toHaveBeenCalledWith({
+      text: "Every polynomial map with nonzero constant Jacobian is invertible",
+      context: "From a survey of the Jacobian conjecture",
+    });
+    expect(mocks.matchClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ domains: ["mathematics"] })
+    );
+    await client.close();
+  });
+
   it("match_claim reports a Matcher timeout as matched: null, not a no-match (#419)", async () => {
     mocks.matchClaim.mockImplementationOnce(async () => ({
       outcome: "undecided",
@@ -591,6 +615,7 @@ describe("MCP tools", () => {
         confidence: 0.9,
         importance: 0.8,
         source_location: null,
+        domains: ["mathematics"],
       },
       {
         verbatim_text: "The moon is made of cheese",
@@ -636,6 +661,17 @@ describe("MCP tools", () => {
     expect(payload.judgments[1]).toMatchObject({ verdict: "unknown" });
     expect(mocks.extractClaims).toHaveBeenCalledWith(
       expect.objectContaining({ maxClaims: 5 })
+    );
+    // Extracted claims carry the Extractor's own domain prior to the
+    // Matcher; no second prior is made for them (#469).
+    expect(mocks.inferDomainPrior).not.toHaveBeenCalled();
+    expect(mocks.matchClaim).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ domains: ["mathematics"] })
+    );
+    expect(mocks.matchClaim).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ domains: [] })
     );
     await client.close();
   });
