@@ -98,10 +98,10 @@ export interface CuratorMessage {
   trigger:
     // A Steward flagged something structural (likely duplicate, needs split, …).
     | "steward_escalation"
-    // Look across a new claim's neighborhood for duplicates / missing edges.
-    // No longer produced: the unconditional post-extraction sweep was removed
-    // (it wrote nothing across 122 runs). Kept so an in-flight message from
-    // before that change still deserializes.
+    // Look across a claim's neighborhood for duplicates / missing edges.
+    // The unconditional post-extraction sweep that produced this was removed
+    // (it wrote nothing across 122 runs); it is now produced only by the
+    // one-shot scripts/sweep-fallback-matches.ts (#419, #438).
     | "neighborhood_sweep";
   // The claim whose neighborhood to reconcile (the escalating/anchor claim).
   claimId: string;
