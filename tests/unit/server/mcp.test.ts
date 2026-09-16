@@ -11,6 +11,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const REPORT_ID = "33333333-3333-4333-8333-333333333333";
 
 const CLAIM_ROW = {
   id: CLAIM_ID,
@@ -902,13 +903,13 @@ describe("MCP tools", () => {
     await client.close();
   });
 
-  it("raise_issue answers a near match as possible_duplicate and passes joins through", async () => {
+  it("raise_issue records, hands back related reports as advice, and passes joins through", async () => {
     mocks.raiseIssue.mockResolvedValueOnce({
       acknowledged: true,
-      reportId: null,
-      occurrenceCount: null,
+      reportId: REPORT_ID,
+      occurrenceCount: 1,
       deduplicated: false,
-      matches: [
+      related: [
         {
           id: OTHER_ID,
           title: "get_claim omits the reasoning",
@@ -921,7 +922,9 @@ describe("MCP tools", () => {
           first_seen_at: "2026-08-01T00:00:00.000Z",
           last_seen_at: "2026-08-02T00:00:00.000Z",
           github_issue_url: "https://github.com/minerval-ai/minerval/issues/9",
+          duplicate_of_id: null,
           similarity: 0.9,
+          matched_by: "meaning",
         },
       ],
     });
@@ -931,15 +934,13 @@ describe("MCP tools", () => {
     });
     expect(first.isError).toBeFalsy();
     const parsed = parseText(first);
-    expect(parsed.status).toBe("possible_duplicate");
-    // An external caller sees what it needs to answer, not the triage note
+    expect(parsed.report).toMatchObject({ id: REPORT_ID, status: "new", deduplicated: false });
+    // An external caller sees what it needs to decide, not the triage note
     // or the tracker link.
-    expect(parsed.matches).toEqual([
+    expect(parsed.related).toEqual([
       {
         id: OTHER_ID,
         title: "get_claim omits the reasoning",
-        kind: "tool_gap",
-        severity: "degraded",
         status: "triaged",
         occurrence_count: 3,
         last_seen_at: "2026-08-02T00:00:00.000Z",
@@ -969,6 +970,7 @@ describe("MCP tools", () => {
       occurrence_count: 4,
       deduplicated: true,
     });
+    expect(parseText(second).related).toEqual([]);
     expect(mocks.raiseIssue).toHaveBeenLastCalledWith(
       expect.objectContaining({ joins: OTHER_ID, origin: "external" })
     );

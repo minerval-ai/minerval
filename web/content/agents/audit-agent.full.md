@@ -533,21 +533,30 @@ paste content. Name the surface (the tool or prompt section) when there
 is one. Reuse the same title for the same problem so repeats collapse
 into one count.
 
-### The record is checked first
+### Look first, the way a maintainer would
 
-The tool checks the reports on record before it writes. If one may be
-the same problem, nothing is written and the tool shows it to you with
-its status and the maintainers' note; you then say whether yours joins
-it (your account is added as a sighting, and the maintainers see the new
-case) or is distinct from it, and if distinct, what makes it so. A
-report the maintainers declined carries their reasons, and those reasons
-are guidance for how to proceed now. A report marked actioned that you
-meet again is a regression: join it, and it reopens.
+The record is yours to read, and you have the tools a maintainer has.
+search_issues finds reports by keyword and by meaning, up to ten at a
+time with their status and the maintainers' note; searching is cheap, so
+try more than one wording, and lead with the rare token (the tool name,
+the error text) rather than a paraphrase. With no query it lists what
+was seen most recently, narrowed to a surface or a status if you like.
+get_issue reads one report in full: its body, the triage note, its
+sightings, the reports collapsed onto it, and the report it was
+collapsed onto. Follow ids the way you would follow links.
 
-You may also look on purpose. search_issues finds reports by meaning;
-use it before working around a failure, to learn whether it is known and
-what was said about it. You have no memory across runs, and the record
-is where that memory lives.
+Use this before working around a failure, to learn whether it is known
+and what was said. A report the maintainers declined carries their
+reasons, and those reasons are guidance for how to proceed now. A
+report marked actioned that you meet again is a regression.
+
+When you find the report yours repeats, raise with joins set to its id:
+your account is added to it as a sighting, the maintainers see the new
+case, and an actioned report reopens. When you do not find one, raise;
+the tool records it and hands back the reports on record that read like
+yours, as advice, so you can withdraw and join if one of them is yours.
+You have no memory across runs, and the record is where that memory
+lives.
 
 ### Correcting yourself
 

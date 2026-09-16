@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 10440,
-    "fullChars": 59359,
+    "roleChars": 10974,
+    "fullChars": 59893,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 19426,
-    "fullChars": 68345,
+    "roleChars": 19960,
+    "fullChars": 68879,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 34815,
-    "fullChars": 83734,
+    "roleChars": 35349,
+    "fullChars": 84268,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 14519,
-    "fullChars": 63438,
+    "roleChars": 15053,
+    "fullChars": 63972,
     "skills": [
       {
         "name": "mathematics",
@@ -147,8 +147,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 17025,
-    "fullChars": 65944,
+    "roleChars": 17559,
+    "fullChars": 66478,
     "skills": [
       {
         "name": "mathematics",
@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 18286,
-    "fullChars": 67205,
+    "roleChars": 18820,
+    "fullChars": 67739,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 17386,
-    "fullChars": 66305,
+    "roleChars": 17920,
+    "fullChars": 66839,
     "skills": [
       {
         "name": "mathematics",
@@ -240,8 +240,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 9642,
-    "fullChars": 58561,
+    "roleChars": 10176,
+    "fullChars": 59095,
     "skills": [
       {
         "name": "mathematics",
