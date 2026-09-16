@@ -174,7 +174,7 @@ const AGENT_INLINE_TOOL_NAMES = [
   "complete_mandate",
   "ingestion_report",
   "submit_plan",
-  "read_page",
+  "web_fetch",
 ];
 
 /** Every tool name the existing families define, plus the inline ones above. */

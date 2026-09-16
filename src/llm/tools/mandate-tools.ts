@@ -15,8 +15,6 @@
  *
  *  - survey_scope: the graph's allocation signals over a subtree and/or a
  *    keyword slice (services/scope-survey-service.ts);
- *  - read_page: one public page in full, for when a search snippet cannot
- *    tell you whether a source matters;
  *  - estimate_costs: owl quotes for a bundle of work from live metered
  *    averages, so a plan is priced before it is proposed;
  *  - update_workspace: the mandate's durable working memory
@@ -24,25 +22,20 @@
  *
  * Follows the null-delegate convention of graph-read-tools: `execute`
  * returns null for a tool that is not its own, so an agent wires it with
- * one spread and one early return. Web search is not here because it is
- * already one implementation for every agent (web-search-tool.ts).
+ * one spread and one early return. Web search and web fetch are not here
+ * because they are already one implementation for every agent
+ * (web-search-tool.ts, web-fetch-tool.ts), chosen by the model.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { rawQuery } from "../../db/client.js";
 import { surveyScope } from "../../services/scope-survey-service.js";
-import {
-  READ_PAGE_TOOL_NAME,
-  getReadPageToolDefinition,
-  executeReadPage,
-} from "./read-page-tool.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
 
 /** Generous but bounded working memory: ~100KB of the agent's own notes. */
 export const WORKSPACE_MAX_CHARS = 100_000;
 
-export { READ_PAGE_TOOL_NAME };
 export const SURVEY_SCOPE_TOOL_NAME = "survey_scope";
 export const ESTIMATE_COSTS_TOOL_NAME = "estimate_costs";
 export const UPDATE_WORKSPACE_TOOL_NAME = "update_workspace";
@@ -195,7 +188,6 @@ export async function updateGrantWorkspace(
 export function createMandateTools(options: MandateToolOptions = {}): MandateTools {
   const definitions: Tool[] = [
     getSurveyScopeToolDefinition(),
-    getReadPageToolDefinition(),
     getEstimateCostsToolDefinition(),
   ];
   if (options.grantId) definitions.push(getUpdateWorkspaceToolDefinition());
@@ -224,7 +216,6 @@ export function createMandateTools(options: MandateToolOptions = {}): MandateToo
         });
         return JSON.stringify({ count: rows.length, claims: rows });
       }
-      if (name === READ_PAGE_TOOL_NAME) return executeReadPage(name, toolInput);
       if (name === ESTIMATE_COSTS_TOOL_NAME) {
         const est = await estimatePlanCosts(toolInput as Record<string, number>);
         // Conversation + planning + review overhead rides on the mandate.

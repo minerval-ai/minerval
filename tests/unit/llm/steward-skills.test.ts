@@ -143,13 +143,14 @@ describe("Steward toolset without a domain tag", () => {
     const first = names.indexOf("provenance_get_map");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     expect(names.slice(first, first + PROVENANCE_TOOLS.length)).toEqual(PROVENANCE_TOOLS);
-    expect(names.slice(-6)).toEqual([
+    expect(names.slice(-7)).toEqual([
       "raise_issue",
       "update_issue",
       "search_issues",
       "get_issue",
       "note_finding",
       "web_search",
+      "web_fetch",
     ]);
     // Two blocks: the constitution and role, then the method skill's view.
     expect(opts.system).toHaveLength(2);
@@ -189,20 +190,21 @@ describe("Steward toolset with the mathematics tag", () => {
       "lean_check",
       "publish_formalization",
     ]);
-    expect(names.slice(-6)).toEqual([
+    expect(names.slice(-7)).toEqual([
       "raise_issue",
       "update_issue",
       "search_issues",
       "get_issue",
       "note_finding",
       "web_search",
+      "web_fetch",
     ]);
     // The skills' tools, in skill order: mathematics then provenance.
     const skillTools = [
       ...getSkill("mathematics").tools.map((t) => t.name),
       ...PROVENANCE_TOOLS,
     ];
-    expect(names.slice(first, -6)).toEqual(skillTools);
+    expect(names.slice(first, -7)).toEqual(skillTools);
 
     // Three cached blocks: the constitution-plus-role block, unchanged, then
     // each skill's Steward view as its own block, in skill order.
@@ -325,7 +327,7 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     const names = opts.tools.map((t) => t.name);
     expect(names.filter((n) => n.startsWith("lean_"))).toEqual([]);
     expect(names).not.toContain("publish_formalization");
-    expect(names.at(-1)).toBe("web_search");
+    expect(names.slice(-2).map((n) => n)).toEqual(["web_search", "web_fetch"]);
     // The skill itself is still active: its block and its name in the task.
     expect(opts.system).toHaveLength(3);
     expect(opts.system[1]!.startsWith("# Domain skill: Mathematics")).toBe(true);
@@ -361,18 +363,20 @@ describe("Steward toolset on a non-Anthropic model", () => {
     }
   };
 
-  it("carries the client-side web_search in the server tool's place, with nothing said in the task", async () => {
+  it("carries the client-side web_search and OpenRouter's web_fetch in the server tools' place, with nothing said in the task", async () => {
     const opts = await onModel("z-ai/glm-5.3-flash");
-    const last = opts.tools.at(-1)!;
-    expect(last.name).toBe("web_search");
-    expect("input_schema" in last).toBe(true);
+    const [search, fetch] = opts.tools.slice(-2);
+    expect(search!.name).toBe("web_search");
+    expect("input_schema" in search!).toBe(true);
+    expect(fetch).toMatchObject({ type: "openrouter:web_fetch" });
     expect(opts.initialMessages[0]!.content).not.toContain("web_search is unavailable");
   });
 
-  it("keeps the server web_search on a Claude model", async () => {
+  it("keeps the server web_search and web_fetch on a Claude model", async () => {
     const opts = await onModel("claude-sonnet-5");
-    const last = opts.tools.at(-1)!;
-    expect(last.name).toBe("web_search");
-    expect("input_schema" in last).toBe(false);
+    const [search, fetch] = opts.tools.slice(-2);
+    expect(search!.name).toBe("web_search");
+    expect("input_schema" in search!).toBe(false);
+    expect(fetch).toMatchObject({ type: "web_fetch_20260318", name: "web_fetch" });
   });
 });

@@ -1020,17 +1020,27 @@ has no equivalent surface for our purposes and keeps the Chat Completions
 translation in `providers/openai-dialect.ts`; the dialect-independent helpers
 stay shared between the two.
 
-**Anthropic-only, by design:** server tools, container-backed execution,
-ephemeral prompt-cache breakpoints, and the server-side Opus refusal
-fallback. No agent hard-codes a server tool: the agents that want web search
-(the Claim Steward, mandate review, lookouts) ask `tools/web-search-tool.ts`
-for one `web_search`, which is the Anthropic server tool on a Claude model
-that runs it and, everywhere else, a client-side tool of the same name and
-shape that the loop executes through OpenRouter's web plugin
-(`openrouterWebSearch` in `providers/openrouter.ts`: one metered
-completion on the cheap tier whose citation annotations are the hits). A
-request that still carries a server tool to a non-Anthropic model fails
-immediately with a message naming the capability, rather than silently
+**Anthropic-only, by design:** Anthropic's server tools, container-backed
+execution, ephemeral prompt-cache breakpoints, and the server-side Opus
+refusal fallback. No agent hard-codes a server tool: the agents that want
+the open web (the Claim Steward, the Grantmaker in every mode —
+conversation, planning, review — and lookouts) ask `tools/web-search-tool.ts`
+for one `web_search` and `tools/web-fetch-tool.ts` for one `web_fetch`, and
+each is whatever the model's provider serves under that name. `web_search`
+is the Anthropic server tool on a Claude model that runs it and, everywhere
+else, a client-side tool of the same name and shape that the loop executes
+through OpenRouter's web plugin (`openrouterWebSearch` in
+`providers/openrouter.ts`: one metered completion on the cheap tier whose
+citation annotations are the hits). `web_fetch` reads one page whole: the
+Anthropic `web_fetch` server tool on a Claude model, OpenRouter's own
+`openrouter:web_fetch` server tool on an OpenRouter model (sent verbatim in
+the `tools` array; OpenRouter runs it and its charge lands in the usage cost
+the adapter already meters), and only on OpenAI direct, which serves no
+fetch tool, a client-side tool executed through the lookout's page reader.
+Ingestion never uses it: the text ingestion stores is provenance, fetched by
+our own guarded fetch so it is deterministic. A request that carries one
+vendor's server tool to another's adapter fails immediately with a message
+naming the capability (`providers/server-tools.ts`), rather than silently
 dropping it. OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic

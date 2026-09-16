@@ -48,7 +48,7 @@ import {
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
-import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
+import { createWebFetch, WEB_FETCH_TOOL_NAME } from "../tools/web-fetch-tool.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -68,7 +68,8 @@ ${structureStep}
    consequential, contested claims warrant deeper search and a second, adversarial
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   Use web_search for external evidence where it would change the verdict.
+   Use web_search for external evidence where it would change the verdict,
+   and web_fetch to read a page whole when a hit's excerpt is not enough.
    Credible instances with differing stances are a strong signal toward
    CONTESTED; an instance set that is lopsided is a signal too, and needs no
    counterweight invented for it. The document the claim was extracted from
@@ -209,6 +210,7 @@ async function runClaimStewardImpl(input: {
   // server runs it on an Anthropic model; elsewhere the loop executes it
   // (tools/web-search-tool.ts).
   const webSearch = createWebSearch(model, 5);
+  const webFetch = createWebFetch(model, 5);
 
   // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
   // structure, so it must be able to read parents, subclaims, and neighbors.
@@ -264,15 +266,13 @@ async function runClaimStewardImpl(input: {
   const tools = [
     ...graphTools,
     ...claimContextTools,
-    // A search hit is a snippet; the page is where an abstract, a results
-    // table, or a retraction notice actually is (#333).
-    getReadPageToolDefinition(),
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
     webSearch.tool,
+    webFetch.tool,
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -447,6 +447,7 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
     },
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      if (name === WEB_FETCH_TOOL_NAME && webFetch.execute) return webFetch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -496,8 +497,6 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (claimContextNames.has(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      const page = await executeReadPage(name, toolInput);
-      if (page !== null) return page;
       // Blast-radius backstop (#157 phase 3): cap the NEW claims one run may
       // mint, in either direction (a subclaim below or a parent above, #428).
       // Like the iteration cap this is a runaway guard, not a target — the

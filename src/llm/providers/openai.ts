@@ -29,6 +29,7 @@ import {
   sanitizeSchemaName,
   toStrictJsonSchema,
 } from "./openai-dialect.js";
+import { assertOpenRouterServerToolsUnused } from "./server-tools.js";
 import {
   fromResponse,
   mapResponseStatus,
@@ -162,6 +163,7 @@ export const openaiAdapter: ProviderAdapter = {
 
   async complete(req: CompleteRequest): Promise<CompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, req);
+    assertOpenRouterServerToolsUnused("OpenAI", req.model, req);
 
     const response = await getClient().responses.create({
       ...baseParams(req),
@@ -187,6 +189,7 @@ export const openaiAdapter: ProviderAdapter = {
 
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenAI", req.model, req);
+    assertOpenRouterServerToolsUnused("OpenAI", req.model, req);
 
     const response = await getClient().responses.create({
       ...baseParams(req),

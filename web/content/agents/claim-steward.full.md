@@ -532,7 +532,8 @@ carefully.
 
 Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. web_search (up
-to five searches per run) is for evidence that would change the verdict.
+to five searches per run) is for evidence that would change the verdict, and
+web_fetch (up to five pages) opens a page a search hit only excerpts.
 
 On the highest-importance claims only, your toolset may also include Elicit
 scholarly search (elicit_search_papers over the academic literature,

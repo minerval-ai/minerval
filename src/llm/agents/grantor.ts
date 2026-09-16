@@ -12,7 +12,7 @@
  * This is the same Grantmaker that steers the mandate on its review passes
  * (mandate-review.ts), in its first mode: the territory survey. It carries
  * the review agent's affordances (#333) — the graph AND the open web
- * (web_search, read_page), the shared cost quotes, and the mandate's
+ * (web_search, web_fetch), the shared cost quotes, and the mandate's
  * workspace, so its survey notes become the mandate's opening working
  * memory — and a briefing framed around the MISSION, in the mandate's own
  * words, rather than around claim ids. A mandate told to "ingest the
@@ -33,6 +33,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { createWebFetch, WEB_FETCH_TOOL_NAME } from "../tools/web-fetch-tool.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createMandateTools, estimatePlanCosts } from "../tools/mandate-tools.js";
@@ -139,14 +140,16 @@ async function runGrantorImpl(input: {
     `note must say what you looked for and did not find.`;
 
   const model = input.model ?? config.grantmakerModel;
-  // Web search on every provider: the server runs it on an Anthropic model,
-  // the loop executes it elsewhere (tools/web-search-tool.ts).
+  // Web search and web fetch on every provider: a provider runs them where
+  // it serves the tool, the loop elsewhere (tools/web-search-tool.ts,
+  // tools/web-fetch-tool.ts).
   const webSearch = createWebSearch(model, 8);
+  const webFetch = createWebFetch(model, 6);
   // Every agent carries the report channel (#366)...
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
-  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  // The mandate toolbox (#333): survey_scope, estimate_costs,
   // update_workspace — one implementation shared with the review pass.
   const mandateTools = createMandateTools({
     grantId: grant.id,
@@ -214,7 +217,7 @@ async function runGrantorImpl(input: {
   await withSkills(skills.map((s) => s.name), () =>
     toolUseLoop({
       initialMessages: [{ role: "user", content: briefing }],
-      tools: [webSearch.tool, ...tools],
+      tools: [webSearch.tool, webFetch.tool, ...tools],
       system,
       model,
       maxTokens: 8192,
@@ -222,6 +225,9 @@ async function runGrantorImpl(input: {
       executeTool: async (name, toolInput) => {
         if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) {
           return webSearch.execute(toolInput);
+        }
+        if (name === WEB_FETCH_TOOL_NAME && webFetch.execute) {
+          return webFetch.execute(toolInput);
         }
         // The report channel first (#366): null means "not my tool".
         const report = await reportTools.execute(name, toolInput);

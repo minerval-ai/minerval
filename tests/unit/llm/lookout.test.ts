@@ -4,8 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * The Lookout run (llm/agents/lookout.ts): the briefing carries the brief,
  * the delegated bounds, the queued inputs, and the record of earlier
  * flags; the toolset is the watcher's (graph reads, scope sources, the
- * retraction record, page reads, the three ways to raise a candidate) with
- * web search on every model; propose_ingest stops at the
+ * retraction record, the three ways to raise a candidate) with web search
+ * and web fetch on every model; propose_ingest stops at the
  * per-run limit; the queued inputs are consumed after the run; the note is
  * the model's closing text. The tool loop and the services are mocked.
  */
@@ -182,20 +182,24 @@ describe("runLookout", () => {
     await runLookout({ lookoutId: LOOKOUT });
     const names = state.loop!.tools.map((t) => t.name);
     expect(names).toEqual([
-      "web_search",
+      "web_search", "web_fetch",
       "raise_issue",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
-      "survey_scope", "scope_sources", "check_doi", "recent_retractions", "read_page",
+      "survey_scope", "scope_sources", "check_doi", "recent_retractions",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
+    // Both are the Anthropic server tools on a Claude model that runs them.
+    expect(state.loop!.tools[1]).toMatchObject({ type: "web_fetch_20260318", name: "web_fetch" });
     expect(state.loop!.model).toBe("claude-sonnet-5");
     expect(state.loop!.briefing).toContain("web searches");
 
-    // No pin: the cheap-tier default, with the client-side tool of the same name.
+    // No pin: the cheap-tier default, with the client-side search of the same
+    // name and OpenRouter's own fetch tool, which OpenRouter runs.
     state.lookout = lookout({ model: null });
     await runLookout({ lookoutId: LOOKOUT });
     expect(state.loop!.tools[0]!.name).toBe("web_search");
     expect("input_schema" in state.loop!.tools[0]!).toBe(true);
+    expect(state.loop!.tools[1]).toMatchObject({ type: "openrouter:web_fetch" });
     expect(state.loop!.model).toBe("z-ai/glm-5.3-flash");
   });
 

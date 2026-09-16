@@ -24,15 +24,19 @@ export const WEB_SEARCH_TOOL_NAME = "web_search";
 const CLIENT_SEARCH_RESULTS = 8;
 
 /**
- * Whether `model` runs the Anthropic server tool. The `_20260209` variant
- * runs through code execution, which the API serves on the Claude 4.6+
- * families; an Anthropic id outside them takes the client-side tool like
- * any other provider's model.
+ * Whether `model` runs the Anthropic server tools this codebase uses. The
+ * `web_search_20260209` and `web_fetch_20260318` variants run through code
+ * execution, which the API serves on the Claude 4.6+ families; an Anthropic
+ * id outside them takes the client-side tool like any other provider's
+ * model.
  */
-export function anthropicServerWebSearch(model: string): boolean {
+export function anthropicServerToolModel(model: string): boolean {
   if (resolveProvider(model) !== "anthropic") return false;
   return /^claude-(fable|mythos|opus-5|opus-4-[6-9]|sonnet-5|sonnet-4-[6-9])/.test(model);
 }
+
+/** Whether `model` runs the Anthropic web_search server tool. */
+export const anthropicServerWebSearch = anthropicServerToolModel;
 
 export interface WebSearch {
   /** The tool definition to put in the agent's toolset. */

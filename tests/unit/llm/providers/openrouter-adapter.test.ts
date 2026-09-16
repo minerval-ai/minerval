@@ -147,6 +147,32 @@ describe("openrouter adapter — request construction", () => {
     expect(sentBody().temperature).toBe(0.5);
   });
 
+  it("sends its own server tools verbatim beside the function tools", async () => {
+    respondWith(completion());
+    const fetchTool = {
+      type: "openrouter:web_fetch",
+      parameters: { engine: "exa", max_uses: 2, max_content_tokens: 12_000 },
+    } as unknown as Anthropic.Messages.ToolUnion;
+    const clientTool = {
+      name: "get_claim",
+      description: "Open a claim",
+      input_schema: { type: "object", properties: {}, required: [] },
+    } as unknown as Anthropic.Messages.ToolUnion;
+    await openrouterAdapter.completeWithTools({
+      messages,
+      model: MODEL,
+      maxTokens: 128,
+      tools: [fetchTool, clientTool],
+    });
+    expect(sentBody().tools).toEqual([
+      { type: "openrouter:web_fetch", parameters: { engine: "exa", max_uses: 2, max_content_tokens: 12_000 } },
+      {
+        type: "function",
+        function: { name: "get_claim", description: "Open a claim", parameters: { type: "object", properties: {}, required: [] } },
+      },
+    ]);
+  });
+
   it("rejects Anthropic server tools", async () => {
     const serverTool = {
       type: "web_search_20260209",

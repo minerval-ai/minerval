@@ -257,6 +257,17 @@ describe("openai adapter — request construction", () => {
     ).rejects.toThrow(/Anthropic-only/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("refuses OpenRouter server tools, which only OpenRouter runs", async () => {
+    const tool = {
+      type: "openrouter:web_fetch",
+      parameters: { engine: "exa" },
+    } as unknown as Anthropic.Messages.ToolUnion;
+    await expect(
+      openaiAdapter.completeWithTools({ messages, model: "gpt-5-nano", maxTokens: 64, tools: [tool] })
+    ).rejects.toThrow(/OpenRouter server tools \(openrouter:web_fetch\)/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("openai adapter — response parsing", () => {

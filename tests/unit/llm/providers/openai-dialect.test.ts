@@ -24,6 +24,11 @@ const SERVER_TOOL = {
   name: "web_search",
 } as unknown as Anthropic.Messages.ToolUnion;
 
+const OPENROUTER_TOOL = {
+  type: "openrouter:web_fetch",
+  parameters: { engine: "exa", max_uses: 3 },
+} as unknown as Anthropic.Messages.ToolUnion;
+
 describe("message translation", () => {
   it("maps a system prompt and plain string turns", () => {
     const out = toChatMessages(
@@ -104,9 +109,20 @@ describe("message translation", () => {
 });
 
 describe("Anthropic-only capabilities", () => {
-  it("distinguishes server tools from client tools", () => {
+  it("distinguishes server tools from client tools, and from OpenRouter's own", () => {
     expect(isServerTool(SERVER_TOOL)).toBe(true);
     expect(isServerTool(CLIENT_TOOL)).toBe(false);
+    expect(isServerTool(OPENROUTER_TOOL)).toBe(false);
+  });
+
+  it("passes an OpenRouter server tool through to the request verbatim", () => {
+    expect(toChatTools([OPENROUTER_TOOL, CLIENT_TOOL])).toEqual([
+      { type: "openrouter:web_fetch", parameters: { engine: "exa", max_uses: 3 } },
+      expect.objectContaining({ type: "function" }),
+    ]);
+    expect(() =>
+      assertAnthropicOnlyCapabilitiesUnused("OpenRouter", "qwen/qwen3", { tools: [OPENROUTER_TOOL] })
+    ).not.toThrow();
   });
 
   it("throws a capability error for server tools", () => {

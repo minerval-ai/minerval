@@ -31,6 +31,7 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { createWebFetch, WEB_FETCH_TOOL_NAME } from "../tools/web-fetch-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -133,6 +134,7 @@ async function runMandateReviewImpl(input: {
   // the loop executes it elsewhere (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
   const webSearch = createWebSearch(model, 5);
+  const webFetch = createWebFetch(model, 5);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -146,7 +148,7 @@ async function runMandateReviewImpl(input: {
     // not answerable from keyword hits and scalars — it needs the claim's
     // reasoning, what it rests on, and what rests on it.
     ...getGraphReadToolDefinitions(),
-    // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+    // The mandate toolbox (#333): survey_scope, estimate_costs,
     // update_workspace — one implementation shared with the planning pass
     // and the granting conversation.
     ...mandateTools.definitions,
@@ -561,13 +563,14 @@ async function runMandateReviewImpl(input: {
     initialMessages: [
       { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}` },
     ],
-    tools: [webSearch.tool, ...availableTools],
+    tools: [webSearch.tool, webFetch.tool, ...availableTools],
     system,
     model,
     maxTokens: 4096,
     maxIterations: REVIEW_PASS_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      if (name === WEB_FETCH_TOOL_NAME && webFetch.execute) return webFetch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

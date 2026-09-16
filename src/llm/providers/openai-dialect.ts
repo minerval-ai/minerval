@@ -39,6 +39,7 @@ import type {
   SystemPrompt,
   ToolUse,
 } from "./types.js";
+import { isAnthropicServerTool, isOpenRouterServerTool } from "./server-tools.js";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
@@ -58,10 +59,9 @@ export function joinSystemBlocks(system: SystemPrompt | undefined): string | und
 /**
  * Anthropic server tools (web_search, code execution, …) carry a versioned
  * `type` and no `input_schema`; client tools always carry `input_schema`.
+ * OpenRouter's own server tools are not these (providers/server-tools.ts).
  */
-export function isServerTool(tool: LlmTool): boolean {
-  return !("input_schema" in tool);
-}
+export const isServerTool = isAnthropicServerTool;
 
 /**
  * Server tools and containers are Anthropic-only in this pass. Fail with a
@@ -183,6 +183,9 @@ export function toChatMessages(
 /** Translate Anthropic client tools into OpenAI function tools. */
 export function toChatTools(tools: LlmTool[]): ChatTool[] {
   return tools.map((tool) => {
+    // OpenRouter's server tools ("openrouter:web_fetch") go through verbatim:
+    // OpenRouter runs them, and the OpenAI SDK's tool type is not the point.
+    if (isOpenRouterServerTool(tool)) return tool as unknown as ChatTool;
     const t = tool as Anthropic.Tool;
     return {
       type: "function" as const,

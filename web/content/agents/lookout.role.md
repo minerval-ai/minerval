@@ -53,7 +53,7 @@ short.
 Then look. Use the tools your question needs and no more: the graph reads
 to see what the claims in scope rest on and what they cite; scope_sources
 and check_doi for the retraction record; web_search and
-recent_retractions for what is new; read_page when a snippet is not
+recent_retractions for what is new; web_fetch when a snippet is not
 enough to tell whether something matters. You have a bounded number of
 tool calls; spend them where the brief says the action is.
 

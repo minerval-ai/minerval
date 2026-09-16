@@ -79,7 +79,6 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
     return {
       definitions: [
         { name: "survey_scope" },
-        { name: "read_page" },
         { name: "estimate_costs" },
         { name: "update_workspace" },
       ],
@@ -182,17 +181,18 @@ describe("runGrantor", () => {
     expect(state.mandateCalls[0]).toContain('"scopeQuery":"dietary fat"');
   });
 
-  it("carries the review agent's toolset: web search first, then the channels, the graph, the toolbox, submit_plan", async () => {
+  it("carries the review agent's toolset: web search and fetch first, then the channels, the graph, the toolbox, submit_plan", async () => {
     state.script = [plan([{ action: "ingest", url: "https://journal.test/a", rationale: "primary" }])];
     await runGrantor({ grantId: GRANT });
     expect(state.loop!.tools.map((t) => t.name)).toEqual([
-      "web_search",
+      "web_search", "web_fetch",
       "raise_issue",
       "note_finding",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
-      "survey_scope", "read_page", "estimate_costs", "update_workspace",
+      "survey_scope", "estimate_costs", "update_workspace",
       "submit_plan",
     ]);
+    expect(state.loop!.tools[1]).toMatchObject({ type: "web_fetch_20260318", max_uses: 6 });
     expect(state.loop!.model).toBe("claude-sonnet-5");
     expect(state.mandateCalls[0]).toContain(`"grantId":"${GRANT}"`);
   });

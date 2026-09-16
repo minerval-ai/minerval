@@ -21,6 +21,7 @@ import {
   modelNeedsRefusalFallback,
 } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
+import { assertOpenRouterServerToolsUnused } from "./server-tools.js";
 import type {
   CompleteRequest,
   CompletionResult,
@@ -386,6 +387,7 @@ export const anthropicAdapter: ProviderAdapter = {
   name: "anthropic",
 
   async complete(req: CompleteRequest): Promise<CompletionResult> {
+    assertOpenRouterServerToolsUnused("Anthropic", req.model, req);
     const response = await createMessage({
       model: req.model,
       messages: req.messages,
@@ -409,6 +411,7 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
+    assertOpenRouterServerToolsUnused("Anthropic", req.model, req);
     const response = await createMessage({
       model: req.model,
       messages: toolMessages(req),
@@ -485,6 +488,7 @@ export const anthropicAdapter: ProviderAdapter = {
    * loop that must not be silently re-served on another tier says so.
    */
   async completeWithToolsStreaming(req: LongRunRequest): Promise<ToolCompletionResult> {
+    assertOpenRouterServerToolsUnused("Anthropic", req.model, req);
     const output: BetaOutputConfig = {
       ...(req.effort ? { effort: req.effort } : {}),
       ...(req.taskBudgetTokens !== undefined

@@ -32,6 +32,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { createWebFetch, WEB_FETCH_TOOL_NAME } from "../tools/web-fetch-tool.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import {
@@ -435,7 +436,8 @@ async function runGrantmakerTurnImpl(input: {
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
   const webSearch = createWebSearch(model, 5);
-  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  const webFetch = createWebFetch(model, 5);
+  // The mandate toolbox (#333): survey_scope, estimate_costs,
   // and — once a mandate is live — its workspace, one implementation
   // shared with the planning and review passes.
   const mandateTools = createMandateTools({ grantId: input.grantId ?? null });
@@ -490,13 +492,14 @@ async function runGrantmakerTurnImpl(input: {
       role: m.role,
       content: m.content,
     })),
-    tools: [webSearch.tool, ...tools],
+    tools: [webSearch.tool, webFetch.tool, ...tools],
     system,
     model,
     maxTokens: 4096,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      if (name === WEB_FETCH_TOOL_NAME && webFetch.execute) return webFetch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

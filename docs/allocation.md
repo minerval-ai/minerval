@@ -58,7 +58,7 @@ Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
 no owl is spent until the funder approves the plan it proposes. The
 planner has the review pass's affordances, because the first territory
 survey is the same job as every later one: the graph (search_claims,
-survey_scope) AND the open web (web_search, read_page), the shared cost
+survey_scope) AND the open web (web_search, web_fetch), the shared cost
 quotes (estimate_costs), and the mandate's workspace, so its survey notes
 become the mandate's opening working memory. Its briefing is the mandate's
 words, with any declared scope claim or query as a search aid rather than
@@ -166,7 +166,7 @@ the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model). It reads
 its brief, its own workspace, and the queued inputs; then the graph
 (search, open, walk down, walk up, survey_scope, scope_sources), the
 retraction record (check_doi, recent_retractions), and the open web
-(web_search, read_page). Most runs find nothing, and say so.
+(web_search, web_fetch). Most runs find nothing, and say so.
 
 **Outputs are candidates, never conclusions.** A lookout can raise three
 things and nothing else:

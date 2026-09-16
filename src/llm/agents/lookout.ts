@@ -15,7 +15,7 @@
  *  - the graph reads (search, open, walk down, walk up) and a scope survey;
  *  - the retraction record (Crossref: check_doi, recent_retractions) and
  *    the sources behind the claims in scope;
- *  - the open web (web_search, and read_page for one page in full);
+ *  - the open web (web_search, and web_fetch for one page in full);
  *  - three ways to raise a candidate: flag_reassessment (a valued reassess
  *    row), propose_ingest (a plan item), leave_note (for the next review).
  *
@@ -30,6 +30,7 @@ import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { createWebFetch, WEB_FETCH_TOOL_NAME } from "../tools/web-fetch-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
@@ -39,7 +40,6 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { surveyScope } from "./grantor.js";
-import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import {
   consumeLookoutEvents,
   flagIngest,
@@ -101,6 +101,7 @@ async function runLookoutImpl(input: {
   // with either (tools/web-search-tool.ts).
   const model = input.model ?? lookout.model ?? config.lookoutModel;
   const webSearch = createWebSearch(model, WEB_SEARCH_MAX_USES);
+  const webFetch = createWebFetch(model, WEB_SEARCH_MAX_USES);
 
   const events = await pendingLookoutEvents(lookout.id);
   const recentFlags = await listLookoutFlags(lookout.id, { limit: 20 });
@@ -177,7 +178,6 @@ async function runLookoutImpl(input: {
         required: [],
       },
     },
-    getReadPageToolDefinition(),
     {
       name: "flag_reassessment",
       description:
@@ -326,7 +326,7 @@ async function runLookoutImpl(input: {
     () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: briefing }],
-        tools: [webSearch.tool, ...tools],
+        tools: [webSearch.tool, webFetch.tool, ...tools],
         system,
         model,
         maxTokens: 2048,
@@ -339,6 +339,7 @@ async function runLookoutImpl(input: {
         },
         executeTool: async (name, toolInput) => {
           if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+          if (name === WEB_FETCH_TOOL_NAME && webFetch.execute) return webFetch.execute(toolInput);
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
           const graphRead = await executeGraphReadTool(name, toolInput);
@@ -389,8 +390,6 @@ async function runLookoutImpl(input: {
             });
             return JSON.stringify({ days, notices: notices.length, rows: notices });
           }
-          const page = await executeReadPage(name, toolInput);
-          if (page !== null) return page;
           if (name === "flag_reassessment") {
             const res = await flagReassessment({
               lookoutId: lookout.id,

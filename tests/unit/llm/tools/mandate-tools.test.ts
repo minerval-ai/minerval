@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
  * The mandate toolbox (llm/tools/mandate-tools.ts, #333): one
- * implementation of survey_scope, read_page, estimate_costs and
- * update_workspace for every mode of a mandate's Grantmaker. The survey
+ * implementation of survey_scope, estimate_costs and update_workspace for
+ * every mode of a mandate's Grantmaker. The survey
  * falls back to the mandate's declared scope hints only when a call names
  * nothing; the workspace is offered only for a live mandate and is
  * bounded; anything else is "not my tool" (null).
@@ -13,7 +13,6 @@ const { state } = vi.hoisted(() => ({
   state: {
     surveys: [] as Array<Record<string, unknown>>,
     updates: [] as Array<{ sql: string; params: unknown[] }>,
-    pages: [] as string[],
   },
 }));
 
@@ -27,12 +26,6 @@ vi.mock("../../../../src/services/scope-survey-service.js", () => ({
   surveyScope: vi.fn(async (input: Record<string, unknown>) => {
     state.surveys.push(input);
     return [{ id: "c1" }];
-  }),
-}));
-vi.mock("../../../../src/services/source-watch-service.js", () => ({
-  readPage: vi.fn(async (url: string) => {
-    state.pages.push(url);
-    return { ok: true, text: "page", chars: 4 };
   }),
 }));
 vi.mock("../../../../src/services/cost-estimate-service.js", () => ({
@@ -55,19 +48,16 @@ import {
 beforeEach(() => {
   state.surveys = [];
   state.updates = [];
-  state.pages = [];
 });
 
 describe("createMandateTools", () => {
   it("offers the workspace only for a live mandate", () => {
     expect(createMandateTools().definitions.map((t) => t.name)).toEqual([
       "survey_scope",
-      "read_page",
       "estimate_costs",
     ]);
     expect(createMandateTools({ grantId: "g-1" }).definitions.map((t) => t.name)).toEqual([
       "survey_scope",
-      "read_page",
       "estimate_costs",
       "update_workspace",
     ]);
@@ -96,15 +86,8 @@ describe("createMandateTools", () => {
     });
   });
 
-  it("reads a page, prices work, and rewrites a bounded workspace", async () => {
+  it("prices work and rewrites a bounded workspace", async () => {
     const tools = createMandateTools({ grantId: "g-1" });
-    expect(JSON.parse((await tools.execute("read_page", { url: "https://x.test/a" }))!)).toEqual({
-      ok: true,
-      text: "page",
-      chars: 4,
-    });
-    expect(state.pages).toEqual(["https://x.test/a"]);
-
     const quote = JSON.parse(
       (await tools.execute("estimate_costs", { assessments: 2, deepen_claims: 1, sources_to_ingest: 4 }))!
     );
