@@ -365,11 +365,9 @@ a fallback-served acceptance is always a send-back.
 
 ## For the Curator
 
-Equivalent formulations the discourse studies as distinct propositions
-stay two nodes with the equivalence recorded as an argument on each; watch
-such pairs. A named conjecture restated in another base field, wording, or
-generality is a duplicate; merge it into the node the discourse consults.
-Problem
+Where the discourse keeps two equivalent formulations as distinct
+propositions, record the equivalence as an argument on each rather than
+merging them. Problem
 families (an Erdős problem and its variants) are distinct claims joined by
 `specifies` where one is a special case, otherwise laterally. A merge keeps
 the survivor's published formal statement and retires the absorbed one; a
@@ -379,18 +377,14 @@ to republish.
 
 ## For the Matcher
 
-Notational variants are one claim. A theorem and its negation are one node.
-A generalization and its special case are different claims. The same
-proposition over different structures is a different claim when the
-discourse treats it so. The proposition is the node; "X has been proven"
-and "X is provable in ZFC" are separate claims only where the discourse
-disputes them. A named conjecture and its standard statement are one node,
-whatever base field, wording, or generality a source states it in.
-Equivalent formulations are two claims only when the discourse studies
-them as distinct propositions and their equivalence is itself a result;
-if a disproof of one would be read as a disproof of the other, they are
-one claim. A problem-list number is a strong identity signal; search it
-before concluding a claim is new.
+The node is the proposition as the discourse consults it. Notational
+variants, and a named conjecture stated in another base field, wording, or
+generality, are one claim. A theorem and its negation are one node. A
+generalization and its special case are different claims. Whether two
+formulations the discourse treats as distinct are one claim or two is the
+same-considerations test, judged by how the discourse treats them, not by
+whether a proof connects them. A problem-list number is a strong identity
+signal; search it before concluding a claim is new.
 
 ## For the Extractor
 
@@ -422,8 +416,7 @@ unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
 authority on fidelity. A conjecture recorded as `contested` because it is
-open. Distinct equivalent propositions merged on the strength of a
-theorem; a named conjecture split from its own statement over a stating
-convention. A
+open. Claim identity decided by whether a proof connects two formulations
+rather than by how the discourse treats them. A
 solver's trivial proof recorded as a result rather than a defect. A
 rediscovery or a calibration solve noted as a finding.
