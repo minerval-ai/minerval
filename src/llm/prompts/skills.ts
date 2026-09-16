@@ -575,9 +575,13 @@ export function getSkillCatalog(role: SkillRole): string {
   if (skills.length === 0) return "No domain skills exist yet.";
   const entries = skills.map((s) => {
     const sections = sectionsForRole(s, role);
+    // "when active": the catalog names what exists, not what this run
+    // carries. A domain skill is spliced only when the claim's recorded
+    // domains activate it, and a run on an untagged claim carries none
+    // (#469); the run's own prompt says which domains it was given.
     const view =
       sections.length > 0
-        ? `you receive: ${sections.join(", ")}`
+        ? `when active, you receive: ${sections.join(", ")}`
         : "you receive none of its sections";
     const activation =
       s.kind === "method"
@@ -602,7 +606,11 @@ kind of work any claim can call for. A skill never outranks either the
 constitution or your role: it may sharpen your obligations and add
 procedures and tools, never loosen them. Which domain skills a run carries
 is decided by the claim's recorded domains, never by who funds the work; a
-method skill is carried on every run. ${getSkillCatalog(role)}`;
+method skill is carried on every run. A claim with no recorded domains
+activates no domain skill, and a run on such a claim carries no domain
+skill block; that is a state to work in, not a delivery fault. The catalog
+below says which skills exist and what you would receive from each when it
+is active. ${getSkillCatalog(role)}`;
 }
 
 /** The tool definitions `skill` brings to `role`'s toolset, in the Anthropic shape. */

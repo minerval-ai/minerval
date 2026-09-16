@@ -145,15 +145,37 @@ export function getMatcherSystemPromptBlocks(
   return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "matcher"));
 }
 
+/**
+ * The user turn. `domains` are the recorded domains the caller handed the
+ * run and `skills` the domain skills they activated: the prompt names both
+ * so the Matcher can tell an untagged claim (no skill block by design) from
+ * a delivery fault (#469), since the role's catalog only says what exists.
+ */
 export function getMatchingPrompt(
   extractedText: string,
-  proposedCanonical: string
+  proposedCanonical: string,
+  run: { domains?: readonly string[]; skills?: readonly Skill[] } = {}
 ): string {
+  const domains = [...new Set(run.domains ?? [])].sort();
+  const spliced = (run.skills ?? []).filter((s) => s.kind === "domain");
+  const domainsLine =
+    domains.length > 0
+      ? `Recorded domains for this run: ${domains.join(", ")}.`
+      : "Recorded domains for this run: none.";
+  const skillsLine =
+    spliced.length > 0
+      ? `Domain skill blocks spliced after your role: ${spliced
+          .map((s) => `${s.displayName} (version ${s.version})`)
+          .join(", ")}.`
+      : "No domain skill block follows your role on this run; judge under the " +
+        "constitution and your role alone.";
   return `Determine whether this claim already exists in the graph.
 
 Source text, verbatim: "${extractedText}"
 
 Proposed canonical form: "${proposedCanonical}"
+
+${domainsLine} ${skillsLine}
 
 Search with \`search_similar_claims\` under several framings, including the
 negation, then call \`submit_match_decision\` with your reasoning.
