@@ -392,6 +392,7 @@ describe("MCP tools", () => {
     ]);
     const { prompts } = await client.listPrompts();
     expect(prompts.map((p) => p.name).sort()).toEqual([
+      "ask_graph",
       "check_assertion",
       "fact_check_document",
     ]);

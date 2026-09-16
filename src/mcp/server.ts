@@ -20,6 +20,7 @@
  *     rate-limited; lands in agent_reports beside our own agents' reports.
  */
 import { z } from "zod";
+import { GRAPH_CHAT_GROUNDING_RULES } from "../llm/prompts/graph-chat.js";
 import {
   McpServer,
   ResourceTemplate,
@@ -1091,6 +1092,45 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               "agreement ends and dispute begins. Report the graph's judgment, " +
               "not your own recollection, and link the claim's `page_url`.\n\n" +
               `Assertion: ${assertion}`,
+          },
+        },
+      ],
+    })
+  );
+
+  // "Ask the graph" over MCP (#312) is compositional on purpose: the client
+  // already has a model, so instead of a tool that runs ours, this prompt
+  // hands the client's model the same grounding rules our graph chat runs
+  // under, over the same read tools.
+  server.registerPrompt(
+    "ask_graph",
+    {
+      title: "Ask the claim graph a question",
+      description:
+        "Answer a question from the Minerval claim graph's assessments, " +
+        "citing the claims used, under the same grounding rules as the " +
+        "site's own graph chat.",
+      argsSchema: {
+        question: z.string().describe("The question to put to the graph"),
+      },
+    },
+    ({ question }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              "Answer the question below from the Minerval claim graph, using " +
+              "the `search_claims`, `get_claim`, `get_decomposition`, and " +
+              "`get_dependents` tools. These rules govern the answer:\n\n" +
+              GRAPH_CHAT_GROUNDING_RULES +
+              "\n\nWhen a claim from the graph carries part of your answer, " +
+              "link its `page_url` immediately after the sentence it " +
+              "supports, and refer to claims by what they say rather than by " +
+              "identifier. Say plainly when the graph has nothing on the " +
+              "question.\n\n" +
+              `Question: ${question}`,
           },
         },
       ],

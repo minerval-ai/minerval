@@ -84,7 +84,7 @@ export function traceLevel(agent?: string): "off" | "full" {
  * phrasings on whatever page is open in the browser and answers questions
  * typed about it; neither is the graph's to keep.
  */
-const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
+const NEVER_TRACED: ReadonlySet<string> = new Set(["extension", "graph_chat"]);
 
 /**
  * Whether a run of `agent` may be recorded at all. Never-traced wins over

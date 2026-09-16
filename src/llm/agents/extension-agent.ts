@@ -1,25 +1,17 @@
-import type Anthropic from "@anthropic-ai/sdk";
-type MessageParam = Anthropic.MessageParam;
-import { completeStructuredList, toolUseLoop } from "../client.js";
+import { completeStructuredList } from "../client.js";
 import {
   getAssessorSystemPrompt,
   getAssessmentPrompt,
-  getChatSystemPrompt,
-  getChatContextPrompt,
 } from "../prompts/extension-agent.js";
-import {
-  getGraphToolDefinitions,
-  executeGraphTool,
-} from "../tools/graph-tools.js";
 import { withAgent } from "../usage-context.js";
-import { createReportTools } from "../tools/report-tools.js";
 import type { InstanceStance } from "../../schemas/common.js";
 
 /**
  * The Extension Agent (issue #72) — lives with the browser extension, never
- * edits the graph. Two entry points: a batched page-claim assessor that
- * decides what markup (if any) each on-page claim gets, and a chat loop
- * grounded in the graph via read-only tools.
+ * edits the graph. A batched page-claim assessor that decides what markup
+ * (if any) each on-page claim gets. Its chat half became the graph chat
+ * (src/llm/agents/graph-chat.ts, #312), which still serves the extension's
+ * popup in page mode alongside the website's ask surfaces.
  */
 
 export type ExtensionVerdict =
@@ -128,70 +120,4 @@ async function assessPageClaimsImpl(input: {
       valid.has(v.index) &&
       EXTENSION_VERDICTS.includes(v.verdict as ExtensionVerdict)
   );
-}
-
-export interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ExtensionChatResult {
-  reply: string;
-}
-
-// Tag every LLM call in this agent for the per-token meter (#70).
-export function extensionChat(
-  input: Parameters<typeof extensionChatImpl>[0]
-): ReturnType<typeof extensionChatImpl> {
-  return withAgent("extension", () => extensionChatImpl(input));
-}
-
-async function extensionChatImpl(input: {
-  messages: ChatTurn[];
-  pageUrl: string | null;
-  pageTitle: string | null;
-  pageClaims: Array<{
-    verbatim_text: string;
-    verdict: string;
-    claim_id: string | null;
-    canonical_form: string | null;
-    status: string | null;
-  }>;
-  model?: string;
-}): Promise<ExtensionChatResult> {
-  const contextBlock = getChatContextPrompt({
-    pageUrl: input.pageUrl,
-    pageTitle: input.pageTitle,
-    pageClaims: input.pageClaims,
-  });
-
-  // Prepend the page context to the first user turn so the conversation
-  // history stays a clean alternation of roles.
-  const history = input.messages.slice();
-  const first = history.findIndex((m) => m.role === "user");
-  const initialMessages: MessageParam[] = history.map((m, i) => ({
-    role: m.role,
-    content:
-      i === first ? `${contextBlock}\n\n---\n\n${m.content}` : m.content,
-  }));
-
-  // Every agent carries the report channel (#366).
-  const reportTools = createReportTools({ model: input.model });
-
-  const result = await toolUseLoop({
-    initialMessages,
-    tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
-    system: getChatSystemPrompt(),
-    maxTokens: 4096,
-    maxIterations: 8,
-    model: input.model,
-    executeTool: async (name, toolInput) => {
-      // The report channel first (#366): null means "not my tool".
-      const report = await reportTools.execute(name, toolInput);
-      if (report !== null) return report;
-      return executeGraphTool(name, toolInput);
-    },
-  });
-
-  return { reply: result.content };
 }

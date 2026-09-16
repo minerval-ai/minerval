@@ -18,7 +18,6 @@ vi.mock("../../../src/llm/agents/matcher.js", () => ({
 }));
 vi.mock("../../../src/llm/agents/extension-agent.js", () => ({
   assessPageClaims: vi.fn(async () => []),
-  extensionChat: vi.fn(),
   EXTENSION_VERDICTS: ["egregious", "contested", "oversimplified", "noteworthy", "fine"],
 }));
 

@@ -157,8 +157,9 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["extension"],
       summary:
-        "Talk to the extension agent about the current page, grounded in " +
-        "the claim graph",
+        "Talk to the graph chat about the current page, grounded in the " +
+        "claim graph. The same loop as POST /ask in page mode, kept under " +
+        "this name for the shipped extension.",
       body: {
         type: "object",
         required: ["messages"],
@@ -173,6 +174,7 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             reply: { type: "string" },
             citations: { type: "array" },
+            model: { type: "string", nullable: true },
           },
         },
       },

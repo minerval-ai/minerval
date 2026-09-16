@@ -24,6 +24,7 @@ import { billingRoutes } from "../routes/billing.js";
 import { mcpRoutes } from "../routes/mcp.js";
 import { oauthRoutes } from "../routes/oauth.js";
 import { extensionRoutes } from "../routes/extension.js";
+import { askRoutes } from "../routes/ask.js";
 import { orderRoutes } from "../routes/orders.js";
 import { budgetJobRoutes } from "../routes/budget-jobs.js";
 import { queueRoutes } from "../routes/queue.js";
@@ -94,6 +95,7 @@ export async function buildApp() {
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);
   await app.register(extensionRoutes, { prefix: "/extension" });
+  await app.register(askRoutes, { prefix: "/ask" });
 
   return app;
 }

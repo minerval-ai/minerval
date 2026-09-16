@@ -62,6 +62,7 @@ const LEDGER_OPS: Record<string, string> = {
   source_ingest: "a source submission",
   extension_analysis: "a page analysis",
   extension_chat: "an extension chat",
+  graph_chat: "a question to the graph",
   text_analysis: "a text analysis",
 };
 
@@ -235,6 +236,7 @@ export default async function AccountPage({
               ["submit a source for extraction", caps.source_ingest],
               ["extension page analysis", caps.extension_analysis],
               ["extension chat exchange", caps.extension_chat],
+              ["ask the graph, one exchange", caps.graph_chat],
               ["API text analysis (match / extract / assess)", caps.text_analysis],
             ]
               .filter(([, cap]) => typeof cap === "number")

@@ -133,6 +133,7 @@ const configSchema = z.object({
   capSourceIngestOwls: z.coerce.number().default(0.1),
   capExtensionAnalysisOwls: z.coerce.number().default(0.1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
+  capGraphChatOwls: z.coerce.number().default(0.1),
   capTextAnalysisOwls: z.coerce.number().default(0.1),
   // One lookout run (kind 'lookout_run'): a cheap-tier agent reading its
   // brief, the graph, and the open web, and raising candidates. Set near
@@ -754,8 +755,9 @@ const configSchema = z.object({
   // Arbitration is the highest-stakes governance call; production sets
   // ARBITRATION_MODEL=claude-fable-5-1.
   arbitrationModel: modelId(MODELS.sonnet),
-  // The extension agent judges on-page phrasings against graph state and
-  // powers the extension chat — user-facing latency-sensitive work (#72).
+  // The extension agent judges on-page phrasings against graph state, and
+  // the graph chat answers readers from the extension and the website
+  // (#72, #312) — user-facing latency-sensitive work.
   extensionModel: modelId(MODELS.sonnet),
   // The Grantmaker runs the granting conversation: mandate design, cost
   // quoting, and the authority to refuse mandates that would warp the
@@ -913,6 +915,7 @@ export function loadConfig(): Config {
     capSourceIngestOwls: process.env.CAP_SOURCE_INGEST_OWLS,
     capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
+    capGraphChatOwls: process.env.CAP_GRAPH_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,

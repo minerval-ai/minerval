@@ -99,10 +99,20 @@ vi.mock("../../../src/llm/agents/extension-agent.js", async () => {
         mocks.seen.push({ ...getUsageContext() });
         return [{ index: 0, verdict: "fine", why: "", confidence: 0.9 }];
       }),
-    extensionChat: () =>
-      withAgent("extension", async () => {
+  };
+});
+
+// The chat is the graph chat's page mode (#312): same seam, same invariant.
+vi.mock("../../../src/llm/agents/graph-chat.js", async () => {
+  const { withAgent, getUsageContext } = await import(
+    "../../../src/llm/usage-context.js"
+  );
+  return {
+    GRAPH_CHAT_AGENT: "graph_chat",
+    graphChat: () =>
+      withAgent("graph_chat", async () => {
         mocks.seen.push({ ...getUsageContext() });
-        return { reply: "The graph holds this claim as contested." };
+        return { reply: "The graph holds this claim as contested.", model: "test-model" };
       }),
   };
 });
@@ -126,7 +136,7 @@ import {
 } from "../../../src/services/extension-service.js";
 import { extractClaims } from "../../../src/llm/agents/extractor.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
-import { extensionChat } from "../../../src/llm/agents/extension-agent.js";
+import { graphChat } from "../../../src/llm/agents/graph-chat.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { traceLevel } from "../../../src/services/trace-service.js";
 
@@ -184,7 +194,7 @@ describe("extension transience (#356)", () => {
     expect(mocks.insertValues).not.toHaveBeenCalled();
     expect(mocks.updateWhere).not.toHaveBeenCalled();
     expect(mocks.seen).toHaveLength(1);
-    expect(mocks.seen[0]).toMatchObject({ agent: "extension", untraced: true });
+    expect(mocks.seen[0]).toMatchObject({ agent: "graph_chat", untraced: true });
   });
 
   it("negative control: the same agents outside the extension path do open runs", async () => {
@@ -200,11 +210,9 @@ describe("extension transience (#356)", () => {
     );
     expect(agents).toEqual(["extractor", "matcher"]);
 
-    // The extension agent is untraced by name, whoever calls it.
+    // The graph chat is untraced by name, whoever calls it.
     mocks.insertValues.mockClear();
-    await asUser(() =>
-      extensionChat({ messages: [], pageUrl: null, pageTitle: null, pageClaims: [] })
-    );
+    await asUser(() => graphChat({ messages: [], context: { kind: "graph" } }));
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 });

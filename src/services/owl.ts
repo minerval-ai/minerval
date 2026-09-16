@@ -34,6 +34,7 @@ export type PricedOp =
   | "source_ingest"
   | "extension_analysis"
   | "extension_chat"
+  | "graph_chat"
   | "text_analysis"
   | "lookout_run";
 
@@ -77,6 +78,10 @@ export function capListOwls(): Record<PricedOp, number> {
     // Browser-extension page analysis / chat exchange.
     extension_analysis: c.capExtensionAnalysisOwls,
     extension_chat: c.capExtensionChatOwls,
+    // One exchange with the graph chat from the website (#312): the same
+    // loop as the extension chat, priced apart so each surface's cost is
+    // legible on its own.
+    graph_chat: c.capGraphChatOwls,
     // MCP text tools (match_claim, extract_claims, assess_text).
     text_analysis: c.capTextAnalysisOwls,
     // One run of a mandate's lookout: cheap model, brief + graph + web.
