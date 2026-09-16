@@ -219,6 +219,7 @@ async function getClaimWithContext(claimId: string) {
   // An edge grouped under several arguments (#437) is listed once per
   // argument; an ungrouped basis edge once, with a null argument.
   const subclaims = await rawQuery<{
+    edge_id: string;
     child_id: string;
     child_text: string;
     child_type: string;
@@ -229,7 +230,7 @@ async function getClaimWithContext(claimId: string) {
     argument_id: string | null;
     argument_name: string | null;
   }>(
-    `SELECT cr.child_claim_id AS child_id, c.text AS child_text,
+    `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             am.argument_id, arg.name AS argument_name
@@ -338,10 +339,14 @@ async function getClaimWithContext(claimId: string) {
       decomposition_status: claim.decompositionStatus,
       importance: claim.importance,
       // Derived from the subclaims loaded below, never from a stored counter
-      // (#417): every edge in claim_relationships counts, argument-grouped or
-      // not, and a child is assessed when it has a current assessment.
-      children_total: subclaims.length,
-      children_assessed: subclaims.filter((sc) => sc.child_status != null).length,
+      // (#417): every edge in claim_relationships counts once, argument-grouped
+      // or not — an edge shared by two arguments is two rows above but one
+      // child (#437) — and a child is assessed when it has a current
+      // assessment.
+      children_total: new Set(subclaims.map((sc) => sc.edge_id)).size,
+      children_assessed: new Set(
+        subclaims.filter((sc) => sc.child_status != null).map((sc) => sc.edge_id)
+      ).size,
       // Why the canonical form runs in the direction it does (#360): chosen
       // on the proposition's terms when the claim was minted, so a Steward
       // improving the wording keeps the polarity every stance is read
