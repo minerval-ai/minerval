@@ -445,6 +445,56 @@ describe("lean_check", () => {
     expect(noArtifact.message).toMatch(/no Lean artifact/);
   });
 
+  it("refuses, without submitting, a proof that visibly breaks the submission convention (#453)", async () => {
+    const cases: Array<[string, RegExp]> = [
+      [`import Mathlib\n${PROOF}`, /line 1 is an `import`/],
+      [`set_option autoImplicit false\n${PROOF}`, /line 1 sets `autoImplicit`/],
+      [`theorem proof : Statement := by\n  sorry_free_proof`, /no declaration can be named `Minerval.S9f2a1b3c_v1.proof`/],
+    ];
+    for (const [proof, reason] of cases) {
+      const out = JSON.parse(
+        await executeLeanTool("lean_check", { formalization_id: FORMALIZATION_ID, kind: "proof", proof }, steward)
+      );
+      expect(out.success).toBe(false);
+      expect(out.not_submitted).toBe(true);
+      expect(out.message).toMatch(reason);
+      expect(out.message).toMatch(/theorem Minerval\.S9f2a1b3c_v1\.proof : Minerval\.S9f2a1b3c_v1\.Statement/);
+    }
+    expect(fake.submissions).toHaveLength(0);
+    expect(mocks.checks).toHaveLength(0);
+    expect(mocks.metered).toHaveLength(0);
+  });
+
+  it("lets a proof that nests the target in a namespace through to the checker", async () => {
+    const nested = `namespace Minerval.S9f2a1b3c_v1\ntheorem proof : Statement := by\n  sorry_free_proof\nend Minerval.S9f2a1b3c_v1`;
+    fake.script(nested, { verdict: "accepted" });
+    const out = JSON.parse(
+      await executeLeanTool("lean_check", { formalization_id: FORMALIZATION_ID, kind: "proof", proof: nested }, steward)
+    );
+    expect(out.verdict).toBe("accepted");
+    expect(fake.submissions).toHaveLength(1);
+  });
+
+  it("repeats the submission convention on a rejection at an early gate, not at the axioms gate", async () => {
+    // Named as a disproof but typed as the statement: the checker's target gate rejects it.
+    const wrongTarget = `theorem Minerval.S9f2a1b3c_v1.disproof : Minerval.S9f2a1b3c_v1.Statement := by\n  sorry_free_proof`;
+    fake.script(wrongTarget, { verdict: "rejected", failed_gate: "target" });
+    const early = JSON.parse(
+      await executeLeanTool("lean_check", { formalization_id: FORMALIZATION_ID, kind: "disproof", proof: wrongTarget }, steward)
+    );
+    expect(early.verdict).toBe("rejected");
+    expect(early.failed_gate).toBe("target");
+    expect(early.message).toMatch(/rejection at the target gate is often a convention slip/);
+    expect(early.message).toMatch(/theorem Minerval\.S9f2a1b3c_v1\.disproof : ¬ Minerval\.S9f2a1b3c_v1\.Statement/);
+
+    fake.script(PROOF, { verdict: "rejected", failed_gate: "axioms" });
+    const merits = JSON.parse(
+      await executeLeanTool("lean_check", { formalization_id: FORMALIZATION_ID, kind: "proof", proof: PROOF }, steward)
+    );
+    expect(merits.failed_gate).toBe("axioms");
+    expect(merits.message).not.toMatch(/Submission convention/);
+  });
+
   it("refuses an unknown formalization or one that belongs to another claim", async () => {
     const missing = JSON.parse(
       await executeLeanTool("lean_check", { formalization_id: "nope", kind: "proof", proof: PROOF }, steward)
