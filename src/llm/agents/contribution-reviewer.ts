@@ -66,6 +66,12 @@ Please review this contribution:
 6. If you accept a contribution on an existing claim, use notify_claim_steward so the steward can integrate the change. Accepted INTAKE contributions are materialized automatically by record_review_decision (matching/canonicalization, then claim creation or extraction); do not call notify_claim_steward for those; the result is reported back to you in the tool result.
 7. If you escalate, use escalate_to_arbitrator with your reasoning.`;
 
+  // A review that ends without record_review_decision leaves the contribution
+  // claimed-and-pending until the reclaim window passes (two of ten in the
+  // GLM 5.3 Flash corpus scenario ended in prose instead). One nudge, only
+  // while no decision has been recorded.
+  let decisionRecorded = false;
+
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
@@ -73,6 +79,13 @@ Please review this contribution:
     model,
     maxTokens: 8192,
     maxIterations: 8,
+    finalToolNudge: {
+      max: 1,
+      when: () => !decisionRecorded,
+      message:
+        "No review decision has been recorded for this contribution. Call " +
+        "record_review_decision now (accept, reject, or escalate) with your reasoning.",
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
@@ -83,7 +96,15 @@ Please review this contribution:
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      return executeReviewerTool(name, toolInput);
+      const output = await executeReviewerTool(name, toolInput);
+      if (name === "record_review_decision") {
+        try {
+          decisionRecorded = (JSON.parse(output) as { success?: boolean }).success !== false;
+        } catch {
+          decisionRecorded = true;
+        }
+      }
+      return output;
     },
   }));
 }

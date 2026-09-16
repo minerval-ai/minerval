@@ -301,3 +301,33 @@ describe("openrouter adapter — system blocks", () => {
     expect(sentBody()).not.toHaveProperty("output_config");
   });
 });
+
+describe("openrouter adapter — upstream errors", () => {
+  it("retries a 200 whose choice carries finish_reason error, and bills the failed attempt", async () => {
+    const failed = completion({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "error",
+          message: { role: "assistant", content: "", refusal: null },
+          error: { message: "upstream host reset the stream", code: 502 },
+        },
+      ],
+      usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 },
+    });
+    let n = 0;
+    fetchMock.mockImplementation(async () => {
+      n++;
+      return new Response(JSON.stringify(n === 1 ? failed : completion()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const result = await openrouterAdapter.complete({ messages, model: MODEL, maxTokens: 128 });
+    expect(result.content).toBe("hello");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Both attempts metered: the failed one produced (and billed) tokens too.
+    expect(meterLlmUsage).toHaveBeenCalledTimes(2);
+  });
+});

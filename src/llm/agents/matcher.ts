@@ -116,6 +116,33 @@ async function matchClaimImpl(input: {
 
   let finalResult: MatchDecision | null = null;
   const model = input.model ?? config.matcherModel;
+
+  // A submitted decision is accepted only when it is whole. The schema marks
+  // is_match required, but not every provider enforces tool schemas: GLM 5.3
+  // Flash on OpenRouter has submitted decisions whose reasoning names the
+  // matched claim with 0.9+ confidence and that carry neither is_match nor
+  // matched_claim_id — read as-is, `undefined` is falsy and a match the model
+  // made becomes a duplicate node. Refuse the call instead and let the model
+  // resubmit; it costs one more turn and keeps the decision the model made.
+  const decisionDefect = (raw: Record<string, unknown>): string | null => {
+    if (typeof raw.is_match !== "boolean") return "is_match must be true or false";
+    if (raw.is_match && typeof raw.matched_claim_id !== "string") {
+      return "matched_claim_id is required when is_match is true";
+    }
+    if (raw.instance_stance !== "affirms" && raw.instance_stance !== "denies") {
+      return 'instance_stance must be "affirms" or "denies"';
+    }
+    return null;
+  };
+  const rejectDecision = (defect: string): string =>
+    JSON.stringify({
+      success: false,
+      message:
+        `Decision NOT recorded: ${defect}. Call submit_match_decision again NOW, ` +
+        `in this turn, with every required field set explicitly: is_match, ` +
+        `matched_claim_id (when is_match is true), instance_stance, confidence, ` +
+        `reasoning. Do not end your turn without the call.`,
+    });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
@@ -124,13 +151,29 @@ async function matchClaimImpl(input: {
     tools: [searchTool, submitTool, ...reportTools.definitions],
     system,
     model,
-    maxTokens: 4096,
+    // A cap, not a target: the decision itself is a few hundred tokens. But a
+    // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
+    // mid-thought on a third of the golden pairs, and a turn cut at
+    // max_tokens ends the loop with no decision — a duplicate node.
+    maxTokens: 16384,
     maxIterations: 8,
+    // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
+    // refused submission: "Resubmitting with every required field." and then
+    // end_turn) would otherwise default the claim to novel. One nudge.
+    finalToolNudge: {
+      max: 1,
+      message:
+        "No decision has been recorded. Call submit_match_decision now with " +
+        "every required field (is_match, matched_claim_id when is_match is " +
+        "true, instance_stance, confidence, reasoning).",
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       if (name === "submit_match_decision") {
+        const defect = decisionDefect(toolInput);
+        if (defect) return rejectDecision(defect);
         finalResult = toolInput as unknown as MatchDecision;
         return JSON.stringify({ success: true });
       }
@@ -163,6 +206,9 @@ async function matchClaimImpl(input: {
     },
     onFinalTool: (name, toolInput) => {
       if (name === "submit_match_decision") {
+        // A defective submission is not final: executeTool answers it with
+        // the refusal above and the loop continues.
+        if (decisionDefect(toolInput)) return null;
         finalResult = toolInput as unknown as MatchDecision;
         return finalResult;
       }

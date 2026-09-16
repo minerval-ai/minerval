@@ -30,7 +30,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { resolveProvider } from "../providers/routing.js";
+import { webSearchTool } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -131,15 +131,11 @@ async function runMandateReviewImpl(input: {
     budgetJobId: grant.budget_job_id,
   });
 
-  // Web search is an Anthropic server tool; on other providers the pass
-  // degrades gracefully to graph-only surveying rather than failing.
+  // Web search is offered only where the model's provider serves it; on
+  // other providers the pass degrades to graph-only surveying rather than
+  // failing (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
-  const webSearchAvailable = resolveProvider(model) === "anthropic";
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: 5,
-  };
+  const webSearch = webSearchTool(model, 5);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -607,9 +603,7 @@ async function runMandateReviewImpl(input: {
 
   const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
-    tools: webSearchAvailable
-      ? [webSearchTool, ...availableTools]
-      : availableTools,
+    tools: webSearch ? [webSearch, ...availableTools] : availableTools,
     system,
     model,
     maxTokens: 4096,

@@ -29,7 +29,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { resolveProvider } from "../providers/routing.js";
+import { webSearchTool } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
@@ -101,12 +101,7 @@ async function runLookoutImpl(input: {
   // Anthropic server tool; elsewhere the run degrades to the graph, the
   // retraction record, and direct page reads.
   const model = input.model ?? lookout.model ?? config.lookoutModel;
-  const webSearchAvailable = resolveProvider(model) === "anthropic";
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: WEB_SEARCH_MAX_USES,
-  };
+  const webSearch = webSearchTool(model, WEB_SEARCH_MAX_USES);
 
   const events = await pendingLookoutEvents(lookout.id);
   const recentFlags = await listLookoutFlags(lookout.id, { limit: 20 });
@@ -318,7 +313,7 @@ async function runLookoutImpl(input: {
     `### Your delegated bounds\n\n` +
     `- A flag's urgency is clamped to ${lookout.max_value}/10 on the mandate's ledger.\n` +
     `- You may propose at most ${lookout.max_ingests_per_run} ingest${lookout.max_ingests_per_run === 1 ? "" : "s"} this run.\n` +
-    `- You have about ${MAX_ITERATIONS} tool turns${webSearchAvailable ? ` and ${WEB_SEARCH_MAX_USES} web searches` : " (no web search on this model: use the graph, the retraction record, and read_page)"}.\n` +
+    `- You have about ${MAX_ITERATIONS} tool turns${webSearch ? ` and ${WEB_SEARCH_MAX_USES} web searches` : " (no web search on this model: use the graph, the retraction record, and read_page)"}.\n` +
     `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
     `### Your recent flags and what became of them\n\n${openFlagsText}\n\n` +
@@ -345,7 +340,7 @@ async function runLookoutImpl(input: {
     () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: briefing }],
-        tools: webSearchAvailable ? [webSearchTool, ...tools] : tools,
+        tools: webSearch ? [webSearch, ...tools] : tools,
         system,
         model,
         maxTokens: 2048,
