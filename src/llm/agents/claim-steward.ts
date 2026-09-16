@@ -74,7 +74,9 @@ ${structureStep}
    is one instance among the rest, not the claim's home (see "Provenance Is
    Evidence, Not an Anchor"). When a source you read itself asserts the claim
    (or its negation) — not merely reports on the debate — record that
-   sighting with record_claim_instance as you go (see "Recording Instances").
+   sighting with record_claim_instance as you go (see "Recording Instances");
+   when an instance already on the claim misrepresents what its source says,
+   correct it with update_claim_instance and give the reason.
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit
@@ -493,16 +495,18 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       // Same runaway-guard shape for instance recording (#278): capturing
       // sightings is a cheap side effect of evidence reading, and this cap
       // only stops a loop from farming instances instead of assessing.
-      if (name === "record_claim_instance") {
+      // Corrections (#420) share the counter: one budget for touching the
+      // instance set, however it is touched.
+      if (name === "record_claim_instance" || name === "update_claim_instance") {
         const cap = config.stewardMaxInstancesPerRun;
         if (cap > 0 && instancesRecordedThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already recorded ${instancesRecordedThisRun} ` +
-              `instances, the per-run backstop (${cap}). Do not record more ` +
-              `in this pass: note any remaining sightings in your ` +
-              `reasoning_trace and proceed to your assessment.`,
+              `This run has already recorded or corrected ${instancesRecordedThisRun} ` +
+              `instances, the per-run backstop (${cap}). Do not record or ` +
+              `correct more in this pass: note any remaining sightings in ` +
+              `your reasoning_trace and proceed to your assessment.`,
           });
         }
         instancesRecordedThisRun++;

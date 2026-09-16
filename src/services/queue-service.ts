@@ -61,6 +61,11 @@ export interface StewardMessage {
     // Grantmaker's extend_plan in the same turn, #416). The context carries
     // the mandate's name and the item's rationale.
     | "mandate_plan"
+    // A mandate's lookout (docs/allocation.md, "Lookouts") reports a
+    // development bearing on this claim — a retraction, a new result, a
+    // moved dependency — and asks for a fresh look. The context carries
+    // what it saw; the ledger row it valued decides whether the pass runs.
+    | "lookout_flag"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review

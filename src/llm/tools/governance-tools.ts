@@ -320,8 +320,11 @@ async function getClaimWithContext(claimId: string) {
       state: claim.state,
       decomposition_status: claim.decompositionStatus,
       importance: claim.importance,
-      children_total: claim.childrenTotal,
-      children_assessed: claim.childrenAssessed,
+      // Derived from the subclaims loaded below, never from a stored counter
+      // (#417): every edge in claim_relationships counts, argument-grouped or
+      // not, and a child is assessed when it has a current assessment.
+      children_total: subclaims.length,
+      children_assessed: subclaims.filter((sc) => sc.child_status != null).length,
       // Why the canonical form runs in the direction it does (#360): chosen
       // on the proposition's terms when the claim was minted, so a Steward
       // improving the wording keeps the polarity every stance is read

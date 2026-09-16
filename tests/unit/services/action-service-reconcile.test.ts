@@ -27,6 +27,7 @@ const { state, queries } = vi.hoisted(() => ({
     attemptGroups: { groups: 0, live: 0 },
     publishedFor: new Set<string>(),
     lastAttemptFinishedAt: null as Date | null,
+    dueLookouts: [] as Array<{ id: string; title: string }>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -42,6 +43,7 @@ vi.mock("../../../src/db/client.js", () => ({
       return [{ id, state: "active", steward_state: "done", published: state.publishedFor.has(id) }];
     }
     if (q.includes("FROM grants") && q.includes("plan_cursor")) return [state.grant];
+    if (q.includes("FROM lookouts l")) return state.dueLookouts;
     if (q.includes("FROM claim_formalizations") && q.includes("status = 'published'") && q.startsWith("SELECT id")) {
       return state.publishedFor.has(params[0] as string) ? [{ id: FORMALIZATION_B }] : [];
     }
@@ -55,7 +57,7 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardStrongModel: "strong", owlCostMicroUsd: 1_000_000 }),
+  loadConfig: () => ({ stewardStrongModel: "strong", owlCostMicroUsd: 1_000_000, capLookoutRunOwls: 0.05 }),
 }));
 
 // The formalize gate (#416): the claim's domains carry the publishing tool
@@ -93,6 +95,7 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
 import {
   ATTEMPT_GROUP,
   FORMALIZE_GROUP,
+  LOOKOUT_GROUP,
   reconcileActions,
 } from "../../../src/services/action-service.js";
 
@@ -106,6 +109,28 @@ beforeEach(() => {
   state.attemptGroups = { groups: 0, live: 0 };
   state.publishedFor = new Set();
   state.lastAttemptFinishedAt = null;
+  state.dueLookouts = [];
+});
+
+describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
+  it("opens one standard row per due lookout in group lookout:<id>, reopening a closed row only when the lookout is due again", async () => {
+    state.dueLookouts = [{ id: "l-1", title: "Retraction watch" }];
+    await reconcileActions();
+    const due = queries.find((x) => x.q.includes("FROM lookouts l"))!;
+    // Due = heartbeat passed, or an unconsumed event waits; active on both sides.
+    expect(due.q).toContain("l.next_due_at <= now()");
+    expect(due.q).toContain("consumed_at IS NULL");
+    expect(due.q).toContain("g.status = 'active'");
+    const rows = inserts("lookout_run");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000]);
+    expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
+  });
+
+  it("opens nothing when no lookout is due", async () => {
+    await reconcileActions();
+    expect(inserts("lookout_run")).toHaveLength(0);
+  });
 });
 
 describe("formalize rows from plan items", () => {

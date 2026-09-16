@@ -262,6 +262,85 @@ export function getStewardToolDefinitions(): Tool[] {
       },
     },
     {
+      name: "update_claim_instance",
+      description:
+        "Correct an already-recorded instance of the claim you steward " +
+        "(#420): its stance, confidence, speaker, or the passage it rests " +
+        "on. Recording is deduplicated per (claim, source), so this is the " +
+        "only way to fix an instance that misrepresents its source — a " +
+        "neutral report recorded as an affirmation, a quote attributed to " +
+        "the outlet instead of the person quoted, a stance read backwards. " +
+        "A source that only mentions the claim, questions it, or reports " +
+        "the debate without taking a side is not an assertion: keep its row " +
+        "for provenance but lower its confidence toward 0 so it no longer " +
+        "counts as a voice on the claim. Every correction requires a " +
+        "reasoning note, which is written to the claim's audit trail.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim the instance belongs to",
+          },
+          instance_id: {
+            type: "string",
+            description:
+              "The UUID of the instance to correct, as listed among the " +
+              "claim's source instances (or returned by a deduplicated " +
+              "record_claim_instance call).",
+          },
+          stance: {
+            type: "string",
+            enum: ["affirms", "denies"],
+            description:
+              "Corrected stance: whether this source asserts the canonical " +
+              "claim (affirms) or its negation (denies). Omit to leave as is.",
+          },
+          confidence: {
+            type: "number",
+            description:
+              "Corrected 0.0-1.0 confidence that this is a genuine assertion " +
+              "of THIS claim. Use a value near 0 for a passing mention or a " +
+              "neutral report. Omit to leave as is.",
+          },
+          speaker: {
+            type: "string",
+            description:
+              "Corrected speaker: who actually asserted it (for a quote, the " +
+              "person quoted, not the outlet). Omit to leave as is.",
+          },
+          publication: {
+            type: "string",
+            description: "Corrected publication/outlet. Omit to leave as is.",
+          },
+          source_date: {
+            type: "string",
+            description:
+              "Corrected date, ISO-8601 to the precision known. Omit to " +
+              "leave as is.",
+          },
+          verbatim_text: {
+            type: "string",
+            description:
+              "Corrected passage, verbatim, where the recorded one is not " +
+              "the statement that carries the stance. Omit to leave as is.",
+          },
+          context: {
+            type: "string",
+            description:
+              "Corrected surrounding context. Omit to leave as is.",
+          },
+          reasoning: {
+            type: "string",
+            description:
+              "Why the recorded instance was wrong and what you read that " +
+              "shows it: the note the audit trail keeps next to the change.",
+          },
+        },
+        required: ["claim_id", "instance_id", "reasoning"],
+      },
+    },
+    {
       name: "update_canonical_form",
       description:
         "Update the canonical form (text) of a claim. Wording is judged fresh " +
@@ -939,8 +1018,10 @@ export async function executeStewardTool(
               (existing.stance !== stance
                 ? ` Note: the existing instance's stance differs from the one ` +
                   `you just observed — if the source genuinely takes both ` +
-                  `sides, or the recorded stance looks wrong, weigh that in ` +
-                  `your assessment and note it in your reasoning_trace.`
+                  `sides, weigh that in your assessment and note it in your ` +
+                  `reasoning_trace; if the recorded stance is simply wrong, ` +
+                  `correct it with update_claim_instance (instance_id ` +
+                  `${existing.id}) and say why.`
                 : ""),
           });
         }
@@ -971,6 +1052,150 @@ export async function executeStewardTool(
             `Recorded a ${stance} instance of claim ${claimId} from ` +
             `${source.url ?? url}. It now counts among the claim's source ` +
             `instances; weigh its stance in your assessment like any other.`,
+        });
+      }
+
+      case "update_claim_instance": {
+        const claimId = input.claim_id as string;
+        const instanceId =
+          typeof input.instance_id === "string" ? input.instance_id.trim() : "";
+        const reasoning =
+          typeof input.reasoning === "string" ? input.reasoning.trim() : "";
+        const optText = (v: unknown): string | undefined =>
+          typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+        if (!instanceId) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "instance_id is required: the UUID of the recorded instance " +
+              "to correct, as listed among the claim's source instances.",
+          });
+        }
+        // A correction without its reason is an unexplained edit to another
+        // agent's record; the audit trail is the point.
+        if (!reasoning) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "reasoning is required: say what you read that shows the " +
+              "recorded instance misrepresents its source.",
+          });
+        }
+
+        const patch: Partial<typeof claimInstances.$inferInsert> = {};
+        if (input.stance !== undefined && input.stance !== null) {
+          const stance = String(input.stance).toLowerCase();
+          if (stance !== "affirms" && stance !== "denies") {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Unknown stance "${stance}". Use "affirms" (the source ` +
+                `asserts the canonical claim) or "denies" (it asserts the ` +
+                `negation). A source that only mentions the claim keeps its ` +
+                `stance and gets a confidence near 0 instead.`,
+            });
+          }
+          patch.stance = stance;
+        }
+        if (input.confidence !== undefined && input.confidence !== null) {
+          const confidence = clampUnit(input.confidence);
+          if (confidence === undefined) {
+            return JSON.stringify({
+              success: false,
+              message: "confidence must be a number in [0, 1].",
+            });
+          }
+          patch.confidence = confidence;
+        }
+        const verbatimText = optText(input.verbatim_text);
+        if (verbatimText !== undefined) {
+          if (verbatimText.length > 2000) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `verbatim_text is ${verbatimText.length} chars; keep it ` +
+                `under 2000. Record the passage that states the claim, not ` +
+                `the surrounding document.`,
+            });
+          }
+          patch.verbatimText = verbatimText;
+        }
+        const speaker = optText(input.speaker);
+        if (speaker !== undefined) patch.speaker = speaker;
+        const publication = optText(input.publication);
+        if (publication !== undefined) patch.publication = publication;
+        const sourceDate = optText(input.source_date);
+        if (sourceDate !== undefined) patch.sourceDate = sourceDate;
+        const context = optText(input.context);
+        if (context !== undefined) patch.context = context;
+
+        if (Object.keys(patch).length === 0) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "Nothing to change: give at least one of stance, confidence, " +
+              "speaker, publication, source_date, verbatim_text, or context.",
+          });
+        }
+
+        // The instance must belong to the claim this steward is responsible
+        // for; a hallucinated or foreign id gets a readable bounce, never a
+        // silent no-op or an edit to another claim's record.
+        const [existing] = await rawQuery<{
+          id: string;
+          stance: string;
+          confidence: number;
+          speaker: string | null;
+          source_url: string | null;
+        }>(
+          `SELECT ci.id, ci.stance, ci.confidence, ci.speaker, s.url AS source_url
+           FROM claim_instances ci
+           JOIN sources s ON s.id = ci.source_id
+           WHERE ci.id = $1 AND ci.claim_id = $2
+           LIMIT 1`,
+          [instanceId, claimId]
+        );
+        if (!existing) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Instance not found: ${instanceId} is not a recorded instance ` +
+              `of claim ${claimId}.`,
+          });
+        }
+
+        const db = getDb();
+        await db
+          .update(claimInstances)
+          .set(patch)
+          .where(eq(claimInstances.id, instanceId));
+
+        // The correction lands in the claim's audit trail with its reason,
+        // so the change to another agent's record is inspectable.
+        const changed = Object.entries(patch)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join(", ");
+        await db.insert(auditLog).values({
+          claimId,
+          action: "updated_claim_instance",
+          reasoning:
+            `Instance ${instanceId} (${existing.source_url ?? "source"}): ` +
+            `was stance=${existing.stance}, confidence=${existing.confidence}` +
+            (existing.speaker ? `, speaker=${existing.speaker}` : "") +
+            `; set ${changed}. ${reasoning}`,
+          createdBy: "claim_steward",
+        });
+
+        return JSON.stringify({
+          success: true,
+          instance_id: instanceId,
+          updated: Object.keys(patch),
+          message:
+            `Updated instance ${instanceId} of claim ${claimId} ` +
+            `(${changed}); the correction and your reasoning are in the ` +
+            `claim's audit trail. Its stance and confidence now feed your ` +
+            `assessment as corrected.`,
         });
       }
 
