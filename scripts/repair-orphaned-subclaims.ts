@@ -79,9 +79,10 @@ async function findRecordedCall(claimId: string): Promise<RecordedCall | null> {
     const items = Array.isArray(step.content) ? step.content : [];
     for (const item of items as Array<Record<string, unknown>>) {
       if (item.name !== "add_decomposition_edge") continue;
+      // Each item is { name, input, output }; output is the tool's JSON text.
       let result: Record<string, unknown> = {};
       try {
-        result = JSON.parse(String(item.result ?? "{}"));
+        result = JSON.parse(String(item.output ?? "{}"));
       } catch {
         continue;
       }
