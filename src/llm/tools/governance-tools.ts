@@ -27,6 +27,7 @@ import { hasWrittenForm } from "../../services/argument-service.js";
 import { getClaimSourceMap } from "../../services/source-map-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { listFindings } from "../../services/finding-service.js";
+import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -312,6 +313,14 @@ async function getClaimWithContext(claimId: string) {
   // current, so the Steward knows the graph has moved since it was written.
   const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
 
+  // The claim's formal statement and the checks on it (#435): the published
+  // version, any draft or reviewed one awaiting publication, every version's
+  // status, and the checker's verdicts. The Steward reads this before
+  // formalizing (is there already a statement, or a draft to review?) and
+  // after an attempt (which statement did it run against, what did the
+  // checker say). Empty history means nothing has ever been recorded.
+  const formalizationRecord = await getClaimFormalizationRecord(claimId);
+
   return {
     claim: {
       id: claim.id,
@@ -342,6 +351,7 @@ async function getClaimWithContext(claimId: string) {
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    ...formalizationRecord,
     findings_noted: findingsNoted.map((f) => ({
       id: f.id,
       noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,

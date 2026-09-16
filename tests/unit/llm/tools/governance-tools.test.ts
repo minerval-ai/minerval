@@ -46,6 +46,18 @@ vi.mock("../../../../src/db/client.js", async () => {
   };
 });
 
+vi.mock("../../../../src/services/formalization-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../src/services/formalization-service.js")>()),
+  getClaimFormalizationRecord: vi.fn(async () => ({
+    formalization: null,
+    formalization_pending: null,
+    formalization_history: [],
+    verification: null,
+    lean_checks: [],
+    lean_checks_total: 0,
+  })),
+}));
+
 import { executeGovernanceTool } from "../../../../src/llm/tools/governance-tools.js";
 
 function baseContribution(overrides: Record<string, unknown> = {}) {
