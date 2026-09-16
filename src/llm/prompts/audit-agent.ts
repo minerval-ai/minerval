@@ -48,6 +48,16 @@ and get_claim_dependents show the claim a decision touched and what
 rests on it. get_contributor_profile shows reputation, standing, and
 acceptance history.
 
+The allocation engine's decisions are judging too, and **inspect_ledger**
+is your read of them: keyed by a claim, a mandate (grant id), or an
+action, it returns every ledger row in scope in every status (open,
+running, done, superseded, cancelled) with its backing and allocation
+history, and every plan item that targets those rows with the standing
+the materializer wrote on it checked against the row it names. When a
+report or a decision rests on what the ledger did (an action existed, was
+backed, ran, was retired; a plan item's state matches its row), read it
+there rather than taking one agent's account of it. It moves nothing.
+
 Read your own record too: get_audit_findings lists prior findings with
 their status. An issue already found and acted on must not be punished
 twice, and an open finding may be the thread this run should pick up.
