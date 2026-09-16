@@ -366,6 +366,14 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
 
   // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
   // the Elicit cap: each refusal tells the agent what to do instead.
+  const wasNotSubmitted = (result: string): boolean => {
+    try {
+      const parsed = JSON.parse(result) as { not_submitted?: unknown };
+      return parsed.not_submitted === true;
+    } catch {
+      return false;
+    }
+  };
   const leanCapRefusal = (name: string): string | null => {
     if (name === "lean_search") {
       const cap = config.stewardLeanMaxSearchesPerRun;
@@ -449,11 +457,17 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (isSkillTool(name)) {
         const refusal = leanCapRefusal(name);
         if (refusal) return refusal;
-        return executeSkillTool(name, toolInput, {
+        const result = await executeSkillTool(name, toolInput, {
           role: "claim-steward",
           claimId: input.claimId,
           run: { trigger: input.trigger, context: input.context, model },
         });
+        // A submission the executor turned away for breaking the convention
+        // never reached the checker, so it is not one of the run's checks (#453).
+        if (name === "lean_check" && leanChecksThisRun > 0 && wasNotSubmitted(result)) {
+          leanChecksThisRun -= 1;
+        }
+        return result;
       }
       // Elicit calls cost real money, not just tokens (#299/#300): a per-run
       // backstop mirrors web_search's max_uses. The judgment about whether

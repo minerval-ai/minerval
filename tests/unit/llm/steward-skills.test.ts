@@ -59,10 +59,14 @@ vi.mock("../../../src/llm/tools/lean-tools.js", () => {
   return {
     LEAN_TOOL_NAMES: names,
     isLeanTool: (name: string) => names.includes(name),
-    registerLeanTools: (register: (name: string, executor: () => Promise<string>) => void) => {
+    registerLeanTools: (register: (name: string, executor: (input: Record<string, unknown>) => Promise<string>) => void) => {
       for (const name of names) {
-        register(name, async () =>
-          JSON.stringify({ success: false, message: `${name}: stub executor reached` })
+        register(name, async (input: Record<string, unknown>) =>
+          JSON.stringify({
+            success: false,
+            message: `${name}: stub executor reached`,
+            ...(input?.proof === "not-a-submission" ? { not_submitted: true } : {}),
+          })
         );
       }
     },
@@ -276,6 +280,21 @@ describe("per-run Lean caps", () => {
     }
     const over = JSON.parse(await opts.executeTool("lean_check", base));
     expect(over.success).toBe(false);
+    expect(over.message).toMatch(/used 3 of its 3 proof checks/);
+  });
+
+  it("does not count a lean_check the executor refused before submitting (#453)", async () => {
+    const opts = await run(["mathematics"]);
+    const base = { formalization_id: "f", kind: "proof" };
+    for (let i = 0; i < 3; i++) {
+      const out = JSON.parse(await opts.executeTool("lean_check", { ...base, proof: "not-a-submission" }));
+      expect(out.not_submitted).toBe(true);
+    }
+    for (let i = 0; i < 3; i++) {
+      const out = JSON.parse(await opts.executeTool("lean_check", base));
+      expect(out.message).toMatch(/stub executor reached/);
+    }
+    const over = JSON.parse(await opts.executeTool("lean_check", base));
     expect(over.message).toMatch(/used 3 of its 3 proof checks/);
   });
 

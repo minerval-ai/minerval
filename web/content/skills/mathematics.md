@@ -158,7 +158,14 @@ unelaborated string. `lean_check` when a proof artifact exists that bears
 on the claim: a contributor's proof, a solver's proof, a formalization
 project's proof. Do not spend a check to learn what an `accepted` row
 already says, and do not check a proof against a statement other than the
-one it was written for. A check that returns `error` is not a verdict;
+one it was written for. A submission is appended after a checker-supplied
+header that is the only `import` and forces `autoImplicit` off, so the
+proof text carries no `import` and no `set_option autoImplicit`; it refers
+to the statement by its full path and declares the target under its full
+name, `theorem Minerval.S<8 hex>_v<n>.proof : Minerval.S<8 hex>_v<n>.Statement`
+(or `.disproof : ¬ ...Statement`), with the namespace taken from the
+formalization. A submission that visibly breaks this is refused without
+spending a check. A check that returns `error` is not a verdict;
 record that verification was unavailable and assess on the informal
 evidence. A proof of a statement with a live bounty that arrives by any door
 other than the prize pipeline (an argument contribution, a link in a

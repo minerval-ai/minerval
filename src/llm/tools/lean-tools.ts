@@ -299,6 +299,56 @@ async function leanElaborate(input: Record<string, unknown>): Promise<string> {
 // lean_check
 // ---------------------------------------------------------------------------
 
+/** The gates whose failure is usually a convention slip rather than a wrong proof (#453). */
+const CONVENTION_GATES = new Set(["static_policy", "compile", "target"]);
+
+/**
+ * The submission convention of docs/mathematics.md §5.4, in the words an
+ * agent needs to write a submission that reaches the axioms gate: the
+ * checker's header is the only import and forces autoImplicit off, the
+ * statement is referenced by its full namespace path, and the target
+ * constant has a fixed name (#453).
+ */
+export function submissionConventions(namespace: string, kind: CheckKind): string {
+  const type = kind === "disproof" ? `¬ ${namespace}.Statement` : `${namespace}.Statement`;
+  return (
+    `Submission convention: the checker prepends its own header (the only \`import\`, plus ` +
+    `\`set_option autoImplicit false\`), so the proof text must contain no \`import\` line and ` +
+    `no \`set_option autoImplicit\`. The statement is \`${namespace}.Statement\` (not in scope ` +
+    `unqualified), and the target must be declared under its full name: ` +
+    `\`theorem ${namespace}.${kind} : ${type} := ...\`. The static policy also refuses sorry, ` +
+    `admit, axiom, native_decide, unsafe, partial, and set_option outside maxHeartbeats/maxRecDepth.`
+  );
+}
+
+/**
+ * Turn away, before a check is spent, a submission that certainly fails the
+ * static_policy or target gate: an \`import\` line, a \`set_option autoImplicit\`,
+ * or no way for the target constant to carry its required name (neither the
+ * dotted name nor a \`namespace Minerval...\` that could nest it). Anything
+ * subtler is the checker's to decide.
+ */
+export function submissionConventionError(
+  source: string,
+  namespace: string,
+  kind: CheckKind
+): string | null {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const importLine = lines.findIndex((l) => /^\s*import\b/.test(l));
+  if (importLine >= 0) {
+    return `line ${importLine + 1} is an \`import\`; the checker's header is the only import`;
+  }
+  const optionLine = lines.findIndex((l) => /^\s*set_option\s+autoImplicit\b/.test(l));
+  if (optionLine >= 0) {
+    return `line ${optionLine + 1} sets \`autoImplicit\`; the checker's header forces it off`;
+  }
+  const target = `${namespace}.${kind}`;
+  if (!source.includes(target) && !/^\s*namespace\s+Minerval\b/m.test(source)) {
+    return `no declaration can be named \`${target}\` (the text has neither that name nor a namespace that nests it)`;
+  }
+  return null;
+}
+
 async function resolveSubmission(
   input: Record<string, unknown>,
   formalizationId: string
@@ -392,6 +442,15 @@ async function leanCheck(
   const submission = await resolveSubmission(input, formalizationId);
   if ("error" in submission) return refuse(submission.error);
   const kind = (kindInput || submission.kind || "proof") as CheckKind;
+  // A submission that visibly breaks the convention is refused here, so it
+  // costs neither checker time nor one of the run's checks (#453).
+  const conventionError = submissionConventionError(submission.source, formalization.namespace, kind);
+  if (conventionError) {
+    return refuse(
+      `Not submitted: ${conventionError}. ${submissionConventions(formalization.namespace, kind)}`,
+      { not_submitted: true, kind, namespace: formalization.namespace }
+    );
+  }
   const { submittedBy, mode } = actorFor(ctx);
   const submissionSha = sha256(submission.source);
   const runId = getUsageContext().runId ?? null;
@@ -470,7 +529,11 @@ async function leanCheck(
         record.verdict === "accepted"
           ? "The kernel accepted the submission against the stored statement. Fidelity of the statement to the claim remains your judgment."
           : record.verdict === "rejected"
-            ? "The submission was rejected on the merits; a rejected disproof is not evidence for the statement."
+            ? "The submission was rejected on the merits; a rejected disproof is not evidence for the statement." +
+              (record.failed_gate && CONVENTION_GATES.has(record.failed_gate)
+                ? ` A rejection at the ${record.failed_gate} gate is often a convention slip. ` +
+                  submissionConventions(formalization.namespace, kind)
+                : "")
             : "The checker could not decide; an error is no evidence at all.",
     });
   } catch (err) {
