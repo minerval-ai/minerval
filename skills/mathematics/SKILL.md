@@ -365,13 +365,11 @@ a fallback-served acceptance is always a send-back.
 
 ## For the Curator
 
-Equivalent formulations whose equivalence is a theorem stay two nodes with
-the equivalence recorded as an argument on each, where the discourse
-studies them as distinct named propositions; watch such pairs. A named
-conjecture restated under a different stating convention (base field,
-choice of equivalent wording, quantification over dimension) is a duplicate
-of the existing node, and the merge keeps the node the discourse consults
-(the assessed one, with the problem-list number and the instances). Problem
+Equivalent formulations the discourse studies as distinct propositions
+stay two nodes with the equivalence recorded as an argument on each; watch
+such pairs. A named conjecture restated in another base field, wording, or
+generality is a duplicate; merge it into the node the discourse consults.
+Problem
 families (an Erdős problem and its variants) are distinct claims joined by
 `specifies` where one is a special case, otherwise laterally. A merge keeps
 the survivor's published formal statement and retires the absorbed one; a
@@ -384,20 +382,13 @@ to republish.
 Notational variants are one claim. A theorem and its negation are one node.
 A generalization and its special case are different claims. The same
 proposition over different structures is a different claim when the
-discourse treats it so. "X holds," "X has been proven," and "X is provable
-in ZFC" are three claims. Equivalent formulations whose equivalence is a
-theorem are two claims only where the discourse studies them as distinct
-named propositions (the Riemann hypothesis and Robin's inequality; a
-conjecture and a criterion equivalent to it). A named conjecture or theorem
-and its standard statement are one node, and a stating convention does not
-make a new claim: the base field a source states a conjecture over, the
-choice among "injective", "bijective" and "polynomial automorphism" in its
-statement, explicit versus implicit quantification over dimension, or a
-settled fact bundled into the name ("the conjecture is true" against the
-bound it asserts). Restating a conjecture in a source's preferred
-generality is an instance of the existing node, not a new claim, unless
-the discourse consults the variants separately. The test: if a source
-titled "disproof of X" would refute both formulations at once, they are
+discourse treats it so. The proposition is the node; "X has been proven"
+and "X is provable in ZFC" are separate claims only where the discourse
+disputes them. A named conjecture and its standard statement are one node,
+whatever base field, wording, or generality a source states it in.
+Equivalent formulations are two claims only when the discourse studies
+them as distinct propositions and their equivalence is itself a result;
+if a disproof of one would be read as a disproof of the other, they are
 one claim. A problem-list number is a strong identity signal; search it
 before concluding a claim is new.
 
@@ -431,9 +422,8 @@ unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
 authority on fidelity. A conjecture recorded as `contested` because it is
-open. Equivalent formulations the discourse studies separately merged on
-the strength of a theorem; a named conjecture split from its own standard
-statement because a source states it over a different base field or with
-a settled fact folded into its name. A
+open. Distinct equivalent propositions merged on the strength of a
+theorem; a named conjecture split from its own statement over a stating
+convention. A
 solver's trivial proof recorded as a result rather than a defect. A
 rediscovery or a calibration solve noted as a finding.

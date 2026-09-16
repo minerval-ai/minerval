@@ -371,15 +371,10 @@ claim when the discourse treats it so. The hard case is equivalent
 formulations whose equivalence is itself a theorem (Robin's inequality and
 the Riemann hypothesis): keep two nodes, record the equivalence as an
 argument on each, and let the Curator watch the pair. That rule is for
-distinct named propositions the discourse studies separately; it does not
-split a named conjecture from its own standard statement. A stating
-convention (the base field a source states the Jacobian conjecture over,
-the choice among equivalent wordings in a conjecture's statement, explicit
-versus implicit quantification over dimension, a settled fact bundled into
-"the conjecture is true") is an instance of the existing node, not a new
-claim, unless the discourse consults the variants separately. The test: if
-a source titled "disproof of X" would refute both formulations at once,
-they are one claim. A problem-list number
+propositions the discourse studies as distinct; a named conjecture and its
+standard statement are one node whatever base field, wording, or
+generality a source states it in, and if a disproof of one would be read
+as a disproof of the other, they are one claim. A problem-list number
 is a strong identity signal the Matcher checks before concluding a claim is
 new. Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
 "For the Matcher").
