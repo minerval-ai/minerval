@@ -50,13 +50,13 @@ const MATCH_DECISION_SCHEMA = {
   type: "object" as const,
   properties: {
     is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
-    matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True" },
+    matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True, copied exactly from a search_similar_claims result" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
     instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
-    alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered" },
+    alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
     relationship_notes: { type: ["string", "null"], description: "Notes on relationships to other claims" },
   },
   required: ["is_match", "confidence", "reasoning", "instance_stance"],
@@ -155,6 +155,25 @@ async function matchClaimImpl(input: {
   type SearchHit = { id: string; canonical_form: string; score: number };
   const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
 
+  // Every claim id the Matcher has been shown (#470). Its searches are its
+  // only source of ids, so an id in a submitted decision that none of them
+  // returned is a transcription error: a model retyping a UUID into its
+  // structured output has spliced two neighbours' ids into one that resolves
+  // to nothing, and a caller told to weigh alternative_matches then reads a
+  // phantom near-miss as evidence. Resolve each submitted id against this
+  // set: exact, or by its first UUID group when that names one retrieved
+  // claim; anything else is not an id the Matcher could have meant.
+  const retrievedIds = new Set<string>();
+  const UUID_GROUP_CHARS = 8;
+  const resolveRetrievedId = (id: unknown): string | null => {
+    if (typeof id !== "string" || id.length === 0) return null;
+    if (retrievedIds.has(id)) return id;
+    if (id.length < UUID_GROUP_CHARS) return null;
+    const group = id.slice(0, UUID_GROUP_CHARS);
+    const candidates = [...retrievedIds].filter((r) => r.startsWith(group));
+    return candidates.length === 1 ? candidates[0]! : null;
+  };
+
   // A submitted decision is accepted only when it is whole. The schema marks
   // is_match required, but not every provider enforces tool schemas: GLM 5.3
   // Flash on OpenRouter has submitted decisions whose reasoning names the
@@ -166,6 +185,12 @@ async function matchClaimImpl(input: {
     if (typeof raw.is_match !== "boolean") return "is_match must be true or false";
     if (raw.is_match && typeof raw.matched_claim_id !== "string") {
       return "matched_claim_id is required when is_match is true";
+    }
+    if (raw.is_match && resolveRetrievedId(raw.matched_claim_id) === null) {
+      return (
+        `matched_claim_id ${JSON.stringify(raw.matched_claim_id)} was not returned by ` +
+        `any search_similar_claims call in this run; copy the id exactly from a search result`
+      );
     }
     if (!isInstanceStance(raw.instance_stance)) {
       return 'instance_stance must be "affirms", "denies", or "poses"';
@@ -179,18 +204,37 @@ async function matchClaimImpl(input: {
         `Decision NOT recorded: ${defect}. Call submit_match_decision again NOW, ` +
         `in this turn, with every required field set explicitly: is_match, ` +
         `matched_claim_id (when is_match is true), instance_stance, confidence, ` +
-        `reasoning. Do not end your turn without the call.`,
+        `reasoning. Every claim id must be copied exactly from a ` +
+        `search_similar_claims result. Do not end your turn without the call.`,
     });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
   const acceptDecision = (toolInput: Record<string, unknown>): MatchDecision => {
     const submitted = toolInput as unknown as Omit<MatchDecision, "outcome">;
+    // Ids are taken from the retrieved set, not from the model's retyping
+    // (#470): decisionDefect has already established that a match's id
+    // resolves, so here it is normalised; an alternative that resolves to
+    // nothing is dropped rather than handed to a caller as a near-miss.
+    const matched_claim_id = submitted.is_match
+      ? resolveRetrievedId(submitted.matched_claim_id)
+      : null;
+    const alternative_matches: string[] = [];
+    for (const raw of Array.isArray(submitted.alternative_matches) ? submitted.alternative_matches : []) {
+      const id = resolveRetrievedId(raw);
+      if (id === null) {
+        console.warn(
+          `[matcher] dropping alternative_matches id ${JSON.stringify(raw)}: ` +
+            `not returned by any search in this run (#470)`
+        );
+        continue;
+      }
+      if (id !== matched_claim_id && !alternative_matches.includes(id)) alternative_matches.push(id);
+    }
     // The outcome is derived here, never trusted from the model: a match
     // without an id is not a match a caller can link to.
-    const outcome: MatchOutcome =
-      submitted.is_match && submitted.matched_claim_id ? "match" : "new";
-    finalResult = { ...submitted, outcome };
+    const outcome: MatchOutcome = submitted.is_match && matched_claim_id ? "match" : "new";
+    finalResult = { ...submitted, matched_claim_id, alternative_matches, outcome };
     return finalResult;
   };
 
@@ -271,6 +315,7 @@ async function matchClaimImpl(input: {
           score: Number(r.similarity_score.toFixed(3)),
         }));
         searchLog.push({ query, results: hits });
+        for (const hit of hits) retrievedIds.add(hit.id);
         return JSON.stringify({ query, count: hits.length, results: hits });
       }
       return `Error: Unknown tool: ${name}`;
