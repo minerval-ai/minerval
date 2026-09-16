@@ -158,6 +158,7 @@ spent (§15):
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 0.1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
 | extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
+| ask the graph, one exchange (`POST /ask`, #312) | up to 0.1 owl | `CAP_GRAPH_CHAT_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
 
 Open-ended operations (deep decomposition, grant mandates) are not capped

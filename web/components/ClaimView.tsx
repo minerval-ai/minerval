@@ -17,6 +17,7 @@ import { Contribute } from "./claim/Contribute";
 import { CiteClaim } from "./claim/CiteClaim";
 import { OrderAssessment } from "./claim/OrderAssessment";
 import { FundDecomposition } from "./claim/FundDecomposition";
+import { AskGraph } from "./AskGraph";
 import { FormalStatement } from "./claim/FormalStatement";
 import { MachineChecked } from "./claim/MachineChecked";
 import { Prize } from "./claim/Prize";
@@ -358,6 +359,20 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           history after the claim's own content. Hidden entirely when no
           contribution has been made. */}
       {record && record.length > 0 && <ContributionRecord record={record} />}
+
+      {/* ask about this claim (#312): the graph chat anchored to this claim.
+          Before the contribution entry, because a question comes before a
+          challenge; the answer is a model with read-only graph tools, and
+          the panel says so. */}
+      <AskGraph
+        context={{ kind: "claim", claim_id: claim.id }}
+        heading="Ask about this claim"
+        starters={[
+          "What does this claim rest on?",
+          "What is the strongest case against it?",
+          "What would change the verdict?",
+        ]}
+      />
 
       {/* contribution entry (#174): the companion of the contribution record
           above — the record shows past exchanges, this is where a new one

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { IMPORTANCE_FLOORS, claimTypeMeta, type ImportanceFloor } from "@/lib/ontology";
@@ -110,6 +111,14 @@ export function ClaimsControls({
           placeholder={`Search claims: try “${suggestedClaim}”`}
           aria-label="Search claims"
         />
+        {/* the other way in (#312): a question instead of a search, carrying
+            whatever has been typed */}
+        <p className="claims-ask-link">
+          or{" "}
+          <Link href={query.trim() ? `/ask?q=${encodeURIComponent(query.trim())}` : "/ask"}>
+            ask the graph a question →
+          </Link>
+        </p>
       </form>
 
       <div className="filter-row">

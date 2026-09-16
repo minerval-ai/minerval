@@ -1050,3 +1050,43 @@ export async function requestPrizeClaimCode(
     actingUser: externalId,
   });
 }
+
+// --- ask the graph (#312) ---------------------------------------------------
+
+export interface AskCitation {
+  id: string;
+  canonical_form: string;
+  status: string | null;
+  url: string;
+}
+
+export interface AskTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export type AskContext =
+  | { kind: "graph" }
+  | { kind: "claim"; claim_id: string };
+
+export interface AskResult {
+  reply: string;
+  citations: AskCitation[];
+  /** The model that answered, as the API reports it. */
+  model: string | null;
+}
+
+/**
+ * One exchange with the graph chat, metered to the signed-in reader. The
+ * conversation is sent whole each time; the API keeps no transcript.
+ */
+export async function askGraph(
+  externalId: string,
+  body: { messages: AskTurn[]; context: AskContext }
+): Promise<AskResult> {
+  return accountFetch<AskResult>("/ask", {
+    method: "POST",
+    body,
+    actingUser: externalId,
+  });
+}

@@ -725,9 +725,16 @@ contribution, and a Lookout's is a flag for a Steward to judge.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
-live web page against graph state (verdicts range from "egregious" to "fine")
-and powers the extension's chat, grounded in the same graph tools. It never
-writes to the graph.
+live web page against graph state (verdicts range from "egregious" to "fine").
+Its chat half became the **graph chat**, "Ask the graph" (#312): the same
+read-only loop over the shared graph tools, answering a reader's questions
+grounded in the graph with claim references, whether the reader arrives from
+the extension's popup (about the page they are reading), from a claim's page
+on the site (about that claim), or from the site's ask page (a question to
+the graph as a whole). One system prompt serves all three; only the context
+block differs. It is transparently a model with graph tools, and the surfaces
+say so. Neither agent writes to the graph, and neither leaves a transcript:
+the reader's page and questions are their own.
 
 ### The Lean checker
 

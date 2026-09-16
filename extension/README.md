@@ -69,7 +69,9 @@ details is free and unmetered.
 Capture the page's readable text → extract claims (Extractor) → match each
 against the graph (Matcher) → a dedicated **extension agent** judges how each
 on-page phrasing relates to what the graph knows and decides the markup
-(issue #72). The same agent powers the popup chat.
+(issue #72). The popup chat is the graph chat (#312) in page mode: the same
+model-with-graph-tools loop that answers questions on the Minerval site,
+here anchored to the page you are reading.
 
 Analysis is asynchronous (#93): the API answers 202 + a content hash once its
 grace window passes and the extension polls until the result is ready.

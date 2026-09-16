@@ -57,6 +57,12 @@ GET  .../claims/inflation-2022?information_depth=standard&depth=3
 GET  .../claims/inflation-2022/dependents?depth=3
 
 # Agentic calls & writes authenticate with your key.
+# Ask the graph a question (a model with read-only
+# graph tools; the reply cites the claims it used):
+POST https://api.claimgraph.io/ask
+     x-api-key: YOUR_KEY
+     {"messages":[{"role":"user","content":"..."}]}
+
 # Proposals are reviewed before they join the graph:
 POST https://api.claimgraph.io/claims/propose
      x-api-key: YOUR_KEY

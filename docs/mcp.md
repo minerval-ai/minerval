@@ -192,6 +192,29 @@ claim page's form (`/claims/:id/prize/claim`) is where one is filed.
   produce a grounded, cited report.
 - `check_assertion(assertion)` — check one assertion via `match_claim` and
   explain its standing.
+- `ask_graph(question)` — answer a question from the graph over the free
+  read tools, under the same grounding rules as the site's own graph chat
+  (below).
+
+### Why there is no `ask_graph` tool
+
+"Ask the graph" (#312) exists as a conversational surface: the graph chat, a
+model with read-only graph tools that answers a reader's question grounded
+in the graph's assessments and cites the claims it used. It powers the
+browser extension's popup, the "ask about this claim" box on every claim
+page, and the site's `/ask` page, and REST callers without a model of their
+own can reach it directly at `POST /ask` (metered, `graph_chat` cap).
+
+MCP does not wrap it, on purpose. An MCP client already has a model; a
+tool that ran ours would pay for two models per question and return prose
+where the other tools return structure the caller's model can reason
+over. So MCP stays compositional: `search_claims`, `get_claim`,
+`get_decomposition`, and `get_dependents` let the caller's model do the
+asking, and the `ask_graph` prompt hands it the same grounding rules our
+chat runs under (exported from `src/llm/prompts/graph-chat.ts`, so the two
+cannot drift). The plugin's fact-checker subagent and the
+`check_assertion` prompt are the same pattern for checking rather than
+asking.
 
 ## Configuration
 

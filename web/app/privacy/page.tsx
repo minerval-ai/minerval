@@ -77,10 +77,10 @@ export default function Privacy() {
       <p>
         Content you hand over to be analyzed rather than ingested is
         different, and is never part of a transcript: the page open in your
-        browser when you use the extension, questions typed into its chat,
-        and passages sent to the MCP server&rsquo;s analysis tools are
-        processed and then discarded. Only the metering record described
-        above remains.
+        browser when you use the extension, questions typed into its chat or
+        into the site&rsquo;s <em>ask the graph</em> boxes, and passages sent
+        to the MCP server&rsquo;s analysis tools are processed and then
+        discarded. Only the metering record described above remains.
       </p>
 
       <h2 id="extension">The browser extension</h2>

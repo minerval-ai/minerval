@@ -756,6 +756,7 @@ hr.thin { border: none; border-top: 1px solid var(--rule); margin: 2.4rem 0; }
   background: var(--paper-card); color: var(--ink);
 }
 .claims-search:focus-visible { outline: none; border-color: var(--faint); }
+.claims-ask-link { font-family: var(--sans); font-size: 0.78rem; color: var(--faint); margin: 0.4rem 0 0; }
 
 .filter-row {
   display: flex; flex-wrap: wrap; align-items: center;
@@ -1435,3 +1436,52 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 }
 .provenance-record li { margin: 0 0 0.4rem; }
 .provenance-record .provenance-why { color: var(--muted); }
+
+/* ---- ask the graph (#312) ------------------------------------------------ */
+.ask { max-width: 36rem; }
+.ask-lede { font-family: var(--sans); font-size: 0.86rem; color: var(--muted); }
+.ask-thread {
+  border: 1px solid var(--rule-soft); border-radius: 4px;
+  background: var(--paper-card); padding: 0.2rem 1.1rem;
+  margin: 0.8rem 0;
+}
+.ask-turn { padding: 0.7rem 0; }
+.ask-turn + .ask-turn { border-top: 1px solid var(--rule-soft); }
+.ask-turn p { margin: 0 0 0.6rem; }
+.ask-turn p:last-child { margin-bottom: 0; }
+.ask-turn-user p { font-family: var(--sans); font-size: 0.88rem; color: var(--ink-soft); }
+.ask-turn-user p::before { content: "you · "; color: var(--faint); font-size: 0.74rem; }
+.ask-turn-graph { font-size: 0.95rem; line-height: 1.55; }
+.ask-cite {
+  font-family: var(--sans); font-size: 0.74rem; vertical-align: super; line-height: 1;
+  margin-left: 0.1rem; text-decoration: none;
+}
+.ask-citations {
+  font-family: var(--sans); font-size: 0.78rem; color: var(--muted);
+  margin: 0.7rem 0 0; padding-left: 1.4rem;
+}
+.ask-citations li { margin: 0.2rem 0; }
+.ask-status { font-family: var(--sans); font-size: 0.8rem; color: var(--faint); padding: 0.6rem 0; }
+.ask-starters {
+  list-style: none; margin: 0.6rem 0 0.8rem; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem;
+  font-family: var(--sans); font-size: 0.82rem;
+}
+.ask-starters .linklike { font-size: inherit; }
+.ask-form { margin: 0.6rem 0 0; }
+.ask-input {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem;
+  padding: 0.55rem 0.7rem; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card); color: var(--ink); resize: vertical; line-height: 1.45;
+}
+.ask-input:focus-visible { outline: none; border-color: var(--faint); }
+.ask-input:disabled { color: var(--faint); }
+.ask-actions, .ask-signin {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem;
+  margin: 0.55rem 0 0; font-family: var(--sans);
+}
+.ask-caption { font-size: 0.76rem; color: var(--faint); }
+.ask-about {
+  font-family: var(--sans); font-size: 0.76rem; color: var(--faint);
+  margin: 0.9rem 0 0; max-width: 36rem;
+}
