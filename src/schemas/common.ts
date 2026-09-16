@@ -109,6 +109,20 @@ export const CLAIM_LINK_GUIDANCE =
 
 export const stanceEnum = z.enum(["for", "against", "neutral"]);
 
+/**
+ * How a source instance stands to the canonical claim (#445). "affirms": the
+ * source asserts the claim as canonically stated. "denies": it asserts the
+ * negation or contrary. "poses": it states the proposition as an open
+ * question without endorsing either side, as a survey states a conjecture
+ * ("the Jacobian conjecture asks whether..."). A posing instance is
+ * provenance, a source that refers to the proposition, and not a vote on it:
+ * stance counts and citation predicates keep it out of both camps.
+ */
+export const INSTANCE_STANCES = ["affirms", "denies", "poses"] as const;
+export type InstanceStance = (typeof INSTANCE_STANCES)[number];
+export const isInstanceStance = (v: unknown): v is InstanceStance =>
+  (INSTANCE_STANCES as readonly unknown[]).includes(v);
+
 // The types a caller may submit against an EXISTING claim via
 // POST /contributions.
 export const contributionTypeEnum = z.enum([

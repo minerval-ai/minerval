@@ -27,6 +27,7 @@ import crypto from "crypto";
 import { loadConfig } from "../config.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
+import type { InstanceStance } from "../schemas/common.js";
 import {
   assessPageClaims,
   type ClaimForAssessment,
@@ -56,8 +57,8 @@ export interface PageAnnotation {
   /** One-line reader-facing explanation (hover card). */
   why: string;
   confidence: number;
-  /** Whether the page affirms or denies the canonical claim. */
-  stance: "affirms" | "denies";
+  /** Whether the page affirms, denies, or merely poses the canonical claim. */
+  stance: InstanceStance;
   /** Matched canonical claim, or null when the claim is new/unknown. */
   claim: {
     id: string;
@@ -184,7 +185,7 @@ export function buildAnnotations(input: {
     verbatim_text: string;
     context: string | null;
     source_location: string | null;
-    stance: "affirms" | "denies";
+    stance: InstanceStance;
     /** The Matcher ran out of budget without a verdict (#419). */
     undecided?: boolean;
     matched: {

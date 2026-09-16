@@ -281,8 +281,12 @@ crowd out the assessment the run exists for.
 
 What counts is an assertion, not an appearance of the words. A source that
 asserts the claim (stance affirms) or its negation (stance denies) is an
-instance. A source that merely mentions the claim, asks whether it is true,
-or reports neutrally that others assert it is not. Quotes attribute to the
+instance. So is a source that states the proposition as an open question
+without taking a side, a survey stating a conjecture, a paper naming an
+open problem (stance poses): it refers to the proposition and is provenance
+worth keeping, but it is not a vote, and it must not be recorded as
+affirming. A source that merely mentions the claim in passing or reports
+neutrally that others assert it is not an instance. Quotes attribute to the
 voice that asserts: for "X said [the claim]", the instance's speaker is X,
 not the outlet quoting them — and if the article endorses it in its own
 voice too, that is the publication's own instance. Prefer originators over

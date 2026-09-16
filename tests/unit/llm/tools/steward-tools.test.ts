@@ -339,6 +339,18 @@ describe("steward record_claim_instance", () => {
     expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
   });
 
+  it("records a posing instance: a source that states the claim as an open question (#445)", async () => {
+    claimExists();
+    await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/survey",
+      verbatim_text: "The Jacobian conjecture asks whether such a map has a polynomial inverse.",
+      stance: "poses",
+    });
+    const row = insertedValues.find((r) => "verbatimText" in r);
+    expect(row?.stance).toBe("poses");
+  });
+
   it("bounces an out-of-enum stance without writing anything", async () => {
     const out = await executeStewardTool("record_claim_instance", {
       claim_id: CLAIM,

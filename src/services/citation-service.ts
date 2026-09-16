@@ -102,6 +102,8 @@ export interface EvidenceRecord {
     contested: boolean;
     affirming_instances: number;
     denying_instances: number;
+    /** Sources that state the proposition as an open question (#445). */
+    posing_instances: number;
     contested_arguments: { id: string; name: string | null }[];
   };
 }
@@ -320,6 +322,9 @@ export async function assembleEvidenceRecord(
       contested: assessment?.status === "contested",
       affirming_instances: instanceRows.filter((i) => i.stance === "affirms").length,
       denying_instances: instanceRows.filter((i) => i.stance === "denies").length,
+      // Sources that state the proposition as an open question (#445): they
+      // cite the claim without voting on it, so they sit in neither camp.
+      posing_instances: instanceRows.filter((i) => i.stance === "poses").length,
       contested_arguments: contestedArguments,
     },
   };

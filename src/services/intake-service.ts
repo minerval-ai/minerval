@@ -20,7 +20,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { claims, arguments_, contributions } from "../db/schema.js";
-import { intakeContributionTypeEnum } from "../schemas/common.js";
+import { intakeContributionTypeEnum, type InstanceStance } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { createJob } from "./job-service.js";
@@ -146,7 +146,7 @@ export interface IntakeMaterializationResult {
     | "already_materialized";
   claimId?: string;
   canonicalText?: string;
-  stance?: "affirms" | "denies";
+  stance?: InstanceStance;
   jobId?: string;
 }
 

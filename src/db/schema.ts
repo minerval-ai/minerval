@@ -606,10 +606,13 @@ export const claimInstances = pgTable(
     proposedCanonicalForm: text("proposed_canonical_form"),
     context: text("context"),
     summaryContext: text("summary_context"),
-    // Whether this source asserts the canonical claim ("affirms") or its
-    // negation/contrary ("denies"). Lets a claim and its denial share one
-    // canonical node while preserving which side each source takes, so the
+    // Whether this source asserts the canonical claim ("affirms"), its
+    // negation/contrary ("denies"), or states the proposition as an open
+    // question without endorsing either side ("poses", #445: a survey
+    // stating a conjecture). Lets a claim and its denial share one canonical
+    // node while preserving which side each source takes, so the
     // disagreement lives on the claim instead of in two mirror-image pages.
+    // Values are INSTANCE_STANCES in schemas/common.ts.
     stance: text("stance").notNull().default("affirms"),
     confidence: real("confidence").notNull().default(1.0),
     // Attribution metadata (#278/#281), all nullable — many instances won't

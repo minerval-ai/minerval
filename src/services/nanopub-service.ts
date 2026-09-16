@@ -209,7 +209,14 @@ function buildGraphs(
         { s: srcUri, p: "dct:title", o: lit(inst.source.title) },
         {
           s: srcUri,
-          p: inst.stance === "denies" ? "cito:disputes" : "cito:supports",
+          // A posing source (#445) states the proposition without taking a
+          // side: it discusses the claim, it neither supports nor disputes it.
+          p:
+            inst.stance === "denies"
+              ? "cito:disputes"
+              : inst.stance === "poses"
+                ? "cito:discusses"
+                : "cito:supports",
           o: iri(claimUri),
         }
       );
