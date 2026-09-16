@@ -366,13 +366,13 @@ hard line.
 The Matcher's same-considerations test has crisp mathematical cases:
 notational variants are one claim; a theorem and its negation are one node; a
 generalization and its special case are different claims joined by
-`specifies`; the same proposition over different structures is a different
-claim when the discourse treats it so. The hard case is equivalent
-formulations whose equivalence is itself a theorem (Robin's inequality and
-the Riemann hypothesis): keep two nodes, record the equivalence as an
-argument on each, and let the Curator watch the pair. A problem-list number
-is a strong identity signal the Matcher checks before concluding a claim is
-new. Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
+`specifies`; a named conjecture stated in another base field, wording, or
+generality is the same claim. Equivalent formulations (Robin's inequality
+and the Riemann hypothesis) are one claim or two by how the discourse treats
+them, not by whether a proof connects them; where they stay two, the Curator
+records the equivalence as an argument on each. A problem-list number is a
+strong identity signal the Matcher checks before concluding a claim is new.
+Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
 "For the Matcher").
 
 ### 2.7 Where mathematical claims come from
