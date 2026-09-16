@@ -420,6 +420,108 @@ export async function listFormalizations(claimId: string): Promise<Formalization
   return rows.map(formalizationVersion);
 }
 
+/** One version's standing, for the history a claim-level read carries (#435). */
+export interface FormalizationHistoryEntry {
+  id: string;
+  version: number;
+  status: FormalizationStatus;
+  authored_by: string;
+  created_at: string;
+  reviewed_at: string | null;
+  published_at: string | null;
+  review_period_ends_at: string | null;
+  retired_at: string | null;
+  retire_reason: string | null;
+  superseded_by: string | null;
+}
+
+/**
+ * The formalization record as an agent opening a claim sees it (#435).
+ *
+ * `formalization` is the published statement or null, the same summary the
+ * MCP `get_claim` returns. `formalization_pending` is the newest draft or
+ * reviewed version awaiting the second-pass publish, with the reviewer's
+ * notes, so a reader can tell "formalize ran and stopped short" from
+ * "formalize never ran". `formalization_history` lists every version's
+ * status, retired ones included, so a run that ended in a retirement is
+ * visible too. `lean_checks` are the newest checks on any version, without
+ * source; `lean_checks_total` says how many exist.
+ */
+export interface ClaimFormalizationRecord {
+  formalization: FormalizationSummary | null;
+  formalization_pending:
+    | (FormalizationSummary & {
+        review_notes: string | null;
+        authored_by: string;
+        reviewed_at: string | null;
+        created_at: string;
+      })
+    | null;
+  formalization_history: FormalizationHistoryEntry[];
+  verification: VerificationSummary | null;
+  lean_checks: Awaited<ReturnType<typeof listLeanChecksForClaim>>;
+  lean_checks_total: number;
+}
+
+/** The newest checks a claim-level read carries; the rest are counted. */
+export const CLAIM_RECORD_LEAN_CHECK_LIMIT = 20;
+
+export function formalizationHistoryEntry(row: FormalizationRow): FormalizationHistoryEntry {
+  return {
+    id: row.id,
+    version: row.version,
+    status: row.status,
+    authored_by: row.authored_by,
+    created_at: iso(row.created_at)!,
+    reviewed_at: iso(row.reviewed_at),
+    published_at: iso(row.published_at),
+    review_period_ends_at: iso(row.review_period_ends_at),
+    retired_at: iso(row.retired_at),
+    retire_reason: row.retire_reason,
+    superseded_by: row.superseded_by,
+  };
+}
+
+/**
+ * The record above from one query on the versions table; the checks and the
+ * badge are read only when the claim has a statement at all, so the common
+ * non-mathematical claim costs one cheap query.
+ */
+export async function getClaimFormalizationRecord(
+  claimId: string
+): Promise<ClaimFormalizationRecord> {
+  const rows = await listFormalizationRows(claimId);
+  const published = rows.find((r) => r.status === "published") ?? null;
+  // Newest first already; a reviewed row outranks a draft only when it is
+  // newer, which is the order the pipeline writes them in.
+  const pending = rows.find((r) => r.status === "draft" || r.status === "reviewed") ?? null;
+  const record: ClaimFormalizationRecord = {
+    formalization: published ? formalizationSummary(published) : null,
+    formalization_pending: pending
+      ? {
+          ...formalizationSummary(pending),
+          review_notes: pending.review_notes,
+          authored_by: pending.authored_by,
+          reviewed_at: iso(pending.reviewed_at),
+          created_at: iso(pending.created_at)!,
+        }
+      : null,
+    formalization_history: rows.map(formalizationHistoryEntry),
+    verification: null,
+    lean_checks: [],
+    lean_checks_total: 0,
+  };
+  if (rows.length === 0) return record;
+  const [verification, checks] = await Promise.all([
+    published ? getVerificationSummary(claimId) : Promise.resolve(null),
+    listLeanChecksForClaim(claimId),
+  ]);
+  record.verification = verification;
+  record.lean_checks = checks.slice(0, CLAIM_RECORD_LEAN_CHECK_LIMIT);
+  record.lean_checks_total = checks.length;
+  return record;
+}
+
 // ---------------------------------------------------------------------------
 // The machine-checked badge and the per-claim SQL fragments
 // ---------------------------------------------------------------------------

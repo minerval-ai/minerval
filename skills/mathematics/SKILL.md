@@ -276,6 +276,17 @@ with the reason) comes back from `extend_plan` in the same turn and from
 `grant_overview` at any time; read it before valuing, and before filing a
 report that work never appeared.
 
+**Reading the formalization record.** `get_claim` carries it on every
+read: `formalization` is the published statement (source, hashes, pin,
+correspondence note, review-period end) or null; `formalization_pending`
+is a draft or reviewed version still awaiting its second-pass publish;
+`formalization_history` lists every version's status, retired ones with
+the reason; `lean_checks` are the newest checker verdicts. Read the
+published statement there for fidelity before valuing `attempt_proof`,
+and value attempts only where it is non-null. An empty history means no
+formalize run has recorded anything on the claim; a pending or retired
+version means one ran and stopped short.
+
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it

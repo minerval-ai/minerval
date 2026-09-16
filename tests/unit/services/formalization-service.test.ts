@@ -24,11 +24,13 @@ vi.mock("../../../src/config.js", () => ({
   }),
 }));
 
+import { rawQuery } from "../../../src/db/client.js";
 import {
   ALLOWED_AXIOMS,
   assembleStatementFile,
   checkedKindSql,
   formalizationNamespace,
+  getClaimFormalizationRecord,
   leanCheckEvidenceUrl,
   normalizeStatementSource,
   statementDocstring,
@@ -161,5 +163,159 @@ describe("the check reference and the SQL fragments", () => {
 
   it("names the three allowed axioms", () => {
     expect([...ALLOWED_AXIOMS]).toEqual(["propext", "Classical.choice", "Quot.sound"]);
+  });
+});
+
+describe("getClaimFormalizationRecord (#435)", () => {
+  const mockRawQuery = vi.mocked(rawQuery);
+
+  function row(overrides: Record<string, unknown>) {
+    return {
+      id: "f",
+      claim_id: CLAIM_ID,
+      version: 1,
+      language: "lean4",
+      pin_id: "mathlib-v4.33.1",
+      lean_toolchain: "leanprover/lean4:v4.33.1",
+      mathlib_rev: "abc",
+      mathlib_tag: null,
+      image_digest: "sha256:img",
+      namespace: "Minerval.S9f2a1b3c_v1",
+      statement_source: "theorem ...",
+      source_hash: "sh",
+      expr_hash: "eh",
+      pp_type: "∀ n, ...",
+      constants: [],
+      definitions_axioms: [],
+      witness_present: true,
+      own_definitions: false,
+      correspondence: "As the claim states.",
+      review_notes: null,
+      status: "draft",
+      authored_by: "claim_steward",
+      model: null,
+      created_by_run_id: null,
+      reviewed_by_run_id: null,
+      reviewed_at: null,
+      published_at: null,
+      review_period_ends_at: null,
+      retired_at: null,
+      retire_reason: null,
+      superseded_by: null,
+      created_at: new Date("2026-09-01T00:00:00Z"),
+      ...overrides,
+    };
+  }
+
+  it("costs one query and says so plainly when the claim has no statement", async () => {
+    mockRawQuery.mockReset();
+    mockRawQuery.mockResolvedValueOnce([]);
+
+    const record = await getClaimFormalizationRecord(CLAIM_ID);
+
+    expect(record).toEqual({
+      formalization: null,
+      formalization_pending: null,
+      formalization_history: [],
+      verification: null,
+      lean_checks: [],
+      lean_checks_total: 0,
+    });
+    expect(mockRawQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("separates the published statement from a newer reviewed version and keeps the retired one in history", async () => {
+    mockRawQuery.mockReset();
+    mockRawQuery
+      // versions, newest first
+      .mockResolvedValueOnce([
+        row({
+          id: "f3",
+          version: 3,
+          status: "reviewed",
+          review_notes: "Tightened the hypothesis; second pass pending.",
+          reviewed_at: new Date("2026-09-10T00:00:00Z"),
+        }),
+        row({
+          id: "f2",
+          version: 2,
+          status: "published",
+          published_at: new Date("2026-09-02T00:00:00Z"),
+          review_period_ends_at: new Date("2026-09-16T00:00:00Z"),
+        }),
+        row({
+          id: "f1",
+          version: 1,
+          status: "retired",
+          retired_at: new Date("2026-09-01T12:00:00Z"),
+          retire_reason: "vacuous hypotheses",
+          superseded_by: "f2",
+        }),
+      ])
+      // verification badge
+      .mockResolvedValueOnce([])
+      // lean checks
+      .mockResolvedValueOnce([
+        {
+          id: "lc1",
+          formalization_id: "f2",
+          mode: "attempt",
+          kind: "proof",
+          verdict: "rejected",
+          finished_at: new Date("2026-09-05T00:00:00Z"),
+          created_at: new Date("2026-09-05T00:00:00Z"),
+          pin_id: "mathlib-v4.33.1",
+          submission_sha256: "s1",
+          submitted_by: "math_solver",
+          checks: { kernel: { status: "fail" } },
+        },
+      ]);
+
+    const record = await getClaimFormalizationRecord(CLAIM_ID);
+
+    expect(record.formalization).toMatchObject({
+      id: "f2",
+      status: "published",
+      statement_source: "theorem ...",
+      review_period_ends_at: "2026-09-16T00:00:00.000Z",
+      correspondence: "As the claim states.",
+    });
+    expect(record.formalization_pending).toMatchObject({
+      id: "f3",
+      status: "reviewed",
+      review_notes: "Tightened the hypothesis; second pass pending.",
+      reviewed_at: "2026-09-10T00:00:00.000Z",
+    });
+    expect(record.formalization_history.map((h) => [h.version, h.status])).toEqual([
+      [3, "reviewed"],
+      [2, "published"],
+      [1, "retired"],
+    ]);
+    expect(record.formalization_history[2]).toMatchObject({
+      retire_reason: "vacuous hypotheses",
+      superseded_by: "f2",
+    });
+    expect(record.lean_checks).toHaveLength(1);
+    expect(record.lean_checks[0]).toMatchObject({
+      id: "lc1",
+      verdict: "rejected",
+      mode: "attempt",
+      failed_gate: "kernel",
+    });
+    expect(record.lean_checks_total).toBe(1);
+  });
+
+  it("skips the badge query when nothing is published, since the badge needs a published statement", async () => {
+    mockRawQuery.mockReset();
+    mockRawQuery
+      .mockResolvedValueOnce([row({ id: "f1", status: "draft" })])
+      .mockResolvedValueOnce([]);
+
+    const record = await getClaimFormalizationRecord(CLAIM_ID);
+
+    expect(record.formalization).toBeNull();
+    expect(record.formalization_pending?.status).toBe("draft");
+    expect(record.verification).toBeNull();
+    expect(mockRawQuery).toHaveBeenCalledTimes(2);
   });
 });
