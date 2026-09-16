@@ -713,7 +713,7 @@ const configSchema = z.object({
   //
   // Consequence: the Matcher routes to OpenRouter, so OPENROUTER_API_KEY is
   // required for anything that matches. The adapter fails loudly naming the
-  // key; set MATCHER_MODEL=claude-sonnet-5 to run Anthropic-only.
+  // key; set MATCHER_MODEL to an Anthropic id (MODELS) to run Anthropic-only.
   matcherModel: modelId(OPENROUTER_MODELS.flash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
@@ -775,7 +775,7 @@ const configSchema = z.object({
   // the cheap tier (#257) applies with more force here: the whole judgment is "which of these existing tags, at what
   // grain?" over candidates it retrieves itself, in the same tool-use loop.
   // Same key requirement as the Matcher (OPENROUTER_API_KEY); set
-  // TAGGER_MODEL=claude-sonnet-5 to run Anthropic-only. Pinned
+  // TAGGER_MODEL to an Anthropic id (MODELS) to run Anthropic-only. Pinned
   // identically in infra/lib/api-stack.ts; the model guard covers it.
   taggerModel: modelId(OPENROUTER_MODELS.flash),
   // The Lookout: a standing watch a mandate funds (docs/allocation.md,

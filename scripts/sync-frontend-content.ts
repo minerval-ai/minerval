@@ -32,9 +32,9 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { execSync } from "child_process";
 
 import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
-import { buildEvalsIndex, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import { buildEvalsIndex, modelLabel, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
 import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
-import { MODELS } from "../src/llm/models.js";
+import { MODELS, OPENROUTER_MODELS } from "../src/llm/models.js";
 
 import { getExtractorSystemPrompt } from "../src/llm/prompts/extractor.js";
 import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
@@ -93,7 +93,7 @@ const AGENTS: AgentMeta[] = [
   { key: "matcher", name: "Matcher", stage: 2, group: "processing",
     tagline: "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     invokedWhen: "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    model: "GLM 5.3 Flash", fn: getMatcherSystemPrompt },
+    model: modelLabel(OPENROUTER_MODELS.flash), fn: getMatcherSystemPrompt },
   { key: "contribution-reviewer", name: "Contribution Reviewer", stage: 3, group: "governance",
     tagline: "Evaluates incoming contributions against policy — accept, reject, or escalate.",
     invokedWhen: "A contributor submits a challenge, support, merge, edit, instance, or argument.",
@@ -121,7 +121,7 @@ const AGENTS: AgentMeta[] = [
   { key: "lookout", name: "Lookout", stage: 9, group: "governance",
     tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
     invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
-    model: "GLM 5.3 Flash", fn: getLookoutSystemPrompt },
+    model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the

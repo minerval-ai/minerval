@@ -76,7 +76,7 @@ production seed set, and all three are built.
 - Postgres running (`docker compose up -d`).
 - `.env` with `ANTHROPIC_API_KEY` (claims), `OPENAI_API_KEY` (embeddings) and
   `OPENROUTER_API_KEY` (the Matcher, which defaults to GLM 5.3 Flash — set
-  `MATCHER_MODEL=claude-sonnet-5` to run a cluster Anthropic-only,
+  `MATCHER_MODEL` to an Anthropic model id to run a cluster Anthropic-only,
   but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
   pipeline's circuit breaker will stop a run cleanly when hit.
