@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 17648,
-    "fullChars": 66336,
+    "roleChars": 18286,
+    "fullChars": 66974,
     "skills": [
       {
         "name": "mathematics",

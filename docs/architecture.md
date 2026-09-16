@@ -598,6 +598,13 @@ These act through tools over the life of a claim and the graph:
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
+  The allocation engine's decisions are judging too, so the Audit carries a
+  read-only cross-cut of the action ledger and the mandate plan surface
+  (`inspect_ledger`, services/ledger-inspection-service.ts): every row in
+  scope in every status with its allocation history, and every plan item
+  targeting those rows with its recorded standing checked against the row
+  it names, so a report about the ledger is verified there instead of taken
+  on the reporter's word.
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
   costs, and drafts or refuses a mandate; once the mandate is live it takes
