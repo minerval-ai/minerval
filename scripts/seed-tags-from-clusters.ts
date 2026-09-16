@@ -117,7 +117,11 @@ async function main(): Promise<void> {
         system:
           "You name topic clusters in a knowledge graph of claims. A tag names what claims are ABOUT, at the grain of a field or a subject; it is never a restatement of one claim and never a judgment about truth.",
         model,
-        maxTokens: 400,
+        // Thinking counts against max_tokens on both the cheap tier (a
+        // reasoning model) and Sonnet 5 (adaptive thinking by default); 400
+        // and then 2048 both truncated before the tool call in production.
+        // The client's default (8192) is the right headroom.
+        maxTokens: 8192,
       })
     );
 
