@@ -47,7 +47,7 @@ import {
   listFormalizations,
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
-import { webSearchTool, webSearchUnavailableNote } from "../tools/web-search-tool.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -203,12 +203,11 @@ async function runClaimStewardImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.stewardModel;
 
-  // The steward has web search wherever its provider serves it — it may need
-  // fresh external evidence to assess any claim, atomic or compound (#30).
-  // Elsewhere (a cheap-tier run on OpenRouter, say) the run degrades to
-  // graph-and-source evidence rather than failing at the adapter, and the
-  // briefing says so (tools/web-search-tool.ts).
-  const webSearch = webSearchTool(model, 5);
+  // The steward has web search on every provider — it may need fresh
+  // external evidence to assess any claim, atomic or compound (#30). The
+  // server runs it on an Anthropic model; elsewhere the loop executes it
+  // (tools/web-search-tool.ts).
+  const webSearch = createWebSearch(model, 5);
 
   // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
   // structure, so it must be able to read parents, subclaims, and neighbors.
@@ -269,7 +268,7 @@ async function runClaimStewardImpl(input: {
     ...elicitTools,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
-    ...(webSearch ? [webSearch] : []),
+    webSearch.tool,
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -311,7 +310,6 @@ likely overkill even here — reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
       : "";
 
-  const webSearchNote = webSearch ? "" : `\n\n${webSearchUnavailableNote(model)}`;
 
   const skillsNote =
     skills.length > 0
@@ -354,7 +352,7 @@ mid-task. If you are warned that few iterations remain, stop exploring and recor
 your conclusion immediately.
 
 ${formalTask ?? `${defaultTask}
-${defaultSteps(structureStep)}`}${webSearchNote}${elicitNote}${skillsNote}`;
+${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
 
   // One cached block for the constitution and role, plus one per active skill,
   // so the shared block's cache entry is the same for skilled and unskilled runs.
@@ -430,6 +428,7 @@ ${defaultSteps(structureStep)}`}${webSearchNote}${elicitNote}${skillsNote}`;
         `log_stewardship_decision, do so on your next turn so your work is saved.`,
     },
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

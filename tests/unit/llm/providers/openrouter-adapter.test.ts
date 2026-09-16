@@ -25,8 +25,10 @@ vi.mock("../../../../src/llm/budget-tracker.js", () => ({
 
 import {
   openrouterAdapter,
+  openrouterWebSearch,
   resetOpenRouterClient,
 } from "../../../../src/llm/providers/openrouter.js";
+import { OPENROUTER_MODELS } from "../../../../src/llm/models.js";
 
 const MODEL = "qwen/qwen3-235b-a22b";
 
@@ -329,5 +331,58 @@ describe("openrouter adapter — upstream errors", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // Both attempts metered: the failed one produced (and billed) tokens too.
     expect(meterLlmUsage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("openrouter web search", () => {
+  it("runs one cheap-tier completion with the web plugin and returns the citation annotations, metered", async () => {
+    respondWith(
+      completion({
+        model: OPENROUTER_MODELS.flash,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "length",
+            message: {
+              role: "assistant",
+              content: "",
+              refusal: null,
+              annotations: [
+                {
+                  type: "url_citation",
+                  url_citation: { url: "https://doi.org/10.1126/science.adu5488", title: "Retraction", content: "x".repeat(2000) },
+                },
+                { type: "url_citation", url_citation: { url: "https://physicsworld.com/a", content: "no title" } },
+                { type: "file_citation", url_citation: { url: "https://ignored.example" } },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 2500, completion_tokens: 1, total_tokens: 2501, cost: 0.0073 },
+      })
+    );
+    const hits = await openrouterWebSearch("arsenic life retraction", 8);
+    expect(hits).toEqual([
+      { url: "https://doi.org/10.1126/science.adu5488", title: "Retraction", excerpt: "x".repeat(1500) },
+      { url: "https://physicsworld.com/a", title: "", excerpt: "no title" },
+    ]);
+    const body = sentBody();
+    expect(body.model).toBe(OPENROUTER_MODELS.flash);
+    expect(body.max_tokens).toBe(1);
+    expect(body.plugins).toEqual([{ id: "web", engine: "exa", max_results: 8 }]);
+    expect(body.messages).toEqual([{ role: "user", content: "arsenic life retraction" }]);
+    expect(body.provider).toEqual({ data_collection: "deny" });
+    expect(meterLlmUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openrouter", providerCostMicroUsd: 7300 })
+    );
+  });
+
+  it("throws on an upstream error instead of returning an empty result", async () => {
+    respondWith(
+      completion({
+        choices: [{ index: 0, finish_reason: "error", error: { message: "Provider returned error" }, message: { role: "assistant", content: null } }],
+      })
+    );
+    await expect(openrouterWebSearch("q", 5)).rejects.toThrow(/web search failed/);
   });
 });

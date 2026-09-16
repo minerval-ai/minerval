@@ -15,7 +15,7 @@
  *  - the graph reads (search, open, walk down, walk up) and a scope survey;
  *  - the retraction record (Crossref: check_doi, recent_retractions) and
  *    the sources behind the claims in scope;
- *  - the open web (web_search on Anthropic models; read_page everywhere);
+ *  - the open web (web_search, and read_page for one page in full);
  *  - three ways to raise a candidate: flag_reassessment (a valued reassess
  *    row), propose_ingest (a plan item), leave_note (for the next review).
  *
@@ -29,7 +29,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { webSearchTool } from "../tools/web-search-tool.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
@@ -97,11 +97,10 @@ async function runLookoutImpl(input: {
   const skills = skillsByName(lookout.grant_skills ?? []);
   const system = getLookoutSystemPromptBlocks({ skills });
 
-  // Model: the lookout's own pin, else the cheap default. Web search is an
-  // Anthropic server tool; elsewhere the run degrades to the graph, the
-  // retraction record, and direct page reads.
+  // Model: the lookout's own pin, else the cheap default. Web search comes
+  // with either (tools/web-search-tool.ts).
   const model = input.model ?? lookout.model ?? config.lookoutModel;
-  const webSearch = webSearchTool(model, WEB_SEARCH_MAX_USES);
+  const webSearch = createWebSearch(model, WEB_SEARCH_MAX_USES);
 
   const events = await pendingLookoutEvents(lookout.id);
   const recentFlags = await listLookoutFlags(lookout.id, { limit: 20 });
@@ -313,7 +312,7 @@ async function runLookoutImpl(input: {
     `### Your delegated bounds\n\n` +
     `- A flag's urgency is clamped to ${lookout.max_value}/10 on the mandate's ledger.\n` +
     `- You may propose at most ${lookout.max_ingests_per_run} ingest${lookout.max_ingests_per_run === 1 ? "" : "s"} this run.\n` +
-    `- You have about ${MAX_ITERATIONS} tool turns${webSearch ? ` and ${WEB_SEARCH_MAX_USES} web searches` : " (no web search on this model: use the graph, the retraction record, and read_page)"}.\n` +
+    `- You have about ${MAX_ITERATIONS} tool turns and ${WEB_SEARCH_MAX_USES} web searches.\n` +
     `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
     `### Your recent flags and what became of them\n\n${openFlagsText}\n\n` +
@@ -340,7 +339,7 @@ async function runLookoutImpl(input: {
     () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: briefing }],
-        tools: webSearch ? [webSearch, ...tools] : tools,
+        tools: [webSearch.tool, ...tools],
         system,
         model,
         maxTokens: 2048,
@@ -352,6 +351,7 @@ async function runLookoutImpl(input: {
             `Raise anything you are sure of, update your workspace, and finish with your note.`,
         },
         executeTool: async (name, toolInput) => {
+          if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
           const graphRead = await executeGraphReadTool(name, toolInput);

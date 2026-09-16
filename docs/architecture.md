@@ -923,10 +923,8 @@ existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
 production as in dev. The Lookout's question ("did something happen that
 warrants work in my scope?") is relevance, not truth, and it runs often,
-so it too belongs on a cheap model; it stays on Anthropic's cheapest
-because its main instrument is web search, an Anthropic server tool, and
-a Grantmaker can pin a stronger model on one lookout whose brief warrants
-it. The load-bearing epistemic work
+so it shares the tier too, and a Grantmaker can pin a stronger model on
+one lookout whose brief warrants it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
@@ -985,14 +983,18 @@ has no equivalent surface for our purposes and keeps the Chat Completions
 translation in `providers/openai-dialect.ts`; the dialect-independent helpers
 stay shared between the two.
 
-**Anthropic-only, by design:** server tools (`web_search`), container-backed
-execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
+**Anthropic-only, by design:** server tools, container-backed execution,
+ephemeral prompt-cache breakpoints, and the server-side Opus refusal
 fallback. No agent hard-codes a server tool: the agents that want web search
-(the Claim Steward, mandate review, lookouts) ask `tools/web-search-tool.ts`,
-which returns the tool on an Anthropic model and `null` elsewhere, and the
-agent's briefing then says web search is absent. A request that still carries
-a server tool to a non-Anthropic model fails immediately with a message naming
-the capability, rather than silently dropping it. OpenAI's own hosted tools are not wired up
+(the Claim Steward, mandate review, lookouts) ask `tools/web-search-tool.ts`
+for one `web_search`, which is the Anthropic server tool on a Claude model
+that runs it and, everywhere else, a client-side tool of the same name and
+shape that the loop executes through OpenRouter's web plugin
+(`openrouterWebSearch` in `providers/openrouter.ts`: one metered
+completion on the cheap tier whose citation annotations are the hits). A
+request that still carries a server tool to a non-Anthropic model fails
+immediately with a message naming the capability, rather than silently
+dropping it. OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic
 prefix caching with a stable `prompt_cache_key` per agent instead of explicit

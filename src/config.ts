@@ -782,11 +782,9 @@ const configSchema = z.object({
   // "Lookouts"). Its judgment is "did something happen that warrants work
   // in my scope?" — relevance, not truth — and it runs often, so it belongs
   // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
-  // tagger's model. Web search is an Anthropic server tool, so on the tier
-  // the run works from graph reads, Crossref and direct page fetches, which
-  // covers a retraction watch but not "what is new on X"; a Grantmaker that
-  // wants the open web pins an Anthropic model on the lookout itself
-  // (lookouts.model). Pinned identically in infra/lib/api-stack.ts; the
+  // tagger's model, with web search like every model (tools/web-search-tool.ts).
+  // A Grantmaker pins a stronger model on a lookout (lookouts.model) where
+  // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,

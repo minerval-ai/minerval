@@ -4,8 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * The Lookout run (llm/agents/lookout.ts): the briefing carries the brief,
  * the delegated bounds, the queued inputs, and the record of earlier
  * flags; the toolset is the watcher's (graph reads, scope sources, the
- * retraction record, page reads, the three ways to raise a candidate) and
- * web search only on an Anthropic model; propose_ingest stops at the
+ * retraction record, page reads, the three ways to raise a candidate) with
+ * web search on every model; propose_ingest stops at the
  * per-run limit; the queued inputs are consumed after the run; the note is
  * the model's closing text. The tool loop and the services are mocked.
  */
@@ -177,7 +177,7 @@ describe("runLookout", () => {
     expect(res).toMatchObject({ note: "Checked the sources; nothing warranted work.", flagsRaised: 0, eventsConsumed: 1 });
   });
 
-  it("carries the watcher's toolset, with web search only on an Anthropic model", async () => {
+  it("carries the watcher's toolset, with web search on every model", async () => {
     state.lookout = lookout({ model: "claude-sonnet-5" });
     await runLookout({ lookoutId: LOOKOUT });
     const names = state.loop!.tools.map((t) => t.name);
@@ -189,13 +189,14 @@ describe("runLookout", () => {
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5");
+    expect(state.loop!.briefing).toContain("web searches");
 
-    // No pin: the cheap-tier default, which has no web search.
+    // No pin: the cheap-tier default, with the client-side tool of the same name.
     state.lookout = lookout({ model: null });
     await runLookout({ lookoutId: LOOKOUT });
-    expect(state.loop!.tools.map((t) => t.name)).not.toContain("web_search");
+    expect(state.loop!.tools[0]!.name).toBe("web_search");
+    expect("input_schema" in state.loop!.tools[0]!).toBe(true);
     expect(state.loop!.model).toBe("z-ai/glm-5.3-flash");
-    expect(state.loop!.briefing).toContain("no web search on this model");
   });
 
   it("routes the candidate tools to the service with the delegated bounds, and stops ingests at the per-run limit", async () => {

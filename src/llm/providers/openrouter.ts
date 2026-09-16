@@ -32,6 +32,7 @@ import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
+import { OPENROUTER_MODELS } from "../models.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
   assertAnthropicOnlyCapabilitiesUnused,
@@ -203,6 +204,59 @@ function checkRefusal(
   if (choice.finish_reason === "content_filter") {
     throw new LlmRefusalError(model, "content_filter");
   }
+}
+
+/** One hit from a web search: where, what it is called, and an excerpt. */
+export interface WebSearchHit {
+  url: string;
+  title: string;
+  /** The page excerpt the search engine returned, capped per hit. */
+  excerpt: string;
+}
+
+/** Characters of excerpt kept per hit: enough to judge relevance, not the page. */
+const WEB_SEARCH_EXCERPT_CHARS = 1500;
+
+/**
+ * A web search through OpenRouter's `web` plugin, for any model on any
+ * provider.
+ *
+ * OpenRouter has no standalone search endpoint: the plugin runs a search
+ * for the request's last user message, injects the hits into the prompt,
+ * and returns them as `url_citation` annotations on the reply. So a search
+ * is one chat completion on the cheap tier with the query as its only
+ * message and `max_tokens: 1` — the reply is discarded, the annotations are
+ * the result. The engine is pinned to Exa so the shape does not change with
+ * whichever model fills the tier (a model with a native engine would run
+ * that instead, and its annotations arrive on its own terms). Metered like
+ * any other call: OpenRouter's reported cost covers the search fee.
+ */
+export async function openrouterWebSearch(
+  query: string,
+  maxResults: number
+): Promise<WebSearchHit[]> {
+  const model = OPENROUTER_MODELS.flash;
+  const completion = await getClient().chat.completions.create({
+    ...baseParams({ model, maxTokens: 1 }),
+    messages: [{ role: "user", content: query }],
+    plugins: [{ id: "web", engine: "exa", max_results: maxResults }],
+  } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+  meter(completion, model);
+  const choice = completion.choices[0];
+  const err = choice ? upstreamError(choice) : null;
+  if (!choice || err) {
+    throw new Error(`OpenRouter web search failed: ${err ?? "no choices"}`);
+  }
+  const annotations =
+    (choice.message as { annotations?: Array<{ type?: string; url_citation?: { url?: string; title?: string; content?: string } }> })
+      .annotations ?? [];
+  return annotations
+    .filter((a) => a.type === "url_citation" && a.url_citation?.url)
+    .map((a) => ({
+      url: a.url_citation!.url!,
+      title: a.url_citation!.title ?? "",
+      excerpt: (a.url_citation!.content ?? "").slice(0, WEB_SEARCH_EXCERPT_CHARS),
+    }));
 }
 
 export const openrouterAdapter: ProviderAdapter = {
