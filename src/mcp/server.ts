@@ -188,6 +188,17 @@ async function matchAssertion(assertion: string, context?: string) {
     proposedCanonical: assertion,
   });
 
+  // No verdict (#419): `matched: null`, distinct from `false`. The Matcher
+  // ran out of search budget; this says nothing about whether the claim
+  // exists, so no canonical form is proposed.
+  if (decision.outcome === "undecided") {
+    return {
+      matched: null,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+    };
+  }
+
   if (!decision.is_match || !decision.matched_claim_id) {
     return {
       matched: false as const,
@@ -667,10 +678,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             proposed_canonical_form: c.proposed_canonical_form,
             claim_type: c.claim_type,
             // "unknown": the graph has no canonical claim for this assertion.
+            // "undecided": the Matcher reached no verdict (#419).
             // "unassessed": it exists but has no current assessment yet.
-            verdict: !match.matched
-              ? "unknown"
-              : (match.assessment?.status ?? "unassessed"),
+            verdict:
+              match.matched === null
+                ? "undecided"
+                : !match.matched
+                  ? "unknown"
+                  : (match.assessment?.status ?? "unassessed"),
             ...match,
           });
         }
@@ -1041,6 +1056,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               "long. For each judged claim, report the verdict the graph " +
               "returned, not your own recollection. A verdict of `unknown` " +
               "means the graph holds no canonical claim for that assertion; " +
+              "`undecided` means the Matcher reached no verdict (say so, do " +
+              "not read it as unknown); " +
               "`unassessed` means the claim exists but has no assessment yet. " +
               "Watch the `stance` field: `denies` means the document asserts " +
               "the negation of the canonical claim, so invert the assessment " +

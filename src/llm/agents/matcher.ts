@@ -9,7 +9,16 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 
+/**
+ * How the Matcher's run ended (#419). `match` and `new` are verdicts the
+ * Matcher submitted; `undecided` means it ran out of search budget without
+ * submitting one. An undecided result is NOT a negative identity verdict:
+ * nothing was compared, so a caller must not mint a claim from it.
+ */
+export type MatchOutcome = "match" | "new" | "undecided";
+
 export interface MatchDecision {
+  outcome: MatchOutcome;
   is_match: boolean;
   matched_claim_id: string | null;
   new_canonical_form: string | null;
@@ -119,19 +128,54 @@ async function matchClaimImpl(input: {
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userPrompt }],
+  const acceptDecision = (toolInput: Record<string, unknown>): MatchDecision => {
+    const submitted = toolInput as unknown as Omit<MatchDecision, "outcome">;
+    // The outcome is derived here, never trusted from the model: a match
+    // without an id is not a match a caller can link to.
+    const outcome: MatchOutcome =
+      submitted.is_match && submitted.matched_claim_id ? "match" : "new";
+    finalResult = { ...submitted, outcome };
+    return finalResult;
+  };
+
+  // One search loop. `retryNote`, when set, is the second attempt's framing
+  // (#419): the first run spent its budget without submitting, so this one
+  // is short and told to decide.
+  const runLoop = (opts: { maxIterations: number; retryNote?: string }) =>
+    toolUseLoop({
+    initialMessages: [
+      {
+        role: "user",
+        content: opts.retryNote
+          ? [
+              { type: "text", text: userPrompt },
+              { type: "text", text: opts.retryNote },
+            ]
+          : userPrompt,
+      },
+    ],
     tools: [searchTool, submitTool, ...reportTools.definitions],
     system,
     model,
     maxTokens: 4096,
-    maxIterations: 8,
+    maxIterations: opts.maxIterations,
+    // Tell the Matcher before it is cut off (#419): a run that ends without a
+    // submission is an undecided result the caller cannot act on, so a
+    // decision at honest confidence beats one more search.
+    iterationBudgetNotice: {
+      warnWithin: 2,
+      message: (remaining) =>
+        `Search budget notice: ${remaining} tool-use iteration(s) remain. ` +
+        `Call submit_match_decision on your next turn with your best ` +
+        `judgment from the searches so far, at honest confidence. A run ` +
+        `that ends without a submission counts as no decision at all.`,
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       if (name === "submit_match_decision") {
-        finalResult = toolInput as unknown as MatchDecision;
+        acceptDecision(toolInput);
         return JSON.stringify({ success: true });
       }
       if (name === "search_similar_claims") {
@@ -163,28 +207,45 @@ async function matchClaimImpl(input: {
     },
     onFinalTool: (name, toolInput) => {
       if (name === "submit_match_decision") {
-        finalResult = toolInput as unknown as MatchDecision;
-        return finalResult;
+        return acceptDecision(toolInput);
       }
       return null;
     },
-  }));
+  });
+
+  await withSkills(skills.map((s) => s.name), async () => {
+    await runLoop({ maxIterations: 8 });
+    if (finalResult) return;
+    // One bounded retry (#419): most timeouts are a Matcher mid-search, not
+    // stuck, so a short second run told to decide usually yields a verdict.
+    await runLoop({
+      maxIterations: 3,
+      retryNote:
+        "Your previous attempt at this decision ran out of search budget " +
+        "without calling submit_match_decision. Run at most one more " +
+        "search_similar_claims query, then submit your decision at honest " +
+        "confidence. Do not end without submitting.",
+    });
+  });
 
   if (finalResult) return finalResult;
 
-  // The matcher never submitted a decision (e.g. hit the iteration cap). Treat
-  // the claim as novel so ingestion proceeds; the steward can re-match later.
-  // The stance is a guess here, not a judgment: no direction was chosen, so
-  // nothing was compared, and the low confidence says so.
+  // The Matcher never submitted a decision, even after the retry. This is
+  // signalled as undecided, not as "new" (#419): a timeout is not a negative
+  // identity verdict, and a caller that minted from it would manufacture a
+  // duplicate. `new_canonical_form` is null so nothing can be created from
+  // this result by accident; the stance is a placeholder, not a judgment.
   return {
+    outcome: "undecided",
     is_match: false,
     matched_claim_id: null,
-    new_canonical_form: input.proposedCanonical,
+    new_canonical_form: null,
     instance_stance: "affirms",
     direction_note: null,
-    confidence: 0.3,
+    confidence: 0,
     reasoning:
-      "Matcher did not submit a decision within the search budget; defaulting to a new claim.",
+      "Matcher did not submit a decision within its search budget (after one retry). " +
+      "No identity verdict was reached: this is not a finding that the claim is new.",
     alternative_matches: [],
     relationship_notes: null,
   };

@@ -219,6 +219,16 @@ async function materializeProposedClaim(contribution: {
     proposedCanonical: claimText,
   });
 
+  // No verdict (#419): neither link nor mint. The call is idempotent and runs
+  // before the review is recorded, so throwing surfaces to the reviewing agent
+  // (which can retry) instead of materializing a possible duplicate.
+  if (match.outcome === "undecided") {
+    throw new Error(
+      `Matcher reached no identity verdict for propose_claim contribution ` +
+        `${contribution.id} (search budget exhausted); retry the accept`
+    );
+  }
+
   if (match.is_match && match.matched_claim_id) {
     await db
       .update(contributions)

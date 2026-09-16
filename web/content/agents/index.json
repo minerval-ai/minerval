@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 31574,
-    "fullChars": 80262,
+    "roleChars": 31740,
+    "fullChars": 80428,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 13565,
-    "fullChars": 62253,
+    "roleChars": 13645,
+    "fullChars": 62333,
     "skills": [
       {
         "name": "mathematics",

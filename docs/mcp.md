@@ -128,14 +128,17 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   per-node assessment status: contested-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
-  `stance`) plus its assessment, or `matched: false` for new/unknown.
+  `stance`) plus its assessment, `matched: false` for new/unknown, or
+  `matched: null` when the Matcher ran out of search budget without a
+  verdict (not a finding that the claim is new; retry).
 - **`extract_claims`** `{text, source_type?, max_claims?}` — run text through
   the Extractor agent → discrete checkable claims with proposed canonical
   forms.
 - **`assess_text`** `{text, max_claims?}` — the judgment surface: extract the
   passage's claims, match each into the graph, and return per-claim verdicts
   (`well_supported`/`disputed`/… from the graph's assessments, `unassessed`
-  if matched but not yet assessed, `unknown` if the graph has no such claim).
+  if matched but not yet assessed, `unknown` if the graph has no such claim,
+  `undecided` if the Matcher reached no verdict for that claim).
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
   assessment applies inverted.
