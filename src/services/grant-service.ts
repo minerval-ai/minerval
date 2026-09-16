@@ -20,6 +20,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
+import type { PlanItemLedger } from "./action-service.js";
 import {
   getJobSpentMicroUsd,
   refundUnspentBudget,
@@ -58,7 +59,40 @@ export interface PlanItem {
   variant?: "standard" | "max";
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
+  /**
+   * The item's standing on the ledger, written by the plan-to-ledger
+   * materializer (action-service.ts) on every sweep and on extend_plan:
+   * the row it became, or why it could not (#416). Absent until the first
+   * materialization.
+   */
+  ledger?: PlanItemLedger;
 }
+
+/**
+ * What each plan kind needs before it becomes ledger work, in the words
+ * the Grantmaker tools show. One text, so every agent reads the same rules
+ * (#416: a plan item that quietly never became work is the failure this
+ * exists to prevent).
+ */
+export const PLAN_KIND_RULES =
+  "What each kind needs to become a priced ledger row (the tool result " +
+  "and grant_overview report each item's standing as open, running, " +
+  "done, cancelled, waiting, or blocked, with the reason): " +
+  "assess/reassess/deepen: an active claim; the item queues the claim for " +
+  "its Steward and opens (or keeps) its assess group, once per item " +
+  "(a finished pass stays finished; add another item for another pass). " +
+  "deepen also releases the claim's deferred subclaims into the queue. " +
+  "ingest: an http(s) url; executes in plan order from your escrow. " +
+  "formalize: an active claim with NO published statement whose recorded " +
+  "domains carry the Steward's publish_formalization tool (the " +
+  "mathematics domain); otherwise blocked, and a formalize run would be " +
+  "refused. One row per claim, two strong passes; a run that ends without " +
+  "a statement is retried on the review cadence. " +
+  "attempt_proof: a claim with a PUBLISHED statement; waits (not blocked) " +
+  "until a formalize item has published one. The n-th attempt_proof item " +
+  "on a claim entitles the n-th attempt group; an earlier open group and " +
+  "the mandate's attempt cooldown both hold the next one back, and only a " +
+  "rationale of twenty characters or more waives the cooldown.";
 
 export type CreateGrantResult =
   | { ok: true; grant: Grant }

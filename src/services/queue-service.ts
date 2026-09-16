@@ -56,6 +56,11 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A mandate's plan asked for a pass on this claim (an assess, reassess
+    // or deepen item, materialized by the reconcile sweep or by the
+    // Grantmaker's extend_plan in the same turn, #416). The context carries
+    // the mandate's name and the item's rationale.
+    | "mandate_plan"
     // A mandate's lookout (docs/allocation.md, "Lookouts") reports a
     // development bearing on this claim — a retraction, a new result, a
     // moved dependency — and asks for a fresh look. The context carries
