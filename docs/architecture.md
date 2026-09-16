@@ -660,7 +660,9 @@ failed. The audit scheduler still requests a `report_triage` audit for each
 period that saw new reports; the Audit Agent clusters them by underlying
 gap, ranks by frequency and severity, and records a reading through
 `triage_report` that the service-scoped `/reports` API exposes to
-maintainers and that closes or annotates the issue.
+maintainers and that closes or annotates the issue. The triage note is
+stored whole up to `TRIAGE_NOTE_MAX_LENGTH` (4,000 characters); a longer
+one is refused with an error naming the limit, never cut (#439).
 
 The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
 Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the

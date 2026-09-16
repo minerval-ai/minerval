@@ -41,6 +41,7 @@ import {
   resetReportRateLimiter,
   searchReports,
   triageAgentReport,
+  TRIAGE_NOTE_MAX_LENGTH,
   updateReport,
   REPORT_BODY_MAX_CHARS,
   type AgentReportRow,
@@ -570,6 +571,27 @@ describe("triageAgentReport", () => {
     expect(String(sql)).toContain("UPDATE agent_reports");
     expect(params).toEqual([REPORT_ID, "wontfix", "not a defect", null, "audit:run-1"]);
     expect(mocks.syncTriageToIssue).not.toHaveBeenCalled();
+  });
+
+  it("stores a long note whole and rejects one over the limit instead of cutting it", async () => {
+    const longest = "x".repeat(TRIAGE_NOTE_MAX_LENGTH);
+    mocks.rawQuery.mockResolvedValue([{ ...ROW, triage_note: longest }]);
+    await triageAgentReport(REPORT_ID, {
+      status: "triaged",
+      triageNote: `  ${longest}  `,
+      triagedBy: "audit:run-1",
+    });
+    expect(mocks.rawQuery.mock.calls[0]![1]![2]).toBe(longest);
+
+    mocks.rawQuery.mockClear();
+    await expect(
+      triageAgentReport(REPORT_ID, {
+        status: "triaged",
+        triageNote: `${longest}y`,
+        triagedBy: "audit:run-1",
+      })
+    ).rejects.toThrow(/limit is 4000/);
+    expect(mocks.rawQuery).not.toHaveBeenCalled();
   });
 
   it("carries the decision to the issue", async () => {

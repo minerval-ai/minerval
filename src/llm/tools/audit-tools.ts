@@ -30,6 +30,7 @@ import {
   listAgentReports,
   triageAgentReport,
   REPORT_STATUSES,
+  TRIAGE_NOTE_MAX_LENGTH,
 } from "../../services/report-service.js";
 
 /** Everything a run's tool executions need to know about the run itself. */
@@ -89,7 +90,9 @@ export function getAuditToolDefinitions(): Tool[] {
         "(names the report it repeats via duplicate_of_id), actioned (the " +
         "gap is closed), or wontfix (not a defect, or not worth it — say " +
         "why). Triage is a reading of the reports, never a change to the " +
-        "tools: the maintainers act on your note.",
+        "tools: the maintainers act on your note. The note is stored whole " +
+        `up to ${TRIAGE_NOTE_MAX_LENGTH} characters; a longer one is ` +
+        "rejected with an error rather than cut, so shorten it and retry.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -102,7 +105,8 @@ export function getAuditToolDefinitions(): Tool[] {
             type: "string",
             description:
               "Why this status; for triaged, the underlying gap in one or " +
-              "two sentences and the reports that share it.",
+              "two sentences and the reports that share it. At most " +
+              `${TRIAGE_NOTE_MAX_LENGTH} characters.`,
           },
           duplicate_of_id: {
             type: "string",
@@ -445,9 +449,19 @@ export async function executeAuditTool(
               `(got ${JSON.stringify(status)}).`,
           });
         }
+        const note = String(input.note ?? "");
+        if (note.trim().length > TRIAGE_NOTE_MAX_LENGTH) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `note is ${note.trim().length} characters; the limit is ` +
+              `${TRIAGE_NOTE_MAX_LENGTH}. Nothing was recorded: shorten the ` +
+              `note and call triage_report again.`,
+          });
+        }
         const updated = await triageAgentReport(reportId, {
           status: status as "triaged" | "duplicate" | "actioned" | "wontfix",
-          triageNote: String(input.note ?? ""),
+          triageNote: note,
           duplicateOfId:
             typeof input.duplicate_of_id === "string"
               ? input.duplicate_of_id
