@@ -20,6 +20,7 @@ import {
   listAgentReports,
   listReportSightings,
   triageAgentReport,
+  TRIAGE_NOTE_MAX_LENGTH,
 } from "../services/report-service.js";
 
 const listReportsParams = z.object({
@@ -36,7 +37,13 @@ const listReportsParams = z.object({
 
 const triageReportBody = z.object({
   status: reportStatusEnum,
-  triage_note: z.string().max(2000).optional(),
+  triage_note: z
+    .string()
+    .max(
+      TRIAGE_NOTE_MAX_LENGTH,
+      `triage_note must be at most ${TRIAGE_NOTE_MAX_LENGTH} characters`
+    )
+    .optional(),
   duplicate_of_id: uuidSchema.optional(),
 });
 

@@ -938,8 +938,16 @@ export async function listReportsAwaitingIssue(
   );
 }
 
+/**
+ * Longest triage note the record keeps, in characters. A longer note is
+ * rejected on write (never silently cut): the note is what maintainers act
+ * on, so its tail must not go missing without the writer knowing (#439).
+ */
+export const TRIAGE_NOTE_MAX_LENGTH = 4000;
+
 export interface TriageReportInput {
   status: ReportStatus;
+  /** Free text up to TRIAGE_NOTE_MAX_LENGTH characters after trimming. */
   triageNote?: string | null;
   /** Required when status is 'duplicate'. */
   duplicateOfId?: string | null;
@@ -963,6 +971,13 @@ export async function triageAgentReport(
   if (duplicateOfId === id) {
     throw new Error("a report cannot duplicate itself");
   }
+  const triageNote = input.triageNote?.trim() || null;
+  if (triageNote && triageNote.length > TRIAGE_NOTE_MAX_LENGTH) {
+    throw new Error(
+      `triage note is ${triageNote.length} characters; the limit is ` +
+        `${TRIAGE_NOTE_MAX_LENGTH}. Shorten it rather than lose the tail.`
+    );
+  }
   const rows = await rawQuery<AgentReportRow>(
     `UPDATE agent_reports
      SET status = $2,
@@ -975,7 +990,7 @@ export async function triageAgentReport(
     [
       id,
       status,
-      input.triageNote?.trim() ? input.triageNote.trim().slice(0, 2000) : null,
+      triageNote,
       duplicateOfId,
       input.triagedBy.slice(0, 128),
     ]

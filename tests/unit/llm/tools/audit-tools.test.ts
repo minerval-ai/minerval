@@ -136,6 +136,23 @@ describe("withdraw_bounty_after_audit", () => {
   });
 });
 
+describe("triage_report", () => {
+  it("refuses a note over the limit with a message naming it, recording nothing", async () => {
+    const result = JSON.parse(
+      await executeAuditTool("triage_report", {
+        report_id: "11111111-1111-4111-8111-111111111111",
+        status: "triaged",
+        note: "x".repeat(4001),
+      })
+    );
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/limit is 4000/);
+    expect(
+      mocks.rawQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE agent_reports"))
+    ).toBe(false);
+  });
+});
+
 describe("flag_issue", () => {
   it("persists the finding with its run and typed targets, returning finding_id", async () => {
     const out = JSON.parse(
