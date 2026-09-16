@@ -36,7 +36,8 @@ metered per account.
  ┌──────────────────────────────────────┐      ┌───────────┐     web ·
  │ Claim Steward (decompose + assess) · │◀────▶│    API    │──▶  extension ·
  │ Curator · Contribution Reviewer ·    │      │ (Fastify) │     MCP clients
- │ Dispute Arbitrator · Audit Agent     │      └───────────┘
+ │ Dispute Arbitrator · Audit Agent ·   │      └───────────┘
+ │ Grantmaker · Lookout                 │
  └──────────────────────────────────────┘
 ```
 
@@ -597,6 +598,23 @@ These act through tools over the life of a claim and the graph:
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
+- **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
+  in conversation with a funder it surveys the territory, quotes honest
+  costs, and drafts or refuses a mandate; once the mandate is live it takes
+  autonomous review passes that value the open action ledger, grow the
+  plan, pace the spend, and move budget between peer mandates.
+- **Lookout** is the cheapest administrator with the narrowest question: a
+  standing watch a mandate's Grantmaker posts with a brief (scope in words,
+  where to look, what warrants work), woken by a heartbeat or a trigger (the
+  daily Crossref retraction poll, a poke), that reads the graph, the
+  retraction record, and the open web and raises *candidates*: a claim to
+  reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
+  delegated; a source to ingest, appended to the mandate's plan; a note for
+  the next review pass. It judges relevance, never truth: it writes no
+  assessment, sets no importance, and moves no money, and every flag is
+  recorded with what became of it, so its precision is on the record and
+  its Grantmaker can tighten or retire a watch that raises noise
+  (docs/allocation.md, "Lookouts").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
@@ -664,8 +682,9 @@ finding, saying what the earlier one lacks). Findings live in
 `agent_findings` with the same no-FK attribution snapshot as reports, so a
 note outlives the trace it came from; the read side computes a `stale`
 flag when a cited assessment is no longer the claim's current one. The
-extension chat, the MCP surface, the Extractor, the Matcher, and the solver
-do not carry the tool: an outside agent's discovery is a contribution.
+extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
+and the solver do not carry the tool: an outside agent's discovery is a
+contribution, and a Lookout's is a flag for a Steward to judge.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
@@ -893,6 +912,7 @@ Model choice follows the value of the judgment, not a single default:
 | Agent | Production model |
 |-------|------------------|
 | Tagger · Matcher | GLM 5.3 Flash (via OpenRouter) |
+| Lookout | Claude Haiku 4.5 (`LOOKOUT_MODEL`; per-lookout override) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
 | Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
@@ -902,7 +922,12 @@ retrieves itself, so a small model suffices; it is the first agent routed to a
 non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
-production as in dev. The load-bearing epistemic work
+production as in dev. The Lookout's question ("did something happen that
+warrants work in my scope?") is relevance, not truth, and it runs often,
+so it too belongs on a cheap model; it stays on Anthropic's cheapest
+because its main instrument is web search, an Anthropic server tool, and
+a Grantmaker can pin a stronger model on one lookout whose brief warrants
+it. The load-bearing epistemic work
 (stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a

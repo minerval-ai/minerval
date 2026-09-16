@@ -53,12 +53,21 @@ export type ActionKind =
   // the platform-owned prize-review reserve minted when the bounty opened,
   // outside any mandate's day room, so a claim never waits on a paused
   // escrow and the claimant is never charged.
-  | "prize_review";
+  | "prize_review"
+  // One run of a mandate's lookout (docs/allocation.md, "Lookouts"): a
+  // cheap standing watch that reads its brief, the graph, and the open
+  // web on a heartbeat or when an event is queued for it, and raises
+  // CANDIDATES — a reassess valued on the mandate's behalf within its
+  // delegated ceiling, an ingest appended to the plan, a note for the
+  // next review pass. Group `lookout:<lookout_id>`; self-funded from the
+  // mandate's escrow like a review pass, bounded per day the same way.
+  | "lookout_run";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 export const INGEST_GROUP = (url: string) => `ingest:${url}`;
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
+export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
 export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
@@ -338,6 +347,38 @@ export async function reconcileActions(): Promise<{
                          WHERE f.id::text = split_part(a.exclusion_group, ':', 2)
                            AND f.status = 'published')`
   );
+
+  // Lookout runs: one open row per active lookout on an active mandate
+  // whose heartbeat has fallen due or that has an unconsumed event
+  // waiting. Due-ness is the lookout's own state (next_due_at, stamped by
+  // the executor after each run), so a closed row reopens exactly when the
+  // lookout says it is due and never on a fixed sweep cadence — an
+  // event-only lookout (heartbeat 0) opens nothing until something is
+  // queued for it. The funding side (fundGrantSelfActions) bounds runs
+  // per day; this only says what is wanted.
+  const lookoutCost = capMicroUsd("lookout_run");
+  const dueLookouts = await rawQuery<{ id: string; title: string }>(
+    `SELECT l.id, l.title
+       FROM lookouts l
+       JOIN grants g ON g.id = l.grant_id
+      WHERE l.status = 'active' AND g.status = 'active'
+        AND ((l.heartbeat_hours > 0 AND l.next_due_at <= now())
+             OR EXISTS (SELECT 1 FROM lookout_events e
+                         WHERE e.lookout_id = l.id AND e.consumed_at IS NULL))
+      LIMIT 200`
+  );
+  for (const l of dueLookouts) {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+       VALUES ('lookout_run', $1, 'standard', $2, $3, $4)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost]
+    );
+  }
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
