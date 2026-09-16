@@ -40,7 +40,7 @@ import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
-import { surveyScope } from "./grantor.js";
+import { createMandateTools } from "../tools/mandate-tools.js";
 import {
   validateMandate,
   executeManagementTool,
@@ -50,8 +50,7 @@ import {
 import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
 import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
 import { materializePlanItems } from "../../services/action-service.js";
-import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
-import { microUsdToOwls, owlsToMicroUsd, capOwls } from "../../services/owl.js";
+import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
   listOpenActions,
   setMandateValuations,
@@ -82,9 +81,6 @@ export interface MandateReviewResult {
    * the passes-per-day funding cap, not by refusing the request). */
   continueRequested: boolean;
 }
-
-/** Generous but bounded working memory: ~100KB of the agent's own notes. */
-const WORKSPACE_MAX_CHARS = 100_000;
 
 export function runMandateReview(
   input: Parameters<typeof runMandateReviewImpl>[0]
@@ -141,6 +137,7 @@ async function runMandateReviewImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  const mandateTools = createMandateTools({ grantId: grant.id, surveyLimit: 25 });
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
@@ -149,22 +146,10 @@ async function runMandateReviewImpl(input: {
     // not answerable from keyword hits and scalars — it needs the claim's
     // reasoning, what it rests on, and what rests on it.
     ...getGraphReadToolDefinitions(),
-    {
-      name: "survey_scope",
-      description:
-        "Survey a subtree and/or keyword slice of the graph with the " +
-        "allocation signals: importance, contestation, assessment state " +
-        "and age, expected gain from another pass. Paginate with offset.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: { type: "string", description: "Subtree root (optional)." },
-          query: { type: "string", description: "Keyword slice (optional)." },
-          offset: { type: "number" },
-        },
-        required: [],
-      },
-    },
+    // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+    // update_workspace — one implementation shared with the planning pass
+    // and the granting conversation.
+    ...mandateTools.definitions,
     {
       name: "list_open_actions",
       description:
@@ -268,22 +253,6 @@ async function runMandateReviewImpl(input: {
       },
     },
     {
-      name: "estimate_costs",
-      description:
-        "Quote expected costs in owls for a bundle of work, from live " +
-        "metered averages (priors otherwise). Use before growing the plan.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          assessments: { type: "number" },
-          reassessments: { type: "number" },
-          deepen_claims: { type: "number" },
-          sources_to_ingest: { type: "number" },
-        },
-        required: [],
-      },
-    },
-    {
       name: "extend_plan",
       description:
         "Append new items to your mandate's plan — the systems-building " +
@@ -367,22 +336,6 @@ async function runMandateReviewImpl(input: {
           note: { type: "string" },
         },
         required: ["title", "objective", "owls", "note"],
-      },
-    },
-    {
-      name: "update_workspace",
-      description:
-        "Rewrite your workspace — your own durable working memory, read " +
-        "back to you in full at the start of every pass. Keep here what a " +
-        "person running this mission would keep in their working notes: " +
-        "the map of the territory so far, the source backlog and what " +
-        "each yielded, strategy, open questions, what the next pass " +
-        "should do. Replaces the whole document; carry forward what " +
-        "still matters.",
-      input_schema: {
-        type: "object" as const,
-        properties: { content: { type: "string" } },
-        required: ["content"],
       },
     },
     {
@@ -624,21 +577,8 @@ async function runMandateReviewImpl(input: {
       // handlers below still run.
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
-      if (name === "survey_scope") {
-        const rows = await surveyScope({
-          scopeClaimId:
-            typeof toolInput.claim_id === "string" && toolInput.claim_id
-              ? toolInput.claim_id
-              : null,
-          scopeQuery:
-            typeof toolInput.query === "string" && toolInput.query
-              ? toolInput.query
-              : null,
-          offset: Number(toolInput.offset ?? 0),
-          limit: 25,
-        });
-        return JSON.stringify(rows);
-      }
+      const mandateTool = await mandateTools.execute(name, toolInput);
+      if (mandateTool !== null) return mandateTool;
       if (name === "list_open_actions") {
         const res = await listOpenActions({
           grantId: grant.id,
@@ -667,21 +607,6 @@ async function runMandateReviewImpl(input: {
         confirmedBy: null,
       });
       if (management !== null) return management;
-      if (name === "estimate_costs") {
-        const tiers = await stewardTierCostEstimates();
-        const passOwls = microUsdToOwls(tiers.strongMicroUsd);
-        const n = (v: unknown) => Math.max(0, Number(v ?? 0) || 0);
-        const subtotal =
-          (n(toolInput.assessments) + n(toolInput.reassessments)) * passOwls +
-          n(toolInput.deepen_claims) * passOwls * 3 +
-          n(toolInput.sources_to_ingest) * capOwls("source_ingest");
-        return JSON.stringify({
-          assessment_each_owls: passOwls,
-          ingest_each_owls: capOwls("source_ingest"),
-          subtotal_owls: Math.round(subtotal * 100) / 100,
-          note: "Estimates; actual spend is metered and unspent budget refunds.",
-        });
-      }
       if (name === "extend_plan") {
         const newItems = (toolInput.items ?? []) as PlanItem[];
         if (newItems.length === 0) {
@@ -775,17 +700,6 @@ async function runMandateReviewImpl(input: {
         });
         if (res.ok) recordMove(owls);
         return JSON.stringify(res);
-      }
-      if (name === "update_workspace") {
-        const content = String(toolInput.content ?? "").slice(
-          0,
-          WORKSPACE_MAX_CHARS
-        );
-        await rawQuery(
-          `UPDATE grants SET workspace = $2, updated_at = now() WHERE id = $1`,
-          [grant.id, content]
-        );
-        return JSON.stringify({ success: true, chars: content.length });
       }
       if (name === "set_daily_rate") {
         const owlsPerDay = Number(toolInput.owls_per_day);
