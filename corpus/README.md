@@ -261,6 +261,23 @@ runner, the production pins — runs the suite on the production Matcher
 reports that it skipped rather than failing. Cents per run; the report is
 uploaded as a workflow artifact.
 
+**Whole clusters on a hosted runner** (`.github/workflows/corpus-eval.yml`,
+manual only): a `corpus:run --score` per cluster, one job each in parallel,
+on a runner with open egress — so the Steward's source reads and the
+lookouts' page reads actually work, which they do not from a sandbox with a
+domain allowlist. Run it from the Actions tab: pick the clusters, the model
+profile (`production` by default), and the caps (`STEWARD_MAX_RUNS`,
+`STEWARD_MAX_ITERATIONS`, `CURATOR_MAX_RUNS`, `LLM_DAILY_TOKEN_LIMIT`,
+`EXTRACTION_MAX_TOKENS`), the judge sample and model, and optionally the
+blackholes contribution scenario after that cluster's ingest. It needs the
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `OPENROUTER_API_KEY` repository
+secrets and fails, rather than skips, without them. Each job prints the
+run's usage + cost report into its summary and uploads `runs/` plus the
+scorecard `corpus:score` filed under `corpus/scorecards/<cluster>/` as an
+artifact; commit that file when the run should stand as a baseline. Hosted
+jobs stop at six hours, which the cheap tier can approach on `lethalities`;
+the production tier is well inside it.
+
 **Judge review** (#99/#137; #334 §2.8 as amended) — no judge number feeds a
 gate until a human has read its verdicts and reasoning. The judge is presumed
 good-faith and competent at its assigned task — its judgment is as good as
