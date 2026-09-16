@@ -65,6 +65,11 @@ import {
   mandateClosureBlockers,
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
+import { getLookoutManagementToolDefinitions } from "../tools/lookout-management-tools.js";
+import {
+  listMandateLookoutFlags,
+  summarizeLookouts,
+} from "../../services/lookout-service.js";
 
 export interface MandateReviewResult {
   note: string;
@@ -419,6 +424,10 @@ async function runMandateReviewImpl(input: {
     // The bounty tools (docs/mathematics.md §8.1): the same implementation
     // as the management chat, two-pass by construction.
     ...getBountyToolDefinitions(),
+    // The lookout tools (docs/allocation.md, "Lookouts"): the standing
+    // watches this mandate funds. Same implementation as the management
+    // chat, through executeManagementTool below.
+    ...getLookoutManagementToolDefinitions(),
     {
       name: "complete_mandate",
       description:
@@ -460,6 +469,43 @@ async function runMandateReviewImpl(input: {
   const mandateText = grant.mandate
     ? JSON.stringify(grant.mandate, null, 2)
     : `(untitled mandate "${grant.name}")`;
+
+  // The mandate's lookouts and what they raised since the last review: the
+  // cheap eyes between passes report here, and their precision is how the
+  // Grantmaker decides whether each watch is earning its runs.
+  const lastReviewAt = (grant.mandate as { last_review?: { at?: string } } | null)
+    ?.last_review?.at;
+  const lookouts = await summarizeLookouts(grant.id).catch(() => []);
+  const lookoutFlags = await listMandateLookoutFlags(grant.id, {
+    since: lastReviewAt ? new Date(lastReviewAt) : null,
+    limit: 40,
+  }).catch(() => []);
+  const lookoutText =
+    lookouts.length === 0
+      ? `(none — spawn_lookout posts a cheap standing watch over part of the ` +
+        `mission: a retraction watch over your sources, a new-results watch ` +
+        `on a live crux.)`
+      : lookouts
+          .map(
+            (l) =>
+              `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; ceiling ${l.max_value}/10] ` +
+              `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
+              `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
+              `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}`
+          )
+          .join("\n") +
+        (lookoutFlags.length === 0
+          ? `\n\nNo flags since your last pass.`
+          : `\n\nFlags since your last pass:\n` +
+            lookoutFlags
+              .map(
+                (f) =>
+                  `- [${f.lookout_title}] ${f.kind}${f.claim_id ? ` claim ${f.claim_id}` : ""}` +
+                  `${f.url ? ` ${f.url}` : ""}${f.value_written !== null ? ` valued ${f.value_written}` : ""}: ` +
+                  `${f.rationale.slice(0, 240)}`
+              )
+              .join("\n"));
   const items = grant.plan?.items ?? [];
   // A mandate gets the valuation lever its policy actually reads. For a
   // formula mandate the two would fight: the bulk refresh upserts the same
@@ -481,6 +527,7 @@ async function runMandateReviewImpl(input: {
     `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
     `(yours to set). Plan: ${items.length} items, ${grant.plan_cursor} executed.\n\n` +
+    `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
     (grant.workspace?.trim()
       ? grant.workspace
@@ -490,7 +537,8 @@ async function runMandateReviewImpl(input: {
     `Do what the mandate needs this pass: survey (graph and web), ` +
     `${valuationClause}, extend the plan with the work ` +
     `you discovered, adjust your pacing, regrant or spawn where part of ` +
-    `the mission belongs in other hands. Skip what doesn't need doing. ` +
+    `the mission belongs in other hands, post or tighten lookouts where ` +
+    `the mission needs eyes between your passes. Skip what doesn't need doing. ` +
     `Before finishing, update your workspace so the next pass starts ` +
     `where this one stopped; call continue_review if the mission needs ` +
     `another pass today. Finish with a short note (recorded on the ` +
@@ -607,6 +655,7 @@ async function runMandateReviewImpl(input: {
       // implementation, honesty guard included. Null means "not mine".
       const management = await executeManagementTool(grant.id, name, toolInput, {
         passStartedAt,
+        actor: "grantmaker:review",
         // No person is present on the autonomous pass: a posting at or
         // above the autonomy threshold parks at confirm_pending.
         confirmedBy: null,

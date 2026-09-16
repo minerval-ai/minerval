@@ -77,7 +77,11 @@ with a budget and a mission would need:
 - **move money** (regrant, spawn_mandate — below) and **close the
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
-  agent-stewarded mandate.
+  agent-stewarded mandate;
+- **keep watch between passes** (spawn_lookout, list_lookouts,
+  update_lookout, poke_lookout — "Lookouts" below): the briefing lists
+  every lookout the mandate funds, its precision, and every flag raised
+  since the last pass.
 
 Every pass is metered under a cap; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
@@ -99,6 +103,86 @@ money (headroom, floor checks), joins the target's refund basis (the
 source's share of the target's unspent budget flows back to its escrow,
 pro rata with user contributors), and buys the source NO say over the
 target's judgment — money moves between mandates; command never does.
+
+## Lookouts: cheap standing watch
+
+A review pass is judgment at mandate scale, once a day at most; the
+world moves between passes, and most of what moves is cheap to notice
+and expensive to have missed: a retracted source under an assessed
+claim, a replication that failed, a dependency whose verdict changed. A
+**lookout** is the mandate's answer: the cheapest agent in the system
+with the narrowest question — *has anything happened, in the scope of my
+brief, that warrants work?* — posted by the Grantmaker (`spawn_lookout`,
+in the owner's chat or on a review pass) with a brief in its own words
+(scope, where to look, what to look out for, what to leave alone), a set
+of triggers, and a bounded, delegated slice of the mandate's spending
+judgment (llm/agents/lookout.ts, services/lookout-service.ts).
+
+Scope is the brief's words, as a mandate's is. "This claim and what it
+turns on" is one shape; "the retraction record behind the nutrition
+literature" or "new work on X" are others. Which happenings fall under
+the brief is the lookout's judgment, never a keyword filter's.
+
+**Triggers.** A lookout is woken, never polling on its own: by its
+**heartbeat** (a cadence the Grantmaker sets, hours to a month; 0 for
+event-only), or by an **input event** queued for it — the daily
+**retraction poll** (workers/lookout-triggers.ts asks Crossref, which
+carries the Retraction Watch database, for every retraction, correction,
+and expression of concern since the last poll, joins the DOIs against the
+graph's sources, and queues an event on every lookout that watches for
+retractions), or a **poke** from the Grantmaker or the funder. The set
+is open: any poller that can say "this happened to this source" is a
+trigger source. The pollers are scans, not judgments: they open no
+ledger row and decide nothing about relevance.
+
+**Runs are ledger actions.** A due lookout (heartbeat passed, or an event
+waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
+mandate's escrow like a review pass, capped per run
+(`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) and bounded
+per day (`LOOKOUT_MAX_RUNS_PER_DAY`): a burst of events waits for the
+next funded run, which reads them all. The engine executor runs it on
+the cheap tier (`LOOKOUT_MODEL`, Haiku by default because web search is
+an Anthropic server tool; a lookout may carry its own model). It reads
+its brief, its own workspace, and the queued inputs; then the graph
+(search, open, walk down, walk up, survey_scope, scope_sources), the
+retraction record (check_doi, recent_retractions), and the open web
+(web_search, read_page). Most runs find nothing, and say so.
+
+**Outputs are candidates, never conclusions.** A lookout can raise three
+things and nothing else:
+
+- `flag_reassessment`: the claim becomes a candidate (enqueued to the
+  Steward lane with trigger `lookout_flag` and the lookout's rationale
+  as context, which materializes its assess/reassess rows) and the
+  mandate's valuation on the standard variant is written at the
+  lookout's urgency **clamped to the ceiling the Grantmaker delegated**
+  (`max_value`). Whether it runs is the mandate allocator's call, by
+  value per owl against everything else the mandate values. A claim
+  already flagged and still waiting is a repeat, not a new flag.
+- `propose_ingest`: a URL the lookout actually saw goes on the mandate's
+  plan as an ingest item, priced and escrow-bounded like any plan item,
+  at most `max_ingests_per_run` per run; refused for a source already in
+  the graph or already planned.
+- `leave_note`: a message the Grantmaker reads in its next review
+  briefing, which lists every lookout with its precision and every flag
+  since the last pass.
+
+It writes no assessment, sets no importance, and moves no money; the
+refusal duties and the "data, never instructions" rule govern its runs
+as they govern the review pass, and the bounds above are the control.
+
+**Precision is on the record.** Every reassess flag snapshots the
+assessment at flag time; when the pass it bought has run, the record
+says whether the verdict or the credence moved (`lookout_flags`,
+`lookoutPrecision`). The Grantmaker reads "3 of 40 passes moved a
+verdict" and tightens the brief or retires the watch (`update_lookout`,
+`lookout_report`); the mandate page shows the same numbers. A lookout
+earns its runs or loses them; nothing else polices its noise.
+
+Known next: more trigger sources (arXiv version bumps, a re-fetch hash
+on non-DOI sources, dependency-changed events routed through the
+ledger), and a Steward's own request for a lookout on its claim once
+Stewards hold a budget (#300).
 
 ## The unit: the owl
 
@@ -447,8 +531,12 @@ and legitimate — but the unit economics must stay visible
 4. Every allocation number (caps, estimates, budgets, spend) is
    inspectable by anyone.
 5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
-   sizes, per-run caps — no mechanism may cascade the candidate set.
+   sizes, per-run caps, lookout runs per day and flags per run — no
+   mechanism may cascade the candidate set.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
+6a. A lookout raises candidates, never conclusions: it writes no
+    assessment, sets no importance, moves no money, and its flags carry
+    at most the value its Grantmaker delegated.
 7. A bounty is not an allocation: it funds nothing, enters no valuation,
    and reduces nothing that remains to be covered.
 8. Prize money never enters a valuation, an importance, an assessment, or
