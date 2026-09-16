@@ -153,6 +153,29 @@ describe("tree-service", () => {
       expect(mockRawQuery).toHaveBeenCalledTimes(5);
     });
 
+    it("lists a subclaim once per argument that groups its edge, collapsing the repeat (#437)", async () => {
+      // One edge root -> shared, grouped under two named arguments: the level
+      // query yields one row per membership, so the child shows up in each
+      // argument's group with its subtree rendered at the first occurrence.
+      mockRawQuery.mockResolvedValueOnce([rootRow("root")]);
+      mockRawQuery.mockResolvedValueOnce([
+        edgeRow("root", "shared", { argument_id: "arg-a", argument_name: "A" }),
+        edgeRow("root", "shared", { argument_id: "arg-b", argument_name: "B" }),
+      ]);
+      mockRawQuery.mockResolvedValueOnce([edgeRow("shared", "leaf")]);
+      mockRawQuery.mockResolvedValueOnce([]); // leaf level
+
+      const tree = await getClaimTree("root", 5);
+      expect(tree!.children.map((c) => c.id)).toEqual(["shared", "shared"]);
+      expect(tree!.children.map((c) => c.argument_id)).toEqual(["arg-a", "arg-b"]);
+      expect(tree!.children[0]!.children).toHaveLength(1);
+      expect(tree!.children[0]!.subtree_collapsed).toBeUndefined();
+      expect(tree!.children[1]!.children).toHaveLength(0);
+      expect(tree!.children[1]!.subtree_collapsed).toBe(true);
+      // The shared node's own level was fetched once, not once per argument.
+      expect(mockRawQuery).toHaveBeenCalledTimes(4);
+    });
+
     it("terminates on a relationship cycle instead of expanding to the depth cap", async () => {
       // root -> a -> root (a cycle the DB's self-reference check can't catch).
       mockRawQuery.mockResolvedValueOnce([rootRow("root")]);
