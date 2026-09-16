@@ -68,6 +68,7 @@ import {
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
 import { getLookoutManagementToolDefinitions } from "../tools/lookout-management-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 import {
   listMandateLookoutFlags,
   summarizeLookouts,
@@ -519,6 +520,7 @@ async function runMandateReviewImpl(input: {
       `have learned about allocation itself warrants it ` +
       `(update_allocation_policy)`
     : `revise your valuations over the open ledger`;
+  const REVIEW_PASS_MAX_TURNS = 24;
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -603,12 +605,14 @@ async function runMandateReviewImpl(input: {
   );
 
   const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
-    initialMessages: [{ role: "user", content: briefing }],
+    initialMessages: [
+      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}` },
+    ],
     tools: [webSearch.tool, ...availableTools],
     system,
     model,
     maxTokens: 4096,
-    maxIterations: 24,
+    maxIterations: REVIEW_PASS_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".

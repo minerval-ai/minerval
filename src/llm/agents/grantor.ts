@@ -25,6 +25,7 @@ import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { RAISING_ISSUES } from "../prompts/raising-issues.js";
 import type { PlanItem } from "../../services/grant-service.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 
 export interface GrantorPlan {
   strategy: string;
@@ -196,6 +197,7 @@ async function runGrantorImpl(input: {
 
   let plan: GrantorPlan | null = null;
   const maxItems = Math.max(1, Math.min(25, Math.floor(input.budgetOwls)));
+  const GRANTOR_MAX_TURNS = 12;
   const model = input.model ?? config.governanceModel;
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -216,14 +218,15 @@ async function runGrantorImpl(input: {
           `a 'deepen' item costs about three).\n\n` +
           `Survey the scope, then propose an allocation plan of at most ` +
           `${maxItems} items. Only include claims that appear in your survey ` +
-          `results — never invent ids.`,
+          `results — never invent ids.\n\n` +
+          turnBudgetLine(GRANTOR_MAX_TURNS),
       },
     ],
     tools: [surveyTool, submitTool, ...reportTools.definitions],
     system: getGrantorSystemPrompt(),
     model,
     maxTokens: 8192,
-    maxIterations: 12,
+    maxIterations: GRANTOR_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
