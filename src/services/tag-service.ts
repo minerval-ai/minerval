@@ -21,7 +21,7 @@
  *  3. Merges keep history. A merged tag stays readable (its slug still
  *     resolves, via `merged_into`) and its taggings move to the survivor.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { claims, tags, taggings, TAG_SUBJECT_KINDS, type TagSubjectKind } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -504,7 +504,12 @@ export async function setSubjectTags(input: {
         eq(taggings.subjectKind, input.kind),
         eq(taggings.subjectId, input.subjectId),
         eq(taggings.source, input.source),
-        keepIds.length > 0 ? sql`${taggings.tagId} <> ALL(${keepIds}::uuid[])` : sql`true`
+        // notInArray, not a hand-written `<> ALL(${ids}::uuid[])`: drizzle's
+        // sql template spreads a JS array into a `($1, $2)` tuple, which
+        // Postgres cannot cast to uuid[] (and a one-element tuple becomes a
+        // bare string, a malformed array literal). That rendering parked
+        // every claim the tagger touched in production.
+        keepIds.length > 0 ? notInArray(taggings.tagId, keepIds) : sql`true`
       )
     )
     .returning({ id: taggings.id });
