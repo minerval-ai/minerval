@@ -27,6 +27,13 @@
  * the queue's only holder and would exit with the work lost, so the script
  * runs the Curator itself, one anchor at a time, and returns when done.
  *
+ * The in-process path is unattributed work, so the LLM circuit breaker
+ * (budget-tracker.ts) applies, and a fresh process inherits the API's
+ * limits: one Curator run on a dense mathematical claim exceeded the
+ * production hourly token limit on its own (2026-09-16). For a one-off task
+ * set LLM_HOURLY_TOKEN_LIMIT=0 and LLM_HOURLY_CALL_LIMIT=0 in the container
+ * overrides, and keep the daily limits as the backstop for the whole sweep.
+ *
  *   npx tsx scripts/sweep-fallback-matches.ts                       # dry run
  *   npx tsx scripts/sweep-fallback-matches.ts --claim <uuid> --confirm
  */
