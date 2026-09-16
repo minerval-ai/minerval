@@ -678,6 +678,15 @@ export function getStewardToolDefinitions(): Tool[] {
               "list when the subclaim belongs to a different domain than its " +
               "parent, as when a mathematical claim rests on an empirical one.",
           },
+          claim_type: {
+            type: "string",
+            enum: [...CLAIM_TYPE_VALUES],
+            description:
+              "The subclaim's proposition kind. Omit to inherit the parent's; " +
+              "pass it when the subclaim is of another kind, as when a " +
+              "mathematical proposition rests on an empirical_derived claim " +
+              "about a proof or a dataset.",
+          },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
       },
@@ -1947,17 +1956,39 @@ export async function executeStewardTool(
           domainsSource = "steward";
         }
 
+        // Proposition kind (#468): the Steward's own value when it passes
+        // one, else the parent's, so a subclaim of a mathematical claim is
+        // not minted empirical_derived by default. Falls back to the schema
+        // default only when the parent row cannot be read.
+        let claimType: string | undefined =
+          typeof input.claim_type === "string" && input.claim_type.trim()
+            ? input.claim_type.trim().toLowerCase()
+            : undefined;
+        if (claimType !== undefined && !CLAIM_TYPE_VALUES.includes(claimType)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown claim_type "${claimType}". Use one of: ` +
+              CLAIM_TYPE_VALUES.join(", "),
+          });
+        }
+
         const db = getDb();
 
-        if (domainsSource === null) {
+        if (domainsSource === null || claimType === undefined) {
           const [parent] = await db
-            .select({ domains: claims.domains })
+            .select({ claimType: claims.claimType, domains: claims.domains })
             .from(claims)
             .where(eq(claims.id, parentId))
             .limit(1);
-          const inherited = parseDomains(parent?.domains ?? []);
-          domains = "domains" in inherited ? inherited.domains : [];
-          domainsSource = domains.length > 0 ? "inherited" : null;
+          if (domainsSource === null) {
+            const inherited = parseDomains(parent?.domains ?? []);
+            domains = "domains" in inherited ? inherited.domains : [];
+            domainsSource = domains.length > 0 ? "inherited" : null;
+          }
+          if (claimType === undefined) {
+            claimType = parent?.claimType ?? undefined;
+          }
         }
 
         // Create the subclaim
@@ -1997,7 +2028,7 @@ export async function executeStewardTool(
             .insert(claims)
             .values({
               text: childText,
-              claimType: "empirical_derived",
+              claimType: (claimType ?? "empirical_derived") as (typeof claimTypeEnum.options)[number],
               embedding: embedding ?? undefined,
               ...(importance !== undefined ? { importance } : {}),
               ...(contestation !== undefined ? { contestation } : {}),
@@ -2066,7 +2097,9 @@ export async function executeStewardTool(
               : "") +
             (domainsSource !== null
               ? `; domains [${domains.join(", ")}] (${domainsSource})`
-              : ""),
+              : "") +
+            `; claim_type ${claimType ?? "empirical_derived"}` +
+            (input.claim_type === undefined && claimType !== undefined ? " (inherited)" : ""),
           child_claim_id: newClaim.id,
         });
       }

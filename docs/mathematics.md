@@ -524,7 +524,8 @@ where the judgment naturally lives.
    closed list of skill names); the Matcher may set it on a new node in
    `submit_match_decision`; `add_decomposition_edge` copies the parent's tags
    onto a new subclaim unless the Steward passes its own (`domains_source =
-   'inherited'`); the new Steward tool `set_claim_domains {claim_id, domains,
+   'inherited'`), and likewise inherits the parent's `claim_type` unless the
+   Steward passes one; the new Steward tool `set_claim_domains {claim_id, domains,
    reasoning}` records the authoritative judgment (`domains_source =
    'steward'`). The Steward, Reviewer, Arbitrator, Curator, and Audit derive
    skills from the claim (the Reviewer and Arbitrator through the
