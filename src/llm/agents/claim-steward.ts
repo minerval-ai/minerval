@@ -8,7 +8,6 @@
  * importance claims it may also get Elicit scholarly search (#299). Acts
  * through tools -- no structured return value.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
 import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
 import { skillsForDomains } from "../prompts/skills.js";
@@ -48,7 +47,7 @@ import {
   listFormalizations,
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
-import { resolveProvider } from "../providers/routing.js";
+import { webSearchTool, webSearchUnavailableNote } from "../tools/web-search-tool.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -204,17 +203,12 @@ async function runClaimStewardImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.stewardModel;
 
-  // The steward always has web search — it may need fresh external evidence to
-  // assess any claim, atomic or compound (#30). It is an Anthropic server
-  // tool, so on any other provider (a cheap-tier eval run on OpenRouter, say)
-  // the run degrades to graph-and-source evidence rather than failing at the
-  // adapter, the same way mandate-review degrades; the briefing says so.
-  const webSearchAvailable = resolveProvider(model) === "anthropic";
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: 5,
-  };
+  // The steward has web search wherever its provider serves it — it may need
+  // fresh external evidence to assess any claim, atomic or compound (#30).
+  // Elsewhere (a cheap-tier run on OpenRouter, say) the run degrades to
+  // graph-and-source evidence rather than failing at the adapter, and the
+  // briefing says so (tools/web-search-tool.ts).
+  const webSearch = webSearchTool(model, 5);
 
   // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
   // structure, so it must be able to read parents, subclaims, and neighbors.
@@ -275,7 +269,7 @@ async function runClaimStewardImpl(input: {
     ...elicitTools,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
-    ...(webSearchAvailable ? [webSearchTool] : []),
+    ...(webSearch ? [webSearch] : []),
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -317,13 +311,7 @@ likely overkill even here — reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
       : "";
 
-  const webSearchNote = webSearchAvailable
-    ? ""
-    : `
-
-web_search is unavailable this run (the model is not served by a provider that
-offers it). Assess on the sources already recorded, the graph, and your own
-knowledge, and say in your reasoning_trace that no web search was possible.`;
+  const webSearchNote = webSearch ? "" : `\n\n${webSearchUnavailableNote(model)}`;
 
   const skillsNote =
     skills.length > 0
