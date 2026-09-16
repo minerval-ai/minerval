@@ -213,11 +213,9 @@ export class ApiStack extends cdk.Stack {
         TAGGER_MODEL: "z-ai/glm-5.3-flash",
         // The Lookout (docs/allocation.md, "Lookouts"): a mandate's cheap
         // standing watch. Its judgment is relevance, not truth, so it runs
-        // on the cheapest capable model that still has web search — an
-        // Anthropic server tool, which is why this is Haiku and not the
-        // OpenRouter cheap tier. Pinned to the config default so the model
+        // on the cheap tier. Pinned to the config default so the model
         // guard covers it; a lookout can carry its own model override.
-        LOOKOUT_MODEL: "claude-haiku-4-5-20251001",
+        LOOKOUT_MODEL: "z-ai/glm-5.3-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

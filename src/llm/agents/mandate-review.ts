@@ -30,7 +30,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { webSearchTool } from "../tools/web-search-tool.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -131,11 +131,10 @@ async function runMandateReviewImpl(input: {
     budgetJobId: grant.budget_job_id,
   });
 
-  // Web search is offered only where the model's provider serves it; on
-  // other providers the pass degrades to graph-only surveying rather than
-  // failing (tools/web-search-tool.ts).
+  // Web search on every provider: the server runs it on an Anthropic model,
+  // the loop executes it elsewhere (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
-  const webSearch = webSearchTool(model, 5);
+  const webSearch = createWebSearch(model, 5);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -603,12 +602,13 @@ async function runMandateReviewImpl(input: {
 
   const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
-    tools: webSearch ? [webSearch, ...availableTools] : availableTools,
+    tools: [webSearch.tool, ...availableTools],
     system,
     model,
     maxTokens: 4096,
     maxIterations: 24,
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

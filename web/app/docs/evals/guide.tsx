@@ -595,7 +595,7 @@ npm run corpus:compare -- db:<idA> db:<idB>         # single runs: deltas, no ve
           body: <p>How the Matcher does on cases we did not write. Thirty pairs, mostly from one cluster&rsquo;s subject, passed in full on the first run. It catches a regression on those thirty.</p>,
         },
         { title: "Run it", body: <Cmd>{`npm run corpus:golden -- --profile=production
-npm run corpus:golden -- --category=negation --model=claude-haiku-4-5-20251001
+npm run corpus:golden -- --category=negation --model=claude-sonnet-5
 npm run corpus:golden -- --min-pass=0.95              # the CI gate`}</Cmd> },
       ];
     },

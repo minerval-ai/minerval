@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-16T13:50:41.099Z",
-  "gitCommit": "a5c3805",
+  "syncedAt": "2026-09-16T14:43:03.719Z",
+  "gitCommit": "1b13089",
   "pins": [
     {
       "agent": "steward",
@@ -59,8 +59,8 @@
     {
       "agent": "lookout",
       "envVar": "LOOKOUT_MODEL",
-      "model": "claude-haiku-4-5-20251001",
-      "label": "Claude Haiku 4.5"
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
     }
   ],
   "judge": {
@@ -74,10 +74,6 @@
       "cacheReadMultiplier": 0.025
     },
     "z-ai/glm-5.3-flash": null,
-    "claude-haiku-4-5-20251001": {
-      "inputPerMtok": 1,
-      "outputPerMtok": 5
-    },
     "claude-sonnet-5": {
       "inputPerMtok": 3,
       "outputPerMtok": 15
@@ -333,10 +329,32 @@
     {
       "cluster": "blackholes",
       "file": "2026-08-09T15-47-32-753Z.json"
+    },
+    {
+      "cluster": "blackholes",
+      "file": "2026-09-11T23-45-34-341Z.json"
+    },
+    {
+      "cluster": "eggs",
+      "file": "2026-09-11T23-22-27-296Z.json"
+    },
+    {
+      "cluster": "eggs",
+      "file": "2026-09-12T04-13-45-131Z.json"
+    },
+    {
+      "cluster": "lableak",
+      "file": "2026-09-12T00-37-51-997Z.json"
+    },
+    {
+      "cluster": "lethalities",
+      "file": "2026-09-12T02-59-38-161Z.json"
     }
   ],
   "goldenRuns": [
-    "2026-08-08-deepseek-v4-flash.json"
+    "2026-08-08-deepseek-v4-flash.json",
+    "2026-09-11-glm-5.3-flash-as-shipped.json",
+    "2026-09-12-glm-5.3-flash.json"
   ],
   "rubric": [
     {

@@ -96,8 +96,8 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           model: {
             type: "string",
             description:
-              "Optional model id for a stronger watch; default is the cheap tier. " +
-              "Web search needs an Anthropic model.",
+              "Optional model id for a stronger watch; default is the cheap " +
+              "tier. Every model has web search.",
           },
         },
         required: ["title", "brief"],
