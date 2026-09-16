@@ -370,7 +370,16 @@ generalization and its special case are different claims joined by
 claim when the discourse treats it so. The hard case is equivalent
 formulations whose equivalence is itself a theorem (Robin's inequality and
 the Riemann hypothesis): keep two nodes, record the equivalence as an
-argument on each, and let the Curator watch the pair. A problem-list number
+argument on each, and let the Curator watch the pair. That rule is for
+distinct named propositions the discourse studies separately; it does not
+split a named conjecture from its own standard statement. A stating
+convention (the base field a source states the Jacobian conjecture over,
+the choice among equivalent wordings in a conjecture's statement, explicit
+versus implicit quantification over dimension, a settled fact bundled into
+"the conjecture is true") is an instance of the existing node, not a new
+claim, unless the discourse consults the variants separately. The test: if
+a source titled "disproof of X" would refute both formulations at once,
+they are one claim. A problem-list number
 is a strong identity signal the Matcher checks before concluding a claim is
 new. Matching saturates (§19), so the Matcher's gloss is short (Appendix A,
 "For the Matcher").
