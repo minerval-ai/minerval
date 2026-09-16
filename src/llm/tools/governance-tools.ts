@@ -37,7 +37,10 @@ export function getGovernanceToolDefinitions(): Tool[] {
       description:
         "Get comprehensive context about a claim: its text, type, current " +
         "assessment, subclaims, instances, and arguments. Use this to " +
-        "understand the full state of a claim before making decisions.",
+        "understand the full state of a claim before making decisions. " +
+        "decomposition_status \"complete\" only means the claim was handed " +
+        "to its Steward; read steward_state and stewarded_at to tell whether " +
+        "a Steward has actually worked it (stewarded_at null = never run).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -337,6 +340,16 @@ async function getClaimWithContext(claimId: string) {
       claim_type: claim.claimType,
       state: claim.state,
       decomposition_status: claim.decompositionStatus,
+      // Whether a Steward has actually worked this claim (#415).
+      // decomposition_status flips to "complete" at onboarding, when the
+      // claim is handed to its Steward, so on its own it cannot tell "never
+      // structured" from "structured and judged to need no children". The
+      // Steward queue state can: stewarded_at is null and steward_state is
+      // 'pending' or 'deferred' until a Steward run has started, and 'done'
+      // only once one has finished. A high-importance claim with no children,
+      // no assessment and no stewarded_at has simply not been worked yet.
+      steward_state: claim.stewardState,
+      stewarded_at: claim.stewardedAt?.toISOString() ?? null,
       importance: claim.importance,
       // Derived from the subclaims loaded below, never from a stored counter
       // (#417): every edge in claim_relationships counts once, argument-grouped
