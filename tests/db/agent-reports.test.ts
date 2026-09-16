@@ -28,6 +28,7 @@ vi.mock("../../src/services/github-issue-service.js", () => ({
 import {
   backfillReportEmbeddings,
   findNearReports,
+  getReportView,
   raiseIssue,
   searchReports,
 } from "../../src/services/report-service.js";
@@ -64,18 +65,11 @@ async function raise(input: {
     body: input.body ?? "",
     surface: input.surface ?? null,
     agent,
-    // The write-time search must not stop these seeds on one another.
-    distinctFrom: await allIds(),
   });
   if (!result.reportId) {
     throw new Error(`seed did not persist: ${JSON.stringify(result)}`);
   }
   return result.reportId;
-}
-
-async function allIds(): Promise<string[]> {
-  const rows = await rawQuery<{ id: string }>(`SELECT id FROM agent_reports`);
-  return rows.map((r) => r.id);
 }
 
 beforeEach(() => {
@@ -183,7 +177,7 @@ describe("findNearReports on a real database", () => {
     expect(same.matches.map((m) => m.id)).toEqual([id]);
   });
 
-  it("stops raise_issue on a wording match with a report that has no embedding", async () => {
+  it("records a raise and hands back a wording match with no embedding as a related report", async () => {
     const title = `search_issues returns only the single best match ${seq}`;
     const id = await raise({ title, embedding: new Error("embedder down") });
     embedMock.next.push(axis(11));
@@ -195,9 +189,44 @@ describe("findNearReports on a real database", () => {
       body: "Every query this sweep returned exactly one row.",
       agent: `${agent}-other`,
     });
-    expect(repeat.reportId).toBeNull();
-    expect(repeat.matches?.map((m) => m.id)).toEqual([id]);
-    expect(repeat.matches![0]!.matched_by).toBe("wording");
+    expect(repeat.reportId).not.toBeNull();
+    expect(repeat.related?.map((m) => m.id)).toEqual([id]);
+    expect(repeat.related![0]!.matched_by).toBe("wording");
+
+    // Having found it, the agent joins: a sighting on the original, no new row.
+    const joined = await raiseIssue({
+      kind: "system_failure",
+      severity: "degraded",
+      title: `seen again ${seq}`,
+      body: "Same thing.",
+      agent: `${agent}-third`,
+      joins: id,
+    });
+    expect(joined).toMatchObject({ reportId: id, occurrenceCount: 2, deduplicated: true });
+  });
+
+  it("lists recent reports on a surface with no query, and reads one in full with its links", async () => {
+    const parent = await raise({ title: `lean checker times out on long proofs ${seq}`, embedding: axis(13), surface: "lean_check" });
+    const child = await raise({ title: `lean_check timeout on a long proof ${seq}`, embedding: axis(14), surface: "lean_check" });
+    await rawQuery(
+      `UPDATE agent_reports SET status = 'duplicate', duplicate_of_id = $1, triage_note = 'same timeout' WHERE id = $2`,
+      [parent, child]
+    );
+    const listed = await searchReports(null, { surface: "lean_check" });
+    expect(listed.matches.map((m) => m.id)).toEqual(expect.arrayContaining([parent, child]));
+    expect(listed.matches.find((m) => m.id === child)).toMatchObject({
+      matched_by: "recent",
+      duplicate_of_id: parent,
+    });
+    const onlyDuplicates = await searchReports(null, { surface: "lean_check", status: "duplicate" });
+    expect(onlyDuplicates.matches.map((m) => m.id)).toEqual([child]);
+
+    const view = await getReportView(child);
+    expect(view!.report.triage_note).toBe("same timeout");
+    expect(view!.duplicate_of).toMatchObject({ id: parent, status: "new" });
+    const parentView = await getReportView(parent);
+    expect(parentView!.duplicates.map((d) => d.id)).toEqual([child]);
+    expect(await getReportView(parent, { origin: "external" })).toBeNull();
   });
 });
 

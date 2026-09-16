@@ -1,7 +1,7 @@
 /**
  * Agent reports (#366): the write never throws, verbatim repeats collapse on
  * the dedupe key, paraphrases are matched before written and the agent
- * answers with joins or distinct_from, sightings carry the account and
+ * gets the related reports back as advice, sightings carry the account and
  * reopen an actioned report, update_issue is the reporter's own edit path,
  * content is capped and refs are ids only, external callers are
  * rate-limited, and every write hands off to GitHub without waiting on it.
@@ -35,6 +35,7 @@ vi.mock("../../../src/config.js", () => ({
 import {
   backfillReportEmbeddings,
   checkReportRateLimit,
+  getReportView,
   computeDedupeKey,
   formatAgentReport,
   listReportsAwaitingIssue,
@@ -258,15 +259,17 @@ describe("raiseIssue: a new report", () => {
     expect(mocks.fileIssueForReport).toHaveBeenCalledTimes(1);
   });
 
-  it("is stopped by a wording match on a report that has no embedding (#432)", async () => {
-    route({
-      matches: [{ ...ROW, id: OTHER_ID, similarity: 0, by_meaning: false, by_wording: true }],
+  it("records even when the related-report search fails", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("<=>")) throw new Error("tsquery broke");
+      if (sql.includes("INSERT INTO agent_reports")) return [{ ...ROW, inserted: true }];
+      return [];
     });
     const result = await raiseIssue(GOOD);
-    expect(result.reportId).toBeNull();
-    expect(result.matches).toHaveLength(1);
-    expect(result.matches![0]).toMatchObject({ id: OTHER_ID, similarity: 0, matched_by: "wording" });
-    expect(calls("INSERT INTO agent_reports")).toHaveLength(0);
+    await settle();
+    expect(result.reportId).toBe(REPORT_ID);
+    expect(result.related).toBeUndefined();
+    expect(mocks.fileIssueForReport).toHaveBeenCalledTimes(1);
   });
 
   it("does not file when the upsert lost a race and collapsed", async () => {
@@ -315,7 +318,7 @@ describe("raiseIssue: a new report", () => {
   });
 });
 
-describe("raiseIssue: matched before written", () => {
+describe("raiseIssue: related reports come back as advice (#432)", () => {
   const MATCH = {
     ...ROW,
     id: OTHER_ID,
@@ -326,12 +329,13 @@ describe("raiseIssue: matched before written", () => {
     by_wording: false,
   };
 
-  it("returns the near matches with status, note, and issue url, and writes nothing", async () => {
+  it("records the report and returns the near reports with status, note, and issue url", async () => {
     route({ matches: [MATCH] });
     const result = await raiseIssue({ ...GOOD, title: "no way to link counterpart claims" });
-    expect(result.reportId).toBeNull();
-    expect(result.matches).toHaveLength(1);
-    expect(result.matches![0]).toMatchObject({
+    await settle();
+    expect(result.reportId).toBe(REPORT_ID);
+    expect(result.related).toHaveLength(1);
+    expect(result.related![0]).toMatchObject({
       id: OTHER_ID,
       status: "wontfix",
       triage_note: "counterparts are recorded as instances; use add_instance",
@@ -339,21 +343,26 @@ describe("raiseIssue: matched before written", () => {
       similarity: 0.91,
       matched_by: "meaning",
     });
-    expect(calls("INSERT INTO agent_reports")).toHaveLength(0);
-    expect(mocks.fileIssueForReport).not.toHaveBeenCalled();
+    expect(calls("INSERT INTO agent_reports")).toHaveLength(1);
+    expect(mocks.fileIssueForReport).toHaveBeenCalledTimes(1);
   });
 
-  it("excludes distinct_from ids from the search and then writes", async () => {
-    route({ matches: [] });
-    const result = await raiseIssue({
-      ...GOOD,
-      title: "no way to link counterpart claims",
-      distinctFrom: [OTHER_ID, "junk"],
+  it("searches by the title's wording too, so a report with no embedding is found", async () => {
+    route({
+      matches: [{ ...ROW, id: OTHER_ID, similarity: 0, by_meaning: false, by_wording: true }],
     });
+    const result = await raiseIssue({ ...GOOD, title: "no way to link counterpart claims" });
     const [, params] = calls("<=>")[0]!;
-    expect(params[3]).toEqual([OTHER_ID]);
     expect(params[4]).toBe("no way to link counterpart claims");
     expect(result.reportId).toBe(REPORT_ID);
+    expect(result.related![0]).toMatchObject({ id: OTHER_ID, similarity: 0, matched_by: "wording" });
+  });
+
+  it("leaves related out when nothing is near", async () => {
+    route({ matches: [] });
+    const result = await raiseIssue(GOOD);
+    expect(result.reportId).toBe(REPORT_ID);
+    expect(result.related).toBeUndefined();
   });
 
   it("scopes the search to the report's origin", async () => {
@@ -531,6 +540,7 @@ describe("searchReports", () => {
     const result = await searchReports("linking counterparts", {
       origin: "internal",
       surface: "add_relationship_edge",
+      status: "wontfix",
     });
     expect(result.matches).toHaveLength(1);
     expect(result.matches[0]!.similarity).toBe(0.7);
@@ -543,12 +553,32 @@ describe("searchReports", () => {
     expect(sql).toContain("websearch_to_tsquery('english', $5::text)");
     expect(sql).toContain("AND r.surface = $6");
     expect(params[5]).toBe("add_relationship_edge");
+    expect(sql).toContain("AND r.status = $7");
+    expect(params[6]).toBe("wontfix");
+    expect(sql).toMatch(/LIMIT 10$/);
     // Wording hits come first, so a report never hides behind a paraphrase.
     expect(sql).toMatch(/ORDER BY by_wording DESC, similarity DESC/);
   });
 
+  it("lists recent reports, withdrawn ones aside, when there is no query", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string) =>
+      sql.includes("ORDER BY last_seen_at DESC")
+        ? [ROW, { ...ROW, id: OTHER_ID, status: "withdrawn" }]
+        : []
+    );
+    const result = await searchReports("   ", { surface: "add_relationship_edge", status: "new" });
+    expect(mocks.generateEmbedding).not.toHaveBeenCalled();
+    expect(result.matches.map((m) => m.id)).toEqual([REPORT_ID]);
+    expect(result.matches[0]).toMatchObject({ matched_by: "recent", similarity: 0, duplicate_of_id: null });
+    const [sql, params] = calls("ORDER BY last_seen_at DESC")[0]!;
+    expect(sql).toContain("origin = $");
+    expect(params).toContain("internal");
+    expect(params).toContain("add_relationship_edge");
+    expect(params).toContain("new");
+    expect(params).toContain(10);
+  });
+
   it("falls back to wording alone when the embedding fails, and never throws", async () => {
-    expect((await searchReports("   ")).problem).toBe("query is required");
     mocks.generateEmbedding.mockRejectedValue(new Error("down"));
     route({ matches: [{ ...ROW, similarity: 0, by_meaning: false, by_wording: true }] });
     const result = await searchReports("add_relationship_edge has no relation type for counterparts");
@@ -565,6 +595,40 @@ describe("searchReports", () => {
     const result = await searchReports("anything");
     expect(result.matches).toEqual([]);
     expect(result.problem).toMatch(/unavailable/);
+  });
+});
+
+describe("getReportView", () => {
+  it("reads the report, its latest sightings, its duplicates, and its parent, origin-scoped", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("FROM agent_reports WHERE id = $1 AND origin = $2")) {
+        return [{ ...ROW, status: "duplicate", duplicate_of_id: OTHER_ID }];
+      }
+      if (sql.includes("FROM agent_report_sightings")) {
+        expect(sql).toContain("ORDER BY seen_at DESC");
+        return [{ id: "s1", report_id: REPORT_ID, kind: "sighting", body: "again", context_refs: {}, agent: "curator", model: null, run_id: null, job_id: null, claim_id: null, seen_at: new Date() }];
+      }
+      if (sql.includes("WHERE duplicate_of_id = $1")) return [];
+      if (sql.includes("SELECT id, title, status, triage_note, github_issue_url FROM agent_reports")) {
+        expect(params).toEqual([OTHER_ID, "internal"]);
+        return [{ id: OTHER_ID, title: "parent", status: "wontfix", triage_note: "n", github_issue_url: null }];
+      }
+      return [];
+    });
+    const view = await getReportView(REPORT_ID);
+    expect(view!.report.id).toBe(REPORT_ID);
+    expect(view!.sightings).toHaveLength(1);
+    expect(view!.duplicates).toEqual([]);
+    expect(view!.duplicate_of).toMatchObject({ id: OTHER_ID, status: "wontfix" });
+  });
+
+  it("returns null for a bad id, an unknown id, and another origin's report", async () => {
+    expect(await getReportView("nope")).toBeNull();
+    expect(await getReportView(REPORT_ID)).toBeNull();
+    mocks.rawQuery.mockImplementation(async (_sql: string, params?: unknown[]) =>
+      params?.[1] === "internal" ? [ROW] : []
+    );
+    expect(await getReportView(REPORT_ID, { origin: "external" })).toBeNull();
   });
 });
 

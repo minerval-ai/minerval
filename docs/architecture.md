@@ -646,30 +646,31 @@ included, also carries the **issue tools**: `raise_issue`, one channel, in
 the agent's own words, for a system failure, a gap in its own tools, or a
 concrete improvement idea arrived at from having just done the work;
 `update_issue`, the reporter's own edit path (re-rate the severity, add
-what it found since, or withdraw a report that was its own mistake); and
-`search_issues`, a search of the reports on record by meaning, for an agent
-that wants to know whether a failure is known and what the maintainers
-said before it works around it. All three are fire-and-forget (they always
-acknowledge and can never fail a run) and the policies say raising is never
-a substitute for acting. Reports land in `agent_reports`, not `audit_log`:
-they are about the machinery, not the graph, so they carry ids rather than
-content and are retained and purged separately. Repeats collapse: a
-verbatim repeat onto the dedupe key, and a paraphrase through the same
-match-before-write the findings channel uses — the report is embedded and
-searched against the reports on record, and a near match is shown to the
-agent with its status and triage note before anything is written, the
-agent answering with `joins` (a sighting, recorded in
-`agent_report_sightings` with its own account) or `distinct_from`. The
-search, shared with `search_issues`, matches two ways and unions them
-(#432): by meaning (cosine similarity over the stored embedding, at or
-above the bar) and by wording (every content word of the title, stemmed,
-appears in a report's title or body), wording hits first, so a report is
-never invisible to its own title even when it has no embedding or a
-paraphrase outscores it. A report recorded while the embedder was down is
-stored without a vector and the search falls back to wording; the report
-embedding backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick)
-embeds such reports afterwards. A sighting of a report already `actioned`
-is a regression and reopens it.
+what it found since, or withdraw a report that was its own mistake);
+`search_issues`, a search of the reports on record by keyword and by
+meaning, or with no query a listing of what was seen most recently on a
+surface; and `get_issue`, one report in full with its triage note, its
+sightings, and the reports collapsed onto it. All are fire-and-forget
+(they always acknowledge and can never fail a run) and the policies say
+raising is never a substitute for acting. Reports land in `agent_reports`,
+not `audit_log`: they are about the machinery, not the graph, so they
+carry ids rather than content and are retained and purged separately.
+The record is navigable rather than gated (#432): a verbatim repeat
+collapses onto the dedupe key, an agent that has found its predecessor
+raises with `joins` (a sighting, recorded in `agent_report_sightings`
+with its own account, and a regression if the report was `actioned`,
+which reopens it), and a report written anyway comes back with the near
+reports on record as advice, with their status and triage note. Whether
+two reports are the same problem is otherwise the Audit Agent's call at
+triage, which collapses duplicates onto their representative. The search
+matches two ways and unions them: by meaning (cosine similarity over the
+stored embedding, at or above the bar) and by wording (every content word
+of the query, stemmed, appears in a report's title or body), wording hits
+first, so a report is never invisible to its own title even when it has
+no embedding or a paraphrase outscores it. A report recorded while the
+embedder was down is stored without a vector; the report embedding
+backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
+such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
 rule holds for this channel too. External agents on the MCP surface get

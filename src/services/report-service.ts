@@ -17,14 +17,16 @@
  *     normalized title): repeats bump occurrence_count and last_seen_at on
  *     one row instead of minting thousands. Frequency × severity is what
  *     triage ranks by.
- *   - Matched before written. Wording drifts, so the exact key alone would
- *     mint paraphrases. A report that is not a verbatim repeat is embedded
- *     and searched against the reports on record (the findings mechanism,
- *     #394), by meaning and, independently, by the title's wording (#432,
- *     so a report with no embedding is still found); a near match is shown
- *     to the agent, with its status and the maintainers' triage note, and
- *     nothing is written until the agent answers with `joins` (a sighting)
- *     or `distinct_from` (a new report).
+ *   - Navigable, not gated. Wording drifts, so the exact key alone would
+ *     mint paraphrases; but whether two reports are the same problem is a
+ *     judgement for whoever has the record in front of them, so the write
+ *     never waits on it (#432). The agent has the tools a maintainer has:
+ *     search the reports on record by keyword and by meaning, list what is
+ *     recent on a surface, read one report with its sightings and its
+ *     duplicates, and say `joins` when it has found its predecessor. A
+ *     report that is written anyway comes back with the near reports on
+ *     record as advice, with their status and the maintainers' note; the
+ *     Audit Agent's triage collapses what the agent did not.
  *   - Filed where maintainers look. Every report written on first sighting
  *     is filed as a GitHub issue (github-issue-service.ts), labelled as
  *     agent-generated; sightings, notes, withdrawals, and triage decisions
@@ -64,10 +66,12 @@ export const REPORT_STATUSES = reportStatusEnum.options;
 export const REPORT_TITLE_MAX_CHARS = 200;
 export const REPORT_BODY_MAX_CHARS = 4000;
 export const REPORT_SURFACE_MAX_CHARS = 200;
-/** How many near matches the match-before-write search shows. */
-export const REPORT_MATCH_CANDIDATES = 3;
-/** How many results an explicit search_issues call returns at most. */
-export const REPORT_SEARCH_MAX_RESULTS = 5;
+/** How many related reports a raise_issue result carries back. */
+export const REPORT_MATCH_CANDIDATES = 5;
+/** How many results a search_issues call returns at most. */
+export const REPORT_SEARCH_MAX_RESULTS = 10;
+/** How many sightings get_issue shows, latest first. */
+export const REPORT_SIGHTINGS_SHOWN = 10;
 const CONTEXT_REF_MAX_KEYS = 12;
 const CONTEXT_REF_MAX_VALUE_CHARS = 500;
 
@@ -91,10 +95,12 @@ export interface RaiseIssueInput extends ReportAttribution {
   /** Ids only (claim id, contribution id, source url, job id). */
   contextRefs?: Record<string, unknown> | null;
   origin?: ReportOrigin;
-  /** Second call: the report on record this one is a sighting of. */
+  /**
+   * The report on record this one is a sighting of, when the agent found
+   * its predecessor (search_issues, get_issue, or a related report from an
+   * earlier raise). No new row; the account lands on that report.
+   */
   joins?: string | null;
-  /** Second call: the reports on record this one is not. */
-  distinctFrom?: unknown;
 }
 
 /** A report on record, as the match search and search_issues describe it. */
@@ -111,18 +117,22 @@ export interface ReportMatch {
   first_seen_at: string;
   last_seen_at: string;
   github_issue_url: string | null;
+  /** When triaged as a duplicate: the report it repeats. */
+  duplicate_of_id: string | null;
   /**
    * Cosine similarity of the query to the report's title + body; 0 when the
-   * report has no embedding or the query could not be embedded.
+   * report has no embedding, the query could not be embedded, or there was
+   * no query.
    */
   similarity: number;
   /**
    * What found it: `meaning` (the embedding, at or above the bar), `wording`
    * (every content word of the query appears in the report's title or
-   * body), or `both`. A wording hit is shown even when the report has no
-   * embedding, so a report on record is never invisible to its own title.
+   * body), `both`, or `recent` (listed without a query). A wording hit is
+   * shown even when the report has no embedding, so a report on record is
+   * never invisible to its own title.
    */
-  matched_by: "meaning" | "wording" | "both";
+  matched_by: "meaning" | "wording" | "both" | "recent";
 }
 
 export interface RaiseIssueResult {
@@ -142,8 +152,12 @@ export interface RaiseIssueResult {
     /** True when this sighting moved an actioned report back to new. */
     reopened: boolean;
   };
-  /** Set when nothing was written because a near report is on record. */
-  matches?: ReportMatch[];
+  /**
+   * Set on a new report: the reports on record that read like it, with
+   * their status and the maintainers' note. Advice, not a gate; the report
+   * is recorded either way.
+   */
+  related?: ReportMatch[];
   /** Set when the report was not persisted; agent-facing wording. */
   problem?: string;
 }
@@ -350,8 +364,15 @@ function toMatch(r: MatchRow): ReportMatch {
     first_seen_at: iso(r.first_seen_at) ?? "",
     last_seen_at: iso(r.last_seen_at) ?? "",
     github_issue_url: r.github_issue_url,
+    duplicate_of_id: r.duplicate_of_id,
     similarity: Number(r.similarity),
-    matched_by: r.by_meaning && r.by_wording ? "both" : r.by_wording ? "wording" : "meaning",
+    matched_by: r.by_meaning && r.by_wording
+      ? "both"
+      : r.by_wording
+        ? "wording"
+        : r.by_meaning
+          ? "meaning"
+          : "recent",
   };
 }
 
@@ -381,6 +402,7 @@ export async function findNearReports(
     text?: string | null;
     exclude?: string[];
     surface?: string | null;
+    status?: string | null;
     limit?: number;
   }
 ): Promise<ReportMatch[]> {
@@ -397,6 +419,10 @@ export async function findNearReports(
   if (opts.surface) {
     values.push(opts.surface);
     surfaceClause = `AND r.surface = $${values.length}`;
+  }
+  if (opts.status) {
+    values.push(opts.status);
+    surfaceClause += ` AND r.status = $${values.length}`;
   }
   const rows = await rawQuery<MatchRow>(
     `WITH q AS (
@@ -424,35 +450,60 @@ export async function findNearReports(
   return rows.map(toMatch);
 }
 
+export interface SearchReportsOptions {
+  origin?: ReportOrigin;
+  surface?: string | null;
+  status?: string | null;
+  limit?: number;
+}
+
 /**
- * search_issues: what an agent calls on purpose, before working around
- * something, to ask whether it is known and what the maintainers said. A
- * lower bar than the write-time match, since the caller asked to look. An
- * embedding failure narrows the search to wording rather than emptying it:
- * the caller is usually holding a title, and a title finds its own report.
+ * search_issues: what an agent calls on purpose, to ask whether a problem
+ * is known and what the maintainers said. With a query, a keyword and
+ * meaning search at a lower bar than the write-time advice, since the
+ * caller asked to look; an embedding failure narrows it to wording rather
+ * than emptying it, because the caller is usually holding a title and a
+ * title finds its own report. Without a query, the recent reports, most
+ * recently seen first, so an agent can read what is on record about a
+ * surface before it starts. Never throws.
  */
 export async function searchReports(
-  query: string,
-  opts: { origin?: ReportOrigin; surface?: string | null; limit?: number } = {}
+  query: string | null | undefined,
+  opts: SearchReportsOptions = {}
 ): Promise<{ matches: ReportMatch[]; problem?: string }> {
   const text = String(query ?? "").trim();
-  if (!text) return { matches: [], problem: "query is required" };
-  let embedding: number[] | null = null;
+  const origin = opts.origin ?? "internal";
+  const limit = Math.max(1, Math.min(REPORT_SEARCH_MAX_RESULTS, opts.limit ?? REPORT_SEARCH_MAX_RESULTS));
   try {
-    embedding = await generateEmbedding(text.slice(0, 4000));
-  } catch (err) {
-    console.error(
-      "[reports] search embedding failed; searching by wording only:",
-      err instanceof Error ? err.message : String(err)
-    );
-  }
-  try {
+    if (!text) {
+      const rows = await listAgentReports({
+        origin,
+        surface: opts.surface ?? undefined,
+        status: opts.status ?? undefined,
+        limit,
+      });
+      return {
+        matches: rows
+          .filter((r) => r.status !== "withdrawn")
+          .map((r) => toMatch({ ...r, similarity: 0, by_meaning: false, by_wording: false })),
+      };
+    }
+    let embedding: number[] | null = null;
+    try {
+      embedding = await generateEmbedding(text.slice(0, 4000));
+    } catch (err) {
+      console.error(
+        "[reports] search embedding failed; searching by wording only:",
+        err instanceof Error ? err.message : String(err)
+      );
+    }
     const matches = await findNearReports(embedding, {
-      origin: opts.origin ?? "internal",
+      origin,
       minSimilarity: Math.max(0, loadConfig().reportMatchSimilarity - 0.2),
       text,
       surface: opts.surface ?? null,
-      limit: opts.limit ?? REPORT_SEARCH_MAX_RESULTS,
+      status: opts.status ?? null,
+      limit,
     });
     return { matches };
   } catch (err) {
@@ -462,6 +513,61 @@ export async function searchReports(
     );
     return { matches: [], problem: "the search is unavailable right now" };
   }
+}
+
+/** One report as get_issue shows it: the row, its record, and its links. */
+export interface ReportView {
+  report: AgentReportRow;
+  /** Latest first, at most REPORT_SIGHTINGS_SHOWN. */
+  sightings: AgentReportSightingRow[];
+  /** Reports triaged as duplicates of this one. */
+  duplicates: Array<Pick<AgentReportRow, "id" | "title" | "status" | "agent" | "last_seen_at">>;
+  /** When this report is itself a duplicate: the report it repeats. */
+  duplicate_of: Pick<AgentReportRow, "id" | "title" | "status" | "triage_note" | "github_issue_url"> | null;
+}
+
+/**
+ * get_issue: read one report in full, the way a maintainer would follow a
+ * link: body, triage note, the latest sightings with their accounts, the
+ * reports collapsed onto it, and the report it was collapsed onto.
+ * Origin-scoped like the search. Null when there is no such report.
+ */
+export async function getReportView(
+  id: string,
+  opts: { origin?: ReportOrigin } = {}
+): Promise<ReportView | null> {
+  const reportId = uuidOrNull(id);
+  if (!reportId) return null;
+  const origin = opts.origin ?? "internal";
+  const [report] = await rawQuery<AgentReportRow>(
+    `SELECT ${REPORT_COLUMNS} FROM agent_reports WHERE id = $1 AND origin = $2`,
+    [reportId, origin]
+  );
+  if (!report) return null;
+  const [sightings, duplicates, parents] = await Promise.all([
+    rawQuery<AgentReportSightingRow>(
+      `SELECT ${SIGHTING_COLUMNS} FROM agent_report_sightings
+        WHERE report_id = $1
+        ORDER BY seen_at DESC
+        LIMIT $2`,
+      [reportId, REPORT_SIGHTINGS_SHOWN]
+    ),
+    rawQuery<Pick<AgentReportRow, "id" | "title" | "status" | "agent" | "last_seen_at">>(
+      `SELECT id, title, status, agent, last_seen_at FROM agent_reports
+        WHERE duplicate_of_id = $1 AND origin = $2
+        ORDER BY last_seen_at DESC
+        LIMIT 20`,
+      [reportId, origin]
+    ),
+    report.duplicate_of_id
+      ? rawQuery<Pick<AgentReportRow, "id" | "title" | "status" | "triage_note" | "github_issue_url">>(
+          `SELECT id, title, status, triage_note, github_issue_url FROM agent_reports
+            WHERE id = $1 AND origin = $2`,
+          [report.duplicate_of_id, origin]
+        )
+      : Promise.resolve([]),
+  ]);
+  return { report, sightings, duplicates, duplicate_of: parents[0] ?? null };
 }
 
 /**
@@ -657,38 +763,35 @@ export async function raiseIssue(
       if (seen) return collapsed(seen.row, seen.reopened);
     }
 
-    // The match-before-write search. An embedding failure is not the
-    // agent's problem: the report is recorded without one (the backfill
-    // worker embeds it later), the search falls back to the title's
-    // wording, and the exact key still holds.
+    // The embedding, for the record and for the related-reports search.
+    // An embedding failure is not the agent's problem: the report is
+    // recorded without one (the backfill worker embeds it later) and the
+    // search falls back to the title's wording.
     let embedding: number[] | null = null;
     try {
       embedding = await generateEmbedding(reportEmbeddingText(v.title, v.body));
     } catch (err) {
       console.error(
-        "[reports] embedding failed; recording after a wording-only match search:",
+        "[reports] embedding failed; recording without one:",
         err instanceof Error ? err.message : String(err)
       );
     }
-    const distinctFrom = Array.isArray(input.distinctFrom)
-      ? input.distinctFrom
-          .map((id) => uuidOrNull(typeof id === "string" ? id : null))
-          .filter((id): id is string => !!id)
-      : [];
-    const matches = await findNearReports(embedding, {
-      origin: v.origin,
-      minSimilarity: loadConfig().reportMatchSimilarity,
-      text: v.title,
-      exclude: distinctFrom,
-    });
-    if (matches.length > 0) {
-      return {
-        acknowledged: true,
-        reportId: null,
-        occurrenceCount: null,
-        deduplicated: false,
-        matches,
-      };
+    // The reports on record that read like this one, carried back as
+    // advice (#432): the write never waits on the agent's answer, and a
+    // search failure is not a reason to lose the report.
+    let related: ReportMatch[] = [];
+    try {
+      related = await findNearReports(embedding, {
+        origin: v.origin,
+        minSimilarity: loadConfig().reportMatchSimilarity,
+        text: v.title,
+        limit: REPORT_MATCH_CANDIDATES,
+      });
+    } catch (err) {
+      console.error(
+        "[reports] related-report search failed:",
+        err instanceof Error ? err.message : String(err)
+      );
     }
 
     // The upsert stays: two processes can pass the exact-key check at once,
@@ -747,6 +850,7 @@ export async function raiseIssue(
         reportId: report.id,
         occurrenceCount: Number(report.occurrence_count),
         deduplicated: false,
+        ...(related.length ? { related } : {}),
       };
     }
     return collapsed(report, false);

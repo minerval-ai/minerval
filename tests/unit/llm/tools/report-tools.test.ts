@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   raiseIssue: vi.fn(),
   updateReport: vi.fn(),
   searchReports: vi.fn(),
+  getReportView: vi.fn(),
   config: { agentReportsPerRun: 2 },
 }));
 
@@ -17,8 +18,10 @@ vi.mock("../../../../src/services/report-service.js", () => ({
   raiseIssue: mocks.raiseIssue,
   updateReport: mocks.updateReport,
   searchReports: mocks.searchReports,
+  getReportView: mocks.getReportView,
   REPORT_KINDS: ["system_failure", "tool_gap", "improvement"],
   REPORT_SEVERITIES: ["blocking", "degraded", "annoyance", "idea"],
+  REPORT_STATUSES: ["new", "triaged", "duplicate", "actioned", "wontfix", "withdrawn"],
 }));
 vi.mock("../../../../src/config.js", () => ({
   loadConfig: () => mocks.config,
@@ -51,6 +54,7 @@ const MATCH = {
   first_seen_at: "2026-08-01T00:00:00.000Z",
   last_seen_at: "2026-08-02T00:00:00.000Z",
   github_issue_url: "https://github.com/minerval-ai/minerval/issues/41",
+  duplicate_of_id: null,
   similarity: 0.9,
   matched_by: "meaning" as const,
 };
@@ -78,22 +82,34 @@ beforeEach(() => {
     githubIssueUrl: "https://github.com/minerval-ai/minerval/issues/7",
   });
   mocks.searchReports.mockReset().mockResolvedValue({ matches: [] });
+  mocks.getReportView.mockReset().mockResolvedValue(null);
   mocks.config.agentReportsPerRun = 2;
 });
 
 describe("raise_issue tool", () => {
-  it("defines the three issue tools, raise_issue with the kind and severity vocabularies", () => {
+  it("defines the four issue tools, raise_issue with the kind and severity vocabularies", () => {
     const tools = getReportToolDefinitions();
-    expect(tools.map((t) => t.name)).toEqual(["raise_issue", "update_issue", "search_issues"]);
+    expect(tools.map((t) => t.name)).toEqual([
+      "raise_issue",
+      "update_issue",
+      "search_issues",
+      "get_issue",
+    ]);
     const [tool] = tools;
     const props = tool!.input_schema.properties as Record<string, { enum?: string[] }>;
     expect(props.kind!.enum).toEqual(["system_failure", "tool_gap", "improvement"]);
     expect(props.severity!.enum).toEqual(["blocking", "degraded", "annoyance", "idea"]);
     expect(props.joins).toBeDefined();
-    expect(props.distinct_from).toBeDefined();
+    // No write gate (#432): the agent navigates the record with the read
+    // tools and says joins when it has found its predecessor.
+    expect(props.distinct_from).toBeUndefined();
     expect(tool!.input_schema.required).toEqual(["kind", "severity", "title", "body"]);
     expect(tools[1]!.input_schema.required).toEqual(["report_id"]);
-    expect(tools[2]!.input_schema.required).toEqual(["query"]);
+    // A query is optional: without one, search_issues lists recent reports.
+    expect(tools[2]!.input_schema.required).toEqual([]);
+    const search = tools[2]!.input_schema.properties as Record<string, { enum?: string[] }>;
+    expect(search.status!.enum).toContain("wontfix");
+    expect(tools[3]!.input_schema.required).toEqual(["report_id"]);
   });
 
   it("returns null for tools it does not own", async () => {
@@ -248,37 +264,38 @@ describe("raise_issue tool", () => {
     expect(out.message).toMatch(/regression/);
   });
 
-  it("shows a near match with its status and note, writes nothing, and counts nothing", async () => {
+  it("records, and hands back related reports with their status and note as advice", async () => {
     mocks.raiseIssue.mockResolvedValue({
       acknowledged: true,
-      reportId: null,
-      occurrenceCount: null,
+      reportId: REPORT_ID,
+      occurrenceCount: 1,
       deduplicated: false,
-      matches: [MATCH],
+      related: [MATCH],
     });
     const tools = createReportTools();
     const out = JSON.parse((await tools.execute("raise_issue", GOOD_INPUT))!);
-    expect(out.success).toBe(false);
-    expect(out.status).toBe("possible_duplicate");
-    expect(out.matches).toEqual([MATCH]);
+    expect(out.success).toBe(true);
+    expect(out.status).toBe("recorded");
+    expect(out.report_id).toBe(REPORT_ID);
+    expect(out.related).toEqual([MATCH]);
+    expect(out.message).toContain("1 report(s) on record read like yours");
     expect(out.message).toContain(OTHER_ID);
     expect(out.message).toContain("status wontfix");
     expect(out.message).toContain("Maintainers' note");
-    expect(out.message).toMatch(/joins/);
-    expect(out.message).toMatch(/distinct_from/);
-    expect(tools.raisedCount).toBe(0);
+    expect(out.message).toMatch(/withdraw this one with update_issue and raise again with joins/);
+    expect(tools.raisedCount).toBe(1);
   });
 
-  it("passes joins and distinct_from through", async () => {
+  it("passes joins through and never a distinct_from", async () => {
     const tools = createReportTools();
     await tools.execute("raise_issue", { ...GOOD_INPUT, joins: OTHER_ID });
     expect(mocks.raiseIssue).toHaveBeenLastCalledWith(
       expect.objectContaining({ joins: OTHER_ID })
     );
     await tools.execute("raise_issue", { ...GOOD_INPUT, distinct_from: [OTHER_ID] });
-    expect(mocks.raiseIssue).toHaveBeenLastCalledWith(
-      expect.objectContaining({ joins: null, distinctFrom: [OTHER_ID] })
-    );
+    const last = mocks.raiseIssue.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(last.joins).toBeNull();
+    expect("distinctFrom" in last).toBe(false);
   });
 });
 
@@ -373,24 +390,41 @@ describe("update_issue tool", () => {
 });
 
 describe("search_issues tool", () => {
-  it("searches internal reports by meaning, narrowed by surface, and describes the matches", async () => {
+  it("searches internal reports, narrowed by surface and status, and describes the matches", async () => {
     mocks.searchReports.mockResolvedValue({ matches: [MATCH] });
     const tools = createReportTools();
     const out = JSON.parse(
       (await tools.execute("search_issues", {
         query: "linking counterpart claims",
         surface: "add_relationship_edge",
+        status: "wontfix",
       }))!
     );
     expect(mocks.searchReports).toHaveBeenCalledWith("linking counterpart claims", {
       origin: "internal",
       surface: "add_relationship_edge",
+      status: "wontfix",
     });
     expect(out.success).toBe(true);
     expect(out.matches).toEqual([MATCH]);
     expect(out.message).toContain("1 report(s) on record");
     expect(out.message).toContain("use add_instance");
+    expect(out.message).toContain("get_issue");
     expect(tools.raisedCount).toBe(0);
+  });
+
+  it("lists recent reports when there is no query, and names duplicates' parents", async () => {
+    mocks.searchReports.mockResolvedValue({
+      matches: [{ ...MATCH, status: "duplicate", duplicate_of_id: REPORT_ID, matched_by: "recent" }],
+    });
+    const tools = createReportTools();
+    const out = JSON.parse((await tools.execute("search_issues", { surface: "add_instance" }))!);
+    expect(mocks.searchReports).toHaveBeenCalledWith(null, {
+      origin: "internal",
+      surface: "add_instance",
+      status: null,
+    });
+    expect(out.message).toContain(`duplicate of ${REPORT_ID}`);
   });
 
   it("says when nothing matches and when the search is unavailable", async () => {
@@ -398,10 +432,83 @@ describe("search_issues tool", () => {
     const none = JSON.parse((await tools.execute("search_issues", { query: "q" }))!);
     expect(none.matches).toEqual([]);
     expect(none.message).toMatch(/No report on record matches/);
+    expect(none.message).toMatch(/Try other words/);
 
     mocks.searchReports.mockResolvedValue({ matches: [], problem: "the search is unavailable right now" });
     const down = JSON.parse((await tools.execute("search_issues", { query: "q" }))!);
     expect(down.success).toBe(false);
     expect(down.message).toMatch(/unavailable/);
+  });
+});
+
+describe("get_issue tool", () => {
+  it("reads one internal report in full with its sightings, duplicates, and parent", async () => {
+    mocks.getReportView.mockResolvedValue({
+      report: {
+        id: REPORT_ID,
+        title: "add_relationship_edge has no relation type for counterparts",
+        body: "Tried to link two claims that are counterparts.",
+        kind: "tool_gap",
+        severity: "degraded",
+        status: "duplicate",
+        surface: "add_relationship_edge",
+        agent: "steward",
+        model: "claude-x",
+        context_refs: { claim_id: CLAIM_ID },
+        triage_note: "same gap as the counterpart report",
+        triaged_by: "audit:1",
+        duplicate_of_id: OTHER_ID,
+        github_issue_url: "https://github.com/minerval-ai/minerval/issues/7",
+        occurrence_count: 2,
+        first_seen_at: new Date("2026-08-01T00:00:00Z"),
+        last_seen_at: new Date("2026-08-02T00:00:00Z"),
+      },
+      sightings: [
+        {
+          kind: "sighting",
+          agent: "curator",
+          body: "met again on a different claim",
+          context_refs: {},
+          seen_at: new Date("2026-08-02T00:00:00Z"),
+        },
+      ],
+      duplicates: [],
+      duplicate_of: {
+        id: OTHER_ID,
+        title: "no relation type for counterpart claims",
+        status: "wontfix",
+        triage_note: "counterparts are instances; use add_instance",
+        github_issue_url: "https://github.com/minerval-ai/minerval/issues/41",
+      },
+    });
+    const tools = createReportTools();
+    const out = JSON.parse((await tools.execute("get_issue", { report_id: REPORT_ID }))!);
+    expect(mocks.getReportView).toHaveBeenCalledWith(REPORT_ID, { origin: "internal" });
+    expect(out.success).toBe(true);
+    expect(out.report).toMatchObject({
+      id: REPORT_ID,
+      status: "duplicate",
+      duplicate_of_id: OTHER_ID,
+      triage_note: "same gap as the counterpart report",
+      first_seen_at: "2026-08-01T00:00:00.000Z",
+    });
+    expect(out.sightings).toEqual([
+      {
+        kind: "sighting",
+        agent: "curator",
+        body: "met again on a different claim",
+        context_refs: {},
+        seen_at: "2026-08-02T00:00:00.000Z",
+      },
+    ]);
+    expect(out.duplicate_of).toMatchObject({ id: OTHER_ID, status: "wontfix" });
+    expect(tools.raisedCount).toBe(0);
+  });
+
+  it("says when there is no such report", async () => {
+    const tools = createReportTools();
+    const out = JSON.parse((await tools.execute("get_issue", { report_id: "nope" }))!);
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/No report on record/);
   });
 });

@@ -38,18 +38,26 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { loadConfig } from "../../config.js";
 import {
+  getReportView,
   raiseIssue,
   searchReports,
   updateReport,
   REPORT_KINDS,
   REPORT_SEVERITIES,
+  REPORT_STATUSES,
   type ReportMatch,
 } from "../../services/report-service.js";
+
+function iso(d: Date | string | null | undefined): string | null {
+  if (!d) return null;
+  return d instanceof Date ? d.toISOString() : String(d);
+}
 import { getUsageContext } from "../usage-context.js";
 
 export const RAISE_ISSUE_TOOL_NAME = "raise_issue";
 export const UPDATE_ISSUE_TOOL_NAME = "update_issue";
 export const SEARCH_ISSUES_TOOL_NAME = "search_issues";
+export const GET_ISSUE_TOOL_NAME = "get_issue";
 
 /** What an untraced context's report carries in place of its body (#356). */
 export const UNTRACED_BODY_NOTE =
@@ -83,13 +91,15 @@ export function getReportToolDefinitions(): Tool[] {
         "express what you need to say, or its result omits what you were " +
         "told to reason over (tool_gap); or when doing this work showed you a " +
         "specific, actionable improvement to the graph or its machinery " +
-        "(improvement). The tool checks the record before it writes: if a " +
-        "report on record may be the same problem, nothing is written and you " +
-        "are shown it with its status and the maintainers' note, and you " +
-        "answer with joins or distinct_from. Every new report is filed as an " +
-        "issue for the maintainers. Fire-and-forget: it always acknowledges, " +
-        "never blocks, and never changes this run's outcome. Raising an issue " +
-        "is not a substitute for acting: report, then proceed with the best " +
+        "(improvement). Always recorded in one call: a verbatim repeat joins " +
+        "its report as a sighting, and a new report is filed as an issue for " +
+        "the maintainers and comes back with the reports on record that read " +
+        "like it, with their status and the maintainers' note, as advice. If " +
+        "you already found the report yours repeats (search_issues, " +
+        "get_issue), pass its id as joins and yours is recorded as a sighting " +
+        "of it instead. Fire-and-forget: it always acknowledges, never " +
+        "blocks, and never changes this run's outcome. Raising an issue is " +
+        "not a substitute for acting: report, then proceed with the best " +
         "action still available to you. Do not report when nothing is wrong; " +
         "a few per run at most.",
       input_schema: {
@@ -144,17 +154,11 @@ export function getReportToolDefinitions(): Tool[] {
           joins: {
             type: "string",
             description:
-              "The id of a report the tool showed you, when yours is the " +
-              "same problem. Your body is added to it as a sighting with " +
-              "your account of this occurrence; nothing new is filed.",
-          },
-          distinct_from: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "The ids of reports the tool showed you that yours is not, " +
-              "when you are raising despite them. Say in the body what " +
-              "makes yours different. Ignored on a first call.",
+              "The id of a report on record that yours repeats, when you " +
+              "have found it (search_issues, get_issue, or a related report " +
+              "from an earlier raise). Your body is added to it as a " +
+              "sighting with your account of this occurrence; nothing new " +
+              "is filed. Optional.",
           },
         },
         required: ["kind", "severity", "title", "body"],
@@ -202,25 +206,58 @@ export function getReportToolDefinitions(): Tool[] {
     {
       name: SEARCH_ISSUES_TOOL_NAME,
       description:
-        "Search the reports agents have raised about the system, by " +
-        "meaning. Use it before working around a failure, to learn whether " +
-        "it is known and what the maintainers said (a wontfix note is " +
-        "guidance; an actioned one means the fix shipped), and to find a " +
-        "report to update. Read-only; free.",
+        "Search the reports agents have raised about the system, by keyword " +
+        "and by meaning, up to ten at a time with their status, the " +
+        "maintainers' note, and the report each duplicate was collapsed " +
+        "onto. Use it before working around a failure, to learn whether it " +
+        "is known and what the maintainers said (a wontfix note is " +
+        "guidance; an actioned one means the fix shipped), to find the " +
+        "report yours repeats, or to find one to update. Searching is " +
+        "cheap: a rare token (the tool name, the error text) finds more " +
+        "than a paraphrase, so try more than one wording. With no query it " +
+        "lists the most recently seen reports, so you can read what is on " +
+        "record about a surface before you start. Read-only; free.",
       input_schema: {
         type: "object" as const,
         properties: {
           query: {
             type: "string",
             description:
-              "The problem in a sentence, as you would title a report.",
+              "Keywords or the problem in a sentence. Omit to list recent " +
+              "reports instead.",
           },
           surface: {
             type: "string",
             description: "Narrow to reports about this tool or pipeline. Optional.",
           },
+          status: {
+            type: "string",
+            enum: [...REPORT_STATUSES],
+            description:
+              "Narrow to one status (new, triaged, duplicate, actioned, " +
+              "wontfix, withdrawn). Optional.",
+          },
         },
-        required: ["query"],
+        required: [],
+      },
+    },
+    {
+      name: GET_ISSUE_TOOL_NAME,
+      description:
+        "Read one report in full: its body, the maintainers' triage note, " +
+        "its issue link, the latest sightings with the reporters' accounts, " +
+        "the reports collapsed onto it as duplicates, and the report it was " +
+        "collapsed onto if it is itself a duplicate. Follow ids from " +
+        "search_issues or from a related report here. Read-only; free.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          report_id: {
+            type: "string",
+            description: "The report's id.",
+          },
+        },
+        required: ["report_id"],
       },
     },
   ];
@@ -229,8 +266,9 @@ export function getReportToolDefinitions(): Tool[] {
 function describeMatch(m: ReportMatch): string {
   const when = m.first_seen_at ? m.first_seen_at.slice(0, 10) : "earlier";
   const seen = m.occurrence_count > 1 ? `, seen ${m.occurrence_count} times` : "";
+  const dup = m.duplicate_of_id ? `, duplicate of ${m.duplicate_of_id}` : "";
   const note = m.triage_note ? ` Maintainers' note: "${m.triage_note}"` : "";
-  return `${m.id} (${when}, ${m.agent}, ${m.kind}/${m.severity}, status ${m.status}${seen}): "${m.title}".${note}`;
+  return `${m.id} (${when}, ${m.agent}, ${m.kind}/${m.severity}, status ${m.status}${seen}${dup}): "${m.title}".${note}`;
 }
 
 /**
@@ -314,26 +352,7 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
       jobId: ctx.jobId ?? null,
       claimId: ctx.claimId ?? null,
       joins: typeof input.joins === "string" ? input.joins : null,
-      distinctFrom: input.distinct_from,
     });
-
-    if (result.matches) {
-      // Nothing written: the agent answers on a second call. Not counted
-      // against the cap, since nothing was recorded.
-      return JSON.stringify({
-        success: false,
-        acknowledged: true,
-        status: "possible_duplicate",
-        matches: result.matches,
-        message:
-          `Not yet recorded: a report already on record may be the same problem. ` +
-          result.matches.map(describeMatch).join(" ") +
-          ` If yours is one of these, call again with joins set to its id and your ` +
-          `body is added as a sighting. If it is not, call again with distinct_from ` +
-          `listing these ids and say in the body what makes yours different. A ` +
-          `maintainers' note on a known report is guidance for your current task.`,
-      });
-    }
 
     if (!result.reportId) {
       // Validation problems are the agent's to fix (legal values are in
@@ -368,16 +387,26 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
           ` ${PROCEED}`,
       });
     }
+    const related = result.related ?? [];
     return JSON.stringify({
       success: true,
       acknowledged: true,
       status: "recorded",
       report_id: result.reportId,
       occurrence_count: result.occurrenceCount,
+      ...(related.length ? { related } : {}),
       message:
         `Acknowledged and recorded; it is being filed as an issue for the ` +
         `maintainers. Use update_issue with this report_id if you learn more ` +
-        `in this run. ${PROCEED}`,
+        `in this run.` +
+        (related.length
+          ? ` ${related.length} report(s) on record read like yours: ` +
+            related.map(describeMatch).join(" ") +
+            ` If yours is one of them, withdraw this one with update_issue and ` +
+            `raise again with joins set to its id; a maintainers' note on a known ` +
+            `report is guidance for your current task.`
+          : "") +
+        ` ${PROCEED}`,
     });
   };
 
@@ -427,9 +456,10 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
   };
 
   const executeSearch = async (input: Record<string, unknown>): Promise<string> => {
-    const result = await searchReports(String(input.query ?? ""), {
+    const result = await searchReports(typeof input.query === "string" ? input.query : null, {
       origin: "internal",
       surface: typeof input.surface === "string" ? input.surface : null,
+      status: typeof input.status === "string" ? input.status : null,
     });
     if (result.problem) {
       return JSON.stringify({
@@ -442,12 +472,61 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
       success: true,
       matches: result.matches,
       message: result.matches.length
-        ? `${result.matches.length} report(s) on record may match. ` +
+        ? `${result.matches.length} report(s) on record. ` +
           result.matches.map(describeMatch).join(" ") +
-          ` A wontfix note is the maintainers' guidance; an actioned report ` +
-          `means the fix shipped, so seeing it again is a regression worth ` +
-          `raising with joins.`
-        : `No report on record matches. If this is a real problem, raise it.`,
+          ` get_issue reads one in full. A wontfix note is the maintainers' ` +
+          `guidance; an actioned report means the fix shipped, so seeing it ` +
+          `again is a regression worth raising with joins.`
+        : `No report on record matches. Try other words (the tool name, the ` +
+          `error text) before concluding it is unknown; if it is a real problem, raise it.`,
+    });
+  };
+
+  const executeGet = async (input: Record<string, unknown>): Promise<string> => {
+    const view = await getReportView(String(input.report_id ?? ""), { origin: "internal" });
+    if (!view) {
+      return JSON.stringify({
+        success: false,
+        message: `No report on record with that id. search_issues finds reports by keyword or meaning.`,
+      });
+    }
+    const r = view.report;
+    return JSON.stringify({
+      success: true,
+      report: {
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        kind: r.kind,
+        severity: r.severity,
+        status: r.status,
+        surface: r.surface,
+        agent: r.agent,
+        model: r.model,
+        context_refs: r.context_refs ?? {},
+        triage_note: r.triage_note,
+        triaged_by: r.triaged_by,
+        duplicate_of_id: r.duplicate_of_id,
+        github_issue_url: r.github_issue_url,
+        occurrence_count: Number(r.occurrence_count),
+        first_seen_at: iso(r.first_seen_at),
+        last_seen_at: iso(r.last_seen_at),
+      },
+      sightings: view.sightings.map((s) => ({
+        kind: s.kind,
+        agent: s.agent,
+        body: s.body,
+        context_refs: s.context_refs ?? {},
+        seen_at: iso(s.seen_at),
+      })),
+      duplicates: view.duplicates.map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+        agent: d.agent,
+        last_seen_at: iso(d.last_seen_at),
+      })),
+      duplicate_of: view.duplicate_of,
     });
   };
 
@@ -463,6 +542,8 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
           return await executeUpdate(input);
         case SEARCH_ISSUES_TOOL_NAME:
           return await executeSearch(input);
+        case GET_ISSUE_TOOL_NAME:
+          return await executeGet(input);
         default:
           return null;
       }

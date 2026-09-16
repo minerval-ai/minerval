@@ -818,11 +818,11 @@ const configSchema = z.object({
   // skipped when no new reports arrived. 0 disables triage sweeps (reports
   // still record; the /reports API still serves them).
   reportTriageIntervalHours: z.coerce.number().default(24),
-  // Match-before-write for reports (the findings mechanism, #394, applied
-  // to raise_issue): a report on record at or above this cosine similarity
-  // (title + body against title + body) is shown to the agent instead of
-  // being written, and the agent answers with joins or distinct_from. The
-  // exact-title dedupe key catches verbatim repeats before this runs.
+  // Related reports for raise_issue: a report on record at or above this
+  // cosine similarity (title + body against title + body) comes back with
+  // the newly recorded report as advice, with its status and triage note;
+  // search_issues uses a bar 0.2 lower. The exact-title dedupe key catches
+  // verbatim repeats before this runs, and a wording match runs alongside.
   reportMatchSimilarity: z.coerce.number().default(0.8),
   // The embedding backfill worker (#432): a report recorded while the
   // embedder was down carries no vector and is invisible to the match
