@@ -11,6 +11,7 @@ import { getAssessmentHistory, getAssessmentTrajectory } from "../services/asses
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
+import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
@@ -365,6 +366,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               provenance_edges: { type: "array", nullable: true },
               source_relationships: { type: "array", nullable: true },
               dependents: { type: "array", nullable: true },
+              // Lateral links (#436), served at every depth: claims that are
+              // neither premise nor conclusion of this one but that a reader
+              // would want beside it, with the reason for each. Never a
+              // dependency; the tree and the assessment do not see them.
+              related: { type: "array", nullable: true },
               // Mathematics (docs/mathematics.md §11.1): the published formal
               // statement, the derived machine-checked badge, the claim's
               // domain tags, the bounty pinned to the statement, the house
@@ -471,6 +477,22 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             seeded_by: seededBy,
           };
         }
+
+        // Lateral links, at every depth: cheap, and the see-also belongs on
+        // the page whatever else was asked for.
+        response.related = (await listRelatedClaims(claim_id)).map((r) => ({
+          link_id: r.link_id,
+          kind: r.kind,
+          reasoning: r.reasoning,
+          created_by: r.created_by,
+          created_at: r.created_at.toISOString(),
+          id: r.id,
+          text: r.text,
+          claim_type: r.claim_type,
+          assessment_status: r.assessment_status,
+          assessment_confidence: r.assessment_confidence,
+          assessment_credence: r.assessment_credence,
+        }));
 
         // Standard: + full tree (depth-capped on request — the claim map
         // renders three rings per view and shouldn't pay for five)

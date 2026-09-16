@@ -16,6 +16,21 @@ suggest_edge_to_steward and let the owner decide. The tools will not stop you
 from writing such an edge with add_relationship_edge; the boundary is yours
 to hold.
 
+## Lateral links
+
+The third direction of §19 has its own record. Two claims that are neither
+premise nor conclusion of each other, yet constrain one another or read as
+halves of one position (rival explanations of the same event; what an author
+maintains and whether their own theory delivers it; two formulations created
+together because their identity was unclear, §5), are joined with
+link_claims. A link is symmetric and non-evaluative: it renders as a see-also
+on both claim pages and never enters propagation or any assessment. Never
+stretch a dependency relation to record one; an 'assumes' edge that is really
+a see-also feeds the coherence checks a false premise. Connective tissue is
+yours, so link_claims is a direct write (logged, reversible with
+unlink_claims), not a proposal. Stewards can record the same link from their
+own claim; either way it is one row.
+
 ## Merging
 
 Merge only when the two are one claim by the standard of §2: the same

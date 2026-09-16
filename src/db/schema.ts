@@ -351,6 +351,48 @@ export const claimRelationships = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// claim_links (#436)
+// ---------------------------------------------------------------------------
+// Lateral, symmetric, non-evaluative relations between claims (constitution
+// §19's third direction). Kept OUT of claim_relationships on purpose: that
+// table is the dependency graph propagation walks, and a see-also must never
+// be read as a premise. The pair is stored in canonical order (a < b), so
+// one row represents the link in both directions and the unique index
+// catches a reverse-direction duplicate; the check also rules out self-links.
+export const claimLinks = pgTable(
+  "claim_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimAId: uuid("claim_a_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    claimBId: uuid("claim_b_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // CLAIM_LINK_KINDS in src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    reasoning: text("reasoning").notNull(),
+    createdBy: text("created_by").notNull().default("curator"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_claim_links_unique").on(
+      table.claimAId,
+      table.claimBId,
+      table.kind
+    ),
+    index("idx_claim_links_b").on(table.claimBId),
+    check("ck_claim_links_ordered", sql`${table.claimAId} < ${table.claimBId}`),
+    check(
+      "ck_claim_links_kind",
+      sql`${table.kind} IN ('related', 'rival_explanation', 'counterpart_position')`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // assessments
 // ---------------------------------------------------------------------------
 export const assessments = pgTable(

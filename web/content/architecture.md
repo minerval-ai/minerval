@@ -79,8 +79,11 @@ epistemic core, where `──<` reads "has many":
                             ├──< Assessment   (verdict history;        │
                             │                  one is_current)         │
                             │                                          │
-                            └──< Argument      (a named line of ───────┘
-                                                reasoning)
+                            ├──< Argument      (a named line of ───────┘
+                            │                   reasoning)
+                            │
+                            └──< Link >── Claim  (lateral see-also; symmetric,
+                                                  never a dependency)
 ```
 
 ### Claims
@@ -266,8 +269,13 @@ recorded separately, in `argument_subclaims` (one row per argument and edge),
 so a child can appear under multiple arguments (shared subclaims) while the
 dependency itself is stated once; an edge with no membership row is part of
 the claim's ungrouped basis. A uniqueness constraint prevents duplicate
-parent/child/relation triples, and self-edges are rejected outright. The
-relation types are:
+parent/child/relation triples, and self-edges are rejected outright. Edges
+are the only relations propagation and assessment read; a relation between
+claims that is *not* a dependency (a rival explanation, two halves of one
+position, two formulations kept apart because identity was unclear) is a
+**claim link** in its own table, symmetric and non-evaluative, rendered as a
+see-also on both claim pages and invisible to the tree. The relation types
+are:
 
 | Relation | Meaning |
 |----------|---------|
@@ -670,7 +678,9 @@ failed. The audit scheduler still requests a `report_triage` audit for each
 period that saw new reports; the Audit Agent clusters them by underlying
 gap, ranks by frequency and severity, and records a reading through
 `triage_report` that the service-scoped `/reports` API exposes to
-maintainers and that closes or annotates the issue.
+maintainers and that closes or annotates the issue. The triage note is
+stored whole up to `TRIAGE_NOTE_MAX_LENGTH` (4,000 characters); a longer
+one is refused with an error naming the limit, never cut (#439).
 
 The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
 Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
@@ -1099,6 +1109,8 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
   │                   (which arguments group     └──▶ argument_evaluations
   │                    an edge; none = basis)
   │                                         (inference verdicts; one is_current per argument)
+  ├──< claim_links >── claims          (lateral see-also: related, rival
+  │                                     explanation, counterpart; never walked)
   ├──▶ assessments        (verdict history; one is_current per claim)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
   │        ├──▶ claim_instance_readings         (does the source bear its own assertion)

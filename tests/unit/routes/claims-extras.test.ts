@@ -109,6 +109,9 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
   listClaimDependents: vi.fn(),
 }));
+vi.mock("../../../src/services/claim-link-service.js", () => ({
+  listRelatedClaims: vi.fn(async () => []),
+}));
 vi.mock("../../../src/services/argument-service.js", () => ({
   addArgument: vi.fn(),
   getArgumentsForClaim: mocks.getArgumentsForClaim,

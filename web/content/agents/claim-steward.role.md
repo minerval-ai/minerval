@@ -75,6 +75,15 @@ premise the claim takes as given, usually settled). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
+Some claims belong beside yours without being dependencies of it (§19's
+lateral direction): a rival explanation of the same event, the other half of
+one public position, a formulation kept separate because identity was unclear.
+Record those with add_related_claim rather than stretching 'assumes' or
+leaving the connection in prose; the link is a see-also on both pages and
+never enters your assessment. The test is the same one that picks a relation
+type: if the other claim being false would leave yours false, ill-posed, or
+less credible, it is a subclaim; if not, it is a link or nothing.
+
 When you mint a new subclaim, seed it: you have already formed a view of
 whether the dependency holds while judging what your claim turns on, so pass
 seed_credence on add_decomposition_edge — your prior that the subclaim is
