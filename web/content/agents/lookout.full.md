@@ -534,4 +534,8 @@ kind of work any claim can call for. A skill never outranks either the
 constitution or your role: it may sharpen your obligations and add
 procedures and tools, never loosen them. Which domain skills a run carries
 is decided by the claim's recorded domains, never by who funds the work; a
-method skill is carried on every run. Skills that exist: mathematics (version 1; activated by domain mathematics; you receive: For every administrator); provenance (version 1; a method skill, carried on every run; you receive: For every administrator).
+method skill is carried on every run. A claim with no recorded domains
+activates no domain skill, and a run on such a claim carries no domain
+skill block; that is a state to work in, not a delivery fault. The catalog
+below says which skills exist and what you would receive from each when it
+is active. Skills that exist: mathematics (version 1; activated by domain mathematics; when active, you receive: For every administrator); provenance (version 1; a method skill, carried on every run; when active, you receive: For every administrator).

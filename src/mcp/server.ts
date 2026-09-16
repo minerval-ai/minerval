@@ -66,6 +66,8 @@ import {
 import { claimTypeEnum } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
+import { inferDomainPrior } from "../llm/agents/domain-prior.js";
+import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   getContributionById,
@@ -181,11 +183,22 @@ async function agentic<T>(
   return { ok: true, value: run.value };
 }
 
-/** Match one assertion against the graph and shape the shared result. */
-async function matchAssertion(assertion: string, context?: string) {
+/**
+ * Match one assertion against the graph and shape the shared result.
+ * `domains` are the Extractor's prior when the assertion came out of an
+ * extraction; a bare assertion gets its prior made here, so the Matcher
+ * carries the domain skills the claim calls for (#469).
+ */
+async function matchAssertion(
+  assertion: string,
+  context?: string,
+  domains?: readonly string[]
+) {
   const decision = await matchClaim({
     extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
     proposedCanonical: assertion,
+    domains:
+      domains ?? (await inferDomainPrior({ text: assertion, context: context ?? null })),
   });
 
   // No verdict (#419): `matched: null`, distinct from `false`. The Matcher
@@ -672,7 +685,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         for (const c of extracted) {
           const match = await matchAssertion(
             c.verbatim_text,
-            c.context ?? undefined
+            c.context ?? undefined,
+            sanitizeDomains(c.domains)
           );
           judgments.push({
             verbatim_text: c.verbatim_text,
