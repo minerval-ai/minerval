@@ -324,9 +324,10 @@ export const claimRelationships = pgTable(
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     relationType: text("relation_type").notNull().default("requires"),
-    argumentId: uuid("argument_id").references(() => arguments_.id, {
-      onDelete: "set null",
-    }),
+    // Which named argument(s) an edge belongs to is NOT a column here: it is
+    // the argument_subclaims relation below, so one edge can be grouped under
+    // several arguments of the same claim (constitution §7, #437). An edge
+    // with no membership row is part of the claim's ungrouped basis.
     reasoning: text("reasoning").notNull(),
     confidence: real("confidence").notNull().default(1.0),
     createdBy: text("created_by").notNull().default("decomposer"),
@@ -345,6 +346,48 @@ export const claimRelationships = pgTable(
     check(
       "no_self_reference",
       sql`${table.parentClaimId} != ${table.childClaimId}`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_links (#436)
+// ---------------------------------------------------------------------------
+// Lateral, symmetric, non-evaluative relations between claims (constitution
+// §19's third direction). Kept OUT of claim_relationships on purpose: that
+// table is the dependency graph propagation walks, and a see-also must never
+// be read as a premise. The pair is stored in canonical order (a < b), so
+// one row represents the link in both directions and the unique index
+// catches a reverse-direction duplicate; the check also rules out self-links.
+export const claimLinks = pgTable(
+  "claim_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimAId: uuid("claim_a_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    claimBId: uuid("claim_b_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // CLAIM_LINK_KINDS in src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    reasoning: text("reasoning").notNull(),
+    createdBy: text("created_by").notNull().default("curator"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_claim_links_unique").on(
+      table.claimAId,
+      table.claimBId,
+      table.kind
+    ),
+    index("idx_claim_links_b").on(table.claimBId),
+    check("ck_claim_links_ordered", sql`${table.claimAId} < ${table.claimBId}`),
+    check(
+      "ck_claim_links_kind",
+      sql`${table.kind} IN ('related', 'rival_explanation', 'counterpart_position')`
     ),
   ]
 );
@@ -437,6 +480,37 @@ export const arguments_ = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
+);
+
+// ---------------------------------------------------------------------------
+// argument_subclaims
+// ---------------------------------------------------------------------------
+// Argument membership (#437): which decomposition edges a named argument
+// groups. Many-to-many on purpose — constitution §7 says different arguments
+// may share subclaims while arranging them differently, which a single
+// argument_id on the edge could not express. Membership points at the EDGE
+// (not the child claim) so the relation type travels with it and a grouping
+// can never dangle: deleting the edge, or the argument, removes the row.
+// An edge with no row here is one of the claim's ungrouped basis edges.
+// Invariant (enforced in relationship-service, not by the FKs): the
+// argument's claim is the edge's parent claim.
+export const argumentSubclaims = pgTable(
+  "argument_subclaims",
+  {
+    argumentId: uuid("argument_id")
+      .notNull()
+      .references(() => arguments_.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => claimRelationships.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.argumentId, table.relationshipId] }),
+    index("idx_argument_subclaims_relationship").on(table.relationshipId),
+  ]
 );
 
 // ---------------------------------------------------------------------------

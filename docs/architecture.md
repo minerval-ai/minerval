@@ -70,14 +70,20 @@ epistemic core, where `──<` reads "has many":
 
 ```
   Source ──< Instance >── Claim ──< Relationship >── Claim
-                            │           (decomposition edge;
-                            │            argument_id groups edges
-                            │            into a line of reasoning)
-                            ├──< Assessment   (verdict history; one is_current)
+                            │           (decomposition edge)
+                            │                │
+                            │                └──< ArgumentSubclaim >──┐
+                            │                     (membership: which   │
+                            │                      arguments group     │
+                            │                      the edge)           │
+                            ├──< Assessment   (verdict history;        │
+                            │                  one is_current)         │
+                            │                                          │
+                            ├──< Argument      (a named line of ───────┘
+                            │                   reasoning)
                             │
-                            └──< Argument      (a named line of reasoning;
-                                                relationship edges point back
-                                                to it via argument_id)
+                            └──< Link >── Claim  (lateral see-also; symmetric,
+                                                  never a dependency)
 ```
 
 ### Claims
@@ -240,9 +246,13 @@ Two design decisions follow:
   (reasoning visible, open to challenge). It is reader-facing prose, not a
   discussion surface: contributor exchanges stay in the contribution record.
 - **Arguments are optional and non-exhaustive.** A claim with one natural
-  decomposition needs no explicitly named argument; edges simply carry a null
-  `argument_id`. Admins create arguments when a line of reasoning is live in
+  decomposition needs no explicitly named argument; its edges simply have no
+  membership row. Admins create arguments when a line of reasoning is live in
   the discourse, not preemptively.
+- **Arguments may share subclaims.** Membership is a relation between an
+  argument and an edge (`argument_subclaims`), not a column on the edge, so
+  the same premise can be grouped under several of a claim's arguments,
+  arranged differently in each written form.
 
 When the *validity of an argument's framework* is itself disputed in the
 discourse, "this framework is valid" is added as a subclaim within that
@@ -254,10 +264,18 @@ layer, where decomposition, assessment, and contribution already operate.
 
 Decomposition is recorded as **claim relationships**: directed edges from a
 parent claim to a child claim. Each edge has a `relation_type`, a free-text
-`reasoning`, a `confidence`, and an optional `argument_id` linking it to the
-argument it belongs to. A child can appear under multiple arguments (shared
-subclaims); a uniqueness constraint prevents duplicate parent/child/relation
-triples, and self-edges are rejected outright. The relation types are:
+`reasoning`, and a `confidence`. Which named arguments an edge belongs to is
+recorded separately, in `argument_subclaims` (one row per argument and edge),
+so a child can appear under multiple arguments (shared subclaims) while the
+dependency itself is stated once; an edge with no membership row is part of
+the claim's ungrouped basis. A uniqueness constraint prevents duplicate
+parent/child/relation triples, and self-edges are rejected outright. Edges
+are the only relations propagation and assessment read; a relation between
+claims that is *not* a dependency (a rival explanation, two halves of one
+position, two formulations kept apart because identity was unclear) is a
+**claim link** in its own table, symmetric and non-evaluative, rendered as a
+see-also on both claim pages and invisible to the tree. The relation types
+are:
 
 | Relation | Meaning |
 |----------|---------|
@@ -598,6 +616,13 @@ These act through tools over the life of a claim and the graph:
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
+  The allocation engine's decisions are judging too, so the Audit carries a
+  read-only cross-cut of the action ledger and the mandate plan surface
+  (`inspect_ledger`, services/ledger-inspection-service.ts): every row in
+  scope in every status with its allocation history, and every plan item
+  targeting those rows with its recorded standing checked against the row
+  it names, so a report about the ledger is verified there instead of taken
+  on the reporter's word.
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
   costs, and drafts or refuses a mandate; once the mandate is live it takes
@@ -1062,9 +1087,10 @@ a billing hiccup.
 
 The graph is stored relationally in **PostgreSQL**, accessed through Drizzle
 ORM, not in a dedicated graph database. Claims are rows; decomposition is an
-adjacency table (`claim_relationships`) whose `argument_id` column attaches
-each edge to its line of reasoning; arguments, assessments, instances and
-sources are their own tables. A relational store keyed by foreign keys is more
+adjacency table (`claim_relationships`) that holds only what propagation
+walks; a membership table (`argument_subclaims`) attaches each edge to the
+line(s) of reasoning it serves; arguments, assessments, instances and sources
+are their own tables. A relational store keyed by foreign keys is more
 than adequate for the tree-shaped reads the product needs, and it lets the same
 engine carry vector search and full-text search without a second system to
 operate.
@@ -1074,18 +1100,24 @@ level by level with a visited set, so each node and edge is fetched exactly
 once even where shared subclaims give the DAG a diamond shape. The walk is
 bounded by a cap of 500 nodes per response (`MAX_TREE_NODES`); children
 dropped by the cap are flagged on their parent (`children_truncated`), never
-silently. Each edge's `argument_id`, `argument_name`, `argument_stance`, and
-`argument_content` are carried onto the node, so a client can group a claim's
-children by argument and render each argument's written form.
+silently. Each edge is joined to its argument memberships, and the
+`argument_id`, `argument_name`, `argument_stance`, and `argument_content` are
+carried onto the node, so a client can group a claim's children by argument
+and render each argument's written form. An edge grouped under two arguments
+appears once in each group; its subtree renders at the first occurrence and
+is collapsed at the second, as for any shared subclaim.
 
 ### Schema at a glance
 
 ```
 claims ──< claim_relationships >── claims     (parent / child adjacency)
   │              │
-  │              └── argument_id ─▶ arguments ──▶ claims
-  │                                    └──▶ argument_evaluations
+  │              └──< argument_subclaims >── arguments ──▶ claims
+  │                   (which arguments group     └──▶ argument_evaluations
+  │                    an edge; none = basis)
   │                                         (inference verdicts; one is_current per argument)
+  ├──< claim_links >── claims          (lateral see-also: related, rival
+  │                                     explanation, counterpart; never walked)
   ├──▶ assessments        (verdict history; one is_current per claim)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
   │        ├──▶ claim_instance_readings         (does the source bear its own assertion)

@@ -36,6 +36,17 @@ vi.mock("../../../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async () => [0.1, 0.2, 0.3]),
 }));
 
+// The edge and its argument membership go through relationship-service
+// (#437); these tests are about the subclaim row, so stub the edge writes.
+vi.mock("../../../../src/services/relationship-service.js", () => ({
+  insertRelationshipEdge: vi.fn(async () => ({
+    id: "22222222-2222-2222-2222-222222222222",
+    created: true,
+  })),
+  attachEdgeToArgument: vi.fn(async () => ({ grouped: true })),
+  getClaimBasisSubclaims: vi.fn(async () => []),
+}));
+
 vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => {}),
   enqueueSteward: vi.fn(async () => {}),

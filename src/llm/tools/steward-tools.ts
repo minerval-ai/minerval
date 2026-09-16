@@ -11,7 +11,6 @@ import { getDb, rawQuery } from "../../db/client.js";
 import {
   claims,
   assessments,
-  claimRelationships,
   claimInstances,
   auditLog,
 } from "../../db/schema.js";
@@ -28,10 +27,19 @@ import {
   setArgumentContent,
   setArgumentEvaluation,
 } from "../../services/argument-service.js";
+import {
+  attachEdgeToArgument,
+  getClaimBasisSubclaims,
+  insertRelationshipEdge,
+} from "../../services/relationship-service.js";
+import { linkClaims } from "../../services/reconciliation-service.js";
+import { isClaimLinkKind } from "../../services/claim-link-service.js";
 import { loadConfig } from "../../config.js";
 import {
   RELATION_TYPES,
   RELATION_GUIDANCE,
+  CLAIM_LINK_KINDS,
+  CLAIM_LINK_GUIDANCE,
   claimTypeEnum,
   INSTANCE_STANCES,
   isInstanceStance,
@@ -511,7 +519,12 @@ export function getStewardToolDefinitions(): Tool[] {
         "Attach an EXISTING claim as a subclaim, by id. Use this when match_claim " +
         "found that the dependency you want already exists (as itself, a rewording, " +
         "or its negation): link it instead of minting a duplicate. Edges to your " +
-        "claim's decomposition are yours to own.",
+        "claim's decomposition are yours to own. A subclaim may belong to several " +
+        "of the claim's arguments (§7): calling this again for an edge that already " +
+        "exists, with another argument_id, groups that edge under the second " +
+        "argument too (the edge itself is not duplicated). The result says whether " +
+        "the edge was created or already existed, and whether the grouping was " +
+        "added or already there.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -535,11 +548,44 @@ export function getStewardToolDefinitions(): Tool[] {
           argument_id: {
             type: "string",
             description:
-              "Optional UUID of an argument (from add_argument) to group this " +
-              "subclaim under",
+              "Optional UUID of an argument (from add_argument, on parent_id) to " +
+              "group this subclaim under. Repeat the call with another " +
+              "argument_id to share the subclaim between arguments.",
           },
         },
         required: ["parent_id", "child_id", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "add_related_claim",
+      description:
+        "Record a lateral link from your claim to another that is neither its " +
+        "premise nor its conclusion (§19): a rival explanation, the other half of " +
+        "one public position, or a formulation kept separate because identity was " +
+        "unclear. Symmetric and non-evaluative: it renders as a see-also on both " +
+        "pages and never enters propagation or your assessment. Use it instead of " +
+        "stretching 'assumes' or leaving the connection in prose. If the other " +
+        "claim being false would make yours false, ill-posed, or less credible, " +
+        "that is a decomposition edge, not a link.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim you steward" },
+          other_claim_id: {
+            type: "string",
+            description: "The UUID of the related claim (an existing claim; match_claim first)",
+          },
+          kind: {
+            type: "string",
+            enum: [...CLAIM_LINK_KINDS],
+            description: CLAIM_LINK_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why a reader of either claim would want the other",
+          },
+        },
+        required: ["claim_id", "other_claim_id", "kind", "reasoning"],
       },
     },
     {
@@ -1437,8 +1483,10 @@ export async function executeStewardTool(
             message:
               `These linked claims are not subclaims of this argument: ` +
               `${unknown.join(", ")}. Link only claims attached to the ` +
-              `argument via add_relationship_edge / add_decomposition_edge ` +
-              `(attach the edge first if it is missing).`,
+              `argument via add_relationship_edge / add_decomposition_edge. ` +
+              `A claim that is already a subclaim (in the basis, or under ` +
+              `another argument) joins this one when you call ` +
+              `add_relationship_edge again with this argument_id.`,
           });
         }
 
@@ -1509,24 +1557,35 @@ export async function executeStewardTool(
           });
         }
 
-        // Any linked claim must belong to this argument (or be the parent
-        // claim); and when the argument has attached subclaims, the
-        // load-bearing analysis should point at them — require at least one
-        // link then. An argument whose premises live only in its written-form
-        // prose has nothing to link, so zero links is allowed in that case.
+        // Any linked claim must be a subclaim of this argument, one of the
+        // parent claim's ungrouped basis subclaims (a framework assumption
+        // that sits at the claim level and bears on several arguments, #434),
+        // or the parent claim itself; and when the argument has attached
+        // subclaims, the load-bearing analysis should point at them — require
+        // at least one link then. An argument whose premises live only in its
+        // written-form prose has nothing to link, so zero links is allowed in
+        // that case.
         const subclaims = await getArgumentSubclaims(argumentId);
+        const basis = await getClaimBasisSubclaims(argument.claimId);
         const links = parseClaimLinks(content);
-        const subclaimIds = new Set(subclaims.map((s) => s.id));
+        const linkable = new Set([
+          ...subclaims.map((s) => s.id),
+          ...basis.map((s) => s.id),
+          argument.claimId,
+        ]);
         const unknown = [...new Set(links.map((l) => l.claimId))].filter(
-          (id) => !subclaimIds.has(id) && id !== argument.claimId
+          (id) => !linkable.has(id)
         );
         if (unknown.length > 0) {
           return JSON.stringify({
             success: false,
             message:
-              `These linked claims are not subclaims of this argument: ` +
-              `${unknown.join(", ")}. Link only claims attached to the argument ` +
-              `(or the claim it is about).`,
+              `These linked claims are neither subclaims of this argument nor ` +
+              `ungrouped basis subclaims of the claim it is about: ` +
+              `${unknown.join(", ")}. Link the argument's own subclaims, the ` +
+              `claim's basis, or the claim itself; a subclaim grouped under ` +
+              `another argument joins this one via add_relationship_edge ` +
+              `with this argument_id.`,
           });
         }
         if (subclaims.length > 0 && links.length === 0) {
@@ -1578,7 +1637,7 @@ export async function executeStewardTool(
       case "add_relationship_edge": {
         const parentId = input.parent_id as string;
         const childId = input.child_id as string;
-        const relation = input.relation as string;
+        const relation = String(input.relation ?? "").toLowerCase();
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
 
@@ -1589,28 +1648,129 @@ export async function executeStewardTool(
           });
         }
 
+        // Validate the grouping target before touching the graph, so a bad
+        // argument id never leaves a half-done write behind.
+        let argument: Awaited<ReturnType<typeof getArgument>> = null;
+        if (argumentId) {
+          argument = await getArgument(argumentId);
+          if (!argument) {
+            return JSON.stringify({
+              success: false,
+              message: `Argument not found: ${argumentId}`,
+            });
+          }
+          if (argument.claimId !== parentId) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Argument ${argumentId} belongs to claim ${argument.claimId}, ` +
+                `not to ${parentId}; an argument groups only edges of its own claim.`,
+            });
+          }
+        }
+
         const db = getDb();
+        const [child] = await db
+          .select({ id: claims.id, state: claims.state })
+          .from(claims)
+          .where(eq(claims.id, childId))
+          .limit(1);
+        if (!child) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${childId}. Link only real claims (ids from ` +
+              `match_claim, get_claim_subclaims, or add_decomposition_edge).`,
+          });
+        }
 
         // Link an already-existing claim; it has (or will have) its own steward
-        // processing, so no enqueue here — just the edge.
-        try {
-          await db.insert(claimRelationships).values({
-            parentClaimId: parentId,
-            childClaimId: childId,
-            relationType: relation.toLowerCase(),
-            reasoning,
-            confidence: 1.0,
-            argumentId,
-            createdBy: "claim_steward",
-          });
-        } catch {
-          // Unique constraint -- this edge already exists; idempotent, ignore.
+        // processing, so no enqueue here — just the edge and its grouping.
+        // A duplicate edge is reported, not disguised as a fresh link (#437);
+        // any other failure propagates to the tool-level error handler.
+        const edge = await insertRelationshipEdge({
+          parentId,
+          childId,
+          relationType: relation,
+          reasoning,
+          confidence: 1.0,
+          createdBy: "claim_steward",
+        });
+
+        let grouped = false;
+        if (argumentId) {
+          ({ grouped } = await attachEdgeToArgument(argumentId, edge.id));
         }
+
+        const argumentLabel = argument
+          ? `argument "${argument.name ?? argumentId}"`
+          : null;
+        const message =
+          (edge.created
+            ? `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`
+            : `Edge ${parentId} -> ${childId} (${relation}) already existed; ` +
+              `nothing was re-linked.`) +
+          (argumentLabel
+            ? grouped
+              ? ` Grouped it under ${argumentLabel}.`
+              : ` It was already grouped under ${argumentLabel}.`
+            : "");
 
         return JSON.stringify({
           success: true,
-          message: `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`,
+          message,
           child_claim_id: childId,
+          relationship_id: edge.id,
+          created: edge.created,
+          ...(argumentId ? { argument_id: argumentId, grouped } : {}),
+        });
+      }
+
+      case "add_related_claim": {
+        const claimId = input.claim_id as string;
+        const otherClaimId = input.other_claim_id as string;
+        const kind = String(input.kind ?? "").toLowerCase();
+        if (!isClaimLinkKind(kind)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`,
+          });
+        }
+        if (claimId === otherClaimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be linked to itself.",
+          });
+        }
+        const db = getDb();
+        const [other] = await db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.id, otherClaimId))
+          .limit(1);
+        if (!other) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
+              `match_claim or get_claim_details).`,
+          });
+        }
+        const { linked, linkId } = await linkClaims({
+          claimId,
+          otherClaimId,
+          kind,
+          reasoning: (input.reasoning as string) ?? "",
+          createdBy: "claim_steward",
+        });
+        return JSON.stringify({
+          success: true,
+          linked,
+          link_id: linkId,
+          message: linked
+            ? `Linked ${claimId} <-> ${otherClaimId} (${kind}); it now shows as a ` +
+              `see-also on both claims.`
+            : `A ${kind} link between these claims already existed; nothing was written.`,
         });
       }
 
@@ -1620,6 +1780,25 @@ export async function executeStewardTool(
         const relation = input.relation as string;
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
+        // Validate the grouping target first: a bad argument id must not mint
+        // an orphan subclaim on its way to failing.
+        if (argumentId) {
+          const argument = await getArgument(argumentId);
+          if (!argument) {
+            return JSON.stringify({
+              success: false,
+              message: `Argument not found: ${argumentId}`,
+            });
+          }
+          if (argument.claimId !== parentId) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Argument ${argumentId} belongs to claim ${argument.claimId}, ` +
+                `not to ${parentId}; an argument groups only edges of its own claim.`,
+            });
+          }
+        }
         const importance = clampUnit(input.importance);
         // Recorded on the new subclaim for the eventual stakes/yield split
         // (#172 phase 1); the deferral gate below still reads only importance.
@@ -1722,19 +1901,19 @@ export async function executeStewardTool(
           })
           .returning();
 
-        // Create relationship
-        try {
-          await db.insert(claimRelationships).values({
-            parentClaimId: parentId,
-            childClaimId: newClaim!.id,
-            relationType: relation.toLowerCase(),
-            reasoning,
-            confidence: 1.0,
-            argumentId,
-            createdBy: "claim_steward",
-          });
-        } catch {
-          // Unique constraint -- relationship may already exist
+        // Create the edge (the child is brand new, so this cannot collide) and
+        // its argument membership (#437). Failures propagate: a swallowed error
+        // here would report a subclaim that never joined the decomposition.
+        const edge = await insertRelationshipEdge({
+          parentId,
+          childId: newClaim!.id,
+          relationType: relation,
+          reasoning,
+          confidence: 1.0,
+          createdBy: "claim_steward",
+        });
+        if (argumentId) {
+          await attachEdgeToArgument(argumentId, edge.id);
         }
 
         // The new claim is created already embedded (above), so it is a valid,

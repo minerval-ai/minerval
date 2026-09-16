@@ -75,6 +75,15 @@ premise the claim takes as given, usually settled). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
+Some claims belong beside yours without being dependencies of it (§19's
+lateral direction): a rival explanation of the same event, the other half of
+one public position, a formulation kept separate because identity was unclear.
+Record those with add_related_claim rather than stretching 'assumes' or
+leaving the connection in prose; the link is a see-also on both pages and
+never enters your assessment. The test is the same one that picks a relation
+type: if the other claim being false would leave yours false, ill-posed, or
+less credible, it is a subclaim; if not, it is a link or nothing.
+
 When you mint a new subclaim, seed it: you have already formed a view of
 whether the dependency holds while judging what your claim turns on, so pass
 seed_credence on add_decomposition_edge — your prior that the subclaim is
@@ -93,8 +102,11 @@ path only; claims arriving from extraction carry no prior, by design.
 
 Where distinct lines of reasoning bear on the claim (§7), group each one's
 subclaims under a named argument: add_argument, then pass the returned
-argument_id on the edges. One natural line of support needs no named argument;
-its subclaims stand as the claim's basis, the dependencies it rests on directly.
+argument_id on the edges. Different arguments may share a subclaim: attach it
+once, then call add_relationship_edge again with the other argument_id, and
+the same edge is grouped under both. One natural line of support needs no
+named argument; its subclaims stand as the claim's basis, the dependencies it
+rests on directly.
 
 Every named argument carries a written form. After attaching its edges, call
 write_argument with one to three sentences stating how the subclaims combine,

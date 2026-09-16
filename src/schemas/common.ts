@@ -80,6 +80,33 @@ export const RELATION_GUIDANCE =
   "'defines': fixes the meaning of a term in the parent, only when that " +
   "meaning is itself disputed and load-bearing.";
 
+// Lateral links (#436): the constitution's third direction (§19), claims that
+// are neither premise nor conclusion of each other yet constrain one another
+// or read as halves of one position. Symmetric and non-evaluative: a link
+// carries reasoning and renders as a see-also on both claim pages, and it is
+// never a dependency, so coherence propagation and subclaim-based assessment
+// never see it. Kept deliberately small; add a kind when a second distinct
+// use appears, not before.
+export const CLAIM_LINK_KINDS = [
+  "related",
+  "rival_explanation",
+  "counterpart_position",
+] as const;
+
+export const claimLinkKindEnum = z.enum(CLAIM_LINK_KINDS);
+
+export const CLAIM_LINK_GUIDANCE =
+  "How the two claims stand to each other, neither being a premise of the " +
+  "other. 'rival_explanation': competing accounts of the same event or " +
+  "phenomenon, so evidence for one bears on the other (§19; their credences " +
+  "must be jointly tenable, §21). 'counterpart_position': two halves of one " +
+  "public position, e.g. what an author maintains and whether their own " +
+  "theory delivers it, which a reader of either would want beside it. " +
+  "'related': a see-also with no tighter fit, including two formulations " +
+  "created together because their identity was unclear (§5). If one claim " +
+  "would be false, ill-posed, or less credible were the other false, that " +
+  "is a decomposition edge, not a link.";
+
 export const stanceEnum = z.enum(["for", "against", "neutral"]);
 
 /**

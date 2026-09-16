@@ -231,13 +231,13 @@ export async function assembleEvidenceRecord(
     relation: string;
     status: string | null;
   }>(
-    `SELECT cr.argument_id, c.id, c.text, cr.relation_type AS relation, a.status
-       FROM claim_relationships cr
+    `SELECT am.argument_id, c.id, c.text, cr.relation_type AS relation, a.status
+       FROM argument_subclaims am
+       JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
       WHERE cr.parent_claim_id = $1
-        AND cr.argument_id IS NOT NULL
-      ORDER BY cr.created_at`,
+      ORDER BY am.created_at, cr.created_at`,
     [claimId]
   );
   const subclaimsByArgument = new Map<
