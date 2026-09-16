@@ -33,6 +33,8 @@ import {
   RELATION_TYPES,
   RELATION_GUIDANCE,
   claimTypeEnum,
+  INSTANCE_STANCES,
+  isInstanceStance,
 } from "../../schemas/common.js";
 import { knownDomains } from "../prompts/skills.js";
 import {
@@ -222,10 +224,12 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           stance: {
             type: "string",
-            enum: ["affirms", "denies"],
+            enum: [...INSTANCE_STANCES],
             description:
-              "Whether this source asserts the canonical claim (affirms) or " +
-              "its negation (denies).",
+              "Whether this source asserts the canonical claim (affirms), " +
+              "its negation (denies), or states the proposition as an open " +
+              "question without endorsing either side (poses: a conjecture " +
+              "as a survey states it).",
           },
           speaker: {
             type: "string",
@@ -294,10 +298,12 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           stance: {
             type: "string",
-            enum: ["affirms", "denies"],
+            enum: [...INSTANCE_STANCES],
             description:
               "Corrected stance: whether this source asserts the canonical " +
-              "claim (affirms) or its negation (denies). Omit to leave as is.",
+              "claim (affirms), its negation (denies), or states the " +
+              "proposition as an open question without taking a side " +
+              "(poses). Omit to leave as is.",
           },
           confidence: {
             type: "number",
@@ -984,12 +990,14 @@ export async function executeStewardTool(
               `surrounding document.`,
           });
         }
-        if (stance !== "affirms" && stance !== "denies") {
+        if (!isInstanceStance(stance)) {
           return JSON.stringify({
             success: false,
             message:
               `Unknown stance "${stance}". Use "affirms" (the source asserts ` +
-              `the canonical claim) or "denies" (it asserts the negation).`,
+              `the canonical claim), "denies" (it asserts the negation), or ` +
+              `"poses" (it states the proposition as an open question ` +
+              `without taking a side).`,
           });
         }
 
@@ -1101,14 +1109,16 @@ export async function executeStewardTool(
         const patch: Partial<typeof claimInstances.$inferInsert> = {};
         if (input.stance !== undefined && input.stance !== null) {
           const stance = String(input.stance).toLowerCase();
-          if (stance !== "affirms" && stance !== "denies") {
+          if (!isInstanceStance(stance)) {
             return JSON.stringify({
               success: false,
               message:
                 `Unknown stance "${stance}". Use "affirms" (the source ` +
-                `asserts the canonical claim) or "denies" (it asserts the ` +
-                `negation). A source that only mentions the claim keeps its ` +
-                `stance and gets a confidence near 0 instead.`,
+                `asserts the canonical claim), "denies" (it asserts the ` +
+                `negation), or "poses" (it states the proposition as an open ` +
+                `question without taking a side). A source that only ` +
+                `mentions the claim in passing keeps its stance and gets a ` +
+                `confidence near 0 instead.`,
             });
           }
           patch.stance = stance;

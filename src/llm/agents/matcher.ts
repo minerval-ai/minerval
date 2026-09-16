@@ -8,6 +8,7 @@ import { findSimilarClaims } from "../../services/search-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { INSTANCE_STANCES, isInstanceStance, type InstanceStance } from "../../schemas/common.js";
 
 /**
  * How the Matcher's run ended (#419). `match` and `new` are verdicts the
@@ -23,11 +24,14 @@ export interface MatchDecision {
   matched_claim_id: string | null;
   new_canonical_form: string | null;
   /**
-   * Whether this source asserts the claim as canonically stated ("affirms") or
-   * asserts its negation/contrary ("denies"). Lets a claim and its denial share
-   * one canonical node while preserving which side each source takes.
+   * Whether this source asserts the claim as canonically stated ("affirms"),
+   * asserts its negation/contrary ("denies"), or states the proposition as an
+   * open question without taking a side ("poses", #445). Lets a claim and its
+   * denial share one canonical node while preserving which side each source
+   * takes, and lets a conjecture statement be recorded without a polarity it
+   * does not have.
    */
-  instance_stance: "affirms" | "denies";
+  instance_stance: InstanceStance;
   /**
    * For a new claim: one sentence on why the canonical form is stated in the
    * direction it is (#360). The direction is chosen on the proposition's own
@@ -48,7 +52,7 @@ const MATCH_DECISION_SCHEMA = {
     is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
     matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
-    instance_stance: { type: "string", enum: ["affirms", "denies"], description: "Whether this source asserts the canonical claim as stated (affirms) or its negation/contrary (denies), judged against the canonical direction, not assumed from the source" },
+    instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
@@ -138,8 +142,8 @@ async function matchClaimImpl(input: {
     if (raw.is_match && typeof raw.matched_claim_id !== "string") {
       return "matched_claim_id is required when is_match is true";
     }
-    if (raw.instance_stance !== "affirms" && raw.instance_stance !== "denies") {
-      return 'instance_stance must be "affirms" or "denies"';
+    if (!isInstanceStance(raw.instance_stance)) {
+      return 'instance_stance must be "affirms", "denies", or "poses"';
     }
     return null;
   };

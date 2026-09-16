@@ -84,6 +84,24 @@ describe("Matcher decision validation", () => {
     expect(JSON.parse(await executeTool("submit_match_decision", whole)).success).toBe(true);
   });
 
+  it("accepts a posing stance for a source that states the proposition as an open question (#445)", async () => {
+    await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
+    const { executeTool, onFinalTool } = mocks.loopOptions!;
+    const posing = { ...whole, instance_stance: "poses" };
+    expect(onFinalTool("submit_match_decision", posing)).toEqual({ ...posing, outcome: "match" });
+    expect(JSON.parse(await executeTool("submit_match_decision", posing)).success).toBe(true);
+  });
+
+  it("refuses a stance outside affirms/denies/poses", async () => {
+    await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
+    const { executeTool, onFinalTool } = mocks.loopOptions!;
+    const bad = { ...whole, instance_stance: "mentions" };
+    expect(onFinalTool("submit_match_decision", bad)).toBeNull();
+    const reply = JSON.parse(await executeTool("submit_match_decision", bad));
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain("poses");
+  });
+
   it("ends undecided, not as a new claim, when nothing whole was ever submitted (#419)", async () => {
     const decision = await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
     expect(decision.outcome).toBe("undecided");

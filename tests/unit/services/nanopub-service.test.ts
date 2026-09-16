@@ -179,6 +179,26 @@ describe("evidenceRecordToTrig", () => {
     expect(trig).not.toContain("cito:supports <https://example.com/column>");
   });
 
+  it("types a posing source as cito:discusses, neither supporting nor disputing (#445)", () => {
+    const base = record();
+    const trig = evidenceRecordToTrig(
+      record({
+        instances: [
+          {
+            ...base.instances[0],
+            stance: "poses",
+            source: { ...base.instances[0].source, url: "https://example.com/survey" },
+          },
+        ],
+      }),
+      opts
+    );
+    expect(trig).toContain(`<https://example.com/survey> cito:discusses <${CLAIM_URI}>`);
+    expect(trig).not.toContain("cito:supports <https://example.com/survey>");
+    expect(trig).not.toContain(`<https://example.com/survey> cito:supports`);
+    expect(trig).not.toContain(`<https://example.com/survey> cito:disputes`);
+  });
+
   it("pins the assessment version and attribution in pubinfo", () => {
     const trig = evidenceRecordToTrig(record(), opts);
     expect(trig).toContain('dct:creator "Minerval"');

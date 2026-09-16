@@ -223,7 +223,8 @@ async function matchAssertion(assertion: string, context?: string) {
         }
       : { id: decision.matched_claim_id },
     // "affirms": the assertion states the canonical claim. "denies": it states
-    // the negation, so the canonical assessment applies inverted.
+    // the negation, so the canonical assessment applies inverted. "poses": it
+    // states the proposition as an open question and takes no side (#445).
     stance: decision.instance_stance,
     assessment: formatAssessment(assessment),
     confidence: decision.confidence,

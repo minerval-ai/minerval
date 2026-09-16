@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 9883,
-    "fullChars": 58571,
+    "roleChars": 10440,
+    "fullChars": 59128,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 32362,
-    "fullChars": 81050,
+    "roleChars": 32649,
+    "fullChars": 81337,
     "skills": [
       {
         "name": "mathematics",

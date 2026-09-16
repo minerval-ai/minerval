@@ -26,6 +26,7 @@ interface EdgeRow {
 
 // SQL fragment: flip affirm/deny (instances) or for/against (arguments) when the
 // merge is between a claim and its negation/counterpart ($3 = opposed boolean).
+// A "poses" instance (#445) takes no side, so the ELSE keeps it as is.
 const FLIP_INSTANCE_STANCE = `CASE WHEN $3::boolean
   THEN (CASE stance WHEN 'affirms' THEN 'denies' WHEN 'denies' THEN 'affirms' ELSE stance END)
   ELSE stance END`;

@@ -102,7 +102,13 @@ put it.
 Then derive the stance by comparing what this source asserts against the
 form you wrote. A new claim's first instance is "denies" whenever the source
 argues against the proposition as posed; that is the correct record, not a
-defect to fix by flipping the form. Give one sentence on why you chose the
+defect to fix by flipping the form. A source that states the proposition
+without endorsing either side, a conjecture as a survey states it ("the
+Jacobian conjecture asks whether..."), an open problem, a question the
+discourse holds open, "poses" it: neither stance fits, and recording
+"affirms" would count the source as a vote it never cast. "poses" is for a
+source that refers to the proposition as a whole and leaves it open, not
+for one that hedges, argues, or reports someone else taking a side. Give one sentence on why you chose the
 direction in \`direction_note\`: it travels with the claim so a later agent
 judging the wording afresh does not silently re-invert it.
 
@@ -112,7 +118,9 @@ judging the wording afresh does not silently re-invert it.
 - \`matched_claim_id\` (if matching) or \`new_canonical_form\` (if new),
   with \`direction_note\` for a new claim
 - \`instance_stance\`: "affirms" if the source asserts the claim as
-  canonically stated, "denies" if it asserts the negation or contrary
+  canonically stated, "denies" if it asserts the negation or contrary,
+  "poses" if it states the proposition as an open question without
+  endorsing either side
 - \`confidence\` (0.0-1.0) and \`reasoning\`
 - \`alternative_matches\` and \`relationship_notes\`: the near-misses you
   weighed and how they relate (specification, generalization, counterpart).
