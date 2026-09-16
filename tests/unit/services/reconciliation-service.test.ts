@@ -74,6 +74,37 @@ describe("mergeClaims", () => {
     expect(instancesCall?.[1]).toEqual(["s", "l", false]);
   });
 
+  it("carries a deleted duplicate's argument memberships onto the survivor's edge (#437)", async () => {
+    // The dedupe SELECT finds one duplicate edge of the loser's; its
+    // memberships must be re-pointed BEFORE it is captured and deleted, and
+    // the capture must precede the delete (membership rows cascade away).
+    rawQuery.mockImplementation(async (sql: unknown) =>
+      /SELECT cr\.id FROM claim_relationships/.test(String(sql)) ? [{ id: "dup" }] : []
+    );
+    try {
+      await mergeClaims({
+        survivorId: "s",
+        loserId: "l",
+        stanceRelation: "same",
+        reasoning: "duplicate",
+      });
+    } finally {
+      rawQuery.mockImplementation(async () => []);
+    }
+    const all = sqls();
+    const repoint = all.findIndex((s) => /INSERT INTO argument_subclaims/.test(s));
+    const capture = all.findIndex((s) => /array_agg\(am\.argument_id\)/.test(s));
+    const del = all.findIndex((s) => /DELETE FROM claim_relationships WHERE id = ANY/.test(s));
+    expect(repoint).toBeGreaterThan(-1);
+    expect(capture).toBeGreaterThan(repoint);
+    expect(del).toBeGreaterThan(capture);
+    // and the re-pointed rows are part of the reversible payload
+    const logCall = rawQuery.mock.calls.find((c) =>
+      /INSERT INTO reconciliation_events/.test(String(c[0]))
+    );
+    expect(String(logCall?.[1]?.[2])).toContain("repointed_memberships");
+  });
+
   it("refuses to merge a claim into itself", async () => {
     await expect(
       mergeClaims({ survivorId: "x", loserId: "x", stanceRelation: "same", reasoning: "" })

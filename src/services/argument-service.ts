@@ -79,15 +79,21 @@ export async function getArgumentsForClaim(claimId: string) {
     .where(eq(arguments_.claimId, claimId));
 }
 
-/** The child claims attached to this argument's decomposition edges. */
+/**
+ * The child claims of the decomposition edges grouped under this argument
+ * (membership lives in argument_subclaims, #437; a child attached to the
+ * parent by two relation types appears once per edge).
+ */
 export async function getArgumentSubclaims(
   argumentId: string
 ): Promise<{ id: string; text: string }[]> {
   return rawQuery<{ id: string; text: string }>(
     `SELECT c.id, c.text
-       FROM claim_relationships cr
+       FROM argument_subclaims am
+       JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
-      WHERE cr.argument_id = $1`,
+      WHERE am.argument_id = $1
+      ORDER BY am.created_at, cr.id`,
     [argumentId]
   );
 }

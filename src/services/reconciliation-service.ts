@@ -10,9 +10,16 @@
  * undoes a logged event.
  */
 import { getDb, rawQuery } from "../db/client.js";
-import { claims, claimRelationships } from "../db/schema.js";
+import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
+import { insertRelationshipEdge } from "./relationship-service.js";
+
+/** One argument_subclaims row, as recorded in a reversible payload. */
+interface MembershipRef {
+  argument_id: string;
+  relationship_id: string;
+}
 
 interface EdgeRow {
   parent_claim_id: string;
@@ -20,8 +27,13 @@ interface EdgeRow {
   relation_type: string;
   reasoning: string;
   confidence: number;
-  argument_id: string | null;
   created_by: string;
+  /**
+   * The named arguments the edge was grouped under when it was deleted
+   * (argument_subclaims, #437), so a reversal can restore the grouping.
+   * Absent on payloads logged before membership moved off the edge.
+   */
+  argument_ids?: string[];
 }
 
 // SQL fragment: flip affirm/deny (instances) or for/against (arguments) when the
@@ -32,9 +44,6 @@ const FLIP_INSTANCE_STANCE = `CASE WHEN $3::boolean
 const FLIP_ARGUMENT_STANCE = `CASE WHEN $3::boolean
   THEN (CASE stance WHEN 'for' THEN 'against' WHEN 'against' THEN 'for' ELSE stance END)
   ELSE stance END`;
-
-const EDGE_COLS =
-  "parent_claim_id, child_claim_id, relation_type, reasoning, confidence, argument_id, created_by";
 
 async function logEvent(
   operation: string,
@@ -49,26 +58,88 @@ async function logEvent(
   return rows[0]?.id;
 }
 
+/**
+ * Capture edges (with their argument memberships) and delete them, in that
+ * order: membership rows cascade away with the edge, so they must be read
+ * first for the reversal payload.
+ */
+async function captureAndDeleteEdges(edgeIds: string[]): Promise<EdgeRow[]> {
+  if (edgeIds.length === 0) return [];
+  const captured = await rawQuery<EdgeRow>(
+    `SELECT cr.parent_claim_id, cr.child_claim_id, cr.relation_type,
+            cr.reasoning, cr.confidence, cr.created_by,
+            COALESCE(
+              array_agg(am.argument_id) FILTER (WHERE am.argument_id IS NOT NULL),
+              '{}'
+            ) AS argument_ids
+       FROM claim_relationships cr
+       LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
+      WHERE cr.id = ANY($1::uuid[])
+      GROUP BY cr.id`,
+    [edgeIds]
+  );
+  await rawQuery(`DELETE FROM claim_relationships WHERE id = ANY($1::uuid[])`, [
+    edgeIds,
+  ]);
+  return captured;
+}
+
+/**
+ * Restore captured edges and their argument memberships. Idempotent: an edge
+ * already present is reused, and a membership is re-added only while its
+ * argument still exists on the edge's parent claim (the invariant
+ * relationship-service enforces on live writes).
+ */
 async function reinsertEdges(edges: EdgeRow[]): Promise<void> {
   for (const e of edges) {
-    try {
-      await rawQuery(
-        `INSERT INTO claim_relationships (${EDGE_COLS})
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          e.parent_claim_id,
-          e.child_claim_id,
-          e.relation_type,
-          e.reasoning,
-          e.confidence,
-          e.argument_id,
-          e.created_by,
-        ]
-      );
-    } catch {
-      // Edge already present (unique index) — idempotent restore, ignore.
-    }
+    const { id } = await insertRelationshipEdge({
+      parentId: e.parent_claim_id,
+      childId: e.child_claim_id,
+      relationType: e.relation_type,
+      reasoning: e.reasoning,
+      confidence: e.confidence,
+      createdBy: e.created_by,
+    });
+    const argumentIds = e.argument_ids ?? [];
+    if (argumentIds.length === 0) continue;
+    await rawQuery(
+      `INSERT INTO argument_subclaims (argument_id, relationship_id)
+       SELECT a.id, cr.id
+         FROM arguments a
+         JOIN claim_relationships cr ON cr.id = $2
+        WHERE a.id = ANY($1::uuid[])
+          AND a.claim_id = cr.parent_claim_id
+       ON CONFLICT DO NOTHING`,
+      [argumentIds, id]
+    );
   }
+}
+
+/**
+ * Before a duplicate edge of the loser's is deleted in a merge, carry its
+ * argument memberships over to the survivor's equivalent edge (same parent,
+ * child and relation once the loser is read as the survivor), so a grouping
+ * survives the merge instead of cascading away with the duplicate.
+ */
+async function repointMemberships(
+  edgeIds: string[],
+  equivalentEdgeJoin: string,
+  survivorId: string
+): Promise<MembershipRef[]> {
+  if (edgeIds.length === 0) return [];
+  // RETURNING yields only the rows this statement created, so the reversal
+  // can remove exactly the memberships the merge added and nothing older.
+  return rawQuery<MembershipRef>(
+    `INSERT INTO argument_subclaims (argument_id, relationship_id)
+     SELECT am.argument_id, e.id
+       FROM argument_subclaims am
+       JOIN claim_relationships cr ON cr.id = am.relationship_id
+       JOIN claim_relationships e ON ${equivalentEdgeJoin}
+      WHERE cr.id = ANY($2::uuid[])
+     ON CONFLICT DO NOTHING
+     RETURNING argument_id, relationship_id`,
+    [survivorId, edgeIds]
+  );
 }
 
 /**
@@ -110,36 +181,57 @@ export async function mergeClaims(input: {
     [survivorId, loserId, opposed]
   );
 
-  // 3. Edges where the loser is the CHILD: drop self/duplicate edges (captured so
-  //    they can be restored), then repoint the rest.
-  const deletedChildEdges = await rawQuery<EdgeRow>(
-    `DELETE FROM claim_relationships cr
-      WHERE cr.child_claim_id = $2
-        AND (cr.parent_claim_id = $1
-             OR EXISTS (SELECT 1 FROM claim_relationships e
-                          WHERE e.child_claim_id = $1
-                            AND e.parent_claim_id = cr.parent_claim_id
-                            AND e.relation_type = cr.relation_type))
-      RETURNING ${EDGE_COLS}`,
-    [survivorId, loserId]
+  // 3. Edges where the loser is the CHILD: drop self/duplicate edges (captured,
+  //    with their argument memberships, so they can be restored; a duplicate's
+  //    memberships move to the survivor's equivalent edge first), then repoint
+  //    the rest — memberships ride along with a repointed edge, whose id is
+  //    unchanged.
+  const childDupIds = (
+    await rawQuery<{ id: string }>(
+      `SELECT cr.id FROM claim_relationships cr
+        WHERE cr.child_claim_id = $2
+          AND (cr.parent_claim_id = $1
+               OR EXISTS (SELECT 1 FROM claim_relationships e
+                            WHERE e.child_claim_id = $1
+                              AND e.parent_claim_id = cr.parent_claim_id
+                              AND e.relation_type = cr.relation_type))`,
+      [survivorId, loserId]
+    )
+  ).map((r) => r.id);
+  const repointedChildMemberships = await repointMemberships(
+    childDupIds,
+    `e.child_claim_id = $1 AND e.parent_claim_id = cr.parent_claim_id
+                                  AND e.relation_type = cr.relation_type`,
+    survivorId
   );
+  const deletedChildEdges = await captureAndDeleteEdges(childDupIds);
   const repointedChild = await rawQuery<{ id: string }>(
     `UPDATE claim_relationships SET child_claim_id = $1 WHERE child_claim_id = $2 RETURNING id`,
     [survivorId, loserId]
   );
 
-  // 4. Edges where the loser is the PARENT (same dedupe).
-  const deletedParentEdges = await rawQuery<EdgeRow>(
-    `DELETE FROM claim_relationships cr
-      WHERE cr.parent_claim_id = $2
-        AND (cr.child_claim_id = $1
-             OR EXISTS (SELECT 1 FROM claim_relationships e
-                          WHERE e.parent_claim_id = $1
-                            AND e.child_claim_id = cr.child_claim_id
-                            AND e.relation_type = cr.relation_type))
-      RETURNING ${EDGE_COLS}`,
-    [survivorId, loserId]
+  // 4. Edges where the loser is the PARENT (same dedupe). The loser's
+  //    arguments already sit on the survivor (step 2), so their memberships
+  //    land on edges of their own claim.
+  const parentDupIds = (
+    await rawQuery<{ id: string }>(
+      `SELECT cr.id FROM claim_relationships cr
+        WHERE cr.parent_claim_id = $2
+          AND (cr.child_claim_id = $1
+               OR EXISTS (SELECT 1 FROM claim_relationships e
+                            WHERE e.parent_claim_id = $1
+                              AND e.child_claim_id = cr.child_claim_id
+                              AND e.relation_type = cr.relation_type))`,
+      [survivorId, loserId]
+    )
+  ).map((r) => r.id);
+  const repointedParentMemberships = await repointMemberships(
+    parentDupIds,
+    `e.parent_claim_id = $1 AND e.child_claim_id = cr.child_claim_id
+                                  AND e.relation_type = cr.relation_type`,
+    survivorId
   );
+  const deletedParentEdges = await captureAndDeleteEdges(parentDupIds);
   const repointedParent = await rawQuery<{ id: string }>(
     `UPDATE claim_relationships SET parent_claim_id = $1 WHERE parent_claim_id = $2 RETURNING id`,
     [survivorId, loserId]
@@ -161,6 +253,10 @@ export async function mergeClaims(input: {
     repointed_child_edge_ids: repointedChild.map((r) => r.id),
     repointed_parent_edge_ids: repointedParent.map((r) => r.id),
     deleted_edges: [...deletedChildEdges, ...deletedParentEdges],
+    repointed_memberships: [
+      ...repointedChildMemberships,
+      ...repointedParentMemberships,
+    ],
   });
 
   return { merged: true, survivorId, loserId, eventId };
@@ -205,19 +301,17 @@ export async function addRelationshipEdge(input: {
   createdBy?: string;
 }): Promise<{ added: boolean; eventId?: string }> {
   if (input.parentId === input.childId) return { added: false };
-  const db = getDb();
-  try {
-    await db.insert(claimRelationships).values({
-      parentClaimId: input.parentId,
-      childClaimId: input.childId,
-      relationType: input.relationType.toLowerCase(),
-      reasoning: input.reasoning,
-      confidence: input.confidence ?? 1.0,
-      createdBy: input.createdBy ?? "curator",
-    });
-  } catch {
-    return { added: false }; // unique constraint — edge already exists
-  }
+  // Only a true duplicate reads as not-added; a missing claim or any other
+  // failure propagates rather than masquerading as "already existed".
+  const { created } = await insertRelationshipEdge({
+    parentId: input.parentId,
+    childId: input.childId,
+    relationType: input.relationType,
+    reasoning: input.reasoning,
+    confidence: input.confidence ?? 1.0,
+    createdBy: input.createdBy ?? "curator",
+  });
+  if (!created) return { added: false };
   const eventId = await logEvent("add_edge", input.reasoning, {
     parent_id: input.parentId,
     child_id: input.childId,
@@ -232,15 +326,17 @@ export async function removeRelationshipEdge(input: {
   childId: string;
   relationType?: string;
 }): Promise<{ removed: number; eventId?: string }> {
-  const deleted = await rawQuery<EdgeRow>(
-    `DELETE FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2
-      ${input.relationType ? "AND relation_type = $3" : ""}
-      RETURNING ${EDGE_COLS}`,
-    input.relationType
-      ? [input.parentId, input.childId, input.relationType.toLowerCase()]
-      : [input.parentId, input.childId]
-  );
+  const ids = (
+    await rawQuery<{ id: string }>(
+      `SELECT id FROM claim_relationships
+        WHERE parent_claim_id = $1 AND child_claim_id = $2
+        ${input.relationType ? "AND relation_type = $3" : ""}`,
+      input.relationType
+        ? [input.parentId, input.childId, input.relationType.toLowerCase()]
+        : [input.parentId, input.childId]
+    )
+  ).map((r) => r.id);
+  const deleted = await captureAndDeleteEdges(ids);
   const eventId =
     deleted.length > 0
       ? await logEvent("remove_edge", "split: edge removed", { deleted_edges: deleted })
@@ -301,6 +397,7 @@ export async function reverseReconciliation(
       const repointedChild = (p.repointed_child_edge_ids as string[]) ?? [];
       const repointedParent = (p.repointed_parent_edge_ids as string[]) ?? [];
       const deletedEdges = (p.deleted_edges as EdgeRow[]) ?? [];
+      const repointedMemberships = (p.repointed_memberships as MembershipRef[]) ?? [];
 
       // Move instances/arguments back (un-flipping stance for an opposed merge).
       // Param order matches FLIP_*_STANCE, which references $3::boolean.
@@ -331,7 +428,19 @@ export async function reverseReconciliation(
           [loserId, repointedParent]
         );
       }
-      // Restore edges that were deleted as duplicates/self-edges.
+      // Drop the memberships the merge carried onto the survivor's edges (and
+      // only those), then restore the deleted duplicates with their own.
+      if (repointedMemberships.length) {
+        await rawQuery(
+          `DELETE FROM argument_subclaims
+            WHERE (argument_id, relationship_id) IN
+                  (SELECT unnest($1::uuid[]), unnest($2::uuid[]))`,
+          [
+            repointedMemberships.map((m) => m.argument_id),
+            repointedMemberships.map((m) => m.relationship_id),
+          ]
+        );
+      }
       await reinsertEdges(deletedEdges);
       // Un-merge the loser.
       await rawQuery(
