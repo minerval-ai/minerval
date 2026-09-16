@@ -13,6 +13,7 @@
  * outage) propagates instead of being swallowed as success.
  */
 import { rawQuery } from "../db/client.js";
+import { asRunner, type Runner } from "./query-runner.js";
 
 export interface InsertEdgeInput {
   parentId: string;
@@ -37,10 +38,12 @@ export interface EdgeIdentity {
  * throws (foreign key), as does a self-edge (check constraint).
  */
 export async function insertRelationshipEdge(
-  input: InsertEdgeInput
+  input: InsertEdgeInput,
+  tx?: Runner
 ): Promise<{ id: string; created: boolean }> {
+  const run = asRunner(tx);
   const relationType = input.relationType.toLowerCase();
-  const inserted = await rawQuery<{ id: string }>(
+  const inserted = await run.query<{ id: string }>(
     `INSERT INTO claim_relationships
        (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -57,7 +60,7 @@ export async function insertRelationshipEdge(
   );
   if (inserted[0]) return { id: inserted[0].id, created: true };
 
-  const [existing] = await rawQuery<{ id: string }>(
+  const [existing] = await run.query<{ id: string }>(
     `SELECT id FROM claim_relationships
       WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
     [input.parentId, input.childId, relationType]
@@ -96,9 +99,11 @@ export async function findRelationshipEdge(
  */
 export async function attachEdgeToArgument(
   argumentId: string,
-  relationshipId: string
+  relationshipId: string,
+  tx?: Runner
 ): Promise<{ grouped: boolean }> {
-  const [check] = await rawQuery<{
+  const run = asRunner(tx);
+  const [check] = await run.query<{
     argument_claim_id: string | null;
     edge_parent_id: string | null;
   }>(
@@ -121,7 +126,7 @@ export async function attachEdgeToArgument(
         `only edges of its own claim`
     );
   }
-  const rows = await rawQuery<{ argument_id: string }>(
+  const rows = await run.query<{ argument_id: string }>(
     `INSERT INTO argument_subclaims (argument_id, relationship_id)
      VALUES ($1, $2)
      ON CONFLICT DO NOTHING

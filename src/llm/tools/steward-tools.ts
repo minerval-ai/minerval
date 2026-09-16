@@ -7,7 +7,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, and } from "drizzle-orm";
-import { getDb, rawQuery } from "../../db/client.js";
+import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import {
   claims,
   assessments,
@@ -1985,42 +1985,54 @@ export async function executeStewardTool(
           stewardEnqueueMinImportance > 0 &&
           effectiveImportance < stewardEnqueueMinImportance;
 
-        const [newClaim] = await db
-          .insert(claims)
-          .values({
-            text: childText,
-            claimType: "empirical_derived",
-            embedding: embedding ?? undefined,
-            ...(importance !== undefined ? { importance } : {}),
-            ...(contestation !== undefined ? { contestation } : {}),
-            ...(seedCredence !== undefined ? { seedCredence } : {}),
-            ...(seedNote !== undefined ? { seedNote } : {}),
-            // Provenance for the mechanical "preliminary" label: which claim's
-            // Steward wrote the seed. Stamped whenever any seed field is given.
-            ...(seedCredence !== undefined || seedNote !== undefined
-              ? { seedSourceClaimId: parentId }
-              : {}),
-            ...(gated ? { stewardState: "deferred" } : {}),
-            ...(domainsSource !== null ? { domains, domainsSource } : {}),
-            pipelineEpoch,
-            createdBy: "claim_steward",
-          })
-          .returning();
+        // The subclaim row, its edge, and its argument membership (#437) are
+        // one transaction: a subclaim exists only as part of a decomposition,
+        // so if the edge cannot be written (a bad relation type, a schema the
+        // running code no longer matches, an outage) the claim row rolls back
+        // with it rather than surviving as an orphan with no parent. Issue
+        // #451 was exactly that: the edge insert failed silently mid-deploy
+        // and five parentless subclaims were left behind. Failures propagate.
+        const newClaim = await withTransaction(async (tx) => {
+          const [created] = await tx.db
+            .insert(claims)
+            .values({
+              text: childText,
+              claimType: "empirical_derived",
+              embedding: embedding ?? undefined,
+              ...(importance !== undefined ? { importance } : {}),
+              ...(contestation !== undefined ? { contestation } : {}),
+              ...(seedCredence !== undefined ? { seedCredence } : {}),
+              ...(seedNote !== undefined ? { seedNote } : {}),
+              // Provenance for the mechanical "preliminary" label: which
+              // claim's Steward wrote the seed. Stamped whenever any seed
+              // field is given.
+              ...(seedCredence !== undefined || seedNote !== undefined
+                ? { seedSourceClaimId: parentId }
+                : {}),
+              ...(gated ? { stewardState: "deferred" } : {}),
+              ...(domainsSource !== null ? { domains, domainsSource } : {}),
+              pipelineEpoch,
+              createdBy: "claim_steward",
+            })
+            .returning();
 
-        // Create the edge (the child is brand new, so this cannot collide) and
-        // its argument membership (#437). Failures propagate: a swallowed error
-        // here would report a subclaim that never joined the decomposition.
-        const edge = await insertRelationshipEdge({
-          parentId,
-          childId: newClaim!.id,
-          relationType: relation,
-          reasoning,
-          confidence: 1.0,
-          createdBy: "claim_steward",
+          // The child is brand new, so the edge cannot collide.
+          const edge = await insertRelationshipEdge(
+            {
+              parentId,
+              childId: created!.id,
+              relationType: relation,
+              reasoning,
+              confidence: 1.0,
+              createdBy: "claim_steward",
+            },
+            tx
+          );
+          if (argumentId) {
+            await attachEdgeToArgument(argumentId, edge.id, tx);
+          }
+          return created!;
         });
-        if (argumentId) {
-          await attachEdgeToArgument(argumentId, edge.id);
-        }
 
         // The new claim is created already embedded (above), so it is a valid,
         // dedup-able stub even if it is never processed. When NOT gated, we onboard
@@ -2032,7 +2044,7 @@ export async function executeStewardTool(
         // looping into it.
         if (!gated) {
           await enqueueClaimPipeline({
-            claimId: newClaim!.id,
+            claimId: newClaim.id,
             jobId: "steward",
           });
         }
@@ -2055,7 +2067,7 @@ export async function executeStewardTool(
             (domainsSource !== null
               ? `; domains [${domains.join(", ")}] (${domainsSource})`
               : ""),
-          child_claim_id: newClaim!.id,
+          child_claim_id: newClaim.id,
         });
       }
 

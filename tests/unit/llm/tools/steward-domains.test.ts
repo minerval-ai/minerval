@@ -34,9 +34,16 @@ vi.mock("../../../../src/db/client.js", () => {
       return { where: async () => undefined };
     },
   });
+  const rawQuery = vi.fn(async () => []);
+  const db = { insert: () => ({ values }), select, update };
   return {
-    getDb: () => ({ insert: () => ({ values }), select, update }),
-    rawQuery: vi.fn(async () => []),
+    getDb: () => db,
+    rawQuery,
+    // add_decomposition_edge writes the claim, edge, and membership in one
+    // transaction; here the callback just runs against the same stubs.
+    withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ query: rawQuery, db })
+    ),
   };
 });
 

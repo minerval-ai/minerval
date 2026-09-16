@@ -26,9 +26,16 @@ vi.mock("../../../../src/db/client.js", () => {
       return { where: async () => undefined };
     },
   });
+  const rawQuery = vi.fn(async () => []);
+  const db = { insert: () => ({ values }), select, update };
   return {
-    getDb: () => ({ insert: () => ({ values }), select, update }),
-    rawQuery: vi.fn(async () => []),
+    getDb: () => db,
+    rawQuery,
+    // add_decomposition_edge writes the claim, edge, and membership in one
+    // transaction; here the callback just runs against the same stubs.
+    withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ query: rawQuery, db })
+    ),
   };
 });
 
@@ -69,12 +76,37 @@ import {
   enqueueClaimPipeline,
   enqueueSteward,
 } from "../../../../src/services/queue-service.js";
-import { rawQuery } from "../../../../src/db/client.js";
+import { rawQuery, withTransaction } from "../../../../src/db/client.js";
+import { insertRelationshipEdge } from "../../../../src/services/relationship-service.js";
 
 describe("steward add_decomposition_edge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     insertedValues.length = 0;
+  });
+
+  it("writes the claim and its edge in one transaction, and does not onboard a subclaim whose edge failed (#451)", async () => {
+    vi.mocked(insertRelationshipEdge).mockRejectedValueOnce(
+      new Error('column "argument_id" does not exist')
+    );
+    const out = await executeStewardTool("add_decomposition_edge", {
+      parent_id: "22222222-2222-2222-2222-222222222222",
+      child_text: "Subclaim whose edge cannot be written",
+      relation: "supports",
+      reasoning: "load-bearing",
+    }).catch((e: Error) => e);
+
+    // The failure is surfaced (the tool runner relays thrown errors as
+    // "Error: ..." text), not swallowed as success.
+    const text = out instanceof Error ? out.message : String(out);
+    expect(text).toContain("argument_id");
+    expect(text).not.toContain('"success":true');
+    // The claim row was written inside the transaction that the edge failure
+    // rolls back, so no orphan survives ...
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(insertedValues.some((r) => "text" in r)).toBe(true);
+    // ... and nothing was enqueued for a subclaim that no longer exists.
+    expect(enqueueClaimPipeline).not.toHaveBeenCalled();
   });
 
   it("enqueues the newly created subclaim for the claim pipeline (not orphaned)", async () => {
