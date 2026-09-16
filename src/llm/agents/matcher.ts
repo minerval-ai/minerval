@@ -63,6 +63,16 @@ const MATCH_DECISION_SCHEMA = {
 };
 
 /**
+ * The first run's tool-use turn cap (#467). A halting guard in the
+ * constitution's sense (Part IX), so it sits clear of normal use: the role
+ * prompt asks for four or more framings plus the decision, and a max_tokens
+ * recovery, a nudge, a refused submission, or a raise_issue call each cost a
+ * turn without a search. The Matcher is told this number in its prompt so it
+ * can pace itself, and may batch several searches into one turn.
+ */
+const MATCHER_TURN_BUDGET = 12;
+
+/**
  * The agentic Matcher is the single decider of claim identity (issue #25).
  *
  * It is a tool-use loop armed with `search_similar_claims`. Embedding similarity
@@ -99,7 +109,9 @@ async function matchClaimImpl(input: {
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
-  const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical);
+  const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
+    turnBudget: MATCHER_TURN_BUDGET,
+  });
   const skills = skillsForDomains(input.domains, "matcher");
   // One cached block for the constitution and role, plus one per active skill.
   const system = getMatcherSystemPromptBlocks({ skills });
@@ -273,7 +285,7 @@ async function matchClaimImpl(input: {
   });
 
   await withSkills(skills.map((s) => s.name), async () => {
-    await runLoop({ maxIterations: 8 });
+    await runLoop({ maxIterations: MATCHER_TURN_BUDGET });
     if (finalResult) return;
     // One bounded retry (#419): most timeouts are a Matcher mid-search, not
     // stuck, so a short second run told to decide usually yields a verdict.

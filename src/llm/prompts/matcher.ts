@@ -147,14 +147,30 @@ export function getMatcherSystemPromptBlocks(
 
 export function getMatchingPrompt(
   extractedText: string,
-  proposedCanonical: string
+  proposedCanonical: string,
+  /**
+   * The run's tool-use turn budget (#467): stated up front so the Matcher
+   * can pace its searches instead of learning the limit two turns before
+   * the cut. Omitted means the prompt says nothing about a budget.
+   */
+  opts: { turnBudget?: number } = {}
 ): string {
+  const budget =
+    opts.turnBudget === undefined
+      ? ""
+      : `
+You have ${opts.turnBudget} tool-use turns in this run, including the one
+that submits. A turn may carry several \`search_similar_claims\` calls at
+once, so issue your framings together (the claim, the canonical form, a
+paraphrase, the negation) rather than one per turn, and keep at least one
+turn for the decision.
+`;
   return `Determine whether this claim already exists in the graph.
 
 Source text, verbatim: "${extractedText}"
 
 Proposed canonical form: "${proposedCanonical}"
-
+${budget}
 Search with \`search_similar_claims\` under several framings, including the
 negation, then call \`submit_match_decision\` with your reasoning.
 `;

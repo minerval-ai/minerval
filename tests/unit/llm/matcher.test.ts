@@ -72,7 +72,7 @@ describe("matchClaim", () => {
     };
     await matchClaim(INPUT);
     const opts = loopCalls[0]!;
-    expect(opts.maxIterations).toBe(8);
+    expect(opts.maxIterations).toBe(12);
     expect(opts.iterationBudgetNotice.warnWithin).toBe(2);
     expect(opts.iterationBudgetNotice.message(1)).toMatch(/submit_match_decision/);
   });
@@ -135,6 +135,16 @@ describe("matchClaim", () => {
     expect(note).toContain("(no results above the floor)");
     // The instruction to decide still follows the record.
     expect(note).toMatch(/at most one more search_similar_claims query/);
+  });
+
+  it("tells the Matcher its turn budget up front and that searches batch (#467)", async () => {
+    script = async (opts) => {
+      await opts.executeTool("submit_match_decision", SUBMISSION);
+    };
+    await matchClaim(INPUT);
+    const first = loopCalls[0]!;
+    expect(first.initialMessages[0].content).toMatch(/You have 12 tool-use turns/);
+    expect(first.initialMessages[0].content).toMatch(/several `search_similar_claims` calls at\nonce/);
   });
 
   it("keeps the retry note plain when the first run never searched", () => {
