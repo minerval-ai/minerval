@@ -80,6 +80,16 @@ production seed set, and all three are built.
   but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
   pipeline's circuit breaker will stop a run cleanly when hit.
+- `BACKGROUND_FALLBACK_LANE_ENABLED=true` (and `BACKGROUND_DAILY_BUDGET_OWLS=0`
+  to leave the owl cap out of it). Stewardship is funded work: the lane runs
+  only what a General mandate covers, and a reset corpus DB has no mandate,
+  so without the fallback lane a run extracts and matches but never
+  decomposes or assesses anything. `corpus:run` warns when that is the
+  situation and reports how many claims were left pending. The alternative
+  is seeding a mandate (`npm run seed:platform-mandates` against
+  `CORPUS_DATABASE_URL`) and running with `--no-reset`.
+- `API_KEYS` must be unset/empty: the runner submits through the real route
+  with no key, relying on the non-production auth bypass.
 
 ## Usage
 

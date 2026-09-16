@@ -105,7 +105,7 @@ async function extractClaimsImpl(input: {
       schemaName: "ExtractedClaim",
       system,
       ...(model ? { model } : {}),
-      maxTokens: 16384,
+      maxTokens: config.extractionMaxTokens,
     });
 
   // The chosen tier decides which propositions become claims and how they are

@@ -30,7 +30,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { resolveProvider } from "../providers/routing.js";
+import { webSearchTool } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -47,7 +47,8 @@ import {
   type GrantMandate,
   getBountyToolDefinitions,
 } from "./grantmaker.js";
-import type { PlanItem } from "../../services/grant-service.js";
+import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
+import { materializePlanItems } from "../../services/action-service.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, owlsToMicroUsd, capOwls } from "../../services/owl.js";
 import {
@@ -130,15 +131,11 @@ async function runMandateReviewImpl(input: {
     budgetJobId: grant.budget_job_id,
   });
 
-  // Web search is an Anthropic server tool; on other providers the pass
-  // degrades gracefully to graph-only surveying rather than failing.
+  // Web search is offered only where the model's provider serves it; on
+  // other providers the pass degrades to graph-only surveying rather than
+  // failing (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
-  const webSearchAvailable = resolveProvider(model) === "anthropic";
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: 5,
-  };
+  const webSearch = webSearchTool(model, 5);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -292,7 +289,12 @@ async function runMandateReviewImpl(input: {
         "move: sources you found that should be ingested, claims that " +
         "need passes. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else. Appends only; " +
-        "already-planned work stays.",
+        "already-planned work stays. The items are materialized onto the " +
+        "ledger in this same call and the result reports each one's " +
+        "standing (open, running, done, cancelled, waiting, blocked) with " +
+        "the reason, so read it: a blocked item will not become work until " +
+        "you change something. " +
+        PLAN_KIND_RULES,
       input_schema: {
         type: "object" as const,
         properties: {
@@ -601,9 +603,7 @@ async function runMandateReviewImpl(input: {
 
   const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: briefing }],
-    tools: webSearchAvailable
-      ? [webSearchTool, ...availableTools]
-      : availableTools,
+    tools: webSearch ? [webSearch, ...availableTools] : availableTools,
     system,
     model,
     maxTokens: 4096,
@@ -689,17 +689,55 @@ async function runMandateReviewImpl(input: {
         };
         const problem = validateMandate(probe);
         if (problem) return JSON.stringify({ success: false, problem });
-        await rawQuery(
+        const [appended] = await rawQuery<{ before: number }>(
           `UPDATE grants
               SET plan = jsonb_set(
                     COALESCE(plan, '{"items": []}'::jsonb), '{items}',
                     COALESCE(plan->'items', '[]'::jsonb) || $2::jsonb),
                   updated_at = now()
-            WHERE id = $1 AND status = 'active'`,
-          [grant.id, JSON.stringify(newItems)]
+            WHERE id = $1 AND status = 'active'
+            RETURNING jsonb_array_length(COALESCE(plan->'items', '[]'::jsonb))
+                      - $3::int AS before`,
+          [grant.id, JSON.stringify(newItems), newItems.length]
         );
+        if (!appended) {
+          return JSON.stringify({
+            success: false,
+            problem: "the mandate is not active; the plan can no longer grow",
+          });
+        }
         planItemsAdded += newItems.length;
-        return JSON.stringify({ success: true, appended: newItems.length });
+        // Materialize now, so the pass learns in this turn whether each
+        // item became work and, if not, why (#416). A materializer
+        // failure never loses the append: the sweep retries on cadence.
+        const before = Number(appended.before);
+        const indices = newItems.map((_, i) => before + i);
+        let outcomes: Array<{ index: number; action: string; ledger: unknown }> = [];
+        let materializeProblem: string | null = null;
+        try {
+          outcomes = await materializePlanItems(grant.id, indices);
+        } catch (err) {
+          materializeProblem = err instanceof Error ? err.message : String(err);
+        }
+        return JSON.stringify({
+          success: true,
+          appended: newItems.length,
+          items: outcomes.map((o) => ({
+            index: o.index,
+            action: o.action,
+            ...("claim_id" in o && o.claim_id ? { claim_id: o.claim_id } : {}),
+            ...("url" in o && o.url ? { url: o.url } : {}),
+            ledger: o.ledger,
+          })),
+          ...(materializeProblem
+            ? {
+                note:
+                  "appended, but not yet materialized onto the ledger: " +
+                  `${materializeProblem}. The reconcile sweep retries on its cadence; ` +
+                  "grant_overview shows each item's standing.",
+              }
+            : {}),
+        });
       }
       if (name === "regrant") {
         const owls = Number(toolInput.owls ?? 0);

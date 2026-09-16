@@ -988,9 +988,12 @@ stay shared between the two.
 
 **Anthropic-only, by design:** server tools (`web_search`), container-backed
 execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
-fallback. Routing an agent that uses a server tool — the Claim Steward does — to
-a non-Anthropic model fails immediately with a message naming the capability,
-rather than silently dropping it. OpenAI's own hosted tools are not wired up
+fallback. No agent hard-codes a server tool: the agents that want web search
+(the Claim Steward, mandate review, lookouts) ask `tools/web-search-tool.ts`,
+which returns the tool on an Anthropic model and `null` elsewhere, and the
+agent's briefing then says web search is absent. A request that still carries
+a server tool to a non-Anthropic model fails immediately with a message naming
+the capability, rather than silently dropping it. OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic
 prefix caching with a stable `prompt_cache_key` per agent instead of explicit

@@ -238,7 +238,22 @@ export function fromChatMessage(
 
   for (const call of message.tool_calls ?? []) {
     if (call.type !== "function") continue;
-    const input = parseToolArguments(call.function.arguments, call.function.name);
+    // Arguments that are not JSON (GLM 5.3 Flash, mid-run, on a long
+    // decision) are the model's mistake, not the adapter's: hand the call to
+    // the loop with a marker instead of throwing, so the tool loop can answer
+    // it with a tool error and the model can call again. Throwing here ended
+    // the whole agent run — and the golden suite around it.
+    let input: Record<string, unknown>;
+    try {
+      input = parseToolArguments(call.function.arguments, call.function.name);
+    } catch (err) {
+      input = {
+        [MALFORMED_TOOL_ARGUMENTS_KEY]:
+          `${err instanceof Error ? err.message : String(err)} ` +
+          `(${call.function.arguments.length} characters received). Call the tool ` +
+          `again with arguments that are a single valid JSON object.`,
+      };
+    }
     toolUses.push({ id: call.id, name: call.function.name, input });
     rawContent.push({
       type: "tool_use",
@@ -249,6 +264,19 @@ export function fromChatMessage(
   }
 
   return { content, toolUses, rawContent };
+}
+
+/**
+ * Key under which fromChatMessage records that a tool call's arguments were
+ * not valid JSON. The tool loops answer such a call with the message instead
+ * of executing it; see malformedToolArguments.
+ */
+export const MALFORMED_TOOL_ARGUMENTS_KEY = "__malformed_arguments";
+
+/** The malformed-arguments message a tool loop should return, or null. */
+export function malformedToolArguments(input: Record<string, unknown>): string | null {
+  const m = input[MALFORMED_TOOL_ARGUMENTS_KEY];
+  return typeof m === "string" ? m : null;
 }
 
 /** Parse a tool call's JSON arguments, naming the tool when it isn't valid JSON. */

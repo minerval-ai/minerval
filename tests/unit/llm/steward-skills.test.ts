@@ -328,3 +328,29 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     );
   });
 });
+
+describe("Steward toolset on a non-Anthropic model", () => {
+  const onModel = async (model: string) => {
+    const saved = mocks.config.stewardModel;
+    mocks.config.stewardModel = model;
+    try {
+      return await run([]);
+    } finally {
+      mocks.config.stewardModel = saved;
+    }
+  };
+
+  it("withholds the Anthropic-only web_search server tool and says so in the task", async () => {
+    const opts = await onModel("z-ai/glm-5.3-flash");
+    const names = opts.tools.map((t) => t.name);
+    expect(names).not.toContain("web_search");
+    expect(names.at(-1)).toBe("note_finding");
+    expect(opts.initialMessages[0]!.content).toContain("web_search is unavailable this run");
+  });
+
+  it("keeps web_search on a Claude model", async () => {
+    const opts = await onModel("claude-sonnet-5");
+    expect(opts.tools.map((t) => t.name).at(-1)).toBe("web_search");
+    expect(opts.initialMessages[0]!.content).not.toContain("web_search is unavailable");
+  });
+});

@@ -43,6 +43,16 @@ import {
 import { getUsageContext } from "../usage-context.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 
+/** The assessment status enum the tool accepts and the graph stores (§10). */
+const ASSESSMENT_STATUSES = [
+  "verified",
+  "supported",
+  "contested",
+  "unsupported",
+  "contradicted",
+  "unknown",
+] as const satisfies readonly string[];
+
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
@@ -97,14 +107,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           status: {
             type: "string",
-            enum: [
-              "verified",
-              "supported",
-              "contested",
-              "unsupported",
-              "contradicted",
-              "unknown",
-            ],
+            enum: [...ASSESSMENT_STATUSES],
             description: "New assessment status",
           },
           confidence: {
@@ -803,7 +806,19 @@ export async function executeStewardTool(
         // but the enum — and every reader — is lowercase; normalize like the
         // relation-type writes do so a prose-following model can't persist an
         // out-of-enum value.
-        const status = String(input.status).toLowerCase();
+        const status = String(input.status ?? "").toLowerCase();
+        // ...and a status that is missing or still out of the enum bounces the
+        // write back rather than persisting the literal "undefined" (GLM 5.3
+        // Flash omitted the field on half its assessments in a corpus run; the
+        // reasoning argued "supported" while the row said nothing).
+        if (!(ASSESSMENT_STATUSES as readonly string[]).includes(status)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Assessment NOT recorded: status ${input.status === undefined ? "is missing" : `"${String(input.status)}" is not one of`} ` +
+              `${ASSESSMENT_STATUSES.join(" | ")}. Call update_claim_assessment again with a valid status.`,
+          });
+        }
         const confidence = input.confidence as number;
         // Optional: only recorded where a probability of truth is meaningful
         // (constitution §10). null, not 0 — "no credence stated" is a distinct
