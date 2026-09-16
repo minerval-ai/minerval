@@ -683,6 +683,112 @@ export function getStewardToolDefinitions(): Tool[] {
       },
     },
     {
+      name: "add_parent_claim",
+      description:
+        "Create a NEW claim ABOVE the claim you steward and attach yours to it " +
+        "as a subclaim: the proposition your claim is an argument for, a " +
+        "meta-claim about (\"X's paper proves P\" is about P), or a special case " +
+        "of. Use only after match_claim confirms the proposition does NOT " +
+        "already exist; when it exists, use propose_parent_edge instead, since " +
+        "edges into an existing claim belong to its own Steward. The new claim " +
+        "is onboarded like any other and its Steward owns it from then on; " +
+        "the edge you create is its starting structure, not a verdict. Same " +
+        "claim bar as a subclaim (§2): a reusable proposition of the discourse, " +
+        "not a heading invented to hang things under. Say in reasoning which " +
+        "claims led you to it.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim you steward (it becomes the subclaim)",
+          },
+          parent_text: {
+            type: "string",
+            description: "Canonical text of the new parent claim (§3)",
+          },
+          relation: {
+            type: "string",
+            enum: [...RELATION_TYPES],
+            description:
+              "How YOUR claim bears on the new parent, read from the parent's " +
+              "side: supports when yours is evidence or an argument for it (a " +
+              "claimed proof of P supports P), specifies when yours is a " +
+              "special case, requires when the parent is false without yours. " +
+              RELATION_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description:
+              "Why the graph needs this node and why your claim sits under it; " +
+              "name the claims that led you here",
+          },
+          claim_type: {
+            type: "string",
+            enum: [...CLAIM_TYPE_VALUES],
+            description:
+              "The parent's proposition kind. Omit to inherit yours; pass it when " +
+              "the parent is of another kind, as when a claim about a proof " +
+              "(empirical_derived) sits under a mathematical proposition.",
+          },
+          importance: {
+            type: "number",
+            description:
+              "How much it is worth getting the parent right, 0..1 " +
+              "(consequence-if-wrong × liveness). Below the decomposition " +
+              "threshold it is left an embedded stub; defaults to 0.5.",
+          },
+          contestation: {
+            type: "number",
+            description:
+              "How live the parent is in the discourse at large (0.0-1.0), " +
+              "recorded separately from importance.",
+          },
+          domains: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "The parent's domain tags, from the closed list of domains that " +
+              "have a skill. Omit to inherit yours.",
+          },
+        },
+        required: ["claim_id", "parent_text", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "propose_parent_edge",
+      description:
+        "Propose that an EXISTING claim adopt yours as a subclaim: the " +
+        "proposition your claim is an argument for, about, or a special case " +
+        "of, when match_claim found it already in the graph but the edge is " +
+        "missing. Edges into another claim's decomposition are its Steward's " +
+        "to write (Part VIII), so this enqueues that Steward with your case; " +
+        "it writes nothing itself.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim you steward (the would-be subclaim)",
+          },
+          parent_id: {
+            type: "string",
+            description: "The UUID of the existing claim that should gain yours as a subclaim",
+          },
+          relation: {
+            type: "string",
+            enum: [...RELATION_TYPES],
+            description: "The relation you propose, read from the parent's side. " + RELATION_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why the edge holds; the parent's Steward reads this and decides",
+          },
+        },
+        required: ["claim_id", "parent_id", "relation", "reasoning"],
+      },
+    },
+    {
       name: "set_claim_importance",
       description:
         "Set a claim's importance (0..1): how much it is worth spending scarce " +
@@ -1950,6 +2056,199 @@ export async function executeStewardTool(
               ? `; domains [${domains.join(", ")}] (${domainsSource})`
               : ""),
           child_claim_id: newClaim!.id,
+        });
+      }
+
+      case "add_parent_claim": {
+        const claimId = input.claim_id as string;
+        const parentText = String(input.parent_text ?? "").trim();
+        const relation = String(input.relation ?? "").toLowerCase();
+        const reasoning = input.reasoning as string;
+        if (!parentText) {
+          return JSON.stringify({
+            success: false,
+            message: "parent_text is required: the canonical text of the new parent claim.",
+          });
+        }
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
+        if (input.claim_type !== undefined && !CLAIM_TYPE_VALUES.includes(String(input.claim_type))) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown claim_type "${String(input.claim_type)}". Use one of: ` +
+              `${CLAIM_TYPE_VALUES.join(", ")}, or omit it to inherit yours.`,
+          });
+        }
+
+        const db = getDb();
+        // The child is the claim this run stewards; it must be real, and its
+        // type and domains are the defaults the parent inherits (the same
+        // inheritance a subclaim gets from its parent, in the other direction).
+        const [child] = await db
+          .select({ id: claims.id, claimType: claims.claimType, domains: claims.domains })
+          .from(claims)
+          .where(eq(claims.id, claimId))
+          .limit(1);
+        if (!child) {
+          return JSON.stringify({
+            success: false,
+            message: `Claim not found: ${claimId}. Pass the id of the claim you steward.`,
+          });
+        }
+
+        let domains: string[] = [];
+        let domainsSource: "steward" | "inherited" | null = null;
+        if (input.domains !== undefined) {
+          const parsed = parseDomains(input.domains);
+          if ("error" in parsed) {
+            return JSON.stringify({ success: false, message: parsed.error });
+          }
+          domains = parsed.domains;
+          domainsSource = "steward";
+        } else {
+          const inherited = parseDomains(child.domains ?? []);
+          domains = "domains" in inherited ? inherited.domains : [];
+          domainsSource = domains.length > 0 ? "inherited" : null;
+        }
+        const claimType =
+          input.claim_type !== undefined ? String(input.claim_type) : child.claimType;
+
+        const importance = clampUnit(input.importance);
+        const contestation = clampUnit(input.contestation);
+
+        let embedding: number[] | undefined;
+        try {
+          embedding = await generateEmbedding(parentText);
+        } catch {
+          // Continue without embedding
+        }
+
+        // The same economic brake as add_decomposition_edge: a parent judged
+        // peripheral is created as a deferred embedded stub, matchable but not
+        // stewarded until something re-triggers it.
+        const { stewardEnqueueMinImportance, pipelineEpoch } = loadConfig();
+        const effectiveImportance = importance ?? 0.5;
+        const gated =
+          stewardEnqueueMinImportance > 0 &&
+          effectiveImportance < stewardEnqueueMinImportance;
+
+        const [parent] = await db
+          .insert(claims)
+          .values({
+            text: parentText,
+            claimType,
+            embedding: embedding ?? undefined,
+            ...(importance !== undefined ? { importance } : {}),
+            ...(contestation !== undefined ? { contestation } : {}),
+            ...(gated ? { stewardState: "deferred" } : {}),
+            ...(domainsSource !== null ? { domains, domainsSource } : {}),
+            pipelineEpoch,
+            createdBy: "claim_steward",
+          })
+          .returning();
+
+        // Brand-new parent, so the edge cannot collide. The child's Steward
+        // wrote it; the parent's Steward, enqueued below, owns it from here.
+        const edge = await insertRelationshipEdge({
+          parentId: parent!.id,
+          childId: claimId,
+          relationType: relation,
+          reasoning,
+          confidence: 1.0,
+          createdBy: "claim_steward",
+        });
+
+        // Provenance in the audit trail: the graph's shape above this claim
+        // came from a Steward's judgment, not from a source, and the record
+        // says which claim's Steward and why.
+        await db.insert(auditLog).values({
+          claimId,
+          action: "add_parent_claim",
+          reasoning:
+            `Minted parent claim ${parent!.id} ("${parentText}") and attached ` +
+            `this claim as its subclaim (${relation}): ${reasoning}`,
+          createdBy: "claim_steward",
+        });
+
+        if (!gated) {
+          await enqueueClaimPipeline({
+            claimId: parent!.id,
+            jobId: "steward",
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message:
+            `Created parent claim "${parentText}" and attached ${claimId} as its ` +
+            `subclaim (${relation})` +
+            (gated
+              ? `; kept as a deferred embedded stub (importance ` +
+                `${effectiveImportance} below the decomposition threshold ` +
+                `${stewardEnqueueMinImportance}); its Steward will not run until ` +
+                `something re-triggers it.`
+              : `; its own Steward will structure and assess it.`) +
+            (domainsSource !== null
+              ? ` Domains [${domains.join(", ")}] (${domainsSource}).`
+              : ""),
+          parent_claim_id: parent!.id,
+          relationship_id: edge.id,
+        });
+      }
+
+      case "propose_parent_edge": {
+        const claimId = input.claim_id as string;
+        const parentId = input.parent_id as string;
+        const relation = String(input.relation ?? "").toLowerCase();
+        const reasoning = String(input.reasoning ?? "");
+        if (parentId === claimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be its own parent.",
+          });
+        }
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
+        const db = getDb();
+        const [parent] = await db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.id, parentId))
+          .limit(1);
+        if (!parent) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${parentId}. Propose edges only into real claims ` +
+              `(ids from match_claim or get_claim_details); if the proposition ` +
+              `does not exist, mint it with add_parent_claim.`,
+          });
+        }
+        // The same handoff the Curator's suggest_edge_to_steward makes: the
+        // parent's Steward is enqueued with the case and decides; nothing is
+        // written across the boundary (Part VIII, "Working Together").
+        await enqueueSteward({
+          claimId: parentId,
+          trigger: "edge_proposal",
+          context:
+            `The Steward of claim ${claimId} proposes that it be attached as your ` +
+            `subclaim (${relation}): ${reasoning}. If apt, attach it with ` +
+            `add_relationship_edge.`,
+        });
+        return JSON.stringify({
+          success: true,
+          message:
+            `Proposed the edge ${parentId} -> ${claimId} (${relation}) to the ` +
+            `Steward of ${parentId}; it decides whether to adopt it.`,
         });
       }
 
