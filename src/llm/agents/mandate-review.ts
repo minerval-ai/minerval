@@ -48,6 +48,7 @@ import {
   getBountyToolDefinitions,
 } from "./grantmaker.js";
 import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
+import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
 import { materializePlanItems } from "../../services/action-service.js";
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, owlsToMicroUsd, capOwls } from "../../services/owl.js";
@@ -527,7 +528,8 @@ async function runMandateReviewImpl(input: {
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
     `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
-    `(yours to set). Plan: ${items.length} items, ${grant.plan_cursor} executed.\n\n` +
+    `(yours to set). Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
+    `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
     (grant.workspace?.trim()

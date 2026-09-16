@@ -497,13 +497,15 @@ export async function fundGrantSelfActions(): Promise<number> {
               SELECT 1 FROM lookouts l
                WHERE l.id::text = a.target_ref AND l.grant_id = g.id
                  AND l.status = 'active'))
+         -- Any open ingest row a plan item names, wherever the cursor
+         -- stands: the direct steward lane can move the cursor past an
+         -- ingest item before its row ran (#427), and an open row is by
+         -- definition unexecuted (nothing reopens a closed ingest row).
          OR (a.kind = 'ingest' AND EXISTS (
               SELECT 1
-                FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb))
-                     WITH ORDINALITY t(item, i)
-               WHERE t.i > g.plan_cursor
-                 AND t.item->>'action' = 'ingest'
-                 AND t.item->>'url' = a.target_ref))
+                FROM jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) item
+               WHERE item->>'action' = 'ingest'
+                 AND item->>'url' = a.target_ref))
        JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE a.status = 'open'
         AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest')

@@ -14,6 +14,7 @@ import {
   reconcileActions,
   type PlanItemLedger,
 } from "../../src/services/action-service.js";
+import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { listOpenActions } from "../../src/services/mandate-valuer-service.js";
 import { getPublicMandate } from "../../src/services/mandate-service.js";
 import { seedClaim, seedUser, seedGrantWithJob, creditOwls, OWL } from "./helpers.js";
@@ -46,6 +47,16 @@ async function planLedger(grantId: string): Promise<Array<PlanItemLedger | undef
     [grantId]
   );
   return row!.plan.items.map((i) => i.ledger);
+}
+
+/** A current assessment on the claim, dated `offsetSeconds` from now. */
+async function seedCurrentAssessment(claimId: string, offsetSeconds = 0): Promise<void> {
+  await rawQuery(
+    `INSERT INTO assessments
+       (claim_id, status, confidence, reasoning_trace, is_current, assessed_at)
+     VALUES ($1, 'contradicted', 0.8, 'db test', true, now() + make_interval(secs => $2))`,
+    [claimId, offsetSeconds]
+  );
 }
 
 async function claimState(id: string): Promise<{ steward_state: string }> {
@@ -237,5 +248,111 @@ describe("plan-to-ledger materialization (#416)", () => {
       [`formalize:${c}`]
     );
     expect(Number(row!.n)).toBe(0);
+  });
+
+  it("reads an assess item on an already-assessed claim as done instead of queueing a pass (#427)", async () => {
+    const funder = await seedUser("plan-funder-5");
+    await creditOwls(funder, 100 * OWL);
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    const claim = await seedClaim("assessed before the plan");
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
+    await seedCurrentAssessment(claim, -60);
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({
+        strategy: "s",
+        items: [
+          { action: "assess", claim_id: claim, rationale: "first pass" },
+          { action: "reassess", claim_id: claim, rationale: "a fresh look" },
+        ],
+      }),
+    ]);
+    const [assess, reassess] = await materializePlanItems(grantId);
+    expect(assess!.ledger.status).toBe("done");
+    expect(assess!.ledger.reason).toContain("already carries an assessment");
+    // The reassess item is the ask for a fresh pass: it queues the claim.
+    expect(reassess!.ledger.status).toBe("open");
+    expect((await claimState(claim)).steward_state).toBe("pending");
+    const detail = await getPublicMandate(grantId);
+    expect(detail!.plan_items.map((i) => i.state)).toEqual(["done", "queued"]);
+  });
+
+  it("reads a stewarding item as done when its pass ran on another lane while the row sat open (#427)", async () => {
+    const funder = await seedUser("plan-funder-6");
+    await creditOwls(funder, 100 * OWL);
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    const claim = await seedClaim("run on the direct lane");
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: claim, rationale: "r" }] }),
+    ]);
+    const [opened] = await materializePlanItems(grantId);
+    expect(opened!.ledger.status).toBe("open");
+    expect((await claimState(claim)).steward_state).toBe("pending");
+
+    // Another lane runs the pass: the claim settles with an assessment, the
+    // row never closes (only the ledger's own drain closes rows).
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
+    await seedCurrentAssessment(claim, 5);
+
+    const result = await reconcileActions();
+    expect(result.plansFailed).toBe(0);
+    let [ledger] = await planLedger(grantId);
+    expect(ledger!.status).toBe("done");
+    expect(ledger!.reason).toContain("another lane");
+    expect(ledger!.action_id).toBe(opened!.ledger.action_id);
+    // The claim was not queued again for a pass that already ran.
+    expect((await claimState(claim)).steward_state).toBe("done");
+
+    // The sweep retired the row as assessed elsewhere; the item keeps
+    // reading done across later sweeps rather than flipping to cancelled.
+    const [row] = await rawQuery<{ status: string }>(
+      `SELECT status FROM actions WHERE id = $1`,
+      [opened!.ledger.action_id]
+    );
+    expect(row!.status).toBe("cancelled");
+    await reconcileActions();
+    [ledger] = await planLedger(grantId);
+    expect(ledger!.status).toBe("done");
+    expect((await claimState(claim)).steward_state).toBe("done");
+    expect((await getPublicMandate(grantId))!.plan_items[0]!.state).toBe("done");
+  });
+
+  it("keeps an ingest item the cursor passed before its row ran queued and funded (#427)", async () => {
+    const funder = await seedUser("plan-funder-7");
+    await creditOwls(funder, 100 * OWL);
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    const claim = await seedClaim("claim item after the ingest");
+    const url = `https://example.org/${randomUUID()}`;
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({
+        strategy: "s",
+        items: [
+          { action: "ingest", url, rationale: "a source" },
+          { action: "assess", claim_id: claim, rationale: "r" },
+        ],
+      }),
+    ]);
+    const [before] = await materializePlanItems(grantId);
+    expect(before!.ledger.status).toBe("open");
+
+    // The direct steward lane runs the claim item and moves the cursor to
+    // 2, past the ingest whose row is still open.
+    await rawQuery(`UPDATE grants SET plan_cursor = 2 WHERE id = $1`, [grantId]);
+    const [after] = await materializePlanItems(grantId);
+    expect(after!.ledger.status).toBe("open");
+    expect(after!.ledger.action_id).toBe(before!.ledger.action_id);
+    const detail = await getPublicMandate(grantId);
+    expect(detail!.plan_items[0]!.state).toBe("queued");
+
+    // Still the mandate's own work: the escrow funds it wherever the cursor stands.
+    await fundGrantSelfActions();
+    const [alloc] = await rawQuery<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM action_allocations
+        WHERE exclusion_group = $1 AND grant_id = $2 AND released_at IS NULL`,
+      [`ingest:${url}`, grantId]
+    );
+    expect(Number(alloc!.n)).toBe(1);
   });
 });

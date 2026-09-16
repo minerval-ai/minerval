@@ -23,6 +23,7 @@ import {
   reverseReconciliation,
 } from "../../src/services/reconciliation-service.js";
 import { getClaimTree } from "../../src/services/tree-service.js";
+import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 
 const FK_VIOLATION = "23503";
 
@@ -143,6 +144,33 @@ describe("argument_subclaims (#437)", () => {
     expect(tree!.children.map((c) => [c.id, c.argument_id, c.argument_name])).toEqual([
       [child, argA, "A"],
       [child, argB, "B"],
+    ]);
+  });
+
+  it("counts a shared subclaim once in children_total while listing it per argument (#417)", async () => {
+    const parent = await seedClaim("parent");
+    const shared = await seedClaim("shared");
+    const basis = await seedClaim("basis");
+    const argA = await seedArgument(parent, "A");
+    const argB = await seedArgument(parent, "B");
+    const { id } = await edge(parent, shared);
+    await edge(parent, basis, "assumes");
+    await attachEdgeToArgument(argA, id);
+    await attachEdgeToArgument(argB, id);
+
+    const out = JSON.parse(
+      await executeGovernanceTool("get_claim_with_context", { claim_id: parent })
+    );
+    // Two edges, so two children — the shared one is not counted per argument.
+    expect(out.claim.children_total).toBe(2);
+    expect(out.claim.children_assessed).toBe(0);
+    // ...but the listing shows the shared subclaim under each argument.
+    expect(
+      out.subclaims.map((sc: { id: string; argument_id: string | null }) => [sc.id, sc.argument_id])
+    ).toEqual([
+      [shared, argA],
+      [shared, argB],
+      [basis, null],
     ]);
   });
 

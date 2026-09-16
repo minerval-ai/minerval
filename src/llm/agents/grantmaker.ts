@@ -36,7 +36,7 @@ import { stewardTierCostEstimates } from "../../services/cost-estimate-service.j
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
 import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
 import { materializePlanItems } from "../../services/action-service.js";
-import { describePlanItems } from "../../services/plan-state.js";
+import { countPlanItems, describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
 import {
   getJobContributions,
@@ -916,7 +916,9 @@ export async function executeManagementTool(
       strategy: grant.plan?.strategy ?? null,
       // Each item's standing on the ledger (plan-state.ts): a blocked or
       // waiting item says why, so a slow queue and a dead one read
-      // differently (#416).
+      // differently (#416). The counts are the executed tally: "done" is
+      // the items whose work ran, not the cursor's position (#427).
+      plan_counts: countPlanItems(grant.plan?.items ?? [], grant.plan_cursor),
       plan: describePlanItems(grant.plan?.items ?? [], grant.plan_cursor),
     });
   }

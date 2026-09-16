@@ -282,14 +282,20 @@ async function runClaimStewardImpl(input: {
    graph (as itself, a rewording, or its negation). If it matches, attach the
    existing claim with add_relationship_edge; only when the Matcher says it is
    novel, create it with add_decomposition_edge. Never mint a duplicate. If the
-   claim is simple, leave it atomic; do not invent dependencies.`
+   claim is simple, leave it atomic; do not invent dependencies. Look UP as
+   well as down: if this claim is an argument for, a meta-claim about, or a
+   special case of a proposition the discourse treats as a unit, match_claim
+   that proposition too; propose_parent_edge if it exists, add_parent_claim
+   if it does not (see the Decomposition guidance).`
     : `2. RE-ASSESS in light of what changed. Adjust structure only if you discover a
-   missing dependency the claim turns on, and then match_claim FIRST, linking
-   an existing claim with add_relationship_edge or creating a new one with
-   add_decomposition_edge. Do not re-decompose from scratch.`;
+   missing dependency the claim turns on, or a proposition above it the graph
+   lacks, and then match_claim FIRST: link an existing claim with
+   add_relationship_edge or propose_parent_edge, create a new one with
+   add_decomposition_edge or add_parent_claim. Do not re-decompose from
+   scratch.`;
 
   const iterationBudget = config.stewardMaxIterations;
-  let newSubclaimsThisRun = 0;
+  let newClaimsThisRun = 0;
   let instancesRecordedThisRun = 0;
   let elicitCallsThisRun = 0;
   let leanSearchesThisRun = 0;
@@ -472,25 +478,28 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (claimContextNames.has(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      // Blast-radius backstop (#157 phase 3): cap the NEW subclaims one run
-      // may mint. Like the iteration cap this is a runaway guard, not a
-      // target — the judgment about how far to decompose stays with the
-      // Steward (and the importance brake bounds recursion). Linking
-      // existing claims (add_relationship_edge) is never capped.
-      if (name === "add_decomposition_edge") {
+      // Blast-radius backstop (#157 phase 3): cap the NEW claims one run may
+      // mint, in either direction (a subclaim below or a parent above, #428).
+      // Like the iteration cap this is a runaway guard, not a target — the
+      // judgment about how far to decompose stays with the Steward (and the
+      // importance brake bounds recursion). Linking or proposing edges to
+      // existing claims (add_relationship_edge, propose_parent_edge) is never
+      // capped.
+      if (name === "add_decomposition_edge" || name === "add_parent_claim") {
         const cap = config.stewardMaxNewSubclaimsPerRun;
-        if (cap > 0 && newSubclaimsThisRun >= cap) {
+        if (cap > 0 && newClaimsThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already minted ${newSubclaimsThisRun} new subclaims, the ` +
+              `This run has already minted ${newClaimsThisRun} new claims, the ` +
               `per-run backstop (${cap}). Do not create more in this pass: link any ` +
-              `remaining dependencies that already exist with add_relationship_edge, ` +
-              `note the rest in your reasoning_trace, and proceed to your assessment. ` +
-              `A future stewardship pass can continue the decomposition.`,
+              `remaining dependencies that already exist with add_relationship_edge ` +
+              `(or propose_parent_edge for a parent), note the rest in your ` +
+              `reasoning_trace, and proceed to your assessment. A future ` +
+              `stewardship pass can continue the decomposition.`,
           });
         }
-        newSubclaimsThisRun++;
+        newClaimsThisRun++;
       }
       // Same runaway-guard shape for instance recording (#278): capturing
       // sightings is a cheap side effect of evidence reading, and this cap

@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 8395,
-    "fullChars": 57083,
+    "fullChars": 57314,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 10974,
-    "fullChars": 59662,
+    "fullChars": 59893,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 19960,
-    "fullChars": 68648,
+    "fullChars": 68879,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
-    "roleChars": 33942,
-    "fullChars": 82630,
+    "roleChars": 35349,
+    "fullChars": 84268,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 15053,
-    "fullChars": 63741,
+    "fullChars": 63972,
     "skills": [
       {
         "name": "mathematics",
@@ -148,7 +148,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 17559,
-    "fullChars": 66247,
+    "fullChars": 66478,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 18820,
-    "fullChars": 67508,
+    "fullChars": 67739,
     "skills": [
       {
         "name": "mathematics",
@@ -214,7 +214,7 @@
     "model": "Claude Fable 5.1",
     "hasConstitution": true,
     "roleChars": 17920,
-    "fullChars": 66608,
+    "fullChars": 66839,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 10176,
-    "fullChars": 58864,
+    "fullChars": 59095,
     "skills": [
       {
         "name": "mathematics",

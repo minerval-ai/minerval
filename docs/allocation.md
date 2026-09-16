@@ -340,11 +340,19 @@ Design principles, in force in the implementation:
   cooldown, a mandate not yet active); `blocked` names something the
   plan's author must change, with the reason. The dashboard and the
   Grantmaker's `grant_overview` read the same standing, so a slow queue
-  and a dead one never look alike (#416). Per kind: `assess` / `reassess`
-  / `deepen` need an active claim, queue it for its Steward and open its
-  assess group once per item (a finished pass stays finished; `deepen`
-  also releases the claim's deferred subclaims); `ingest` needs a url and
-  executes in plan order; `formalize` needs an active claim with no
+  and a dead one never look alike (#416), and the plan's executed count
+  (the review briefing, `grant_overview`'s `plan_counts`) is the number of
+  items whose work ran, never the cursor's position (#427). Per kind:
+  `assess` / `reassess` / `deepen` need an active claim, queue it for its
+  Steward and open its assess group once per item (a finished pass stays
+  finished, whichever lane ran it: the mandate's direct steward lane closes
+  the row it ran, and a pass that ran elsewhere while the row sat open
+  reads done from the assessment's date; an `assess` item on a claim that
+  already carries an assessment reads done, `reassess` being the ask for a
+  fresh pass; `deepen` also releases the claim's deferred subclaims);
+  `ingest` needs a url and executes in plan order (an ingest item the
+  cursor passed before its row ran stays funded and reads from its row);
+  `formalize` needs an active claim with no
   published statement whose recorded domains carry the Steward's
   `publish_formalization` tool, else it is blocked (a run would be
   refused); `attempt_proof` needs a published statement and otherwise
