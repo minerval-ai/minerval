@@ -23,6 +23,7 @@
  */
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { bodyToText } from "./document-text.js";
 
 const MAX_REDIRECTS = 5;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -182,7 +183,9 @@ export async function fetchPublicUrl(
       }
       chunks.push(value);
     }
-    return Buffer.concat(chunks).toString("utf8");
+    // A PDF body is extracted to text; every body is scrubbed of the NUL
+    // and control characters a text column refuses (#430).
+    return bodyToText(Buffer.concat(chunks), response.headers.get("content-type"), current);
   }
   throw new UnsafeUrlError(`Too many redirects fetching ${rawUrl}`);
 }

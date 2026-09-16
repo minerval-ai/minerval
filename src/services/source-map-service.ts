@@ -23,6 +23,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { fetchPublicUrl } from "./url-guard.js";
+import { sanitizeStoredText } from "./document-text.js";
 import { getOrCreateSource } from "./source-service.js";
 import {
   CLAIM_PROVENANCE_RELATION_TYPES,
@@ -226,7 +227,7 @@ export async function readSourceContent(input: {
       );
     }
     const fetcher = input.fetch ?? ((u: string) => fetchPublicUrl(u));
-    raw = await fetcher(source.url);
+    raw = sanitizeStoredText(await fetcher(source.url));
     origin = "fetched";
     await rawQuery(
       `UPDATE sources SET raw_content = $2, retrieved_at = now()
