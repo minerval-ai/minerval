@@ -1,0 +1,398 @@
+{
+  "generatedAt": "2026-09-12T00:16:26.275Z",
+  "matcherModel": "z-ai/glm-5.3-flash",
+  "gitCommit": "cd30e7b",
+  "profile": null,
+  "summary": {
+    "total": 30,
+    "passed": 29,
+    "passRate": 0.967,
+    "byCategory": {
+      "paraphrase": {
+        "total": 8,
+        "passed": 8
+      },
+      "negation": {
+        "total": 6,
+        "passed": 6
+      },
+      "specification": {
+        "total": 6,
+        "passed": 6
+      },
+      "similar_but_different": {
+        "total": 7,
+        "passed": 7
+      },
+      "hard": {
+        "total": 3,
+        "passed": 2
+      }
+    }
+  },
+  "costMicroUsd": 161124,
+  "results": [
+    {
+      "id": "para-01",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.8,
+        "reasoning": "Searched six framings: the proposed canonical form, two paraphrases (\"non-negligible risk\" phrasing; \"AI could wipe out humanity before 2100\"), a stronger-probability paraphrase, and two negations (\"The risk of AI causing human extinction is negligible\"; \"AI will not cause human extinction\"). The existing claim \"Advanced AI poses a non-negligible risk of human extinction this century\" was the top hit in every search, including both negation searches, at 0.69-0.82. Identity: both formulations turn on the same considerations, whether AI-caused human extinction within this century is a genuine, material possibility rather than negligible. The time parameter is effectively identical (\"before 2100\" is the endpoint of \"this century\" for a present-day speaker) and the event is the same (\"wipes us all out\" = human extinction). The source's \"a real chance\" is the colloquial equivalent of \"non-negligible risk\", asserting a genuine possibility rather than a fanciful one. The proposed canonical form sharpens \"real chance\" to \"substantial probability\", which is a stronger quantitative reading than the source's vague wording most plausibly asserts; per the guidance not to sharpen claims the discourse debates vaguely, the vague proposition is the claim, and it is already held under a neutral canonical form. Creating a separate \"substantial probability\" node would split the central claim of this debate into mirror pages. Stance: the source plainly asserts a real chance of AI wiping out humanity before 2100, so it affirms the canonical claim. Confidence held at 0.8 rather than higher because \"there's a real chance\" is ambiguous between \"genuine (non-negligible) possibility\" and \"sizable probability\"; the first is the most plausible reading from context, but if the surrounding discourse clearly argues a large p(doom), the Steward should consider the specification noted below."
+      }
+    },
+    {
+      "id": "para-02",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Four searches under distinct framings (proposed canonical form, source verbatim, negation/danger framing, safety paraphrase) all converged on one existing node, \"LHC particle collisions cannot produce black holes that endanger the Earth\" (05602134-5f96-4f98-b362-c7484f955848). The source's proposition and this node turn on the same considerations: black hole production feasibility at collider energies, Hawking evaporation, and the cosmic-ray analogue. Nothing could bear as evidence on one without bearing equally on the other; both are true exactly when LHC-produced black holes do not endanger Earth, so they are one claim under any wording. The difference between \"cannot produce black holes that endanger\" and \"produced black holes pose no danger\" is framing within the same vague safety proposition, not a distinct implicit parameter, and belongs to the instance. The source asserts the safety proposition, and the existing node is canonically stated on the safety side, so the instance affirms it. The proposed wording \"Black holes produced at the LHC pose no danger to Earth\" is a slightly cleaner neutral form than the existing one, but wording improvement never justifies minting a new node; the Steward of the matched claim is free to adopt it."
+      }
+    },
+    {
+      "id": "para-03",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.9,
+        "reasoning": "The existing claim \"Dietary cholesterol from eggs has little effect on blood cholesterol in most people\" (c4987e4f) is the same proposition as the proposed form: both ask whether eating eggs moves blood cholesterol materially in the typical person. The differences are purely instance-level wording — \"dietary cholesterol from eggs\" vs. \"egg consumption\" (the same operative dietary exposure as debated), \"little\" vs. \"minimal\" (equally unsharpened quantifiers), \"blood\" vs. \"serum\" cholesterol (same measure), \"in\" vs. \"for\" most people (same hedge). Nothing could count as evidence for one without bearing equally on the other: controlled feeding studies, meta-analyses of egg intake and lipid response, and hyper-responder subpopulation findings all bear on both identically, so identical decomposition holds. Per §2/§3 the node's identity does not depend on its current wording, so I match rather than create a duplicate with marginally different phrasing. The negation/contrary framing (\"eggs substantially raise serum cholesterol\") was searched explicitly and returns the same node, correctly — it is the denial side hosted on this one node, not a mirror-page, and no separate contrary node exists to merge. Stance: the source asserts the effect is negligible, which affirms the node as canonically worded."
+      }
+    },
+    {
+      "id": "para-04",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "Searched eight framings: the proposed canonical form, \"SARS-CoV-2 has a zoonotic origin\", a \"rather than from a laboratory\" paraphrase, the source's own \"virus jumping from animals to people\" wording, the negation (\"did not originate via zoonotic spillover\"), two lab-leak phrasings, and a market-spillover variant. Every framing returned the same top node, 66eaba1f (\"SARS-CoV-2 most likely entered humans through natural zoonotic spillover\"), including the negation and lab-leak searches, which is strong evidence the graph holds this debate on a single node with no mirror page. The proposition is identical: both formulations ask whether natural animal-to-human transmission is the most likely origin of the virus behind COVID-19, turn on the same evidence (early case geography, market linkage, viral traits, absence of a lab pathway), and carry the same \"most likely\" hedge; the disease-vs-virus phrasing difference is wording, not a different consideration set. The existing canonical form is already neutral, affirmative, and terse, and names the virus more precisely than the proposed form, so per the no-new-claim-for-wording rule the match stands. The source asserts the zoonotic account as canonically stated, hence stance \"affirms\"; the source's \"probably\" is a hedged affirmation of the same proposition, a matter for the instance, not the node."
+      }
+    },
+    {
+      "id": "para-05",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "Searched four framings (canonical candidate, direct paraphrase, alternate vocabulary, and the negation). All four surfaced the same single node, \"Raising the minimum wage reduces teen employment\", with the paraphrase \"Raising the minimum wage reduces teenage employment\" scoring 0.947, effectively a direct hit. The negation search also returned this node, which is correct: a claim and its denial are one node, and the node's canonical form is the affirmative assertion, so a denying source is recorded with stance \"denies\" rather than on a mirror page. Identity holds on the considerations test: evidence bearing on \"minimum-wage increases cost teenagers jobs\" (teen employment elasticity studies, the Card–Krueger literature, meta-analyses) bears identically on \"raising the minimum wage reduces teen employment\", and both would decompose the same way. The source's colloquial \"teenagers lose jobs\" is wording, and \"that's the standard result\" is the author's framing about consensus; both belong to the instance, not the canonical form. I considered whether \"cost jobs\" (layoffs of incumbent teens) is a distinct proposition from \"reduces employment\" (which includes reduced hiring); the discourse does not separate them and no evidence bears on one without bearing on the other, so I treat them as one claim. The existing canonical form is also the better canonical wording: affirmative, neutral, the debate-motion form, so no new claim is needed for phrasing. The source asserts the disemployment effect, so its stance is \"affirms\" against the canonical direction."
+      }
+    },
+    {
+      "id": "para-06",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.94,
+        "reasoning": "Five searches (canonical form as proposed, the source's colloquial phrasing, the negation, the broader antidepressants-vs-placebo framing, and a severity-unspecified paraphrase) all returned the same existing node, \"SSRIs outperform placebo for moderate depression.\" The negation search scored highest (0.927), which is the mirror-node check working: the node hosts both sides of this debate, so a source asserting the contrary would be recorded on it with stance \"denies\" rather than as a new page. The source text and the existing node turn on the same considerations: same drug class (SSRIs), same severity parameter (moderate depression), same comparison (versus placebo/sugar pills). The \"in the trials\" element is instance-level framing, not a different proposition: the author is summarizing what the trials showed as evidence of efficacy, and the standard reading is that SSRIs proved more effective than placebo for moderate depression. I considered the narrower reading (a claim purely about trial results, distinct from real-world efficacy) and rejected it as less plausible from context; the source offers the trial result as the fact. The proposed canonical form is equivalent to the existing node's wording; per §2 the node's identity does not depend on wording, and a new claim must never be created to get a better one, so the existing node stands and the proposed form is redundant. Stance is \"affirms\": the source asserts the proposition as canonically stated."
+      }
+    },
+    {
+      "id": "para-07",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The proposed canonical form \"Most warming since 1950 is attributable to human activity\" and the existing node \"Human activity is the principal cause of observed global warming since the mid-20th century\" pose the same question: what caused the bulk of post-1950 observed warming. The same considerations bear on both (attribution studies, greenhouse gas forcing, natural variability estimates), so they are one claim under different wordings, and the node should not be duplicated to obtain the terser wording. Search results: the exact existing canonical form scored 0.98; paraphrases and the negation and natural-causation contrary all retrieved this single node and nothing else, so the debate is hosted under one node with no mirror-image counterpart, and no alternative matches were found. On stance: the source says \"Even granting that most of the recent warming is man-made\", a concessive grant of the proposition for the sake of a further argument. That is not an assertion of the negation or contrary, so \"denies\" would be wrong; among the two available values, \"affirms\" correctly records the direction of the source's commitment, with the important caveat, recorded here and in relationship_notes, that this is an arguendo concession rather than an independent affirming voice, and the Steward should weight or represent it accordingly. The source's actual thesis (that policy conclusions do not follow from man-made warming) is a distinct argumentative claim my searches did not find in the graph; it belongs to the Steward to consider, not to this identity decision."
+      }
+    },
+    {
+      "id": "para-08",
+      "category": "paraphrase",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.95,
+        "reasoning": "The source states that black holes evaporate and glosses this itself: \"they radiate away their mass via the Hawking process.\" That gloss fixes the proposition as the Hawking mechanism causing mass loss, which is exactly what the existing claim asserts (\"Hawking radiation causes black holes to lose mass over time\"). The proposed canonical form differs only in wording and direction of the causal framing; identical considerations (evidence about the Hawking effect and its mass-loss consequence) bear on both formulations, so they are one claim, not two. I searched six framings: the proposed form, the source wording, two paraphrases emphasizing the causal direction and eventual disappearance, and two negations. All converged on the same single node, with the direct restatement scoring 0.982 and the negation search still surfacing the same node rather than a mirror-image page, so no separate denial node exists to worry about. Matching on the proposition rather than the phrasing per the constitution, this is a match; the existing canonical form is a fair, neutral statement and there is no reason to mint a duplicate. The source plainly asserts the proposition, so the instance affirms it."
+      }
+    },
+    {
+      "id": "neg-01",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.97,
+        "reasoning": "The existing claim 882ff546-ee73-408f-95da-08ae40e5f259, \"LHC collisions could create stable black holes that accrete the Earth,\" is the direct contrary of what this source asserts. The source says CERN's collider cannot produce stable, Earth-devouring black holes; the existing canonical form states the catastrophe thesis the source is denying. A claim and its denial are one node (§2): the same considerations bear on both — the probability of micro black hole formation at LHC energies, whether such holes would be stable or evaporate (Hawking radiation), the accretion rate if stable, and the cosmic-ray evidence. Every argument for one side is evidence against the other, so identical decomposition holds and forcing two pages would split the very debate the node exists to host. I searched four framings: the proposed canonical form, the source's own wording, the plain negation thesis, and a broader planetary-catastrophe framing; all retrieved this same node (similarity up to 0.81), with no competing candidates, so identity is settled. I record instance_stance \"denies\": the source asserts the negation of the canonical proposition. I do not create the proposed form \"The LHC cannot produce stable black holes that would consume the Earth\": it carries \"cannot,\" which inverts the node's direction, and the existing wording already follows the house convention of stating the affirmative thesis (the named catastrophe hypothesis) with dissenting sources recorded as denials. The source's tail, \"the physics rules it out,\" is argument, not extra proposition: it gestures at premises (Hawking evaporation, cosmic-ray constraints) that belong as subclaims under the matched claim's arguments, not as separate claims."
+      }
+    },
+    {
+      "id": "neg-02",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.93,
+        "reasoning": "Searched nine framings: the claim as written, the proposed canonical form, the negation, dose-specific variants (high intake, one egg per day, moderate intake), dietary cholesterol, and colloquial forms. The only substantive neighbor in every search was 7360438d-8ac3-4cd7-983e-c4ebfe424fd1, \"Egg consumption increases cardiovascular disease risk in the general population\" (scores 0.93 affirming-framing, 0.65-0.86 under other framings). The proposed claim is that claim's negation: both turn on exactly the same considerations (egg intake, cardiovascular/heart disease risk, population-level effect), so nothing could count as evidence for one without bearing equally on the other. A claim and its denial are one node (§2); creating the proposed form would split the debate across mirror pages. The proposed form's \"for most people\" qualifier corresponds to the existing node's \"in the general population\" and does not mark a distinct proposition; no separate dose-specific claim (e.g., high intake) surfaced, so there is nothing else this statement could match instead. The only other candidate, e018adb8-de8c-484d-bd5c-4a29d5a76b08 (\"Eggs are a significant source of dietary protein\"), is unrelated. Instance stance is \"denies\": the source asserts eggs do not raise heart disease risk, the contrary of the canonical direction."
+      }
+    },
+    {
+      "id": "neg-03",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.9,
+        "reasoning": "The proposed claim \"Minimum-wage increases have no detectable effect on teen employment\" is the contrary of the existing graph claim \"Raising the minimum wage reduces teen employment\" (77f3c16a-26f1-4cf8-beb5-1672ee6f3469). Identity test (§2): both formulations pose the same question, what happens to teen employment when the minimum wage rises, and turn on the same considerations: the natural-experiment literature (Card-Krueger and successors), border-county designs, elasticity estimates, and meta-analyses. Nothing counts as evidence for one without bearing equally on the other. A claim and its denial are one claim; creating a separate \"no effect\" node would split the debate the claim exists to host. The source text (\"Careful studies keep finding no detectable effect...\") asserts the negation of the reduction thesis, so the instance stance is \"denies\" against the canonical affirmative form. The existing canonical wording is preferred over the proposed one: it states the affirmative debate motion as the discourse poses it (\"does raising the minimum wage reduce teen employment?\"), and the source's hedged \"no detectable effect\" phrasing is framing that belongs in the instance, not the canonical text. All four searches, including the negation framing, surfaced only this one candidate, so I did not find a more precisely worded counterpart (e.g., one scoped to particular studies or periods) to weigh."
+      }
+    },
+    {
+      "id": "neg-04",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.9,
+        "reasoning": "All six searches converged on one existing node: \"Advanced AI poses a non-negligible risk of human extinction this century\" (1f87629e-bf58-47ff-bf30-fa0628fe32fc). The source's substantive assertion, \"there is no credible pathway this century,\" is the direct counterpart of that claim: both turn on the identical question, whether credible mechanisms exist by which advanced AI could cause human extinction this century. Identical decomposition confirms this: any expert forecast, loss-of-control argument, misuse scenario, or capability-trajectory evidence bears on both formulations equally. The differences are instance-level: \"no credible pathway\" vs \"non-negligible risk\" are the same vague standard the discourse actually debates (the graph should not sharpen either into a numeric threshold), and \"the extinction-from-AI discourse is science fiction\" is the author's rhetoric supporting the denial, not a separate proposition. The proposed canonical form (\"Fears... are unfounded\") states the negation in negation form; the existing canonical form is the better node, affirmatively stating the thesis as the discourse poses it, and wording differences never justify a new claim. Notably, the negation search scored lowest (0.664) against the affirmative node, confirming the retrieval asymmetry this role warns about; only the multi-framing search pattern surfaced the counterpart reliably. The source is a skeptic voice on this claim, so instance_stance is \"denies.\""
+      }
+    },
+    {
+      "id": "neg-05",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.94,
+        "reasoning": "Four searches under different framings (the proposed form, a paraphrase, the negation \"free of publication-bias inflation\", and a mechanistic paraphrase about unpublished unfavorable trials) all surface the same existing claim, \"Publication bias inflates the measured effect size of antidepressants\" (0df4eb56). The source's statement and that canonical claim turn on identical considerations: both ask whether the published antidepressant effect sizes are biased upward by publication bias. Nothing could count as evidence for one without bearing equally on the other. The source's construction, \"not credible that they are free of publication-bias inflation\", asserts exactly that the effect sizes are inflated, which affirms the existing canonical direction (inflation is real); its rhetorical form (\"simply not credible\") belongs to the instance, not the claim. No alternative candidate surfaced in any search. Match on the existing node, no new claim created."
+      }
+    },
+    {
+      "id": "neg-06",
+      "category": "negation",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.96,
+        "reasoning": "The proposed formulation \"Black holes do not lose mass to Hawking radiation\" is the direct negation of the held claim \"Hawking radiation causes black holes to lose mass over time\" (99e1b5f9-5047-4df1-8cfd-44aaa64b2ba1). Both turn on the same considerations: the physical reality of Hawking radiation, its energy flux away from the horizon, and the resulting decrease in black hole mass. No evidence or argument could bear on one without bearing equally on the other, and their decompositions are identical. Under the constitution's rule that a claim and its denial are one claim, this is a match with the source denying the canonically stated proposition, not a new node. The source sentence contains three component denials: Hawking radiation has never been observed (a narrower, purely observational claim the graph does not appear to hold separately), Hawking radiation does not exist, and black holes do not evaporate. The latter two are the substantive denials of the matched claim's content; the first is instance or subclaim material for the Steward, not a new canonical claim from the Matcher. The held node's existing wording is the correct canonical direction: it states the affirmative thesis as the discourse poses it, so no rewording or new negative twin is warranted. Search covered the proposed form, its affirmative counterpart, the existence claim, the observational claim, the evaporation claim, and a full-evaporation paraphrase; all six framings returned only the one node, so novelty is established for everything except the negation itself."
+      }
+    },
+    {
+      "id": "spec-01",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.87,
+        "reasoning": "Searched seven framings: the source's verbatim wording, the proposed canonical form, a paraphrase on whether the increase caused employment/hours losses, two negations (the source's own text negated, and the \"little or no effect\" contrary framing), a study-framing probe, and the general minimum-wage-effect form. The only neighbor above the retrieval floor in every search was \"Raising the minimum wage reduces teen employment\" (09d65d5b), and it is not this claim: it is general over time and place and uses a different outcome measure (teen employment vs. hours of low-wage workers), so different considerations bear on it, and identical decomposition fails. It is a specification relationship, not a match, and not a negation either; the graph holds no Seattle-specific node under any framing, including the contrary one. Per the recoverable-error rule I create the claim as new. Canonical form is 10 words, neutral, and states the proposition so either side would accept it as what is in dispute. Direction chosen on the proposition's own terms (affirmative thesis of the live debate motion), not from this source's position; this source, reporting that hours fell measurably after the increase, affirms the form as stated."
+      }
+    },
+    {
+      "id": "spec-02",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Identity search was run under eight framings: the proposed canonical form, paraphrases in alternate vocabulary (\"self-preservation and resource-acquisition drives\", \"seek to acquire resources and resist shutdown\", \"converge on predictable instrumental goals independent of its final objective\"), the named-thesis framing (\"the instrumental convergence thesis\"), and three negations (\"would not develop...\", \"there is no reason to expect...\"). Only one claim ever surfaced above the floor: \"Advanced AI poses a non-negligible risk of human extinction this century\" (scores 0.475-0.558 across framings). It is not a counterpart: the two propositions turn on different considerations, so evidence for one does not bear equally on the other. An AGI could predictably develop self-preservation and resource drives yet pose negligible extinction risk if the drives remain containable, and a source could hold extinction risk high without endorsing predictable instrumental convergence. Identical decomposition fails: the extinction claim resolves on probability-of-extinction evidence, this claim on what subgoals a misaligned optimizer's planning converges on. It is a downstream/related claim, recorded in relationship_notes, not a match. With the canonical form, both paraphrase families, the named thesis, and the negations all returning nothing, I conclude the graph does not hold this claim. The source asserts the proposition as stated, so the first instance affirms. Confidence is high but not 1.0: a counterpart could exist under a wording none of my eight framings retrieved, though a true match is unlikely given the coverage."
+      }
+    },
+    {
+      "id": "spec-03",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "denies",
+        "confidence": 0.85,
+        "reasoning": "Novelty: I searched the claim as written, the proposed canonical form, a risk paraphrase, an association paraphrase, a study-finding framing, and both directions of the general vaccines-autism question. All six returned only one node, the general claim \"Vaccines do not cause autism\" (b5a4f162-c811-4b1b-a0c5-5ed20cb7230b), with MMR-specific phrasings scoring mid-range (0.485-0.635) against it, indicating it is the only neighbor and no MMR-specific node exists. The general node is a near-miss, not a match: the two propositions turn on different considerations. Evidence exonerating other vaccines, thimerosal, or cumulative antigen load bears on the general claim but only partially on MMR, and the Danish cohort evidence bears on MMR but only partially on all vaccines; a source can coherently deny one and not the other. The MMR claim is a specification of the general claim, so it merits its own node with the relationship recorded. Direction: the proposed form contained a \"not,\" which usually signals an inverted canonical direction. The discourse poses the question affirmatively (\"Does the MMR vaccine cause autism?\") and names the thesis under test, the MMR-autism hypothesis; the canonical form states that thesis, \"The MMR vaccine causes autism.\" This source asserts no autism link, so its stance against the canonically stated proposition is \"denies,\" which is the honest record of the first voice on the node. The \"settled it\" language is the author's confidence framing and belongs to the instance, not the claim. Confidence is high on novelty (six framings searched, including the negation, with only the general node surfacing) and the direction judgment follows the house rules for a named thesis."
+      }
+    },
+    {
+      "id": "spec-04",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Searched eight framings: the proposed canonical form, two paraphrases (heart disease risk in people with diabetes; egg intake correlates with CVD risk among diabetic patients in cohort studies), two negations (not associated; does not increase risk), and two further vocabulary variants (heart attack and stroke rates; cardiovascular mortality). Every query returned only one existing claim, \"Eggs are safe to eat daily for most healthy adults\", at 0.44-0.56 similarity. That claim is a near-miss, not a counterpart: it is scoped to healthy adults, a different implicit population parameter that excludes diabetics, and it concerns safety rather than an association with elevated risk, so different considerations bear on it. No diabetic-population counterpart surfaced under positive or negated wording, so the graph does not hold this claim under any framing or as its denial. The proposed canonical form is neutral, affirmative, roughly eleven words, and strips the source's framing (\"tracks with\", \"in several cohorts\" are instance-level wording). The source asserts the association, so the first instance affirms. Novelty confidence is high but not certain, since the graph appears sparse in this domain and a true counterpart could still sit below the retrieval floor; the proposed form follows the source rather than sharpening it."
+      }
+    },
+    {
+      "id": "spec-05",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.85,
+        "reasoning": "Searched six framings: verbatim text, the proposed canonical form, an elaborated paraphrase, the negation (\"would produce no observable effects even if collider black holes are dangerous\"), the broader safety conclusion, and the neutron-star-constraint framing. All six surfaced only one candidate, claim 039ef2a2 (\"Astrophysical cosmic-ray collisions bound the catastrophic risk from LHC collisions\"), which is the conclusion of the cosmic-ray safety argument, not this premise. The two differ in decomposition: the source proposition turns on whether collider-scale black holes produced by cosmic rays on/in neutron stars would accrete or otherwise leave observable signatures, a live dispute (accretion timescales, passage through dense matter); the candidate turns additionally on the observation that no anomalous effects exist on abundant, healthy neutron stars, plus the energy/rate comparison, and can also be supported by arguments independent of the conditional (e.g., prompt evaporation). Evidence bearing on one does not bear equally on the other, so under the identical-decomposition test they are different claims. The source is also neither candidate's negation, and its own negation (the critics' reply that such impacts would reveal nothing) surfaced nothing similar. The sentence is literally a conditional that does not itself assert no effects were seen, so the faithful reading is the conditional premise as a distinct claim; even under an elliptical reading, forcing it onto the conclusion node would misplace an argument step. The canonical form keeps the affirmative direction of the disputed prediction, per the discourse's framing of the observational test."
+      }
+    },
+    {
+      "id": "spec-06",
+      "category": "specification",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Searched ten framings: the claim as proposed, drug-class and medication-maintenance paraphrases, the specific GLP-1 phrasing, the comparative diet-vs-drug framing, and two negations (\"cannot produce sustained weight loss\"; \"only diet and exercise can achieve lasting weight loss\"). The only candidate above the floor in every search was \"GLP-1 agonists reduce body weight in obese adults\". It is a specification, not the same claim: it names a narrower intervention class (GLP-1 agonists) and asserts an efficacy endpoint (body weight reduction) that lacks the durability parameter central to the proposed claim. The same considerations do not bear on both: long-term maintenance evidence and non-GLP-1 pharmacotherapy bear on the broader claim and only partly on the candidate, and trial evidence of acute weight reduction does not establish sustained loss. Per the diagnostic that a member of a class and a different implicit parameter make different claims, this is not a match. The negation searches found no counterpart, so no mirror-node risk. Confidence is held below 0.9 because retrieval returned sparse candidate lists throughout, leaving room for a true counterpart sitting under the similarity floor; the recoverable-error preference supports creating the claim and recording the near-miss for the Curator."
+      }
+    },
+    {
+      "id": "diff-01",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "denies",
+        "confidence": 0.88,
+        "reasoning": "Interpretation: the source explicitly sets aside the transmission question (\"whatever they did to case curves\") and asserts the net balance, that lockdowns' costs exceeded what they bought. That is the cost-benefit half of the lockdowns debate, not the transmission-effectiveness half. Under the identical-decomposition test they are different claims: evidence on whether lockdowns reduced SARS-CoV-2 transmission bears only partly on whether their total costs exceeded their total benefits, and the two unfold differently (a virological/epidemiological finding on one; a weighing of economic, social, educational, and health costs against lives saved on the other). A source can coherently affirm transmission reduction and still deny net benefit, and vice versa.\n\nSearch: eleven framings covering the proposed form, the colloquial \"did more harm than good\" and \"cost more than they bought\" versions, the negation and contrary (\"benefits outweighed costs\", \"lockdowns were worth it\", \"lockdowns were justified\"), and policy-mistake phrasings. The transmission claim was the only neighbor returned under every framing, at moderate scores (0.52-0.62); no net cost-benefit node surfaced in either direction, so no counterpart and no mirror page exists. The claim is novel.\n\nDirection: the debate is posed as \"were lockdowns worth it?\", and the guidance is to state the thesis the discourse argues and prefer the form saying the policy worked. The canonical form is therefore the net-benefit assertion. The proposed form (\"costs exceeded public-health benefits\") states the contrary and would let the first source's side fix the node's polarity; this source instead records as denying the canonical form, which is the correct stance, not a defect to fix by flipping. The proposed form's narrowing of benefits to \"public-health\" was also dropped: the live debate weighs all-in harm against all-in good, lives saved against economic, social, and educational costs, and a vague question should not be sharpened into one side's accounting frame.\n\nConfidence: 0.88. Novelty rests on broad multi-framing retrieval, which is strong but floor-based retrieval, not proof of absence; when identity is uncertain the recoverable error is creation, which is what this decision does."
+      }
+    },
+    {
+      "id": "diff-02",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Searched twelve framings: the proposed canonical form, the source's verbatim framing, paraphrases (catastrophic-risk, race dynamics, cost-benefit, pause-the-race), and three negations (\"AGI development is safe\", \"does not pose catastrophic risk\", \"AGI will not be dangerous\"). All hits converged on one existing claim, \"Artificial general intelligence will be developed before 2040,\" which is a timeline prediction, not the danger evaluation. The two turn on different considerations: capability forecasts and expert surveys bear on the prediction, while capability risk, alignment progress, race dynamics, and governance readiness bear on the danger judgment; a source can affirm one and deny the other, so they are not counterparts under any wording. The negation space returned no candidate at all, so the graph holds neither this claim nor its denial. The source's superlative intensifier (\"reckless beyond anything in industrial history\") is author framing that belongs to the instance; the underlying proposition, that building AGI on the near-term timeline is dangerous, is what the canonical form states. The 2040 parameter comes from the proposed form's rendering of the source's \"that timeline,\" which the calling agent supplies with document context. Confidence is high but not certain because retrieval surfaced the timeline claim for nearly every AGI query at moderate scores, suggesting a broad neighborhood; a missed counterpart is nonetheless unlikely given the empty negation searches. Per the recoverable-error rule, creating is safe: a duplicate is cheap for the Curator to merge later."
+      }
+    },
+    {
+      "id": "diff-03",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.8,
+        "reasoning": "I ran eight searches across the claim's wording, paraphrases, and both negations (\"AI does not pose serious risks of large-scale societal harm...\", \"AI risks are exaggerated, AI is safe and beneficial\"), plus adjacent framings (catastrophic/existential risk, misuse and systemic risks, serious threat to society). Only one candidate ever surfaced above the floor: the extinction claim, which is a near-miss, not this claim. The identity test fails: the two propositions decompose differently. The extinction claim turns on the probability of one maximal outcome (human extinction) and what counts as \"non-negligible\"; this claim turns on the probability of a broader outcome class (large-scale societal harm, including misuse, destabilization, and systemic harms that are not extinction) and what counts as \"serious\". Evidence about election manipulation, labor displacement, or AI-enabled misuse bears on this claim but only partially on extinction risk, and the discourse itself treats them as distinct propositions: one can coherently affirm serious societal-harm risk while denying meaningful extinction risk, and vice versa. Extinction is best read as the extreme specification of this claim, and a specification is a different claim (§2). I therefore create the new claim. Two refinements to the proposed form: I restored \"societal\" (the debated proposition is societal-scale harm, not harm in general) and generalized \"coming decades\" to \"this century\", the standard horizon the surrounding discourse uses, which does not change the considerations the claim turns on. The source asserts the claim as stated, so its stance is \"affirms\". Residual uncertainty: every search returned a single result, so if the index is truncated rather than sparse, a closer counterpart could have been missed; per the recoverable-error preference, creating is the safe side."
+      }
+    },
+    {
+      "id": "diff-04",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "denies",
+        "confidence": 0.9,
+        "reasoning": "Identity: I searched eight framings before concluding novelty. The proposed canonical form, the colloquial paraphrase (\"eating cholesterol raises your blood cholesterol\"), the serum-cholesterol vocabulary variant, an LDL-specific framing, the source's own wording (\"cholesterol you eat becomes cholesterol in your blood\"), and three negation/contrary framings (\"little or no effect on blood cholesterol,\" \"blood cholesterol is produced mainly by the liver, not determined by what you eat,\" and \"old advice wrongly assumed eating cholesterol directly raises blood cholesterol\"). Every query returned the same single neighbor, \"Egg yolks are high in dietary cholesterol,\" at moderate similarity (0.44-0.57), which is a compositional fact about a food, not the causal proposition under debate; evidence for one (laboratory measurement of yolk contents) does not decide the other, and an author on either side of the causal question can affirm it. Under no framing did a counterpart or its negation surface, so the claim is novel. Canonical form: the proposed form is terse, neutral, and frame-independent; the debate is conducted over the causal link in general, not a magnitude threshold, so I did not sharpen it with qualifiers like \"substantially.\" Stance: the verbatim sentence attributes the proposition to \"the old advice\" rather than asserting it; the most plausible authorial reading is a piece explaining the outdated basis of old advice, i.e., a voice rejecting the direct diet-to-blood cholesterol link. Recorded as \"denies\" against the canonical direction, which per my role is the correct record for a first instance that argues against the proposition as posed. Caveat flagged for the calling Steward: the sentence also carries a distinct historical proposition (\"old dietary advice assumed that dietary cholesterol directly raises blood cholesterol\"), which the discourse may warrant as its own node; the linkage here records the source's voice on the causal claim."
+      }
+    },
+    {
+      "id": "diff-05",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.75,
+        "reasoning": "Searched ten framings: the claim as written, multiple lab-origin paraphrases (\"began with a laboratory leak in Wuhan\", \"escaped from a laboratory in Wuhan\", \"originated from a lab accident rather than natural spillover\", \"caused by a leak from coronavirus research at the WIV\"), the engineered-virus variant, two \"research program caused it\" paraphrases, the direct negation (\"Gain-of-function research did not cause the COVID-19 pandemic\"), and the natural-origin contrary (\"SARS-CoV-2 emerged naturally from animals to humans\"). Only one related claim surfaced under any framing: 479629f8, \"The Wuhan Institute of Virology conducted gain-of-function research on coronaviruses.\" That claim is about what research WIV conducted; the proposed claim is about a causal outcome (that the research program started the pandemic). They have different decompositions: grant records and research documents bear on the first, the origin of SARS-CoV-2 bears on the second, and a source can hold both or either. It is a factual premise or near-relative, not the same claim or its negation. No counterpart or negation of the proposed claim exists in the graph. Creating is the recoverable error if wrong: a duplicate the Curator can merge later. Confidence is held at 0.75 rather than higher because retrieval surfaced nothing on the entire origin question, so I cannot rule out that a counterpart exists that embeddings failed to surface; the search effort itself was thorough. Stance: the source relays the critics' assertion (\"critics say\"), which is an affirmation of the claim as canonically stated, with the attribution preserved in the instance's verbatim text and context; the canonical node is the causal proposition, not the fact that critics say it."
+      }
+    },
+    {
+      "id": "diff-06",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "I searched eight framings: the proposed canonical form, the source's own wording (\"refereeing makes published papers clearer\"), two paraphrases (manuscripts improve in readability after review; peer review improves the quality of published research), a value-based paraphrase (\"adds little value beyond making papers clearer\"), and three negations or contraries (\"peer review does not improve clarity\", \"no effect on clarity or quality\", \"peer-reviewed papers are no clearer than preprints\"). Every search surfaced only one neighbor, \"Peer review reliably filters out fraudulent research\", and it is not this claim: it concerns peer review's screening function, where the operative evidence is fraud detection, retraction rates, and how much misconduct survives review, whereas the proposition here concerns editorial improvement of manuscripts, where the operative evidence is writing and presentation before versus after refereeing. Nothing could count as evidence for one without bearing equally on the other only if they were the same claim, and they are not: identical decomposition fails. So the graph does not hold this claim under any wording I could surface, and I conclude it is new. The source, with its concessive \"Say what you will\", asserts that refereeing does make papers clearer, which affirms the canonical proposition as stated. Confidence is 0.88 rather than higher because every search returned very few candidates, so a low-scoring counterpart that embedding retrieval misses remains conceivable; the recoverable error in that direction is a duplicate the Curator can merge later."
+      }
+    },
+    {
+      "id": "diff-07",
+      "category": "similar_but_different",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.86,
+        "reasoning": "Searched six framings: the claim as proposed, two plain paraphrases (cosmic rays more energetic than the LHC; nature produces collisions vastly more energetic than any collider), and three contrary/negation forms (no cosmic-ray collision has reached LHC energies; the LHC reaches higher energies than cosmic rays; the LHC probes energy scales never before realized in nature). All six returned the same single existing claim, \"The LHC's center-of-mass collision energy exceeds that of any previous human-built collider\" (4bedf85a), at scores of 0.54 to 0.71. That claim is not a match on the merits: its comparison class is previous human-built colliders, settled by accelerator construction history, while the proposed claim's comparison class is natural cosmic rays, settled by cosmic-ray energy measurements. Different evidence classes mean the claims decompose differently, so nothing that bears on one bears equally on the other (§2). It is also not the negation or contrary of the proposed claim, and the three contrary framings surfaced no counterpart, so no mirror-page risk. The claim is therefore new. Stance: the source (\"Nature has been running the experiment forever: cosmic-ray collisions dwarf LHC energies\") asserts the proposition, so it affirms the canonically stated claim. Canonical form kept at the vague level the discourse debates rather than sharpened into center-of-mass technicalities; \"far above\" reflects how the gap is actually argued."
+      }
+    },
+    {
+      "id": "hard-01",
+      "category": "hard",
+      "pass": false,
+      "failures": [
+        "expected a match; matcher created a new claim"
+      ],
+      "decision": {
+        "is_match": false,
+        "instance_stance": "affirms",
+        "confidence": 0.75,
+        "reasoning": "Searched seven framings: the proposed wording verbatim, three paraphrases of the one-shot structure, the negation (\"humanity could recover from a failed attempt and try again later\"), and the two component propositions (lethality of a misaligned superintelligence, general extinction risk). All seven returned the same three neighbors, so coverage of this neighborhood looks reasonable and none is the one-shot proposition. Closest is \"A misaligned superintelligence would likely cause human extinction on its first deployment\" (ed684a84, 0.75-0.84 similarity), but it is the lethality premise, not the claim in front of me. The source sentence carries a \"because\": it asserts lethality and derives the no-retry conclusion, making it nearly an argument over two claims (§2). The proposed canonical form bundles both into one node; the canonical form I propose states the one-shot thesis itself. The decomposition test confirms they are distinct: ed684a84 turns on what an uncontrolled misaligned superintelligence would do once deployed, while the one-shot thesis additionally turns on whether failure would be detected and corrected before such a deployment, whether warning shots are available, and whether trial-and-error is feasible. Sources exist that grant lethality but deny one-shot structure, so the same considerations do not bear on both. Where identity remains uncertain after real searching, the recoverable error is to create, so I create. The author's unconditional confidence (\"ends us\") versus the existing node's \"likely\" hedge is a stance-strength difference that belongs to the instance, not the canonical form."
+      }
+    },
+    {
+      "id": "hard-02",
+      "category": "hard",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "affirms",
+        "confidence": 0.88,
+        "reasoning": "Searched six framings: the proposed canonical form, the source's own wording, the named-effect framing from the nutrition literature, the lifestyle-pattern paraphrase, the broad confounding generalization, and the negation/contrary (that adjustment for lifestyle factors makes such studies valid). Every search surfaced f83a4a92 (\"Observational nutrition studies are confounded by healthy-user bias\"), scoring 0.757 under the literature framing and 0.643 under the proposed form, and the negation search surfaced no separate counter-claim node, so there is no mirror page to worry about. Identity judgment: the source states the defining mechanism of healthy-user bias, namely that people who choose culturally endorsed healthy foods also exercise, smoke less, and see doctors, so a cohort association with any single food is measuring the lifestyle package. The existing node names that exact phenomenon. The same considerations bear on both: any evidence about lifestyle co-occurrence among healthy eaters, residual confounding after multivariate adjustment, or discrepancy with randomized evidence bears equally on the source's statement and on the existing claim, and both would decompose into the same subclaims (lifestyle confounders co-occur with food choice; adjustment does not fully remove the bias; hence single-food observational findings are suspect). The proposed canonical form is not a specification of the existing claim but a rewording of it, since \"healthy-user bias\" is simply the name the discourse uses for the proposed form's mechanism. The near-miss 9dfe0da0 (\"Randomized controlled trials of diet are difficult to run at scale\") is a distinct, downstream claim that often travels with this one as its methodological counterpart; it is related, not identical. One note for the Steward: the existing canonical form is generic, while this instance states the mechanism explicitly; if the graph later wants a more concrete canonical wording, \"healthy-user bias\" could be glossed in the claim's own structure rather than via a second node. No new claim is created."
+      }
+    },
+    {
+      "id": "hard-03",
+      "category": "hard",
+      "pass": true,
+      "failures": [],
+      "decision": {
+        "is_match": true,
+        "instance_stance": "denies",
+        "confidence": 0.9,
+        "reasoning": "The source asserts \"On balance, raising the minimum wage now would be a mistake,\" an all-things-considered normative verdict against raising the minimum wage. The graph already holds that debate under da1eb05a, \"The minimum wage should be raised.\" The two formulations are the same claim read in opposite directions: the identical considerations (employment effects, poverty and earnings effects, price effects, and the normative weighing of them) bear on both, and an author and critic of the same policy proposal share the very claim in dispute. The proposed canonical form, \"The minimum wage should not be raised,\" is the negation-phrased mirror of the existing node; per the direction convention (prefer the positive assertion, as the discourse poses the motion), the existing form is already correctly worded, so the proposal is resolved as a match to the existing node rather than a new claim, and no wording change is needed. The qualifiers \"on balance\" and \"now\" are instance-level framing and temporal color on the same policy question, not a distinct implicit parameter: the live debate is whether raising the minimum wage, in current circumstances, is good policy. No new claim is created."
+      }
+    }
+  ]
+}

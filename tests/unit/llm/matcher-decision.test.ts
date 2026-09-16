@@ -79,13 +79,16 @@ describe("Matcher decision validation", () => {
   it("accepts a whole decision as final", async () => {
     await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
     const { executeTool, onFinalTool } = mocks.loopOptions!;
-    expect(onFinalTool("submit_match_decision", whole)).toEqual(whole);
+    // The outcome is derived from the ids, not trusted from the model (#419).
+    expect(onFinalTool("submit_match_decision", whole)).toEqual({ ...whole, outcome: "match" });
     expect(JSON.parse(await executeTool("submit_match_decision", whole)).success).toBe(true);
   });
 
-  it("still defaults to a new claim when nothing whole was ever submitted", async () => {
+  it("ends undecided, not as a new claim, when nothing whole was ever submitted (#419)", async () => {
     const decision = await matchClaim({ extractedText: "x", proposedCanonical: "x", domains: [] });
+    expect(decision.outcome).toBe("undecided");
     expect(decision.is_match).toBe(false);
-    expect(decision.confidence).toBe(0.3);
+    expect(decision.new_canonical_form).toBeNull();
+    expect(decision.confidence).toBe(0);
   });
 });

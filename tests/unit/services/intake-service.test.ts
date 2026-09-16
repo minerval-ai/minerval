@@ -261,6 +261,26 @@ describe("materializeAcceptedIntake — propose_claim", () => {
     expect(mocks.enqueueClaimPipeline).not.toHaveBeenCalled();
   });
 
+  it("neither links nor mints when the Matcher reached no verdict (#419)", async () => {
+    state.selectResults.push([pendingContribution()]);
+    mocks.matchClaim.mockResolvedValue({
+      outcome: "undecided",
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "affirms",
+    });
+
+    // The error surfaces to the reviewing agent, which can retry: the call
+    // is idempotent and the review is not yet recorded.
+    await expect(materializeAcceptedIntake("contrib-1")).rejects.toThrow(
+      /no identity verdict/
+    );
+    expect(state.inserts.find((i) => i.table === claims)).toBeUndefined();
+    expect(state.updates).toHaveLength(0);
+    expect(mocks.enqueueClaimPipeline).not.toHaveBeenCalled();
+  });
+
   it("is idempotent once the contribution has a claim", async () => {
     state.selectResults.push([pendingContribution({ claimId: "done-1" })]);
     const result = await materializeAcceptedIntake("contrib-1");

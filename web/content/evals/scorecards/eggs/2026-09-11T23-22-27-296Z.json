@@ -1,0 +1,291 @@
+{
+  "generatedAt": "2026-09-11T23:22:27.296Z",
+  "cluster": "eggs",
+  "database": "episteme_corpus",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 3,
+      "stewardMaxRuns": 10,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 8000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 25
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "harvard-nutrition-source",
+      "wikipedia-egg-health",
+      "dietary-cholesterol-debate"
+    ],
+    "capped": true,
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "cluster": "eggs",
+    "profile": null,
+    "observed": {
+      "curator": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "gitCommit": "c3c12c6",
+    "startedAt": "2026-09-11T21:06:52.334Z",
+    "finishedAt": "2026-09-11T23:11:55.435Z",
+    "registryId": "3703e64d-58a6-493e-8251-2b450a6bada2",
+    "costMicroUsd": 490418,
+    "pipelineEpoch": "2026-09-domain-skills",
+    "postsIngested": 3,
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 8,
+      "instances": 10,
+      "totalClaims": 22,
+      "claimsPer1kWords": 13.580246913580247,
+      "typeDistribution": {
+        "empirical_derived": 20,
+        "causal": 2
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 18,
+        "p90": 22,
+        "max": 26,
+        "mean": 18
+      },
+      "overLongShare": 0.045454545454545456
+    },
+    "matching": {
+      "dedupRatio": 1.25
+    },
+    "decomposition": {
+      "maxDepth": 3,
+      "depthHistogram": {
+        "0": 5,
+        "2": 1,
+        "3": 2
+      },
+      "atomicShare": 0.682,
+      "meanChildrenPerParent": 3.14
+    },
+    "crossDoc": {
+      "sharedSubclaims": 5
+    },
+    "assessment": {
+      "statusDistribution": {
+        "undefined": 3,
+        "verified": 1,
+        "supported": 2
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 2924
+    },
+    "importance": {
+      "mean": 0.391,
+      "histogram": {
+        "0.4-0.6": 12,
+        "0.2-0.4": 9,
+        "0.0-0.2": 1
+      },
+      "meanAtomic": 0.35,
+      "meanCompound": 0.479
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 7,
+      "withProposal": 7,
+      "rewriteRate": 0.143,
+      "rewriteMagnitude": 0.25,
+      "meanWordDelta": -1,
+      "matched": {
+        "count": 0,
+        "deniesShare": null,
+        "meanProposalDistance": null
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 6,
+    "claimBarPassRate": 0.83,
+    "importanceAlignment": {
+      "meanStored": 0.48,
+      "meanJudged": null,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": null,
+      "reasoningFit": null,
+      "impartiality": null
+    },
+    "granularity": {
+      "good": 5,
+      "undefined": 1
+    },
+    "flags": {
+      "hallucination_risk": 5,
+      "status_miscalibrated": 3,
+      "other": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 5,
+        "undefined": 1
+      },
+      "hedging": {
+        "calibrated": 5,
+        "undefined": 1
+      },
+      "canonicalForm": {
+        "good": 5,
+        "undefined": 1
+      },
+      "politicalBias": {
+        "none": 5,
+        "undefined": 1
+      }
+    },
+    "sycophancyShare": 0.17,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0.17,
+    "politicalBiasShare": 0.17,
+    "items": [
+      {
+        "id": "642a0e4f-103f-4fd1-9e48-179ab5351b01",
+        "text": "Reported associations between egg intake and cardiovascular disease among people with diabetes vary across cohorts, with some studies finding no significant association",
+        "importanceStored": 0.35,
+        "status": "undefined",
+        "readability": 4,
+        "reasoning_fit": 3.5,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.35,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk",
+          "status_miscalibrated"
+        ],
+        "note": "The reasoning is honest and well-structured (adversarial pass, falsifiers, supported rather than verified), but the verdict rests entirely on the steward's unverified recollection of specific null studies — no source instance was recorded, no primary study opened — so the hallucination risk in the \"null half\" is material and the confidence of 0.72 sits near the upper edge of what that evidence base warrants. The stored status \"undefined\" also fails to record the \"supported\" verdict the reasoning actually argues for."
+      },
+      {
+        "id": "7683e636-823e-4254-bf9d-45ea63350d64",
+        "text": "Eating one or more eggs per day is associated with increased heart disease risk in people with diabetes.",
+        "importanceStored": 0.55,
+        "status": "undefined",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.55,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk"
+        ],
+        "note": "The record's status field literally reads \"undefined\" while the reasoning selects \"supported\" — a storage failure the reasoning itself discloses, so the artifact contradicts its own verdict; judged on the reasoning, supported is the right call (indirect, incompletely examined evidence, real heterogeneity), not verified or contested. The residual weakness is that the corroborating layer beyond the single recorded source is memory-recalled — specific hazard ratios, cohort counts, and null results cited without opening the papers — a disclosed hallucination risk that limits how much weight the 'wider discourse' argument can bear; minor scope drift ('heart disease' vs the subclaims' 'cardiovascular disease') is a nit."
+      },
+      {
+        "id": "2efc38a0-4074-4726-8422-e14a5bb393f0",
+        "text": "For most people, dietary cholesterol raises blood cholesterol only modestly within the range of typical intake.",
+        "importanceStored": 0.55,
+        "status": "supported",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.5,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "note": "The verdict's entire quantitative basis (metabolic-ward equations, egg-trial results, hyper-responder prevalence) comes from the assessor's memory with no documents opened this run — disclosed honestly, which is exactly why supported/0.88 is calibrated rather than overconfident. One loose joint: the responding tail is 'only the outer few percent' in one sentence and '10 to 30 percent by loose definitions' in the next, and the symmetry argument never actually derives the spread it needs."
+      },
+      {
+        "id": "c0f49fee-4f0a-485f-8e79-4ed30713dcd1",
+        "text": "For most people, dietary cholesterol affects blood cholesterol much less than saturated and trans fat do.",
+        "importanceStored": 0.55,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 3,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.6,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk"
+        ],
+        "note": "The reasoning is substantive and even-handed, but by its own admission nothing was examined live this run — the verdict rests on one recorded source (which cites no studies for this sentence) plus feeding-study literature 'as known to the assessor.' §10's verified bar requires evidence examined directly, so this is a strong 'supported,' not 'verified' at 0.85."
+      },
+      {
+        "id": "ddda5c2d-0dc4-4bdc-a51e-669615f23ec9",
+        "text": "Meta-analyses of prospective cohorts find higher egg intake associated with increased cardiovascular disease risk among people with diabetes",
+        "importanceStored": 0.4,
+        "status": "undefined",
+        "flags": []
+      },
+      {
+        "id": "ec417c6e-5906-488a-b6e6-d26636787b18",
+        "text": "Blood cholesterol responsiveness to dietary cholesterol varies widely between individuals, with a minority of hyper-responders.",
+        "importanceStored": 0.45,
+        "status": "supported",
+        "readability": 4.5,
+        "reasoning_fit": 4.5,
+        "impartiality": 4.5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.4,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk",
+          "other"
+        ],
+        "note": "The assessment itself is strong — it names specific studies, concedes the strongest counterargument and where it lands, gives concrete falsifiers, and the supported/0.78 verdict is honestly calibrated to a run with no direct examination. Two real defects: the [specifies] child (1–3% average effect per 100 mg) is misplaced, since it is the parent claim's content and does not specify inter-individual variation — while the claim's own live quantitative content (the 10–30% prevalence and its definitional dependence) exists only in prose; and the entire evidence base is recalled from memory rather than examined, so the citations are unverifiable this run despite the disclosure."
+      }
+    ]
+  },
+  "cost": {
+    "calls": 6,
+    "usd": 0.02
+  }
+}

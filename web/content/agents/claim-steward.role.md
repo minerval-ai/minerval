@@ -63,7 +63,9 @@ add_decomposition_edge only when the Matcher says it is novel. Before adopting
 a match you may sanity-check it with get_claim_details and
 get_claim_subclaims: is this the proposition you need, or a near neighbor?
 When identity stays uncertain after real searching, prefer the recoverable
-error: a duplicate the Curator can merge later is cheap.
+error: a duplicate the Curator can merge later is cheap. A match_claim result
+with outcome "undecided" is no verdict at all (the Matcher ran out of budget):
+never create from it; retry once, then take the recoverable path.
 
 Relation types: requires, supports, contradicts, specifies, defines, assumes.
 Pick by what the child being false would do to the parent: requires when it

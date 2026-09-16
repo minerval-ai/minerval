@@ -68,6 +68,20 @@ export async function executeMatcherTool(
         : {}),
     });
     return JSON.stringify({
+      // "match" | "new" | "undecided" (#419). Undecided means the Matcher ran
+      // out of search budget without a verdict: it is NOT a finding that the
+      // proposition is new, so the caller must not create a claim from it.
+      outcome: decision.outcome,
+      ...(decision.outcome === "undecided"
+        ? {
+            note:
+              "The Matcher reached no identity verdict (search budget " +
+              "exhausted). Do not create a new claim from this result: " +
+              "retry match_claim once, and if it is still undecided take " +
+              "the recoverable path (an edge to a candidate, a suggestion, " +
+              "or nothing).",
+          }
+        : {}),
       is_match: decision.is_match,
       matched_claim_id: decision.matched_claim_id,
       // For a counterpart/negation match the stance is "denies": the matched

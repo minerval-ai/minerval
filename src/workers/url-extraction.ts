@@ -199,6 +199,7 @@ async function processUrlExtraction(
     let claimsCreated = 0;
     let claimsMatched = 0;
     let claimsDroppedLowConfidence = 0;
+    let claimsUndecided = 0;
 
     for (const claim of extracted) {
       // Validity floor (#157 phase 3): the Extractor scores each proposition
@@ -226,6 +227,15 @@ async function processUrlExtraction(
         // Extractor's prior for this claim.
         domains: sanitizeDomains(claim.domains),
       });
+
+      // The Matcher reached no verdict (#419). Skipping is the safe default:
+      // a missed instance is picked up on the next crawl of the source, while
+      // a claim minted from a non-decision is a duplicate the Curator has to
+      // find and merge. Counted in the job result so it is visible.
+      if (matchResult.outcome === "undecided") {
+        claimsUndecided++;
+        continue;
+      }
 
       let claimId: string;
 
@@ -336,6 +346,8 @@ async function processUrlExtraction(
         // Never truncate silently: dropped extractions are visible in the
         // job result so a low floor misconfiguration is diagnosable.
         claims_dropped_low_confidence: claimsDroppedLowConfidence,
+        // Extractions the Matcher could not decide on and were skipped (#419).
+        claims_undecided: claimsUndecided,
       },
     });
   } catch (err) {

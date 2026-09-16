@@ -558,6 +558,28 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  it("match_claim reports a Matcher timeout as matched: null, not a no-match (#419)", async () => {
+    mocks.matchClaim.mockImplementationOnce(async () => ({
+      outcome: "undecided",
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "affirms",
+      confidence: 0,
+      reasoning: "No verdict.",
+      alternative_matches: [],
+      relationship_notes: null,
+    }));
+    const result = await client.callTool({
+      name: "match_claim",
+      arguments: { assertion: "Supply chains caused 2022 inflation" },
+    });
+    const payload = parseText(result);
+    expect(payload.matched).toBeNull();
+    expect(payload).not.toHaveProperty("proposed_canonical_form");
+    await client.close();
+  });
+
   it("assess_text composes extract → match → graph verdicts", async () => {
     mocks.extractClaims.mockResolvedValueOnce([
       {

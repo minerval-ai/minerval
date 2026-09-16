@@ -185,6 +185,8 @@ export function buildAnnotations(input: {
     context: string | null;
     source_location: string | null;
     stance: "affirms" | "denies";
+    /** The Matcher ran out of budget without a verdict (#419). */
+    undecided?: boolean;
     matched: {
       claimId: string;
       canonicalForm: string;
@@ -208,7 +210,9 @@ export function buildAnnotations(input: {
         context: c.context,
         source_location: c.source_location,
         verdict: "unknown" as const,
-        why: "This claim isn't in the Minerval graph yet.",
+        why: c.undecided
+          ? "Minerval could not decide whether this claim is in the graph."
+          : "This claim isn't in the Minerval graph yet.",
         confidence: 0,
         stance: c.stance,
         claim: null,
@@ -449,6 +453,9 @@ async function analyzePageUncached(
       source_location: c.source_location,
       stance: decision.instance_stance,
       matchConfidence: decision.confidence,
+      // The Matcher reached no verdict (#419): distinct from "not in the
+      // graph" so the annotation can say so.
+      undecided: decision.outcome === "undecided",
     };
 
     if (!decision.is_match || !decision.matched_claim_id) {

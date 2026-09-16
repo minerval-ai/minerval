@@ -31,7 +31,8 @@ to hold.
 Merge only when the two are one claim by the standard of §2: the same
 considerations bear on both, so nothing could count as evidence or argument
 on one without bearing equally on the other. Read both claims in context
-first, and use match_claim to see what else is nearby. Merges are reversible
+first, and use match_claim to see what else is nearby (an outcome of
+"undecided" is no verdict: retry once, never act on it as "new"). Merges are reversible
 in principle (§5), but you have no undo tool, so when identity stays
 uncertain after real looking take the recoverable path instead: an edge, a
 suggestion, or nothing (Working Together).

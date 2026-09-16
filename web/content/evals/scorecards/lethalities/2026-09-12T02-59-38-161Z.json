@@ -1,0 +1,144 @@
+{
+  "generatedAt": "2026-09-12T02:59:38.161Z",
+  "cluster": "lethalities",
+  "database": "episteme_corpus_lethalities",
+  "config": {
+    "pipelineEpoch": "2026-09-domain-skills",
+    "gitCommit": "08be745",
+    "profile": null,
+    "swap": null,
+    "order": null,
+    "models": {
+      "extractor": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "curator": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "caps": {
+      "stewardMaxRuns": 6,
+      "stewardMaxIterations": 25,
+      "curatorMaxRuns": 3,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 8000000,
+      "llmHourlyTokenLimit": 0
+    },
+    "observed": {
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "modelsSource": "run"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 169,
+      "instances": 178,
+      "totalClaims": 169,
+      "claimsPer1kWords": 1.9270898662439992,
+      "typeDistribution": {
+        "causal": 24,
+        "empirical_derived": 92,
+        "empirical_verifiable": 32,
+        "evaluative": 8,
+        "normative": 10,
+        "empirical": 3
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 13,
+        "p90": 17,
+        "max": 51,
+        "mean": 13.7
+      },
+      "overLongShare": 0.023668639053254437
+    },
+    "matching": {
+      "dedupRatio": 1.0532544378698225
+    },
+    "decomposition": {
+      "maxDepth": 0,
+      "depthHistogram": {
+        "0": 169
+      },
+      "atomicShare": 1,
+      "meanChildrenPerParent": 0
+    },
+    "crossDoc": {
+      "sharedSubclaims": 0
+    },
+    "assessment": {
+      "statusDistribution": {},
+      "pctWithTrace": 0,
+      "meanTraceLength": 0
+    },
+    "importance": {
+      "mean": 0.537,
+      "histogram": {
+        "0.6-0.8": 49,
+        "0.4-0.6": 96,
+        "0.8-1.0": 11,
+        "0.2-0.4": 13
+      },
+      "meanAtomic": 0.537,
+      "meanCompound": null
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 169,
+      "withProposal": 169,
+      "rewriteRate": 0.112,
+      "rewriteMagnitude": 0.396,
+      "meanWordDelta": 0.737,
+      "matched": {
+        "count": 9,
+        "deniesShare": 0.222,
+        "meanProposalDistance": 0.466
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 0,
+    "claimBarPassRate": 0,
+    "importanceAlignment": {
+      "meanStored": 0,
+      "meanJudged": 0,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 0,
+      "reasoningFit": 0,
+      "impartiality": 0
+    },
+    "granularity": {},
+    "flags": {},
+    "dimensions": {
+      "sycophancy": {},
+      "hedging": {},
+      "canonicalForm": {},
+      "politicalBias": {}
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0,
+    "politicalBiasShare": 0,
+    "items": []
+  },
+  "cost": {
+    "calls": 0,
+    "usd": 0
+  }
+}
