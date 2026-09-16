@@ -1,6 +1,7 @@
 # Consistency Checker: implementation plan for #330
 
-Status: plan, not yet built. Issue: https://github.com/minerval-ai/minerval/issues/330
+Status: Phase 0 built (`src/services/coherence-service.ts`, `GET /coherence`);
+Phases 1 and 2 planned. Issue: https://github.com/minerval-ai/minerval/issues/330
 
 ## 1. What has changed since the issue was written
 
@@ -83,8 +84,17 @@ Two layers, mirroring "mechanism as backstop, judgment for decisions":
 
 The scheduler picks the tag due next (least recently swept, weighted by the
 tag's importance mass and by how many of its claims were re-assessed since
-its last sweep). Untagged live claims form one residual bucket so nothing
-is unreachable.
+its last sweep).
+
+**Partition threshold.** The live vocabulary (September 2026: 342 tags over
+866 claims) is a few dozen broad field tags and a long tail of one- and
+two-claim tags. A sweep over a two-claim tag cannot find a cross-claim
+tension, so only tags carrying at least `CONSISTENCY_MIN_TAG_CLAIMS`
+claims (default 10; about 40 tags today) are sweep partitions. Every live
+claim not covered by a qualifying tag falls into one **residual bucket**,
+which competes for sweeps on the same terms. The pre-filter itself takes a
+tag or the whole graph; the residual bucket is the scheduler's construction
+(Phase 1), so thinning the vocabulary later changes nothing below it.
 
 ### 2.4 Spend shape: config caps now, ledger-funded runs later
 
@@ -126,31 +136,38 @@ in that neighborhood changes.
   tenable), `created_at`. A candidate is suppressed while every assessment
   it named is still current.
 
-### 3.2 Mechanical pre-filter (`src/services/coherence-service.ts`)
+### 3.2 Mechanical pre-filter (`src/services/coherence-service.ts`) — BUILT
 
-`listCoherenceCandidates({ tagId | untagged, limit })` returns
-`{ kind, claim_ids, primary_claim_id, evidence }[]`, importance-ordered.
-Kinds, each one SQL over `assessments` (is_current) joined through
-`claim_relationships` / `claim_links`:
+`listCoherenceCandidates({ tagId? }, { limit, offset })` returns
+`{ kind, primary_claim_id, claim_ids, importance, relation, primary, other,
+neighbor_status_then? }[]`, most important primary first. One SQL statement
+over current assessments joined through `claim_relationships` and
+`claim_links`; thresholds in `COHERENCE_THRESHOLDS`:
 
-| kind | rule (mechanical, tunable constants in one place) |
+| kind | rule |
 |---|---|
-| `requires_status` | parent status in (`verified`,`supported`) and a `requires` child in (`contradicted`,`unsupported`) |
-| `requires_credence` | parent credence exceeds a `requires` child's credence by more than `REQUIRES_MARGIN` (a conclusion is no likelier than a premise it needs) |
-| `contradicts_both_high` | `contradicts` edge with both endpoints `verified`/`supported`, or both credences above `HIGH_CREDENCE` |
-| `rivals_jointly_untenable` | `claim_links.kind = 'rival_explanation'` with credences summing above `1 + RIVAL_TOLERANCE` (§21) |
-| `stale_vs_neighbor` | parent assessed before a `requires`/`contradicts` child's current assessment, and the child's status at the parent's `assessed_at` (from assessment history) differs from its status now |
-| `supports_inverted` | a `supports` child at `contradicted` under a parent that rose to `verified` after the child's assessment (weak signal; low weight) |
+| `requires_status` | parent `verified`/`supported` while a `requires` child is `contradicted`/`unsupported` |
+| `requires_credence` | parent credence exceeds a `requires` child's by more than `requiresMargin` (0.15); yields to `requires_status` on the same pair |
+| `contradicts_both_high` | `contradicts` edge with both ends `verified`/`supported`, or both credences at or above `highCredence` (0.7) |
+| `rivals_jointly_untenable` | `rival_explanation` link with credences summing past `1 + rivalTolerance` (0.1) (§21); the likelier side is primary |
+| `stale_vs_neighbor` | parent assessed before a `requires`/`contradicts` child's current assessment, and the child's status at the parent's `assessed_at` (from assessment history) differs from now. A child first assessed after the parent does not count: that ordering is the pipeline's normal course |
+
+Two exclusions keep it a shortlist: a primary already `pending`/`running`
+for its Steward is left out (a flag on it would repeat queued work), and
+only live claims (`active`, not merged) with a current assessment take part.
+A `supports_inverted` kind was considered and dropped: a `supports` child
+carries no logical commitment strong enough to shortlist on.
 
 Not mechanical, left to the agent: dependents that presuppose different
 verdicts on a shared upstream claim (needs the traces), and tensions the
-traces already acknowledge. The pre-filter is a shortlist, not a verdict:
-the constitution's line is that a threshold may pick what to look at, never
-decide.
+traces already acknowledge.
 
-Also exported: `coherenceStats()` for a `GET /coherence` (or `/usage`
-sibling) route showing candidate counts by kind, so the incoherence rate is
-observable before and after the agent runs.
+`coherenceStats({ tagId? })` returns the population (assessed claims,
+assessed edges) and counts by kind. Both are served by **`GET /coherence`**
+(`?tag=<slug>&limit=&offset=`, read-only, `src/routes/coherence.ts`), so the
+incoherence rate is observable before any agent spend and after it. Tests:
+`tests/db/coherence-candidates.test.ts` (one fixture per kind plus the
+negative controls), `tests/unit/routes/coherence.test.ts`.
 
 ### 3.3 Agent (`src/llm/agents/consistency-checker.ts`, `src/llm/prompts/consistency-checker.ts`, `src/llm/tools/consistency-tools.ts`)
 
@@ -245,6 +262,7 @@ second sweep of the same tag; an older one counts as abandoned.
 | `consistencySweepIntervalHours` | `CONSISTENCY_SWEEP_INTERVAL_HOURS` | 0 (off) until Phase 0 numbers are in |
 | `consistencyMaxSweepsPerDay` | `CONSISTENCY_MAX_SWEEPS_PER_DAY` | 6 |
 | `consistencyMaxCandidatesPerSweep` | `CONSISTENCY_MAX_CANDIDATES_PER_SWEEP` | 40 |
+| `consistencyMinTagClaims` | `CONSISTENCY_MIN_TAG_CLAIMS` | 10 |
 | `consistencyMaxFlagsPerSweep` | `CONSISTENCY_MAX_FLAGS_PER_SWEEP` | 5 |
 | `consistencyFlagMaxValue` | `CONSISTENCY_FLAG_MAX_VALUE` | 6 (the Lookout's default ceiling) |
 | `consistencyModel` | `CONSISTENCY_MODEL` | `MODELS.sonnet` |
@@ -267,12 +285,9 @@ role is enabled in prod.
 
 ### 3.9 Tests
 
-- `tests/db/coherence-candidates.test.ts`: fixtures per candidate kind
-  (parent verified + requires child contradicted; rival links summing
-  past 1; stale-vs-neighbor via assessment history) and the negative
-  controls (a `supports` child at contradicted under a `contested` parent
-  is not a candidate; a dismissed candidate stays suppressed until an
-  assessment changes).
+- `tests/db/coherence-candidates.test.ts` (built): one fixture per kind and
+  the negative controls. Phase 1 adds: a dismissed candidate stays
+  suppressed until an assessment it named changes.
 - `tests/unit/workers/consistency-scheduler.test.ts`: interval off, daily
   cap, partition choice, reclaim of an abandoned sweep (mocked `rawQuery`,
   like audit-scheduler.test.ts).
@@ -286,11 +301,12 @@ role is enabled in prod.
 
 ## 4. Phasing
 
-**Phase 0: measure before spending.** `coherence-service.ts` + the stats
-route + `tests/db` cases. Run it against the production snapshot to learn
-the actual incoherence rate by kind. If the mechanical pass finds almost
-nothing, tune the rules; if it finds a lot, the agent's first sweeps have a
-known workload. No LLM spend, no schema beyond nothing (read-only).
+**Phase 0: measure before spending. Built.** `coherence-service.ts`,
+`GET /coherence`, `tests/db` cases. No LLM spend, no schema change,
+read-only. Next step is operational: read `GET /coherence` on production
+to learn the incoherence rate by kind. If the mechanical pass finds almost
+nothing, loosen the thresholds; if it finds a lot, the agent's first sweeps
+have a known workload, and the counts set the per-sweep caps.
 
 **Phase 1: the agent.** Schema (sweeps, flags, dismissals), agent + prompt +
 tools, flag service, Steward trigger + prompt paragraph, scheduler with
