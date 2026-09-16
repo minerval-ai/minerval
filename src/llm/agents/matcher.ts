@@ -63,6 +63,16 @@ const MATCH_DECISION_SCHEMA = {
 };
 
 /**
+ * The first run's tool-use turn cap (#467). A halting guard in the
+ * constitution's sense (Part IX), so it sits clear of normal use: the role
+ * prompt asks for four or more framings plus the decision, and a max_tokens
+ * recovery, a nudge, a refused submission, or a raise_issue call each cost a
+ * turn without a search. The Matcher is told this number in its prompt so it
+ * can pace itself, and may batch several searches into one turn.
+ */
+const MATCHER_TURN_BUDGET = 12;
+
+/**
  * The agentic Matcher is the single decider of claim identity (issue #25).
  *
  * It is a tool-use loop armed with `search_similar_claims`. Embedding similarity
@@ -103,6 +113,7 @@ async function matchClaimImpl(input: {
   const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
     domains: input.domains ?? [],
     skills,
+    turnBudget: MATCHER_TURN_BUDGET,
   });
   // One cached block for the constitution and role, plus one per active skill.
   const system = getMatcherSystemPromptBlocks({ skills });
@@ -132,6 +143,17 @@ async function matchClaimImpl(input: {
 
   let finalResult: MatchDecision | null = null;
   const model = input.model ?? config.matcherModel;
+
+  // Every search the Matcher ran, with its top hits (#467). The retry loop is
+  // a fresh transcript: without this, a first run that spent its budget
+  // searching leaves nothing behind and the retry re-derives retrieval from
+  // scratch. The constitution asks an admin under a bounded budget to record
+  // its best current conclusions before the budget expires; the searches are
+  // the part of that record the agent itself already holds, so it is kept
+  // here rather than asked for through one more tool call the budget cannot
+  // spare.
+  type SearchHit = { id: string; canonical_form: string; score: number };
+  const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
 
   // A submitted decision is accepted only when it is whole. The schema marks
   // is_match required, but not every provider enforces tool schemas: GLM 5.3
@@ -243,15 +265,13 @@ async function matchClaimImpl(input: {
         } catch (err) {
           return `Error searching: ${err instanceof Error ? err.message : String(err)}`;
         }
-        return JSON.stringify({
-          query,
-          count: results.length,
-          results: results.map((r) => ({
-            id: r.id,
-            canonical_form: r.text,
-            score: Number(r.similarity_score.toFixed(3)),
-          })),
-        });
+        const hits: SearchHit[] = results.map((r) => ({
+          id: r.id,
+          canonical_form: r.text,
+          score: Number(r.similarity_score.toFixed(3)),
+        }));
+        searchLog.push({ query, results: hits });
+        return JSON.stringify({ query, count: hits.length, results: hits });
       }
       return `Error: Unknown tool: ${name}`;
     },
@@ -267,7 +287,7 @@ async function matchClaimImpl(input: {
   });
 
   await withSkills(skills.map((s) => s.name), async () => {
-    await runLoop({ maxIterations: 8 });
+    await runLoop({ maxIterations: MATCHER_TURN_BUDGET });
     if (finalResult) return;
     // One bounded retry (#419): most timeouts are a Matcher mid-search, not
     // stuck, so a short second run told to decide usually yields a verdict.
@@ -275,9 +295,10 @@ async function matchClaimImpl(input: {
       maxIterations: 3,
       retryNote:
         "Your previous attempt at this decision ran out of search budget " +
-        "without calling submit_match_decision. Run at most one more " +
-        "search_similar_claims query, then submit your decision at honest " +
-        "confidence. Do not end without submitting.",
+        "without calling submit_match_decision. " +
+        priorSearchesNote(searchLog) +
+        "Run at most one more search_similar_claims query, then submit " +
+        "your decision at honest confidence. Do not end without submitting.",
     });
   });
 
@@ -302,4 +323,38 @@ async function matchClaimImpl(input: {
     alternative_matches: [],
     relationship_notes: null,
   };
+}
+
+/**
+ * The first run's searches as a note for the retry (#467): each query with
+ * its top hits, so the retry confirms prior work instead of repeating it.
+ * Capped per query and in wording length so a long first run does not turn
+ * the short retry's prompt into the transcript it replaces.
+ */
+const PRIOR_HITS_PER_QUERY = 5;
+const PRIOR_HIT_TEXT_CHARS = 200;
+
+export function priorSearchesNote(
+  searchLog: ReadonlyArray<{
+    query: string;
+    results: ReadonlyArray<{ id: string; canonical_form: string; score: number }>;
+  }>
+): string {
+  if (searchLog.length === 0) return "";
+  const clip = (text: string): string =>
+    text.length > PRIOR_HIT_TEXT_CHARS ? `${text.slice(0, PRIOR_HIT_TEXT_CHARS - 1)}…` : text;
+  const lines = searchLog.map((entry, i) => {
+    const hits = entry.results
+      .slice(0, PRIOR_HITS_PER_QUERY)
+      .map((r) => `  - ${r.id} (score ${r.score}): ${clip(r.canonical_form)}`);
+    const body = hits.length > 0 ? hits.join("\n") : "  (no results above the floor)";
+    return `${i + 1}. Query: ${JSON.stringify(entry.query)}\n${body}`;
+  });
+  return (
+    "Its searches and their top hits are recorded below; treat them as " +
+    "already run and do not repeat them.\n\n" +
+    `Searches from the previous attempt (${searchLog.length}):\n` +
+    lines.join("\n") +
+    "\n\n"
+  );
 }

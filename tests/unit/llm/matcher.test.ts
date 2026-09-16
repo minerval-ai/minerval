@@ -41,7 +41,8 @@ vi.mock("../../../src/llm/tools/report-tools.js", () => ({
   }),
 }));
 
-import { matchClaim } from "../../../src/llm/agents/matcher.js";
+import { matchClaim, priorSearchesNote } from "../../../src/llm/agents/matcher.js";
+import { findSimilarClaims } from "../../../src/services/search-service.js";
 
 const INPUT = {
   extractedText: "Arithmetic holomorphic structures in the IUT papers can be distinct.",
@@ -71,7 +72,7 @@ describe("matchClaim", () => {
     };
     await matchClaim(INPUT);
     const opts = loopCalls[0]!;
-    expect(opts.maxIterations).toBe(8);
+    expect(opts.maxIterations).toBe(12);
     expect(opts.iterationBudgetNotice.warnWithin).toBe(2);
     expect(opts.iterationBudgetNotice.message(1)).toMatch(/submit_match_decision/);
   });
@@ -109,6 +110,58 @@ describe("matchClaim", () => {
     const content = retry.initialMessages[0].content as Array<{ text: string }>;
     expect(content[1]!.text).toMatch(/ran out of search budget/);
     expect(d.outcome).toBe("match");
+  });
+
+  it("hands the retry the first run's searches and top hits (#467)", async () => {
+    vi.mocked(findSimilarClaims).mockResolvedValueOnce([
+      { id: "c1", text: "Convex Wolff axioms imply the Kakeya conjecture.", similarity_score: 0.8123 },
+    ] as any);
+    script = async (opts, index) => {
+      if (index === 0) {
+        await opts.executeTool("search_similar_claims", { query: "Kakeya via Wolff axioms" });
+        await opts.executeTool("search_similar_claims", { query: "Kakeya conjecture fails" });
+      } else {
+        opts.onFinalTool("submit_match_decision", SUBMISSION);
+      }
+    };
+    const d = await matchClaim(INPUT);
+    expect(d.outcome).toBe("match");
+    const retry = loopCalls[1]!;
+    const note = (retry.initialMessages[0].content as Array<{ text: string }>)[1]!.text;
+    expect(note).toMatch(/Searches from the previous attempt \(2\)/);
+    expect(note).toContain('Query: "Kakeya via Wolff axioms"');
+    expect(note).toContain("c1 (score 0.812): Convex Wolff axioms imply the Kakeya conjecture.");
+    expect(note).toContain('Query: "Kakeya conjecture fails"');
+    expect(note).toContain("(no results above the floor)");
+    // The instruction to decide still follows the record.
+    expect(note).toMatch(/at most one more search_similar_claims query/);
+  });
+
+  it("tells the Matcher its turn budget up front and that searches batch (#467)", async () => {
+    script = async (opts) => {
+      await opts.executeTool("submit_match_decision", SUBMISSION);
+    };
+    await matchClaim(INPUT);
+    const first = loopCalls[0]!;
+    expect(first.initialMessages[0].content).toMatch(/You have 12 tool-use turns/);
+    expect(first.initialMessages[0].content).toMatch(/several `search_similar_claims` calls at\nonce/);
+  });
+
+  it("keeps the retry note plain when the first run never searched", () => {
+    expect(priorSearchesNote([])).toBe("");
+  });
+
+  it("caps the hits per query and clips long wording in the retry note", () => {
+    const results = Array.from({ length: 8 }, (_, i) => ({
+      id: `id${i}`,
+      canonical_form: "x".repeat(400),
+      score: 0.5,
+    }));
+    const note = priorSearchesNote([{ query: "q", results }]);
+    expect(note.match(/^  - id/gm)).toHaveLength(5);
+    expect(note).not.toContain("id5");
+    expect(note).not.toContain("x".repeat(201));
+    expect(note).toContain("…");
   });
 
   it("reports undecided, not new, when both loops end without a submission", async () => {

@@ -154,7 +154,13 @@ export function getMatcherSystemPromptBlocks(
 export function getMatchingPrompt(
   extractedText: string,
   proposedCanonical: string,
-  run: { domains?: readonly string[]; skills?: readonly Skill[] } = {}
+  /**
+   * What this run carries: its recorded domains and spliced skills (#469),
+   * and its tool-use turn budget (#467), stated up front so the Matcher can
+   * pace its searches instead of learning the limit two turns before the
+   * cut. A budget left out means the prompt says nothing about one.
+   */
+  run: { domains?: readonly string[]; skills?: readonly Skill[]; turnBudget?: number } = {}
 ): string {
   const domains = [...new Set(run.domains ?? [])].sort();
   const spliced = (run.skills ?? []).filter((s) => s.kind === "domain");
@@ -169,6 +175,16 @@ export function getMatchingPrompt(
           .join(", ")}.`
       : "No domain skill block follows your role on this run; judge under the " +
         "constitution and your role alone.";
+  const budget =
+    run.turnBudget === undefined
+      ? ""
+      : `
+You have ${run.turnBudget} tool-use turns in this run, including the one
+that submits. A turn may carry several \`search_similar_claims\` calls at
+once, so issue your framings together (the claim, the canonical form, a
+paraphrase, the negation) rather than one per turn, and keep at least one
+turn for the decision.
+`;
   return `Determine whether this claim already exists in the graph.
 
 Source text, verbatim: "${extractedText}"
@@ -176,7 +192,7 @@ Source text, verbatim: "${extractedText}"
 Proposed canonical form: "${proposedCanonical}"
 
 ${domainsLine} ${skillsLine}
-
+${budget}
 Search with \`search_similar_claims\` under several framings, including the
 negation, then call \`submit_match_decision\` with your reasoning.
 `;
