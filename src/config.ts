@@ -824,6 +824,12 @@ const configSchema = z.object({
   // being written, and the agent answers with joins or distinct_from. The
   // exact-title dedupe key catches verbatim repeats before this runs.
   reportMatchSimilarity: z.coerce.number().default(0.8),
+  // The embedding backfill worker (#432): a report recorded while the
+  // embedder was down carries no vector and is invisible to the match
+  // search, so its repeats file as new issues. Every tick embeds at most
+  // this many such reports, oldest first. 0 disables the worker.
+  reportEmbeddingBackfillPerTick: z.coerce.number().default(20),
+  reportEmbeddingBackfillIntervalSeconds: z.coerce.number().default(300),
   // GitHub issue filing for agent reports: every report written on first
   // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
   // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
@@ -1044,6 +1050,10 @@ export function loadConfig(): Config {
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
+    reportEmbeddingBackfillPerTick:
+      process.env.REPORT_EMBEDDING_BACKFILL_PER_TICK,
+    reportEmbeddingBackfillIntervalSeconds:
+      process.env.REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS,
     githubToken: process.env.GITHUB_TOKEN,
     githubAppId: process.env.GITHUB_APP_ID,
     githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,

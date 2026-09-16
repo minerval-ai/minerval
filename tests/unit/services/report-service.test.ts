@@ -33,6 +33,7 @@ vi.mock("../../../src/config.js", () => ({
 }));
 
 import {
+  backfillReportEmbeddings,
   checkReportRateLimit,
   computeDedupeKey,
   formatAgentReport,
@@ -243,15 +244,29 @@ describe("raiseIssue: a new report", () => {
     expect(String(params[3]).length).toBe(REPORT_BODY_MAX_CHARS);
   });
 
-  it("records without a match search when embedding fails, and still files", async () => {
+  it("records after a wording-only match search when embedding fails, and still files", async () => {
     mocks.generateEmbedding.mockRejectedValue(new Error("embeddings down"));
     const result = await raiseIssue(GOOD);
     await settle();
     expect(result.reportId).toBe(REPORT_ID);
-    expect(calls("<=>")).toHaveLength(0);
+    // The search still runs, with no vector and the title as the wording.
+    const [, search] = calls("<=>")[0]!;
+    expect(search[0]).toBeNull();
+    expect(search[4]).toBe(GOOD.title);
     const [, params] = calls("INSERT INTO agent_reports")[0]!;
     expect(params[14]).toBeNull();
     expect(mocks.fileIssueForReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("is stopped by a wording match on a report that has no embedding (#432)", async () => {
+    route({
+      matches: [{ ...ROW, id: OTHER_ID, similarity: 0, by_meaning: false, by_wording: true }],
+    });
+    const result = await raiseIssue(GOOD);
+    expect(result.reportId).toBeNull();
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches![0]).toMatchObject({ id: OTHER_ID, similarity: 0, matched_by: "wording" });
+    expect(calls("INSERT INTO agent_reports")).toHaveLength(0);
   });
 
   it("does not file when the upsert lost a race and collapsed", async () => {
@@ -307,6 +322,8 @@ describe("raiseIssue: matched before written", () => {
     status: "wontfix",
     triage_note: "counterparts are recorded as instances; use add_instance",
     similarity: 0.91,
+    by_meaning: true,
+    by_wording: false,
   };
 
   it("returns the near matches with status, note, and issue url, and writes nothing", async () => {
@@ -320,6 +337,7 @@ describe("raiseIssue: matched before written", () => {
       triage_note: "counterparts are recorded as instances; use add_instance",
       github_issue_url: ROW.github_issue_url,
       similarity: 0.91,
+      matched_by: "meaning",
     });
     expect(calls("INSERT INTO agent_reports")).toHaveLength(0);
     expect(mocks.fileIssueForReport).not.toHaveBeenCalled();
@@ -334,6 +352,7 @@ describe("raiseIssue: matched before written", () => {
     });
     const [, params] = calls("<=>")[0]!;
     expect(params[3]).toEqual([OTHER_ID]);
+    expect(params[4]).toBe("no way to link counterpart claims");
     expect(result.reportId).toBe(REPORT_ID);
   });
 
@@ -507,27 +526,73 @@ describe("updateReport", () => {
 });
 
 describe("searchReports", () => {
-  it("embeds the query and searches with a lower bar, scoped by origin and surface", async () => {
-    route({ matches: [{ ...ROW, similarity: 0.7 }] });
+  it("embeds the query and searches by meaning and wording with a lower bar, scoped by origin and surface", async () => {
+    route({ matches: [{ ...ROW, similarity: 0.7, by_meaning: true, by_wording: true }] });
     const result = await searchReports("linking counterparts", {
       origin: "internal",
       surface: "add_relationship_edge",
     });
     expect(result.matches).toHaveLength(1);
     expect(result.matches[0]!.similarity).toBe(0.7);
+    expect(result.matches[0]!.matched_by).toBe("both");
     const [sql, params] = calls("<=>")[0]!;
+    expect(params[0]).toBe("[0.1,0.2,0.3]");
     expect(params[1]).toBeCloseTo(0.6);
     expect(params[2]).toBe("internal");
-    expect(sql).toContain("AND surface = $5");
-    expect(params[4]).toBe("add_relationship_edge");
+    expect(params[4]).toBe("linking counterparts");
+    expect(sql).toContain("websearch_to_tsquery('english', $5::text)");
+    expect(sql).toContain("AND r.surface = $6");
+    expect(params[5]).toBe("add_relationship_edge");
+    // Wording hits come first, so a report never hides behind a paraphrase.
+    expect(sql).toMatch(/ORDER BY by_wording DESC, similarity DESC/);
   });
 
-  it("answers an empty query and an embedding failure without throwing", async () => {
+  it("falls back to wording alone when the embedding fails, and never throws", async () => {
     expect((await searchReports("   ")).problem).toBe("query is required");
     mocks.generateEmbedding.mockRejectedValue(new Error("down"));
+    route({ matches: [{ ...ROW, similarity: 0, by_meaning: false, by_wording: true }] });
+    const result = await searchReports("add_relationship_edge has no relation type for counterparts");
+    expect(result.problem).toBeUndefined();
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]!.matched_by).toBe("wording");
+    const [, params] = calls("<=>")[0]!;
+    expect(params[0]).toBeNull();
+    expect(params[4]).toBe("add_relationship_edge has no relation type for counterparts");
+  });
+
+  it("says the search is unavailable when the database fails", async () => {
+    mocks.rawQuery.mockRejectedValue(new Error("db down"));
     const result = await searchReports("anything");
     expect(result.matches).toEqual([]);
     expect(result.problem).toMatch(/unavailable/);
+  });
+});
+
+describe("backfillReportEmbeddings", () => {
+  it("embeds title + body of each report without a vector, oldest first, and counts failures", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("WHERE embedding IS NULL") && sql.includes("SELECT")) {
+        return [
+          { id: REPORT_ID, title: "first", body: "one" },
+          { id: OTHER_ID, title: "second", body: "two" },
+        ];
+      }
+      return [];
+    });
+    mocks.generateEmbedding
+      .mockResolvedValueOnce([1, 0, 0])
+      .mockRejectedValueOnce(new Error("embeddings down"));
+    const result = await backfillReportEmbeddings(10);
+    expect(result).toEqual({ pending: 2, embedded: 1, failed: 1 });
+    expect(mocks.generateEmbedding).toHaveBeenCalledWith("first\n\none");
+    expect(mocks.generateEmbedding).toHaveBeenCalledWith("second\n\ntwo");
+    const [selectSql, selectParams] = calls("ORDER BY first_seen_at ASC")[0]!;
+    expect(selectSql).toContain("WHERE embedding IS NULL");
+    expect(selectParams[0]).toBe(10);
+    const updates = calls("UPDATE agent_reports SET embedding");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]![1]).toEqual([REPORT_ID, "[1,0,0]"]);
+    expect(updates[0]![0]).toContain("AND embedding IS NULL");
   });
 });
 

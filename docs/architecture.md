@@ -659,8 +659,17 @@ match-before-write the findings channel uses — the report is embedded and
 searched against the reports on record, and a near match is shown to the
 agent with its status and triage note before anything is written, the
 agent answering with `joins` (a sighting, recorded in
-`agent_report_sightings` with its own account) or `distinct_from`. A
-sighting of a report already `actioned` is a regression and reopens it.
+`agent_report_sightings` with its own account) or `distinct_from`. The
+search, shared with `search_issues`, matches two ways and unions them
+(#432): by meaning (cosine similarity over the stored embedding, at or
+above the bar) and by wording (every content word of the title, stemmed,
+appears in a report's title or body), wording hits first, so a report is
+never invisible to its own title even when it has no embedding or a
+paraphrase outscores it. A report recorded while the embedder was down is
+stored without a vector and the search falls back to wording; the report
+embedding backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick)
+embeds such reports afterwards. A sighting of a report already `actioned`
+is a regression and reopens it.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
 rule holds for this channel too. External agents on the MCP surface get

@@ -16,6 +16,7 @@ import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { startLookoutTriggers } from "./workers/lookout-triggers.js";
 import { startGithubIssueSync } from "./workers/github-issue-sync.js";
+import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfill.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -149,6 +150,12 @@ async function main() {
   // that failed — a bounded batch per tick. The row records the issue
   // number, so every task may run it. Silent no-op unless configured.
   pollers.push(startGithubIssueSync({ logger }));
+
+  // The report embedding backfill (#432) gives a vector to every report
+  // recorded without one, so the match-before-write search and
+  // search_issues can see it. The update lands only where the embedding
+  // is still null, so every task may run it.
+  pollers.push(startReportEmbeddingBackfill({ logger }));
 
   // Lookout triggers (docs/allocation.md, "Lookouts"): the daily Crossref
   // retraction poll that queues inputs for the mandates' standing watches.

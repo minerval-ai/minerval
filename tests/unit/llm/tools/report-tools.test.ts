@@ -52,6 +52,7 @@ const MATCH = {
   last_seen_at: "2026-08-02T00:00:00.000Z",
   github_issue_url: "https://github.com/minerval-ai/minerval/issues/41",
   similarity: 0.9,
+  matched_by: "meaning" as const,
 };
 
 const GOOD_INPUT = {

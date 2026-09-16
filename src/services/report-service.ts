@@ -20,9 +20,11 @@
  *   - Matched before written. Wording drifts, so the exact key alone would
  *     mint paraphrases. A report that is not a verbatim repeat is embedded
  *     and searched against the reports on record (the findings mechanism,
- *     #394); a near match is shown to the agent, with its status and the
- *     maintainers' triage note, and nothing is written until the agent
- *     answers with `joins` (a sighting) or `distinct_from` (a new report).
+ *     #394), by meaning and, independently, by the title's wording (#432,
+ *     so a report with no embedding is still found); a near match is shown
+ *     to the agent, with its status and the maintainers' triage note, and
+ *     nothing is written until the agent answers with `joins` (a sighting)
+ *     or `distinct_from` (a new report).
  *   - Filed where maintainers look. Every report written on first sighting
  *     is filed as a GitHub issue (github-issue-service.ts), labelled as
  *     agent-generated; sightings, notes, withdrawals, and triage decisions
@@ -109,7 +111,18 @@ export interface ReportMatch {
   first_seen_at: string;
   last_seen_at: string;
   github_issue_url: string | null;
+  /**
+   * Cosine similarity of the query to the report's title + body; 0 when the
+   * report has no embedding or the query could not be embedded.
+   */
   similarity: number;
+  /**
+   * What found it: `meaning` (the embedding, at or above the bar), `wording`
+   * (every content word of the query appears in the report's title or
+   * body), or `both`. A wording hit is shown even when the report has no
+   * embedding, so a report on record is never invisible to its own title.
+   */
+  matched_by: "meaning" | "wording" | "both";
 }
 
 export interface RaiseIssueResult {
@@ -318,7 +331,13 @@ const SIGHTING_COLUMNS = `id, report_id, kind, body, context_refs, agent, model,
 // Match search
 // ---------------------------------------------------------------------------
 
-function toMatch(r: AgentReportRow & { similarity: number }): ReportMatch {
+type MatchRow = AgentReportRow & {
+  similarity: number;
+  by_meaning: boolean;
+  by_wording: boolean;
+};
+
+function toMatch(r: MatchRow): ReportMatch {
   return {
     id: r.id,
     title: r.title,
@@ -332,47 +351,73 @@ function toMatch(r: AgentReportRow & { similarity: number }): ReportMatch {
     last_seen_at: iso(r.last_seen_at) ?? "",
     github_issue_url: r.github_issue_url,
     similarity: Number(r.similarity),
+    matched_by: r.by_meaning && r.by_wording ? "both" : r.by_wording ? "wording" : "meaning",
   };
 }
 
 /**
  * The match-before-write search and the search_issues backend: reports of
- * the same origin by cosine similarity of title + body. Origin-scoped so an
- * external caller never sees the internal agents' reports, which quote the
- * machinery's failures. Withdrawn reports are excluded: a report its own
- * author took back is not a thing to join.
+ * the same origin, found two ways and unioned. By meaning: cosine
+ * similarity of the query's embedding to the report's title + body, at or
+ * above the bar. By wording: the query's content words (the title, as the
+ * agent would write it) all appear, stemmed, in the report's title or
+ * body. The wording match is what keeps the record honest when the
+ * embedding cannot (#432): a report written while embedding was down has
+ * no vector and would otherwise never be found, not even by its own title,
+ * and a report whose paraphrase outscores it would otherwise hide behind
+ * that paraphrase; wording hits sort first for the same reason. Either
+ * side may be absent: a null embedding (the embedder is down) searches by
+ * wording alone, and a query with no content words searches by meaning
+ * alone. Origin-scoped so an external caller never sees the internal
+ * agents' reports, which quote the machinery's failures. Withdrawn reports
+ * are excluded: a report its own author took back is not a thing to join.
  */
 export async function findNearReports(
-  embedding: number[],
+  embedding: number[] | null,
   opts: {
     origin: ReportOrigin;
     minSimilarity: number;
+    /** The query as words, for the wording match; the title when raising. */
+    text?: string | null;
     exclude?: string[];
     surface?: string | null;
     limit?: number;
   }
 ): Promise<ReportMatch[]> {
+  const text = String(opts.text ?? "").trim();
+  if (!embedding && !text) return [];
   const values: unknown[] = [
-    toVectorLiteral(embedding),
+    embedding ? toVectorLiteral(embedding) : null,
     opts.minSimilarity,
     opts.origin,
     opts.exclude ?? [],
+    text,
   ];
   let surfaceClause = "";
   if (opts.surface) {
     values.push(opts.surface);
-    surfaceClause = `AND surface = $${values.length}`;
+    surfaceClause = `AND r.surface = $${values.length}`;
   }
-  const rows = await rawQuery<AgentReportRow & { similarity: number }>(
-    `SELECT ${REPORT_COLUMNS}, 1 - (embedding <=> $1::vector) AS similarity
-       FROM agent_reports
-      WHERE embedding IS NOT NULL
-        AND origin = $3
-        AND status <> 'withdrawn'
-        AND NOT (id = ANY($4::uuid[]))
-        AND 1 - (embedding <=> $1::vector) >= $2
-        ${surfaceClause}
-      ORDER BY similarity DESC
+  const rows = await rawQuery<MatchRow>(
+    `WITH q AS (
+       SELECT $1::vector AS v, websearch_to_tsquery('english', $5::text) AS tsq
+     ),
+     scored AS (
+       SELECT ${REPORT_COLUMNS_R},
+              COALESCE(1 - (r.embedding <=> q.v), 0) AS similarity,
+              (r.embedding IS NOT NULL AND q.v IS NOT NULL
+                 AND 1 - (r.embedding <=> q.v) >= $2) AS by_meaning,
+              (numnode(q.tsq) > 0
+                 AND to_tsvector('english', r.title || ' ' || r.body) @@ q.tsq) AS by_wording
+         FROM agent_reports r, q
+        WHERE r.origin = $3
+          AND r.status <> 'withdrawn'
+          AND NOT (r.id = ANY($4::uuid[]))
+          ${surfaceClause}
+     )
+     SELECT * FROM scored
+      WHERE by_meaning OR by_wording
+      ORDER BY by_wording DESC, similarity DESC
       LIMIT ${Math.max(1, Math.min(REPORT_SEARCH_MAX_RESULTS, opts.limit ?? REPORT_MATCH_CANDIDATES))}`,
     values
   );
@@ -382,7 +427,9 @@ export async function findNearReports(
 /**
  * search_issues: what an agent calls on purpose, before working around
  * something, to ask whether it is known and what the maintainers said. A
- * lower bar than the write-time match, since the caller asked to look.
+ * lower bar than the write-time match, since the caller asked to look. An
+ * embedding failure narrows the search to wording rather than emptying it:
+ * the caller is usually holding a title, and a title finds its own report.
  */
 export async function searchReports(
   query: string,
@@ -390,11 +437,20 @@ export async function searchReports(
 ): Promise<{ matches: ReportMatch[]; problem?: string }> {
   const text = String(query ?? "").trim();
   if (!text) return { matches: [], problem: "query is required" };
+  let embedding: number[] | null = null;
   try {
-    const embedding = await generateEmbedding(text.slice(0, 4000));
+    embedding = await generateEmbedding(text.slice(0, 4000));
+  } catch (err) {
+    console.error(
+      "[reports] search embedding failed; searching by wording only:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+  try {
     const matches = await findNearReports(embedding, {
       origin: opts.origin ?? "internal",
       minSimilarity: Math.max(0, loadConfig().reportMatchSimilarity - 0.2),
+      text,
       surface: opts.surface ?? null,
       limit: opts.limit ?? REPORT_SEARCH_MAX_RESULTS,
     });
@@ -406,6 +462,44 @@ export async function searchReports(
     );
     return { matches: [], problem: "the search is unavailable right now" };
   }
+}
+
+/**
+ * The embedding backfill (#432): reports recorded while the embedder was
+ * down, or before the column existed, carry no vector, so the meaning
+ * search cannot see them and the match-before-write files their repeats
+ * as new. Embed a bounded batch, oldest first; a row that fails stays
+ * pending for the next tick. Exported for the worker and for tests.
+ */
+export async function backfillReportEmbeddings(
+  limit: number
+): Promise<{ pending: number; embedded: number; failed: number }> {
+  const rows = await rawQuery<Pick<AgentReportRow, "id" | "title" | "body">>(
+    `SELECT id, title, body FROM agent_reports
+      WHERE embedding IS NULL
+      ORDER BY first_seen_at ASC
+      LIMIT $1`,
+    [Math.max(1, limit)]
+  );
+  const result = { pending: rows.length, embedded: 0, failed: 0 };
+  for (const row of rows) {
+    try {
+      const embedding = await generateEmbedding(reportEmbeddingText(row.title, row.body));
+      await rawQuery(
+        `UPDATE agent_reports SET embedding = $2::vector
+          WHERE id = $1 AND embedding IS NULL`,
+        [row.id, toVectorLiteral(embedding)]
+      );
+      result.embedded++;
+    } catch (err) {
+      result.failed++;
+      console.error(
+        `[reports] embedding backfill failed for ${row.id}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,14 +658,15 @@ export async function raiseIssue(
     }
 
     // The match-before-write search. An embedding failure is not the
-    // agent's problem: the report is recorded without one and without the
-    // search, and the exact key still holds.
+    // agent's problem: the report is recorded without one (the backfill
+    // worker embeds it later), the search falls back to the title's
+    // wording, and the exact key still holds.
     let embedding: number[] | null = null;
     try {
       embedding = await generateEmbedding(reportEmbeddingText(v.title, v.body));
     } catch (err) {
       console.error(
-        "[reports] embedding failed; recording without a match search:",
+        "[reports] embedding failed; recording after a wording-only match search:",
         err instanceof Error ? err.message : String(err)
       );
     }
@@ -580,21 +675,20 @@ export async function raiseIssue(
           .map((id) => uuidOrNull(typeof id === "string" ? id : null))
           .filter((id): id is string => !!id)
       : [];
-    if (embedding) {
-      const matches = await findNearReports(embedding, {
-        origin: v.origin,
-        minSimilarity: loadConfig().reportMatchSimilarity,
-        exclude: distinctFrom,
-      });
-      if (matches.length > 0) {
-        return {
-          acknowledged: true,
-          reportId: null,
-          occurrenceCount: null,
-          deduplicated: false,
-          matches,
-        };
-      }
+    const matches = await findNearReports(embedding, {
+      origin: v.origin,
+      minSimilarity: loadConfig().reportMatchSimilarity,
+      text: v.title,
+      exclude: distinctFrom,
+    });
+    if (matches.length > 0) {
+      return {
+        acknowledged: true,
+        reportId: null,
+        occurrenceCount: null,
+        deduplicated: false,
+        matches,
+      };
     }
 
     // The upsert stays: two processes can pass the exact-key check at once,
