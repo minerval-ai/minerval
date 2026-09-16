@@ -80,7 +80,9 @@ export const PLAN_KIND_RULES =
   "done, cancelled, waiting, or blocked, with the reason): " +
   "assess/reassess/deepen: an active claim; the item queues the claim for " +
   "its Steward and opens (or keeps) its assess group, once per item " +
-  "(a finished pass stays finished; add another item for another pass). " +
+  "(a finished pass stays finished, whichever lane ran it; add another " +
+  "item for another pass). assess on a claim that already carries an " +
+  "assessment reads done: reassess is the ask for a fresh pass. " +
   "deepen also releases the claim's deferred subclaims into the queue. " +
   "ingest: an http(s) url; executes in plan order from your escrow. " +
   "formalize: an active claim with NO published statement whose recorded " +

@@ -612,17 +612,28 @@ interface ClaimStanding {
   state: string;
   steward_state: string;
   published: boolean;
+  /** When the claim's current assessment was made; null while unassessed. */
+  assessed_at: Date | null;
 }
 
 async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
   const [row] = await rawQuery<ClaimStanding>(
     `SELECT c.id, c.state, c.steward_state,
             EXISTS (SELECT 1 FROM claim_formalizations f
-                     WHERE f.claim_id = c.id AND f.status = 'published') AS published
+                     WHERE f.claim_id = c.id AND f.status = 'published') AS published,
+            (SELECT MAX(x.assessed_at) FROM assessments x
+              WHERE x.claim_id = c.id AND x.is_current = true) AS assessed_at
        FROM claims c WHERE c.id = $1`,
     [claimId]
   );
   return row ?? null;
+}
+
+/** Was the claim assessed after the moment `sinceIso` (an item's standing was written)? */
+function assessedSince(claim: ClaimStanding, sinceIso: string | undefined): boolean {
+  if (!claim.assessed_at || !sinceIso) return false;
+  const since = Date.parse(sinceIso);
+  return Number.isFinite(since) && new Date(claim.assessed_at).getTime() > since;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -797,8 +808,15 @@ async function materializePlanItem(
   if (kind === "ingest") {
     if (!item.url) return blocked("an ingest item needs a url");
     if (index < o.cursor) {
+      // The cursor passed this item. Its row, when one exists, says whether
+      // the ingest actually ran: the direct steward lane (grant-pipeline.ts)
+      // moves the cursor past a claim item and takes any ingest item before
+      // it along, and such a row stays open, funded from the escrow
+      // (fundGrantSelfActions), until it runs. Forcing "done" on position
+      // hid exactly those (#427). Only an item with no row at all (executed
+      // before the ledger recorded plan work) reads done on position alone.
       const row = await groupLedger({ group: INGEST_GROUP(item.url) });
-      return row ? fromRow({ ...row, status: "done" }) : { status: "done", checked_at: nowIso() };
+      return row ? fromRow(row) : { status: "done", checked_at: nowIso() };
     }
     // An unexecuted one gets (or keeps) its open row, funded by the grant's
     // own escrow (fundGrantSelfActions).
@@ -823,13 +841,45 @@ async function materializePlanItem(
   if (kind === "assess" || kind === "reassess" || kind === "deepen") {
     // A stewarding item is consumed once its pass has run: a finished row
     // stays finished (re-enqueueing on every sweep would loop the claim
-    // through the Steward forever). Otherwise the claim's steward_state IS
-    // the queue: not pending → enqueue, then mirror the assess group's row.
+    // through the Steward forever). The pass may also have run on another
+    // lane while the row sat open (the mandate's direct steward lane, a
+    // user's order, the background drain): no lane but the ledger's own
+    // closes the row, the sweep then retires it as "assessed elsewhere",
+    // and the item read cancelled, or was queued again, for work that ran
+    // (#427). An assessment dated after the item's standing was written
+    // says the pass ran: the item reads done and keeps reading done.
     if (item.ledger?.action_id) {
       const prior = await groupLedger({ actionId: item.ledger.action_id });
-      if (prior && (prior.status === "done" || prior.status === "cancelled")) {
-        return fromRow(prior);
+      if (prior) {
+        if (prior.status === "done") return fromRow(prior);
+        if (item.ledger.status === "done") return item.ledger;
+        if (prior.status !== "running" && assessedSince(claim, item.ledger.checked_at)) {
+          return fromRow(
+            { ...prior, status: "done" },
+            "the pass ran on another lane after this item opened its row " +
+              "(the claim was stewarded outside the ledger row)"
+          );
+        }
+        if (prior.status === "cancelled") {
+          return fromRow(
+            prior,
+            `the row was retired: the claim left the Steward queue (steward_state ` +
+              `${claim.steward_state}) without this row running; add another item for another pass`
+          );
+        }
       }
+    }
+    // An assess item asks for a first assessment; a claim that already
+    // carries one has what the item asked for (the reassess kind is the ask
+    // for a fresh pass). Read done rather than queue a pass the plan did
+    // not ask for.
+    if (kind === "assess" && !item.ledger?.action_id && claim.assessed_at) {
+      const row = await groupLedger({ group: ASSESS_GROUP(claim.id) });
+      const reason =
+        "the claim already carries an assessment; a reassess item asks for a fresh pass";
+      return row && row.status === "done"
+        ? fromRow(row, reason)
+        : { status: "done", reason, checked_at: nowIso() };
     }
     if (!o.active) return o.notActive;
     if (kind === "deepen") {
