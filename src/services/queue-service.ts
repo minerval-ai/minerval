@@ -71,6 +71,10 @@ export interface StewardMessage {
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"
+    // Another claim's Steward proposes that this claim adopt it as a subclaim
+    // (propose_parent_edge): the claim it stewards is an argument for, about,
+    // or a special case of this one. Review and adopt the edge if apt.
+    | "edge_proposal"
     // One-shot backfill (issue #129): named arguments predating write_argument
     // lack a written form — write one for each.
     | "argument_written_form_backfill"
