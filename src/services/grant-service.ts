@@ -96,6 +96,96 @@ export const PLAN_KIND_RULES =
   "the mandate's attempt cooldown both hold the next one back, and only a " +
   "rationale of twenty characters or more waives the cooldown.";
 
+/**
+ * The JSON schema of one plan item, as the Grantmaker's tools show it
+ * (propose_mandate, adjust_plan, extend_plan, submit_plan). One schema, so
+ * every mode of the mandate's agent proposes the same shape.
+ */
+export const PLAN_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: [
+        "assess",
+        "reassess",
+        "deepen",
+        "ingest",
+        "formalize",
+        "attempt_proof",
+      ],
+    },
+    claim_id: {
+      type: "string",
+      description:
+        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
+        "for ingest. " +
+        PLAN_KIND_RULES,
+    },
+    url: {
+      type: "string",
+      description: "Required for ingest; the source URL to extract and match.",
+    },
+    rationale: { type: "string" },
+    variant: {
+      type: "string",
+      enum: ["standard", "max"],
+      description: "attempt_proof only: the solver's effort variant.",
+    },
+    is_calibration: {
+      type: "boolean",
+      description:
+        "attempt_proof only: a calibration run on a settled problem.",
+    },
+    lifetime_cap_owls: {
+      type: "number",
+      description:
+        "attempt_proof only: raise this claim's lifetime attempt spend " +
+        "above the policy key (bounded at twice it).",
+    },
+  },
+  required: ["action", "rationale"],
+};
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const PLAN_ACTIONS = new Set<PlanItem["action"]>([
+  "assess",
+  "reassess",
+  "deepen",
+  "ingest",
+  "formalize",
+  "attempt_proof",
+]);
+
+/**
+ * The mechanical check every plan goes through before it is recorded: a
+ * known action, an http(s) url for an ingest, a claim id for everything
+ * else. Returns the problem in the agent's words, or null when the items
+ * are well-formed. Whether the ids are REAL is the ledger's business (a
+ * missing claim blocks the item there, with the reason).
+ */
+export function validatePlanItems(items: readonly PlanItem[]): string | null {
+  for (const item of items) {
+    if (!item || typeof item !== "object") return "each plan item must be an object";
+    if (!PLAN_ACTIONS.has(item.action)) {
+      return `unknown plan action "${String(item.action)}" (one of ${[...PLAN_ACTIONS].join(", ")})`;
+    }
+    if (typeof item.rationale !== "string" || !item.rationale.trim()) {
+      return `${item.action} item needs a rationale`;
+    }
+    if (item.action === "ingest") {
+      if (!item.url || !/^https?:\/\//.test(item.url)) {
+        return `ingest item needs an http(s) url (got: ${item.url ?? "none"})`;
+      }
+    } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
+      return `${item.action} item needs a claim_id from your survey results`;
+    }
+  }
+  return null;
+}
+
 export type CreateGrantResult =
   | { ok: true; grant: Grant }
   | {

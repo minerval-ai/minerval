@@ -31,7 +31,6 @@
  *    with the two passes' summed metered cost.
  */
 import { rawQuery } from "../db/client.js";
-import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
@@ -347,7 +346,6 @@ async function runGrantAgentAction(
     return { status: "empty" };
   }
 
-  const config = loadConfig();
   const funder: { jobId?: string; userId?: string; grantId?: string } =
     await largestActionFunder(action.id).catch(() => ({}));
   try {
@@ -358,12 +356,7 @@ async function runGrantAgentAction(
         withCostMeter(async () => {
           if (action.kind === "grant_planning") {
             const plan = await runGrantor({
-              grantName: grant.name,
-              scopeClaimId: grant.scope_claim_id,
-              scopeQuery: grant.scope_query,
-              budgetOwls: Math.floor(
-                Number(grant.budget_micro_usd) / config.owlCostMicroUsd
-              ),
+              grantId: grant.id,
               model: opts.model,
             });
             await rawQuery(

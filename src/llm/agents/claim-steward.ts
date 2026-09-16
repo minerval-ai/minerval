@@ -48,6 +48,7 @@ import {
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -263,6 +264,9 @@ async function runClaimStewardImpl(input: {
   const tools = [
     ...graphTools,
     ...claimContextTools,
+    // A search hit is a snippet; the page is where an abstract, a results
+    // table, or a retraction notice actually is (#333).
+    getReadPageToolDefinition(),
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
@@ -492,6 +496,8 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (claimContextNames.has(name)) {
         return executeGovernanceTool(name, toolInput);
       }
+      const page = await executeReadPage(name, toolInput);
+      if (page !== null) return page;
       // Blast-radius backstop (#157 phase 3): cap the NEW claims one run may
       // mint, in either direction (a subclaim below or a parent above, #428).
       // Like the iteration cap this is a runaway guard, not a target — the

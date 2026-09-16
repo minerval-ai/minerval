@@ -49,6 +49,27 @@ mandate's ALLOCATION POLICY, revised by asking its Grantmaker, not by
 editing code. Neither side is ever a verdict input: the estimates order
 work and select effort, and appear nowhere in an assessment.
 
+## Mandates start with a planning pass
+
+A mandate under the agent policy, and every mandate another mandate
+spawns, starts in `planning`: the ledger opens a `grant_planning` action,
+self-funded from its escrow, and the engine executor runs the mandate's
+Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
+no owl is spent until the funder approves the plan it proposes. The
+planner has the review pass's affordances, because the first territory
+survey is the same job as every later one: the graph (search_claims,
+survey_scope) AND the open web (web_search, read_page), the shared cost
+quotes (estimate_costs), and the mandate's workspace, so its survey notes
+become the mandate's opening working memory. Its briefing is the mandate's
+words, with any declared scope claim or query as a search aid rather than
+the scope; a mandate told to "map the nutrition literature" reaches its
+planner with no scope claim at all, and the planner's job is to find the
+sources and propose them as ingest items. The plan carries every kind of
+work a mandate can fund, is validated like any other, and is held to the
+escrow at the same estimate the funder was quoted. The three modes of a
+mandate's Grantmaker (the granting conversation, the planning pass, the
+review pass) share one toolbox (llm/tools/mandate-tools.ts).
+
 ## Mandates steward themselves: the review pass
 
 There can be no human bottleneck between a funded mission and the work.
