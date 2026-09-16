@@ -27,6 +27,13 @@ vi.mock("../../../../src/services/relationship-service.js", () => ({
   getClaimBasisSubclaims: vi.fn(async () => []),
 }));
 
+vi.mock("../../../../src/services/reconciliation-service.js", () => ({
+  linkClaims: vi.fn(async () => ({
+    linked: true,
+    linkId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+  })),
+}));
+
 vi.mock("../../../../src/services/argument-service.js", async (importOriginal) => {
   const actual = await importOriginal<
     typeof import("../../../../src/services/argument-service.js")
@@ -50,6 +57,7 @@ import {
   insertRelationshipEdge,
 } from "../../../../src/services/relationship-service.js";
 import { getArgument } from "../../../../src/services/argument-service.js";
+import { linkClaims } from "../../../../src/services/reconciliation-service.js";
 
 const argument = {
   id: ARG_ID,
@@ -168,5 +176,67 @@ describe("steward add_relationship_edge (#437)", () => {
     const out = await call();
     expect(out.startsWith("Error:")).toBe(true);
     expect(out).toContain("connection reset");
+  });
+});
+
+describe("steward add_related_claim (#436)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    childRows.length = 0;
+    childRows.push({ id: CHILD_ID, state: "active" });
+  });
+
+  it("records a lateral link from the stewarded claim", async () => {
+    const out = JSON.parse(
+      await executeStewardTool("add_related_claim", {
+        claim_id: PARENT_ID,
+        other_claim_id: CHILD_ID,
+        kind: "counterpart_position",
+        reasoning: "two halves of one position",
+      })
+    );
+    expect(out).toMatchObject({ success: true, linked: true });
+    expect(out.message).toContain("see-also");
+    expect(linkClaims).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claimId: PARENT_ID,
+        otherClaimId: CHILD_ID,
+        kind: "counterpart_position",
+        createdBy: "claim_steward",
+      })
+    );
+  });
+
+  it("bounces a hallucinated counterpart, an unknown kind, and a self-link", async () => {
+    childRows.length = 0;
+    let out = JSON.parse(
+      await executeStewardTool("add_related_claim", {
+        claim_id: PARENT_ID,
+        other_claim_id: CHILD_ID,
+        kind: "related",
+        reasoning: "r",
+      })
+    );
+    expect(out.success).toBe(false);
+    expect(out.message).toContain("Claim not found");
+    out = JSON.parse(
+      await executeStewardTool("add_related_claim", {
+        claim_id: PARENT_ID,
+        other_claim_id: CHILD_ID,
+        kind: "assumes",
+        reasoning: "r",
+      })
+    );
+    expect(out.success).toBe(false);
+    out = JSON.parse(
+      await executeStewardTool("add_related_claim", {
+        claim_id: PARENT_ID,
+        other_claim_id: PARENT_ID,
+        kind: "related",
+        reasoning: "r",
+      })
+    );
+    expect(out.success).toBe(false);
+    expect(linkClaims).not.toHaveBeenCalled();
   });
 });

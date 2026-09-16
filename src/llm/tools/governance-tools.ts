@@ -28,6 +28,7 @@ import { getClaimSourceMap } from "../../services/source-map-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { listFindings } from "../../services/finding-service.js";
 import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
+import { listRelatedClaims } from "../../services/claim-link-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -324,6 +325,9 @@ async function getClaimWithContext(claimId: string) {
   // after an attempt (which statement did it run against, what did the
   // checker say). Empty history means nothing has ever been recorded.
   const formalizationRecord = await getClaimFormalizationRecord(claimId);
+  // Lateral links (#436): claims a reader of this one would want beside it,
+  // with the reason. Not dependencies; they never enter the assessment.
+  const relatedClaims = await listRelatedClaims(claimId);
 
   return {
     claim: {
@@ -365,6 +369,13 @@ async function getClaimWithContext(claimId: string) {
       headline: f.headline,
       cites: (Array.isArray(f.refs) ? f.refs : []).map((r) => `${r.kind} ${r.id}`),
       ...(f.stale ? { stale: "cites an assessment that is no longer current" } : {}),
+    })),
+    related_claims: relatedClaims.map((r) => ({
+      id: r.id,
+      text: r.text,
+      kind: r.kind,
+      reasoning: r.reasoning,
+      assessment_status: r.assessment_status,
     })),
     subclaims: subclaims.map((sc) => ({
       id: sc.child_id,

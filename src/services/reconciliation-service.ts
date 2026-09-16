@@ -14,6 +14,12 @@ import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
 import { insertRelationshipEdge } from "./relationship-service.js";
+import {
+  linkClaims as insertClaimLink,
+  unlinkClaims as deleteClaimLinks,
+  type ClaimLinkKind,
+  type ClaimLinkRow,
+} from "./claim-link-service.js";
 
 /** One argument_subclaims row, as recorded in a reversible payload. */
 interface MembershipRef {
@@ -237,6 +243,31 @@ export async function mergeClaims(input: {
     [survivorId, loserId]
   );
 
+  // 4b. Lateral links (#436) touching the loser move to the survivor. Captured
+  //     whole and re-created on the survivor's side (a link to the survivor
+  //     itself, or one the survivor already has, simply drops), so the
+  //     reversal can delete exactly what the merge created and put the
+  //     originals back.
+  const movedLinks = await rawQuery<ClaimLinkRow>(
+    `DELETE FROM claim_links
+      WHERE claim_a_id = $1 OR claim_b_id = $1
+      RETURNING id, claim_a_id, claim_b_id, kind, reasoning, created_by`,
+    [loserId]
+  );
+  const mergedLinkIds: string[] = [];
+  for (const link of movedLinks) {
+    const other = link.claim_a_id === loserId ? link.claim_b_id : link.claim_a_id;
+    if (other === survivorId) continue;
+    const { id, created } = await insertClaimLink({
+      claimId: survivorId,
+      otherClaimId: other,
+      kind: link.kind as ClaimLinkKind,
+      reasoning: link.reasoning,
+      createdBy: link.created_by,
+    });
+    if (created) mergedLinkIds.push(id);
+  }
+
   // 5. Mark the loser a merged alias of the survivor.
   await rawQuery(
     `UPDATE claims SET merged_into = $1, state = 'merged', updated_at = now() WHERE id = $2`,
@@ -257,6 +288,8 @@ export async function mergeClaims(input: {
       ...repointedChildMemberships,
       ...repointedParentMemberships,
     ],
+    moved_links: movedLinks,
+    merged_link_ids: mergedLinkIds,
   });
 
   return { merged: true, survivorId, loserId, eventId };
@@ -344,6 +377,62 @@ export async function removeRelationshipEdge(input: {
   return { removed: deleted.length, eventId };
 }
 
+/**
+ * Record a lateral link (#436) between two claims. Logs a reversible
+ * `link_claims` event when the link is new; a duplicate is reported, not
+ * re-logged.
+ */
+export async function linkClaims(input: {
+  claimId: string;
+  otherClaimId: string;
+  kind: ClaimLinkKind;
+  reasoning: string;
+  createdBy?: string;
+}): Promise<{ linked: boolean; linkId: string; eventId?: string }> {
+  const { id, created } = await insertClaimLink({
+    ...input,
+    createdBy: input.createdBy ?? "curator",
+  });
+  if (!created) return { linked: false, linkId: id };
+  const eventId = await logEvent("link_claims", input.reasoning, {
+    link_id: id,
+    claim_id: input.claimId,
+    other_claim_id: input.otherClaimId,
+    kind: input.kind,
+  });
+  return { linked: true, linkId: id, eventId };
+}
+
+/** Remove lateral link(s) between two claims. Logs a reversible `unlink_claims` event. */
+export async function unlinkClaims(input: {
+  claimId: string;
+  otherClaimId: string;
+  kind?: ClaimLinkKind;
+  reasoning?: string;
+}): Promise<{ removed: number; eventId?: string }> {
+  const deleted = await deleteClaimLinks(input);
+  const eventId =
+    deleted.length > 0
+      ? await logEvent("unlink_claims", input.reasoning ?? "link removed", {
+          deleted_links: deleted,
+        })
+      : undefined;
+  return { removed: deleted.length, eventId };
+}
+
+/** Restore captured lateral links; idempotent against a link already present. */
+async function reinsertLinks(links: ClaimLinkRow[]): Promise<void> {
+  for (const link of links) {
+    await insertClaimLink({
+      claimId: link.claim_a_id,
+      otherClaimId: link.claim_b_id,
+      kind: link.kind as ClaimLinkKind,
+      reasoning: link.reasoning,
+      createdBy: link.created_by,
+    });
+  }
+}
+
 /** Move a source instance to another claim. Logs a reversible `reassign_instance` event. */
 export async function reassignInstance(input: {
   instanceId: string;
@@ -398,6 +487,8 @@ export async function reverseReconciliation(
       const repointedParent = (p.repointed_parent_edge_ids as string[]) ?? [];
       const deletedEdges = (p.deleted_edges as EdgeRow[]) ?? [];
       const repointedMemberships = (p.repointed_memberships as MembershipRef[]) ?? [];
+      const movedLinks = (p.moved_links as ClaimLinkRow[]) ?? [];
+      const mergedLinkIds = (p.merged_link_ids as string[]) ?? [];
 
       // Move instances/arguments back (un-flipping stance for an opposed merge).
       // Param order matches FLIP_*_STANCE, which references $3::boolean.
@@ -442,6 +533,13 @@ export async function reverseReconciliation(
         );
       }
       await reinsertEdges(deletedEdges);
+      // Lateral links: drop what the merge created, restore the originals.
+      if (mergedLinkIds.length) {
+        await rawQuery(`DELETE FROM claim_links WHERE id = ANY($1::uuid[])`, [
+          mergedLinkIds,
+        ]);
+      }
+      await reinsertLinks(movedLinks);
       // Un-merge the loser.
       await rawQuery(
         `UPDATE claims SET merged_into = NULL, state = $2, updated_at = now() WHERE id = $1`,
@@ -471,6 +569,16 @@ export async function reverseReconciliation(
 
     case "remove_edge": {
       await reinsertEdges((p.deleted_edges as EdgeRow[]) ?? []);
+      break;
+    }
+
+    case "link_claims": {
+      await rawQuery(`DELETE FROM claim_links WHERE id = $1`, [p.link_id as string]);
+      break;
+    }
+
+    case "unlink_claims": {
+      await reinsertLinks((p.deleted_links as ClaimLinkRow[]) ?? []);
       break;
     }
 

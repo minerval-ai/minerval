@@ -18,9 +18,17 @@ import {
   addRelationshipEdge,
   removeRelationshipEdge,
   reassignInstance,
+  linkClaims,
+  unlinkClaims,
 } from "../../services/reconciliation-service.js";
+import { isClaimLinkKind } from "../../services/claim-link-service.js";
 import { enqueueSteward } from "../../services/queue-service.js";
-import { RELATION_TYPES, RELATION_GUIDANCE } from "../../schemas/common.js";
+import {
+  RELATION_TYPES,
+  RELATION_GUIDANCE,
+  CLAIM_LINK_KINDS,
+  CLAIM_LINK_GUIDANCE,
+} from "../../schemas/common.js";
 
 const RELATION_ENUM = RELATION_TYPES;
 
@@ -118,6 +126,55 @@ export function getCuratorToolDefinitions(): Tool[] {
           to_claim_id: { type: "string", description: "The claim to move it to" },
         },
         required: ["instance_id", "to_claim_id"],
+      },
+    },
+    {
+      name: "link_claims",
+      description:
+        "Record a lateral link between two claims that are neither premise nor " +
+        "conclusion of each other (§19): rival explanations, two halves of one " +
+        "position, or two formulations kept apart because their identity was " +
+        "unclear (§5). Symmetric and non-evaluative: it renders as a see-also on " +
+        "both claim pages and never enters propagation or assessment. Connective " +
+        "tissue between claims is yours, so this is a direct write, logged and " +
+        "reversible. Do NOT use it for a dependency; that is the Steward's edge " +
+        "(suggest_edge_to_steward).",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "One claim's UUID" },
+          other_claim_id: { type: "string", description: "The other claim's UUID" },
+          kind: {
+            type: "string",
+            enum: [...CLAIM_LINK_KINDS],
+            description: CLAIM_LINK_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why a reader of either claim would want the other",
+          },
+        },
+        required: ["claim_id", "other_claim_id", "kind", "reasoning"],
+      },
+    },
+    {
+      name: "unlink_claims",
+      description:
+        "Remove a lateral link recorded with link_claims (all kinds between the " +
+        "pair unless one is given). Logged and reversible.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "One claim's UUID" },
+          other_claim_id: { type: "string", description: "The other claim's UUID" },
+          kind: {
+            type: "string",
+            enum: [...CLAIM_LINK_KINDS],
+            description: "Only this kind of link; omit to remove every link between the pair",
+          },
+          reasoning: { type: "string", description: "Why the link does not hold" },
+        },
+        required: ["claim_id", "other_claim_id", "reasoning"],
       },
     },
     {
@@ -226,6 +283,57 @@ export async function executeCuratorTool(
           toClaimId: String(input.to_claim_id),
         });
         return JSON.stringify({ success: reassigned, reassigned });
+      }
+
+      case "link_claims": {
+        const kind = String(input.kind ?? "").toLowerCase();
+        if (!isClaimLinkKind(kind)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`,
+          });
+        }
+        const claimId = String(input.claim_id);
+        const otherClaimId = String(input.other_claim_id);
+        if (claimId === otherClaimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be linked to itself.",
+          });
+        }
+        const { linked, linkId } = await linkClaims({
+          claimId,
+          otherClaimId,
+          kind,
+          reasoning: String(input.reasoning ?? ""),
+          createdBy: "curator",
+        });
+        return JSON.stringify({
+          success: true,
+          linked,
+          link_id: linkId,
+          message: linked
+            ? `Linked ${claimId} <-> ${otherClaimId} (${kind}).`
+            : `A ${kind} link between these claims already existed; nothing was written.`,
+        });
+      }
+
+      case "unlink_claims": {
+        const kind =
+          input.kind === undefined ? undefined : String(input.kind).toLowerCase();
+        if (kind !== undefined && !isClaimLinkKind(kind)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`,
+          });
+        }
+        const { removed } = await unlinkClaims({
+          claimId: String(input.claim_id),
+          otherClaimId: String(input.other_claim_id),
+          kind,
+          reasoning: String(input.reasoning ?? ""),
+        });
+        return JSON.stringify({ success: true, removed });
       }
 
       case "suggest_edge_to_steward": {

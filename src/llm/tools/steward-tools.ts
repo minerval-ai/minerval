@@ -32,10 +32,14 @@ import {
   getClaimBasisSubclaims,
   insertRelationshipEdge,
 } from "../../services/relationship-service.js";
+import { linkClaims } from "../../services/reconciliation-service.js";
+import { isClaimLinkKind } from "../../services/claim-link-service.js";
 import { loadConfig } from "../../config.js";
 import {
   RELATION_TYPES,
   RELATION_GUIDANCE,
+  CLAIM_LINK_KINDS,
+  CLAIM_LINK_GUIDANCE,
   claimTypeEnum,
 } from "../../schemas/common.js";
 import { knownDomains } from "../prompts/skills.js";
@@ -544,6 +548,38 @@ export function getStewardToolDefinitions(): Tool[] {
           },
         },
         required: ["parent_id", "child_id", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "add_related_claim",
+      description:
+        "Record a lateral link from your claim to another that is neither its " +
+        "premise nor its conclusion (§19): a rival explanation, the other half of " +
+        "one public position, or a formulation kept separate because identity was " +
+        "unclear. Symmetric and non-evaluative: it renders as a see-also on both " +
+        "pages and never enters propagation or your assessment. Use it instead of " +
+        "stretching 'assumes' or leaving the connection in prose. If the other " +
+        "claim being false would make yours false, ill-posed, or less credible, " +
+        "that is a decomposition edge, not a link.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim you steward" },
+          other_claim_id: {
+            type: "string",
+            description: "The UUID of the related claim (an existing claim; match_claim first)",
+          },
+          kind: {
+            type: "string",
+            enum: [...CLAIM_LINK_KINDS],
+            description: CLAIM_LINK_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why a reader of either claim would want the other",
+          },
+        },
+        required: ["claim_id", "other_claim_id", "kind", "reasoning"],
       },
     },
     {
@@ -1677,6 +1713,54 @@ export async function executeStewardTool(
           relationship_id: edge.id,
           created: edge.created,
           ...(argumentId ? { argument_id: argumentId, grouped } : {}),
+        });
+      }
+
+      case "add_related_claim": {
+        const claimId = input.claim_id as string;
+        const otherClaimId = input.other_claim_id as string;
+        const kind = String(input.kind ?? "").toLowerCase();
+        if (!isClaimLinkKind(kind)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`,
+          });
+        }
+        if (claimId === otherClaimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be linked to itself.",
+          });
+        }
+        const db = getDb();
+        const [other] = await db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.id, otherClaimId))
+          .limit(1);
+        if (!other) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
+              `match_claim or get_claim_details).`,
+          });
+        }
+        const { linked, linkId } = await linkClaims({
+          claimId,
+          otherClaimId,
+          kind,
+          reasoning: (input.reasoning as string) ?? "",
+          createdBy: "claim_steward",
+        });
+        return JSON.stringify({
+          success: true,
+          linked,
+          link_id: linkId,
+          message: linked
+            ? `Linked ${claimId} <-> ${otherClaimId} (${kind}); it now shows as a ` +
+              `see-also on both claims.`
+            : `A ${kind} link between these claims already existed; nothing was written.`,
         });
       }
 
