@@ -234,6 +234,24 @@ export async function completeStructuredList<T>(options: {
  * history whose earlier turns changed, and the moving cache breakpoint in the
  * Anthropic adapter only pays off when the prefix it caches stays put.
  */
+/** The running turn counter's wording (#474), one line after the tool results. */
+export function turnCounterLine(used: number, max: number): string {
+  return `Turn ${used} of ${max} used; ${max - used} remain.`;
+}
+
+/**
+ * The budget notice an agent gets when it sets none of its own (#474): every
+ * agent records its conclusions through a tool call, so every agent needs
+ * telling, shortly before the cut, that unrecorded conclusions are lost.
+ */
+export const DEFAULT_ITERATION_BUDGET_NOTICE = {
+  warnWithin: 2,
+  message: (remaining: number): string =>
+    `Budget notice: ${remaining} tool-use turn(s) remain, the last of them ` +
+    `included. Whatever is not recorded through a tool call when the run ` +
+    `ends is lost: stop exploring and make your concluding tool call(s) now.`,
+};
+
 export async function toolUseLoop(options: {
   initialMessages: MessageParam[];
   tools: ToolUnion[];
@@ -254,6 +272,14 @@ export async function toolUseLoop(options: {
    */
   iterationBudgetNotice?: { warnWithin: number; message: (remaining: number) => string };
   /**
+   * A running counter appended to every tool-result message (#474): "Turn 3
+   * of 12 used; 9 remain." A budget stated once up front stops meaning
+   * anything by turn 20 of a 40-turn run, because a model does not track its
+   * own turn count across a long transcript; a continuous signal lets it
+   * pace. On by default; false turns it off.
+   */
+  turnCounter?: boolean;
+  /**
    * When the agent's whole output is one final tool call (the Matcher's
    * decision), a turn that ends in prose instead — "resubmitting now", and
    * then nothing — loses the run. With this set, such a turn is answered with
@@ -270,6 +296,8 @@ export async function toolUseLoop(options: {
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
+  const notice = options.iterationBudgetNotice ?? DEFAULT_ITERATION_BUDGET_NOTICE;
+  const turnCounter = options.turnCounter ?? true;
   let lastResult: ToolCompletionResult | null = null;
   let nudges = 0;
   let maxTokensRecoveries = 0;
@@ -407,14 +435,17 @@ export async function toolUseLoop(options: {
       recordAgentStep(trace, "tool_results", executedTools);
     }
 
-    // If the iteration budget is nearly spent, tell the agent so it can wrap up
-    // its essential actions on the next turn rather than being hard-cut.
+    // Tell the agent where it stands after every turn (#474), and, once the
+    // budget is nearly spent, that it should wrap up its essential actions on
+    // the next turn rather than being hard-cut.
     const remaining = maxIter - 1 - i;
-    const notice = options.iterationBudgetNotice;
     const userContent: Array<ToolResultBlockParam | { type: "text"; text: string }> = [
       ...toolResults,
     ];
-    if (notice && remaining > 0 && remaining <= notice.warnWithin) {
+    if (turnCounter) {
+      userContent.push({ type: "text", text: turnCounterLine(i + 1, maxIter) });
+    }
+    if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });
     }
 

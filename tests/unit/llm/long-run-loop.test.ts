@@ -127,7 +127,11 @@ describe("toolUseLoop is append-only", () => {
     expect(seen[2]![3]).toEqual({ role: "assistant", content: toolTurn("t2").rawContent });
     expect(seen[2]![4]).toEqual({
       role: "user",
-      content: [{ type: "tool_result", tool_use_id: "t2", content: "search:t2" }],
+      content: [
+        { type: "tool_result", tool_use_id: "t2", content: "search:t2" },
+        // The running turn counter (#474) rides after the tool results.
+        { type: "text", text: "Turn 2 of 10 used; 8 remain." },
+      ],
     });
     expect(initial).toEqual(before);
   });

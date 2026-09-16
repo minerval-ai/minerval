@@ -26,6 +26,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -76,6 +77,7 @@ async function runAuditImpl(input: {
           : ".")
       : "";
 
+  const AUDIT_MAX_TURNS = 10;
   const userMessage = `You have been triggered to perform an audit.
 
 Audit Type: ${input.auditType}
@@ -84,7 +86,9 @@ Context: ${input.context}
 Investigate with the read tools, check get_audit_findings for prior findings
 that bear on this ground, and record what you conclude: flag_issue for each
 issue found (its finding_id is what the consequence tools require), or nothing
-when the decisions under review hold up.${skillsNote}`;
+when the decisions under review hold up.${skillsNote}
+
+${turnBudgetLine(AUDIT_MAX_TURNS)}`;
 
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -97,7 +101,7 @@ when the decisions under review hold up.${skillsNote}`;
     // the extractor's post-incident ceiling; pacing belongs to the iteration
     // budget notice, not this cap.
     maxTokens: 16384,
-    maxIterations: 10,
+    maxIterations: AUDIT_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
