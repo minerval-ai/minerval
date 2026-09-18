@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T18:47:48.269Z",
-  "gitCommit": "2b6d590",
+  "syncedAt": "2026-09-18T20:30:29.093Z",
+  "gitCommit": "e9189e8",
   "pins": [
     {
       "agent": "steward",
@@ -377,6 +377,21 @@
     "2026-09-18T17-42-30-813Z.json"
   ],
   "replays": [
+    {
+      "name": "personas-blackholes-2026-09-18T20-29-56-643Z",
+      "kind": "personas",
+      "title": "Personas: phase1 on blackholes",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T20:29:56.771Z",
+      "arms": [
+        "phase1 on blackholes"
+      ],
+      "events": 30,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 243646
+    },
     {
       "name": "blackholes-20260918-1709",
       "kind": "ingest",
