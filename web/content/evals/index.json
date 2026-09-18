@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T17:04:36.428Z",
-  "gitCommit": "6840a17",
+  "syncedAt": "2026-09-18T17:42:42.330Z",
+  "gitCommit": "91c17e0",
   "pins": [
     {
       "agent": "steward",
@@ -373,7 +373,9 @@
     "2026-09-12-glm-5.3-flash.json",
     "2026-09-16-glm-5.3-flash-main-477.json"
   ],
-  "goldenCanonicalRuns": [],
+  "goldenCanonicalRuns": [
+    "2026-09-18T17-42-30-813Z.json"
+  ],
   "replays": [],
   "rubric": [
     {
