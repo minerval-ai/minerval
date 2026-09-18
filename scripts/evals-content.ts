@@ -94,6 +94,8 @@ export interface EvalsIndexInput {
   reviews: ReviewSheetInput[];
   scorecardFiles: Array<{ cluster: string; file: string }>;
   goldenRunFiles: string[];
+  /** Runs of the canonical-form golden suite (corpus/scorecards/golden-canonical/); optional for older callers. */
+  goldenCanonicalRunFiles?: string[];
   /** Committed replays, by their index files; optional so older callers need not pass it. */
   replays?: ReplayIndexInput[];
   /** corpus/RUBRIC.md, verbatim. */
@@ -136,6 +138,7 @@ export interface EvalsIndex {
   reviews: Array<{ file: string; cluster: string | null; evalRun: string | null; reviewedOn: string | null }>;
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
+  goldenCanonicalRuns: string[];
   /** Committed recordings the player can show, newest first. */
   replays: Array<{
     name: string;
@@ -302,6 +305,7 @@ export function buildEvalsIndex(input: EvalsIndexInput): EvalsIndex {
       a.cluster === b.cluster ? a.file.localeCompare(b.file) : a.cluster.localeCompare(b.cluster)
     ),
     goldenRuns: [...input.goldenRunFiles].sort(),
+    goldenCanonicalRuns: [...(input.goldenCanonicalRunFiles ?? [])].sort(),
     replays: (input.replays ?? [])
       .map((r) => ({
         name: r.name,

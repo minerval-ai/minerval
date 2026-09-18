@@ -297,7 +297,7 @@ export function syncEvalsContent(contentDir: string): {
   mkdirSync(evalsDir, { recursive: true });
 
   const jsonFiles = (dir: string) =>
-    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "baselines.json").sort() : [];
   const readJson = <T,>(path: string) => JSON.parse(readFileSync(path, "utf8")) as T;
   const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
@@ -325,13 +325,22 @@ export function syncEvalsContent(contentDir: string): {
   // Scorecards and golden runs, copied file for file under the same names.
   const scorecardFiles: Array<{ cluster: string; file: string }> = [];
   const goldenRunFiles: string[] = [];
+  const goldenCanonicalRunFiles: string[] = [];
   const scorecardsRoot = join(corpusDir, "scorecards");
   for (const cluster of readdirSync(scorecardsRoot).filter((d) => statSync(join(scorecardsRoot, d)).isDirectory()).sort()) {
-    const target = cluster === "golden-matcher" ? resolve(evalsDir, "golden-runs") : resolve(evalsDir, "scorecards", cluster);
+    // The two golden suites file their runs beside the cluster scorecards but
+    // are not scorecards: they get their own directories and index lists.
+    const target =
+      cluster === "golden-matcher"
+        ? resolve(evalsDir, "golden-runs")
+        : cluster === "golden-canonical"
+          ? resolve(evalsDir, "golden-canonical-runs")
+          : resolve(evalsDir, "scorecards", cluster);
     mkdirSync(target, { recursive: true });
     for (const file of jsonFiles(join(scorecardsRoot, cluster))) {
       copyFileSync(join(scorecardsRoot, cluster, file), resolve(target, file));
       if (cluster === "golden-matcher") goldenRunFiles.push(file);
+      else if (cluster === "golden-canonical") goldenCanonicalRunFiles.push(file);
       else scorecardFiles.push({ cluster, file });
     }
   }
@@ -424,6 +433,7 @@ export function syncEvalsContent(contentDir: string): {
     reviews,
     scorecardFiles,
     goldenRunFiles,
+    goldenCanonicalRunFiles,
     replays,
     rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
   });
