@@ -624,7 +624,7 @@ async function main(): Promise<void> {
       capped: drain1.capped,
     });
     const rec = replay.assembleReplay({
-      kind: "personas" as never,
+      kind: "personas",
       name: `personas-${cluster}-${stamp}`,
       title: `Personas: ${manifest.name} on ${cluster}`,
       cluster,

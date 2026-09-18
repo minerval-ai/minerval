@@ -64,6 +64,9 @@ export const METRIC_DIRECTIONS: Record<string, "higher" | "lower" | null> = {
   "judge · overconfident share": "lower",
   "judge · canonical-form miss share": "lower",
   "judge · political bias share": "lower",
+  // §22 cascade stability (S3): R must stay below one; oscillations are churn.
+  "§22 · cascade R": "lower",
+  "§22 · cascade oscillations": "lower",
 };
 
 /** The metrics a regression on fails the gate, by default. */

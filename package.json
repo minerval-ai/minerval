@@ -39,6 +39,8 @@
     "corpus:gate": "tsx scripts/corpus/gate.ts",
     "corpus:golden-canonical": "tsx scripts/corpus/golden-canonical.ts",
     "models:discover": "tsx scripts/models-discover.ts",
+    "monitors": "tsx scripts/monitors.ts",
+    "corpus:personas": "tsx scripts/corpus/personas.ts",
     "predictions": "tsx scripts/predictions.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts",
     "tags": "tsx scripts/tags.ts",

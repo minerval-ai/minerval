@@ -11,7 +11,7 @@
 
 export const REPLAY_VERSION = 1 as const;
 
-export type ReplayKind = "ingest" | "property" | "swap" | "contributions" | "adversarial";
+export type ReplayKind = "ingest" | "property" | "swap" | "contributions" | "adversarial" | "personas" | "redteam";
 
 export type ReplayAgent =
   | "extractor"

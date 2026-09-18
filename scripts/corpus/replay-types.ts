@@ -28,7 +28,9 @@ export type ReplayKind =
   | "property"      // two arms of one cluster (idempotency, path-independence, dup-flood, …)
   | "swap"          // two arms, one agent's model changed
   | "contributions" // a contribution scenario against a drained graph
-  | "adversarial";  // attack arms + benign control against one snapshot
+  | "adversarial"   // attack arms + benign control against one snapshot
+  | "personas"      // simulated users against a drained graph (S8)
+  | "redteam";      // the adaptive attacker's episodes (S4 cell 2)
 
 /** The agent vocabulary, same as llm_usage.agent / agent_runs.agent. */
 export type ReplayAgent =
