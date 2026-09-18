@@ -1,0 +1,16 @@
+{
+  "cluster": "eggs",
+  "description": "Questions a downstream reasoner might be asked about the health effects of eggs, authored from corpus/eggs/posts. The cluster's cruxes are about ways of knowing (cohorts vs trials, confounding, subgroups), so the probe reads whether a reasoner keeps the population scope and evidence-quality caveats the record carries (#334 S5). Diagnostic only.",
+  "questions": [
+    { "id": "eg-01", "kind": "factual", "question": "Does eating up to one egg a day increase heart disease risk in healthy adults?", "note": "Mostly null in cohorts for healthy people; the record should keep the 'healthy' scope." },
+    { "id": "eg-02", "kind": "factual", "question": "Does eating eggs daily increase cardiovascular risk in people with diabetes?", "note": "The subgroup where the evidence diverges; the record should hold an elevated-risk claim for diabetics." },
+    { "id": "eg-03", "kind": "factual", "question": "Why did the 2015–2020 US Dietary Guidelines drop the 300 mg/day dietary cholesterol limit?", "note": "Weak and variable effect of dietary cholesterol on blood cholesterol for most people." },
+    { "id": "eg-04", "kind": "comparative", "question": "Which raises blood cholesterol more: dietary cholesterol or saturated fat?", "note": "Saturated fat; McGee and the Harvard source agree." },
+    { "id": "eg-05", "kind": "comparative", "question": "Should I trust the randomized trials showing eggs raise LDL, or the observational cohorts showing no association with heart disease in healthy people?", "note": "The biomarker-vs-hard-outcome crux; the record should carry both and the reason they differ." },
+    { "id": "eg-06", "kind": "crux", "question": "What is the crux behind the conflicting meta-analyses on eggs and cardiovascular disease?", "note": "Study selection and reliance on observational data with uncontrolled confounding." },
+    { "id": "eg-07", "kind": "crux", "question": "Does the TMAO pathway establish that eggs cause heart disease?", "note": "Proposed mechanism with a confounding/reverse-causation caveat (diabetes and kidney disease raise TMAO)." },
+    { "id": "eg-08", "kind": "confidence", "question": "How confident should I be that the observed associations between egg consumption and heart disease are explained by confounding?", "note": "Contested; the record should hold a middling credence." },
+    { "id": "eg-09", "kind": "confidence", "question": "How confident should I be that adding eggs to a diet raises LDL cholesterol relative to eating no eggs?", "note": "Consistent trial evidence; the record should hold it as verified/supported with high credence — but only relative to a no-egg diet." },
+    { "id": "eg-10", "kind": "confidence", "question": "How confident should I be that eggs are healthier than red or processed meat as a protein source?", "note": "The Harvard bottom line; a comparative claim the record may hold as supported." }
+  ]
+}

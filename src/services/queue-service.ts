@@ -392,6 +392,10 @@ export async function requestAudit(input: {
     | "suspension_review"
     | "report_triage"
     | "manual"
+    // A production monitor's candidate detector (#334 S9): a performed-
+    // settling or empty-chairs hit handed over as anomaly_investigation
+    // INPUT, deduped per claim per reflag period (monitor-scheduler.ts).
+    | "monitor_signal"
     // The prize triggers (docs/mathematics.md §8.1, §8.4, §8.5): a bounty
     // opened at or above the sign-off threshold, a Steward's acceptance of
     // a prize claim, and a checker failure that holds a statement's queue.

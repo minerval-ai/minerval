@@ -407,13 +407,14 @@ describe("longRunToolLoop", () => {
     const { runWithUsageContext } = await import("../../../src/llm/usage-context.js");
     recordMessages(mocks.completeWithToolsStreaming);
     queueTurns(mocks.completeWithToolsStreaming, [toolTurn("t1"), textTurn("done")]);
-    const trace = { runId: "run-1", seq: { n: 0 } };
+    const trace = { runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() };
 
     await runWithUsageContext({ trace }, () =>
       longRunToolLoop({ initialMessages: initial, tools: [], executeTool })
     );
 
     expect(mocks.recordAgentStep.mock.calls.map((c) => c[1])).toEqual([
+      "prompt",
       "assistant",
       "tool_results",
       "assistant",

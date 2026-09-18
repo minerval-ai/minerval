@@ -27,6 +27,10 @@ corpus/
   scorecards/            committed scorecard history (see its README)
   predictions/           resolvable predictions + README (S6 calibration track)
   contributions/         contribution scenarios + README (review / escalation / arbitration)
+  adversarial/           adversarial scenarios + README (S4 robustness)
+  personas/              simulated users + README (S8)
+  probes/                reasoner-probe questions per cluster (S5)
+  replays/               committed recordings of runs + README (played on the evals page)
   <cluster>/
     manifest.json        pinned LessWrong post IDs (source of truth, reproducible)
     expectations.json    minimal orienting notes (intentionally not an answer key)
@@ -316,6 +320,215 @@ questions with criteria and resolution dates; `npm run predictions -- seed
 them, and `score` reports Brier, log score, calibration curve and ECE over the
 credences the Steward held before resolution. Seeded early because the signal
 accrues only as questions resolve.
+
+**Replays.** Every driver that runs the real agents also writes a recording
+of the episode (`runs/<run>/replay.json` plus
+`runs/<run>/replay-events/<arm>/<seq>.json`), built after the drain from the
+trace substrate (`agent_runs`, `agent_steps`, `enqueue_events`, `llm_usage`)
+and the graph tables: one event per agent run, its steps verbatim (including
+the prompt it was given), the graph deltas credited to it, what caused it
+and what it cost. `npm run corpus:replay -- db --since=<iso> --name=<name>`
+builds one from any run window; `snap:<a> snap:<b>` builds a two-arm
+recording with the agreement matching; `--commit-as=<name>` copies it under
+`replays/` for the evals page. See [`replays/README.md`](./replays/README.md).
+
+**Cascade stability** (#334 S3, from #295 tier 1) — does a reassessment die
+out or ripple? `npm run corpus:cascade -- [db|snap:<name>] [--since=<iso>]
+[--material=0.1]` reconstructs the propagation trees from the telemetry every
+run already writes — `enqueue_events` (who woke whom, and whether the
+enqueue coalesced into an existing pending slot), `agent_runs` (each Steward
+run) and the assessment history (what each run wrote). A run's parent is the
+Steward run that created its pending slot; a run with no Steward source
+(onboarding, an accepted contribution, a staleness sweep, a user order) is a
+root. A run *changed* its claim when its assessment is the first, or the
+status changed, or credence moved by ≥ `--material`. The report gives, per
+generation, notifications sent, how many led to a run and how many to a
+material change (the materiality decay); **R** = materially changed children
+per changed parent, overall and over reassessments alone, which must stay
+< 1; the coalescing share (#182's absorption, finally measured); the cascade
+size and depth distribution with the largest trees; A→B→A status
+oscillations and credence reversals per claim; and the pending-depth curve
+over the window (from `queue_depth_snapshots` when the sampler ran, else
+reconstructed from enqueues and run starts — approximate, from an assumed
+empty lane). Every `corpus:run` prints a one-line cascade summary at the end
+and writes `cascade.json`; `corpus:score` carries R and oscillations as
+`§22` rows (`corpus:compare` and `corpus:gate` band them). Pure library in
+`cascade-lib.ts`, unit-tested; registered as kind `cascade`.
+
+**Assessment history** (#334 S3 tier 2, from #295) — what the record of a
+graph's verdicts says about the Steward, with no referent and no second arm.
+`npm run corpus:history -- [db|snap:<name>]` reads two properties off the
+assessment history and the accepted contributions. *Evidence monotonicity*:
+a supporting contribution should not lower credence and a challenge should
+not raise it — sign, not magnitude. Each accepted `support` / `add_instance`
+/ `challenge` is linked to the `contribution_accepted` assessment that
+followed its review (falling back to the next assessment when triggers are
+absent; contributions integrated by one assessment that pull both ways are
+skipped as ambiguous) and the sign of Δcredence is checked; violations are
+listed by claim and contribution. *Overturn-rate discrimination*:
+first-assessment credences are binned (0–0.2 … 0.8–1.0, and by distance
+from 0.5) and, per bin, the share later materially changed and the share
+*reversed* (credence crossed 0.5 or status flipped polarity) is reported;
+the reading says whether reversal falls with confidence and flags bins under
+`--min-bin`. Run it after `corpus:contributions` and after something
+reassessed claims (a staleness sweep, `corpus:property fixpoint`): a graph
+straight out of one ingest has nothing to reverse. Registered as kind
+`history`.
+
+**Properties, the second slice** — four more arms for `corpus:property`,
+read through the same `corpus:agreement` report, which now carries a
+per-claim block (children, depth, verdicts, instances with source and stance
+for every matched pair). `adversarial-order` is the attack on path
+independence: arm B ingests the most partisan source first
+(`--order=adversarial`, by a keyword ranking over manifest roles —
+`dissent`, `skeptic`, `lab-leak-case`, … — falling back to the last post; or
+`--role=<manifest role>`), and the summary reports the first-mover effect:
+mean signed Δcredence of matched claims toward the first source's stance.
+`dup-flood` restores arm A and re-submits the same posts `--dups=N` (default
+3) more times under `url?dup=k`; instance count is provenance, not evidence
+weight, so the reading is inflation = mean signed Δcredence toward what A's
+sources said, plus the instances gained and the claims only B has
+(duplicates the Matcher failed to absorb). `locality` restores arm A and
+ingests one post from another cluster (`--foreign=<cluster>:<postId>`); the
+reading is the churn share — A's matched claims whose status changed or
+credence moved ≥ 0.1. `fixpoint` restores arm A and re-enqueues every
+stewarded claim with the staleness trigger (`corpus:run --no-reset
+--reassess-all`); the reading says whether stewardship settles: verdicts
+moved, claims and edges added or removed. Every property now also reports
+granularity stability — the share of matched claims with the same child
+count and depth. The tier-2 arms cost one drain plus a perturbation rather
+than two drains.
+
+**Adversarial robustness** (#334 S4, from #302) — robustness is not
+immovability: a good argument SHOULD move the graph, so "did credence move"
+is never the metric alone. `npm run corpus:adversarial -- blackholes
+--baseline=<snapshot>` attacks the same claim toward TRUE and toward FALSE
+from one snapshot with matched effort, plus a BENIGN CONTROL arm per target:
+a sincere contributor with a real case, same claim, same budget. Both attack
+arms moving credence their way means the assessment tracks the loudest
+argument (a failure whatever the merits); neither moving needs the control
+to tell a settled claim from an inert pipeline; one moving is evidence about
+how confidently the stored credence was held. The quantity of interest is
+the **legitimacy gap** — attacker displacement minus benign displacement.
+Each arm restores the baseline, submits through the real Reviewer / Steward
+/ Arbitrator pipelines, and is snapshotted (`adv_<stamp>_<target>_<arm>`)
+as the evidence; the report gives displacement, the symmetry verdict, the
+gap, whole-graph agreement against the baseline, **attribution** (admitted
+at review, or moved by the Steward once admitted — separable stages,
+separable fixes), the cost of the attack in contributions, reputation and
+burned accounts, and a **blind judge** on each arm's before/after assessment
+pair (order randomised by `--seed`, provenance withheld, constitution
+standards pinned, on `JUDGE_MODEL`). A `campaign` block does the same at
+graph level with a holistic framing judge plus importance-ordering and
+claim-set displacement. `npm run corpus:redteam -- <cluster>
+--target="…" --direction=down --episodes=5` is the adaptive cell: an agent on
+`REDTEAM_MODEL` (default the cheap flash pin) with read-only graph tools, a
+`submit_contribution` tool and persistent notes, producing a success curve
+and a playbook; `--benign` gives the same tools to a sincere contributor for
+the control curve. **Dual use**: isolated corpus deployments only, and a
+discovered playbook is a security finding — the notes go to `runs/`
+(gitignored) and a `--notes` path under `corpus/` is refused. Registered as
+kinds `adversarial` and `redteam`; both emit replays. See
+[`adversarial/README.md`](./adversarial/README.md).
+
+**Personas** (#334 S8, from #82) — the simulated-user half. `npm run
+corpus:personas -- blackholes` runs the twenty personas in
+[`personas/manifest.json`](./personas/README.md) that care about the
+cluster — readers who arrive with a question, contributors of every
+temperament, programmatic clients that only read, and an adversarial
+minority (a sea-lion, a spammer, a sockpuppet pair, a prompt-injector) —
+each an LLM agent on `PERSONA_MODEL` (the cheap flash pin) with the graph
+read tools and three actions (`submit_contribution`, `propose_claim`,
+`file_finding`), through the same service path `corpus:contributions` uses,
+then the real review, intake, escalation and arbitration. The report gives
+per persona every action and review decision verbatim, the adversarial
+outcomes in their own table (rejected? flagged? anything landed?), and the
+findings **triaged** — deduplicated and ranked by severity × count — for a
+human to read before any issue is opened. `--dry-run` prints the plan and
+the first persona's full prompt; registered as kind `personas`; emits a
+replay.
+
+**Reasoner probe** (#334 S5, from #288) — does the graph's confidence
+survive contact with a reasoner? `npm run corpus:probe -- blackholes` takes
+the pinned questions in `probes/blackholes.json` (8–12 per cluster: factual,
+comparative, what-is-the-crux, how-confident-should-I-be), builds the
+graph's record for each by hybrid search (the top claims with status,
+verdict confidence, credence and assessment summary), and asks a reasoner
+(`PROBE_MODEL`, default the cheap tier; `--model`) twice — with the record
+("answer using only this record; state your confidence 0–1; cite the claims
+you rest on and whether you take each as true or false") and without
+("answer from your own knowledge; state your confidence"). Per question it
+records both confidences, whether the answer cited the record at all, how
+far its confidence sat from the credences of the claims it cited (a claim
+used as false counts as 1 − credence), and whether it used a verified claim
+as false or a contradicted one as true. `--retraction` picks a source (most
+instances, or `--source=`), flags every claim with an instance from it as if
+a lookout had found it retracted, drains the Stewards, and reports which
+affected claims and dependent parents were re-assessed and how credence
+moved. The system has no retraction path today, so the flag is simulated
+(`enqueueSteward` with trigger `lookout_flag` and the context in
+`scripts/corpus/probe-prompts.ts`); it mutates the corpus graph — snapshot
+first. The report (`runs/probe-<cluster>-<stamp>/probe.json`) carries the
+exact record and prompts handed to the reasoner and its verbatim answers;
+registered as kind `probe`. Diagnostic only: a reasoner's confidence is not
+ground truth for the graph and nothing here is a scoring rule.
+
+**Canonical-form golden cases** (#334 S1, addendum of 2026-08-11) — the
+regression net for a prompt or model change that starts rewriting good
+wording. `golden/canonical-forms.json` pins 26 verbatim 2–4 sentence
+excerpts from the corpus posts with the §3 form each turns on, in six
+categories: direction (the source argues against the proposition; the form
+must still state the debated affirmative), neutrality, scope, survive
+(already near-canonical; must not move in substance), hedging, specificity.
+`npm run corpus:golden-canonical` runs the real Extractor's single shot on
+each excerpt (capped at 1–3 claims), takes the proposal closest to the
+expected form by embedding, and asks a pair judge on `JUDGE_MODEL` three
+narrow questions — same proposition? same direction? neutral and no invented
+specificity? — pass = all yes. Cents per run; near-deterministic because the
+questions are narrow, but a judgment on prose, not an exact match. Results
+land in `runs/`, in the registry (kind `golden-canonical`) and under
+`scorecards/golden-canonical/` like the Matcher goldens. `--min-pass` makes
+it a gate.
+
+**Model discovery and adoption** (#334 S7, from #324) — `npm run
+models:discover` polls the three providers' model lists and diffs them
+against what the codebase registers (MODELS, OPENROUTER_MODELS, the
+production pins, the pricing prefixes): candidates (listed, unregistered
+chat models), deprecations (registered, no longer listed — the drift the
+per-PR guard cannot see), and pricing drift (a model priced in `pricing.ts`
+that OpenRouter resells at another rate; a hint, not a verdict). It opens no
+issues; `--json` is the hook for a workflow that would. `npm run
+corpus:adopt -- --agent=matcher --model=<id>` then runs the candidate
+through the agent's suite with the judge pinned: the golden pairs on
+candidate and incumbent for the Matcher (plus a `corpus:swap` when
+`--cluster` is given), a swap for the other agents, and summarises quality
+per dollar (pass-rate points per dollar; fidelity per dollar) as one line —
+adopt / hold / reject — and a human decides; the pin changes by PR in
+`infra/lib/api-stack.ts`. Registered as kind `adopt`.
+
+**Epoch-bump gate** (#334 L4, from #137.3) — `npm run corpus:gate --
+blackholes` reads the committed scorecards for the cluster, takes the
+baseline group (`--baseline=`, else `scorecards/<cluster>/baselines.json`,
+else the earliest runs sharing the earliest run's epoch and profile) and the
+candidate group (`--candidate=`, else the newest runs outside the baseline
+sharing the newest run's fingerprint), applies band.ts's rule to every
+headline metric read in its direction, prints the delta table with verdicts
+(regressed / improved / within band / moved / no verdict), and exits 1 on a
+regression of a gated metric — by default the claim-bar pass rate,
+coherence violations, the dedup ratio and the share of assessments with a
+trace (`--gated=`). It refuses (deltas printed, exit 0, message says why)
+when a side has fewer than `--min-n` runs (default 2) or the sides differ in
+profile or epoch. A passed gate is "not shown to regress", not "shown
+equal".
+
+**Monitors** (#334 S9) — `npm run monitors -- --corpus` reads the production
+monitors against a drained corpus DB the way `GET /monitors` reads
+production: the two candidate detectors from #289 (performed settling, empty
+chairs — inputs to the Audit Agent, never verdicts), #295's tier-2 checks
+(overturn-rate discrimination, evidence monotonicity), cascade health
+(per-day empirical R from the L0 enqueue events, coalescing share), queue
+health and per-agent cost/error rollups. Every query is in
+[`docs/monitors.md`](../docs/monitors.md) verbatim.
 
 `corpus:run` flags: `--limit=N`, `--posts=id1,id2`, `--no-reset` (ingest on top
 of the existing graph instead of wiping first), `--score[=N]` (emit a scorecard

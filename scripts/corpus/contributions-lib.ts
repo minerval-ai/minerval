@@ -1,6 +1,7 @@
 /**
  * Contribution driver, the pure half (#334 L1): scenario validation and the
- * report's summary. contributions.ts does the submitting and draining.
+ * report's summary. contribution-driver.ts does the submitting and draining;
+ * contributions.ts is the CLI over it.
  */
 
 export const CONTRIBUTION_TYPES = [
@@ -14,10 +15,23 @@ export const CONTRIBUTION_TYPES = [
 ] as const;
 export type ContributionType = (typeof CONTRIBUTION_TYPES)[number];
 
+/**
+ * Capability tiers (#302 / S4): the standing a persona starts the scenario
+ * with. The driver applies the tier before the first submission by writing
+ * the contributor's reputation score, account age and counters (see
+ * contribution-driver.ts `applyTier`), so the Reviewer's
+ * get_contributor_profile sees a restricted, standard or trusted account.
+ * Omitted = the account as minted (reputation 50, brand new: "standard"
+ * trust level, sandboxed by the rate limiter's new-account rule).
+ */
+export const CONTRIBUTOR_TIERS = ["fresh", "standard", "trusted"] as const;
+export type ContributorTier = (typeof CONTRIBUTOR_TIERS)[number];
+
 export interface ScenarioContributor {
   key: string;
   displayName: string;
   note?: string;
+  tier?: ContributorTier;
 }
 
 export interface ScenarioContribution {
@@ -50,6 +64,9 @@ export function validateScenario(s: Scenario): string[] {
   for (const c of s.contributors ?? []) {
     if (!c.key || !c.displayName) problems.push(`contributor ${c.key ?? "?"}: key and displayName required`);
     if (personas.has(c.key)) problems.push(`duplicate contributor key ${c.key}`);
+    if (c.tier !== undefined && !CONTRIBUTOR_TIERS.includes(c.tier)) {
+      problems.push(`contributor ${c.key}: unknown tier "${c.tier}" (${CONTRIBUTOR_TIERS.join(" | ")})`);
+    }
     personas.add(c.key);
   }
   const ids = new Set<string>();
@@ -99,6 +116,8 @@ export interface ContributionOutcome {
   } | null;
   claimChange: { textBefore: string; textAfter: string; statusBefore: string | null; statusAfter: string | null } | null;
   expect?: string;
+  /** Exactly what went in, so a report is auditable without the scenario file. */
+  submitted?: { content: string; evidenceUrls: string[]; proposedCanonicalForm: string | null };
 }
 
 export interface ContributionSummary {
@@ -171,7 +190,7 @@ export function renderReport(input: {
   outcomes: ContributionOutcome[];
   summary: ContributionSummary;
   costMicroUsd: number | null;
-  reputation: Array<{ key: string; displayName: string; before: number; after: number; standing: string }>;
+  reputation: Array<{ key: string; displayName: string; before: number; after: number; standing: string; tier?: string | null }>;
   generatedAt: string;
 }): string {
   const { scenario, outcomes, summary } = input;
@@ -206,9 +225,9 @@ export function renderReport(input: {
   w();
   w(`### Personas`);
   w();
-  w(`| persona | reputation before → after | standing |`);
-  w(`|---|---|---|`);
-  for (const r of input.reputation) w(`| ${r.displayName} (${r.key}) | ${r.before} → ${r.after} | ${r.standing} |`);
+  w(`| persona | tier | reputation before → after | standing |`);
+  w(`|---|---|---|---|`);
+  for (const r of input.reputation) w(`| ${r.displayName} (${r.key}) | ${r.tier ?? "as minted"} | ${r.before} → ${r.after} | ${r.standing} |`);
   w();
   w(`## Contributions`);
   for (const c of outcomes) {

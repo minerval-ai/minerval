@@ -32,6 +32,18 @@ export interface AgreementClaim {
   status?: string | null;
   credence?: number | null;
   embedding?: number[] | null;
+  /**
+   * The claim's instances (utterances), each with the source it came from
+   * and its stance — optional, loaded by agreement.ts for the property
+   * runner's stance-aware readings (#295 dup-flood, adversarial ordering).
+   */
+  instances?: AgreementInstance[] | null;
+}
+
+export interface AgreementInstance {
+  sourceUrl?: string | null;
+  /** 'affirms' | 'denies' | … as recorded on the instance. */
+  stance?: string | null;
 }
 
 export interface AgreementEdge {
@@ -190,12 +202,38 @@ export interface StructuralAgreement {
   danglingB: number;
 }
 
+/**
+ * One matched pair, with what each side says about the claim: verdict,
+ * decomposition (children and depth) and instances. Additive to the report
+ * (#295): granularity stability reads children/depth, dup-flood reads
+ * instance counts against stance, locality/fixpoint read who moved.
+ */
+export interface PerClaimPair {
+  a: string;
+  b: string;
+  similarity: number;
+  method: MatchMethod;
+  textA: string;
+  statusA: string | null;
+  statusB: string | null;
+  credenceA: number | null;
+  credenceB: number | null;
+  childrenA: number;
+  childrenB: number;
+  depthA: number;
+  depthB: number;
+  instancesA: AgreementInstance[];
+  instancesB: AgreementInstance[];
+}
+
 export interface AgreementReport {
   a: string;
   b: string;
   claimSet: ClaimSetAgreement;
   credence: CredenceAgreement;
   structure: StructuralAgreement;
+  /** Per matched pair (additive; absent on reports written before #295's S3 slice). */
+  perClaim?: PerClaimPair[];
 }
 
 const ratio = (num: number, den: number): number | null => (den > 0 ? num / den : null);
@@ -335,6 +373,66 @@ export function structuralAgreement(
   };
 }
 
+/**
+ * Children count and longest root-to-leaf depth per claim (cycle-guarded,
+ * memoized — the same shape as metrics.ts's computeDepths).
+ */
+export function claimStructure(g: AgreementGraph): Map<string, { children: number; depth: number }> {
+  const childrenOf = new Map<string, string[]>();
+  for (const e of g.edges) {
+    (childrenOf.get(e.parent) ?? childrenOf.set(e.parent, []).get(e.parent)!).push(e.child);
+  }
+  const memo = new Map<string, number>();
+  const depthOf = (id: string, path: Set<string>): number => {
+    if (memo.has(id)) return memo.get(id)!;
+    let best = 0;
+    for (const k of childrenOf.get(id) ?? []) {
+      if (path.has(k)) continue;
+      path.add(k);
+      best = Math.max(best, 1 + depthOf(k, path));
+      path.delete(k);
+    }
+    memo.set(id, best);
+    return best;
+  };
+  const out = new Map<string, { children: number; depth: number }>();
+  for (const c of g.claims) {
+    out.set(c.id, { children: childrenOf.get(c.id)?.length ?? 0, depth: depthOf(c.id, new Set([c.id])) });
+  }
+  return out;
+}
+
+export function perClaimAgreement(a: AgreementGraph, b: AgreementGraph, pairs: MatchedPair[]): PerClaimPair[] {
+  const ca = new Map(a.claims.map((c) => [c.id, c]));
+  const cb = new Map(b.claims.map((c) => [c.id, c]));
+  const sa = claimStructure(a);
+  const sb = claimStructure(b);
+  const out: PerClaimPair[] = [];
+  for (const p of pairs) {
+    const x = ca.get(p.a);
+    const y = cb.get(p.b);
+    if (!x || !y) continue;
+    out.push({
+      a: p.a,
+      b: p.b,
+      similarity: p.similarity,
+      method: p.method,
+      textA: x.text,
+      statusA: x.status ?? null,
+      statusB: y.status ?? null,
+      credenceA: typeof x.credence === "number" ? x.credence : null,
+      credenceB: typeof y.credence === "number" ? y.credence : null,
+      childrenA: sa.get(p.a)?.children ?? 0,
+      childrenB: sb.get(p.b)?.children ?? 0,
+      depthA: sa.get(p.a)?.depth ?? 0,
+      depthB: sb.get(p.b)?.depth ?? 0,
+      instancesA: (x.instances ?? []).map((i) => ({ sourceUrl: i.sourceUrl ?? null, stance: i.stance ?? null })),
+      instancesB: (y.instances ?? []).map((i) => ({ sourceUrl: i.sourceUrl ?? null, stance: i.stance ?? null })),
+    });
+  }
+  return out;
+}
+
 export function graphAgreement(
   a: AgreementGraph,
   b: AgreementGraph,
@@ -346,6 +444,7 @@ export function graphAgreement(
     claimSet: claimSetAgreement(a, b, pairs),
     credence: credenceAgreement(a, b, pairs),
     structure: structuralAgreement(a, b, pairs),
+    perClaim: perClaimAgreement(a, b, pairs),
   };
 }
 

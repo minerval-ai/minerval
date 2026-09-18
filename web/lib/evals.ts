@@ -49,6 +49,21 @@ export interface EvalsIndex {
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
   rubric: RubricSection[];
+  /** Committed replays (#334), newest first; absent or empty before the first recording is synced. */
+  replays?: ReplaySummary[];
+}
+
+/** One line of the evals index about a recording, enough for a card without reading the file. */
+export interface ReplaySummary {
+  name: string;
+  kind: string;
+  title: string;
+  cluster: string | null;
+  generatedAt: string;
+  arms: string[];
+  events: number;
+  models: Record<string, string | undefined>;
+  costMicroUsd: number | null;
 }
 
 export interface RubricSection {
@@ -302,6 +317,182 @@ export function getContributionScenarios(): ContributionScenario[] {
     .map((f) => readJson<ContributionScenario>(resolve(dir, f)));
 }
 
+// ---- the reasoner probe (S5) and the canonical-form goldens (S1) -----------
+
+export interface ProbeQuestion {
+  id: string;
+  kind?: string;
+  question: string;
+  note?: string;
+}
+
+export interface ProbeFixture {
+  cluster: string;
+  description?: string;
+  questions: ProbeQuestion[];
+}
+
+export interface ProbePrompts {
+  withGraph: string;
+  withoutGraph: string;
+  retraction: string;
+  withGraphSchema: unknown;
+  withoutGraphSchema: unknown;
+}
+
+export function getProbeFixtures(): ProbeFixture[] {
+  const dir = resolve(EVALS, "probes");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((f) => {
+      const raw = readJson<Partial<ProbeFixture> & Record<string, unknown>>(resolve(dir, f));
+      return { cluster: raw.cluster ?? f.replace(/\.json$/, ""), description: raw.description, questions: raw.questions ?? [] };
+    });
+}
+
+export function getProbePrompts(): ProbePrompts | null {
+  const path = resolve(EVALS, "probe-prompts.json");
+  return existsSync(path) ? readJson<ProbePrompts>(path) : null;
+}
+
+export interface CanonicalCase {
+  id: string;
+  category: string;
+  sourceTitle?: string;
+  cluster?: string;
+  excerpt: string;
+  expected: string;
+  note?: string;
+}
+
+export function getCanonicalCases(): { description?: string; cases: CanonicalCase[] } {
+  const path = resolve(EVALS, "canonical-forms.json");
+  if (!existsSync(path)) return { cases: [] };
+  const raw = readJson<{ description?: string; cases?: CanonicalCase[] }>(path);
+  return { description: raw.description, cases: raw.cases ?? [] };
+}
+
+export function getCanonicalJudge(): { prompt: string; standard: string; schema: unknown } | null {
+  const path = resolve(EVALS, "canonical-judge.json");
+  return existsSync(path) ? readJson(path) : null;
+}
+
+export interface GoldenCanonicalRun {
+  file: string;
+  generatedAt: string;
+  summary?: { total: number; passed: number; passRate: number; byCategory?: Record<string, { total: number; passed: number }> };
+  costMicroUsd?: number | null;
+  [k: string]: unknown;
+}
+
+export function getGoldenCanonicalRuns(): GoldenCanonicalRun[] {
+  const dir = resolve(EVALS, "golden-canonical-runs");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((file): GoldenCanonicalRun => {
+      const raw = readJson<Partial<GoldenCanonicalRun>>(resolve(dir, file));
+      return { ...raw, file, generatedAt: String(raw.generatedAt ?? "") };
+    })
+    .sort((a, b) => String(a.generatedAt).localeCompare(String(b.generatedAt)));
+}
+
+// ---- the adversarial suite (S4), the personas (S8) and the monitors (S9) ----
+
+export interface AdversarialContribution {
+  id: string;
+  persona: string;
+  type: string;
+  gambit: string;
+  content: string;
+  evidenceUrls?: string[];
+  fabricated?: boolean;
+  proposedCanonicalForm?: string;
+  appealIfRejected?: string;
+  expect?: string;
+  target?: { query: string };
+}
+
+export interface AdversarialTarget {
+  key: string;
+  query: string;
+  kind: string;
+  note?: string;
+  expect?: string;
+  arms: Record<string, { direction?: string; contributions: AdversarialContribution[] } | AdversarialContribution[]>;
+}
+
+export interface AdversarialScenario {
+  scenario: string;
+  cluster: string;
+  description?: string;
+  baseline?: string;
+  personas: Array<{ key: string; displayName: string; tier: string; note?: string }>;
+  targets: AdversarialTarget[];
+  campaign?: { description?: string; arms: Record<string, { contributions: AdversarialContribution[] } | AdversarialContribution[]> };
+}
+
+export function getAdversarialScenarios(): AdversarialScenario[] {
+  const dir = resolve(EVALS, "adversarial");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((f) => readJson<AdversarialScenario>(resolve(dir, f)));
+}
+
+export interface AdversarialPrompts {
+  gambits: Record<string, string>;
+  blindJudge: { prompt: string; schema: unknown };
+  holisticJudge: { prompt: string; schema: unknown };
+  redteam: { attackSystem: string; benignSystem: string; campaignSystem: string; episode: string; feedback: string; tools: Array<{ name: string; description?: string; input_schema?: unknown }> };
+}
+
+export function getAdversarialPrompts(): AdversarialPrompts | null {
+  const path = resolve(EVALS, "adversarial-prompts.json");
+  return existsSync(path) ? readJson<AdversarialPrompts>(path) : null;
+}
+
+export interface PersonaEntry {
+  key: string;
+  name: string;
+  kind: string;
+  archetype: string;
+  goals: string[];
+  style: string;
+  tier: string;
+  budget: string;
+  clusters: string[];
+  appeals?: boolean;
+  opening?: string;
+  pairWith?: string;
+  tactic?: string;
+}
+
+export function getPersonas(): { name?: string; description?: string; personas: PersonaEntry[] } {
+  const path = resolve(EVALS, "personas.json");
+  return existsSync(path) ? readJson(path) : { personas: [] };
+}
+
+export interface PersonaPrompts {
+  notice: string;
+  tools: Array<{ name: string; description?: string; input_schema?: unknown }>;
+  prompts: Array<{ key: string; cluster: string; tools: string[]; system: string; opening: string }>;
+}
+
+export function getPersonaPrompts(): PersonaPrompts | null {
+  const path = resolve(EVALS, "persona-prompts.json");
+  return existsSync(path) ? readJson<PersonaPrompts>(path) : null;
+}
+
+export function getMonitorsDoc(): string | null {
+  const path = resolve(EVALS, "monitors.md");
+  return existsSync(path) ? readFileSync(path, "utf-8") : null;
+}
+
 // ---- formatting helpers ----------------------------------------------------
 
 export function fmtDate(iso: string | null | undefined): string {
@@ -348,6 +539,16 @@ export interface EvalsData {
   reviews: ReviewSheet[];
   predictions: Prediction[];
   scenarios: ContributionScenario[];
+  probes: ProbeFixture[];
+  probePrompts: ProbePrompts | null;
+  canonical: { description?: string; cases: CanonicalCase[] };
+  canonicalJudge: { prompt: string; standard: string; schema: unknown } | null;
+  goldenCanonicalRuns: GoldenCanonicalRun[];
+  adversarial: AdversarialScenario[];
+  adversarialPrompts: AdversarialPrompts | null;
+  personas: PersonaEntry[];
+  personaPrompts: PersonaPrompts | null;
+  monitorsDoc: string | null;
 }
 
 export function loadEvalsData(): EvalsData {
@@ -372,5 +573,15 @@ export function loadEvalsData(): EvalsData {
     reviews: getReviews(index),
     predictions: getPredictions().predictions,
     scenarios: getContributionScenarios(),
+    probes: getProbeFixtures(),
+    probePrompts: getProbePrompts(),
+    canonical: getCanonicalCases(),
+    canonicalJudge: getCanonicalJudge(),
+    goldenCanonicalRuns: getGoldenCanonicalRuns(),
+    adversarial: getAdversarialScenarios(),
+    adversarialPrompts: getAdversarialPrompts(),
+    personas: getPersonas().personas,
+    personaPrompts: getPersonaPrompts(),
+    monitorsDoc: getMonitorsDoc(),
   };
 }

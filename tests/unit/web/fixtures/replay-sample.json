@@ -1,0 +1,499 @@
+{
+  "version": 1,
+  "kind": "property",
+  "name": "sample-property-eggs",
+  "title": "Path independence on the eggs cluster (sample)",
+  "cluster": "eggs",
+  "generatedAt": "2026-09-10T11:20:00.000Z",
+  "about": "The same two sources ingested in two orders. The graphs should end up the same: the same claims, the same verdicts, the same edges, whatever order the documents arrive in.",
+  "commands": [
+    "npm run corpus:property -- --cluster=eggs --property=path-independence --posts=2 --seed=3"
+  ],
+  "arms": [
+    {
+      "key": "a",
+      "label": "Arm A · manifest order",
+      "variation": "sources in manifest order",
+      "fingerprint": {
+        "pipelineEpoch": "2026-09-01",
+        "gitCommit": "4a7d757",
+        "profile": "production",
+        "swap": null,
+        "order": "manifest",
+        "models": { "extractor": "claude-sonnet-5", "matcher": "z-ai/glm-5.3-flash", "steward": "claude-fable-5-1", "curator": "claude-sonnet-5" },
+        "caps": { "stewardRuns": 8, "iterations": 12 }
+      },
+      "sources": [
+        { "id": "s1", "key": "eggs-01", "title": "Eggs and the cholesterol question", "url": "https://example.org/eggs-cholesterol", "order": 0, "words": 1800 },
+        { "id": "s2", "key": "eggs-02", "title": "The egg-a-day studies", "url": "https://example.org/egg-a-day", "order": 1, "words": 2100 }
+      ],
+      "promptsUsed": [
+        { "sha256": "7c1f0d3a9e4b2c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e0b2c4f6a8d0e2b4c6f", "agents": ["matcher"], "count": 4, "chars": 4120, "eventSeq": 3 },
+        { "sha256": "0b2c4f6a8d0e2b4c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e7c1f0d3a9e4b2c6f", "agents": ["steward"], "count": 4, "chars": 9860, "eventSeq": 5 }
+      ],
+      "events": [
+        {
+          "seq": 1, "at": "2026-09-10T10:00:00.000Z", "endedAt": "2026-09-10T10:00:01.000Z",
+          "agent": "system", "runId": null, "claimId": null, "sourceId": "s1", "trigger": null, "causedBy": null,
+          "title": "Source submitted: Eggs and the cholesterol question", "outcome": "ok",
+          "steps": [], "deltas": [{ "op": "source_submitted", "sourceId": "s1", "title": "Eggs and the cholesterol question", "url": "https://example.org/eggs-cholesterol" }],
+          "costMicroUsd": null, "durationMs": 900, "attribution": "harness", "detailPath": "a/1.json"
+        },
+        {
+          "seq": 2, "at": "2026-09-10T10:00:02.000Z", "endedAt": "2026-09-10T10:00:31.000Z",
+          "agent": "extractor", "runId": "run-a-ext-1", "claimId": null, "sourceId": "s1", "trigger": "source_submitted", "causedBy": 1,
+          "title": "Extractor read “Eggs and the cholesterol question”: 2 claims", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:00:02.000Z", "text": "system prompt · 1 message · no tools", "sizes": { "system": 3300, "input": 9400 }, "full": false },
+            { "seq": 2, "kind": "completion", "at": "2026-09-10T10:00:31.000Z", "text": "Listed 2 claims: “Dietary cholesterol from eggs raises LDL cholesterol in most adults”; “Daily egg consumption raises cardiovascular risk”.", "sizes": { "output": 1260 }, "truncated": true }
+          ],
+          "deltas": [],
+          "dataFlow": { "read": [{ "tool": "source_text", "sourceIds": ["s1"] }], "wrote": [] },
+          "costMicroUsd": 21000, "durationMs": 29000, "attribution": "exact", "detailPath": "a/2.json"
+        },
+        {
+          "seq": 3, "at": "2026-09-10T10:00:32.000Z", "endedAt": "2026-09-10T10:00:44.000Z",
+          "agent": "matcher", "runId": "run-a-match-1", "claimId": "c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": "s1", "trigger": "extracted_claim", "causedBy": 2,
+          "title": "Matcher: new claim — “Dietary cholesterol from eggs raises LDL cholesterol in most adults”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:00:32.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1180 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:00:34.000Z", "text": "search_claims: “dietary cholesterol LDL”", "tool": "search_claims", "input": { "query": "dietary cholesterol LDL", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:00:35.000Z", "text": "0 results", "tool": "search_claims", "output": { "results": [] } },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:00:40.000Z", "text": "Nothing in the graph is about dietary cholesterol. This is a new claim; the proposed canonical form is already neutral and under twenty words." },
+            { "seq": 5, "kind": "decision", "at": "2026-09-10T10:00:44.000Z", "text": "new claim: “Dietary cholesterol from eggs raises LDL cholesterol in most adults”", "tool": "submit_decision", "input": { "isMatch": false, "canonical": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "claimType": "empirical" } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "createdBy": "matcher", "topLevel": true, "sourceId": "s1" },
+            { "op": "steward_notified", "claimId": "c1", "trigger": "structure_and_assess", "coalesced": false }
+          ],
+          "dataFlow": { "read": [{ "tool": "search_claims", "claimIds": [] }], "wrote": [
+            { "op": "claim_created", "claimId": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "createdBy": "matcher", "topLevel": true, "sourceId": "s1" },
+            { "op": "steward_notified", "claimId": "c1", "trigger": "structure_and_assess", "coalesced": false }
+          ] },
+          "costMicroUsd": 1800, "durationMs": 12000, "attribution": "exact", "detailPath": "a/3.json"
+        },
+        {
+          "seq": 4, "at": "2026-09-10T10:00:45.000Z", "endedAt": "2026-09-10T10:00:58.000Z",
+          "agent": "matcher", "runId": "run-a-match-2", "claimId": "c2", "claimText": "Daily egg consumption raises cardiovascular risk", "sourceId": "s1", "trigger": "extracted_claim", "causedBy": 2,
+          "title": "Matcher: new claim — “Daily egg consumption raises cardiovascular risk”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:00:45.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1210 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:00:47.000Z", "text": "search_claims: “egg consumption cardiovascular risk”", "tool": "search_claims", "input": { "query": "egg consumption cardiovascular risk", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:00:48.000Z", "text": "1 result: c1 (0.41)", "tool": "search_claims", "output": { "results": [{ "id": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "score": 0.41 }] } },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:00:55.000Z", "text": "c1 is about LDL, a mechanism; this claim is about the outcome. They would decompose differently. New claim." },
+            { "seq": 5, "kind": "decision", "at": "2026-09-10T10:00:58.000Z", "text": "new claim: “Daily egg consumption raises cardiovascular risk”", "tool": "submit_decision", "input": { "isMatch": false, "canonical": "Daily egg consumption raises cardiovascular risk", "claimType": "empirical" } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "c2", "text": "Daily egg consumption raises cardiovascular risk", "createdBy": "matcher", "topLevel": true, "sourceId": "s1" },
+            { "op": "steward_notified", "claimId": "c2", "trigger": "structure_and_assess", "coalesced": false }
+          ],
+          "costMicroUsd": 1900, "durationMs": 13000, "attribution": "exact", "detailPath": "a/4.json"
+        },
+        {
+          "seq": 5, "at": "2026-09-10T10:01:00.000Z", "endedAt": "2026-09-10T10:03:10.000Z",
+          "agent": "steward", "runId": "run-a-stew-1", "claimId": "c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 3,
+          "title": "Steward assessed “Dietary cholesterol from eggs raises LDL cholesterol in most adults”: supported", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:01:00.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2400 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:01:05.000Z", "text": "get_claim_with_context: c1", "tool": "get_claim_with_context", "input": { "claimId": "c1" } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:01:06.000Z", "text": "claim c1, 1 instance, 0 children", "tool": "get_claim_with_context", "output": { "id": "c1", "instances": 1, "children": [] }, "truncated": true },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:01:40.000Z", "text": "The claim rests on one empirical premise: that absorbed dietary cholesterol raises serum LDL. Meta-analyses of feeding trials show a modest, dose-dependent rise. Supported, not verified: effect sizes vary and hyper-responders complicate “most adults”." },
+            { "seq": 5, "kind": "tool_call", "at": "2026-09-10T10:02:10.000Z", "text": "create_subclaim: “Absorbed dietary cholesterol raises serum LDL in feeding trials”", "tool": "create_subclaim", "input": { "parentId": "c1", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "relation": "requires" } },
+            { "seq": 6, "kind": "tool_result", "at": "2026-09-10T10:02:11.000Z", "text": "created c1a, edge e1", "tool": "create_subclaim", "output": { "claimId": "c1a", "edgeId": "e1" } },
+            { "seq": 7, "kind": "decision", "at": "2026-09-10T10:03:10.000Z", "text": "assessment: supported, credence 0.70, confidence 0.80", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.7, "confidence": 0.8, "summary": "Controlled feeding trials show a modest dose-dependent rise in LDL; the size varies and a minority respond strongly." } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "c1a", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "e1", "parentId": "c1", "childId": "c1a", "relation": "requires", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "c1", "status": "supported", "credence": 0.7, "confidence": 0.8, "trigger": "structure_and_assess", "summary": "Controlled feeding trials show a modest dose-dependent rise in LDL; the size varies and a minority respond strongly." },
+            { "op": "importance_set", "claimId": "c1", "importance": 0.55 }
+          ],
+          "dataFlow": { "read": [{ "tool": "get_claim_with_context", "claimIds": ["c1"] }], "wrote": [] },
+          "costMicroUsd": 48000, "durationMs": 130000, "attribution": "exact", "detailPath": "a/5.json"
+        },
+        {
+          "seq": 6, "at": "2026-09-10T10:03:12.000Z", "endedAt": "2026-09-10T10:05:20.000Z",
+          "agent": "steward", "runId": "run-a-stew-2", "claimId": "c2", "claimText": "Daily egg consumption raises cardiovascular risk", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 4,
+          "title": "Steward assessed “Daily egg consumption raises cardiovascular risk”: contested", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:03:12.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2500 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:03:15.000Z", "text": "search_claims: “dietary cholesterol LDL”", "tool": "search_claims", "input": { "query": "dietary cholesterol LDL" } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:03:16.000Z", "text": "1 result: c1 (0.88)", "tool": "search_claims", "output": { "results": [{ "id": "c1", "score": 0.88 }] } },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:04:00.000Z", "text": "The risk claim requires the LDL mechanism (already in the graph as c1) and an outcome premise that the cohorts do not agree on. Link c1 rather than duplicate it." },
+            { "seq": 5, "kind": "tool_call", "at": "2026-09-10T10:04:20.000Z", "text": "link_subclaim: c2 requires c1", "tool": "link_subclaim", "input": { "parentId": "c2", "childId": "c1", "relation": "requires" } },
+            { "seq": 6, "kind": "tool_call", "at": "2026-09-10T10:04:40.000Z", "text": "create_subclaim: “Prospective cohorts show no consistent association between egg intake and cardiovascular events”", "tool": "create_subclaim", "input": { "parentId": "c2", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "relation": "contradicts" } },
+            { "seq": 7, "kind": "decision", "at": "2026-09-10T10:05:20.000Z", "text": "assessment: contested, credence 0.50, confidence 0.70", "tool": "record_assessment", "input": { "status": "contested", "credence": 0.5, "confidence": 0.7 } }
+          ],
+          "deltas": [
+            { "op": "edge_added", "edgeId": "e2", "parentId": "c2", "childId": "c1", "relation": "requires", "argumentId": null },
+            { "op": "claim_created", "claimId": "c2a", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "e3", "parentId": "c2", "childId": "c2a", "relation": "contradicts", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "c2", "status": "contested", "credence": 0.5, "confidence": 0.7, "trigger": "structure_and_assess", "summary": "The mechanism is supported but the outcome cohorts disagree." }
+          ],
+          "costMicroUsd": 51000, "durationMs": 128000, "attribution": "exact", "detailPath": "a/6.json"
+        },
+        {
+          "seq": 7, "at": "2026-09-10T10:05:30.000Z", "endedAt": "2026-09-10T10:05:31.000Z",
+          "agent": "system", "runId": null, "claimId": null, "sourceId": "s2", "trigger": null, "causedBy": null,
+          "title": "Source submitted: The egg-a-day studies", "outcome": "ok",
+          "steps": [], "deltas": [{ "op": "source_submitted", "sourceId": "s2", "title": "The egg-a-day studies", "url": "https://example.org/egg-a-day" }],
+          "costMicroUsd": null, "durationMs": 800, "attribution": "harness", "detailPath": "a/7.json"
+        },
+        {
+          "seq": 8, "at": "2026-09-10T10:05:32.000Z", "endedAt": "2026-09-10T10:06:01.000Z",
+          "agent": "extractor", "runId": "run-a-ext-2", "claimId": null, "sourceId": "s2", "trigger": "source_submitted", "causedBy": 7,
+          "title": "Extractor read “The egg-a-day studies”: 2 claims", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:05:32.000Z", "text": "system prompt · 1 message · no tools", "sizes": { "system": 3300, "input": 10800 }, "full": false },
+            { "seq": 2, "kind": "completion", "at": "2026-09-10T10:06:01.000Z", "text": "Listed 2 claims: “Eating an egg a day does not raise cardiovascular risk”; “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”.", "truncated": true }
+          ],
+          "deltas": [],
+          "costMicroUsd": 23000, "durationMs": 29000, "attribution": "exact", "detailPath": "a/8.json"
+        },
+        {
+          "seq": 9, "at": "2026-09-10T10:06:02.000Z", "endedAt": "2026-09-10T10:06:20.000Z",
+          "agent": "matcher", "runId": "run-a-match-3", "claimId": "c2", "claimText": "Daily egg consumption raises cardiovascular risk", "sourceId": "s2", "trigger": "extracted_claim", "causedBy": 8,
+          "title": "Matcher: “Eating an egg a day does not raise cardiovascular risk” is c2, stance denies", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:06:02.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1300 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:06:04.000Z", "text": "search_claims: “egg a day cardiovascular risk”", "tool": "search_claims", "input": { "query": "egg a day cardiovascular risk", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:06:05.000Z", "text": "2 results: c2 (0.93), c2a (0.71)", "tool": "search_claims", "output": { "results": [{ "id": "c2", "text": "Daily egg consumption raises cardiovascular risk", "score": 0.93 }, { "id": "c2a", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "score": 0.71 }] } },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:06:15.000Z", "text": "The new source denies exactly what c2 asserts. A claim and its denial are one node: match c2 with stance denies." },
+            { "seq": 5, "kind": "decision", "at": "2026-09-10T10:06:20.000Z", "text": "match c2, stance denies", "tool": "submit_decision", "input": { "isMatch": true, "matchedId": "c2", "stance": "denies" } }
+          ],
+          "deltas": [
+            { "op": "claim_matched", "claimId": "c2", "sourceId": "s2", "stance": "denies", "verbatim": "an egg a day does not, on the best evidence we have, raise your risk of heart disease", "proposed": "Eating an egg a day does not raise cardiovascular risk" },
+            { "op": "steward_notified", "claimId": "c2", "trigger": "new_instance", "coalesced": false }
+          ],
+          "costMicroUsd": 2100, "durationMs": 18000, "attribution": "exact", "detailPath": "a/9.json"
+        },
+        {
+          "seq": 10, "at": "2026-09-10T10:06:21.000Z", "endedAt": "2026-09-10T10:06:35.000Z",
+          "agent": "matcher", "runId": "run-a-match-4", "claimId": "c4", "claimText": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "sourceId": "s2", "trigger": "extracted_claim", "causedBy": 8,
+          "title": "Matcher: new claim — “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:06:21.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1250 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:06:23.000Z", "text": "search_claims: “saturated fat LDL”", "tool": "search_claims", "input": { "query": "saturated fat LDL", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:06:24.000Z", "text": "2 results: c1 (0.62), c1a (0.58)", "tool": "search_claims", "output": { "results": [{ "id": "c1", "score": 0.62 }, { "id": "c1a", "score": 0.58 }] } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:06:35.000Z", "text": "new claim: “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”", "tool": "submit_decision", "input": { "isMatch": false, "canonical": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL" } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "c4", "text": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "createdBy": "matcher", "topLevel": true, "sourceId": "s2" },
+            { "op": "steward_notified", "claimId": "c4", "trigger": "structure_and_assess", "coalesced": false }
+          ],
+          "costMicroUsd": 1700, "durationMs": 14000, "attribution": "exact", "detailPath": "a/10.json"
+        },
+        {
+          "seq": 11, "at": "2026-09-10T10:06:40.000Z", "endedAt": "2026-09-10T10:08:00.000Z",
+          "agent": "steward", "runId": "run-a-stew-3", "claimId": "c2", "claimText": "Daily egg consumption raises cardiovascular risk", "sourceId": null, "trigger": "new_instance", "causedBy": 9,
+          "title": "Steward reassessed “Daily egg consumption raises cardiovascular risk”: still contested", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:06:40.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 3100 }, "full": false },
+            { "seq": 2, "kind": "thought", "at": "2026-09-10T10:07:30.000Z", "text": "A second source denies the claim on the cohort evidence the graph already records under c2a. The picture has not changed: contested, credence a little lower." },
+            { "seq": 3, "kind": "decision", "at": "2026-09-10T10:08:00.000Z", "text": "assessment: contested, credence 0.42, confidence 0.75", "tool": "record_assessment", "input": { "status": "contested", "credence": 0.42, "confidence": 0.75 } }
+          ],
+          "deltas": [
+            { "op": "assessment_recorded", "claimId": "c2", "status": "contested", "credence": 0.42, "confidence": 0.75, "trigger": "new_instance", "summary": "A second source denies the claim on the same cohort evidence." }
+          ],
+          "costMicroUsd": 30000, "durationMs": 80000, "attribution": "run-window", "detailPath": "a/11.json"
+        },
+        {
+          "seq": 12, "at": "2026-09-10T10:08:05.000Z", "endedAt": "2026-09-10T10:10:00.000Z",
+          "agent": "steward", "runId": "run-a-stew-4", "claimId": "c4", "claimText": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 10,
+          "title": "Steward assessed “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”: supported", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:08:05.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2600 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:08:30.000Z", "text": "link_subclaim: c4 requires c1a", "tool": "link_subclaim", "input": { "parentId": "c4", "childId": "c1a", "relation": "requires" } },
+            { "seq": 3, "kind": "tool_call", "at": "2026-09-10T10:09:00.000Z", "text": "create_subclaim: “Cohort studies find no consistent link between egg intake and heart disease”", "tool": "create_subclaim", "input": { "parentId": "c4", "text": "Cohort studies find no consistent link between egg intake and heart disease", "relation": "supports" } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:10:00.000Z", "text": "assessment: supported, credence 0.66, confidence 0.70", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.66, "confidence": 0.7 } }
+          ],
+          "deltas": [
+            { "op": "edge_added", "edgeId": "e4", "parentId": "c4", "childId": "c1a", "relation": "requires", "argumentId": null },
+            { "op": "claim_created", "claimId": "c4a", "text": "Cohort studies find no consistent link between egg intake and heart disease", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "e5", "parentId": "c4", "childId": "c4a", "relation": "supports", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "c4", "status": "supported", "credence": 0.66, "confidence": 0.7, "trigger": "structure_and_assess" }
+          ],
+          "costMicroUsd": 44000, "durationMs": 115000, "attribution": "exact", "detailPath": "a/12.json"
+        },
+        {
+          "seq": 13, "at": "2026-09-10T10:10:10.000Z", "endedAt": "2026-09-10T10:11:00.000Z",
+          "agent": "curator", "runId": "run-a-cur-1", "claimId": "c4a", "claimText": "Cohort studies find no consistent link between egg intake and heart disease", "sourceId": null, "trigger": "duplicate_scan", "causedBy": 12,
+          "title": "Curator merged “Cohort studies find no consistent link…” into “Prospective cohorts show no consistent association…”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "thought", "at": "2026-09-10T10:10:40.000Z", "text": "c4a and c2a state the same cohort finding; they would decompose identically. Merge c4a into c2a and re-point the edge." },
+            { "seq": 2, "kind": "decision", "at": "2026-09-10T10:11:00.000Z", "text": "merge c4a → c2a", "tool": "merge_claims", "input": { "from": "c4a", "into": "c2a" } }
+          ],
+          "deltas": [
+            { "op": "claim_merged", "claimId": "c4a", "into": "c2a" },
+            { "op": "edge_added", "edgeId": "e6", "parentId": "c4", "childId": "c2a", "relation": "supports", "argumentId": null },
+            { "op": "steward_notified", "claimId": "c4", "trigger": "curator_change", "coalesced": true }
+          ],
+          "costMicroUsd": 9000, "durationMs": 50000, "attribution": "exact", "detailPath": "a/13.json"
+        },
+        {
+          "seq": 14, "at": "2026-09-10T10:11:05.000Z", "endedAt": "2026-09-10T10:11:50.000Z",
+          "agent": "steward", "runId": "run-a-stew-5", "claimId": "c4", "claimText": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "sourceId": null, "trigger": "curator_change", "causedBy": 13,
+          "title": "Steward reassessed “Saturated fat, not dietary cholesterol…”: still supported", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "decision", "at": "2026-09-10T10:11:50.000Z", "text": "assessment: supported, credence 0.66, confidence 0.72", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.66, "confidence": 0.72 } }
+          ],
+          "deltas": [
+            { "op": "assessment_recorded", "claimId": "c4", "status": "supported", "credence": 0.66, "confidence": 0.72, "trigger": "curator_change" }
+          ],
+          "costMicroUsd": 12000, "durationMs": 45000, "attribution": "exact", "detailPath": "a/14.json"
+        }
+      ],
+      "final": {
+        "claims": [
+          { "id": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "claimType": "empirical", "createdBy": "matcher", "createdAt": "2026-09-10T10:00:44.000Z", "importance": 0.55, "stewardState": "assessed", "status": "supported", "credence": 0.7, "confidence": 0.8, "topLevel": true, "sourceIds": ["s1"] },
+          { "id": "c2", "text": "Daily egg consumption raises cardiovascular risk", "claimType": "empirical", "createdBy": "matcher", "createdAt": "2026-09-10T10:00:58.000Z", "importance": 0.6, "stewardState": "assessed", "status": "contested", "credence": 0.42, "confidence": 0.75, "topLevel": true, "sourceIds": ["s1", "s2"] },
+          { "id": "c4", "text": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "claimType": "empirical", "createdBy": "matcher", "createdAt": "2026-09-10T10:06:35.000Z", "importance": 0.5, "stewardState": "assessed", "status": "supported", "credence": 0.66, "confidence": 0.72, "topLevel": true, "sourceIds": ["s2"] },
+          { "id": "c1a", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:02:11.000Z", "importance": 0.3, "stewardState": "pending", "status": null, "credence": null, "confidence": null, "topLevel": false, "sourceIds": [] },
+          { "id": "c2a", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:04:41.000Z", "importance": 0.35, "stewardState": "pending", "status": null, "credence": null, "confidence": null, "topLevel": false, "sourceIds": [] }
+        ],
+        "edges": [
+          { "id": "e1", "parentId": "c1", "childId": "c1a", "relation": "requires", "argumentId": null, "createdAt": "2026-09-10T10:02:11.000Z" },
+          { "id": "e2", "parentId": "c2", "childId": "c1", "relation": "requires", "argumentId": null, "createdAt": "2026-09-10T10:04:20.000Z" },
+          { "id": "e3", "parentId": "c2", "childId": "c2a", "relation": "contradicts", "argumentId": null, "createdAt": "2026-09-10T10:04:41.000Z" },
+          { "id": "e4", "parentId": "c4", "childId": "c1a", "relation": "requires", "argumentId": null, "createdAt": "2026-09-10T10:08:30.000Z" },
+          { "id": "e6", "parentId": "c4", "childId": "c2a", "relation": "supports", "argumentId": null, "createdAt": "2026-09-10T10:11:00.000Z" }
+        ]
+      },
+      "costMicroUsd": 245500, "capped": false, "database": "snap:eggs-path-a"
+    },
+    {
+      "key": "b",
+      "label": "Arm B · reversed order",
+      "variation": "sources in reversed order, seed 3",
+      "fingerprint": {
+        "pipelineEpoch": "2026-09-01",
+        "gitCommit": "4a7d757",
+        "profile": "production",
+        "swap": null,
+        "order": "reversed",
+        "models": { "extractor": "claude-sonnet-5", "matcher": "z-ai/glm-5.3-flash", "steward": "claude-fable-5-1", "curator": "claude-sonnet-5" },
+        "caps": { "stewardRuns": 8, "iterations": 12 }
+      },
+      "sources": [
+        { "id": "s2", "key": "eggs-02", "title": "The egg-a-day studies", "url": "https://example.org/egg-a-day", "order": 0, "words": 2100 },
+        { "id": "s1", "key": "eggs-01", "title": "Eggs and the cholesterol question", "url": "https://example.org/eggs-cholesterol", "order": 1, "words": 1800 }
+      ],
+      "promptsUsed": [
+        { "sha256": "7c1f0d3a9e4b2c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e0b2c4f6a8d0e2b4c6f", "agents": ["matcher"], "count": 4, "chars": 4120, "eventSeq": 3 },
+        { "sha256": "0b2c4f6a8d0e2b4c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e7c1f0d3a9e4b2c6f", "agents": ["steward"], "count": 4, "chars": 9860, "eventSeq": 5 }
+      ],
+      "events": [
+        {
+          "seq": 1, "at": "2026-09-10T10:20:00.000Z", "endedAt": "2026-09-10T10:20:01.000Z",
+          "agent": "system", "runId": null, "claimId": null, "sourceId": "s2", "trigger": null, "causedBy": null,
+          "title": "Source submitted: The egg-a-day studies", "outcome": "ok",
+          "steps": [], "deltas": [{ "op": "source_submitted", "sourceId": "s2", "title": "The egg-a-day studies", "url": "https://example.org/egg-a-day" }],
+          "costMicroUsd": null, "durationMs": 700, "attribution": "harness", "detailPath": "b/1.json"
+        },
+        {
+          "seq": 2, "at": "2026-09-10T10:20:02.000Z", "endedAt": "2026-09-10T10:20:30.000Z",
+          "agent": "extractor", "runId": "run-b-ext-1", "claimId": null, "sourceId": "s2", "trigger": "source_submitted", "causedBy": 1,
+          "title": "Extractor read “The egg-a-day studies”: 2 claims", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:20:02.000Z", "text": "system prompt · 1 message · no tools", "sizes": { "system": 3300, "input": 10800 }, "full": false },
+            { "seq": 2, "kind": "completion", "at": "2026-09-10T10:20:30.000Z", "text": "Listed 2 claims: “Eating an egg a day does not raise cardiovascular risk”; “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”.", "truncated": true }
+          ],
+          "deltas": [], "costMicroUsd": 22000, "durationMs": 28000, "attribution": "exact", "detailPath": "b/2.json"
+        },
+        {
+          "seq": 3, "at": "2026-09-10T10:20:31.000Z", "endedAt": "2026-09-10T10:20:45.000Z",
+          "agent": "matcher", "runId": "run-b-match-1", "claimId": "b-c2", "claimText": "Eating an egg a day does not raise cardiovascular risk", "sourceId": "s2", "trigger": "extracted_claim", "causedBy": 2,
+          "title": "Matcher: new claim — “Eating an egg a day does not raise cardiovascular risk”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:20:31.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1190 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:20:33.000Z", "text": "search_claims: “egg a day cardiovascular risk”", "tool": "search_claims", "input": { "query": "egg a day cardiovascular risk", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:20:34.000Z", "text": "0 results", "tool": "search_claims", "output": { "results": [] } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:20:45.000Z", "text": "new claim: “Eating an egg a day does not raise cardiovascular risk”", "tool": "submit_decision", "input": { "isMatch": false, "canonical": "Eating an egg a day does not raise cardiovascular risk" } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "b-c2", "text": "Eating an egg a day does not raise cardiovascular risk", "createdBy": "matcher", "topLevel": true, "sourceId": "s2" },
+            { "op": "steward_notified", "claimId": "b-c2", "trigger": "structure_and_assess", "coalesced": false }
+          ],
+          "costMicroUsd": 1800, "durationMs": 14000, "attribution": "exact", "detailPath": "b/3.json"
+        },
+        {
+          "seq": 4, "at": "2026-09-10T10:20:46.000Z", "endedAt": "2026-09-10T10:21:00.000Z",
+          "agent": "matcher", "runId": "run-b-match-2", "claimId": "b-c4", "claimText": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "sourceId": "s2", "trigger": "extracted_claim", "causedBy": 2,
+          "title": "Matcher: new claim — “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:20:46.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1240 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:20:48.000Z", "text": "search_claims: “saturated fat LDL”", "tool": "search_claims", "input": { "query": "saturated fat LDL", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:20:49.000Z", "text": "1 result: b-c2 (0.33)", "tool": "search_claims", "output": { "results": [{ "id": "b-c2", "score": 0.33 }] } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:21:00.000Z", "text": "new claim: “Saturated fat, not dietary cholesterol, is the main dietary driver of LDL”", "tool": "submit_decision", "input": { "isMatch": false } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "b-c4", "text": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "createdBy": "matcher", "topLevel": true, "sourceId": "s2" },
+            { "op": "steward_notified", "claimId": "b-c4", "trigger": "structure_and_assess", "coalesced": false }
+          ],
+          "costMicroUsd": 1700, "durationMs": 14000, "attribution": "exact", "detailPath": "b/4.json"
+        },
+        {
+          "seq": 5, "at": "2026-09-10T10:21:02.000Z", "endedAt": "2026-09-10T10:23:00.000Z",
+          "agent": "steward", "runId": "run-b-stew-1", "claimId": "b-c2", "claimText": "Eating an egg a day does not raise cardiovascular risk", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 3,
+          "title": "Steward assessed “Eating an egg a day does not raise cardiovascular risk”: contested", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:21:02.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2450 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:21:40.000Z", "text": "create_subclaim: “Prospective cohorts show no consistent association between egg intake and cardiovascular events”", "tool": "create_subclaim", "input": { "parentId": "b-c2", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "relation": "supports" } },
+            { "seq": 3, "kind": "tool_call", "at": "2026-09-10T10:22:10.000Z", "text": "create_subclaim: “Dietary cholesterol from eggs raises LDL cholesterol in most adults”", "tool": "create_subclaim", "input": { "parentId": "b-c2", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "relation": "contradicts" } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:23:00.000Z", "text": "assessment: contested, credence 0.55, confidence 0.70", "tool": "record_assessment", "input": { "status": "contested", "credence": 0.55, "confidence": 0.7 } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "b-c2a", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "b-e1", "parentId": "b-c2", "childId": "b-c2a", "relation": "supports", "argumentId": null },
+            { "op": "claim_created", "claimId": "b-c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "b-e2", "parentId": "b-c2", "childId": "b-c1", "relation": "contradicts", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "b-c2", "status": "contested", "credence": 0.55, "confidence": 0.7, "trigger": "structure_and_assess" }
+          ],
+          "costMicroUsd": 47000, "durationMs": 118000, "attribution": "exact", "detailPath": "b/5.json"
+        },
+        {
+          "seq": 6, "at": "2026-09-10T10:23:05.000Z", "endedAt": "2026-09-10T10:25:00.000Z",
+          "agent": "steward", "runId": "run-b-stew-2", "claimId": "b-c4", "claimText": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 4,
+          "title": "Steward assessed “Saturated fat, not dietary cholesterol…”: supported", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:23:05.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2600 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:23:50.000Z", "text": "create_subclaim: “Absorbed dietary cholesterol raises serum LDL in feeding trials”", "tool": "create_subclaim", "input": { "parentId": "b-c4", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "relation": "requires" } },
+            { "seq": 3, "kind": "tool_call", "at": "2026-09-10T10:24:20.000Z", "text": "create_subclaim: “Replacing saturated fat with unsaturated fat lowers LDL more than removing dietary cholesterol”", "tool": "create_subclaim", "input": { "parentId": "b-c4", "text": "Replacing saturated fat with unsaturated fat lowers LDL more than removing dietary cholesterol", "relation": "supports" } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:25:00.000Z", "text": "assessment: supported, credence 0.68, confidence 0.72", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.68, "confidence": 0.72 } }
+          ],
+          "deltas": [
+            { "op": "claim_created", "claimId": "b-c1a", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "b-e3", "parentId": "b-c4", "childId": "b-c1a", "relation": "requires", "argumentId": null },
+            { "op": "claim_created", "claimId": "b-c5", "text": "Replacing saturated fat with unsaturated fat lowers LDL more than removing dietary cholesterol", "createdBy": "steward", "topLevel": false },
+            { "op": "edge_added", "edgeId": "b-e4", "parentId": "b-c4", "childId": "b-c5", "relation": "supports", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "b-c4", "status": "supported", "credence": 0.68, "confidence": 0.72, "trigger": "structure_and_assess" }
+          ],
+          "costMicroUsd": 49000, "durationMs": 115000, "attribution": "exact", "detailPath": "b/6.json"
+        },
+        {
+          "seq": 7, "at": "2026-09-10T10:25:10.000Z", "endedAt": "2026-09-10T10:25:11.000Z",
+          "agent": "system", "runId": null, "claimId": null, "sourceId": "s1", "trigger": null, "causedBy": null,
+          "title": "Source submitted: Eggs and the cholesterol question", "outcome": "ok",
+          "steps": [], "deltas": [{ "op": "source_submitted", "sourceId": "s1", "title": "Eggs and the cholesterol question", "url": "https://example.org/eggs-cholesterol" }],
+          "costMicroUsd": null, "durationMs": 800, "attribution": "harness", "detailPath": "b/7.json"
+        },
+        {
+          "seq": 8, "at": "2026-09-10T10:25:12.000Z", "endedAt": "2026-09-10T10:25:40.000Z",
+          "agent": "extractor", "runId": "run-b-ext-2", "claimId": null, "sourceId": "s1", "trigger": "source_submitted", "causedBy": 7,
+          "title": "Extractor read “Eggs and the cholesterol question”: 2 claims", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:25:12.000Z", "text": "system prompt · 1 message · no tools", "sizes": { "system": 3300, "input": 9400 }, "full": false },
+            { "seq": 2, "kind": "completion", "at": "2026-09-10T10:25:40.000Z", "text": "Listed 2 claims: “Dietary cholesterol from eggs raises LDL cholesterol in most adults”; “Daily egg consumption raises cardiovascular risk”.", "truncated": true }
+          ],
+          "deltas": [], "costMicroUsd": 21000, "durationMs": 28000, "attribution": "exact", "detailPath": "b/8.json"
+        },
+        {
+          "seq": 9, "at": "2026-09-10T10:25:41.000Z", "endedAt": "2026-09-10T10:25:58.000Z",
+          "agent": "matcher", "runId": "run-b-match-3", "claimId": "b-c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": "s1", "trigger": "extracted_claim", "causedBy": 8,
+          "title": "Matcher: “Dietary cholesterol from eggs raises LDL…” is b-c1, stance asserts", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:25:41.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1300 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:25:43.000Z", "text": "search_claims: “dietary cholesterol LDL”", "tool": "search_claims", "input": { "query": "dietary cholesterol LDL", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:25:44.000Z", "text": "2 results: b-c1 (0.97), b-c1a (0.74)", "tool": "search_claims", "output": { "results": [{ "id": "b-c1", "score": 0.97 }, { "id": "b-c1a", "score": 0.74 }] } },
+            { "seq": 4, "kind": "decision", "at": "2026-09-10T10:25:58.000Z", "text": "match b-c1, stance asserts", "tool": "submit_decision", "input": { "isMatch": true, "matchedId": "b-c1", "stance": "asserts" } }
+          ],
+          "deltas": [
+            { "op": "claim_matched", "claimId": "b-c1", "sourceId": "s1", "stance": "asserts", "verbatim": "the cholesterol in eggs raises LDL in most people who eat them regularly", "proposed": "Dietary cholesterol from eggs raises LDL cholesterol in most adults" },
+            { "op": "steward_notified", "claimId": "b-c1", "trigger": "new_instance", "coalesced": false }
+          ],
+          "costMicroUsd": 2000, "durationMs": 17000, "attribution": "exact", "detailPath": "b/9.json"
+        },
+        {
+          "seq": 10, "at": "2026-09-10T10:25:59.000Z", "endedAt": "2026-09-10T10:26:15.000Z",
+          "agent": "matcher", "runId": "run-b-match-4", "claimId": "b-c2", "claimText": "Eating an egg a day does not raise cardiovascular risk", "sourceId": "s1", "trigger": "extracted_claim", "causedBy": 8,
+          "title": "Matcher: “Daily egg consumption raises cardiovascular risk” is b-c2, stance denies", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:25:59.000Z", "text": "system prompt · 1 message · 2 tools", "sizes": { "system": 4120, "input": 1280 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:26:01.000Z", "text": "search_claims: “egg consumption cardiovascular risk”", "tool": "search_claims", "input": { "query": "egg consumption cardiovascular risk", "limit": 8 } },
+            { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:26:02.000Z", "text": "2 results: b-c2 (0.92), b-c2a (0.70)", "tool": "search_claims", "output": { "results": [{ "id": "b-c2", "score": 0.92 }, { "id": "b-c2a", "score": 0.7 }] } },
+            { "seq": 4, "kind": "thought", "at": "2026-09-10T10:26:10.000Z", "text": "The source asserts the risk that b-c2 denies. Same node, opposite stance." },
+            { "seq": 5, "kind": "decision", "at": "2026-09-10T10:26:15.000Z", "text": "match b-c2, stance denies", "tool": "submit_decision", "input": { "isMatch": true, "matchedId": "b-c2", "stance": "denies" } }
+          ],
+          "deltas": [
+            { "op": "claim_matched", "claimId": "b-c2", "sourceId": "s1", "stance": "denies", "verbatim": "eating eggs every day raises your risk of heart disease", "proposed": "Daily egg consumption raises cardiovascular risk" },
+            { "op": "steward_notified", "claimId": "b-c2", "trigger": "new_instance", "coalesced": false }
+          ],
+          "costMicroUsd": 2100, "durationMs": 16000, "attribution": "exact", "detailPath": "b/10.json"
+        },
+        {
+          "seq": 11, "at": "2026-09-10T10:26:20.000Z", "endedAt": "2026-09-10T10:28:00.000Z",
+          "agent": "steward", "runId": "run-b-stew-3", "claimId": "b-c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": null, "trigger": "new_instance", "causedBy": 9,
+          "title": "Steward assessed “Dietary cholesterol from eggs raises LDL…”: supported", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "prompt", "at": "2026-09-10T10:26:20.000Z", "text": "system prompt · 1 message · 6 tools", "sizes": { "system": 9860, "input": 2900 }, "full": false },
+            { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:27:00.000Z", "text": "link_subclaim: b-c1 requires b-c1a", "tool": "link_subclaim", "input": { "parentId": "b-c1", "childId": "b-c1a", "relation": "requires" } },
+            { "seq": 3, "kind": "decision", "at": "2026-09-10T10:28:00.000Z", "text": "assessment: supported, credence 0.72, confidence 0.80", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.72, "confidence": 0.8 } }
+          ],
+          "deltas": [
+            { "op": "edge_added", "edgeId": "b-e5", "parentId": "b-c1", "childId": "b-c1a", "relation": "requires", "argumentId": null },
+            { "op": "assessment_recorded", "claimId": "b-c1", "status": "supported", "credence": 0.72, "confidence": 0.8, "trigger": "new_instance" }
+          ],
+          "costMicroUsd": 40000, "durationMs": 100000, "attribution": "exact", "detailPath": "b/11.json"
+        },
+        {
+          "seq": 12, "at": "2026-09-10T10:28:05.000Z", "endedAt": "2026-09-10T10:29:20.000Z",
+          "agent": "steward", "runId": "run-b-stew-4", "claimId": "b-c2", "claimText": "Eating an egg a day does not raise cardiovascular risk", "sourceId": null, "trigger": "new_instance", "causedBy": 10,
+          "title": "Steward reassessed “Eating an egg a day does not raise cardiovascular risk”: still contested", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "decision", "at": "2026-09-10T10:29:20.000Z", "text": "assessment: contested, credence 0.56, confidence 0.75", "tool": "record_assessment", "input": { "status": "contested", "credence": 0.56, "confidence": 0.75 } }
+          ],
+          "deltas": [
+            { "op": "assessment_recorded", "claimId": "b-c2", "status": "contested", "credence": 0.56, "confidence": 0.75, "trigger": "new_instance" }
+          ],
+          "costMicroUsd": 28000, "durationMs": 75000, "attribution": "run-window", "detailPath": "b/12.json"
+        },
+        {
+          "seq": 13, "at": "2026-09-10T10:29:30.000Z", "endedAt": "2026-09-10T10:30:00.000Z",
+          "agent": "curator", "runId": "run-b-cur-1", "claimId": null, "sourceId": null, "trigger": "duplicate_scan", "causedBy": null,
+          "title": "Curator scanned for duplicates: nothing to merge", "outcome": "ok",
+          "steps": [
+            { "seq": 1, "kind": "thought", "at": "2026-09-10T10:30:00.000Z", "text": "No pair of claims decomposes the same way. Nothing to merge." }
+          ],
+          "deltas": [{ "op": "note", "text": "no merges" }],
+          "costMicroUsd": 7000, "durationMs": 30000, "attribution": "exact", "detailPath": "b/13.json"
+        }
+      ],
+      "final": {
+        "claims": [
+          { "id": "b-c2", "text": "Eating an egg a day does not raise cardiovascular risk", "claimType": "empirical", "createdBy": "matcher", "createdAt": "2026-09-10T10:20:45.000Z", "importance": 0.6, "stewardState": "assessed", "status": "contested", "credence": 0.56, "confidence": 0.75, "topLevel": true, "sourceIds": ["s2", "s1"] },
+          { "id": "b-c4", "text": "Saturated fat, not dietary cholesterol, is the main dietary driver of LDL", "claimType": "empirical", "createdBy": "matcher", "createdAt": "2026-09-10T10:21:00.000Z", "importance": 0.5, "stewardState": "assessed", "status": "supported", "credence": 0.68, "confidence": 0.72, "topLevel": true, "sourceIds": ["s2"] },
+          { "id": "b-c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:22:10.000Z", "importance": 0.55, "stewardState": "assessed", "status": "supported", "credence": 0.72, "confidence": 0.8, "topLevel": true, "sourceIds": ["s1"] },
+          { "id": "b-c2a", "text": "Prospective cohorts show no consistent association between egg intake and cardiovascular events", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:21:40.000Z", "importance": 0.35, "stewardState": "pending", "status": null, "credence": null, "confidence": null, "topLevel": false, "sourceIds": [] },
+          { "id": "b-c1a", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:23:50.000Z", "importance": 0.3, "stewardState": "pending", "status": null, "credence": null, "confidence": null, "topLevel": false, "sourceIds": [] },
+          { "id": "b-c5", "text": "Replacing saturated fat with unsaturated fat lowers LDL more than removing dietary cholesterol", "claimType": "empirical", "createdBy": "steward", "createdAt": "2026-09-10T10:24:20.000Z", "importance": 0.3, "stewardState": "pending", "status": null, "credence": null, "confidence": null, "topLevel": false, "sourceIds": [] }
+        ],
+        "edges": [
+          { "id": "b-e1", "parentId": "b-c2", "childId": "b-c2a", "relation": "supports", "argumentId": null, "createdAt": "2026-09-10T10:21:40.000Z" },
+          { "id": "b-e2", "parentId": "b-c2", "childId": "b-c1", "relation": "contradicts", "argumentId": null, "createdAt": "2026-09-10T10:22:10.000Z" },
+          { "id": "b-e3", "parentId": "b-c4", "childId": "b-c1a", "relation": "requires", "argumentId": null, "createdAt": "2026-09-10T10:23:50.000Z" },
+          { "id": "b-e4", "parentId": "b-c4", "childId": "b-c5", "relation": "supports", "argumentId": null, "createdAt": "2026-09-10T10:24:20.000Z" },
+          { "id": "b-e5", "parentId": "b-c1", "childId": "b-c1a", "relation": "requires", "argumentId": null, "createdAt": "2026-09-10T10:27:00.000Z" }
+        ]
+      },
+      "costMicroUsd": 221600, "capped": false, "database": "snap:eggs-path-b"
+    }
+  ],
+  "matching": [
+    {
+      "armA": "a", "armB": "b",
+      "pairs": [
+        { "a": "c1", "b": "b-c1", "method": "exact", "similarity": 1 },
+        { "a": "c2", "b": "b-c2", "method": "judge", "similarity": 0.91 },
+        { "a": "c4", "b": "b-c4", "method": "exact", "similarity": 1 },
+        { "a": "c1a", "b": "b-c1a", "method": "exact", "similarity": 1 }
+      ],
+      "unmatchedA": ["c2a"],
+      "unmatchedB": ["b-c5"],
+      "summary": { "claimSetF1": 0.8, "credenceMeanAbsDiff": 0.05, "statusAgreement": 1, "edgeEditDistance": 3 }
+    }
+  ],
+  "scenario": null,
+  "summary": { "property": "path-independence", "claimSetF1": 0.8, "statusAgreement": 1, "verdict": "pass" },
+  "evalRunId": "eval-run-sample-1",
+  "costMicroUsd": 467100
+}

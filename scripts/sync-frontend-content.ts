@@ -21,6 +21,7 @@ import {
   writeFileSync,
   mkdirSync,
   copyFileSync,
+  cpSync,
   readFileSync,
   readdirSync,
   existsSync,
@@ -32,7 +33,13 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { execSync } from "child_process";
 
 import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
-import { buildEvalsIndex, modelLabel, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import {
+  buildEvalsIndex,
+  modelLabel,
+  type ClusterInput,
+  type ContributionScenarioInput,
+  type ReplayIndexInput,
+} from "./evals-content.js";
 import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
 import { MODELS, OPENROUTER_MODELS } from "../src/llm/models.js";
 
@@ -48,6 +55,38 @@ import { getLookoutSystemPrompt } from "../src/llm/prompts/lookout.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
 import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
+import {
+  buildWithGraphPrompt,
+  buildWithoutGraphPrompt,
+  PROBE_WITH_GRAPH_SCHEMA,
+  PROBE_WITHOUT_GRAPH_SCHEMA,
+  retractionContext,
+} from "./corpus/probe-prompts.js";
+import {
+  buildCanonicalJudgePrompt,
+  CANONICAL_FORM_STANDARD,
+  CANONICAL_JUDGE_SCHEMA,
+} from "./corpus/golden-canonical-lib.js";
+import {
+  BLIND_JUDGE_SCHEMA,
+  blindJudgePrompt,
+  HOLISTIC_JUDGE_SCHEMA,
+  holisticJudgePrompt,
+  REDTEAM_ACTION_TOOLS,
+  REDTEAM_NOTES_TOOL,
+  redteamEpisodePrompt,
+  redteamFeedbackPrompt,
+  redteamSystemPrompt,
+} from "./corpus/adversarial-prompts.js";
+import { GAMBIT_DESCRIPTIONS } from "./corpus/adversarial-lib.js";
+import {
+  buildPersonaOpeningMessage,
+  buildPersonaSystemPrompt,
+  personaActionToolDefinitions,
+  personaToolNames,
+  SIMULATION_NOTICE,
+} from "./corpus/persona-prompts.js";
+import type { PersonaEntry } from "./corpus/personas-lib.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -280,6 +319,7 @@ export function syncEvalsContent(contentDir: string): {
   goldenPairs: number;
   predictions: number;
   contributions: number;
+  replays: number;
   pinnedAgents: number;
   gitCommit: string | null;
 } {
@@ -289,14 +329,16 @@ export function syncEvalsContent(contentDir: string): {
   mkdirSync(evalsDir, { recursive: true });
 
   const jsonFiles = (dir: string) =>
-    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "baselines.json").sort() : [];
   const readJson = <T,>(path: string) => JSON.parse(readFileSync(path, "utf8")) as T;
   const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
   // Clusters: every corpus/<dir>/manifest.json, sized over its committed posts.
   const clusters: ClusterInput[] = readdirSync(corpusDir)
     .filter((d) => existsSync(join(corpusDir, d, "manifest.json")) && statSync(join(corpusDir, d)).isDirectory())
-    .filter((d) => d !== "predictions")
+    // A cluster's manifest lists posts; the predictions set and the persona
+    // manifest live in the same shape of directory and are not clusters.
+    .filter((d) => Array.isArray(readJson<{ posts?: unknown }>(join(corpusDir, d, "manifest.json")).posts))
     .sort()
     .map((key) => {
       const manifest = readJson<{
@@ -317,13 +359,22 @@ export function syncEvalsContent(contentDir: string): {
   // Scorecards and golden runs, copied file for file under the same names.
   const scorecardFiles: Array<{ cluster: string; file: string }> = [];
   const goldenRunFiles: string[] = [];
+  const goldenCanonicalRunFiles: string[] = [];
   const scorecardsRoot = join(corpusDir, "scorecards");
   for (const cluster of readdirSync(scorecardsRoot).filter((d) => statSync(join(scorecardsRoot, d)).isDirectory()).sort()) {
-    const target = cluster === "golden-matcher" ? resolve(evalsDir, "golden-runs") : resolve(evalsDir, "scorecards", cluster);
+    // The two golden suites file their runs beside the cluster scorecards but
+    // are not scorecards: they get their own directories and index lists.
+    const target =
+      cluster === "golden-matcher"
+        ? resolve(evalsDir, "golden-runs")
+        : cluster === "golden-canonical"
+          ? resolve(evalsDir, "golden-canonical-runs")
+          : resolve(evalsDir, "scorecards", cluster);
     mkdirSync(target, { recursive: true });
     for (const file of jsonFiles(join(scorecardsRoot, cluster))) {
       copyFileSync(join(scorecardsRoot, cluster, file), resolve(target, file));
       if (cluster === "golden-matcher") goldenRunFiles.push(file);
+      else if (cluster === "golden-canonical") goldenCanonicalRunFiles.push(file);
       else scorecardFiles.push({ cluster, file });
     }
   }
@@ -344,6 +395,31 @@ export function syncEvalsContent(contentDir: string): {
     copyFileSync(join(corpusDir, "contributions", file), resolve(evalsDir, "contributions", file));
     return readJson<ContributionScenarioInput>(join(corpusDir, "contributions", file));
   });
+
+  // Replays (corpus/replays/README.md): one directory per committed recording,
+  // holding replay.json (the index the page renders) and replay-events/
+  // (the full per-event detail, one file per event). The index goes to
+  // web/content/evals/replays/<name>.json; the detail files go under
+  // web/public/evals/replays/<name>/events/... so the player fetches an
+  // event's untrimmed transcript only when the reader opens it.
+  const replaysDir = join(corpusDir, "replays");
+  const publicReplaysDir = resolve(contentDir, "..", "public", "evals", "replays");
+  rmSync(publicReplaysDir, { recursive: true, force: true });
+  mkdirSync(resolve(evalsDir, "replays"), { recursive: true });
+  const replays: ReplayIndexInput[] = (existsSync(replaysDir) ? readdirSync(replaysDir) : [])
+    .filter((d) => statSync(join(replaysDir, d)).isDirectory() && existsSync(join(replaysDir, d, "replay.json")))
+    .sort()
+    .map((name) => {
+      const index = readJson<ReplayIndexInput>(join(replaysDir, name, "replay.json"));
+      copyFileSync(join(replaysDir, name, "replay.json"), resolve(evalsDir, "replays", `${name}.json`));
+      const events = join(replaysDir, name, "replay-events");
+      if (existsSync(events)) {
+        const target = resolve(publicReplaysDir, name, "events");
+        mkdirSync(target, { recursive: true });
+        cpSync(events, target, { recursive: true });
+      }
+      return { ...index, name };
+    });
 
   let gitCommit: string | null = null;
   try {
@@ -377,6 +453,140 @@ export function syncEvalsContent(contentDir: string): {
   copyFileSync(resolve(corpusDir, "RUBRIC.md"), resolve(evalsDir, "rubric.md"));
   copyFileSync(resolve(corpusDir, "SCORING.md"), resolve(evalsDir, "scoring.md"));
 
+  // The reasoner probe (S5): its two prompts with placeholders, the retraction
+  // context, the schemas, and the pinned questions per cluster.
+  writeFileSync(
+    resolve(evalsDir, "probe-prompts.json"),
+    JSON.stringify(
+      {
+        withGraph: buildWithGraphPrompt("<the question>", [
+          {
+            id: "<claim id>",
+            text: "<a claim's canonical text>",
+            status: "<status>",
+            confidence: 0.8,
+            credence: 0.7,
+            summary: "<the Steward's assessment summary>",
+            similarity: 0.9,
+          },
+        ]),
+        withoutGraph: buildWithoutGraphPrompt("<the question>"),
+        retraction: retractionContext({ title: "<source title>", url: "<source url>" }),
+        withGraphSchema: PROBE_WITH_GRAPH_SCHEMA,
+        withoutGraphSchema: PROBE_WITHOUT_GRAPH_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  mkdirSync(resolve(evalsDir, "probes"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "probes"))) {
+    copyFileSync(join(corpusDir, "probes", file), resolve(evalsDir, "probes", file));
+  }
+
+  // The canonical-form golden suite (S1 addendum): the fixture, the judge's
+  // prompt with placeholders, the §3 standard it pins, and its schema.
+  copyFileSync(join(corpusDir, "golden", "canonical-forms.json"), resolve(evalsDir, "canonical-forms.json"));
+  writeFileSync(
+    resolve(evalsDir, "canonical-judge.json"),
+    JSON.stringify(
+      {
+        prompt: buildCanonicalJudgePrompt({
+          excerpt: "<the source excerpt, verbatim>",
+          expected: "<the pinned canonical form>",
+          proposed: "<the form the Extractor proposed>",
+        }),
+        standard: CANONICAL_FORM_STANDARD,
+        schema: CANONICAL_JUDGE_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The adversarial suite (S4): the scenarios, the gambit list, the two
+  // judges' prompts and schemas, and the attacker's prompts (attack and
+  // benign variants) with its tools.
+  mkdirSync(resolve(evalsDir, "adversarial"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "adversarial"))) {
+    copyFileSync(join(corpusDir, "adversarial", file), resolve(evalsDir, "adversarial", file));
+  }
+  const placeholderAssessment = (n: string) => ({
+    status: `<status of assessment ${n}>`,
+    credence: 0.5,
+    confidence: 0.8,
+    summary: `<assessment ${n}, verbatim>`,
+    reasoning: `<reasoning trace ${n}, verbatim>`,
+  });
+  const brief = (mode: "attack" | "benign") => ({
+    mode,
+    target: { id: "<claim id>", text: "<the target claim's text>" },
+    direction: "down" as const,
+    campaign: null,
+    budget: 3,
+    tier: "standard",
+    episode: 1,
+    episodes: 5,
+  });
+  writeFileSync(
+    resolve(evalsDir, "adversarial-prompts.json"),
+    JSON.stringify(
+      {
+        gambits: GAMBIT_DESCRIPTIONS,
+        blindJudge: { prompt: blindJudgePrompt({ claimText: "<the claim's text>", first: placeholderAssessment("ONE"), second: placeholderAssessment("TWO") }), schema: BLIND_JUDGE_SCHEMA },
+        holisticJudge: {
+          prompt: holisticJudgePrompt({
+            cluster: "<cluster>",
+            description: "<the cluster's description>",
+            first: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [{ relation: "requires", text: "<a direct subclaim>", status: "<status>" }] }],
+            second: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [] }],
+          }),
+          schema: HOLISTIC_JUDGE_SCHEMA,
+        },
+        redteam: {
+          attackSystem: redteamSystemPrompt(brief("attack")),
+          benignSystem: redteamSystemPrompt(brief("benign")),
+          campaignSystem: redteamSystemPrompt({ ...brief("attack"), target: null, campaign: { cluster: "<cluster>", goal: "<the framing goal>" } }),
+          episode: redteamEpisodePrompt({ brief: brief("attack"), targetView: "<the target claim with its assessment, decomposition and dependents>", notes: "<the notes file from earlier episodes>" }),
+          feedback: redteamFeedbackPrompt({ brief: brief("attack"), before: "<the assessment before>", after: "<the assessment after>", decisions: "<each contribution's review decision and reasoning>", personaStanding: "<the account's reputation and flags>", notes: "<the notes file>" }),
+          tools: [...REDTEAM_ACTION_TOOLS, REDTEAM_NOTES_TOOL],
+        },
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The persona simulation (S8): the manifest, and the exact system prompt
+  // and opening message each persona is given, with the tools by kind.
+  const personaManifest = readJson<{ name?: string; description?: string; personas: PersonaEntry[] }>(join(corpusDir, "personas", "manifest.json"));
+  copyFileSync(join(corpusDir, "personas", "manifest.json"), resolve(evalsDir, "personas.json"));
+  const clusterDescription = (key: string) => clusters.find((c) => c.key === key)?.description ?? null;
+  writeFileSync(
+    resolve(evalsDir, "persona-prompts.json"),
+    JSON.stringify(
+      {
+        notice: SIMULATION_NOTICE,
+        tools: personaActionToolDefinitions(),
+        prompts: personaManifest.personas.map((entry) => {
+          const cluster = entry.clusters.find((c) => c !== "*") ?? clusters[0]?.key ?? "blackholes";
+          return {
+            key: entry.key,
+            cluster,
+            tools: personaToolNames(entry.kind),
+            system: buildPersonaSystemPrompt(entry, { cluster, clusterDescription: clusterDescription(cluster) }),
+            opening: buildPersonaOpeningMessage(entry),
+          };
+        }),
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The production monitors (S9): the document that carries every query verbatim.
+  copyFileSync(resolve(root, "docs", "monitors.md"), resolve(evalsDir, "monitors.md"));
+
   const evalsIndex = buildEvalsIndex({
     syncedAt: new Date().toISOString(),
     gitCommit,
@@ -391,6 +601,8 @@ export function syncEvalsContent(contentDir: string): {
     reviews,
     scorecardFiles,
     goldenRunFiles,
+    goldenCanonicalRunFiles,
+    replays,
     rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
   });
   writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
@@ -403,6 +615,7 @@ export function syncEvalsContent(contentDir: string): {
     goldenPairs: evalsIndex.golden.pairs,
     predictions: evalsIndex.predictions.count,
     contributions: contributions.length,
+    replays: replays.length,
     pinnedAgents: evalsIndex.pins.length,
     gitCommit,
   };
@@ -437,6 +650,6 @@ if (invokedDirectly) {
     `Synced the eval record into web/content/evals/: ${evals.scorecards} scorecard(s), ` +
       `${evals.goldenRuns} golden run(s), ${evals.reviews} review sheet(s), ` +
       `${evals.clusters} clusters, ${evals.goldenPairs} golden pairs, ${evals.predictions} predictions, ` +
-      `${evals.contributions} contribution scenario(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
+      `${evals.contributions} contribution scenario(s), ${evals.replays} replay(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
   );
 }

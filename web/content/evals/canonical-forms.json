@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "description": "Canonical-form golden cases (#334 S1, addendum of 2026-08-11). Each case pins a verbatim 2–4 sentence excerpt from a committed corpus post and the §3 canonical form its central proposition should take. The runner extracts from the excerpt with the real Extractor (EXTRACTION_MAX_CLAIMS 1–3), takes the proposal closest to the expected form by embedding, and asks a pair judge on JUDGE_MODEL three questions — same proposition? same direction? neutral and no invented specificity? — pass = all yes. Categories: direction (the source argues AGAINST the proposition; the form must still state the affirmative the discourse debates), neutrality (author/dialectical framing stripped), scope (population or condition kept), survive (the excerpt is already near-canonical and must not be rewritten in substance), hedging (the proposition, not the hedge), specificity (no parameters the author never committed to). Grading is a judgment on prose, so this is near-deterministic rather than exact-match; it exists to catch a prompt or model change that starts rewriting good wording.",
+  "cases": [
+    {
+      "id": "dir-01",
+      "category": "direction",
+      "sourceTitle": "blackholes/cern-lhc-safety",
+      "excerpt": "Even on the extremely conservative assumption that some microscopic black holes turned out to be stable, they would still pose no danger. A stable microscopic black hole would be far too small — on the order of the Planck length — to accrete ordinary matter at any meaningful rate.",
+      "expected": "Microscopic black holes produced at the LHC could grow to endanger the Earth.",
+      "note": "The safety case denies the proposition; the discourse poses it as the danger question ('will the LHC create a black hole that destroys the Earth?'). The form states that affirmative; CERN's 'no' is the instance stance. A proposal reading 'pose no danger' has been bent toward the author."
+    },
+    {
+      "id": "dir-02",
+      "category": "direction",
+      "sourceTitle": "eggs/harvard-nutrition-source",
+      "excerpt": "A large prospective study following nearly 40,000 men and over 80,000 women found that up to one egg per day is not associated with increased heart disease risk in healthy individuals. So for a generally healthy person, an egg a day appears to be fine.",
+      "expected": "Eating up to one egg a day raises heart disease risk in healthy adults.",
+      "note": "The debated question is whether eggs raise heart-disease risk; this source answers no. The form keeps the affirmative and the 'healthy adults' scope; the cohort sizes are evidence, not the proposition."
+    },
+    {
+      "id": "dir-03",
+      "category": "direction",
+      "sourceTitle": "lableak/zoonosis-market-case",
+      "excerpt": "To engineer SARS-CoV-2, the WIV would have needed a close progenitor. Its closest published virus, RaTG13, is far too distant (~4% divergent — decades of evolution) to be the backbone.",
+      "expected": "The Wuhan Institute of Virology possessed a virus close enough to serve as a progenitor of SARS-CoV-2.",
+      "note": "The zoonosis case denies the lab-capability crux; the crux is posed in the affirmative (did the WIV have a close-enough progenitor?). 'RaTG13 is too distant' is a reason, and a possible second claim, but not the proposition this passage turns on."
+    },
+    {
+      "id": "dir-04",
+      "category": "direction",
+      "sourceTitle": "lethalities/CoZhXrhpQxpy9xw9y (Christiano)",
+      "excerpt": "In particular, existing AI training strategies don’t need to handle a “drastic” distribution shift from low levels of intelligence to high levels of intelligence. There’s nothing in the foreseeable ways of building AI that would call for a big transfer like this, rather than continuously training as intelligence gradually increases.",
+      "expected": "Aligning AI requires generalizing across a drastic distribution shift from low to high intelligence.",
+      "note": "Christiano is denying lethality #12. The proposition as the debate poses it is Yudkowsky's affirmative; this instance denies it. A proposal that states 'does not need to handle' is the same node in the wrong direction."
+    },
+    {
+      "id": "dir-05",
+      "category": "direction",
+      "sourceTitle": "lethalities/CoZhXrhpQxpy9xw9y (Christiano)",
+      "excerpt": "Eliezer strongly expects sharp capability gains, based on a combination of arguments that I think don’t make sense and an analogy with primate evolution which I think is being applied poorly. We’ve talked about this before, and I still think Eliezer’s position is probably wrong and clearly overconfident.",
+      "expected": "AI capabilities will increase sharply rather than gradually.",
+      "note": "A denial wrapped in attribution ('Eliezer expects…', 'I think'). Both frames go; the form is the takeoff proposition in the direction the debate poses it, and the source denies."
+    },
+    {
+      "id": "neu-01",
+      "category": "neutrality",
+      "sourceTitle": "lableak/lab-leak-case",
+      "excerpt": "The pandemic began in Wuhan, home to the WIV, the largest collection of bat coronaviruses in Asia and a center for exactly the kind of research most likely to produce a SARS-like virus. Of all the cities in China — and all the rural locations near the bat caves where these viruses circulate naturally — the outbreak surfaced in the one city hosting the leading lab studying them. Proponents argue this proximity is a strong piece of evidence that conventional zoonosis struggles to match, since wildlife spillovers usually originate in rural areas far from major virology institutes.",
+      "expected": "The outbreak's origin in Wuhan, home of the WIV, is strong evidence for a laboratory origin of SARS-CoV-2.",
+      "note": "'Proponents argue' and the rhetorical 'of all the cities' setup are frame. The proposition is the geographic-coincidence argument, stated so a zoonosis advocate would accept it as what is in dispute."
+    },
+    {
+      "id": "neu-02",
+      "category": "neutrality",
+      "sourceTitle": "blackholes/plaga-2008",
+      "excerpt": "The white-dwarf and neutron-star arguments assume the dangerous black holes would be stopped and retained by those bodies. Plaga argues that in the metastable regime the relevant black holes would either not be retained, or would themselves evaporate before destroying the star, so the survival of white dwarfs and neutron stars does *not* constrain the metastable scenario.",
+      "expected": "The survival of white dwarfs and neutron stars excludes dangerous metastable black holes from collider collisions.",
+      "note": "Strip 'Plaga argues'. The proposition is the astrophysical bound's reach, which the safety consensus affirms and Plaga denies; the form states it in the consensus' affirmative direction, and this instance denies."
+    },
+    {
+      "id": "neu-03",
+      "category": "neutrality",
+      "sourceTitle": "lethalities/qJgz2YapqpFEDTLKn (DeepMind alignment team)",
+      "excerpt": "**#6 (pivotal act is necessary).** We think it's necessary to end the acute risk period, but don't agree with the \"pivotal act\" framing that assumes that the risk period is ended through a discrete unilateral action by a small number of actors.",
+      "expected": "Ending the acute AI risk period requires a discrete pivotal act by a small number of actors.",
+      "note": "'We think' and the list-item label are frame. The disputed proposition is the pivotal-act framing itself; the team denies it, Yudkowsky affirms it."
+    },
+    {
+      "id": "neu-04",
+      "category": "neutrality",
+      "sourceTitle": "eggs/wikipedia-egg-health",
+      "excerpt": "The food scientist Harold McGee argues that the cholesterol in the yolk is not the main problem, because saturated fat raises blood cholesterol much more than dietary cholesterol does.",
+      "expected": "Saturated fat raises blood cholesterol far more than dietary cholesterol does.",
+      "note": "A source attribution: the claim is what McGee asserts, stated plainly (extractor prompt: 'Smith asserts X' → X). The attribution is not itself disputed."
+    },
+    {
+      "id": "sco-01",
+      "category": "scope",
+      "sourceTitle": "eggs/harvard-nutrition-source",
+      "excerpt": "The evidence diverges sharply for people with diabetes. In the Nurses' Health Study and the Health Professionals Follow-up Study, heart disease risk was increased among men and women with diabetes who ate one or more eggs a day.",
+      "expected": "Daily egg consumption raises heart disease risk in people with diabetes.",
+      "note": "The population is the point: the general-population claim is a different node. Study names are evidence; 'one or more a day' is the daily scope."
+    },
+    {
+      "id": "sco-02",
+      "category": "scope",
+      "sourceTitle": "blackholes/cern-lhc-safety",
+      "excerpt": "According to the Standard Model of particle physics, the LHC's energies are far too low to create black holes at all. Some speculative theories that posit extra spatial dimensions suggest that microscopic black holes could be produced — at a rate of perhaps one per second.",
+      "expected": "The LHC can produce microscopic black holes only if extra spatial dimensions exist.",
+      "note": "The condition (extra dimensions) is the proposition's scope, not a hedge to strip. 'One per second' is a detail no side commits to."
+    },
+    {
+      "id": "sco-03",
+      "category": "scope",
+      "sourceTitle": "lableak/zoonosis-market-case",
+      "excerpt": "Molecular-clock analyses (Pekar et al. 2021/2022; Pipes et al.) give high odds that the two lineages reflect at least two separate introductions of an animal virus into humans at the market within days of each other — a pattern naturally explained by multiple infected animals, and hard to explain by a single laboratory escape.",
+      "expected": "The two early SARS-CoV-2 lineages reflect at least two separate introductions into humans at the Huanan market.",
+      "note": "'At least two' and 'at the market' are the proposition's scope, contested as such (the lab-leak side reads the lineages as a puzzle for a single market origin). The analyses cited are evidence."
+    },
+    {
+      "id": "sco-04",
+      "category": "scope",
+      "sourceTitle": "eggs/dietary-cholesterol-debate",
+      "excerpt": "They consistently show that adding eggs raises LDL relative to a no-egg diet — but raising a biomarker is not the same as causing disease, and the effect shrinks or vanishes when eggs replace other foods rather than being added on top.",
+      "expected": "Adding eggs to a diet raises LDL cholesterol relative to a no-egg diet.",
+      "note": "A biomarker claim with a specific comparison, not a disease claim. Generalizing to 'eggs raise cholesterol' or 'eggs cause heart disease' changes the proposition."
+    },
+    {
+      "id": "sur-01",
+      "category": "survive",
+      "sourceTitle": "lethalities/uMQ3cqWDPHhjtiesc (List of Lethalities, #8)",
+      "excerpt": "**The best and easiest-found-by-optimization algorithms for solving problems we want an AI to solve, readily generalize to problems we'd rather the AI not solve**; you can't build a system that only has the capability to drive red cars and not blue cars, because all red-car-driving algorithms generalize to the capability to drive blue cars.",
+      "expected": "The algorithms that best solve the problems we want an AI to solve readily generalize to problems we would rather it not solve.",
+      "note": "The bolded sentence is already the proposition in near-canonical form; the red/blue cars are illustration. A survive case: substance must not move."
+    },
+    {
+      "id": "sur-02",
+      "category": "survive",
+      "sourceTitle": "lethalities/GNhMPAWcfBCASy8e6 (Soares, sharp left turn)",
+      "excerpt": "On my model, one of the most central technical challenges of alignment—and one that every viable alignment plan will probably need to grapple with—is the issue that capabilities generalize better than alignment.",
+      "expected": "AI capabilities generalize further than alignment.",
+      "note": "The Extractor's own prompt lists 'Capabilities generalize further than alignment' as a good claim. The 'on my model' and 'most central challenge' framing goes; the proposition survives."
+    },
+    {
+      "id": "sur-03",
+      "category": "survive",
+      "sourceTitle": "lableak/origins-debate-overview",
+      "excerpt": "SARS-CoV-2 has a furin cleavage site absent from its closest known relatives, encoded partly with an arginine codon (CGG) that is uncommon in this viral family. One side sees a fingerprint of engineering; the other sees ordinary natural recombination and an insertion too \"suboptimal\" to be designed.",
+      "expected": "The furin cleavage site of SARS-CoV-2 is evidence of laboratory engineering.",
+      "note": "The overview already states the crux neutrally with both sides; the form is the debated motion. Composition details (CGG codon) are evidence either side cites."
+    },
+    {
+      "id": "sur-04",
+      "category": "survive",
+      "sourceTitle": "blackholes/giddings-mangano-2008",
+      "excerpt": "Combining the strong theoretical expectation that any micro black hole evaporates essentially instantly via Hawking radiation with the empirical, model-independent bound from the observed stability of white dwarfs and neutron stars, we find that there is no risk of any significance whatsoever from black holes that might be produced at the LHC. The astrophysical bound stands even if Hawking radiation is assumed not to operate at all.",
+      "expected": "The observed stability of white dwarfs and neutron stars excludes dangerous LHC black holes even without Hawking radiation.",
+      "note": "The load-bearing claim of the paper, stated in the paper's own affirmative direction; 'even without Hawking radiation' is the proposition's strength as the authors commit to it, not invented specificity."
+    },
+    {
+      "id": "sur-05",
+      "category": "survive",
+      "sourceTitle": "lethalities/CoZhXrhpQxpy9xw9y (Christiano, agreements)",
+      "excerpt": "Powerful AI systems have a good chance of deliberately and irreversibly disempowering humanity. This is a much more likely failure mode than humanity killing ourselves with destructive physical technologies.",
+      "expected": "Powerful AI systems have a substantial chance of deliberately and irreversibly disempowering humanity.",
+      "note": "Already canonical. A proposal that sharpens 'good chance' into a probability, or folds in the comparison to physical technologies, has rewritten it."
+    },
+    {
+      "id": "hed-01",
+      "category": "hedging",
+      "sourceTitle": "lableak/defuse-proposal",
+      "excerpt": "The DEFUSE proposal shows that, eighteen months before the pandemic, researchers at exactly the institution at the outbreak's location had proposed to build viruses with precisely the features SARS-CoV-2 turned out to have. That coincidence of capability, intent, and location is the strongest form of the lab-leak argument: not proof, but a documented motive and means.",
+      "expected": "The 2018 DEFUSE proposal documents an intent to engineer the features that distinguish SARS-CoV-2.",
+      "note": "'Not proof, but…' is the author's hedge and belongs on the instance. The proposition is what the proposal documents; the stronger 'proves a lab origin' would overstate it."
+    },
+    {
+      "id": "hed-02",
+      "category": "hedging",
+      "sourceTitle": "blackholes/wikipedia-safety-overview",
+      "excerpt": "The LHC Safety Assessment Group (LSAG) notes that \"there is broad consensus among physicists on the reality of Hawking radiation, but so far no experiment has had the sensitivity required to find direct evidence for it.\"",
+      "expected": "Black holes emit Hawking radiation.",
+      "note": "The proposition is the physics, not the sociology: 'there is consensus that X' is a hedge around X. A proposal about consensus states a different proposition — the miss this case exists to catch."
+    },
+    {
+      "id": "hed-03",
+      "category": "hedging",
+      "sourceTitle": "eggs/dietary-cholesterol-debate",
+      "excerpt": "In the 2015–2020 Dietary Guidelines for Americans, that numerical limit was dropped. The advisory committee concluded that \"cholesterol is not a nutrient of concern for overconsumption,\" reflecting evidence that dietary cholesterol has a weak and variable effect on blood cholesterol for most people.",
+      "expected": "Dietary cholesterol has only a weak effect on blood cholesterol in most people.",
+      "note": "The guideline change is the event; the proposition it reflects is the weak-effect claim. 'The committee concluded' is a hedge, not the claim."
+    },
+    {
+      "id": "hed-04",
+      "category": "hedging",
+      "sourceTitle": "blackholes/wikipedia-safety-overview",
+      "excerpt": "Physicists noted they cannot demonstrate a zero probability for catastrophic events — they can only calculate upper limits. Martin Rees indicated the risk of a RHIC doomsday scenario as being at most a 1 in 50 million chance.",
+      "expected": "The probability of a catastrophic outcome from collider experiments cannot be shown to be zero, only bounded.",
+      "note": "The attribution to 'physicists' and Rees's illustrative number are frame; the proposition is that collider risk is bounded above, not excluded."
+    },
+    {
+      "id": "spe-01",
+      "category": "specificity",
+      "sourceTitle": "lethalities/uMQ3cqWDPHhjtiesc (List of Lethalities, #4)",
+      "excerpt": "**We can't just \"decide not to build AGI\"** because GPUs are everywhere, and knowledge of algorithms is constantly being improved and published; 2 years after the leading actor has the capability to destroy the world, 5 other actors will have the capability to destroy the world.",
+      "expected": "Humanity cannot coordinate to refrain from building AGI.",
+      "note": "'2 years' and '5 other actors' are illustrative, not a commitment; a form that carries them has been sharpened past what the author debates."
+    },
+    {
+      "id": "spe-02",
+      "category": "specificity",
+      "sourceTitle": "lableak/lab-leak-case",
+      "excerpt": "For SARS-CoV-2, despite the testing of tens of thousands of animals, no infected intermediate host has ever been found. The environmental market samples show viral RNA co-located with animal stalls but do not establish that an infected animal — rather than an infected human vendor or shopper — deposited it. The absence of a found animal host, years on, is offered as evidence against the market-spillover story.",
+      "expected": "The failure to find an infected intermediate host is evidence against a market spillover origin of SARS-CoV-2.",
+      "note": "'Tens of thousands of animals' and 'years on' quantify the evidence; the proposition is the inference from absence. Do not import the numbers."
+    },
+    {
+      "id": "spe-03",
+      "category": "specificity",
+      "sourceTitle": "eggs/dietary-cholesterol-debate",
+      "excerpt": "People who eat many eggs may differ systematically from those who don't — in smoking, exercise, overall diet, or socioeconomic status. A classic pattern is that, in some populations and eras, frequent egg eaters also ate more processed meat and fewer vegetables, so the egg \"effect\" may be the effect of an unhealthy dietary pattern.",
+      "expected": "Observed associations between egg consumption and heart disease are largely explained by confounding.",
+      "note": "The listed confounders are examples; a form naming 'processed meat' or 'socioeconomic status' has committed the author to a mechanism the passage only illustrates."
+    },
+    {
+      "id": "spe-04",
+      "category": "specificity",
+      "sourceTitle": "blackholes/cern-lhc-safety",
+      "excerpt": "But the probability of producing a strangelet *decreases* as collision energy increases, so the high-energy LHC is even less likely to produce one than lower-energy machines that ran for years without incident.",
+      "expected": "The probability of producing a strangelet decreases as collision energy increases.",
+      "note": "The general proposition; the LHC-vs-predecessors comparison is its application. A form pinning energies or machines has added specificity."
+    }
+  ]
+}

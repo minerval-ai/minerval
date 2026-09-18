@@ -75,8 +75,52 @@ export async function complete(options: {
     system: options.system,
     output: result.content,
     stopReason: result.stopReason,
+    maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+    effort: options.effort,
+    temperature: options.temperature,
   });
   return result;
+}
+
+/**
+ * The setup a model was given, recorded verbatim as one "prompt" step at the
+ * start of every tool-use loop and before every single-shot completion (the
+ * replay's "inspect all the way down" requirement): the full system prompt
+ * (string or cached blocks — the constitution, the role, the domain skills),
+ * the initial messages, the tool descriptors (name, description, input
+ * schema for client tools; server tool descriptors as given), and the
+ * sampling parameters. Fire-and-forget through recordAgentStep, like every
+ * other step: a prompt step never throws or slows the loop, and nothing is
+ * recorded without a trace on the context.
+ */
+function recordPromptStep(step: {
+  model: string;
+  system?: SystemPrompt;
+  initialMessages: MessageParam[];
+  tools?: ToolUnion[];
+  maxTokens?: number;
+  effort?: EffortLevel;
+  temperature?: number;
+  schemaName?: string;
+  schema?: Record<string, unknown>;
+}): void {
+  const trace = getUsageContext().trace;
+  if (!trace) return;
+  const tools = (step.tools ?? []).map((t) =>
+    "input_schema" in t
+      ? { name: t.name, description: t.description ?? null, input_schema: t.input_schema }
+      : t
+  );
+  recordAgentStep(trace, "prompt", {
+    model: step.model,
+    effort: step.effort ?? null,
+    maxTokens: step.maxTokens ?? null,
+    temperature: step.temperature ?? null,
+    system: step.system ?? null,
+    initialMessages: step.initialMessages,
+    tools,
+    ...(step.schemaName ? { schemaName: step.schemaName, schema: step.schema ?? null } : {}),
+  });
 }
 
 /**
@@ -92,11 +136,27 @@ function recordCompletionStep(step: {
   messages: MessageParam[];
   system?: SystemPrompt;
   schemaName?: string;
+  schema?: Record<string, unknown>;
   output: unknown;
   stopReason?: string | null;
+  maxTokens?: number;
+  effort?: EffortLevel;
+  temperature?: number;
 }): void {
   const trace = getUsageContext().trace;
   if (!trace) return;
+  // The prompt first, whole; the completion step keeps its shape (system
+  // prompt by size) for the readers that predate the prompt step.
+  recordPromptStep({
+    model: step.model,
+    system: step.system,
+    initialMessages: step.messages,
+    maxTokens: step.maxTokens,
+    effort: step.effort,
+    temperature: step.temperature,
+    schemaName: step.schemaName,
+    schema: step.schema,
+  });
   // The system prompt may be several cached blocks (constitution-plus-role,
   // then one per domain skill); the size recorded is the total.
   const systemChars =
@@ -164,7 +224,11 @@ export async function completeStructured<T>(options: {
     messages: options.messages,
     system: options.system,
     schemaName: options.schemaName,
+    schema: options.schema,
     output: result,
+    maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+    effort: options.effort,
+    temperature: options.temperature,
   });
   return result;
 }
@@ -305,6 +369,17 @@ export async function toolUseLoop(options: {
   // loop is where the transcript exists, so it's where steps are recorded
   // (#334 L0). Absent handle = record nothing, zero overhead.
   const trace = getUsageContext().trace;
+  if (trace) {
+    recordPromptStep({
+      model: options.model ?? DEFAULT_MODEL,
+      system: options.system,
+      initialMessages: options.initialMessages,
+      tools: options.tools,
+      maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+      effort: options.effort,
+      temperature: options.temperature,
+    });
+  }
   // Container-backed server tools (web_search_20260209 runs via code execution)
   // mint a container on first use that MUST be passed back on every later turn of
   // the loop, or the API rejects the request. Thread the latest id through.
@@ -577,6 +652,17 @@ export async function longRunToolLoop(options: {
     cacheCreationTokens: 0,
   };
   const trace = getUsageContext().trace;
+  if (trace) {
+    recordPromptStep({
+      model,
+      system: options.system,
+      initialMessages: options.initialMessages,
+      tools: options.tools,
+      maxTokens: options.maxTokens,
+      effort: options.effort,
+      temperature: options.temperature,
+    });
+  }
   let containerId: string | undefined;
   let turns = 0;
   let lastResult: ToolCompletionResult | null = null;
