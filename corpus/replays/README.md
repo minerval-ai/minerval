@@ -12,9 +12,17 @@ Every driver that runs the real agents writes one at the end of its run
 (`runs/<run>/replay.json`), built from the trace substrate (#334 L0:
 `agent_runs`, `agent_steps`, `enqueue_events`, `llm_usage`) and the graph
 tables. Nothing in a replay is authored by hand; where attribution is a
-heuristic the record says so. Commit the ones worth showing here as
-`corpus/replays/<name>.json`, run `npx tsx scripts/sync-frontend-content.ts`,
-and the public evals page plays them at `/docs/evals/replays/<name>`.
+heuristic the record says so. Commit the ones worth showing here as a directory,
+`corpus/replays/<name>/` holding `replay.json` (the index: arms, events with
+a one-line gist and the size of each step, deltas, matching, final graph)
+and `replay-events/<arm>/<seq>.json` (the full event: every step untrimmed,
+including the "prompt" step with the system prompt, the initial messages
+and the tool definitions the agent was given). Run
+`npx tsx scripts/sync-frontend-content.ts`: the index lands in
+`web/content/evals/replays/<name>.json`, the event files under
+`web/public/evals/replays/<name>/events/`, and the public evals page plays
+the recording at `/docs/evals/replays/<name>`, fetching an event's full
+transcript when the reader opens it.
 
 ```bash
 npm run corpus:replay -- db --since=<iso> --name=<name>      # from the corpus DB, one run window

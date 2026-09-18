@@ -21,6 +21,7 @@ import {
   writeFileSync,
   mkdirSync,
   copyFileSync,
+  cpSync,
   readFileSync,
   readdirSync,
   existsSync,
@@ -32,7 +33,13 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { execSync } from "child_process";
 
 import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
-import { buildEvalsIndex, modelLabel, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import {
+  buildEvalsIndex,
+  modelLabel,
+  type ClusterInput,
+  type ContributionScenarioInput,
+  type ReplayIndexInput,
+} from "./evals-content.js";
 import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
 import { MODELS, OPENROUTER_MODELS } from "../src/llm/models.js";
 
@@ -280,6 +287,7 @@ export function syncEvalsContent(contentDir: string): {
   goldenPairs: number;
   predictions: number;
   contributions: number;
+  replays: number;
   pinnedAgents: number;
   gitCommit: string | null;
 } {
@@ -345,6 +353,31 @@ export function syncEvalsContent(contentDir: string): {
     return readJson<ContributionScenarioInput>(join(corpusDir, "contributions", file));
   });
 
+  // Replays (corpus/replays/README.md): one directory per committed recording,
+  // holding replay.json (the index the page renders) and replay-events/
+  // (the full per-event detail, one file per event). The index goes to
+  // web/content/evals/replays/<name>.json; the detail files go under
+  // web/public/evals/replays/<name>/events/... so the player fetches an
+  // event's untrimmed transcript only when the reader opens it.
+  const replaysDir = join(corpusDir, "replays");
+  const publicReplaysDir = resolve(contentDir, "..", "public", "evals", "replays");
+  rmSync(publicReplaysDir, { recursive: true, force: true });
+  mkdirSync(resolve(evalsDir, "replays"), { recursive: true });
+  const replays: ReplayIndexInput[] = (existsSync(replaysDir) ? readdirSync(replaysDir) : [])
+    .filter((d) => statSync(join(replaysDir, d)).isDirectory() && existsSync(join(replaysDir, d, "replay.json")))
+    .sort()
+    .map((name) => {
+      const index = readJson<ReplayIndexInput>(join(replaysDir, name, "replay.json"));
+      copyFileSync(join(replaysDir, name, "replay.json"), resolve(evalsDir, "replays", `${name}.json`));
+      const events = join(replaysDir, name, "replay-events");
+      if (existsSync(events)) {
+        const target = resolve(publicReplaysDir, name, "events");
+        mkdirSync(target, { recursive: true });
+        cpSync(events, target, { recursive: true });
+      }
+      return { ...index, name };
+    });
+
   let gitCommit: string | null = null;
   try {
     gitCommit = execSync("git rev-parse --short HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
@@ -391,6 +424,7 @@ export function syncEvalsContent(contentDir: string): {
     reviews,
     scorecardFiles,
     goldenRunFiles,
+    replays,
     rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
   });
   writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
@@ -403,6 +437,7 @@ export function syncEvalsContent(contentDir: string): {
     goldenPairs: evalsIndex.golden.pairs,
     predictions: evalsIndex.predictions.count,
     contributions: contributions.length,
+    replays: replays.length,
     pinnedAgents: evalsIndex.pins.length,
     gitCommit,
   };
@@ -437,6 +472,6 @@ if (invokedDirectly) {
     `Synced the eval record into web/content/evals/: ${evals.scorecards} scorecard(s), ` +
       `${evals.goldenRuns} golden run(s), ${evals.reviews} review sheet(s), ` +
       `${evals.clusters} clusters, ${evals.goldenPairs} golden pairs, ${evals.predictions} predictions, ` +
-      `${evals.contributions} contribution scenario(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
+      `${evals.contributions} contribution scenario(s), ${evals.replays} replay(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
   );
 }
