@@ -54,6 +54,13 @@ export interface AgentTrace {
   runId: string;
   /** Next step sequence number; mutated by recordAgentStep. */
   seq: { n: number };
+  /**
+   * Settles once the agent_runs row is in (or its insert failed). Step
+   * writes wait on it: the first step (the prompt) is recorded the moment a
+   * loop starts, and without this it raced the run row and lost to the
+   * foreign key.
+   */
+  ready: Promise<void>;
 }
 
 export interface RunAttribution {
@@ -122,7 +129,7 @@ export function startAgentRun(
 ): AgentTrace | null {
   if (!traceable(agent)) return null;
   const runId = randomUUID();
-  void (async () => {
+  const ready = (async () => {
     try {
       await getDb().insert(agentRuns).values({
         id: runId,
@@ -139,7 +146,7 @@ export function startAgentRun(
       );
     }
   })();
-  return { runId, seq: { n: 0 } };
+  return { runId, seq: { n: 0 }, ready };
 }
 
 /**
@@ -154,6 +161,7 @@ export function recordAgentRunSkills(
 ): void {
   void (async () => {
     try {
+      await trace.ready;
       await getDb()
         .update(agentRuns)
         .set({ skills: [...skills] })
@@ -175,6 +183,7 @@ export function finishAgentRun(
 ): void {
   void (async () => {
     try {
+      await trace.ready;
       await getDb()
         .update(agentRuns)
         .set({
@@ -205,6 +214,7 @@ export function recordAgentStep(
   const seq = trace.seq.n++;
   void (async () => {
     try {
+      await trace.ready;
       await getDb().insert(agentSteps).values({
         runId: trace.runId,
         seq,

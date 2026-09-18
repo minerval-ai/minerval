@@ -64,7 +64,7 @@ beforeEach(() => {
 describe("single-shot completion step recording", () => {
   it("records a structured completion with its prompt, schema and output", async () => {
     mocks.completeStructured.mockResolvedValueOnce({ items: [{ text: "a claim" }] });
-    const trace = { runId: "run-2", seq: { n: 0 } };
+    const trace = { runId: "run-2", seq: { n: 0 }, ready: Promise.resolve() };
     const messages = [{ role: "user" as const, content: "extract" }];
 
     const out = await runWithUsageContext({ trace }, () =>
@@ -106,7 +106,7 @@ describe("single-shot completion step recording", () => {
 
   it("records a plain completion with its text and stop reason", async () => {
     mocks.complete.mockResolvedValueOnce({ content: "hello", model: "m", usage, stopReason: "end_turn" });
-    const trace = { runId: "run-3", seq: { n: 0 } };
+    const trace = { runId: "run-3", seq: { n: 0 }, ready: Promise.resolve() };
     await runWithUsageContext({ trace }, () =>
       complete({ messages: [{ role: "user", content: "hi" }], model: "m" })
     );
@@ -128,7 +128,7 @@ describe("toolUseLoop step recording", () => {
     mocks.completeWithTools
       .mockResolvedValueOnce(toolTurn)
       .mockResolvedValueOnce(finalTurn);
-    const trace = { runId: "run-1", seq: { n: 0 } };
+    const trace = { runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() };
 
     const tools = [
       { name: "search", description: "find things", input_schema: { type: "object" as const } },
