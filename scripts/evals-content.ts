@@ -146,7 +146,8 @@ export interface EvalsIndex {
     title: string;
     cluster: string | null;
     generatedAt: string;
-    arms: number;
+    /** Arm labels, in order. */
+    arms: string[];
     events: number;
     models: string[];
     costMicroUsd: number | null;
@@ -313,7 +314,7 @@ export function buildEvalsIndex(input: EvalsIndexInput): EvalsIndex {
         title: r.title,
         cluster: r.cluster,
         generatedAt: r.generatedAt,
-        arms: r.arms.length,
+        arms: r.arms.map((a) => a.label || a.key),
         events: r.arms.reduce((n, a) => n + a.events.length, 0),
         models: Array.from(
           new Set(r.arms.flatMap((a) => Object.values(a.fingerprint?.models ?? {}).filter((m): m is string => Boolean(m))))

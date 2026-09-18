@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T17:42:42.330Z",
-  "gitCommit": "91c17e0",
+  "syncedAt": "2026-09-18T18:47:48.269Z",
+  "gitCommit": "2b6d590",
   "pins": [
     {
       "agent": "steward",
@@ -376,7 +376,23 @@
   "goldenCanonicalRuns": [
     "2026-09-18T17-42-30-813Z.json"
   ],
-  "replays": [],
+  "replays": [
+    {
+      "name": "blackholes-20260918-1709",
+      "kind": "ingest",
+      "title": "blackholes: 1 post on z-ai/glm-5.3-flash",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T18:46:15.825Z",
+      "arms": [
+        "blackholes"
+      ],
+      "events": 21,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 292883
+    }
+  ],
   "rubric": [
     {
       "letter": "A",
