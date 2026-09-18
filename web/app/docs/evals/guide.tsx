@@ -171,7 +171,6 @@ function runTags(d: EvalsData): Tag[] {
 // ---- the topics --------------------------------------------------------------
 
 export const TOPICS: Topic[] = [
-  ...MORE_TOPICS,
   // ------------------------------------------------------------------ graph
   {
     slug: "corpus-runs",
@@ -1134,6 +1133,8 @@ npm run predictions -- seed --corpus --drain`}</Cmd>
     ],
   },
 ];
+
+TOPICS.push(...MORE_TOPICS);
 
 export function topicBySlug(slug: string): Topic | undefined {
   return TOPICS.find((t) => t.slug === slug);
