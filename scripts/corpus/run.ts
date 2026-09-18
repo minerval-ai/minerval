@@ -39,6 +39,7 @@ import { eq } from "drizzle-orm";
 import {
   argFlag,
   assertCorpusDb,
+  CORPUS_DATABASE_URL,
   CORPUS_PROFILE,
   CORPUS_SWAP,
   gitCommit,
@@ -66,6 +67,8 @@ import { resetCorpusDb } from "./reset.js";
 import { generateReport } from "./report.js";
 import { scoreRun, type RunFingerprint } from "./score.js";
 import { observedModels } from "./fingerprint.js";
+import { assembleReplay, collectArm, fingerprintFromRecord, replayName, writeReplay } from "./replay.js";
+import { dbNameOf } from "./snapshot-core.js";
 
 function formatActivity(stats: DrainStats): string {
   const acts = Object.entries(stats.processed).map(([q, n]) => `${q} ${n}`);
@@ -453,6 +456,39 @@ async function main(): Promise<void> {
   console.log(`\nReport: ${reportPath}`);
   console.log(`Trace:  ${join(runDir, "trace.jsonl")} (${trace.length} agent messages)`);
   console.log("Read the report alongside corpus/RUBRIC.md.");
+
+  // The recording of the run (#334, the evals page's "show me" half): every
+  // agent run in the window with its steps, the graph deltas credited to
+  // them, written as replay.json + replay-events/ in the run dir.
+  // Best-effort: a replay failure never fails the run that produced it.
+  try {
+    const models = [...new Set(Object.values(fingerprint.models).filter(Boolean))].join(", ");
+    const arm = await collectArm({
+      since: RUN_STARTED_AT,
+      key: "run",
+      label: cluster,
+      variation: null,
+      fingerprint: fingerprintFromRecord(finished),
+      database: dbNameOf(CORPUS_DATABASE_URL),
+      capped: anyCapped,
+      sourceKeys: Object.fromEntries(posts.map((p) => [postUrl(p), p.id])),
+    });
+    const replay = assembleReplay({
+      kind: "ingest",
+      name: replayName(cluster, RUN_STARTED_AT.toISOString()),
+      title: `${cluster}: ${succeeded} post${succeeded === 1 ? "" : "s"} on ${models}`,
+      cluster,
+      about:
+        `${succeeded} post${succeeded === 1 ? "" : "s"} of the ${cluster} cluster submitted one by one and drained to quiescence: ` +
+        "each source landing, the Extractor listing its claims, the Matcher searching the graph and deciding identity for each, " +
+        "and each claim's Steward structuring and assessing it, with the graph rebuilt from those decisions as they land.",
+      arms: [arm],
+      evalRunId: registryId,
+    });
+    console.log(`Replay: ${writeReplay(runDir, replay)}`);
+  } catch (err) {
+    console.warn("[run] replay export failed (report and trace are intact):", err instanceof Error ? err.message : err);
+  }
 
   // Optional scored scorecard (#99). --score emits structural metrics + a
   // bounded LLM-judge sample into the same run dir; --score=N sets the sample

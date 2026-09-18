@@ -29,7 +29,8 @@ import "./lib.js"; // must be first: pins DATABASE_URL to the corpus DB
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { argFlag, assertCorpusDb, CORPUS_DATABASE_URL, CORPUS_PROFILE, gitCommit, hasFlag, positional, RUNS_ROOT } from "./lib.js";
-import { latestRunRecord, runChild } from "./arms.js";
+import { emitTwoArmReplay, latestRunRecord, runChild } from "./arms.js";
+import { replayName } from "./replay.js";
 import { closeDb, getDb } from "../../src/db/client.js";
 import { evalRuns } from "../../src/db/schema.js";
 import { loadConfig } from "../../src/config.js";
@@ -44,7 +45,7 @@ import {
   type ArmRecord,
   type SwappableAgent,
 } from "./swap-lib.js";
-import type { AgreementReport } from "./graph-agreement.js";
+import type { AgreementReport, MatchedPair } from "./graph-agreement.js";
 
 async function main(): Promise<void> {
   assertCorpusDb();
@@ -108,7 +109,7 @@ async function main(): Promise<void> {
     [`snap:${snapA}`, `snap:${names.b}`, `--out=${agreementPath}`, ...(hasFlag("confirm") ? ["--confirm"] : [])],
     {}
   );
-  const agreement = JSON.parse(readFileSync(agreementPath, "utf8")) as { report: AgreementReport };
+  const agreement = JSON.parse(readFileSync(agreementPath, "utf8")) as { report: AgreementReport; pairs?: MatchedPair[] };
   const summary = summarizeSwap({ cluster, agent, swapModel: model, armA, armB, agreement: agreement.report });
 
   const f = (x: number | null) => (x === null ? "n/a" : x.toFixed(3));
@@ -120,6 +121,21 @@ async function main(): Promise<void> {
 
   const record = { generatedAt: new Date().toISOString(), summary, arms: { a: armA, b: armB }, snapshots: { a: snapA, b: names.b }, agreement };
   writeFileSync(join(outDir, "swap.json"), JSON.stringify(record, null, 2));
+
+  // The recording of both arms, side by side (best-effort; never fails the run).
+  await emitTwoArmReplay({
+    kind: "swap",
+    name: replayName(`swap-${agent}-${cluster}`, stamp),
+    title: `${cluster}: ${agent} ${summary.referenceModel} → ${summary.swapModel}`,
+    cluster,
+    about: `The same posts ingested twice, with the ${agent} on ${summary.referenceModel} in arm A and on ${summary.swapModel} in arm B: two graphs built side by side, with the claims the agreement metric paired linked across them. Where they differ is what the swapped model did differently.`,
+    outDir,
+    arms: { a: armA, b: armB },
+    snapshots: { a: snapA, b: names.b },
+    variation: { a: baseline ? `baseline snapshot ${baseline}` : `${agent} on ${summary.referenceModel}`, b: `${agent} on ${model}` },
+    agreement,
+    summary: summary as unknown as Record<string, unknown>,
+  });
   try {
     const cfg = loadConfig();
     await getDb().insert(evalRuns).values({

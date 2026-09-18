@@ -99,8 +99,19 @@ export type ReplayStepKind =
   | "tool_call"     // a tool the agent called
   | "tool_result"   // what it got back
   | "decision"      // the load-bearing submission (match decision, assessment, review, ruling)
-  | "completion";   // single-shot output (Extractor, judge)
+  | "completion"    // single-shot output (Extractor, judge)
+  | "prompt";       // the setup the model was given: system prompt, initial messages, tools
 
+/**
+ * Nothing in a step is paraphrased or cut by the exporter. `text` is a
+ * one-line gist the exporter derives for the timeline; `input` / `output` /
+ * `full` carry the verbatim content (a tool's input and output, a thought's
+ * whole text, the prompt step's whole setup). `truncated` is set only when
+ * the trace itself capped the content (trace-service's per-step cap), never
+ * by the replay. The index layout (replay.json) drops the verbatim fields
+ * and keeps `sizes`; the detail layout (replay-events/<arm>/<seq>.json)
+ * carries everything.
+ */
 export interface ReplayStep {
   seq: number;
   kind: ReplayStepKind;
@@ -108,10 +119,38 @@ export interface ReplayStep {
   /** Short text for the reader: the thought, the tool name + gist, the result gist. */
   text: string;
   tool?: string;
-  /** Trimmed JSON of the tool input / output; `truncated` when cut. */
+  /** Verbatim tool input / output (detail layout only). */
   input?: unknown;
   output?: unknown;
+  /** Verbatim content that is neither an input nor an output: a thought's whole text, a prompt step's setup, a completion's record (detail layout only). */
+  full?: unknown;
+  /** Set only when the trace itself capped this step's content. */
   truncated?: boolean;
+  /** Character sizes of the verbatim fields, so the index can say "12,400 chars, open" (index layout). */
+  sizes?: { input?: number; output?: number; full?: number };
+}
+
+/**
+ * Information movement, per event: what the agent read (each tool result,
+ * with the claim and source ids its output mentioned that the arm knows)
+ * and what it wrote (its deltas, by op and id), so the player can draw the
+ * flow between agents without re-deriving it from the steps.
+ */
+export interface ReplayDataFlow {
+  reads: Array<{ tool: string; claimIds: string[]; sourceIds: string[] }>;
+  writes: Array<{ op: ReplayDelta["op"]; claimId?: string | null; sourceId?: string | null; contributionId?: string | null }>;
+}
+
+/** One distinct system prompt an arm's agents were given, by content hash. */
+export interface ReplayPromptUse {
+  sha256: string;
+  chars: number;
+  agents: string[];
+  /** Runs that were given this prompt. */
+  count: number;
+  /** Where the full text is: the first event and step (a "prompt" step) carrying it. */
+  firstEventSeq: number;
+  firstStepSeq: number;
 }
 
 export type ReplayDelta =
@@ -155,6 +194,9 @@ export interface ReplayEvent {
   durationMs: number | null;
   /** "run-window" when deltas were credited by time window + claim; "exact" when a tool call names them. */
   attribution: "exact" | "run-window" | "harness";
+  /** Index layout: where the full event lives, relative to the replay-events directory ("a/12.json"). */
+  detailPath?: string;
+  dataFlow?: ReplayDataFlow;
 }
 
 export interface ReplayArm {
@@ -173,6 +215,8 @@ export interface ReplayArm {
   capped: boolean;
   /** Where the arm's graph lives, for whoever wants to dig (snapshot name / db). */
   database: string | null;
+  /** The distinct system prompts the arm's agents were given, each once. */
+  promptsUsed?: ReplayPromptUse[];
 }
 
 /** The pairing the agreement metric found between two arms' claims. */

@@ -414,6 +414,7 @@ describe("longRunToolLoop", () => {
     );
 
     expect(mocks.recordAgentStep.mock.calls.map((c) => c[1])).toEqual([
+      "prompt",
       "assistant",
       "tool_results",
       "assistant",

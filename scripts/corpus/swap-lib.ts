@@ -91,6 +91,10 @@ export interface ArmRecord {
   profile?: string | null;
   gitCommit?: string | null;
   pipelineEpoch?: string;
+  /** The rest of the run's fingerprint (run.json carries them; the replay records them). */
+  swap?: { agent: string; model: string } | null;
+  order?: string | null;
+  caps?: Record<string, number>;
 }
 
 export interface SwapSummary {
