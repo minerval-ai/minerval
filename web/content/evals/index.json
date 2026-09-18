@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T21:34:17.820Z",
-  "gitCommit": "a75e2e0",
+  "syncedAt": "2026-09-18T23:00:46.325Z",
+  "gitCommit": "6a6d40b",
   "pins": [
     {
       "agent": "steward",
@@ -381,6 +381,22 @@
     "2026-09-18T17-42-30-813Z.json"
   ],
   "replays": [
+    {
+      "name": "adversarial-blackholes-2026-09-18T18-48-41-952Z",
+      "kind": "adversarial",
+      "title": "Adversarial: blackholes",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T23:00:07.393Z",
+      "arms": [
+        "astrophysical · con (down)",
+        "astrophysical · benign (down)"
+      ],
+      "events": 76,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 841495
+    },
     {
       "name": "blackholes-2posts-20260918-1620",
       "kind": "ingest",
