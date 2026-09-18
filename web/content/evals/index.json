@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T20:30:29.093Z",
-  "gitCommit": "e9189e8",
+  "syncedAt": "2026-09-18T20:45:15.653Z",
+  "gitCommit": "4725520",
   "pins": [
     {
       "agent": "steward",
@@ -377,6 +377,22 @@
     "2026-09-18T17-42-30-813Z.json"
   ],
   "replays": [
+    {
+      "name": "dup-flood-blackholes-20260918-1848",
+      "kind": "property",
+      "title": "blackholes: dup-flood",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T20:44:37.422Z",
+      "arms": [
+        "blackholes (a)",
+        "blackholes (b)"
+      ],
+      "events": 53,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 628982
+    },
     {
       "name": "personas-blackholes-2026-09-18T20-29-56-643Z",
       "kind": "personas",
