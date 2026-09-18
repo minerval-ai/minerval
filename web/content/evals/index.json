@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-18T20:45:15.653Z",
-  "gitCommit": "4725520",
+  "syncedAt": "2026-09-18T21:34:17.820Z",
+  "gitCommit": "a75e2e0",
   "pins": [
     {
       "agent": "steward",
@@ -339,6 +339,10 @@
       "file": "2026-09-18T14-31-11-782Z.json"
     },
     {
+      "cluster": "blackholes",
+      "file": "2026-09-18T21-34-02-354Z.json"
+    },
+    {
       "cluster": "eggs",
       "file": "2026-09-11T23-22-27-296Z.json"
     },
@@ -377,6 +381,21 @@
     "2026-09-18T17-42-30-813Z.json"
   ],
   "replays": [
+    {
+      "name": "blackholes-2posts-20260918-1620",
+      "kind": "ingest",
+      "title": "blackholes: 25 source(s) on z-ai/glm-5.3-flash",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T21:34:01.294Z",
+      "arms": [
+        "blackholes"
+      ],
+      "events": 62,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 795508
+    },
     {
       "name": "dup-flood-blackholes-20260918-1848",
       "kind": "property",
