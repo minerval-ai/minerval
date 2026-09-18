@@ -41,6 +41,8 @@
     "models:discover": "tsx scripts/models-discover.ts",
     "monitors": "tsx scripts/monitors.ts",
     "corpus:personas": "tsx scripts/corpus/personas.ts",
+    "corpus:adversarial": "tsx scripts/corpus/adversarial.ts",
+    "corpus:redteam": "tsx scripts/corpus/redteam.ts",
     "predictions": "tsx scripts/predictions.ts",
     "seed:platform-mandates": "tsx scripts/seed-platform-mandates.ts",
     "tags": "tsx scripts/tags.ts",

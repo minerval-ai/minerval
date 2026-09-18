@@ -2,13 +2,10 @@
  * Replay emission for the adversarial drivers (S4), behind a shim.
  *
  * The replay module (scripts/corpus/replay.ts: collectArm / assembleReplay /
- * writeReplay over scripts/corpus/replay-types.ts) is being built in
- * parallel with this suite and may not exist in a given checkout, so this
- * file loads it dynamically, declares the slice of its contract the drivers
- * need locally (structurally identical to replay-types.ts), and turns any
- * failure into a warning: a run never loses its report because the replay
- * could not be written. Once the module is present, the calls go through
- * unchanged.
+ * writeReplay over scripts/corpus/replay-types.ts) was built in parallel
+ * with this suite; this file keeps the slice of its contract the drivers
+ * need and turns any failure into a warning: a run never loses its report
+ * because the replay could not be written.
  *
  * Contract relied on:
  *   collectArm({ databaseUrl?, since, until?, key, label, variation,
@@ -17,6 +14,8 @@
  *                    scenario?, summary?, evalRunId? }): Replay
  *   writeReplay(runDir, replay): string
  */
+
+import * as replayModule from "./replay.js";
 
 export interface ReplayFingerprint {
   pipelineEpoch: string | null;
@@ -87,26 +86,11 @@ interface ReplayModule {
   writeReplay: (runDir: string, replay: unknown) => string;
 }
 
-let cached: ReplayModule | null | undefined;
-
+// replay.ts landed beside this shim; the guarded dynamic import it was
+// written against is now a plain import, and the try/catch wrappers below
+// remain the failure policy (a run never loses its report over a replay).
 async function loadReplayModule(): Promise<ReplayModule | null> {
-  if (cached !== undefined) return cached;
-  try {
-    // A computed specifier so the type checker does not resolve the module:
-    // this branch must typecheck whether or not replay.ts exists yet.
-    const specifier = "./replay.js";
-    const mod = (await import(specifier)) as Partial<ReplayModule>;
-    if (typeof mod.collectArm !== "function" || typeof mod.assembleReplay !== "function" || typeof mod.writeReplay !== "function") {
-      console.warn("[replay] scripts/corpus/replay.ts is present but does not export collectArm/assembleReplay/writeReplay; no replay will be written.");
-      cached = null;
-    } else {
-      cached = mod as ReplayModule;
-    }
-  } catch (err) {
-    console.warn(`[replay] replay module unavailable (${err instanceof Error ? err.message.split("\n")[0] : err}); no replay will be written.`);
-    cached = null;
-  }
-  return cached;
+  return replayModule as unknown as ReplayModule;
 }
 
 /** Collect one arm's events from the trace substrate; null (with a warning) when it cannot. */

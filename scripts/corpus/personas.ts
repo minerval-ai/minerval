@@ -602,8 +602,7 @@ async function main(): Promise<void> {
   // driver runs without it and picks it up when it lands.
   try {
     // A non-literal specifier keeps tsc from resolving a module this branch may not have.
-    const replayModule = "./replay.js";
-    const replay = (await import(replayModule)) as ReplayModule;
+    const replay: ReplayModule = await import("./replay.js");
     const fingerprint: ReplayFingerprint = {
       pipelineEpoch: cfg.pipelineEpoch ?? null,
       gitCommit: gitCommit(),
