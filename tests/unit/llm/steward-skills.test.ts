@@ -79,6 +79,13 @@ vi.mock("../../../src/services/formalization-service.js", async (importOriginal)
   listFormalizations: vi.fn(async () => []),
 }));
 
+vi.mock("../../../src/llm/tools/steward-tools.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/llm/tools/steward-tools.js")>()),
+  executeStewardTool: vi.fn(async (name: string) =>
+    JSON.stringify(name === "update_claim_assessment" ? { success: true } : { ok: true })
+  ),
+}));
+
 vi.mock("../../../src/llm/tools/matcher-tools.js", () => ({
   getMatcherToolDefinition: () => ({
     name: "match_claim",
@@ -109,6 +116,7 @@ type LoopOptions = {
   system: string[];
   initialMessages: Array<{ content: string }>;
   executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+  finalToolNudge: { max: number; message: string; when: () => boolean };
 };
 
 async function run(domains: string[]): Promise<LoopOptions> {
@@ -374,5 +382,18 @@ describe("Steward toolset on a non-Anthropic model", () => {
     const last = opts.tools.at(-1)!;
     expect(last.name).toBe("web_search");
     expect("input_schema" in last).toBe(false);
+  });
+});
+
+describe("Steward final-action nudge", () => {
+  it("nudges only while no assessment has been recorded", async () => {
+    const opts = await run([]);
+    expect(opts.finalToolNudge.max).toBe(1);
+    expect(opts.finalToolNudge.message).toContain("update_claim_assessment");
+    expect(opts.finalToolNudge.when()).toBe(true);
+    await opts.executeTool("log_stewardship_decision", {});
+    expect(opts.finalToolNudge.when()).toBe(true);
+    await opts.executeTool("update_claim_assessment", { status: "supported" });
+    expect(opts.finalToolNudge.when()).toBe(false);
   });
 });

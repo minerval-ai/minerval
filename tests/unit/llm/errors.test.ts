@@ -45,6 +45,11 @@ describe("isTransientApiError", () => {
     }
   });
 
+  it("treats undici's terminated stream and a failed fetch as transient", () => {
+    expect(isTransientApiError(new Error("terminated"))).toBe(true);
+    expect(isTransientApiError(new TypeError("fetch failed"))).toBe(true);
+  });
+
   it("recognizes network/overload phrasing in the message", () => {
     for (const msg of [
       "Overloaded",

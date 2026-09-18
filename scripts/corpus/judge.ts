@@ -192,9 +192,11 @@ export async function judgeClaim(input: JudgeInput): Promise<JudgeVerdict> {
         model,
         // Claude-5 judge models think before answering, and thinking counts against
         // max_tokens: too low a budget is spent thinking and the structured JSON
-        // output is truncated. Give comfortable headroom for a small JSON verdict —
-        // the cap is a backstop, not a budget.
-        maxTokens: 8192,
+        // output is truncated. A model that reasons in its output (GLM 5.3 Flash)
+        // needs more still: at 8192 it truncated a fifth to a half of the verdicts
+        // in a corpus pass, each a paid call that scored nothing. Give generous
+        // headroom for a small JSON verdict — the cap is a backstop, not a budget.
+        maxTokens: 32768,
       })
     );
   // Not every provider enforces the schema: GLM 5.3 Flash has returned an

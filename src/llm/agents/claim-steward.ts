@@ -422,11 +422,25 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
     return null;
   };
 
+  // A run that ends its turn with no assessment recorded — GLM 5.3 Flash
+  // has returned an empty end_turn after seventeen steps of structuring —
+  // loses the whole pass. One nudge, only while nothing was recorded.
+  let assessmentRecorded = false;
+
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
     model,
+    finalToolNudge: {
+      max: 1,
+      when: () => !assessmentRecorded,
+      message:
+        "You ended your turn without recording an assessment for this claim. " +
+        "Record it now with update_claim_assessment (status, confidence, the " +
+        "reader-facing assessment, and your reasoning_trace), then log your " +
+        "decision with log_stewardship_decision.",
+    },
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
     // terminal — a truncated final turn loses the run's work. 16384 matches
@@ -540,7 +554,7 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
         }
         instancesRecordedThisRun++;
       }
-      return executeStewardTool(name, toolInput, {
+      const output = await executeStewardTool(name, toolInput, {
         trigger: input.trigger,
         context: input.context,
         // Recorded on the assessment row (#294): the verdict names the model
@@ -548,6 +562,14 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
         // this run uses.
         model,
       });
+      if (name === "update_claim_assessment") {
+        try {
+          assessmentRecorded = (JSON.parse(output) as { success?: boolean }).success !== false;
+        } catch {
+          assessmentRecorded = true;
+        }
+      }
+      return output;
     },
   }));
 }

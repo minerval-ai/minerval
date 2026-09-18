@@ -107,6 +107,11 @@ export function isTransientApiError(err: unknown): boolean {
     message.includes("econnrefused") ||
     message.includes("etimedout") ||
     message.includes("socket hang up") ||
+    // undici's wording for a connection or body stream closed under it, and
+    // Node's for a fetch that never connected — both hit the Steward mid-run.
+    message === "terminated" ||
+    message.includes("terminated") ||
+    message.includes("fetch failed") ||
     message.includes("network error") ||
     message.includes("connection error") ||
     message.includes("service unavailable") ||

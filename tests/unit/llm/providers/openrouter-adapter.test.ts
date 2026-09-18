@@ -193,7 +193,7 @@ describe("openrouter adapter — structured outputs", () => {
     ]);
   });
 
-  it("throws on malformed tool-call arguments", async () => {
+  it("retries malformed tool-call arguments, then names the model", async () => {
     respondWith(respondToolCall("{not json"));
 
     await expect(
@@ -204,7 +204,36 @@ describe("openrouter adapter — structured outputs", () => {
         model: MODEL,
         maxTokens: 256,
       })
-    ).rejects.toThrow(/"ClaimVerdict".*was not valid JSON/);
+    ).rejects.toThrow(/"ClaimVerdict" in 3 attempts \(last: tool-call arguments were not valid JSON\)/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers when a later attempt returns the forced call", async () => {
+    let n = 0;
+    fetchMock.mockImplementation(async () => {
+      n++;
+      return new Response(
+        JSON.stringify(n === 1 ? completion() : respondToolCall('{"verdict":"supported"}')),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    const out = await openrouterAdapter.completeStructured<{ verdict: string }>({
+      messages,
+      schema,
+      schemaName: "ClaimVerdict",
+      model: MODEL,
+      maxTokens: 256,
+    });
+    expect(out.verdict).toBe("supported");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a truncation: that is the caller's max_tokens to raise", async () => {
+    respondWith(completion({ choices: [{ index: 0, finish_reason: "length", message: { role: "assistant", content: "…", refusal: null } }] }));
+    await expect(
+      openrouterAdapter.completeStructured({ messages, schema, schemaName: "ClaimVerdict", model: MODEL, maxTokens: 256 })
+    ).rejects.toThrow(/truncated at max_tokens/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("names the model when it returns no tool call at all", async () => {
@@ -219,7 +248,7 @@ describe("openrouter adapter — structured outputs", () => {
         maxTokens: 256,
       })
     ).rejects.toThrow(
-      /OpenRouter model "qwen\/qwen3-235b-a22b" did not return the forced "respond" tool call/
+      /OpenRouter model "qwen\/qwen3-235b-a22b" did not return a usable forced "respond" tool call/
     );
   });
 });
