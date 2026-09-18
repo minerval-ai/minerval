@@ -156,6 +156,8 @@ function firstChoice(
  * 502 is what isTransientApiError keys off), naming the upstream message.
  */
 const UPSTREAM_ERROR_RETRIES = Number(process.env.LLM_MAX_RETRIES ?? 4);
+/** Attempts at a forced structured call before its absence is reported as the model's. */
+const STRUCTURED_ATTEMPTS = 3;
 
 function upstreamError(
   choice: OpenAI.Chat.Completions.ChatCompletion.Choice
@@ -311,7 +313,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async completeStructured<T>(req: StructuredRequest): Promise<T> {
-    const { completion, choice } = await createWithUpstreamRetry({
+    const params = {
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       tools: [
@@ -325,41 +327,48 @@ export const openrouterAdapter: ProviderAdapter = {
         },
       ],
       tool_choice: { type: "function", function: { name: "respond" } },
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
 
-    checkRefusal(choice, req.model);
-    meter(completion, req.model);
+    // A forced tool call that comes back without the call, or with arguments
+    // that are not JSON, is a host-level flake as often as a model limit:
+    // GLM 5.3 Flash answered an extraction with no tool call and
+    // finish_reason null after five minutes, and the source was lost. A
+    // truncation (finish_reason "length") is the caller's to fix; anything
+    // else is retried a couple of times, each attempt billed, before the
+    // error names the model.
+    let lastReason = "";
+    for (let attempt = 0; attempt < STRUCTURED_ATTEMPTS; attempt++) {
+      const { completion, choice } = await createWithUpstreamRetry(params, req.model);
+      checkRefusal(choice, req.model);
+      meter(completion, req.model);
 
-    const call = (choice.message.tool_calls ?? []).find(
-      (c) => c.type === "function" && c.function.name === "respond"
-    );
-
-    if (!call || call.type !== "function") {
-      if (choice.finish_reason === "length") {
-        throw new Error(
-          `Structured response "${req.schemaName}" was truncated at ` +
-            `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
-            `maxTokens or reduce the input size.`
-        );
+      const call = (choice.message.tool_calls ?? []).find(
+        (c) => c.type === "function" && c.function.name === "respond"
+      );
+      if (!call || call.type !== "function") {
+        if (choice.finish_reason === "length") {
+          throw new Error(
+            `Structured response "${req.schemaName}" was truncated at ` +
+              `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
+              `maxTokens or reduce the input size.`
+          );
+        }
+        lastReason = `no "respond" tool call (finish_reason: ${choice.finish_reason ?? "unknown"})`;
+        continue;
       }
-      // Tool-calling support varies across OpenRouter's zoo — name the model so
-      // the fix (pick a tool-calling model) is obvious from the log line alone.
-      throw new Error(
-        `OpenRouter model "${req.model}" did not return the forced "respond" ` +
-          `tool call for schema "${req.schemaName}" (finish_reason: ` +
-          `${choice.finish_reason ?? "unknown"}). This model may not support ` +
-          `tool calling — choose one that does, or route this agent to a ` +
-          `"claude-…" or "gpt-…" model.`
-      );
+      try {
+        return parseToolArguments(call.function.arguments, "respond") as T;
+      } catch {
+        lastReason = "tool-call arguments were not valid JSON";
+      }
     }
-
-    try {
-      return parseToolArguments(call.function.arguments, "respond") as T;
-    } catch {
-      throw new Error(
-        `Structured response "${req.schemaName}" from OpenRouter model ` +
-          `"${req.model}" was not valid JSON.`
-      );
-    }
+    // Tool-calling support varies across OpenRouter's zoo — name the model so
+    // the fix (pick a tool-calling model) is obvious from the log line alone.
+    throw new Error(
+      `OpenRouter model "${req.model}" did not return a usable forced "respond" ` +
+        `tool call for schema "${req.schemaName}" in ${STRUCTURED_ATTEMPTS} attempts ` +
+        `(last: ${lastReason}). This model may not support tool calling — choose ` +
+        `one that does, or route this agent to a "claude-…" or "gpt-…" model.`
+    );
   },
 };
