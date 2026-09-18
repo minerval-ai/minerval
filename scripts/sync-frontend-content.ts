@@ -68,6 +68,26 @@ import {
   CANONICAL_JUDGE_SCHEMA,
 } from "./corpus/golden-canonical-lib.js";
 import {
+  BLIND_JUDGE_SCHEMA,
+  blindJudgePrompt,
+  HOLISTIC_JUDGE_SCHEMA,
+  holisticJudgePrompt,
+  REDTEAM_ACTION_TOOLS,
+  REDTEAM_NOTES_TOOL,
+  redteamEpisodePrompt,
+  redteamFeedbackPrompt,
+  redteamSystemPrompt,
+} from "./corpus/adversarial-prompts.js";
+import { GAMBIT_DESCRIPTIONS } from "./corpus/adversarial-lib.js";
+import {
+  buildPersonaOpeningMessage,
+  buildPersonaSystemPrompt,
+  personaActionToolDefinitions,
+  personaToolNames,
+  SIMULATION_NOTICE,
+} from "./corpus/persona-prompts.js";
+import type { PersonaEntry } from "./corpus/personas-lib.js";
+import {
   ROLE_VIEW,
   SKILL_ROLES,
   getSkillView,
@@ -316,7 +336,9 @@ export function syncEvalsContent(contentDir: string): {
   // Clusters: every corpus/<dir>/manifest.json, sized over its committed posts.
   const clusters: ClusterInput[] = readdirSync(corpusDir)
     .filter((d) => existsSync(join(corpusDir, d, "manifest.json")) && statSync(join(corpusDir, d)).isDirectory())
-    .filter((d) => d !== "predictions")
+    // A cluster's manifest lists posts; the predictions set and the persona
+    // manifest live in the same shape of directory and are not clusters.
+    .filter((d) => Array.isArray(readJson<{ posts?: unknown }>(join(corpusDir, d, "manifest.json")).posts))
     .sort()
     .map((key) => {
       const manifest = readJson<{
@@ -481,6 +503,89 @@ export function syncEvalsContent(contentDir: string): {
       2
     ) + "\n"
   );
+
+  // The adversarial suite (S4): the scenarios, the gambit list, the two
+  // judges' prompts and schemas, and the attacker's prompts (attack and
+  // benign variants) with its tools.
+  mkdirSync(resolve(evalsDir, "adversarial"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "adversarial"))) {
+    copyFileSync(join(corpusDir, "adversarial", file), resolve(evalsDir, "adversarial", file));
+  }
+  const placeholderAssessment = (n: string) => ({
+    status: `<status of assessment ${n}>`,
+    credence: 0.5,
+    confidence: 0.8,
+    summary: `<assessment ${n}, verbatim>`,
+    reasoning: `<reasoning trace ${n}, verbatim>`,
+  });
+  const brief = (mode: "attack" | "benign") => ({
+    mode,
+    target: { id: "<claim id>", text: "<the target claim's text>" },
+    direction: "down" as const,
+    campaign: null,
+    budget: 3,
+    tier: "standard",
+    episode: 1,
+    episodes: 5,
+  });
+  writeFileSync(
+    resolve(evalsDir, "adversarial-prompts.json"),
+    JSON.stringify(
+      {
+        gambits: GAMBIT_DESCRIPTIONS,
+        blindJudge: { prompt: blindJudgePrompt({ claimText: "<the claim's text>", first: placeholderAssessment("ONE"), second: placeholderAssessment("TWO") }), schema: BLIND_JUDGE_SCHEMA },
+        holisticJudge: {
+          prompt: holisticJudgePrompt({
+            cluster: "<cluster>",
+            description: "<the cluster's description>",
+            first: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [{ relation: "requires", text: "<a direct subclaim>", status: "<status>" }] }],
+            second: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [] }],
+          }),
+          schema: HOLISTIC_JUDGE_SCHEMA,
+        },
+        redteam: {
+          attackSystem: redteamSystemPrompt(brief("attack")),
+          benignSystem: redteamSystemPrompt(brief("benign")),
+          campaignSystem: redteamSystemPrompt({ ...brief("attack"), target: null, campaign: { cluster: "<cluster>", goal: "<the framing goal>" } }),
+          episode: redteamEpisodePrompt({ brief: brief("attack"), targetView: "<the target claim with its assessment, decomposition and dependents>", notes: "<the notes file from earlier episodes>" }),
+          feedback: redteamFeedbackPrompt({ brief: brief("attack"), before: "<the assessment before>", after: "<the assessment after>", decisions: "<each contribution's review decision and reasoning>", personaStanding: "<the account's reputation and flags>", notes: "<the notes file>" }),
+          tools: [...REDTEAM_ACTION_TOOLS, REDTEAM_NOTES_TOOL],
+        },
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The persona simulation (S8): the manifest, and the exact system prompt
+  // and opening message each persona is given, with the tools by kind.
+  const personaManifest = readJson<{ name?: string; description?: string; personas: PersonaEntry[] }>(join(corpusDir, "personas", "manifest.json"));
+  copyFileSync(join(corpusDir, "personas", "manifest.json"), resolve(evalsDir, "personas.json"));
+  const clusterDescription = (key: string) => clusters.find((c) => c.key === key)?.description ?? null;
+  writeFileSync(
+    resolve(evalsDir, "persona-prompts.json"),
+    JSON.stringify(
+      {
+        notice: SIMULATION_NOTICE,
+        tools: personaActionToolDefinitions(),
+        prompts: personaManifest.personas.map((entry) => {
+          const cluster = entry.clusters.find((c) => c !== "*") ?? clusters[0]?.key ?? "blackholes";
+          return {
+            key: entry.key,
+            cluster,
+            tools: personaToolNames(entry.kind),
+            system: buildPersonaSystemPrompt(entry, { cluster, clusterDescription: clusterDescription(cluster) }),
+            opening: buildPersonaOpeningMessage(entry),
+          };
+        }),
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The production monitors (S9): the document that carries every query verbatim.
+  copyFileSync(resolve(root, "docs", "monitors.md"), resolve(evalsDir, "monitors.md"));
 
   const evalsIndex = buildEvalsIndex({
     syncedAt: new Date().toISOString(),

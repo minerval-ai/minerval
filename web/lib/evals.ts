@@ -400,6 +400,99 @@ export function getGoldenCanonicalRuns(): GoldenCanonicalRun[] {
     .sort((a, b) => String(a.generatedAt).localeCompare(String(b.generatedAt)));
 }
 
+// ---- the adversarial suite (S4), the personas (S8) and the monitors (S9) ----
+
+export interface AdversarialContribution {
+  id: string;
+  persona: string;
+  type: string;
+  gambit: string;
+  content: string;
+  evidenceUrls?: string[];
+  fabricated?: boolean;
+  proposedCanonicalForm?: string;
+  appealIfRejected?: string;
+  expect?: string;
+  target?: { query: string };
+}
+
+export interface AdversarialTarget {
+  key: string;
+  query: string;
+  kind: string;
+  note?: string;
+  expect?: string;
+  arms: Record<string, { direction?: string; contributions: AdversarialContribution[] } | AdversarialContribution[]>;
+}
+
+export interface AdversarialScenario {
+  scenario: string;
+  cluster: string;
+  description?: string;
+  baseline?: string;
+  personas: Array<{ key: string; displayName: string; tier: string; note?: string }>;
+  targets: AdversarialTarget[];
+  campaign?: { description?: string; arms: Record<string, { contributions: AdversarialContribution[] } | AdversarialContribution[]> };
+}
+
+export function getAdversarialScenarios(): AdversarialScenario[] {
+  const dir = resolve(EVALS, "adversarial");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((f) => readJson<AdversarialScenario>(resolve(dir, f)));
+}
+
+export interface AdversarialPrompts {
+  gambits: Record<string, string>;
+  blindJudge: { prompt: string; schema: unknown };
+  holisticJudge: { prompt: string; schema: unknown };
+  redteam: { attackSystem: string; benignSystem: string; campaignSystem: string; episode: string; feedback: string; tools: Array<{ name: string; description?: string; input_schema?: unknown }> };
+}
+
+export function getAdversarialPrompts(): AdversarialPrompts | null {
+  const path = resolve(EVALS, "adversarial-prompts.json");
+  return existsSync(path) ? readJson<AdversarialPrompts>(path) : null;
+}
+
+export interface PersonaEntry {
+  key: string;
+  name: string;
+  kind: string;
+  archetype: string;
+  goals: string[];
+  style: string;
+  tier: string;
+  budget: string;
+  clusters: string[];
+  appeals?: boolean;
+  opening?: string;
+  pairWith?: string;
+  tactic?: string;
+}
+
+export function getPersonas(): { name?: string; description?: string; personas: PersonaEntry[] } {
+  const path = resolve(EVALS, "personas.json");
+  return existsSync(path) ? readJson(path) : { personas: [] };
+}
+
+export interface PersonaPrompts {
+  notice: string;
+  tools: Array<{ name: string; description?: string; input_schema?: unknown }>;
+  prompts: Array<{ key: string; cluster: string; tools: string[]; system: string; opening: string }>;
+}
+
+export function getPersonaPrompts(): PersonaPrompts | null {
+  const path = resolve(EVALS, "persona-prompts.json");
+  return existsSync(path) ? readJson<PersonaPrompts>(path) : null;
+}
+
+export function getMonitorsDoc(): string | null {
+  const path = resolve(EVALS, "monitors.md");
+  return existsSync(path) ? readFileSync(path, "utf-8") : null;
+}
+
 // ---- formatting helpers ----------------------------------------------------
 
 export function fmtDate(iso: string | null | undefined): string {
@@ -451,6 +544,11 @@ export interface EvalsData {
   canonical: { description?: string; cases: CanonicalCase[] };
   canonicalJudge: { prompt: string; standard: string; schema: unknown } | null;
   goldenCanonicalRuns: GoldenCanonicalRun[];
+  adversarial: AdversarialScenario[];
+  adversarialPrompts: AdversarialPrompts | null;
+  personas: PersonaEntry[];
+  personaPrompts: PersonaPrompts | null;
+  monitorsDoc: string | null;
 }
 
 export function loadEvalsData(): EvalsData {
@@ -480,5 +578,10 @@ export function loadEvalsData(): EvalsData {
     canonical: getCanonicalCases(),
     canonicalJudge: getCanonicalJudge(),
     goldenCanonicalRuns: getGoldenCanonicalRuns(),
+    adversarial: getAdversarialScenarios(),
+    adversarialPrompts: getAdversarialPrompts(),
+    personas: getPersonas().personas,
+    personaPrompts: getPersonaPrompts(),
+    monitorsDoc: getMonitorsDoc(),
   };
 }

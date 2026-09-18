@@ -975,7 +975,7 @@ npm run predictions -- score`}</Cmd> },
             <li><strong>Two places reality can check the graph:</strong> <Link href="/docs/evals/predictions">predictions</Link>, which resolve slowly, and <Link href="/docs/evals/model-swap">agreement between models</Link>, which is fast but relative. Neither becomes a truth score for the rest.</li>
             <li><strong>Expert consensus is never the referent.</strong> Distance from consensus is reported, never used as a gate.</li>
             <li><strong>One run is one sample.</strong> Groups of about three, and a change must clear the spread (<Link href="/docs/evals/noise-band">comparing runs</Link>).</li>
-            <li><strong>Every invariance is tested benign and adversarial.</strong> The adversarial case shows the invariance is not empty. Not yet met.</li>
+            <li><strong>Every invariance is tested benign and adversarial.</strong> The adversarial case shows the invariance is not empty. Path independence and idempotency now have their attacks (a hostile order, a duplicate flood); paraphrase and frame do not.</li>
             <li><strong>Numbers inform; they never decide.</strong> No eval score changes a verdict or a claim&rsquo;s importance (<C n="judgment">judgment over mechanism</C>).</li>
             <li><strong>Stability plus calibration is the argument.</strong> A graph that is stable under changes that should not matter, and calibrated where it can be checked, has earned some trust where it cannot be.</li>
             <li><strong>Judges are reviewed before they are trusted.</strong> No judge number feeds a decision until a person has read its verdicts (<Link href="/docs/evals/judge-review">judge review</Link>).</li>
@@ -1017,7 +1017,7 @@ npm run predictions -- score`}</Cmd> },
         body: (
           <>
             <p>The registry is in each developer&rsquo;s test database, so it is a per-machine index, not shared history. The committed files are the record: <a href={`${GH}/corpus/scorecards`}>scorecards</a>, golden runs beside them, <a href={`${GH}/corpus/calibration`}>review sheets</a>. This guide renders only from those files.</p>
-            <p>Agreement, swap, property and contribution runs have no committed home yet: they register locally and report into a directory git ignores. Until an export exists they reach this guide by hand.</p>
+            <p>Agreement, swap, property, contribution, adversarial and persona runs register locally and report into a directory git ignores; each also writes a <Link href="/docs/evals/replays-guide">replay</Link>, and the replays worth showing are committed under <a href={`${GH}/corpus/replays`}>corpus/replays</a> and played on this site.</p>
           </>
         ),
       },
@@ -1035,14 +1035,15 @@ npm run predictions -- score`}</Cmd> },
         open: true,
         body: (
           <ul>
-            <li><strong>Anything on the production models.</strong> The one scored run used a Sonnet Steward, capped, with the Matcher mis-recorded. The next thing to do is three production-profile runs of one cluster.</li>
-            <li><strong>The noise floor.</strong> Idempotency has never been run, so no comparison has a scale.</li>
-            <li><strong>Anything adversarial.</strong> No hostile inputs, no attacker, no campaigns.</li>
-            <li><strong>Governance.</strong> The Reviewer and Arbitrator have never been read under controlled input.</li>
+            <li><strong>Anything on the production models.</strong> Every committed run so far is on the cheap tier or the development defaults, capped. The next thing to do is three production-profile runs of one cluster.</li>
+            <li><strong>The noise floor.</strong> Idempotency ran once on the cheap tier and lost its second arm; no comparison has a scale yet.</li>
+            <li><strong>Anything adversarial, in results.</strong> The suite, the gambit library and the red team are built; no arm has run.</li>
+            <li><strong>Governance under simulated people.</strong> The scenario and the personas are built; the Reviewer and Arbitrator have been read once, under the scripted scenario, on the cheap tier.</li>
             <li><strong>Model fidelity.</strong> No swap has run; the allocator&rsquo;s tiering rests on a guess.</li>
-            <li><strong>The judge&rsquo;s newest dimensions.</strong> Sycophancy, hedging, canonical-form strength and political bias: never judged on a real run, never reviewed.</li>
+            <li><strong>The judge&rsquo;s newest dimensions.</strong> Sycophancy, hedging, canonical-form strength and political bias: judged on cheap-tier runs, never reviewed.</li>
             <li><strong>Calibration.</strong> Nothing seeded into production, nothing resolved, no market baseline.</li>
-            <li><strong>The live graph.</strong> Every eval runs on test graphs. Nothing measures the quality of what visitors read.</li>
+            <li><strong>Paraphrase and frame invariance.</strong> The same proposition reworded, or stated by a proponent and a critic, has no arm.</li>
+            <li><strong>The live graph, as read.</strong> The monitors read it; nothing measures the quality of what visitors read.</li>
           </ul>
         ),
       },
@@ -1070,15 +1071,15 @@ npm run predictions -- score`}</Cmd> },
               <thead><tr><th>suite</th><th>what</th><th>standing</th></tr></thead>
               <tbody>
                 {([
-                  ["S1", "per-PR golden suite", "built, in CI"],
+                  ["S1", "per-PR golden suite", "Matcher pairs in CI; canonical-form goldens built"],
                   ["S2", "quality scorecard", "built; newest four dimensions unreviewed"],
-                  ["S3", "properties and stability", "idempotency, path independence, coherence rules; no adversarial arms"],
-                  ["S4", "adversarial robustness", "not built"],
-                  ["S5", "downstream-reasoner probe", "not built"],
+                  ["S3", "properties and stability", "six properties, cascade stability and assessment history built; paraphrase and frame invariance not"],
+                  ["S4", "adversarial robustness", "all four cells built; never run"],
+                  ["S5", "downstream-reasoner probe", "built; never run"],
                   ["S6", "calibration track", "built; not seeded into production"],
-                  ["S7", "model economics and lifecycle", "guard and swap runner; discover and adopt not built"],
-                  ["S8", "persona simulation", "not built"],
-                  ["S9", "production monitors", "not built"],
+                  ["S7", "model economics and lifecycle", "guard, swap, discover and adopt built"],
+                  ["S8", "persona simulation", "phase one built (twenty personas); never run"],
+                  ["S9", "production monitors", "built; scheduler off by default"],
                 ] as const).map(([k, what, standing]) => <tr key={k}><td>{k}</td><td>{what}</td><td className={s.note}>{standing}</td></tr>)}
               </tbody>
             </table>
