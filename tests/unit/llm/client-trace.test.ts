@@ -78,8 +78,20 @@ describe("single-shot completion step recording", () => {
     );
 
     expect(out.items).toHaveLength(1);
-    expect(mocks.recordAgentStep).toHaveBeenCalledOnce();
-    const [t, kind, content] = mocks.recordAgentStep.mock.calls[0]!;
+    // The setup first, verbatim (the replay's prompt step), then the completion.
+    expect(mocks.recordAgentStep).toHaveBeenCalledTimes(2);
+    const [, promptKind, prompt] = mocks.recordAgentStep.mock.calls[0]!;
+    expect(promptKind).toBe("prompt");
+    expect(prompt).toMatchObject({
+      model: "m",
+      system: "the constitution",
+      initialMessages: messages,
+      tools: [],
+      schemaName: "Claims",
+      schema: { type: "object" },
+      maxTokens: 8192,
+    });
+    const [t, kind, content] = mocks.recordAgentStep.mock.calls[1]!;
     expect(t).toBe(trace);
     expect(kind).toBe("completion");
     expect(content).toEqual({
@@ -98,7 +110,8 @@ describe("single-shot completion step recording", () => {
     await runWithUsageContext({ trace }, () =>
       complete({ messages: [{ role: "user", content: "hi" }], model: "m" })
     );
-    const [, kind, content] = mocks.recordAgentStep.mock.calls[0]!;
+    expect(mocks.recordAgentStep.mock.calls.map((c) => c[1])).toEqual(["prompt", "completion"]);
+    const [, kind, content] = mocks.recordAgentStep.mock.calls[1]!;
     expect(kind).toBe("completion");
     expect(content).toMatchObject({ output: "hello", stopReason: "end_turn", systemChars: 0 });
   });
@@ -117,25 +130,37 @@ describe("toolUseLoop step recording", () => {
       .mockResolvedValueOnce(finalTurn);
     const trace = { runId: "run-1", seq: { n: 0 } };
 
+    const tools = [
+      { name: "search", description: "find things", input_schema: { type: "object" as const } },
+    ];
     await runWithUsageContext({ trace }, () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: "go" }],
-        tools: [],
+        tools,
+        system: "the constitution",
         executeTool: async () => "search-output",
       })
     );
 
     const calls = mocks.recordAgentStep.mock.calls;
     expect(calls.map((c) => c[1])).toEqual([
+      "prompt",
       "assistant",
       "tool_results",
       "assistant",
     ]);
-    expect(calls[0]![2]).toEqual({
+    // The prompt step carries the whole setup: system prompt, initial
+    // messages and the tool descriptors, verbatim.
+    expect(calls[0]![2]).toMatchObject({
+      system: "the constitution",
+      initialMessages: [{ role: "user", content: "go" }],
+      tools: [{ name: "search", description: "find things", input_schema: { type: "object" } }],
+    });
+    expect(calls[1]![2]).toEqual({
       stopReason: "tool_use",
       content: toolTurn.rawContent,
     });
-    expect(calls[1]![2]).toEqual([
+    expect(calls[2]![2]).toEqual([
       { name: "search", input: { q: "x" }, output: "search-output" },
     ]);
     expect(calls.every((c) => c[0] === trace)).toBe(true);

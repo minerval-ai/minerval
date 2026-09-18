@@ -27,10 +27,11 @@ import { evalRuns } from "../../src/db/schema.js";
 import { loadConfig } from "../../src/config.js";
 import { formatMicroUsd } from "../../src/llm/pricing.js";
 import { saveSnapshot } from "./snapshot-core.js";
-import { latestRunRecord, runChild } from "./arms.js";
+import { emitTwoArmReplay, latestRunRecord, runChild } from "./arms.js";
 import { buildPropertyArms, isProperty, summarizeProperty } from "./property-lib.js";
+import { replayName } from "./replay.js";
 import type { ArmRecord } from "./swap-lib.js";
-import type { AgreementReport } from "./graph-agreement.js";
+import type { AgreementReport, MatchedPair } from "./graph-agreement.js";
 
 async function main(): Promise<void> {
   assertCorpusDb();
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
     [`snap:${snapA}`, `snap:${names.b}`, `--out=${agreementPath}`, ...(hasFlag("confirm") ? ["--confirm"] : [])],
     {}
   );
-  const agreement = JSON.parse(readFileSync(agreementPath, "utf8")) as { report: AgreementReport };
+  const agreement = JSON.parse(readFileSync(agreementPath, "utf8")) as { report: AgreementReport; pairs?: MatchedPair[] };
   const summary = summarizeProperty({ property, cluster, armA, armB, agreement: agreement.report });
 
   const f = (x: number | null) => (x === null ? "n/a" : x.toFixed(3));
@@ -101,6 +102,24 @@ async function main(): Promise<void> {
 
   const record = { generatedAt: new Date().toISOString(), summary, arms: { a: armA, b: armB }, snapshots: { a: snapA, b: names.b }, agreement };
   writeFileSync(join(outDir, "property.json"), JSON.stringify(record, null, 2));
+
+  // The recording of both arms, side by side (best-effort; never fails the run).
+  await emitTwoArmReplay({
+    kind: "property",
+    name: replayName(`${property}-${cluster}`, stamp),
+    title: `${cluster}: ${property}`,
+    cluster,
+    about:
+      property === "idempotency"
+        ? "The same configuration run twice on the same posts: two graphs built side by side from identical inputs, with the claims the agreement metric paired linked across them. The differences are the pipeline's own noise floor."
+        : `The same posts ingested in two orders (arm B shuffled with seed ${seed}): two graphs built side by side, with the claims the agreement metric paired linked across them. Matching is stateful, so where the graphs differ is where order mattered.`,
+    outDir,
+    arms: { a: armA, b: armB },
+    snapshots: { a: snapA, b: names.b },
+    variation: { a: baseline ? `baseline snapshot ${baseline}` : null, b: property === "path-independence" ? `sources in shuffled order, seed ${seed}` : "same configuration, second run" },
+    agreement,
+    summary: summary as unknown as Record<string, unknown>,
+  });
   try {
     const cfg = loadConfig();
     await getDb().insert(evalRuns).values({
