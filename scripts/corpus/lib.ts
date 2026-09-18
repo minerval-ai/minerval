@@ -152,6 +152,13 @@ export interface ManifestPost {
   url?: string;
   title: string;
   author: string;
+  /**
+   * The post's part in the cluster's argument, free text set when the
+   * cluster was curated (e.g. "anchor", "published-dissent",
+   * "lab-leak-case"). Read by corpus:run --order=role:<role> and
+   * --order=adversarial (#295 adversarial ordering), which put a role — or
+   * the most partisan one, by keyword — first.
+   */
   role?: string;
 }
 export interface Manifest {

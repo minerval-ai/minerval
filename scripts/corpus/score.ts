@@ -31,6 +31,8 @@ import { computeStructuralMetrics, type GraphSnapshot, type StructuralMetrics } 
 import { judgeClaim, type JudgeInput, type JudgeVerdict } from "./judge.js";
 import { judgeConflict, type ScorecardConfig } from "./fingerprint.js";
 import { summarizeJudged, type JudgedSummary } from "./judged-summary.js";
+import { analyzeCascade, cascadeHeadline, type CascadeHeadline } from "./cascade-lib.js";
+import { loadCascadeInput } from "./cascade-load.js";
 
 export type { ScorecardConfig } from "./fingerprint.js";
 
@@ -104,6 +106,37 @@ export interface Scorecard {
   structural: StructuralMetrics;
   judged: JudgedSummary | null;
   cost: { calls: number; usd: number } | null;
+  /**
+   * Cascade stability (#295 (d), additive): R and the propagation shape of
+   * the ingest that built this graph, reconstructed from the run window's
+   * telemetry (enqueue_events, agent_runs, assessment history). Absent on
+   * scorecards written before it existed; null when the telemetry could not
+   * be read.
+   */
+  cascade?: CascadeHeadline | null;
+}
+
+/**
+ * The propagation the graph's ingest produced, over the window of the run
+ * that built it (its registry row's startedAt; the whole database when no
+ * run is registered — corpus:reset truncates the telemetry, so that is the
+ * same thing for a plain run). Best-effort: never fails a scorecard.
+ */
+async function loadCascadeBlock(cluster: string): Promise<CascadeHeadline | null> {
+  try {
+    const rows = await rawQuery<{ started_at: string | null }>(
+      `SELECT config->>'startedAt' AS started_at FROM eval_runs
+        WHERE cluster = $1 AND kind = 'ingest'
+        ORDER BY created_at DESC LIMIT 1`,
+      [cluster]
+    );
+    const since = rows[0]?.started_at ?? null;
+    const input = await loadCascadeInput(process.env.DATABASE_URL!, { since });
+    return cascadeHeadline(analyzeCascade(input));
+  } catch (err) {
+    console.warn("[score] cascade block unavailable:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 async function loadSnapshot(): Promise<GraphSnapshot> {
@@ -269,6 +302,7 @@ export async function scoreRun(
 
   const snapshot = await loadSnapshot();
   const structural = computeStructuralMetrics(snapshot);
+  const cascade = await loadCascadeBlock(cluster);
 
   let judged: JudgedSummary | null = null;
   let cost: Scorecard["cost"] = null;
@@ -302,6 +336,7 @@ export async function scoreRun(
     structural,
     judged,
     cost,
+    cascade,
   };
 
   const stamp = scorecard.generatedAt.replace(/[:.]/g, "-");
@@ -410,7 +445,18 @@ function renderMarkdown(s: Scorecard): string {
   w(`| C matching | matched instances: denies share / proposal distance | ${ca.matched.count}: ${pctOrNa(ca.matched.deniesShare)} / ${numOrNa(ca.matched.meanProposalDistance)} |`);
   w(`| importance | mean / atomic / compound | ${st.importance.mean} / ${st.importance.meanAtomic ?? "n/a"} / ${st.importance.meanCompound ?? "n/a"} |`);
   w(`| importance | histogram | ${Object.entries(st.importance.histogram).sort().map(([k, v]) => `${k}:${v}`).join(" ")} |`);
+  if (s.cascade) {
+    const c = s.cascade;
+    const n = (x: number | null) => (x === null ? "n/a" : x.toFixed(2));
+    w(`| §22 cascade | R (material children per changed parent) / over reassessments | ${n(c.R)} / ${n(c.rReassessment)} |`);
+    w(`| §22 cascade | roots / propagating / max size / max depth | ${c.roots} / ${c.propagating} / ${c.maxSize} / ${c.maxDepth} |`);
+    w(`| §22 cascade | oscillations / coalesced share / drain monotone | ${c.oscillations} / ${n(c.coalescingShare)} / ${c.drainMonotone ? "yes" : "no"} (${c.drainSource}) |`);
+  }
   w();
+  if (s.cascade) {
+    w(`_cascade: ${s.cascade.reading}_`);
+    w();
+  }
 
   if (s.judged) {
     const j = s.judged;
