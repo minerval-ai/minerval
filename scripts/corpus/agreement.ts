@@ -93,6 +93,21 @@ async function loadGraph(label: string, url: string): Promise<AgreementGraph> {
       `SELECT parent_claim_id AS parent, child_claim_id AS child, relation_type AS rel
          FROM claim_relationships`
     );
+    // Instances with their source and stance (#295): what each source said
+    // about the claim, for the stance-aware property readings.
+    const instances = await client.query<{ claim_id: string; url: string | null; stance: string | null }>(
+      `SELECT ci.claim_id, s.url, ci.stance
+         FROM claim_instances ci
+         LEFT JOIN sources s ON s.id = ci.source_id
+        ORDER BY ci.created_at`
+    );
+    const instancesByClaim = new Map<string, Array<{ sourceUrl: string | null; stance: string | null }>>();
+    for (const r of instances.rows) {
+      (instancesByClaim.get(r.claim_id) ?? instancesByClaim.set(r.claim_id, []).get(r.claim_id)!).push({
+        sourceUrl: r.url,
+        stance: r.stance,
+      });
+    }
     return {
       label,
       claims: claims.rows.map((r) => ({
@@ -103,6 +118,7 @@ async function loadGraph(label: string, url: string): Promise<AgreementGraph> {
         status: r.status,
         credence: r.credence,
         embedding: parseVector(r.embedding),
+        instances: instancesByClaim.get(r.id) ?? [],
       })),
       edges: edges.rows,
     };

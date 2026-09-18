@@ -106,6 +106,9 @@ export const HEADLINE_METRICS: Array<{
   { label: "E · shared subclaims", get: (s) => s.structural.crossDoc.sharedSubclaims },
   { label: "F · % with trace", get: (s) => s.structural.assessment.pctWithTrace },
   { label: "§21 · coherence violations", get: (s) => s.structural.coherence?.violations },
+  // Cascade stability (#295 (d); absent on scorecards before it existed).
+  { label: "§22 · cascade R", get: (s) => s.cascade?.R },
+  { label: "§22 · cascade oscillations", get: (s) => s.cascade?.oscillations },
   // Canonical-form authorship (#379 data; absent on older scorecards).
   { label: "B · matcher rewrite rate", get: (s) => s.structural.canonicalAuthorship?.rewriteRate },
   { label: "B · rewrite magnitude", get: (s) => s.structural.canonicalAuthorship?.rewriteMagnitude },
