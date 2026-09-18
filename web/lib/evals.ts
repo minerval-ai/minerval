@@ -49,6 +49,21 @@ export interface EvalsIndex {
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
   rubric: RubricSection[];
+  /** Committed replays (#334), newest first; absent or empty before the first recording is synced. */
+  replays?: ReplaySummary[];
+}
+
+/** One line of the evals index about a recording, enough for a card without reading the file. */
+export interface ReplaySummary {
+  name: string;
+  kind: string;
+  title: string;
+  cluster: string | null;
+  generatedAt: string;
+  arms: string[];
+  events: number;
+  models: Record<string, string | undefined>;
+  costMicroUsd: number | null;
 }
 
 export interface RubricSection {
