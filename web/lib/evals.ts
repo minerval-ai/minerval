@@ -302,6 +302,89 @@ export function getContributionScenarios(): ContributionScenario[] {
     .map((f) => readJson<ContributionScenario>(resolve(dir, f)));
 }
 
+// ---- the reasoner probe (S5) and the canonical-form goldens (S1) -----------
+
+export interface ProbeQuestion {
+  id: string;
+  kind?: string;
+  question: string;
+  note?: string;
+}
+
+export interface ProbeFixture {
+  cluster: string;
+  description?: string;
+  questions: ProbeQuestion[];
+}
+
+export interface ProbePrompts {
+  withGraph: string;
+  withoutGraph: string;
+  retraction: string;
+  withGraphSchema: unknown;
+  withoutGraphSchema: unknown;
+}
+
+export function getProbeFixtures(): ProbeFixture[] {
+  const dir = resolve(EVALS, "probes");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((f) => {
+      const raw = readJson<Partial<ProbeFixture> & Record<string, unknown>>(resolve(dir, f));
+      return { cluster: raw.cluster ?? f.replace(/\.json$/, ""), description: raw.description, questions: raw.questions ?? [] };
+    });
+}
+
+export function getProbePrompts(): ProbePrompts | null {
+  const path = resolve(EVALS, "probe-prompts.json");
+  return existsSync(path) ? readJson<ProbePrompts>(path) : null;
+}
+
+export interface CanonicalCase {
+  id: string;
+  category: string;
+  sourceTitle?: string;
+  cluster?: string;
+  excerpt: string;
+  expected: string;
+  note?: string;
+}
+
+export function getCanonicalCases(): { description?: string; cases: CanonicalCase[] } {
+  const path = resolve(EVALS, "canonical-forms.json");
+  if (!existsSync(path)) return { cases: [] };
+  const raw = readJson<{ description?: string; cases?: CanonicalCase[] }>(path);
+  return { description: raw.description, cases: raw.cases ?? [] };
+}
+
+export function getCanonicalJudge(): { prompt: string; standard: string; schema: unknown } | null {
+  const path = resolve(EVALS, "canonical-judge.json");
+  return existsSync(path) ? readJson(path) : null;
+}
+
+export interface GoldenCanonicalRun {
+  file: string;
+  generatedAt: string;
+  summary?: { total: number; passed: number; passRate: number; byCategory?: Record<string, { total: number; passed: number }> };
+  costMicroUsd?: number | null;
+  [k: string]: unknown;
+}
+
+export function getGoldenCanonicalRuns(): GoldenCanonicalRun[] {
+  const dir = resolve(EVALS, "golden-canonical-runs");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((file): GoldenCanonicalRun => {
+      const raw = readJson<Partial<GoldenCanonicalRun>>(resolve(dir, file));
+      return { ...raw, file, generatedAt: String(raw.generatedAt ?? "") };
+    })
+    .sort((a, b) => String(a.generatedAt).localeCompare(String(b.generatedAt)));
+}
+
 // ---- formatting helpers ----------------------------------------------------
 
 export function fmtDate(iso: string | null | undefined): string {
@@ -348,6 +431,11 @@ export interface EvalsData {
   reviews: ReviewSheet[];
   predictions: Prediction[];
   scenarios: ContributionScenario[];
+  probes: ProbeFixture[];
+  probePrompts: ProbePrompts | null;
+  canonical: { description?: string; cases: CanonicalCase[] };
+  canonicalJudge: { prompt: string; standard: string; schema: unknown } | null;
+  goldenCanonicalRuns: GoldenCanonicalRun[];
 }
 
 export function loadEvalsData(): EvalsData {
@@ -372,5 +460,10 @@ export function loadEvalsData(): EvalsData {
     reviews: getReviews(index),
     predictions: getPredictions().predictions,
     scenarios: getContributionScenarios(),
+    probes: getProbeFixtures(),
+    probePrompts: getProbePrompts(),
+    canonical: getCanonicalCases(),
+    canonicalJudge: getCanonicalJudge(),
+    goldenCanonicalRuns: getGoldenCanonicalRuns(),
   };
 }

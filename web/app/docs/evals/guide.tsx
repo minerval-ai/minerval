@@ -15,6 +15,7 @@ import {
   type RubricSection,
 } from "@/lib/evals";
 import s from "./evals.module.css";
+import { MORE_GROUPS, MORE_TOPICS, moreIndexRow } from "./guide-more";
 
 // The guide's topics (#368). Each is a short page of collapsed sections. The
 // rule for the copy: show the artifact (a prompt, a fixture, a standard, a
@@ -89,6 +90,7 @@ export const GROUPS: Array<{ key: string; title: string; note?: string }> = [
   { key: "stable", title: "Is the pipeline stable?", note: "Build it twice and measure the difference." },
   { key: "governance", title: "Does governance work?" },
   { key: "reality", title: "Where can reality check it?" },
+  ...MORE_GROUPS,
   { key: "background", title: "Background" },
 ];
 
@@ -169,6 +171,7 @@ function runTags(d: EvalsData): Tag[] {
 // ---- the topics --------------------------------------------------------------
 
 export const TOPICS: Topic[] = [
+  ...MORE_TOPICS,
   // ------------------------------------------------------------------ graph
   {
     slug: "corpus-runs",
@@ -647,8 +650,8 @@ npm run corpus:agreement -- snap:run1 db --confirm`}</Cmd> },
     kind: "eval",
     group: "stable",
     title: "Same graph twice",
-    line: "Build the graph twice with nothing changed (the noise floor), or with the documents in a different order (which should not matter).",
-    tags: () => [{ text: "built; never run", kind: "notyet" }, { text: "two runs", kind: "cost" }],
+    line: "Build the graph twice with nothing changed (the noise floor), with the documents reordered, flooded with duplicates, joined by an unrelated document, or reassessed in place. None of it should matter.",
+    tags: () => [{ text: "six properties built; idempotency and path independence run once on the cheap tier, arms lost", kind: "notyet" }, { text: "two drains, or one drain plus a perturbation", kind: "cost" }],
     sections: () => [
       {
         title: "Two arms",
@@ -658,16 +661,43 @@ npm run corpus:agreement -- snap:run1 db --confirm`}</Cmd> },
             <TwoArmDiagram change="same, or shuffled order" />
             <p><strong>Idempotency:</strong> the same setup twice. The disagreement between the arms is the pipeline&rsquo;s own noise, and the floor every other comparison is read against.</p>
             <p><strong>Path independence:</strong> arm B reads the documents in a seeded random order. The <G t="Matcher" /> is stateful, since the first wording it sees becomes the claim, so order can change the graph; <C n="2" /> and <C n="3" /> say it should not.</p>
-            <p>Both arms are child runs, saved as <G t="snapshot">snapshots</G>, and compared by <Link href="/docs/evals/graph-agreement">graph agreement</Link>. One pair of arms is one sample.</p>
+            <p><strong>Adversarial order</strong> is the attack on path independence: arm B reads the most partisan document first (by its role in the manifest, or <code>--role</code>), and the summary reports the first-mover effect: the mean signed credence move of matched claims toward the first document&rsquo;s stance.</p>
+            <p><strong>Duplicate flood:</strong> arm B is arm A&rsquo;s graph plus the same documents submitted again three times under distinct URLs. Instance count is provenance, not evidence weight, so the reading is inflation: the mean signed credence move toward what the sources said, plus the claims only B has (duplicates the Matcher failed to absorb).</p>
+            <p><strong>Locality:</strong> arm B is arm A&rsquo;s graph plus one document from another cluster. The reading is churn: the share of A&rsquo;s claims whose status changed or credence moved by 0.1 or more.</p>
+            <p><strong>Fixpoint:</strong> arm B is arm A&rsquo;s graph with every stewarded claim re-enqueued on the staleness trigger and drained. The reading says whether stewardship settles: verdicts moved, claims and edges added or removed.</p>
+            <p>Every property also reports <strong>granularity stability</strong>: the share of matched claims with the same number of children and the same depth in both arms.</p>
+            <p>Arms are child runs, saved as <G t="snapshot">snapshots</G>, and compared by <Link href="/docs/evals/graph-agreement">graph agreement</Link>, whose report now carries a per-claim block (children, depth, verdicts, instances with source and stance) for every matched pair. The tier-two arms restore A&rsquo;s snapshot and perturb it, so they cost one drain plus the perturbation. One pair of arms is one sample.</p>
           </>
         ),
       },
       {
+        title: "How an arm is built, step by step",
+        body: (
+          <ol>
+            <li><strong>Arm A</strong> is a child <code>corpus:run</code> with the flags given, snapshotted when it drains.</li>
+            <li><strong>Arm B</strong> is a second child run: for idempotency the same flags; for path independence <code>--order=shuffle:&lt;seed&gt;</code>; for adversarial order <code>--order=adversarial</code> or <code>--order=role:&lt;role&gt;</code>; for the tier-two properties the runner first restores A&rsquo;s snapshot and runs with <code>--no-reset</code> plus <code>--dup-suffix</code>, <code>--foreign=&lt;cluster&gt;:&lt;post&gt;</code>, or <code>--reassess-all</code>.</li>
+            <li><strong>Agreement</strong> between the two snapshots: claims matched one to one by text, then by embedding, the ambiguous band judged when <code>--confirm</code> is given.</li>
+            <li><strong>Summary</strong> in plain language with the property&rsquo;s own reading (noise floor, first-mover effect, inflation, churn, settling) and each arm&rsquo;s exact cost, registered as kind property, with a two-arm <Link href="/docs/evals/replays">replay</Link> of both arms.</li>
+          </ol>
+        ),
+      },
+      {
         title: "What it cannot show",
-        body: <p>Anything under hostile input. The rule is that every invariance is tested benign and adversarial; the adversarial arms (a hostile order, a hostile rewording) are not built. Nor are the other invariances in the plan: paraphrase, cascade stability, granularity.</p>,
+        body: (
+          <ul>
+            <li>Paraphrase and frame invariance (the same proposition reworded, or stated by a proponent and a critic) have no arm yet; the golden pairs cover the Matcher half of paraphrase.</li>
+            <li>A matched duplicate never re-triggers the Steward, so a duplicate flood can inflate credence only where duplicates minted new nodes or edges; the instrument shows Matcher leakage reliably and inflation only where the pipeline re-triggers.</li>
+            <li>Which document is most partisan is a keyword heuristic over the manifest roles unless <code>--role</code> says.</li>
+            <li>A capped fixpoint drain reassesses only the highest-priority claims.</li>
+          </ul>
+        ),
       },
       { title: "Run it", body: <Cmd>{`npm run corpus:property -- idempotency blackholes --profile=production
-npm run corpus:property -- path-independence blackholes --seed=3 --baseline=<snapshot>`}</Cmd> },
+npm run corpus:property -- path-independence blackholes --seed=3 --baseline=<snapshot>
+npm run corpus:property -- adversarial-order lableak
+npm run corpus:property -- dup-flood blackholes --dups=3 --baseline=<snapshot>
+npm run corpus:property -- locality eggs --foreign=blackholes:cern-lhc-safety --baseline=<snapshot>
+npm run corpus:property -- fixpoint eggs --baseline=<snapshot>`}</Cmd> },
     ],
   },
   {
@@ -1149,6 +1179,6 @@ export function indexRow(slug: string, d: EvalsData): IndexRow | null {
     case "predictions":
       return { property: "the Steward's probabilities are calibrated against outcomes", status: "seeded", statusKind: "notyet", lastRun: none, result: `${d.index.predictions.count} questions, 0 resolved`, cost: "≈ 22 Steward runs" };
     default:
-      return null;
+      return moreIndexRow(slug, d);
   }
 }
