@@ -15,9 +15,9 @@ import { TEST_DATABASE_URL } from "./urls.js";
 import { collectArm } from "../../scripts/corpus/replay.js";
 import type { ReplayArm } from "../../scripts/corpus/replay-types.js";
 
-// The window opens a minute back, so the fixture's stamps are unambiguous
-// and rows other files wrote earlier are outside it.
-const T0 = Date.now() - 60_000;
+// A window in the past no other suite's rows can land in: the DB suite shares one
+// scratch database and every other file stamps its rows with now().
+const T0 = Date.parse("2001-01-01T00:00:00Z");
 const at = (s: number) => new Date(T0 + s * 1000);
 
 const SOURCE = randomUUID();
