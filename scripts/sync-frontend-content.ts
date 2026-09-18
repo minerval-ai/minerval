@@ -56,6 +56,18 @@ import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
 import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
 import {
+  buildWithGraphPrompt,
+  buildWithoutGraphPrompt,
+  PROBE_WITH_GRAPH_SCHEMA,
+  PROBE_WITHOUT_GRAPH_SCHEMA,
+  retractionContext,
+} from "./corpus/probe-prompts.js";
+import {
+  buildCanonicalJudgePrompt,
+  CANONICAL_FORM_STANDARD,
+  CANONICAL_JUDGE_SCHEMA,
+} from "./corpus/golden-canonical-lib.js";
+import {
   ROLE_VIEW,
   SKILL_ROLES,
   getSkillView,
@@ -418,6 +430,57 @@ export function syncEvalsContent(contentDir: string): {
   );
   copyFileSync(resolve(corpusDir, "RUBRIC.md"), resolve(evalsDir, "rubric.md"));
   copyFileSync(resolve(corpusDir, "SCORING.md"), resolve(evalsDir, "scoring.md"));
+
+  // The reasoner probe (S5): its two prompts with placeholders, the retraction
+  // context, the schemas, and the pinned questions per cluster.
+  writeFileSync(
+    resolve(evalsDir, "probe-prompts.json"),
+    JSON.stringify(
+      {
+        withGraph: buildWithGraphPrompt("<the question>", [
+          {
+            id: "<claim id>",
+            text: "<a claim's canonical text>",
+            status: "<status>",
+            confidence: 0.8,
+            credence: 0.7,
+            summary: "<the Steward's assessment summary>",
+            similarity: 0.9,
+          },
+        ]),
+        withoutGraph: buildWithoutGraphPrompt("<the question>"),
+        retraction: retractionContext({ title: "<source title>", url: "<source url>" }),
+        withGraphSchema: PROBE_WITH_GRAPH_SCHEMA,
+        withoutGraphSchema: PROBE_WITHOUT_GRAPH_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  mkdirSync(resolve(evalsDir, "probes"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "probes"))) {
+    copyFileSync(join(corpusDir, "probes", file), resolve(evalsDir, "probes", file));
+  }
+
+  // The canonical-form golden suite (S1 addendum): the fixture, the judge's
+  // prompt with placeholders, the §3 standard it pins, and its schema.
+  copyFileSync(join(corpusDir, "golden", "canonical-forms.json"), resolve(evalsDir, "canonical-forms.json"));
+  writeFileSync(
+    resolve(evalsDir, "canonical-judge.json"),
+    JSON.stringify(
+      {
+        prompt: buildCanonicalJudgePrompt({
+          excerpt: "<the source excerpt, verbatim>",
+          expected: "<the pinned canonical form>",
+          proposed: "<the form the Extractor proposed>",
+        }),
+        standard: CANONICAL_FORM_STANDARD,
+        schema: CANONICAL_JUDGE_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
 
   const evalsIndex = buildEvalsIndex({
     syncedAt: new Date().toISOString(),

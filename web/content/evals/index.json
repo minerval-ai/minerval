@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-16T16:47:52.869Z",
-  "gitCommit": "90c252c",
+  "syncedAt": "2026-09-18T16:50:02.271Z",
+  "gitCommit": "e256022",
   "pins": [
     {
       "agent": "steward",
@@ -335,6 +335,10 @@
       "file": "2026-09-11T23-45-34-341Z.json"
     },
     {
+      "cluster": "blackholes",
+      "file": "2026-09-18T14-31-11-782Z.json"
+    },
+    {
       "cluster": "eggs",
       "file": "2026-09-11T23-22-27-296Z.json"
     },
@@ -343,19 +347,34 @@
       "file": "2026-09-12T04-13-45-131Z.json"
     },
     {
+      "cluster": "eggs",
+      "file": "2026-09-18T14-32-36-530Z.json"
+    },
+    {
       "cluster": "lableak",
       "file": "2026-09-12T00-37-51-997Z.json"
     },
     {
+      "cluster": "lableak",
+      "file": "2026-09-18T14-36-34-280Z.json"
+    },
+    {
       "cluster": "lethalities",
       "file": "2026-09-12T02-59-38-161Z.json"
+    },
+    {
+      "cluster": "lethalities",
+      "file": "2026-09-18T14-32-23-343Z.json"
     }
   ],
   "goldenRuns": [
     "2026-08-08-deepseek-v4-flash.json",
     "2026-09-11-glm-5.3-flash-as-shipped.json",
-    "2026-09-12-glm-5.3-flash.json"
+    "2026-09-12-glm-5.3-flash.json",
+    "2026-09-16-glm-5.3-flash-main-477.json"
   ],
+  "goldenCanonicalRuns": [],
+  "replays": [],
   "rubric": [
     {
       "letter": "A",
