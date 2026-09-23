@@ -329,7 +329,7 @@ judge runs on `JUDGE_MODEL` (default Sonnet — deliberately a different
 model/context than the agents under test). Scoring **refuses** a judge that
 is the Steward model the graph was built with, unless overridden: on the
 config defaults that means set `JUDGE_MODEL` to something other than Sonnet,
-or use `--profile=production`, where the Steward is Fable. See
+or use `--profile=production`, where the Steward is Opus 5.5. See
 [`SCORING.md`](./SCORING.md).
 
 ## Reading the results

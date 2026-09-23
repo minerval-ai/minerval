@@ -85,16 +85,16 @@ export class SolverStack extends cdk.Stack {
         // accident.
         SOLVER_ENABLED: props.solverEnabled ?? "false",
         // The strong tier; config refuses production without it (7.8).
-        SOLVER_MODEL: props.solverModel ?? "claude-fable-5-1",
+        SOLVER_MODEL: props.solverModel ?? "claude-opus-5-5",
         // The model-env guard names every load-bearing agent, and the
         // Steward's attempt_completed run is invoked from this process on
         // the strong tier (6.4).
-        STEWARD_MODEL: "claude-fable-5-1",
-        STEWARD_STRONG_MODEL: "claude-fable-5-1",
-        CURATOR_MODEL: "claude-fable-5-1",
-        AUDIT_MODEL: "claude-fable-5-1",
-        ARBITRATION_MODEL: "claude-fable-5-1",
-        EXTRACTOR_MODEL: "claude-fable-5-1",
+        STEWARD_MODEL: "claude-opus-5-5",
+        STEWARD_STRONG_MODEL: "claude-opus-5-5",
+        CURATOR_MODEL: "claude-opus-5-5",
+        AUDIT_MODEL: "claude-opus-5-5",
+        ARBITRATION_MODEL: "claude-opus-5-5",
+        EXTRACTOR_MODEL: "claude-opus-5-5",
         MATCHER_MODEL: "z-ai/glm-5.3-flash",
         PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
         CITATION_URL_BASE: "https://w3id.org/minerval/claim",

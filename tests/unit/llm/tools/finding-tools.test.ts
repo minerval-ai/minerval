@@ -81,7 +81,7 @@ describe("note_finding tool", () => {
   });
 
   it("attributes the finding from the usage context and reports it published", async () => {
-    const tools = createFindingTools({ model: "claude-fable-5-1" });
+    const tools = createFindingTools({ model: "claude-opus-5-5" });
     const out = await runWithUsageContext(
       { agent: "steward", runId: RUN_ID, jobId: null, skills: ["mathematics"] },
       () => tools.execute(NOTE_FINDING_TOOL_NAME, INPUT)
@@ -94,7 +94,7 @@ describe("note_finding tool", () => {
         importance: 7,
         joins: null,
         agent: "steward",
-        model: "claude-fable-5-1",
+        model: "claude-opus-5-5",
         runId: RUN_ID,
         skills: ["mathematics"],
       })

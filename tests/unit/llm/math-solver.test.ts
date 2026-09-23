@@ -60,8 +60,8 @@ vi.mock("../../../src/llm/client.js", async () => {
         turns++;
         const result = {
           content: "",
-          model: "claude-fable-5-1",
-          servedModel: t.servedModel ?? "claude-fable-5-1",
+          model: "claude-opus-5-5",
+          servedModel: t.servedModel ?? "claude-opus-5-5",
           usage,
           stopReason: t.tools.length > 0 ? "tool_use" : "end_turn",
           toolUses: t.tools.map((u, i) => ({ id: `t${turns}-${i}`, name: u.name, input: u.input })),
@@ -142,7 +142,7 @@ vi.mock("../../../src/services/trace-service.js", () => ({
 
 const config = vi.hoisted(() => ({
   env: "test",
-  solverModel: "claude-fable-5-1",
+  solverModel: "claude-opus-5-5",
   solverLeanMaxChecks: 60,
   solverLeanMaxElaborations: 200,
   attemptOverageFraction: 0.25,
@@ -200,7 +200,7 @@ const attempt = {
   action_id: "ac1",
   variant: "max" as const,
   effort: "max",
-  model: "claude-fable-5-1",
+  model: "claude-opus-5-5",
   is_calibration: false,
 };
 
@@ -278,8 +278,8 @@ describe("runMathSolver: the run shape", () => {
     expect((o.tools as unknown[])[6]).toBe(REPORT_TOOL);
     expect(o.fallbacks).toBe("none");
     expect(o.effort).toBe("max");
-    expect(o.taskBudgetTokens).toBe(solverTaskBudgetTokens(CEILING, "claude-fable-5-1"));
-    expect(o.model).toBe("claude-fable-5-1");
+    expect(o.taskBudgetTokens).toBe(solverTaskBudgetTokens(CEILING, "claude-opus-5-5"));
+    expect(o.model).toBe("claude-opus-5-5");
     // No clock or turn budget: the guard is the loop's, not the attempt's.
     expect(o.maxIterations).toBe(SOLVER_MAX_TURNS_GUARD);
     expect(o.maxWallMs).toBeUndefined();
@@ -396,8 +396,8 @@ describe("runMathSolver: hooks", () => {
 
   it("updates the heartbeat, turns, spend, and served models after every turn", async () => {
     script.turns = [
-      { tools: [{ name: "notebook_read", input: {} }], cost: 1_000, servedModel: "claude-fable-5-1-20260901" },
-      { tools: [report()], cost: 500, servedModel: "claude-fable-5-1-20260901" },
+      { tools: [{ name: "notebook_read", input: {} }], cost: 1_000, servedModel: "claude-opus-5-5-20260901" },
+      { tools: [report()], cost: 500, servedModel: "claude-opus-5-5-20260901" },
     ];
     const { value } = await run();
     expect(svc.progress).toEqual([
@@ -406,17 +406,17 @@ describe("runMathSolver: hooks", () => {
         actionId: "ac1",
         turns: 1,
         spentMicroUsd: 1_000,
-        servedModels: ["claude-fable-5-1-20260901"],
+        servedModels: ["claude-opus-5-5-20260901"],
       },
       {
         attemptId: attempt.id,
         actionId: "ac1",
         turns: 2,
         spentMicroUsd: 1_500,
-        servedModels: ["claude-fable-5-1-20260901"],
+        servedModels: ["claude-opus-5-5-20260901"],
       },
     ]);
-    expect(value.servedModels).toEqual(["claude-fable-5-1-20260901"]);
+    expect(value.servedModels).toEqual(["claude-opus-5-5-20260901"]);
     expect(value.turns).toBe(2);
   });
 
@@ -450,7 +450,7 @@ describe("runMathSolver: hooks", () => {
   it("records a refusal as refused rather than continuing on another model", async () => {
     script.turns = [
       { tools: [{ name: "notebook_read", input: {} }], cost: 100 },
-      { throw: new LlmRefusalError("claude-fable-5-1", "harmful") },
+      { throw: new LlmRefusalError("claude-opus-5-5", "harmful") },
     ];
     const { value, billedMicroUsd } = await run();
     expect(value.status).toBe("refused");
@@ -650,12 +650,13 @@ describe("validateSolverReport", () => {
 
 describe("solverTaskBudgetTokens", () => {
   it("sizes the token countdown from the dollar ceiling at the model's output price, never below the provider minimum", () => {
-    // $150 ceiling, 60 percent of it at $50 per million output tokens: 1.8M tokens.
-    expect(solverTaskBudgetTokens(150_000_000, "claude-fable-5-1")).toBe(1_800_000);
-    // A cheaper model gets more tokens for the same dollars.
+    // $150 ceiling, 60 percent of it at $20 per million output tokens: 4.5M tokens.
+    expect(solverTaskBudgetTokens(150_000_000, "claude-opus-5-5")).toBe(4_500_000);
+    // A pricier model gets fewer tokens for the same dollars.
     expect(solverTaskBudgetTokens(150_000_000, "claude-opus-5")).toBe(3_600_000);
+    expect(solverTaskBudgetTokens(150_000_000, "claude-fable-5-1")).toBe(1_800_000);
     // A tiny ceiling still meets the provider's floor.
-    expect(solverTaskBudgetTokens(100_000, "claude-fable-5-1")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
-    expect(solverTaskBudgetTokens(0, "claude-fable-5-1")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
+    expect(solverTaskBudgetTokens(100_000, "claude-opus-5-5")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
+    expect(solverTaskBudgetTokens(0, "claude-opus-5-5")).toBe(SOLVER_TASK_BUDGET_MIN_TOKENS);
   });
 });

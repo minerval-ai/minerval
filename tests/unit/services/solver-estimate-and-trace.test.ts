@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
     costEstimateMinRuns: 5,
     costEstimatePercentile: 0.8,
     stewardModel: "claude-sonnet-5",
-    stewardStrongModel: "claude-fable-5-1",
+    stewardStrongModel: "claude-opus-5-5",
   },
 }));
 
@@ -68,31 +68,31 @@ beforeEach(() => {
 describe("estimateSolverAttemptCostMicroUsd", () => {
   it("groups the solver's live series by run_id and filters by variant", async () => {
     state.row = { runs: 7, est_cost: 91_000_000 };
-    const est = await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "max" });
+    const est = await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "max" });
     expect(est).toBe(91_000_000);
     const { q, params } = state.queries[0]!;
     const s = q.replace(/\s+/g, " ");
     expect(s).toMatch(/GROUP BY u.run_id/);
     expect(s).toMatch(/FROM proof_attempts p WHERE p.run_id = u.run_id/);
     expect(s).not.toMatch(/GROUP BY claim_id/);
-    expect(params).toEqual(["math_solver", "claude-fable-5-1", 14, 0.8, "max"]);
+    expect(params).toEqual(["math_solver", "claude-opus-5-5", 14, 0.8, "max"]);
   });
 
   it("falls back to the funding mandate's prior until five runs exist", async () => {
     state.row = { runs: 3, est_cost: 91_000_000 };
-    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "max" })).toBe(150_000_000);
-    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "standard" })).toBe(60_000_000);
+    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "max" })).toBe(150_000_000);
+    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "standard" })).toBe(60_000_000);
     expect(
-      await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "standard", grantId: "g1" })
+      await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "standard", grantId: "g1" })
     ).toBe(70_000_000);
   });
 
   it("keeps the two variants as two series in the cache", async () => {
     state.row = { runs: 9, est_cost: 40_000_000 };
-    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "standard" })).toBe(40_000_000);
+    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "standard" })).toBe(40_000_000);
     state.row = { runs: 9, est_cost: 120_000_000 };
-    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "max" })).toBe(120_000_000);
-    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-fable-5-1", variant: "standard" })).toBe(40_000_000);
+    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "max" })).toBe(120_000_000);
+    expect(await estimateSolverAttemptCostMicroUsd({ model: "claude-opus-5-5", variant: "standard" })).toBe(40_000_000);
   });
 });
 

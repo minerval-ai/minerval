@@ -1,8 +1,8 @@
 /**
  * Thrown when the model declines a request (stop_reason "refusal" — an HTTP
- * 200, not an API error). For Fable models the request already retried on the
- * server-side Opus fallback (see client.ts), so seeing this means the whole
- * chain refused. Callers that previously read empty content or got a
+ * 200, not an API error). For fallback-gated models (Opus 5.5, Fable/Mythos)
+ * the request already retried on the server-side Opus fallback (see
+ * client.ts), so seeing this means the whole chain refused. Callers that previously read empty content or got a
  * misleading structured-output parse failure now fail loudly with the
  * policy category instead.
  */

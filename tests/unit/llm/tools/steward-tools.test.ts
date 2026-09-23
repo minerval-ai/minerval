@@ -753,11 +753,11 @@ describe("steward update_claim_assessment", () => {
         assessment: "Supported.",
         reasoning_trace: "Trace.",
       },
-      { trigger: "structure_and_assess", model: "claude-fable-5-1" }
+      { trigger: "structure_and_assess", model: "claude-opus-5-5" }
     );
     const row = insertedValues.find((r) => "reasoningTrace" in r);
     // Every verdict names its assessor: the model id the run resolved to.
-    expect(row?.model).toBe("claude-fable-5-1");
+    expect(row?.model).toBe("claude-opus-5-5");
   });
 
   it("writes a null model when the run doesn't carry one (legacy call sites)", async () => {

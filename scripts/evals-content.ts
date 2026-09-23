@@ -126,6 +126,7 @@ export interface EvalsIndex {
 
 /** Display names for the model ids the system pins; anything else shows its id. */
 const MODEL_LABELS: Array<[prefix: string, label: string]> = [
+  ["claude-opus-5-5", "Claude Opus 5.5"],
   ["claude-fable-5-1", "Claude Fable 5.1"],
   ["claude-fable-5", "Claude Fable 5"],
   ["claude-mythos-5", "Claude Mythos 5"],

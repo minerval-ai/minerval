@@ -34,7 +34,7 @@ function attemptRow(over: Record<string, unknown> = {}) {
     run_id: "run-1",
     grant_id: "g1",
     job_id: "job-1",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     variant: "max",
     effort: "max",
     status: "running",
@@ -144,7 +144,7 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     owlCostMicroUsd: 1_000_000,
     attemptOverageFraction: 0.25,
-    solverModel: "claude-fable-5-1",
+    solverModel: "claude-opus-5-5",
   }),
 }));
 vi.mock("../../../src/services/allocation-policy-service.js", () => ({
@@ -333,7 +333,7 @@ describe("openAttempt", () => {
       action_id: "ac1",
       grant_id: "g1",
       job_id: "job-1",
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       variant: "max",
       effort: "max",
       is_calibration: true,

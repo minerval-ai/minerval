@@ -24,10 +24,10 @@ beforeEach(() => {
 
 describe("web_search on every provider", () => {
   it("is the Anthropic server tool on a Claude model that runs it, with nothing to execute", () => {
-    for (const model of ["claude-fable-5-1", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+    for (const model of ["claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"]) {
       expect(anthropicServerWebSearch(model)).toBe(true);
     }
-    const ws = createWebSearch("claude-fable-5-1", 5);
+    const ws = createWebSearch("claude-opus-5-5", 5);
     expect(ws.tool).toEqual({ type: "web_search_20260209", name: WEB_SEARCH_TOOL_NAME, max_uses: 5 });
     expect(ws.execute).toBeNull();
   });

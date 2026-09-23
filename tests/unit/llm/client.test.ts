@@ -45,12 +45,12 @@ beforeEach(() => {
 
 describe("complete() model routing", () => {
   it("routes Fable through the beta endpoint with the Opus refusal fallback", async () => {
-    const result = await complete({ messages, model: MODELS.fable });
+    const result = await complete({ messages, model: MODELS.strong });
 
     expect(result.content).toBe("hello");
     expect(createMock).not.toHaveBeenCalled();
     const params = betaCreateMock.mock.calls[0]![0];
-    expect(params.model).toBe(MODELS.fable);
+    expect(params.model).toBe(MODELS.strong);
     expect(params.betas).toEqual(["server-side-fallback-2026-06-01"]);
     expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
     // Fable rejects sampling params and any thinking config with a 400.
@@ -222,7 +222,7 @@ describe("complete() refusal handling", () => {
       stop_details: { type: "refusal", category: null },
     });
 
-    await expect(complete({ messages, model: MODELS.fable })).rejects.toThrow(
+    await expect(complete({ messages, model: MODELS.strong })).rejects.toThrow(
       LlmRefusalError
     );
   });
