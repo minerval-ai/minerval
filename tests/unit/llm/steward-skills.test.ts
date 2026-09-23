@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   executeMatcherTool: vi.fn(async () => JSON.stringify({ is_match: false })),
   config: {
     env: "test",
-    stewardModel: "claude-fable-5-1",
+    stewardModel: "claude-opus-5-5",
     stewardMaxIterations: 50,
     stewardMaxNewSubclaimsPerRun: 20,
     stewardMaxInstancesPerRun: 10,

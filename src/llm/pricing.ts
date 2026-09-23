@@ -47,6 +47,11 @@ const MODEL_RATES: Record<string, ModelRates> = {
   "claude-fable-5-1": { inputPerMtok: 10, outputPerMtok: 50, cacheReadMultiplier: 0.025 },
   "claude-fable-5": { inputPerMtok: 10, outputPerMtok: 50 },
   "claude-mythos-5": { inputPerMtok: 10, outputPerMtok: 50 },
+  // Opus 5.5 — the strong tier — undercuts Opus 5 at $4/$20 and bills cache
+  // reads at $0.20/MTok (0.05× input). "claude-opus-5" is a PREFIX of its id,
+  // so without this entry it would meter at Opus 5's $5/$25 and 0.1× reads —
+  // overstating every load-bearing agent's cost. Longest prefix wins.
+  "claude-opus-5-5": { inputPerMtok: 4, outputPerMtok: 20, cacheReadMultiplier: 0.05 },
   // Opus 5 and the 4.x line share pricing. All three 4.x entries are listed
   // because any *_MODEL env override can route an agent to them (see #11's
   // validation), and an unlisted model meters at the Fable-tier fallback —
@@ -78,7 +83,8 @@ const MODEL_RATES: Record<string, ModelRates> = {
   "gpt-5-nano": { inputPerMtok: 0.05, outputPerMtok: 0.4, ...OPENAI_FREE_CACHE_WRITES },
 };
 
-// Conservative default for unknown models: price at the top (Fable) tier so a
+// Conservative default for unknown models: price at the top (Fable) tier — the
+// most expensive Anthropic list price, above the strong tier's Opus 5.5 — so a
 // new model ID never meters as free. Ops sees the unknown model in usage rows.
 const FALLBACK_RATES: ModelRates = { inputPerMtok: 10, outputPerMtok: 50 };
 

@@ -103,7 +103,7 @@ vi.mock("../../../src/db/client.js", () => ({
 
 const config = vi.hoisted(() => ({
   env: "test",
-  solverModel: "claude-fable-5-1",
+  solverModel: "claude-opus-5-5",
   solverLeanMaxChecks: 60,
   solverLeanMaxElaborations: 200,
   attemptMaxIterations: 500,
@@ -134,7 +134,7 @@ vi.mock("../../../src/llm/client.js", () => ({
       turns++;
       last = {
         content: "",
-        model: "claude-fable-5-1",
+        model: "claude-opus-5-5",
         usage,
         stopReason: "tool_use",
         toolUses: tools.map((t, i) => ({ id: `t${turns}-${i}`, ...t })),
@@ -251,7 +251,7 @@ describe("the solver writes nothing to the graph or the money tables", () => {
             action_id: "ac1",
             variant: "max",
             effort: "max",
-            model: "claude-fable-5-1",
+            model: "claude-opus-5-5",
             is_calibration: false,
           },
           claim: { id: formalization.claim_id, text: "True." },

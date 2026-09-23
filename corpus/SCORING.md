@@ -67,7 +67,7 @@ note, so a low number is always traceable to specific claims.
 ## Judge design (why it's set up this way)
 
 - **Different model/context than the agent under test.** `JUDGE_MODEL` defaults to
-  Sonnet; the agents under test run on Fable in prod. Never let an agent grade
+  Sonnet; the agents under test run on Opus 5.5 in prod. Never let an agent grade
   its own trace with its own framing in context. This is enforced: `corpus:score`
   refuses a judge that is the Steward model the graph was actually built with
   (as recorded at run time, not as configured at score time — the first

@@ -553,13 +553,13 @@ const configSchema = z.object({
           code: z.ZodIssueCode.custom,
           message:
             `SOLVER_MODEL "${id}" is not a strong-tier model the long-run ` +
-            "loop can drive (claude-fable, claude-mythos, claude-opus-5 " +
+            "loop can drive (claude-opus-5, claude-fable, claude-mythos " +
             "families); the solver needs effort, streaming, and the " +
             "long-run betas.",
         });
       }
     })
-    .default(MODELS.fable),
+    .default(MODELS.strong),
   // The solver's own kill switch: the worker exits its loop when false.
   // Off by default so no deployment runs multi-hour attempts without
   // someone choosing that. Same string convention as enableContributions
@@ -717,13 +717,13 @@ const configSchema = z.object({
   matcherModel: modelId(OPENROUTER_MODELS.flash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
-  // STEWARD_MODEL=claude-fable-5-1 so the most important claims get the deepest
-  // judgment (issue #77). The importance-priority drain means Fable only ever
-  // runs on the top of the queue.
+  // STEWARD_MODEL=claude-opus-5-5 so the most important claims get the deepest
+  // judgment (issue #77). The importance-priority drain means the strong tier
+  // only ever runs on the top of the queue.
   stewardModel: modelId(MODELS.sonnet),
   // The Curator adjudicates merges/splits and proposes structure — recognizing
   // duplicates saturates, but a contested split is judgment, so production runs
-  // it on Fable (CURATOR_MODEL).
+  // it on the strong tier, Opus 5.5 (CURATOR_MODEL).
   curatorModel: modelId(MODELS.sonnet),
   // The Extractor authors the graph's language: given an arbitrary document —
   // whose framing it must not adopt and whose text is wholly untrusted — it
@@ -733,18 +733,19 @@ const configSchema = z.object({
   // It also runs ONCE PER DOCUMENT rather than once per claim (6 sources
   // yielded 41 claims in the first live epoch), so tier here is cheap
   // leverage, and its cost is already attributed to the mandate that chose
-  // the source. Production sets EXTRACTOR_MODEL=claude-fable-5-1.
+  // the source. Production sets EXTRACTOR_MODEL=claude-opus-5-5.
   //
   // Until this existed the extractor had no knob at all: no env, no config,
   // and no model passed by its caller, so it silently ran the cheap
   // DEFAULT_MODEL — the exact regression the production guard below was
   // written to prevent, through a door that guard did not cover.
   extractorModel: modelId(MODELS.sonnet),
-  // Where extraction retries when the chosen tier REFUSES. Fable declines
-  // bio-adjacent material (issue #78) and has already done so on this graph's
-  // virology cluster, and LlmRefusalError means the server-side Opus fallback
-  // refused too — so the retry has to leave the family. Without it, moving
-  // extraction to Fable would turn "this paper is about pathogens" into a
+  // Where extraction retries when the chosen tier REFUSES. The strong tier's
+  // classifiers decline bio-adjacent material (issue #78; Fable did so on this
+  // graph's virology cluster, and Opus 5.5 carries the same bio classifier),
+  // and LlmRefusalError means the server-side Opus fallback refused too — so
+  // the retry has to leave the family. Without it, moving extraction to the
+  // strong tier would turn "this paper is about pathogens" into a
   // cancelled ingest with the mandate's fetch money already spent.
   extractorFallbackModel: modelId(MODELS.sonnet),
   // Shared by the Contribution Reviewer. The Audit Agent has its own knob
@@ -752,7 +753,7 @@ const configSchema = z.object({
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
   // Arbitration is the highest-stakes governance call; production sets
-  // ARBITRATION_MODEL=claude-fable-5-1.
+  // ARBITRATION_MODEL=claude-opus-5-5.
   arbitrationModel: modelId(MODELS.sonnet),
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
@@ -761,11 +762,11 @@ const configSchema = z.object({
   // quoting, and the authority to refuse mandates that would warp the
   // graph. Always the best available model — this is judgment-heavy,
   // user-facing work where a weak model would be a false economy.
-  grantmakerModel: modelId(MODELS.fable),
+  grantmakerModel: modelId(MODELS.strong),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
-  // Default Sonnet; raise to Opus/Fable for a higher-confidence judge.
+  // Default Sonnet; raise to Opus for a higher-confidence judge.
   judgeModel: modelId(MODELS.sonnet),
   // The tagger (#272): the first agent on the nano tier. It labels what a
   // claim is ABOUT (topic tags over the open vocabulary in `tags`), makes no
@@ -1134,10 +1135,10 @@ export function loadConfig(): Config {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.fable}, ` +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.strong}, ` +
           "and the Steward's money triggers on STEWARD_MODEL. " +
           "Fine for local dev; set the env(s) (production uses " +
-          "claude-fable-5-1) if this environment does real assessment work."
+          "claude-opus-5-5) if this environment does real assessment work."
       );
     }
   }

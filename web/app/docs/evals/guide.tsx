@@ -1020,7 +1020,7 @@ npm run predictions -- score`}</Cmd> },
         title: "Where the design may be wrong",
         body: (
           <ul>
-            <li><strong>The judge is weaker than the judged.</strong> Sonnet grades Fable, one model family, no second judge.</li>
+            <li><strong>The judge is weaker than the judged.</strong> Sonnet grades Opus 5.5, one model family, no second judge.</li>
             <li><strong>The judge&rsquo;s reviewer wrote its prompt.</strong> An outside reader would be a stronger check.</li>
             <li><strong>Agreement is measured by another matcher</strong>, with a hand-picked embedding threshold never checked against the golden pairs.</li>
             <li><strong>The golden suite is thirty in-house pairs at its ceiling.</strong> It will catch regressions on those thirty.</li>

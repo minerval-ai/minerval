@@ -6,6 +6,7 @@ import { modelDisplayName } from "../../../web/lib/model-names";
 
 describe("modelDisplayName", () => {
   it("maps the known production model ids to their display names", () => {
+    expect(modelDisplayName("claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(modelDisplayName("claude-fable-5-1")).toBe("Claude Fable 5.1");
     // The retired default stays mapped: assessments written under Fable 5
     // must keep naming the model that actually judged them.

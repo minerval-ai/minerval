@@ -77,7 +77,7 @@ const FLAGSHIP: ClaimDetail = {
     subclaim_summary: {},
     assessed_at: "2026-03-18T09:12:00Z",
     // The model behind the verdict (#294), shown next to the date.
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
   },
   trajectory: {
     current: { status: "supported", confidence: 0.78, assessed_at: "2026-03-18T09:12:00Z", is_current: true, trigger: "contribution_accepted" },
@@ -885,7 +885,7 @@ const LEGENDRE: ClaimDetail = {
       "The claim is a proposition of mathematics, true or false by proof, and no proof is on record. The evidence that bears on it is of three kinds. First, computation: [[claim:legendre-computed|the conjecture holds for every n below 4 × 10⁹]], because every maximal prime gap below 2⁶⁴ is known and none exceeds 1,550, while the interval between n² and (n + 1)² has length 2n + 1. Second, weaker proven statements in the same direction: [[claim:bertrand-postulate|Bertrand's postulate]], machine-checked here, and [[claim:bhp-gaps|the Baker–Harman–Pintz bound]], an accepted proof placing a prime in [x, x + x^0.525] for all sufficiently large x. Third, the heuristic of Cramér's model, under which the conjecture holds with room to spare; that heuristic is not evidence of the kind that changes a status, and it is recorded here only as the reason the credence is high. The formal statement was published on 20 February 2026 as version 2, after version 1 was retired in review for quantifying over n = 0; the house solver attempted the statement twice and settled nothing, and a prize of 2,500 owls is open on it. The prize changes nothing in this assessment. What would change it: a proof, which would make the claim verified; a counterexample, which the computation makes very unlikely below 4 × 10⁹; or a proof for a density-one set of n, which would strengthen the support without settling the question.",
     subclaim_summary: {},
     assessed_at: "2026-03-02T23:30:00Z",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
   },
   trajectory: {
     current: { status: "supported", confidence: 0.9, assessed_at: "2026-03-02T23:30:00Z", is_current: true, trigger: "steward_reassessment" },
@@ -1072,7 +1072,7 @@ const BERTRAND: ClaimDetail = {
       "Verified by the machine-checked route (§2.4): a formal proof of the published statement checks under the pin with a clean axiom list, and the statement is faithful to the wording. The argument rests on [[claim:primorial-bound|Chebyshev's bound on the primorial]], which the discourse names and reuses and which is itself in Mathlib; the rest of the proof is arithmetic on the central binomial coefficient and is not a claim. The check was the solver's calibration run of 10 February 2026, accepted at mathlib-v4.33.1 with axioms propext, Classical.choice, and Quot.sound only. Fidelity was reviewed at drafting and in a fresh-context pass: Nat.Prime is the primality of the informal statement, the lower bound is strict and the upper bound weak as the postulate states, and the witness n = 1, p = 2 shows the hypotheses are satisfiable.",
     subclaim_summary: {},
     assessed_at: "2026-02-11T09:00:00Z",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
   },
   trajectory: {
     current: { status: "verified", confidence: 0.98, assessed_at: "2026-02-11T09:00:00Z", is_current: true, trigger: "steward_reassessment" },

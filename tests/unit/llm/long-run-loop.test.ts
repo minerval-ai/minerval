@@ -44,7 +44,7 @@ const usage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheCre
 function toolTurn(id: string): ToolCompletionResult {
   return {
     content: "",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     usage,
     stopReason: "tool_use",
     toolUses: [{ id, name: "search", input: { q: id } }],
@@ -57,7 +57,7 @@ function toolTurn(id: string): ToolCompletionResult {
 function textTurn(text: string, stopReason = "end_turn"): ToolCompletionResult {
   return {
     content: text,
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     usage,
     stopReason,
     toolUses: [],
@@ -151,7 +151,7 @@ describe("longRunToolLoop", () => {
     await longRunToolLoop({
       initialMessages: initial,
       tools: [],
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       system: ["role", "skill"],
       effort: "xhigh",
       taskBudgetTokens: 64_000,
@@ -160,7 +160,7 @@ describe("longRunToolLoop", () => {
     });
     const req = mocks.completeWithToolsStreaming.mock.calls[0]![0];
     expect(req).toMatchObject({
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       system: ["role", "skill"],
       effort: "xhigh",
       taskBudgetTokens: 64_000,

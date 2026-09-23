@@ -55,7 +55,7 @@ PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
-Fable 5.1. Any agent can be pointed at OpenAI or OpenRouter instead with a
+Opus 5.5. Any agent can be pointed at OpenAI or OpenRouter instead with a
 single env var — the Matcher runs on GLM 5.3 Flash this way — see
 [Providers](#providers).
 
@@ -950,8 +950,8 @@ Model choice follows the value of the judgment, not a single default:
 |-------|------------------|
 | Tagger · Matcher · Lookout | GLM 5.3 Flash (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
-| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
-| Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
+| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Opus 5.5 |
+| Solver (`math_solver`) | Claude Opus 5.5 at effort `max` (`SOLVER_MODEL`), fallbacks off |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
@@ -962,7 +962,7 @@ production as in dev. The Lookout's question ("did something happen that
 warrants work in my scope?") is relevance, not truth, and it runs often,
 so it shares the tier too, and a Grantmaker can pin a stronger model on
 one lookout whose brief warrants it. The load-bearing epistemic work
-(stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
+(stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and the
@@ -987,7 +987,7 @@ Which backend serves a call is decided by the **shape of the model id**
 
 | ID shape | Provider | Example |
 |----------|----------|---------|
-| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-fable-5-1` |
+| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
