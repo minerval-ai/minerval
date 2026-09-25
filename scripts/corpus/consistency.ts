@@ -459,6 +459,8 @@ async function run(cluster: string): Promise<void> {
     await restoreSnapshot(CORPUS_DATABASE_URL, planted);
     runChild(SCRIPT, ["arm", `--arm=${name}`, `--out=${outDir}`, ...passthrough], {
       BACKGROUND_FALLBACK_LANE_ENABLED: "false",
+      // The eval mandate's own review pass is not what either arm measures.
+      MANDATE_REVIEW_MAX_PASSES_PER_DAY: "0",
       CONSISTENCY_MAX_SWEEPS_PER_DAY: name === "checker" ? (argFlag("sweeps") ?? "2") : "0",
     });
     await saveSnapshot(CORPUS_DATABASE_URL, `cc_${stamp}_${name}`);

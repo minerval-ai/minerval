@@ -40,7 +40,6 @@ import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
 import { partitionFromRef } from "../services/consistency-service.js";
-import { getGeneralMandate } from "../services/allocation-policy-service.js";
 import { runConsistencySweep } from "./consistency-sweep.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
@@ -332,20 +331,25 @@ async function runLookoutAction(
  */
 async function runConsistencySweepAction(action: RunnableAction): Promise<EngineProcessResult> {
   const partition = await partitionFromRef(action.target_ref ?? "");
-  const general = await getGeneralMandate();
-  if (!partition || !general) {
+  // The funder is whoever covered this row (the General mandate, by
+  // fundGrantSelfActions), read from the allocation itself rather than a
+  // cached mandate lookup that can lag a mandate's creation.
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  const [grant] = funder.grantId
+    ? await rawQuery<{ id: string; funder_user_id: string; budget_job_id: string }>(
+        `SELECT id, funder_user_id, budget_job_id FROM grants WHERE id = $1`,
+        [funder.grantId]
+      )
+    : [];
+  if (!partition || !grant) {
     await cancelGroup(action.exclusion_group);
     return { status: "empty" };
   }
-  const [grant] = await rawQuery<{ funder_user_id: string }>(
-    `SELECT funder_user_id FROM grants WHERE id = $1`,
-    [general.grantId]
-  );
-  const funder: { jobId?: string; userId?: string; grantId?: string } =
-    await largestActionFunder(action.id).catch(() => ({}));
+  const general = { grantId: grant.id, budgetJobId: grant.budget_job_id };
   try {
     const { billedMicroUsd } = await runWithUsageContext(
-      { userId: grant?.funder_user_id ?? null, jobId: funder.jobId ?? general.budgetJobId },
+      { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
       () => withCostMeter(() => runConsistencySweep({ partition }))
     );
     await completeAction(action.id, billedMicroUsd, {
