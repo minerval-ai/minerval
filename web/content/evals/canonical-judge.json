@@ -1,0 +1,32 @@
+{
+  "prompt": "You are comparing two candidate canonical forms for the central proposition of a source excerpt, against the standard below. One is the pinned EXPECTED form; the other was PROPOSED by an extraction agent. Answer three narrow questions about the proposed form relative to the expected one. This is a comparison of substance, not style: different words for the same proposition in the same direction with no added specificity is a full pass.\n\nCanonical form (Minerval constitution §3): the shortest neutral statement of the proposition as it is actually debated, about fifteen words and rarely more than twenty-five, stated at the precision the discourse debates it. It strips the frame — the author's name, the document's dialectical setup, document-relative references — and is worded so that anyone discussing the proposition, whichever answer they give, would accept it as a fair statement of what is in dispute. It is written in the direction the discourse poses the question (the affirmative form of what is argued, as a debate motion or neutral headline would put it) even when the source argues against it; the source's stance is recorded on the instance, never by bending the form. It is not sharpened with parameters, thresholds or dates the author never committed to, and a vague proposition stays vague. Qualifications and hedges belong to the source's wording, not to the form.\n\n## Source excerpt\n<the source excerpt, verbatim>\n\n## Expected canonical form\n<the pinned canonical form>\n\n## Proposed canonical form\n<the form the Extractor proposed>\n\nAnswer: same proposition? same direction? neutral and no invented specificity? Then one sentence on the most important difference.",
+  "standard": "Canonical form (Minerval constitution §3): the shortest neutral statement of the proposition as it is actually debated, about fifteen words and rarely more than twenty-five, stated at the precision the discourse debates it. It strips the frame — the author's name, the document's dialectical setup, document-relative references — and is worded so that anyone discussing the proposition, whichever answer they give, would accept it as a fair statement of what is in dispute. It is written in the direction the discourse poses the question (the affirmative form of what is argued, as a debate motion or neutral headline would put it) even when the source argues against it; the source's stance is recorded on the instance, never by bending the form. It is not sharpened with parameters, thresholds or dates the author never committed to, and a vague proposition stays vague. Qualifications and hedges belong to the source's wording, not to the form.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "same_proposition": {
+        "type": "boolean",
+        "description": "Do the two forms state the SAME proposition — would the same evidence and reasons bear on both, and would a source that affirms one thereby affirm the other? Wording may differ freely; substance may not."
+      },
+      "same_direction": {
+        "type": "boolean",
+        "description": "Are the two forms stated in the same direction — does the proposed form affirm what the expected form affirms, rather than its negation or denial? A form that states the contrary proposition (\"X does not…\" against \"X does…\") is the wrong direction even though it is the same node."
+      },
+      "neutral_no_invented_specificity": {
+        "type": "boolean",
+        "description": "Is the proposed form neutral (no author framing, no dialectical setup, no document-relative references, no hedges carried into the form) AND free of specificity the expected form does not carry (no added numbers, thresholds, dates, named studies, mechanisms, or qualifiers that narrow or sharpen the proposition)?"
+      },
+      "note": {
+        "type": "string",
+        "description": "One sentence: the single most important difference, or 'equivalent' when there is none."
+      }
+    },
+    "required": [
+      "same_proposition",
+      "same_direction",
+      "neutral_no_invented_specificity",
+      "note"
+    ],
+    "additionalProperties": false
+  }
+}

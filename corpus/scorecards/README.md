@@ -38,6 +38,41 @@ the run-to-run spread, which takes N≈3 runs per side to measure
 (`corpus/SCORING.md`). The committed baseline for each cluster should
 therefore be the N≈3 set, not one file.
 
+## Baselines and the epoch-bump gate
+
+`corpus:gate <cluster>` (#334 L4) reads this directory and nothing else: it
+compares a candidate group of scorecards against the cluster's baseline group
+with the noise-band rule and exits 1 on a regression of a gated headline
+metric (by default the claim-bar pass rate, coherence violations, the dedup
+ratio and the share of assessments with a trace; `--gated=` changes the
+set). The baseline group is declared in `corpus/scorecards/<cluster>/baselines.json`:
+
+```json
+{ "epoch": "2026-09-domain-skills", "files": ["<A1>.json", "<A2>.json", "<A3>.json"], "note": "why these" }
+```
+
+Without one, the gate takes the earliest runs sharing the earliest run's
+epoch and profile. The candidate defaults to the newest runs outside the
+baseline that share the newest run's fingerprint (`--baseline=` and
+`--candidate=` take explicit comma lists). The gate refuses — deltas printed,
+no verdict, exit 0 — when a side has fewer than `--min-n` runs (default 2)
+or when the sides differ in profile or epoch: a delta across configurations
+is a different graph, not a regression. Declare a baseline only once its
+N≈3 runs are committed, and note that `scripts/sync-frontend-content.ts`
+copies every `.json` in a cluster directory to the site as a scorecard, so
+it must learn to skip `baselines.json` before one is committed here.
+
+## Other suites that file here
+
+`golden-matcher/` holds the Matcher golden runs (`corpus:golden`) and
+`golden-canonical/` the canonical-form golden runs (`corpus:golden-canonical`,
+#334 S1 addendum: pinned excerpt → expected §3 form, graded by a pair judge on
+`JUDGE_MODEL`). Both write one file per run; commit the ones worth keeping as
+the record, as with scorecards. The reasoner probe (`corpus:probe`, S5) and
+the adoption runner (`corpus:adopt`, S7) register in the per-machine registry
+and write to `runs/` only — diagnostic and decision-support respectively, not
+history to gate on.
+
 ## Files are the record; the registry is a local index
 
 The eval-run registry (`eval_runs`, #334 L1) exists and every scored run,

@@ -1,0 +1,41 @@
+{
+  "seq": 5, "at": "2026-09-10T10:01:00.000Z", "endedAt": "2026-09-10T10:03:10.000Z",
+  "agent": "steward", "runId": "run-a-stew-1", "claimId": "c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": null, "trigger": "structure_and_assess", "causedBy": 3,
+  "title": "Steward assessed “Dietary cholesterol from eggs raises LDL cholesterol in most adults”: supported", "outcome": "ok",
+  "steps": [
+    {
+      "seq": 1, "kind": "prompt", "at": "2026-09-10T10:01:00.000Z", "text": "system prompt · 1 message · 6 tools", "full": true,
+      "sizes": { "system": 9860, "input": 2400 },
+      "prompt": {
+        "model": "claude-fable-5-1", "effort": "high", "maxTokens": 16000,
+        "sha256": "0b2c4f6a8d0e2b4c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e7c1f0d3a9e4b2c6f",
+        "system": "You are the Claim Steward, an administrator of the Minerval claim graph bound by its constitution.\n\n# Your task\n\nYou own one claim. Break it into the claims it depends on, weigh the evidence, and record one of six verdicts with a credence where a single probability is honest.\n\n(sample fixture: the real prompt runs to about ten thousand characters and is vendored verbatim in a real recording)",
+        "initialMessages": [
+          { "role": "user", "content": "Claim c1: Dietary cholesterol from eggs raises LDL cholesterol in most adults\nTrigger: structure_and_assess\nInstances: 1 (s1, asserts)\n\nStructure and assess." }
+        ],
+        "tools": [
+          { "name": "get_claim_with_context", "description": "The claim, its instances, children and dependents.", "input_schema": { "type": "object", "properties": { "claimId": { "type": "string" } }, "required": ["claimId"] } },
+          { "name": "search_claims", "description": "Search the graph.", "input_schema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } },
+          { "name": "create_subclaim", "description": "Create a subclaim and link it.", "input_schema": { "type": "object", "properties": { "parentId": { "type": "string" }, "text": { "type": "string" }, "relation": { "type": "string" } }, "required": ["parentId", "text", "relation"] } },
+          { "name": "link_subclaim", "description": "Link an existing claim as a subclaim.", "input_schema": { "type": "object", "properties": { "parentId": { "type": "string" }, "childId": { "type": "string" }, "relation": { "type": "string" } }, "required": ["parentId", "childId", "relation"] } },
+          { "name": "search_sources", "description": "Search the web for sources.", "input_schema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } },
+          { "name": "record_assessment", "description": "Record the verdict. Ends the run.", "input_schema": { "type": "object", "properties": { "status": { "type": "string" }, "credence": { "type": "number" }, "confidence": { "type": "number" }, "summary": { "type": "string" } }, "required": ["status", "confidence"] } }
+        ]
+      }
+    },
+    { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:01:05.000Z", "text": "get_claim_with_context: c1", "tool": "get_claim_with_context", "input": { "claimId": "c1" }, "full": true },
+    { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:01:06.000Z", "text": "claim c1, 1 instance, 0 children", "tool": "get_claim_with_context", "output": { "id": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "instances": [{ "sourceId": "s1", "stance": "asserts", "verbatim": "the cholesterol in eggs raises LDL in most people who eat them regularly" }], "children": [], "dependents": [] }, "full": true },
+    { "seq": 4, "kind": "thought", "at": "2026-09-10T10:01:40.000Z", "text": "The claim rests on one empirical premise: that absorbed dietary cholesterol raises serum LDL. Controlled feeding trials and their meta-analyses show a modest, dose-dependent rise, roughly 0.05 mmol/L per 100 mg/day, with wide individual variation. That is enough for supported, not verified: the effect size is small, the trials are short, and a minority of hyper-responders complicate \"most adults\". I will record the mechanism premise as a subclaim it requires.", "full": true },
+    { "seq": 5, "kind": "tool_call", "at": "2026-09-10T10:02:10.000Z", "text": "create_subclaim: “Absorbed dietary cholesterol raises serum LDL in feeding trials”", "tool": "create_subclaim", "input": { "parentId": "c1", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "relation": "requires" }, "full": true },
+    { "seq": 6, "kind": "tool_result", "at": "2026-09-10T10:02:11.000Z", "text": "created c1a, edge e1", "tool": "create_subclaim", "output": { "claimId": "c1a", "edgeId": "e1" }, "full": true },
+    { "seq": 7, "kind": "decision", "at": "2026-09-10T10:03:10.000Z", "text": "assessment: supported, credence 0.70, confidence 0.80", "tool": "record_assessment", "input": { "status": "supported", "credence": 0.7, "confidence": 0.8, "summary": "Controlled feeding trials show a modest dose-dependent rise in LDL; the size varies and a minority respond strongly." }, "output": { "ok": true }, "full": true }
+  ],
+  "deltas": [
+    { "op": "claim_created", "claimId": "c1a", "text": "Absorbed dietary cholesterol raises serum LDL in feeding trials", "createdBy": "steward", "topLevel": false },
+    { "op": "edge_added", "edgeId": "e1", "parentId": "c1", "childId": "c1a", "relation": "requires", "argumentId": null },
+    { "op": "assessment_recorded", "claimId": "c1", "status": "supported", "credence": 0.7, "confidence": 0.8, "trigger": "structure_and_assess", "summary": "Controlled feeding trials show a modest dose-dependent rise in LDL; the size varies and a minority respond strongly." },
+    { "op": "importance_set", "claimId": "c1", "importance": 0.55 }
+  ],
+  "dataFlow": { "read": [{ "tool": "get_claim_with_context", "claimIds": ["c1"] }], "wrote": [] },
+  "costMicroUsd": 48000, "durationMs": 130000, "attribution": "exact", "detailPath": "a/5.json"
+}

@@ -1,0 +1,434 @@
+{
+  "generatedAt": "2026-09-18T14:31:11.782Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus_blackholes",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 6,
+      "stewardMaxRuns": 12,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 25000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 30
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "cern-lhc-safety",
+      "giddings-mangano-2008",
+      "wikipedia-safety-overview",
+      "plaga-2008"
+    ],
+    "capped": true,
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "cluster": "blackholes",
+    "profile": null,
+    "observed": {
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "gitCommit": "8737a8c",
+    "startedAt": "2026-09-16T22:43:41.193Z",
+    "finishedAt": "2026-09-17T07:42:14.839Z",
+    "registryId": "537bfe4f-92dd-4670-8ced-ae1dd7a04a61",
+    "costMicroUsd": 1738695,
+    "pipelineEpoch": "2026-09-domain-skills",
+    "postsIngested": 4,
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 29,
+      "instances": 63,
+      "totalClaims": 66,
+      "claimsPer1kWords": 19.50354609929078,
+      "typeDistribution": {
+        "empirical_derived": 57,
+        "empirical_verifiable": 6,
+        "causal": 2,
+        "mathematical": 1
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 16,
+        "p90": 26,
+        "max": 44,
+        "mean": 17.5
+      },
+      "overLongShare": 0.12121212121212122
+    },
+    "matching": {
+      "dedupRatio": 2.1724137931034484
+    },
+    "decomposition": {
+      "maxDepth": 5,
+      "depthHistogram": {
+        "0": 16,
+        "1": 6,
+        "2": 3,
+        "3": 1,
+        "4": 1,
+        "5": 2
+      },
+      "atomicShare": 0.788,
+      "meanChildrenPerParent": 4.14
+    },
+    "crossDoc": {
+      "sharedSubclaims": 3
+    },
+    "assessment": {
+      "statusDistribution": {
+        "verified": 7,
+        "supported": 4,
+        "contested": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 3640
+    },
+    "importance": {
+      "mean": 0.355,
+      "histogram": {
+        "0.2-0.4": 40,
+        "0.4-0.6": 25,
+        "0.0-0.2": 1
+      },
+      "meanAtomic": 0.337,
+      "meanCompound": 0.421
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 1,
+      "items": [
+        {
+          "rule": "contradiction",
+          "severity": "tension",
+          "parent": "5cb9da06-164d-4f84-bd12-0e866241f88e",
+          "child": "caf66739-cb7b-4600-a84b-aae7e6d68428"
+        }
+      ]
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 18,
+      "withProposal": 18,
+      "rewriteRate": 0.333,
+      "rewriteMagnitude": 0.289,
+      "meanWordDelta": 1,
+      "matched": {
+        "count": 2,
+        "deniesShare": 0,
+        "meanProposalDistance": 0.685
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 12,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.42,
+      "meanJudged": 0.37,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.25,
+      "reasoningFit": 3.96,
+      "impartiality": 4.21
+    },
+    "granularity": {
+      "good": 12
+    },
+    "flags": {
+      "status_miscalibrated": 6,
+      "hallucination_risk": 2,
+      "opaque_ids": 5,
+      "false_precision": 2,
+      "other": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 12
+      },
+      "hedging": {
+        "overconfident": 2,
+        "calibrated": 10
+      },
+      "canonicalForm": {
+        "good": 9,
+        "overstated": 2,
+        "understated": 1
+      },
+      "politicalBias": {
+        "none": 12
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0.17,
+    "canonicalFormMissShare": 0.25,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "00ac5ae0-a13e-445c-adca-064720e9f6b6",
+        "text": "The minimum black hole mass used in LHC production and safety analyses is an assumed threshold of semiclassical validity, not a result about the production dynamics",
+        "importanceStored": 0.35,
+        "status": "verified",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "hedging": "overconfident",
+        "impartiality": 4,
+        "importance_judged": 0.35,
+        "note": "The main defect is status inflation: \"verified\" requires evidence examined directly, yet every full-text fetch failed (403), quotes were checked only against search excerpts, and the safety-analysis leg was never directly read — by the constitution's own terms this is supported, not verified, and the reasoning's own honesty about the gap (\"full-text confirmation, not evidence on the other side\") is inconsistent with the flat verified label. Otherwise strong: the claim bar and canonical form are clean, the adversarial pass genuinely weighs the Plaga dissent and the threshold-estimate papers rather than waving them off, subclaims are properly at claim-bar granularity, deferred children are correctly not penalized, and 0.35 importance fits a settled methods point inside a larger debate.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 3,
+        "flags": [
+          "status_miscalibrated"
+        ],
+        "sycophancy": "independent"
+      },
+      {
+        "id": "12ee3981-55f2-4de0-ab97-39c760fbe0ee",
+        "text": "Elementary particle collision outcomes depend only on center-of-mass energy, not on how the collision is produced.",
+        "importanceStored": 0.45,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.4,
+        "note": "The physics reasoning and adversarial pass are strong and the canonical form is clean, but \"verified\" contradicts the assessment's own admission that no source was actually opened (403s throughout): §10 requires evidence examined directly, so supported (confidence ~0.85) is the honest status, and the same limitation carries residual quote-accuracy/hallucination risk.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "3ebf1cca-8df9-4f90-9e83-4ac45614e102",
+        "text": "In semiclassical TeV-scale gravity models, a black hole produced at the LHC has initial mass of order the parton center-of-mass energy, with production described only above a minimum mass several times the fundamental Planck scale",
+        "importanceStored": 0.45,
+        "status": "verified",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.35,
+        "note": "The reasoning explicitly states both founding-paper quotations could not be verified against full text (arXiv fetches returned 403), which is incompatible with \"verified\": the evidence was examined indirectly, so supported is the correct status. Otherwise the claim is well-formed, corroboration from independent later practice is genuine, and the decomposition sensibly stops where the discourse stops.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "flags": [
+          "status_miscalibrated"
+        ],
+        "sycophancy": "independent"
+      },
+      {
+        "id": "24e4fe51-775a-4dce-8ede-0885150f0d37",
+        "text": "Quantum black hole models used to design LHC searches identify the black hole production threshold mass with the fundamental Planck scale itself",
+        "importanceStored": 0.35,
+        "status": "verified",
+        "canonical_form": "overstated",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "hallucination_risk"
+        ],
+        "hedging": "overconfident",
+        "impartiality": 4,
+        "importance_judged": 0.3,
+        "note": "Status \"verified\" is miscalibrated: the reasoning itself admits the primary papers could not be fetched (403s) and the readings rest on search-surfaced excerpts, which under §10 is indirect evidence and therefore at most \"supported.\" The hallucination risk follows — verbatim quotes accepted from search snippets, and one URL (0912.0826) is cited for both the ATLAS and CMS points. Substantively the assessment is careful: the adversarial pass correctly distinguishes the semiclassical several-times-the-scale convention, and unassessed children are properly not counted against it.",
+        "readability": 4,
+        "reasoning_fit": 3,
+        "sycophancy": "independent",
+        "political_bias": "none"
+      },
+      {
+        "id": "58b55b21-408a-4936-880b-5eaa4ea57535",
+        "text": "Collisions at the Large Hadron Collider present no danger to the Earth or the public.",
+        "importanceStored": 0.55,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.45,
+        "note": "The assessment is genuinely strong — convergent independent lines, a real adversarial pass, honest recording of the 403 gap — but \"verified\" is miscalibrated on the standard's own terms: the primary PDFs and SPC report were never directly examined (only abstracts/excerpts via search), so §10's verified bar (\"evidence, examined directly\") is not met; supported at ~0.9 would be the honest status. Note also that the reasoning refers to the subclaim set only implicitly; the child \"Nature has already produced LHC-equivalent collisions\" is marked verified despite the assessment's own acknowledgment of a fixed-target kinematics quibble, and that verification was granted without recorded direct examination either. The absolute \"no danger\" canonical form is roughly what the debate is about and is acceptable.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "5cb9da06-164d-4f84-bd12-0e866241f88e",
+        "text": "Hawking's semiclassical evaporation calculation applies to black holes as small as those the LHC could produce.",
+        "importanceStored": 0.45,
+        "status": "supported",
+        "claim_bar": "yes",
+        "canonical_form": "understated",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.4,
+        "note": "A well-argued supported verdict: the reasoning explicitly weighs the dissent (Plaga's model-internal condition, the 10^23 rederivation, terascale modeling-insufficiency claims) and explains why neither contested nor verified fits, with an honest note that sources were read via excerpts (403s). Defects: subclaims are cited by opaque IDs, and the claim text omits the mass-regime conditionality the reasoning treats as load-bearing — a reader of the bare claim cannot see that applicability is defended only several Planck scales above threshold, which is why the canonical form reads understated/frame-loose rather than neutral-precise.",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent",
+        "political_bias": "none"
+      },
+      {
+        "id": "663a4dd7-aa88-4f71-85cd-2c1c76bd2520",
+        "text": "In the Casadio-Harms model the threshold mass below which mass loss is suppressed is of order the fundamental Planck scale",
+        "importanceStored": 0.5,
+        "status": "supported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids",
+          "status_miscalibrated"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.4,
+        "note": "The reasoning is unusually honest — it flags its own order-of-magnitude inference as the cap on status and names what would move the verdict — but the child layer has an outright defect: the same anti-premise appears twice (once \"none\", once \"contradicts\") with empty labels, an opaque-ids problem, and sources were read only via excerpts after 403s, which \"supported\" at 0.78 absorbs but does not fully disclose in the claim text.",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent",
+        "political_bias": "none"
+      },
+      {
+        "id": "89d88bfa-8c69-4e62-a424-b345e10bfed1",
+        "text": "Microscopic black holes, if produced at the LHC, would evaporate almost immediately through Hawking radiation.",
+        "importanceStored": 0.35,
+        "status": "supported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.35,
+        "note": "A model assessment: it weighs the Plaga dissent and rebuttal exchange on the merits, explains why supported-not-verified, and states what would change the verdict. Minor flaw: it records credence 0.93 in prose while the claim stores no credence, and \"almost immediately\" sits slightly stronger than the seconds-long-survival scenarios it itself cites.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "b8dc651c-6320-40a2-b373-d078db9fb6b1",
+        "text": "Every black hole production mechanism proposed for the LHC produces holes with masses a few times the fundamental Planck scale or higher, not at or below the fundamental scale.",
+        "importanceStored": 0.45,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.4,
+        "impartiality": 4,
+        "note": "A well-argued contested verdict that weighs both sides honestly and discloses source-access limits, though the instance count is slightly inflated (Plaga's \"denial\" is dismissed in the reasoning's own reading, yet still tallied as a denying source), and the universal \"Every\" claim is at the upper edge of what the evidence supports without a credence figure.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "caf66739-cb7b-4600-a84b-aae7e6d68428",
+        "text": "In some quantum black hole models, Hawking radiation is suppressed below a Planck-scale threshold mass, so microscopic black holes could persist.",
+        "importanceStored": 0.35,
+        "status": "supported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.35,
+        "note": "A well-scoped, honestly hedged assessment: the 403/excerpt limitation is disclosed and matched to the supported status, and the semiclassical-endpoint counter-position is weighed rather than dismissed. The main residue is that subclaims are addressed by UUID alongside their glosses, which taxes readability, and confidence 0.72 sits slightly high for a verdict resting entirely on unverified excerpts of three mutually non-independent theoretical papers.",
+        "political_bias": "none",
+        "readability": 3,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "e9fef217-22e9-4ffa-af2c-56b55c39c72c",
+        "text": "Cosmic-ray collisions on astronomical bodies reach LHC-scale energies and vastly outnumber the entire LHC programme.",
+        "importanceStored": 0.35,
+        "status": "verified",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.35,
+        "note": "A strong, genuinely verified assessment: independent flux integration and fixed-target kinematics establish the physics directly, the lopsided source set is candidly acknowledged rather than treated as independent corroboration, and the search for counterevidence (which found safety-inference disputes, not energy/count disputes) is honestly reported. Verified at 0.9 is the right call even though two key sources were excerpt-level, since the verdict does not hinge on them. Minor defects only: subclaims are referenced by opaque ids (a7b78f06, 6b39f037) in the reasoning body, and the count conjunct's own node remains unassessed — a legitimate deferral under §19, but the graph should fund it soon since the compound's \"verified\" rests partly on the steward's own arithmetic being correct.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "1a4a1b18-2730-44c8-b9ef-7157f70ae358",
+        "text": "Nature has already produced LHC-equivalent collisions throughout the universe many times over without harmful consequences.",
+        "importanceStored": 0.45,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 4.5,
+        "impartiality": 4.5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.35,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "overstated",
+        "political_bias": "none",
+        "flags": [
+          "other"
+        ],
+        "note": "The verified status is earned for the occurrence half — the fixed-target kinematics and flux arithmetic are independently derived, not deferred to CERN — but the claim text outruns what the verdict defends: \"without harmful consequences\" (unqualified, universe-wide) is silently re-read in prose as \"no harm observed or attributed,\" and that \"observed\" qualifier belongs in the canonical form itself, since Ord et al.'s anthropic-luck scenario is credible argument against the unqualified reading. Graph hygiene defect: the air-shower subclaim appears twice verbatim with conflicting edge types ([supports] and [requires])."
+      }
+    ]
+  },
+  "cost": {
+    "calls": 12,
+    "usd": 0.01
+  }
+}

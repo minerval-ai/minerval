@@ -1,0 +1,69 @@
+{
+  "withGraph": "You are answering a question using ONLY the record below: a set of claims from a claim graph, each with the status its steward assigned, the steward's confidence in that status, the steward's credence (probability the claim is true, where one was stated), and a short assessment. Do not use outside knowledge to decide the answer; if the record does not settle the question, say so and let your confidence reflect it.\n\nThen state your confidence, from 0 to 1, that your answer is correct. Your confidence should follow the record: an answer that rests on a claim the record marks verified with high credence deserves more confidence than one resting on a contested or unassessed claim, and an answer that has to go beyond the record deserves less. Finally, list the claims your answer rests on by their bracketed id, and for each say whether your answer takes it as true, as false, or as uncertain.\n\n## Question\n<the question>\n\n## The record\n[<claim i] <a claim's canonical text>\n  status: <status> · verdict confidence: 0.80 · credence (probability true): 0.70\n  assessment: <the Steward's assessment summary>",
+  "withoutGraph": "Answer the question below from your own knowledge, briefly. Then state your confidence, from 0 to 1, that your answer is correct.\n\n## Question\n<the question>",
+  "retraction": "Lookout flag: the source \"<source title>\" (<source url>) has been RETRACTED by its publisher. Every instance this claim has from that source should now be treated as withdrawn evidence: it no longer counts toward or against the claim. Re-examine the claim's assessment on the evidence that remains, revise the status, confidence and credence as the remaining evidence warrants, and say in the reasoning trace what the retraction changed. If the retracted source was the only evidence, say so and mark the claim accordingly rather than carrying the old verdict forward.",
+  "withGraphSchema": {
+    "type": "object",
+    "properties": {
+      "answer": {
+        "type": "string",
+        "description": "The answer, in a few sentences, from the record only."
+      },
+      "confidence": {
+        "type": "number",
+        "description": "0 to 1: your confidence that the answer is correct, following the record's statuses and credences."
+      },
+      "cited_claims": {
+        "type": "array",
+        "description": "The claims the answer rests on, by bracketed id from the record, and how each is used.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The bracketed id exactly as it appears in the record."
+            },
+            "used_as": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "uncertain"
+              ],
+              "description": "Whether the answer takes this claim as true, as false, or as uncertain."
+            }
+          },
+          "required": [
+            "id",
+            "used_as"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "answer",
+      "confidence",
+      "cited_claims"
+    ],
+    "additionalProperties": false
+  },
+  "withoutGraphSchema": {
+    "type": "object",
+    "properties": {
+      "answer": {
+        "type": "string",
+        "description": "The answer, in a few sentences."
+      },
+      "confidence": {
+        "type": "number",
+        "description": "0 to 1: your confidence that the answer is correct."
+      }
+    },
+    "required": [
+      "answer",
+      "confidence"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -115,13 +115,19 @@ describe("startAgentRun", () => {
   });
 });
 
+// Step and finish writes wait for the run row's insert to settle before
+// they go out (so the first step can never race the run row), so a test
+// reads the mock after that turn of the event loop.
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe("recordAgentStep", () => {
-  it("claims monotonic sequence numbers synchronously", () => {
+  it("claims monotonic sequence numbers synchronously", async () => {
     const trace = startAgentRun("curator", {})!;
     mocks.insertValues.mockClear();
     recordAgentStep(trace, "assistant", { stopReason: "tool_use" });
     recordAgentStep(trace, "tool_results", [{ name: "search" }]);
     expect(trace.seq.n).toBe(2);
+    await flush();
     const rows = mocks.insertValues.mock.calls.map(
       (c) => c[0] as Record<string, unknown>
     );
@@ -130,10 +136,11 @@ describe("recordAgentStep", () => {
     expect(rows.every((r) => r.runId === trace.runId)).toBe(true);
   });
 
-  it("caps oversized content instead of writing it whole", () => {
+  it("caps oversized content instead of writing it whole", async () => {
     const trace = startAgentRun("steward", {})!;
     mocks.insertValues.mockClear();
     recordAgentStep(trace, "tool_results", [{ output: "x".repeat(300_000) }]);
+    await flush();
     const row = mocks.insertValues.mock.calls[0]![0] as {
       content: { truncated?: boolean; originalChars?: number; preview?: string };
     };
@@ -144,10 +151,11 @@ describe("recordAgentStep", () => {
 });
 
 describe("finishAgentRun", () => {
-  it("stamps outcome, step count, and a truncated error message", () => {
+  it("stamps outcome, step count, and a truncated error message", async () => {
     const trace = startAgentRun("steward", {})!;
     recordAgentStep(trace, "assistant", {});
     finishAgentRun(trace, "error", new Error("boom ".repeat(1000)));
+    await flush();
     expect(mocks.updateSet).toHaveBeenCalledOnce();
     const payload = mocks.updateSet.mock.calls[0]![0] as Record<string, unknown>;
     expect(payload.outcome).toBe("error");
@@ -156,9 +164,10 @@ describe("finishAgentRun", () => {
     expect(payload.finishedAt).toBeInstanceOf(Date);
   });
 
-  it("clears error on ok", () => {
+  it("clears error on ok", async () => {
     const trace = startAgentRun("steward", {})!;
     finishAgentRun(trace, "ok");
+    await flush();
     const payload = mocks.updateSet.mock.calls[0]![0] as Record<string, unknown>;
     expect(payload.outcome).toBe("ok");
     expect(payload.error).toBeNull();

@@ -1,0 +1,39 @@
+{
+  "seq": 3, "at": "2026-09-10T10:00:32.000Z", "endedAt": "2026-09-10T10:00:44.000Z",
+  "agent": "matcher", "runId": "run-a-match-1", "claimId": "c1", "claimText": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "sourceId": "s1", "trigger": "extracted_claim", "causedBy": 2,
+  "title": "Matcher: new claim — “Dietary cholesterol from eggs raises LDL cholesterol in most adults”", "outcome": "ok",
+  "steps": [
+    {
+      "seq": 1, "kind": "prompt", "at": "2026-09-10T10:00:32.000Z", "text": "system prompt · 1 message · 2 tools", "full": true,
+      "sizes": { "system": 4120, "input": 1180 },
+      "prompt": {
+        "model": "z-ai/glm-5.3-flash", "effort": "low", "maxTokens": 2048,
+        "sha256": "7c1f0d3a9e4b2c6f8a1d5e7b9c0f2a4d6e8b1c3f5a7d9e0b2c4f6a8d0e2b4c6f",
+        "system": [
+          { "type": "text", "text": "You are the Matcher, an administrator of the Minerval claim graph bound by its constitution.\n\n# Your task\n\nYou receive one claim extracted from a source, in the source's own words and in a proposed canonical form. Decide whether it is already in the graph. Two formulations are the same claim exactly when they decompose the same way; a claim and its denial are one node, recorded with opposite stances.\n\n(sample fixture: the real prompt runs to about four thousand characters and is vendored verbatim in a real recording)" },
+          { "type": "text", "text": "# Constitution\n\n§2 What a claim is …\n§3 Canonical forms …\n§4 Instances …" }
+        ],
+        "initialMessages": [
+          { "role": "user", "content": "Source: Eggs and the cholesterol question (s1)\n\nVerbatim: \"the cholesterol in eggs raises LDL in most people who eat them regularly\"\n\nProposed canonical form: Dietary cholesterol from eggs raises LDL cholesterol in most adults\n\nSearch the graph, then submit your decision." }
+        ],
+        "tools": [
+          { "name": "search_claims", "description": "Full-text and semantic search over the claim graph.", "input_schema": { "type": "object", "properties": { "query": { "type": "string" }, "limit": { "type": "integer", "default": 8 } }, "required": ["query"] } },
+          { "name": "submit_decision", "description": "Record the match decision. Ends the run.", "input_schema": { "type": "object", "properties": { "isMatch": { "type": "boolean" }, "matchedId": { "type": "string" }, "stance": { "type": "string", "enum": ["asserts", "denies"] }, "canonical": { "type": "string" }, "claimType": { "type": "string" } }, "required": ["isMatch"] } }
+        ]
+      }
+    },
+    { "seq": 2, "kind": "tool_call", "at": "2026-09-10T10:00:34.000Z", "text": "search_claims: “dietary cholesterol LDL”", "tool": "search_claims", "input": { "query": "dietary cholesterol LDL", "limit": 8 }, "full": true },
+    { "seq": 3, "kind": "tool_result", "at": "2026-09-10T10:00:35.000Z", "text": "0 results", "tool": "search_claims", "output": { "results": [], "took_ms": 41 }, "full": true },
+    { "seq": 4, "kind": "thought", "at": "2026-09-10T10:00:40.000Z", "text": "Nothing in the graph is about dietary cholesterol. The search returned no candidates at any score, so there is nothing to compare against. This is a new claim. The proposed canonical form is already neutral, under twenty words, and makes its scope (\"most adults\") explicit rather than universal, so I keep it as proposed. Claim type: empirical.", "full": true },
+    { "seq": 5, "kind": "decision", "at": "2026-09-10T10:00:44.000Z", "text": "new claim: “Dietary cholesterol from eggs raises LDL cholesterol in most adults”", "tool": "submit_decision", "input": { "isMatch": false, "canonical": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "claimType": "empirical" }, "output": { "claimId": "c1", "created": true }, "full": true }
+  ],
+  "deltas": [
+    { "op": "claim_created", "claimId": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "createdBy": "matcher", "topLevel": true, "sourceId": "s1" },
+    { "op": "steward_notified", "claimId": "c1", "trigger": "structure_and_assess", "coalesced": false }
+  ],
+  "dataFlow": { "read": [{ "tool": "search_claims", "claimIds": [] }], "wrote": [
+    { "op": "claim_created", "claimId": "c1", "text": "Dietary cholesterol from eggs raises LDL cholesterol in most adults", "createdBy": "matcher", "topLevel": true, "sourceId": "s1" },
+    { "op": "steward_notified", "claimId": "c1", "trigger": "structure_and_assess", "coalesced": false }
+  ] },
+  "costMicroUsd": 1800, "durationMs": 12000, "attribution": "exact", "detailPath": "a/3.json"
+}

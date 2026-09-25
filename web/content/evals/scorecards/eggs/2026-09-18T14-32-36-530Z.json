@@ -1,0 +1,372 @@
+{
+  "generatedAt": "2026-09-18T14:32:36.530Z",
+  "cluster": "eggs",
+  "database": "episteme_corpus_eggs",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 6,
+      "stewardMaxRuns": 12,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 25000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 30
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "harvard-nutrition-source",
+      "wikipedia-egg-health",
+      "dietary-cholesterol-debate"
+    ],
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "noReset": false,
+    "profile": null,
+    "gitCommit": "8737a8c",
+    "pipelineEpoch": "2026-09-domain-skills",
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 16,
+      "instances": 33,
+      "totalClaims": 52,
+      "claimsPer1kWords": 3.8797284190106693,
+      "typeDistribution": {
+        "empirical_verifiable": 12,
+        "empirical_derived": 22,
+        "causal": 16,
+        "normative": 1,
+        "evaluative": 1
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 17,
+        "p90": 23,
+        "max": 35,
+        "mean": 17.5
+      },
+      "overLongShare": 0.057692307692307696
+    },
+    "matching": {
+      "dedupRatio": 2.0625
+    },
+    "decomposition": {
+      "maxDepth": 7,
+      "depthHistogram": {
+        "0": 7,
+        "1": 3,
+        "2": 3,
+        "4": 1,
+        "5": 1,
+        "6": 1
+      },
+      "atomicShare": 0.75,
+      "meanChildrenPerParent": 4.85
+    },
+    "crossDoc": {
+      "sharedSubclaims": 15
+    },
+    "assessment": {
+      "statusDistribution": {
+        "contested": 6,
+        "supported": 2,
+        "unsupported": 1,
+        "verified": 1
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 4065
+    },
+    "importance": {
+      "mean": 0.411,
+      "histogram": {
+        "0.0-0.2": 4,
+        "0.4-0.6": 26,
+        "0.2-0.4": 17,
+        "0.6-0.8": 5
+      },
+      "meanAtomic": 0.377,
+      "meanCompound": 0.512
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 8,
+      "withProposal": 8,
+      "rewriteRate": 0.125,
+      "rewriteMagnitude": 0.056,
+      "meanWordDelta": -1,
+      "matched": {
+        "count": 0,
+        "deniesShare": null,
+        "meanProposalDistance": null
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 10,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.51,
+      "meanJudged": 0.51,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.3,
+      "reasoningFit": 4.4,
+      "impartiality": 4.6
+    },
+    "granularity": {
+      "good": 8,
+      "too_shallow": 1,
+      "too_granular": 1
+    },
+    "flags": {
+      "opaque_ids": 5,
+      "hallucination_risk": 2,
+      "status_miscalibrated": 3,
+      "other": 3,
+      "boilerplate_trace": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 10
+      },
+      "hedging": {
+        "calibrated": 10
+      },
+      "canonicalForm": {
+        "good": 9,
+        "overstated": 1
+      },
+      "politicalBias": {
+        "none": 10
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0.1,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "34d86b71-3dfc-47b0-9a14-7e2df922f1a5",
+        "text": "Eating up to one egg per day is associated with increased heart disease risk in healthy people.",
+        "importanceStored": 0.55,
+        "status": "contested",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.6,
+        "impartiality": 5,
+        "note": "A model assessment: the contested status is earned by genuinely weighing population-matched null cohorts against the newer dose-response gradient, the confidence/credence split (0.85/0.3) is used correctly, and the abstract-only full-text limitation is disclosed rather than papered over. Only minor defect: subclaims are cited by opaque UUIDs alongside their text, which the standards flag even though the inline paraphrase mostly mitigates it.",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent",
+        "political_bias": "none"
+      },
+      {
+        "id": "34361fe8-6a8b-4091-832b-9282995b2d69",
+        "text": "Adjusting for dietary cholesterol intake eliminates the positive dose-response association between egg intake and cardiovascular disease",
+        "importanceStored": 0.4,
+        "status": "supported",
+        "canonical_form": "overstated",
+        "claim_bar": "yes",
+        "decomposition_granularity": "too_shallow",
+        "flags": [
+          "hallucination_risk",
+          "status_miscalibrated",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.35,
+        "impartiality": 4,
+        "note": "The claim text overstates the evidence: both sources report loss of statistical significance, not \"elimination\" of the association, and neither speaks directly to dose-response shape — the canonical form should say \"attenuates to nonsignificance,\" which the assessment's own subclaim but not the claim states. The second source quote is garbled (\"no longer significant... with HRs of 0.91... all P values>0.0033\") and incoherent as written; only one OCR variant was flagged, leaving a possible transcription defect unexamined.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "59c04cc0-7cdd-457c-8929-74223ca4680e",
+        "text": "Independent large-scale analyses corroborate a positive dose-response association between egg intake and cardiovascular disease",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.6,
+        "note": "A well-run contested verdict: the reasoning surveys the split large-scale record on its merits and correctly refuses to round either way, but it refers to subclaims by opaque ids/seeds (\"seed 0.55\", \"9d791e2e\") rather than what they say, an explicit §12 failure.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "70d9caeb-4a61-418a-a0c0-fef63d2729e6",
+        "text": "Positive egg-cardiovascular estimates in minimally adjusted analyses weaken substantially after adjustment for lifestyle and dietary factors",
+        "importanceStored": 0.55,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.55,
+        "note": "An exemplary contested verdict: primary evidence weighed on both sides, non-significant endpoints and the dietary-cholesterol-as-pathway point handled honestly, and the credence of 0.45 correctly records that the claim as stated overreaches the persistence findings. One residual defect: the claim text's \"weaken substantially\" is framed to the BMJ 2020 attenuation and is not the neutral statement a defender of the persistence reading (six-cohort and NIH-AARP) would accept; the graph's honesty lives mostly in the credence, not the canonical text.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "7645baad-7739-422d-a927-489c3a377ccf",
+        "text": "Egg intake is positively associated with cardiovascular disease risk in prospective cohort studies",
+        "importanceStored": 0.65,
+        "status": "contested",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids",
+          "status_miscalibrated"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.6,
+        "note": "A strong, even-handed contested verdict with excellent provenance analysis and calibrated confidence/credence; the main defect is an internal inconsistency — the reasoning says the \"persists after adjustment\" and \"interpretable after cholesterol adjustment\" subclaims are both unassessed, yet the first is recorded as verified, and subclaims are cited by UUID with the gloss carried only in the pipe text.",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent",
+        "political_bias": "none"
+      },
+      {
+        "id": "9d791e2e-5032-418b-98dd-981e6f58203b",
+        "text": "In large prospective cohorts of healthy adults, egg intake up to one egg per day is not associated with cardiovascular disease risk",
+        "importanceStored": 0.45,
+        "status": "supported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.45,
+        "note": "A well-calibrated assessment: the null sources are weighed against the 2019 positive analysis and precision limits, and the supported/verified boundary is explicitly justified, though the reasoning cites three subclaims by opaque id rather than restating them.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "be053887-e6e9-47c6-913c-136966f38201",
+        "text": "In the 2019 pooled analysis of six US cohorts, the egg-cardiovascular association persists after adjustment for processed meat and other food groups",
+        "importanceStored": 0.45,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.45,
+        "note": "The verification is earned: the reasoning walks the actual sensitivity-table rows, resolves the \"adjusted separately\" ambiguity adversarially, and correctly scopes the verdict to what the analysis found rather than the broader health debate. Only blemish is the single reference to a subclaim by opaque UUID rather than plain language.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "cb7998c6-b330-44dc-8299-9f93cf7e11b4",
+        "text": "Each additional half egg of daily intake is associated with higher cardiovascular disease risk",
+        "importanceStored": 0.55,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "too_granular",
+        "flags": [
+          "boilerplate_trace",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.55,
+        "impartiality": 5,
+        "note": "The verdict reasoning is genuinely strong — abstract-level caveats disclosed, competing evidence weighed, falsification conditions stated — but the subclaim set contains near-duplicate cholesterol-attenuation nodes (\"adjusting for dietary cholesterol eliminates the association\" appears twice with divergent statuses, one unsupported-strength, one unassessed), an unpruned decomposition that creates unexplained status tension.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "f5a204fe-33de-4260-8d33-9d1f8a0a8a46",
+        "text": "Cohort associations between egg intake and cardiovascular disease are confounded by foods commonly eaten with eggs",
+        "importanceStored": 0.35,
+        "status": "unsupported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 3,
+        "importance_judged": 0.35,
+        "note": "The reasoning itself concedes the confounding thesis is \"an interpretation offered by credible parties in a live dispute,\" which is the §10 definition of contested, yet it picks unsupported because the tested signature is absent in one leading analysis — a direct contradictor on one side plus credible affirmations on the other is contested, not unsupported; the verdict also quietly overgeneralizes from Zhong et al.'s sensitivity analyses (which cover measured covariates in US cohorts) to \"cohort associations\" generally.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "112956e0-4003-4a98-baf0-8c8f40b0bbae",
+        "text": "Adjusting for consumption of foods commonly eaten with eggs attenuates the positive association between egg intake and cardiovascular disease",
+        "importanceStored": 0.55,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.55,
+        "note": "The weighing is genuinely two-sided with concrete change-conditions, but the entire verdict rests on 403-blocked fetches — search excerpts plus coefficients recorded secondhand from the parent — which caps how far confidence 0.72 should stretch; separately, the positivity subclaim is mislabeled [contradicts] when it is actually the claim's scope premise (it should be [assumes]).",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      }
+    ]
+  },
+  "cost": {
+    "calls": 10,
+    "usd": 0.01
+  }
+}

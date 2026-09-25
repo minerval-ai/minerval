@@ -808,6 +808,30 @@ const configSchema = z.object({
   // A suspension that has stood unexamined this many days gets a
   // contributor_review audit asking whether it should still hold.
   auditStaleSuspensionDays: z.coerce.number().default(14),
+  // Production monitors (#334 S9, docs/monitors.md). The sweep hands the
+  // two candidate detectors' hits (performed settling, empty chairs) to the
+  // Audit Agent as anomaly_investigation INPUT, at most one sweep per this
+  // many hours. 0 (the default) = off: the signals stay readable at
+  // GET /monitors and `npm run monitors` without feeding anything.
+  monitorSweepIntervalHours: z.coerce.number().default(0),
+  // A claim flagged by a monitor is not re-flagged within this many days
+  // (the dedupe key on audit_runs carries the period bucket).
+  monitorReflagDays: z.coerce.number().default(14),
+  // Most claims one sweep hands to the Audit Agent, most important first.
+  monitorSweepMaxFlags: z.coerce.number().int().min(0).default(5),
+  // The thresholds behind the signals. A verdict counts as "settled" at or
+  // above this confidence with status verified/contradicted ...
+  monitorSettledConfidence: z.coerce.number().min(0).max(1).default(0.8),
+  // ... a credence move of at least this much is "material" (also the
+  // reversal criterion for overturn-rate discrimination) ...
+  monitorMaterialCredenceDelta: z.coerce.number().min(0).max(1).default(0.1),
+  // ... an accepted challenge this recent counts as live disagreement ...
+  monitorRecentChallengeDays: z.coerce.number().default(30),
+  // ... an evidence-monotonicity check tolerates a credence move against
+  // the contribution's sign up to this much (LLM noise, not a violation),
+  // and looks for the re-assessment within this many days of acceptance.
+  monitorMonotonicityTolerance: z.coerce.number().min(0).max(1).default(0.05),
+  monitorMonotonicityHorizonDays: z.coerce.number().default(30),
   // Agent reports (#366). The most raise_issue calls one agent run may
   // record; past the cap the tool acknowledges without writing, so a chatty
   // run cannot flood the table. 0 = unlimited.
@@ -1047,6 +1071,14 @@ export function loadConfig(): Config {
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,
+    monitorSweepIntervalHours: process.env.MONITOR_SWEEP_INTERVAL_HOURS,
+    monitorReflagDays: process.env.MONITOR_REFLAG_DAYS,
+    monitorSweepMaxFlags: process.env.MONITOR_SWEEP_MAX_FLAGS,
+    monitorSettledConfidence: process.env.MONITOR_SETTLED_CONFIDENCE,
+    monitorMaterialCredenceDelta: process.env.MONITOR_MATERIAL_CREDENCE_DELTA,
+    monitorRecentChallengeDays: process.env.MONITOR_RECENT_CHALLENGE_DAYS,
+    monitorMonotonicityTolerance: process.env.MONITOR_MONOTONICITY_TOLERANCE,
+    monitorMonotonicityHorizonDays: process.env.MONITOR_MONOTONICITY_HORIZON_DAYS,
     agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
