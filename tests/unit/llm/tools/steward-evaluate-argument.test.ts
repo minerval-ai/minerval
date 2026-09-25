@@ -47,6 +47,13 @@ vi.mock("../../../../src/services/argument-service.js", async (importOriginal) =
   };
 });
 
+// The parent claim's ungrouped basis (#434): linkable from an evaluation.
+vi.mock("../../../../src/services/relationship-service.js", () => ({
+  insertRelationshipEdge: vi.fn(),
+  attachEdgeToArgument: vi.fn(),
+  getClaimBasisSubclaims: vi.fn(async () => [] as { id: string; text: string }[]),
+}));
+
 vi.mock("../../../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async () => [0.1, 0.2, 0.3]),
 }));
@@ -58,6 +65,7 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
 }));
 
 import { executeStewardTool } from "../../../../src/llm/tools/steward-tools.js";
+import { getClaimBasisSubclaims } from "../../../../src/services/relationship-service.js";
 import {
   getArgument,
   getArgumentSubclaims,
@@ -104,6 +112,23 @@ describe("steward evaluate_argument", () => {
         createdBy: "claim_steward",
       })
     );
+  });
+
+  it("accepts a link to one of the claim's ungrouped basis subclaims (#434)", async () => {
+    const BASIS_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    vi.mocked(getClaimBasisSubclaims).mockResolvedValueOnce([
+      { id: BASIS_ID, text: "Credit can attach to a non-human system" },
+    ]);
+    const out = await executeStewardTool("evaluate_argument", {
+      argument_id: ARG_ID,
+      verdict: "holds",
+      evaluation:
+        `Granting [[claim:${BASIS_ID}]], the inference goes through and rests ` +
+        `on [[claim:${SUB_ID}]].`,
+    });
+    expect(JSON.parse(out).success).toBe(true);
+    expect(getClaimBasisSubclaims).toHaveBeenCalledWith(CLAIM_ID);
+    expect(setArgumentEvaluation).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an off-enum verdict", async () => {

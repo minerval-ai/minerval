@@ -23,6 +23,7 @@ import { toolUseLoop } from "../client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 import {
   getTaggerSystemPrompt,
   getTaggingPrompt,
@@ -155,17 +156,19 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
     };
   };
 
+  const TAGGER_MAX_TURNS = 8;
   await toolUseLoop({
     initialMessages: [
       {
         role: "user",
-        content: getTaggingPrompt({
-          claimId: input.claimId,
-          text: input.text,
-          claimType: input.claimType,
-          domains: input.domains ?? [],
-          existing: input.existing ?? [],
-        }),
+        content:
+          getTaggingPrompt({
+            claimId: input.claimId,
+            text: input.text,
+            claimType: input.claimType,
+            domains: input.domains ?? [],
+            existing: input.existing ?? [],
+          }) + `\n\n${turnBudgetLine(TAGGER_MAX_TURNS)}`,
       },
     ],
     tools: [searchTool, submitTool, ...reportTools.definitions],
@@ -173,7 +176,7 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
     model,
     maxTokens: 2048,
     // Enough for a broad and a couple of specific searches plus the submit.
-    maxIterations: 8,
+    maxIterations: TAGGER_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

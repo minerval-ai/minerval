@@ -431,6 +431,25 @@ describe("readSourceContent", () => {
     expect(updates[0]).toEqual([SOURCE_C, "<html><body><p>Fresh text.</p></body></html>"]);
   });
 
+  it("scrubs NUL and control characters from a fetched copy before storing it (#430)", async () => {
+    const updates: unknown[][] = [];
+    routeQueries([
+      [/FROM sources WHERE id = \$1/, () => [{ ...stored, raw_content: null }]],
+      [
+        /UPDATE sources SET raw_content/,
+        (params) => {
+          updates.push(params);
+          return [];
+        },
+      ],
+    ]);
+    mocks.fetchPublicUrl.mockResolvedValue("Extracted\u0000 text\u0001 with\nnoise");
+    const result = await readSourceContent({ sourceId: SOURCE_A });
+    expect(result.origin).toBe("fetched");
+    expect(result.content).toBe("Extracted text with\nnoise");
+    expect(updates[0]).toEqual([SOURCE_A, "Extracted text with\nnoise"]);
+  });
+
   it("refuses an unknown source id and a source with neither text nor URL", async () => {
     routeQueries([[/FROM sources WHERE id = \$1/, () => []]]);
     await expect(readSourceContent({ sourceId: SOURCE_A })).rejects.toThrow(/No source .* exists/);

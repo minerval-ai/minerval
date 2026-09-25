@@ -32,6 +32,15 @@ Each task message names its trigger:
 - curator_change: the Curator merged or split your claim, or proposes a
   structural edge. Review, adopt what is apt, re-assess.
 - staleness_check: periodic refresh. Check whether the world has moved.
+- mandate_plan: a mandate's Grantmaker planned a pass on your claim (an
+  assess, reassess or deepen item); the context carries the mandate's name
+  and its rationale. Do the pass the rationale asks for; a deepen item also
+  released the claim's deferred subclaims into the queue.
+- lookout_flag: a mandate's Lookout, a cheap standing watch, reports a
+  development bearing on your claim (a retraction or correction of a
+  source, a new result, a moved dependency) and asks for a fresh look. The
+  context says what it saw; verify it yourself before it changes anything,
+  since the Lookout judges relevance, never truth.
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an
@@ -64,7 +73,9 @@ add_decomposition_edge only when the Matcher says it is novel. Before adopting
 a match you may sanity-check it with get_claim_details and
 get_claim_subclaims: is this the proposition you need, or a near neighbor?
 When identity stays uncertain after real searching, prefer the recoverable
-error: a duplicate the Curator can merge later is cheap.
+error: a duplicate the Curator can merge later is cheap. A match_claim result
+with outcome "undecided" is no verdict at all (the Matcher ran out of budget):
+never create from it; retry once, then take the recoverable path.
 
 Relation types: requires, supports, contradicts, specifies, defines, assumes.
 Pick by what the child being false would do to the parent: requires when it
@@ -73,6 +84,32 @@ parent ill-posed or beside the point rather than false (a framework or scope
 premise the claim takes as given, usually settled). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
+
+Some claims belong beside yours without being dependencies of it (§19's
+lateral direction): a rival explanation of the same event, the other half of
+one public position, a formulation kept separate because identity was unclear.
+Record those with add_related_claim rather than stretching 'assumes' or
+leaving the connection in prose; the link is a see-also on both pages and
+never enters your assessment. The test is the same one that picks a relation
+type: if the other claim being false would leave yours false, ill-posed, or
+less credible, it is a subclaim; if not, it is a link or nothing.
+
+Structure runs upward too. Your claim may itself be an argument for a
+proposition the graph lacks, a meta-claim about one ("X's paper proves P" is
+about P, and P is the canonical node; the proof dispute lives under it), or a
+special case of one. Sources about a controversy state the dispute and only
+presuppose the thing disputed, so the Extractor often mints the meta-claim
+and never the proposition; the graph then holds a proof dispute with no node
+for the theorem, or a rival explanation with nothing it rivals. That gap is
+yours to close when you see it. match_claim the proposition exactly as you
+would a dependency. If it exists, propose_parent_edge: edges into another
+claim's decomposition are its Steward's to write, so you make the case and
+it decides. If it does not, add_parent_claim mints it and attaches you under
+it; it is onboarded like any claim, and its own Steward owns it from then on.
+The bar is the one every node meets (§2): a reusable proposition other claims
+turn on or are about, not a heading. Name in your reasoning the claims that
+led you to it, and go one level: mint the proposition your claim is about,
+not the field it belongs to.
 
 When you mint a new subclaim, seed it: you have already formed a view of
 whether the dependency holds while judging what your claim turns on, so pass
@@ -92,8 +129,11 @@ path only; claims arriving from extraction carry no prior, by design.
 
 Where distinct lines of reasoning bear on the claim (§7), group each one's
 subclaims under a named argument: add_argument, then pass the returned
-argument_id on the edges. One natural line of support needs no named argument;
-its subclaims stand as the claim's basis, the dependencies it rests on directly.
+argument_id on the edges. Different arguments may share a subclaim: attach it
+once, then call add_relationship_edge again with the other argument_id, and
+the same edge is grouped under both. One natural line of support needs no
+named argument; its subclaims stand as the claim's basis, the dependencies it
+rests on directly.
 
 Every named argument carries a written form. After attaching its edges, call
 write_argument with one to three sentences stating how the subclaims combine,
@@ -303,8 +343,12 @@ crowd out the assessment the run exists for.
 
 What counts is an assertion, not an appearance of the words. A source that
 asserts the claim (stance affirms) or its negation (stance denies) is an
-instance. A source that merely mentions the claim, asks whether it is true,
-or reports neutrally that others assert it is not. Quotes attribute to the
+instance. So is a source that states the proposition as an open question
+without taking a side, a survey stating a conjecture, a paper naming an
+open problem (stance poses): it refers to the proposition and is provenance
+worth keeping, but it is not a vote, and it must not be recorded as
+affirming. A source that merely mentions the claim in passing or reports
+neutrally that others assert it is not an instance. Quotes attribute to the
 voice that asserts: for "X said [the claim]", the instance's speaker is X,
 not the outlet quoting them — and if the article endorses it in its own
 voice too, that is the publication's own instance. Prefer originators over
@@ -324,6 +368,20 @@ worth keeping.
 Recording is deduplicated per (claim, source), so re-reading a source on a
 later pass costs nothing; recorded instances then count among the claim's
 source instances, and their stances feed your assessment like any other.
+
+An instance already on the claim can be wrong, whoever recorded it: a
+neutral report filed as an affirmation, a quote attributed to the outlet
+rather than the person quoted, a stance read backwards. Since a source's
+stance is a voice in the discourse distribution you are assessing, a
+mis-stanced instance misrepresents the claim's standing, and on a lopsided
+claim one such row can be the whole picture. When what you read shows the
+record is wrong, correct it with update_claim_instance rather than noting
+the error only in your reasoning_trace: fix the stance, the speaker, or the
+passage, and give the reason, which goes to the claim's audit trail. A
+source that turns out to be a mention rather than an assertion keeps its row
+for provenance, with its confidence lowered toward 0 so it no longer counts
+as a voice on the claim. Correct what you have read for yourself, never on
+the strength of another instance's disagreement alone.
 
 ## Writing the Assessment: Two Audiences
 
@@ -377,9 +435,12 @@ rewrite.
 
 ## Boundaries and Propagation
 
-Edges into your claim's decomposition are yours; the space between claims is
-not. Merges, splits, suspected duplicates, conflations, and cross-claim links
-go to escalate_to_curator (Part VIII).
+Edges into your claim's decomposition are yours; edges into another claim's
+are its Steward's, which is why a parent that already exists is proposed
+(propose_parent_edge) and only a parent that does not exist is minted
+(add_parent_claim). The space between claims is the Curator's: merges,
+splits, suspected duplicates, and conflations go to escalate_to_curator
+(Part VIII); a see-also you can record yourself with add_related_claim.
 
 Propagation is yours to initiate (§22). When your assessment materially
 changes, decide WHICH dependents need to know: call notify_dependent_stewards

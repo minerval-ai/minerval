@@ -149,7 +149,10 @@ export async function getClaimTree(
 
   // parent id -> its outgoing edges, each carrying the child's node fields.
   // The (parent, child, relation) unique index plus visiting each parent
-  // exactly once means no edge is fetched twice.
+  // exactly once means no edge is fetched twice. An edge grouped under
+  // several named arguments (#437) yields one row per argument, so the child
+  // appears in each argument's group; the tree renders its subtree at the
+  // first occurrence and collapses the rest, exactly as for a diamond.
   const childEdges = new Map<string, TreeEdgeRow[]>();
   const visited = new Set<string>([root.id]);
   // Parents that have children the node cap dropped from this response.
@@ -160,7 +163,8 @@ export async function getClaimTree(
     const rows = await rawQuery<TreeEdgeRow>(
       `SELECT cr.parent_claim_id AS parent_id,
               c.id, c.text, c.claim_type, c.state,
-              cr.relation_type, cr.reasoning, cr.confidence, cr.argument_id,
+              cr.relation_type, cr.reasoning, cr.confidence,
+              am.argument_id,
               arg.name AS argument_name, arg.stance AS argument_stance,
               arg.content AS argument_content,
               ae.verdict AS argument_verdict, ae.content AS argument_evaluation,
@@ -174,14 +178,15 @@ export async function getClaimTree(
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.child_claim_id
          LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-         LEFT JOIN arguments arg ON arg.id = cr.argument_id
+         LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
+         LEFT JOIN arguments arg ON arg.id = am.argument_id
          LEFT JOIN argument_evaluations ae
-                ON ae.argument_id = cr.argument_id AND ae.is_current = true
+                ON ae.argument_id = am.argument_id AND ae.is_current = true
          LEFT JOIN LATERAL ${argumentLeanCheckLateralSql("arg")} alc ON true
          ${NODE_MATH_JOIN_SQL}
         WHERE cr.parent_claim_id = ANY($1)
           AND c.state = 'active'
-        ORDER BY cr.created_at, cr.id`,
+        ORDER BY cr.created_at, cr.id, am.created_at, am.argument_id`,
       [frontier]
     );
 

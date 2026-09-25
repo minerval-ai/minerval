@@ -102,7 +102,13 @@ put it.
 Then derive the stance by comparing what this source asserts against the
 form you wrote. A new claim's first instance is "denies" whenever the source
 argues against the proposition as posed; that is the correct record, not a
-defect to fix by flipping the form. Give one sentence on why you chose the
+defect to fix by flipping the form. A source that states the proposition
+without endorsing either side, a conjecture as a survey states it ("the
+Jacobian conjecture asks whether..."), an open problem, a question the
+discourse holds open, "poses" it: neither stance fits, and recording
+"affirms" would count the source as a vote it never cast. "poses" is for a
+source that refers to the proposition as a whole and leaves it open, not
+for one that hedges, argues, or reports someone else taking a side. Give one sentence on why you chose the
 direction in \`direction_note\`: it travels with the claim so a later agent
 judging the wording afresh does not silently re-invert it.
 
@@ -112,12 +118,19 @@ judging the wording afresh does not silently re-invert it.
 - \`matched_claim_id\` (if matching) or \`new_canonical_form\` (if new),
   with \`direction_note\` for a new claim
 - \`instance_stance\`: "affirms" if the source asserts the claim as
-  canonically stated, "denies" if it asserts the negation or contrary
+  canonically stated, "denies" if it asserts the negation or contrary,
+  "poses" if it states the proposition as an open question without
+  endorsing either side
 - \`confidence\` (0.0-1.0) and \`reasoning\`
 - \`alternative_matches\` and \`relationship_notes\`: the near-misses you
   weighed and how they relate (specification, generalization, counterpart).
   The calling agent, Steward or Curator, uses these to decide whether to
   link or escalate; they are not decoration.
+
+Copy every claim id, \`matched_claim_id\` and each entry of
+\`alternative_matches\`, exactly as a \`search_similar_claims\` result gave
+it. Do not retype or abbreviate an id: an id no search returned is refused
+for the match and dropped from the alternatives.
 
 ${RAISING_ISSUES}
 
@@ -137,16 +150,54 @@ export function getMatcherSystemPromptBlocks(
   return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "matcher"));
 }
 
+/**
+ * The user turn. `domains` are the recorded domains the caller handed the
+ * run and `skills` the domain skills they activated: the prompt names both
+ * so the Matcher can tell an untagged claim (no skill block by design) from
+ * a delivery fault (#469), since the role's catalog only says what exists.
+ */
 export function getMatchingPrompt(
   extractedText: string,
-  proposedCanonical: string
+  proposedCanonical: string,
+  /**
+   * What this run carries: its recorded domains and spliced skills (#469),
+   * and its tool-use turn budget (#467), stated up front so the Matcher can
+   * pace its searches instead of learning the limit two turns before the
+   * cut. A budget left out means the prompt says nothing about one.
+   */
+  run: { domains?: readonly string[]; skills?: readonly Skill[]; turnBudget?: number } = {}
 ): string {
+  const domains = [...new Set(run.domains ?? [])].sort();
+  const spliced = (run.skills ?? []).filter((s) => s.kind === "domain");
+  const domainsLine =
+    domains.length > 0
+      ? `Recorded domains for this run: ${domains.join(", ")}.`
+      : "Recorded domains for this run: none.";
+  const skillsLine =
+    spliced.length > 0
+      ? `Domain skill blocks spliced after your role: ${spliced
+          .map((s) => `${s.displayName} (version ${s.version})`)
+          .join(", ")}.`
+      : "No domain skill block follows your role on this run; judge under the " +
+        "constitution and your role alone.";
+  const budget =
+    run.turnBudget === undefined
+      ? ""
+      : `
+You have ${run.turnBudget} tool-use turns in this run, including the one
+that submits. A turn may carry several \`search_similar_claims\` calls at
+once, so issue your framings together (the claim, the canonical form, a
+paraphrase, the negation) rather than one per turn, and keep at least one
+turn for the decision.
+`;
   return `Determine whether this claim already exists in the graph.
 
 Source text, verbatim: "${extractedText}"
 
 Proposed canonical form: "${proposedCanonical}"
 
+${domainsLine} ${skillsLine}
+${budget}
 Search with \`search_similar_claims\` under several framings, including the
 negation, then call \`submit_match_decision\` with your reasoning.
 `;

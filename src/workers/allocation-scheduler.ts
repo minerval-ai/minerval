@@ -69,9 +69,26 @@ export async function allocationSchedulerTick(
   if (now - lastSweepAt < intervalMs) return result;
   lastSweepAt = now;
 
-  // 1. The ledger catches up with the graph.
-  const reconciled = await reconcileActions().catch(() => null);
-  if (reconciled) result.actionsReconciled = reconciled.assessEnsured;
+  // 1. The ledger catches up with the graph. A failure here is the one the
+  // mandates feel most (plan items that never become work, #416), so it is
+  // never silent: the sweep isolates per-mandate failures itself and
+  // reports them; anything that still escapes is logged here.
+  const reconciled = await reconcileActions().catch((err: unknown) => {
+    console.error(
+      `[allocation-scheduler] reconcileActions failed: ${
+        err instanceof Error ? err.stack ?? err.message : String(err)
+      }`
+    );
+    return null;
+  });
+  if (reconciled) {
+    result.actionsReconciled = reconciled.assessEnsured;
+    if (reconciled.plansFailed > 0) {
+      console.error(
+        `[allocation-scheduler] ${reconciled.plansFailed} mandate plan(s) failed to materialize this sweep`
+      );
+    }
+  }
 
   // 2. The General mandate's formula valuations refresh (other mandates
   // judge for themselves in their own review passes, which the reconcile

@@ -112,6 +112,22 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
     }
   });
 
+  it("defaults the Lookout to the model production pins", async () => {
+    // The cheap tier again: a lookout's judgment is relevance, and a
+    // Grantmaker pins a stronger model per lookout where the brief needs it.
+    const saved = process.env.LOOKOUT_MODEL;
+    delete process.env.LOOKOUT_MODEL;
+    try {
+      const { loadConfig } = await import("../../../src/config.js");
+      const pin = productionPins().find((p) => p.envVar === "LOOKOUT_MODEL");
+      expect(pin?.model).toBe(OPENROUTER_MODELS.flash);
+      expect(loadConfig().lookoutModel).toBe(pin?.model);
+    } finally {
+      if (saved === undefined) delete process.env.LOOKOUT_MODEL;
+      else process.env.LOOKOUT_MODEL = saved;
+    }
+  });
+
   it("defaults the tagger to the model production pins (#272)", async () => {
     // Same discipline as the Matcher: the nano tier's default and its pin
     // are one ID, so dev and corpus runs tag on the model production tags on.

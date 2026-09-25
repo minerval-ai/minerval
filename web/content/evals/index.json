@@ -1,48 +1,48 @@
 {
-  "syncedAt": "2026-09-11T16:29:30.858Z",
-  "gitCommit": "6f4abd2",
+  "syncedAt": "2026-09-25T17:03:10.307Z",
+  "gitCommit": "766cfea",
   "pins": [
     {
       "agent": "steward",
       "envVar": "STEWARD_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "solver",
       "envVar": "SOLVER_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "steward strong",
       "envVar": "STEWARD_STRONG_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "curator",
       "envVar": "CURATOR_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "audit",
       "envVar": "AUDIT_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "arbitration",
       "envVar": "ARBITRATION_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "extractor",
       "envVar": "EXTRACTOR_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "matcher",
@@ -55,6 +55,12 @@
       "envVar": "TAGGER_MODEL",
       "model": "z-ai/glm-5.3-flash",
       "label": "GLM 5.3 Flash"
+    },
+    {
+      "agent": "lookout",
+      "envVar": "LOOKOUT_MODEL",
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
     }
   ],
   "judge": {
@@ -62,10 +68,10 @@
     "label": "Claude Sonnet 5"
   },
   "rates": {
-    "claude-fable-5-1": {
-      "inputPerMtok": 10,
-      "outputPerMtok": 50,
-      "cacheReadMultiplier": 0.025
+    "claude-opus-5-5": {
+      "inputPerMtok": 4,
+      "outputPerMtok": 20,
+      "cacheReadMultiplier": 0.05
     },
     "z-ai/glm-5.3-flash": null,
     "claude-sonnet-5": {
@@ -323,10 +329,135 @@
     {
       "cluster": "blackholes",
       "file": "2026-08-09T15-47-32-753Z.json"
+    },
+    {
+      "cluster": "blackholes",
+      "file": "2026-09-11T23-45-34-341Z.json"
+    },
+    {
+      "cluster": "blackholes",
+      "file": "2026-09-18T14-31-11-782Z.json"
+    },
+    {
+      "cluster": "blackholes",
+      "file": "2026-09-18T21-34-02-354Z.json"
+    },
+    {
+      "cluster": "eggs",
+      "file": "2026-09-11T23-22-27-296Z.json"
+    },
+    {
+      "cluster": "eggs",
+      "file": "2026-09-12T04-13-45-131Z.json"
+    },
+    {
+      "cluster": "eggs",
+      "file": "2026-09-18T14-32-36-530Z.json"
+    },
+    {
+      "cluster": "lableak",
+      "file": "2026-09-12T00-37-51-997Z.json"
+    },
+    {
+      "cluster": "lableak",
+      "file": "2026-09-18T14-36-34-280Z.json"
+    },
+    {
+      "cluster": "lethalities",
+      "file": "2026-09-12T02-59-38-161Z.json"
+    },
+    {
+      "cluster": "lethalities",
+      "file": "2026-09-18T14-32-23-343Z.json"
     }
   ],
   "goldenRuns": [
-    "2026-08-08-deepseek-v4-flash.json"
+    "2026-08-08-deepseek-v4-flash.json",
+    "2026-09-11-glm-5.3-flash-as-shipped.json",
+    "2026-09-12-glm-5.3-flash.json",
+    "2026-09-16-glm-5.3-flash-main-477.json"
+  ],
+  "goldenCanonicalRuns": [
+    "2026-09-18T17-42-30-813Z.json"
+  ],
+  "replays": [
+    {
+      "name": "adversarial-blackholes-2026-09-18T18-48-41-952Z",
+      "kind": "adversarial",
+      "title": "Adversarial: blackholes",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T23:00:07.393Z",
+      "arms": [
+        "astrophysical · con (down)",
+        "astrophysical · benign (down)"
+      ],
+      "events": 76,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 841495
+    },
+    {
+      "name": "blackholes-2posts-20260918-1620",
+      "kind": "ingest",
+      "title": "blackholes: 25 source(s) on z-ai/glm-5.3-flash",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T21:34:01.294Z",
+      "arms": [
+        "blackholes"
+      ],
+      "events": 62,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 795508
+    },
+    {
+      "name": "dup-flood-blackholes-20260918-1848",
+      "kind": "property",
+      "title": "blackholes: dup-flood",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T20:44:37.422Z",
+      "arms": [
+        "blackholes (a)",
+        "blackholes (b)"
+      ],
+      "events": 53,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 628982
+    },
+    {
+      "name": "personas-blackholes-2026-09-18T20-29-56-643Z",
+      "kind": "personas",
+      "title": "Personas: phase1 on blackholes",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T20:29:56.771Z",
+      "arms": [
+        "phase1 on blackholes"
+      ],
+      "events": 30,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 243646
+    },
+    {
+      "name": "blackholes-20260918-1709",
+      "kind": "ingest",
+      "title": "blackholes: 1 post on z-ai/glm-5.3-flash",
+      "cluster": "blackholes",
+      "generatedAt": "2026-09-18T18:46:15.825Z",
+      "arms": [
+        "blackholes"
+      ],
+      "events": 21,
+      "models": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "costMicroUsd": 292883
+    }
   ],
   "rubric": [
     {

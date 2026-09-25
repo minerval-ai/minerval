@@ -11,7 +11,7 @@ import { MODELS } from "../../../../src/llm/models.js";
 
 describe("resolveProvider — the routing table", () => {
   it("routes claude-* to Anthropic", () => {
-    expect(resolveProvider(MODELS.fable)).toBe("anthropic");
+    expect(resolveProvider(MODELS.strong)).toBe("anthropic");
     expect(resolveProvider(MODELS.sonnet)).toBe("anthropic");
     expect(resolveProvider(MODELS.haiku)).toBe("anthropic");
     expect(resolveProvider("claude-opus-4-8")).toBe("anthropic");

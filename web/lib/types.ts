@@ -112,7 +112,7 @@ export interface Assessment {
   subclaim_summary: Record<string, number>;
   assessed_at: string;
   // Raw API id of the model that produced the assessment (#294), e.g.
-  // "claude-fable-5-1". Null/absent for assessments written before the model
+  // "claude-opus-5-5". Null/absent for assessments written before the model
   // was recorded — render the date alone, no dangling separator. Optional
   // while API deploys race the frontend.
   model?: string | null;
@@ -272,6 +272,24 @@ export interface TrajectoryPoint {
 // A claim that depends on THIS claim — a reverse decomposition edge. `relation_type`
 // describes how the dependent uses this claim (e.g. it `requires` it as a premise).
 // This is the data that fills the right margin on a claim page.
+// A lateral link (#436): a claim that is neither premise nor conclusion of
+// this one, but that a reader would want beside it, with the reason.
+export type ClaimLinkKind = "related" | "rival_explanation" | "counterpart_position";
+
+export interface RelatedClaim {
+  link_id: string;
+  kind: ClaimLinkKind;
+  reasoning: string;
+  created_by: string;
+  created_at: string;
+  id: string;
+  text: string;
+  claim_type: ClaimType;
+  assessment_status: AssessmentStatus | null;
+  assessment_confidence: number | null;
+  assessment_credence: number | null;
+}
+
 export interface DependentClaim {
   id: string;
   text: string;
@@ -366,6 +384,8 @@ export interface ClaimDetail {
   provenance_edges?: ProvenanceEdge[];
   source_relationships?: SourceRelationship[];
   dependents?: DependentClaim[];
+  // Lateral links (#436); absent when the API predates the field.
+  related?: RelatedClaim[];
   trajectory?: {
     current: TrajectoryPoint | null;
     history: TrajectoryPoint[];

@@ -44,7 +44,7 @@ const usage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheCre
 function toolTurn(id: string): ToolCompletionResult {
   return {
     content: "",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     usage,
     stopReason: "tool_use",
     toolUses: [{ id, name: "search", input: { q: id } }],
@@ -57,7 +57,7 @@ function toolTurn(id: string): ToolCompletionResult {
 function textTurn(text: string, stopReason = "end_turn"): ToolCompletionResult {
   return {
     content: text,
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     usage,
     stopReason,
     toolUses: [],
@@ -127,7 +127,11 @@ describe("toolUseLoop is append-only", () => {
     expect(seen[2]![3]).toEqual({ role: "assistant", content: toolTurn("t2").rawContent });
     expect(seen[2]![4]).toEqual({
       role: "user",
-      content: [{ type: "tool_result", tool_use_id: "t2", content: "search:t2" }],
+      content: [
+        { type: "tool_result", tool_use_id: "t2", content: "search:t2" },
+        // The running turn counter (#474) rides after the tool results.
+        { type: "text", text: "Turn 2 of 10 used; 8 remain." },
+      ],
     });
     expect(initial).toEqual(before);
   });
@@ -147,7 +151,7 @@ describe("longRunToolLoop", () => {
     await longRunToolLoop({
       initialMessages: initial,
       tools: [],
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       system: ["role", "skill"],
       effort: "xhigh",
       taskBudgetTokens: 64_000,
@@ -156,7 +160,7 @@ describe("longRunToolLoop", () => {
     });
     const req = mocks.completeWithToolsStreaming.mock.calls[0]![0];
     expect(req).toMatchObject({
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       system: ["role", "skill"],
       effort: "xhigh",
       taskBudgetTokens: 64_000,
@@ -403,13 +407,14 @@ describe("longRunToolLoop", () => {
     const { runWithUsageContext } = await import("../../../src/llm/usage-context.js");
     recordMessages(mocks.completeWithToolsStreaming);
     queueTurns(mocks.completeWithToolsStreaming, [toolTurn("t1"), textTurn("done")]);
-    const trace = { runId: "run-1", seq: { n: 0 } };
+    const trace = { runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() };
 
     await runWithUsageContext({ trace }, () =>
       longRunToolLoop({ initialMessages: initial, tools: [], executeTool })
     );
 
     expect(mocks.recordAgentStep.mock.calls.map((c) => c[1])).toEqual([
+      "prompt",
       "assistant",
       "tool_results",
       "assistant",

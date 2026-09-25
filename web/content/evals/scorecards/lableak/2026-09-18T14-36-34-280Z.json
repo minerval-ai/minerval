@@ -1,0 +1,389 @@
+{
+  "generatedAt": "2026-09-18T14:36:34.280Z",
+  "cluster": "lableak",
+  "database": "episteme_corpus_lableak",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 6,
+      "stewardMaxRuns": 12,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 25000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 30
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "origins-debate-overview",
+      "zoonosis-market-case",
+      "worobey-market-epicenter",
+      "lab-leak-case",
+      "defuse-proposal"
+    ],
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "noReset": false,
+    "profile": null,
+    "gitCommit": "8737a8c",
+    "pipelineEpoch": "2026-09-domain-skills",
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 21,
+      "instances": 72,
+      "totalClaims": 53,
+      "claimsPer1kWords": 37.192982456140356,
+      "typeDistribution": {
+        "empirical_verifiable": 30,
+        "empirical_derived": 15,
+        "causal": 8
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 16,
+        "p90": 21,
+        "max": 24,
+        "mean": 15.7
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 3.4285714285714284
+    },
+    "decomposition": {
+      "maxDepth": 7,
+      "depthHistogram": {
+        "0": 10,
+        "1": 5,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1
+      },
+      "atomicShare": 0.792,
+      "meanChildrenPerParent": 6.18
+    },
+    "crossDoc": {
+      "sharedSubclaims": 12
+    },
+    "assessment": {
+      "statusDistribution": {
+        "contested": 6,
+        "verified": 3,
+        "supported": 2
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 4041
+    },
+    "importance": {
+      "mean": 0.375,
+      "histogram": {
+        "0.2-0.4": 25,
+        "0.4-0.6": 18,
+        "0.0-0.2": 5,
+        "0.8-1.0": 2,
+        "0.6-0.8": 3
+      },
+      "meanAtomic": 0.319,
+      "meanCompound": 0.591
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 11,
+      "withProposal": 11,
+      "rewriteRate": 0.273,
+      "rewriteMagnitude": 0.23,
+      "meanWordDelta": 1,
+      "matched": {
+        "count": 6,
+        "deniesShare": 0.167,
+        "meanProposalDistance": 0.51
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 11,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.59,
+      "meanJudged": 0.61,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.73,
+      "reasoningFit": 4.36,
+      "impartiality": 4.64
+    },
+    "granularity": {
+      "good": 11
+    },
+    "flags": {
+      "status_miscalibrated": 3,
+      "false_precision": 3,
+      "other": 4,
+      "opaque_ids": 2,
+      "hallucination_risk": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 11
+      },
+      "hedging": {
+        "calibrated": 10,
+        "overconfident": 1
+      },
+      "canonicalForm": {
+        "good": 10,
+        "frame_bound": 1
+      },
+      "politicalBias": {
+        "none": 11
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0.09,
+    "canonicalFormMissShare": 0.09,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "3112d325-a2f6-45f2-914b-1ae53291deea",
+        "text": "No intermediate host animal infected with SARS-CoV-2 or a close progenitor virus was ever identified in Wuhan",
+        "importanceStored": 0.55,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.55,
+        "note": "The assessment is impressively even-handed and handles the seropositive-cats falsification risk honestly, but \"verified (0.9)\" overstates the evidence base: the verdict rests on excerpts, not whole-document readings, and the freshness check never ran — that profile fits §10's \"supported\" (examination incomplete), not verified, and the reasoning's own opening concession about the rewording quietly concedes the claim as literally stated is not quite what the evidence settles.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "5bf38300-4db2-4cd0-bce0-a8aad8c6c1f6",
+        "text": "SARS-CoV-2 entered humans through natural spillover from an animal host",
+        "importanceStored": 0.9,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.9,
+        "note": "An unusually good assessment: contested is the right status (a low-confidence IC split, a published genomic challenge, and real evidential gaps keep both sides live, and the reasoning explicitly answers the false-parity objection with asymmetric weighing), the canonical form is the neutral statement both camps debate, and limitations (blocked full-texts) and falsifiers are stated honestly. One defect: the reasoning relies on a \"joint-tenability\" credence of ~0.75–0.8 it then declines to record; since the proposition is composite, omission is defensible, but the reasoning should not both compute and withhold the number. Separately, the verified furin-site child (\"not found in other known sarbecoviruses\") appears stale against the reasoning's own 2026 bat-lineage finding — a child-level repair owed on the next pass.",
+        "political_bias": "none",
+        "readability": 4.5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "7b21c521-1f55-4aee-b393-0290be4a7289",
+        "text": "The Huanan market was a superspreading amplifier of SARS-CoV-2 introduced from elsewhere",
+        "importanceStored": 0.65,
+        "status": "contested",
+        "canonical_form": "frame_bound",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids",
+          "false_precision",
+          "status_miscalibrated"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.7,
+        "note": "The contested verdict and adversarial pass are unusually well-reasoned and independently grounded, but the canonical text bundles the two independent halves the reasoning itself separates: the amplifier role (largely conceded, e.g., by SAGO) and \"introduced from elsewhere\" (the live dispute) — a concession about amplification with in-market spillover still possible would deny the claim as written, so the neutral form should say the market amplified a virus whose point of introduction is disputed.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "d0f908c1-0bc4-401d-86b9-9988f4a5b575",
+        "text": "SARS-CoV-2 first spilled over into humans at the Huanan Seafood Market in Wuhan",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.6,
+        "note": "A model assessment: the reasoning weighs both accounts on their merits, shows the structure of what is settled vs. live, and honestly discloses the evidence-access limits (full texts unretrieved, NBER read in excerpt). The main flaw is structural: subclaims 6 and 13 are near-duplicate statements of the two-introduction thesis, and credence 0.6 appears only in prose rather than as the formal second number.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "da7700ec-536f-42ab-875d-43363f39ab1e",
+        "text": "December 2019 COVID-19 cases, including those without a known link to the Huanan market, were geographically centered on the Huanan market",
+        "importanceStored": 0.5,
+        "status": "supported",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "opaque_ids",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.6,
+        "note": "A careful, well-calibrated assessment: the supported verdict is earned by the evidence actually read (abstract/mirror only), the adversarial pass is genuine, and the denying SSRN source is correctly down-weighted; minor defects are the residual claim-id citations and a mild understatement of importance (this is a live, widely consulted point of the origin debate, closer to 0.6 than 0.5).",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "dd9d10c5-7ed8-40d8-b21f-e02e7ee646e1",
+        "text": "The preponderance of early COVID-19 cases linked to the Huanan market is genuine rather than an artifact of ascertainment bias",
+        "importanceStored": 0.55,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.55,
+        "note": "A well-weighed contested verdict: both sides are represented at their strongest, the reasoning shows the evidence chain and what would change it, and the 0.85 confidence fits a live discourse split between credible parties. Main defect: 0.85 confidence rests on sources never read whole (all six fetches 403'd) — the assessment admits search excerpts and recorded readings were the actual base, which argues for a somewhat lower confidence or an explicit confidence haircut. The third subclaim is a near-restatement of the parent and adds nothing.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "26c59b56-34cf-460f-9157-95ee1158c5ac",
+        "text": "Most early COVID-19 cases were linked to the Huanan Seafood Market in Wuhan",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.7,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "note": "The contested verdict is earned, not defaulted to: \"most\" is genuinely cohort-dependent (66%/53% for the earliest identified cases vs 33% of 168 and 22% of 198 over broader sets), and the assessment refuses to fix the case set rather than quietly taking a side — with the closeness to \"supported\" honestly stated rather than rounded. Remaining defects are minor: the China CDC 22%-of-198 denial, a deciding-grade evidence pillar, exists only in prose rather than as a node, and the quoted figures (55/168, 155/164, the distance medians) rest on search excerpts with full texts 403-blocked — disclosed, but the precision is unverified."
+      },
+      {
+        "id": "ebe506fc-2bfb-4f52-a416-8d7f22d3134b",
+        "text": "SARS-CoV-2 possesses a furin cleavage site not found in other known sarbecoviruses",
+        "importanceStored": 0.4,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.4,
+        "note": "The one arguable pressure point — verified despite ten blocked full texts — is named and defused correctly: the proposition is the title-level finding of the originator paper, directly re-quoted across 2020–2025 and both camps of the origins dispute, and the assessor ran its own counterexample hunt rather than deferring. Near misses (RDAR Brazil, Khosta-2/RhGB01, Hainan CD35) are distinguished on scope, not waved away; existence/uniqueness is exactly the right split and the unassessed children are legitimate §19 deferral.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "3560b331-7c6f-41bb-86e6-24de36e885b4",
+        "text": "SARS-CoV-2 entered humans through a research-related laboratory accident",
+        "importanceStored": 0.85,
+        "status": "contested",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4.5,
+        "importance_judged": 0.85,
+        "note": "Substantively this is a strong assessment — \"contested\" is plainly the right status (the IC is split, credible published analyses exist on both sides) and the credence-0.2 derivation is independent and honestly argued — but the direct-subclaim relation labels are semantically incoherent: the rival natural-spillover thesis is tagged \"requires\" (it is contradicted by the parent, not required by it), evidence that cuts against the parent (SARS/MERS zoonotic precedent, expert opinion favoring zoonosis) is tagged \"supports\", and cases predating the market cluster — which favor the accident hypothesis — are tagged \"contradicts\". Read without the prose, the structure points the wrong way; also, as displayed, the 0.2 credence the reasoning defends is absent from the stored assessment line despite being argued as an honest point estimate.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4.5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "f26cbef7-b823-4e9c-b0e8-4eb244f9e20d",
+        "text": "About a third (55 of 168) of the earliest known December 2019 COVID-19 cases in Wuhan were associated with the Huanan Seafood Market",
+        "importanceStored": 0.45,
+        "status": "supported",
+        "readability": 4.5,
+        "reasoning_fit": 4.5,
+        "impartiality": 4.5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.45,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [],
+        "note": "Calibration is the strength here: withholding \"verified\" because no primary text could be fetched and \"associated with\" was never operationalized is exactly right, and the requires-edge on the no-pre-December premise correctly guards the \"earliest known\" scope. Two wobbles: the supports-edge is wired to the 22.6% other-markets cell (context, not evidence for the Huanan count) while the load-bearing 28.0%/4.8% cells stay in prose, and the SBS raw-data-withheld concern is converted wholly into corroboration rather than weighed as a caveat on the figure's underlying reliability."
+      },
+      {
+        "id": "f3059bd3-5fea-41f2-8008-8395eaeee390",
+        "text": "Some Huanan market environmental samples contain both raccoon dog DNA and SARS-CoV-2 RNA",
+        "importanceStored": 0.45,
+        "status": "verified",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated"
+        ],
+        "hedging": "overconfident",
+        "importance_judged": 0.4,
+        "impartiality": 4,
+        "note": "The decisive defect is internal: the assessment concedes every source fetch failed and the evidence was never examined whole, which is precisely §10's definition of supported — \"verified\" at 0.9 claims a process that did not happen, and the prose asserts as settled what its own disclosure leaves at supported. The weighing itself is strong and even-handed (Bloom's adversarial reanalysis concedes the datum; the literal-datum/causal-account split is correct), though the \"contradicts\" edge on the virus-poor subclaim is mislabeled, since the reasoning itself concedes logical compatibility.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 3,
+        "sycophancy": "independent"
+      }
+    ]
+  },
+  "cost": {
+    "calls": 11,
+    "usd": 0.03
+  }
+}

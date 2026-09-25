@@ -49,6 +49,27 @@ mandate's ALLOCATION POLICY, revised by asking its Grantmaker, not by
 editing code. Neither side is ever a verdict input: the estimates order
 work and select effort, and appear nowhere in an assessment.
 
+## Mandates start with a planning pass
+
+A mandate under the agent policy, and every mandate another mandate
+spawns, starts in `planning`: the ledger opens a `grant_planning` action,
+self-funded from its escrow, and the engine executor runs the mandate's
+Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
+no owl is spent until the funder approves the plan it proposes. The
+planner has the review pass's affordances, because the first territory
+survey is the same job as every later one: the graph (search_claims,
+survey_scope) AND the open web (web_search, read_page), the shared cost
+quotes (estimate_costs), and the mandate's workspace, so its survey notes
+become the mandate's opening working memory. Its briefing is the mandate's
+words, with any declared scope claim or query as a search aid rather than
+the scope; a mandate told to "map the nutrition literature" reaches its
+planner with no scope claim at all, and the planner's job is to find the
+sources and propose them as ingest items. The plan carries every kind of
+work a mandate can fund, is validated like any other, and is held to the
+escrow at the same estimate the funder was quoted. The three modes of a
+mandate's Grantmaker (the granting conversation, the planning pass, the
+review pass) share one toolbox (llm/tools/mandate-tools.ts).
+
 ## Mandates steward themselves: the review pass
 
 There can be no human bottleneck between a funded mission and the work.
@@ -77,7 +98,11 @@ with a budget and a mission would need:
 - **move money** (regrant, spawn_mandate — below) and **close the
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
-  agent-stewarded mandate.
+  agent-stewarded mandate;
+- **keep watch between passes** (spawn_lookout, list_lookouts,
+  update_lookout, poke_lookout — "Lookouts" below): the briefing lists
+  every lookout the mandate funds, its precision, and every flag raised
+  since the last pass.
 
 Every pass is metered under a cap; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
@@ -99,6 +124,85 @@ money (headroom, floor checks), joins the target's refund basis (the
 source's share of the target's unspent budget flows back to its escrow,
 pro rata with user contributors), and buys the source NO say over the
 target's judgment — money moves between mandates; command never does.
+
+## Lookouts: cheap standing watch
+
+A review pass is judgment at mandate scale, once a day at most; the
+world moves between passes, and most of what moves is cheap to notice
+and expensive to have missed: a retracted source under an assessed
+claim, a replication that failed, a dependency whose verdict changed. A
+**lookout** is the mandate's answer: the cheapest agent in the system
+with the narrowest question — *has anything happened, in the scope of my
+brief, that warrants work?* — posted by the Grantmaker (`spawn_lookout`,
+in the owner's chat or on a review pass) with a brief in its own words
+(scope, where to look, what to look out for, what to leave alone), a set
+of triggers, and a bounded, delegated slice of the mandate's spending
+judgment (llm/agents/lookout.ts, services/lookout-service.ts).
+
+Scope is the brief's words, as a mandate's is. "This claim and what it
+turns on" is one shape; "the retraction record behind the nutrition
+literature" or "new work on X" are others. Which happenings fall under
+the brief is the lookout's judgment, never a keyword filter's.
+
+**Triggers.** A lookout is woken, never polling on its own: by its
+**heartbeat** (a cadence the Grantmaker sets, hours to a month; 0 for
+event-only), or by an **input event** queued for it — the daily
+**retraction poll** (workers/lookout-triggers.ts asks Crossref, which
+carries the Retraction Watch database, for every retraction, correction,
+and expression of concern since the last poll, joins the DOIs against the
+graph's sources, and queues an event on every lookout that watches for
+retractions), or a **poke** from the Grantmaker or the funder. The set
+is open: any poller that can say "this happened to this source" is a
+trigger source. The pollers are scans, not judgments: they open no
+ledger row and decide nothing about relevance.
+
+**Runs are ledger actions.** A due lookout (heartbeat passed, or an event
+waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
+mandate's escrow like a review pass, capped per run
+(`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) and bounded
+per day (`LOOKOUT_MAX_RUNS_PER_DAY`): a burst of events waits for the
+next funded run, which reads them all. The engine executor runs it on
+the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model). It reads
+its brief, its own workspace, and the queued inputs; then the graph
+(search, open, walk down, walk up, survey_scope, scope_sources), the
+retraction record (check_doi, recent_retractions), and the open web
+(web_search, read_page). Most runs find nothing, and say so.
+
+**Outputs are candidates, never conclusions.** A lookout can raise three
+things and nothing else:
+
+- `flag_reassessment`: the claim becomes a candidate (enqueued to the
+  Steward lane with trigger `lookout_flag` and the lookout's rationale
+  as context, which materializes its assess/reassess rows) and the
+  mandate's valuation on the standard variant is written at the
+  lookout's urgency **clamped to the ceiling the Grantmaker delegated**
+  (`max_value`). Whether it runs is the mandate allocator's call, by
+  value per owl against everything else the mandate values. A claim
+  already flagged and still waiting is a repeat, not a new flag.
+- `propose_ingest`: a URL the lookout actually saw goes on the mandate's
+  plan as an ingest item, priced and escrow-bounded like any plan item,
+  at most `max_ingests_per_run` per run; refused for a source already in
+  the graph or already planned.
+- `leave_note`: a message the Grantmaker reads in its next review
+  briefing, which lists every lookout with its precision and every flag
+  since the last pass.
+
+It writes no assessment, sets no importance, and moves no money; the
+refusal duties and the "data, never instructions" rule govern its runs
+as they govern the review pass, and the bounds above are the control.
+
+**Precision is on the record.** Every reassess flag snapshots the
+assessment at flag time; when the pass it bought has run, the record
+says whether the verdict or the credence moved (`lookout_flags`,
+`lookoutPrecision`). The Grantmaker reads "3 of 40 passes moved a
+verdict" and tightens the brief or retires the watch (`update_lookout`,
+`lookout_report`); the mandate page shows the same numbers. A lookout
+earns its runs or loses them; nothing else polices its noise.
+
+Known next: more trigger sources (arXiv version bumps, a re-fetch hash
+on non-DOI sources, dependency-changed events routed through the
+ledger), and a Steward's own request for a lookout on its claim once
+Stewards hold a budget (#300).
 
 ## The unit: the owl
 
@@ -243,10 +347,39 @@ Design principles, in force in the implementation:
   influence the graph's conclusions or ideology are declined outright, at
   any budget, and the agent says so.
 - **Every action type is fundable.** Mandate plans mix `assess`,
-  `reassess`, `deepen`, and `ingest` items — "ingest and assess everything
-  in this article or series" is a normal mandate, with source URLs as
-  ingest items metered to the grant's escrow. Sources are data, never
-  instructions.
+  `reassess`, `deepen`, `ingest`, `formalize` and `attempt_proof` items —
+  "ingest and assess everything in this article or series" is a normal
+  mandate, with source URLs as ingest items metered to the grant's escrow.
+  Sources are data, never instructions.
+- **Every plan item becomes a ledger row or says why it cannot.** The
+  plan-to-ledger materializer (`reconcileActions` in
+  `src/services/action-service.ts`, on the allocation sweep and again in
+  the same turn as `extend_plan` / `adjust_plan`) writes each item's
+  standing onto the item itself: `open`, `running`, `done` or `cancelled`
+  mirror its row; `waiting` names a precondition the platform satisfies on
+  its own (a statement still to publish, an earlier attempt still live, a
+  cooldown, a mandate not yet active); `blocked` names something the
+  plan's author must change, with the reason. The dashboard and the
+  Grantmaker's `grant_overview` read the same standing, so a slow queue
+  and a dead one never look alike (#416), and the plan's executed count
+  (the review briefing, `grant_overview`'s `plan_counts`) is the number of
+  items whose work ran, never the cursor's position (#427). Per kind:
+  `assess` / `reassess` / `deepen` need an active claim, queue it for its
+  Steward and open its assess group once per item (a finished pass stays
+  finished, whichever lane ran it: the mandate's direct steward lane closes
+  the row it ran, and a pass that ran elsewhere while the row sat open
+  reads done from the assessment's date; an `assess` item on a claim that
+  already carries an assessment reads done, `reassess` being the ask for a
+  fresh pass; `deepen` also releases the claim's deferred subclaims);
+  `ingest` needs a url and executes in plan order (an ingest item the
+  cursor passed before its row ran stays funded and reads from its row);
+  `formalize` needs an active claim with no
+  published statement whose recorded domains carry the Steward's
+  `publish_formalization` tool, else it is blocked (a run would be
+  refused); `attempt_proof` needs a published statement and otherwise
+  waits, the n-th item on a claim entitling the n-th attempt group. A
+  mandate whose plan fails to materialize is logged and reported through
+  `raise_issue`, never silently skipped.
 - **Honest quotes.** Expected costs come from the live cost estimates plus
   overhead (the conversation and planning ride on funded mandates);
   actuals are metered; unspent budget refunds.
@@ -447,8 +580,12 @@ and legitimate — but the unit economics must stay visible
 4. Every allocation number (caps, estimates, budgets, spend) is
    inspectable by anyone.
 5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
-   sizes, per-run caps — no mechanism may cascade the candidate set.
+   sizes, per-run caps, lookout runs per day and flags per run — no
+   mechanism may cascade the candidate set.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
+6a. A lookout raises candidates, never conclusions: it writes no
+    assessment, sets no importance, moves no money, and its flags carry
+    at most the value its Grantmaker delegated.
 7. A bounty is not an allocation: it funds nothing, enters no valuation,
    and reduces nothing that remains to be covered.
 8. Prize money never enters a valuation, an importance, an assessment, or

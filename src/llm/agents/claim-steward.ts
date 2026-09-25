@@ -8,7 +8,6 @@
  * importance claims it may also get Elicit scholarly search (#299). Acts
  * through tools -- no structured return value.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
 import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
 import { skillsForDomains } from "../prompts/skills.js";
@@ -48,6 +47,8 @@ import {
   listFormalizations,
 } from "../../services/formalization-service.js";
 import { loadConfig } from "../../config.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -75,7 +76,9 @@ ${structureStep}
    is one instance among the rest, not the claim's home (see "Provenance Is
    Evidence, Not an Anchor"). When a source you read itself asserts the claim
    (or its negation) — not merely reports on the debate — record that
-   sighting with record_claim_instance as you go (see "Recording Instances").
+   sighting with record_claim_instance as you go (see "Recording Instances");
+   when an instance already on the claim misrepresents what its source says,
+   correct it with update_claim_instance and give the reason.
 5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
    **assessment** (an encyclopedia-style account of where the claim stands, no
    internal machinery or bookkeeping) and the **reasoning_trace** (the audit
@@ -202,13 +205,11 @@ async function runClaimStewardImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.stewardModel;
 
-  // The steward always has web search — it may need fresh external evidence to
-  // assess any claim, atomic or compound (#30).
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: 5,
-  };
+  // The steward has web search on every provider — it may need fresh
+  // external evidence to assess any claim, atomic or compound (#30). The
+  // server runs it on an Anthropic model; elsewhere the loop executes it
+  // (tools/web-search-tool.ts).
+  const webSearch = createWebSearch(model, 5);
 
   // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
   // structure, so it must be able to read parents, subclaims, and neighbors.
@@ -270,13 +271,16 @@ async function runClaimStewardImpl(input: {
   const tools = [
     ...graphTools,
     ...claimContextTools,
+    // A search hit is a snippet; the page is where an abstract, a results
+    // table, or a retraction notice actually is (#333).
+    getReadPageToolDefinition(),
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
     ...skillTools,
     ...researchTools.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
-    webSearchTool,
+    webSearch.tool,
   ];
 
   const isInitial = input.trigger === "structure_and_assess";
@@ -290,14 +294,20 @@ async function runClaimStewardImpl(input: {
    graph (as itself, a rewording, or its negation). If it matches, attach the
    existing claim with add_relationship_edge; only when the Matcher says it is
    novel, create it with add_decomposition_edge. Never mint a duplicate. If the
-   claim is simple, leave it atomic; do not invent dependencies.`
+   claim is simple, leave it atomic; do not invent dependencies. Look UP as
+   well as down: if this claim is an argument for, a meta-claim about, or a
+   special case of a proposition the discourse treats as a unit, match_claim
+   that proposition too; propose_parent_edge if it exists, add_parent_claim
+   if it does not (see the Decomposition guidance).`
     : `2. RE-ASSESS in light of what changed. Adjust structure only if you discover a
-   missing dependency the claim turns on, and then match_claim FIRST, linking
-   an existing claim with add_relationship_edge or creating a new one with
-   add_decomposition_edge. Do not re-decompose from scratch.`;
+   missing dependency the claim turns on, or a proposition above it the graph
+   lacks, and then match_claim FIRST: link an existing claim with
+   add_relationship_edge or propose_parent_edge, create a new one with
+   add_decomposition_edge or add_parent_claim. Do not re-decompose from
+   scratch.`;
 
   const iterationBudget = config.stewardMaxIterations;
-  let newSubclaimsThisRun = 0;
+  let newClaimsThisRun = 0;
   let instancesRecordedThisRun = 0;
   let elicitCallsThisRun = 0;
   let leanSearchesThisRun = 0;
@@ -317,6 +327,7 @@ elicit_* tools are in your toolset (up to ${
 likely overkill even here — reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
       : "";
+
 
   const skillsNote =
     skills.length > 0
@@ -367,6 +378,14 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
 
   // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
   // the Elicit cap: each refusal tells the agent what to do instead.
+  const wasNotSubmitted = (result: string): boolean => {
+    try {
+      const parsed = JSON.parse(result) as { not_submitted?: unknown };
+      return parsed.not_submitted === true;
+    } catch {
+      return false;
+    }
+  };
   const leanCapRefusal = (name: string): string | null => {
     if (name === "lean_search") {
       const cap = config.stewardLeanMaxSearchesPerRun;
@@ -411,11 +430,25 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
     return null;
   };
 
+  // A run that ends its turn with no assessment recorded — GLM 5.3 Flash
+  // has returned an empty end_turn after seventeen steps of structuring —
+  // loses the whole pass. One nudge, only while nothing was recorded.
+  let assessmentRecorded = false;
+
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
     model,
+    finalToolNudge: {
+      max: 1,
+      when: () => !assessmentRecorded,
+      message:
+        "You ended your turn without recording an assessment for this claim. " +
+        "Record it now with update_claim_assessment (status, confidence, the " +
+        "reader-facing assessment, and your reasoning_trace), then log your " +
+        "decision with log_stewardship_decision.",
+    },
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
     // terminal — a truncated final turn loses the run's work. 16384 matches
@@ -435,6 +468,7 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
         `log_stewardship_decision, do so on your next turn so your work is saved.`,
     },
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -451,11 +485,17 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (isSkillTool(name)) {
         const refusal = leanCapRefusal(name);
         if (refusal) return refusal;
-        return executeSkillTool(name, toolInput, {
+        const result = await executeSkillTool(name, toolInput, {
           role: "claim-steward",
           claimId: input.claimId,
           run: { trigger: input.trigger, context: input.context, model },
         });
+        // A submission the executor turned away for breaking the convention
+        // never reached the checker, so it is not one of the run's checks (#453).
+        if (name === "lean_check" && leanChecksThisRun > 0 && wasNotSubmitted(result)) {
+          leanChecksThisRun -= 1;
+        }
+        return result;
       }
       // Elicit calls cost real money, not just tokens (#299/#300): a per-run
       // backstop mirrors web_search's max_uses. The judgment about whether
@@ -480,44 +520,51 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
       if (claimContextNames.has(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      // Blast-radius backstop (#157 phase 3): cap the NEW subclaims one run
-      // may mint. Like the iteration cap this is a runaway guard, not a
-      // target — the judgment about how far to decompose stays with the
-      // Steward (and the importance brake bounds recursion). Linking
-      // existing claims (add_relationship_edge) is never capped.
-      if (name === "add_decomposition_edge") {
+      const page = await executeReadPage(name, toolInput);
+      if (page !== null) return page;
+      // Blast-radius backstop (#157 phase 3): cap the NEW claims one run may
+      // mint, in either direction (a subclaim below or a parent above, #428).
+      // Like the iteration cap this is a runaway guard, not a target — the
+      // judgment about how far to decompose stays with the Steward (and the
+      // importance brake bounds recursion). Linking or proposing edges to
+      // existing claims (add_relationship_edge, propose_parent_edge) is never
+      // capped.
+      if (name === "add_decomposition_edge" || name === "add_parent_claim") {
         const cap = config.stewardMaxNewSubclaimsPerRun;
-        if (cap > 0 && newSubclaimsThisRun >= cap) {
+        if (cap > 0 && newClaimsThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already minted ${newSubclaimsThisRun} new subclaims, the ` +
+              `This run has already minted ${newClaimsThisRun} new claims, the ` +
               `per-run backstop (${cap}). Do not create more in this pass: link any ` +
-              `remaining dependencies that already exist with add_relationship_edge, ` +
-              `note the rest in your reasoning_trace, and proceed to your assessment. ` +
-              `A future stewardship pass can continue the decomposition.`,
+              `remaining dependencies that already exist with add_relationship_edge ` +
+              `(or propose_parent_edge for a parent), note the rest in your ` +
+              `reasoning_trace, and proceed to your assessment. A future ` +
+              `stewardship pass can continue the decomposition.`,
           });
         }
-        newSubclaimsThisRun++;
+        newClaimsThisRun++;
       }
       // Same runaway-guard shape for instance recording (#278): capturing
       // sightings is a cheap side effect of evidence reading, and this cap
       // only stops a loop from farming instances instead of assessing.
-      if (name === "record_claim_instance") {
+      // Corrections (#420) share the counter: one budget for touching the
+      // instance set, however it is touched.
+      if (name === "record_claim_instance" || name === "update_claim_instance") {
         const cap = config.stewardMaxInstancesPerRun;
         if (cap > 0 && instancesRecordedThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already recorded ${instancesRecordedThisRun} ` +
-              `instances, the per-run backstop (${cap}). Do not record more ` +
-              `in this pass: note any remaining sightings in your ` +
-              `reasoning_trace and proceed to your assessment.`,
+              `This run has already recorded or corrected ${instancesRecordedThisRun} ` +
+              `instances, the per-run backstop (${cap}). Do not record or ` +
+              `correct more in this pass: note any remaining sightings in ` +
+              `your reasoning_trace and proceed to your assessment.`,
           });
         }
         instancesRecordedThisRun++;
       }
-      return executeStewardTool(name, toolInput, {
+      const output = await executeStewardTool(name, toolInput, {
         trigger: input.trigger,
         context: input.context,
         // Recorded on the assessment row (#294): the verdict names the model
@@ -525,6 +572,14 @@ ${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
         // this run uses.
         model,
       });
+      if (name === "update_claim_assessment") {
+        try {
+          assessmentRecorded = (JSON.parse(output) as { success?: boolean }).success !== false;
+        } catch {
+          assessmentRecorded = true;
+        }
+      }
+      return output;
     },
   }));
 }

@@ -108,9 +108,9 @@ beforeEach(() => {
   resetAnthropicClient();
   mocks.constructed.length = 0;
   mocks.create.mockReset().mockResolvedValue(response());
-  mocks.betaCreate.mockReset().mockResolvedValue(response({ model: MODELS.fable }));
+  mocks.betaCreate.mockReset().mockResolvedValue(response({ model: MODELS.strong }));
   mocks.betaStream.mockReset().mockImplementation(() => ({
-    finalMessage: async () => response({ model: MODELS.fable }),
+    finalMessage: async () => response({ model: MODELS.strong }),
   }));
 });
 
@@ -218,7 +218,7 @@ describe("effort", () => {
   });
 
   it("rides through the Fable beta path with the refusal fallback", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.fable, maxTokens: 64, effort: "high" });
+    await anthropicAdapter.complete({ messages, model: MODELS.strong, maxTokens: 64, effort: "high" });
     const params = sentParams(mocks.betaCreate);
     expect(params.output_config).toEqual({ effort: "high" });
     expect(params.betas).toEqual(["server-side-fallback-2026-06-01"]);
@@ -242,21 +242,21 @@ describe("usage and served model", () => {
     const fell = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.fable,
+      model: MODELS.strong,
       maxTokens: 64,
     });
-    expect(fell.model).toBe(MODELS.fable);
+    expect(fell.model).toBe(MODELS.strong);
     expect(fell.servedModel).toBe(MODELS.opus);
     expect(fell.fallbackRan).toBe(true);
 
-    mocks.betaCreate.mockResolvedValue(response({ model: MODELS.fable }));
+    mocks.betaCreate.mockResolvedValue(response({ model: MODELS.strong }));
     const same = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.fable,
+      model: MODELS.strong,
       maxTokens: 64,
     });
-    expect(same.servedModel).toBe(MODELS.fable);
+    expect(same.servedModel).toBe(MODELS.strong);
     expect(same.fallbackRan).toBe(false);
 
     // A dated snapshot of the requested alias is the same model, not a fallback.
@@ -369,7 +369,7 @@ describe("completeWithToolsStreaming", () => {
   const longRun = {
     messages,
     tools: [TOOL],
-    model: MODELS.fable,
+    model: MODELS.strong,
     maxTokens: 200_000,
     fallbacks: "none" as const,
   };
@@ -381,7 +381,7 @@ describe("completeWithToolsStreaming", () => {
     expect(mocks.betaCreate).not.toHaveBeenCalled();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(result.content).toBe("hello");
-    expect(result.servedModel).toBe(MODELS.fable);
+    expect(result.servedModel).toBe(MODELS.strong);
     expect(result.fallbackRan).toBe(false);
     expect(result.usage.cacheReadTokens).toBe(7);
 

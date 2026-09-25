@@ -6,6 +6,7 @@ import {
   assessmentStatusEnum,
   informationDepthEnum,
   stanceEnum,
+  claimLinkKindEnum,
 } from "./common.js";
 
 // ---- Request schemas ----
@@ -218,6 +219,25 @@ export const claimDetailResponse = z.object({
         confidence: z.number(),
         source_title: z.string(),
         source_url: z.string().nullable(),
+      })
+    )
+    .optional(),
+  // Lateral links (#436): see-also claims with the reason for each. Not part
+  // of the tree, never a dependency.
+  related: z
+    .array(
+      z.object({
+        link_id: uuidSchema,
+        kind: claimLinkKindEnum,
+        reasoning: z.string(),
+        created_by: z.string(),
+        created_at: z.string(),
+        id: uuidSchema,
+        text: z.string(),
+        claim_type: z.string(),
+        assessment_status: z.string().nullable(),
+        assessment_confidence: z.number().nullable(),
+        assessment_credence: z.number().nullable(),
       })
     )
     .optional(),

@@ -57,7 +57,7 @@ vi.mock("../../src/llm/agents/contribution-reviewer.js", () => ({
   runContributionReview: vi.fn(async (input: { contributionId: string }) => {
     const { admitPrizeClaim } = await import("../../src/services/prize-claim-service.js");
     const { meterLlmUsage } = await import("../../src/services/usage-service.js");
-    await meterLlmUsage({ model: "claude-fable-5-1", inputTokens: 1000, outputTokens: 200 });
+    await meterLlmUsage({ model: "claude-opus-5-5", inputTokens: 1000, outputTokens: 200 });
     await admitPrizeClaim({ contributionId: input.contributionId, review: { reasoning: "in order", confidence: 0.9, policyCitations: ["GF"] }, actor: "contribution_reviewer" });
   }),
 }));

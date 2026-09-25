@@ -17,7 +17,7 @@ import {
   withAgent,
 } from "../../../src/llm/usage-context.js";
 
-const fakeTrace = () => ({ runId: "run-1", seq: { n: 0 } });
+const fakeTrace = () => ({ runId: "run-1", seq: { n: 0 }, ready: Promise.resolve() });
 
 beforeEach(() => {
   mocks.start.mockReset().mockReturnValue(null);

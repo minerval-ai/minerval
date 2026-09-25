@@ -76,8 +76,6 @@ export const claims = pgTable(
     decompositionStatus: text("decomposition_status")
       .notNull()
       .default("pending"),
-    childrenAssessed: integer("children_assessed").notNull().default(0),
-    childrenTotal: integer("children_total").notNull().default(0),
     // How load-bearing the claim is (0..1), a revisable judgment set by the
     // Steward. Scales proportional effort and orders the Steward work queue so
     // important claims are processed first under a run budget (§"Claim Importance
@@ -326,9 +324,10 @@ export const claimRelationships = pgTable(
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     relationType: text("relation_type").notNull().default("requires"),
-    argumentId: uuid("argument_id").references(() => arguments_.id, {
-      onDelete: "set null",
-    }),
+    // Which named argument(s) an edge belongs to is NOT a column here: it is
+    // the argument_subclaims relation below, so one edge can be grouped under
+    // several arguments of the same claim (constitution §7, #437). An edge
+    // with no membership row is part of the claim's ungrouped basis.
     reasoning: text("reasoning").notNull(),
     confidence: real("confidence").notNull().default(1.0),
     createdBy: text("created_by").notNull().default("decomposer"),
@@ -347,6 +346,48 @@ export const claimRelationships = pgTable(
     check(
       "no_self_reference",
       sql`${table.parentClaimId} != ${table.childClaimId}`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// claim_links (#436)
+// ---------------------------------------------------------------------------
+// Lateral, symmetric, non-evaluative relations between claims (constitution
+// §19's third direction). Kept OUT of claim_relationships on purpose: that
+// table is the dependency graph propagation walks, and a see-also must never
+// be read as a premise. The pair is stored in canonical order (a < b), so
+// one row represents the link in both directions and the unique index
+// catches a reverse-direction duplicate; the check also rules out self-links.
+export const claimLinks = pgTable(
+  "claim_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimAId: uuid("claim_a_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    claimBId: uuid("claim_b_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // CLAIM_LINK_KINDS in src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    reasoning: text("reasoning").notNull(),
+    createdBy: text("created_by").notNull().default("curator"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_claim_links_unique").on(
+      table.claimAId,
+      table.claimBId,
+      table.kind
+    ),
+    index("idx_claim_links_b").on(table.claimBId),
+    check("ck_claim_links_ordered", sql`${table.claimAId} < ${table.claimBId}`),
+    check(
+      "ck_claim_links_kind",
+      sql`${table.kind} IN ('related', 'rival_explanation', 'counterpart_position')`
     ),
   ]
 );
@@ -388,7 +429,7 @@ export const assessments = pgTable(
     // as maximal by convention.
     marginalYield: real("marginal_yield"),
     // Raw API id of the model that produced this assessment (#294), e.g.
-    // "claude-fable-5-1" — a verdict is only as trustworthy as its assessor, so
+    // "claude-opus-5-5" — a verdict is only as trustworthy as its assessor, so
     // the assessor is recorded on the verdict, not just in llm_usage. Nullable:
     // legacy rows predate the column and degrade gracefully (date only in UI).
     model: text("model"),
@@ -439,6 +480,37 @@ export const arguments_ = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_arguments_claim").on(table.claimId)]
+);
+
+// ---------------------------------------------------------------------------
+// argument_subclaims
+// ---------------------------------------------------------------------------
+// Argument membership (#437): which decomposition edges a named argument
+// groups. Many-to-many on purpose — constitution §7 says different arguments
+// may share subclaims while arranging them differently, which a single
+// argument_id on the edge could not express. Membership points at the EDGE
+// (not the child claim) so the relation type travels with it and a grouping
+// can never dangle: deleting the edge, or the argument, removes the row.
+// An edge with no row here is one of the claim's ungrouped basis edges.
+// Invariant (enforced in relationship-service, not by the FKs): the
+// argument's claim is the edge's parent claim.
+export const argumentSubclaims = pgTable(
+  "argument_subclaims",
+  {
+    argumentId: uuid("argument_id")
+      .notNull()
+      .references(() => arguments_.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => claimRelationships.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.argumentId, table.relationshipId] }),
+    index("idx_argument_subclaims_relationship").on(table.relationshipId),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -534,10 +606,13 @@ export const claimInstances = pgTable(
     proposedCanonicalForm: text("proposed_canonical_form"),
     context: text("context"),
     summaryContext: text("summary_context"),
-    // Whether this source asserts the canonical claim ("affirms") or its
-    // negation/contrary ("denies"). Lets a claim and its denial share one
-    // canonical node while preserving which side each source takes, so the
+    // Whether this source asserts the canonical claim ("affirms"), its
+    // negation/contrary ("denies"), or states the proposition as an open
+    // question without endorsing either side ("poses", #445: a survey
+    // stating a conjecture). Lets a claim and its denial share one canonical
+    // node while preserving which side each source takes, so the
     // disagreement lives on the claim instead of in two mirror-image pages.
+    // Values are INSTANCE_STANCES in schemas/common.ts.
     stance: text("stance").notNull().default("affirms"),
     confidence: real("confidence").notNull().default(1.0),
     // Attribution metadata (#278/#281), all nullable — many instances won't
@@ -1768,6 +1843,187 @@ export const grantSources = pgTable(
 );
 
 export type GrantSource = typeof grantSources.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// lookouts
+//
+// A standing watch a mandate funds: a cheap agent with a brief (scope in
+// words, where to look, what to look out for), a set of triggers, and a
+// bounded, delegated slice of the mandate's spending judgment. It runs
+// when a trigger fires (a heartbeat on its own cadence, an input event
+// queued by a poller or a person), reads the graph and the open web, and
+// answers one question: has anything happened that warrants work in
+// scope? Its outputs are CANDIDATES on the ledger, never conclusions —
+// a reassess valued on the mandate's behalf (capped by max_value), an
+// ingest appended to the mandate's plan (capped per run), a note for the
+// Grantmaker's next review pass. Money, importance, and assessments are
+// beyond its reach by construction.
+//
+// Scope is the brief's words: "this claim and what it turns on" is one
+// shape, "the retraction record for sources behind the nutrition claims"
+// or "new arXiv preprints on X" are others. Which happenings fall under
+// the brief is the lookout's judgment, never a keyword filter's.
+// ---------------------------------------------------------------------------
+export const lookouts = pgTable(
+  "lookouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The funding mandate. Every run is a `lookout_run` action covered
+    // from its escrow (fundGrantSelfActions), so a lookout can never
+    // outspend the mandate that stands it up.
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    // The brief, written by the Grantmaker: scope, where to look, what
+    // to look out for, what to leave alone. Read in full every run.
+    brief: text("brief").notNull(),
+    // active | paused | retired
+    status: text("status").notNull().default("active"),
+    // Heartbeat cadence in hours; 0 = event-driven only.
+    heartbeatHours: integer("heartbeat_hours").notNull().default(24),
+    // Input kinds beyond the heartbeat this lookout wakes on:
+    // ["retraction", "manual", ...] — see LOOKOUT_TRIGGER_KINDS.
+    triggers: jsonb("triggers").notNull().default([]),
+    // Per-lookout model override; null = config.lookoutModel.
+    model: text("model"),
+    // The ceiling on the valuation a flag may write on the mandate's
+    // behalf (0–10). The Grantmaker delegates this much of its spending
+    // judgment and no more.
+    maxValue: real("max_value").notNull().default(6),
+    // How many ingests one run may append to the mandate's plan.
+    maxIngestsPerRun: integer("max_ingests_per_run").notNull().default(3),
+    // The lookout's own durable notes, read back every run: what it has
+    // already seen and flagged, sources checked and when, what to watch.
+    workspace: text("workspace"),
+    // The run-end note, recorded on the mandate's public page.
+    lastNote: text("last_note"),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    // When the heartbeat next falls due. The reconcile sweep opens a
+    // lookout_run row when this has passed or an unconsumed event waits.
+    nextDueAt: timestamp("next_due_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    runs: integer("runs").notNull().default(0),
+    flags: integer("flags").notNull().default(0),
+    // Who set it up: 'grantmaker:review' | 'grantmaker:chat' | 'seed'.
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_lookouts_grant").on(table.grantId, table.createdAt),
+    index("idx_lookouts_due")
+      .on(table.nextDueAt)
+      .where(sql`status = 'active'`),
+    check(
+      "ck_lookouts_status",
+      sql`${table.status} IN ('active', 'paused', 'retired')`
+    ),
+    check(
+      "ck_lookouts_max_value",
+      sql`${table.maxValue} >= 0 AND ${table.maxValue} <= 10`
+    ),
+    check("ck_lookouts_heartbeat", sql`${table.heartbeatHours} >= 0`),
+  ]
+);
+
+export type Lookout = typeof lookouts.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// lookout_events
+//
+// Inputs queued for a lookout by something other than its heartbeat: a
+// retraction the Crossref poller matched to a source in the graph, a note
+// a Grantmaker or funder poked it with. Unconsumed events make the lookout
+// due; the run reads them all and they are stamped consumed when it ends.
+// ---------------------------------------------------------------------------
+export const lookoutEvents = pgTable(
+  "lookout_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_lookout_events_pending")
+      .on(table.lookoutId, table.createdAt)
+      .where(sql`consumed_at IS NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// lookout_flags
+//
+// What a lookout produced: one row per candidate it raised. A `reassess`
+// flag points at the claim's assess/reassess action and snapshots the
+// assessment at flag time, so the record can later say whether the funded
+// pass moved anything — the lookout's precision, read by its Grantmaker
+// when deciding whether to keep paying for it. An `ingest` flag records the
+// URL appended to the mandate's plan; a `note` is a message for the next
+// review pass. A flag stays OPEN while its action is still open or running,
+// and a second flag on the same target is folded into it (no duplicates,
+// no re-flagging the same retraction every heartbeat).
+// ---------------------------------------------------------------------------
+export const lookoutFlags = pgTable(
+  "lookout_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    // reassess | ingest | note
+    kind: text("kind").notNull(),
+    claimId: uuid("claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    url: text("url"),
+    // The ledger row the flag opened or valued (reassess: the standard
+    // variant; ingest: null until the reconcile sweep opens it).
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    rationale: text("rationale").notNull(),
+    // The lookout's urgency 0–10, before the mandate's max_value clamp.
+    urgency: real("urgency"),
+    // The value actually written on the mandate's behalf, after the clamp.
+    valueWritten: real("value_written"),
+    // The assessment at flag time (reassess flags), for the precision read.
+    statusAtFlag: text("status_at_flag"),
+    credenceAtFlag: real("credence_at_flag"),
+    assessmentIdAtFlag: uuid("assessment_id_at_flag"),
+    // Folded duplicates: how many times the lookout raised this again while
+    // it was still open.
+    repeats: integer("repeats").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_lookout_flags_lookout").on(table.lookoutId, table.createdAt),
+    index("idx_lookout_flags_claim").on(table.claimId),
+    check(
+      "ck_lookout_flags_kind",
+      sql`${table.kind} IN ('reassess', 'ingest', 'note')`
+    ),
+  ]
+);
+
+export type LookoutFlag = typeof lookoutFlags.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // grant_conversations

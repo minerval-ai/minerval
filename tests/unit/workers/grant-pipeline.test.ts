@@ -6,10 +6,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // refund. Planning, mandate reviews, and ingests belong to the engine
 // executor over the action ledger, NOT to this worker. DB/agents mocked.
 
-const { state, stewardRuns, grantorRuns } = vi.hoisted(() => ({
+const { state, stewardRuns, grantorRuns, completions } = vi.hoisted(() => ({
   stewardRuns: [] as Array<{ claimId: string; trigger: string }>,
   grantorRuns: [] as Array<{ grantName: string }>,
+  completions: [] as Array<{ actionId: string; metered: number; jobId: string | null }>,
   state: {
+    /** Open assess rows by exclusion group, for the direct lane's close (#427). */
+    openAssessRows: {} as Record<string, string>,
     grant: null as null | Record<string, unknown>,
     spent: 0,
     liveBounties: 0,
@@ -57,6 +60,10 @@ vi.mock("../../../src/db/client.js", () => ({
       }
       return [];
     }
+    if (q.includes("FROM actions") && q.includes("exclusion_group = $1")) {
+      const id = state.openAssessRows[params[0] as string];
+      return id ? [{ id }] : [];
+    }
     if (q.includes("INSERT INTO claim_stakes")) {
       state.stakes.push(params);
       return [];
@@ -93,6 +100,16 @@ vi.mock("../../../src/services/budget-job-service.js", () => ({
     state.refunds.push(job);
     return 1;
   }),
+}));
+
+vi.mock("../../../src/services/action-service.js", () => ({
+  ASSESS_GROUP: (claimId: string) => `assess:${claimId}`,
+  completeAction: vi.fn(
+    async (actionId: string, metered: number, opts: { meteredJobId?: string | null } = {}) => {
+      completions.push({ actionId, metered, jobId: opts.meteredJobId ?? null });
+      return 0;
+    }
+  ),
 }));
 
 vi.mock("../../../src/services/regrant-service.js", () => ({
@@ -151,6 +168,8 @@ function grant(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   stewardRuns.length = 0;
   grantorRuns.length = 0;
+  completions.length = 0;
+  state.openAssessRows = {};
   state.grant = null;
   state.spent = 0;
   state.liveBounties = 0;
@@ -215,6 +234,26 @@ describe("processNextGrantTask", () => {
       u.sql.includes("plan_cursor")
     );
     expect(cursorWrite).toBeDefined();
+    // No assess row existed for the claim: nothing to close.
+    expect(completions).toEqual([]);
+  });
+
+  it("closes the claim's open assess row as done after a direct run, at zero metered cost (#427)", async () => {
+    state.grant = grant({
+      policy: "agent",
+      status: "active",
+      plan: state.plan,
+    });
+    state.specificTargets["p-1"] = true;
+    state.openAssessRows["assess:p-1"] = "act-assess-1";
+    const r = await processNextGrantTask();
+    expect(r).toMatchObject({ status: "processed", ok: true, claimId: "p-1" });
+    // The run was metered to the mandate's job through llm_usage already:
+    // the row closes so the plan item reads done, consuming nothing from
+    // other backers.
+    expect(completions).toEqual([
+      { actionId: "act-assess-1", metered: 0, jobId: "gjob-1" },
+    ]);
   });
 
   it("pauses the budget job at the floor", async () => {

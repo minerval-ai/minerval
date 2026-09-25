@@ -1,0 +1,19 @@
+/* Replay cards and the replay page frame (#334). */
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; max-width: 46rem; margin: 0.6rem 0 0; }
+@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+.card { display: flex; flex-direction: column; gap: 0.3rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card); padding: 0.75rem 0.9rem; text-decoration: none; color: var(--ink); }
+.card:hover { border-color: var(--faint); text-decoration: none; }
+.cardHead { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.date { margin-left: auto; font-family: var(--sans); font-size: 0.7rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.cardTitle { font-family: var(--serif); font-size: 1.02rem; font-weight: 600; line-height: 1.3; }
+.cardMeta { font-family: var(--sans); font-size: 0.76rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cardArms { font-family: var(--sans); font-size: 0.76rem; color: var(--ink-soft); }
+.cardModels { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; font-family: var(--sans); font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+.cardModels b { font-weight: 600; color: var(--ink-soft); }
+
+/* the replay page runs wide: two graphs side by side need the frame, not the measure */
+.wide { max-width: var(--frame); }
+.about { font-size: 1.02rem; line-height: 1.5; color: var(--ink-soft); max-width: 40rem; margin: 0.4rem 0 0.8rem; }
+.meta { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); margin: 0 0 1rem; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-variant-numeric: tabular-nums; }
+.fps { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0 1rem; max-width: 46rem; }
+.fps > div > p { margin: 0 0 0.2rem; }

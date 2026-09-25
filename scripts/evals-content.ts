@@ -62,6 +62,19 @@ export interface RubricSection {
   standard: string;
 }
 
+/** The index half of a committed replay (corpus/replays/<name>/replay.json), as far as the evals index needs it. */
+export interface ReplayIndexInput {
+  name: string;
+  version?: number;
+  kind: string;
+  title: string;
+  cluster: string | null;
+  generatedAt: string;
+  about?: string;
+  arms: Array<{ key: string; label: string; events: unknown[]; fingerprint?: { models?: Record<string, string | undefined> } }>;
+  costMicroUsd?: number | null;
+}
+
 export interface ReviewSheetInput {
   file: string;
   text: string;
@@ -81,6 +94,10 @@ export interface EvalsIndexInput {
   reviews: ReviewSheetInput[];
   scorecardFiles: Array<{ cluster: string; file: string }>;
   goldenRunFiles: string[];
+  /** Runs of the canonical-form golden suite (corpus/scorecards/golden-canonical/); optional for older callers. */
+  goldenCanonicalRunFiles?: string[];
+  /** Committed replays, by their index files; optional so older callers need not pass it. */
+  replays?: ReplayIndexInput[];
   /** corpus/RUBRIC.md, verbatim. */
   rubric: string;
 }
@@ -121,11 +138,26 @@ export interface EvalsIndex {
   reviews: Array<{ file: string; cluster: string | null; evalRun: string | null; reviewedOn: string | null }>;
   scorecards: Array<{ cluster: string; file: string }>;
   goldenRuns: string[];
+  goldenCanonicalRuns: string[];
+  /** Committed recordings the player can show, newest first. */
+  replays: Array<{
+    name: string;
+    kind: string;
+    title: string;
+    cluster: string | null;
+    generatedAt: string;
+    /** Arm labels, in order. */
+    arms: string[];
+    events: number;
+    models: string[];
+    costMicroUsd: number | null;
+  }>;
   rubric: RubricSection[];
 }
 
 /** Display names for the model ids the system pins; anything else shows its id. */
 const MODEL_LABELS: Array<[prefix: string, label: string]> = [
+  ["claude-opus-5-5", "Claude Opus 5.5"],
   ["claude-fable-5-1", "Claude Fable 5.1"],
   ["claude-fable-5", "Claude Fable 5"],
   ["claude-mythos-5", "Claude Mythos 5"],
@@ -275,6 +307,22 @@ export function buildEvalsIndex(input: EvalsIndexInput): EvalsIndex {
       a.cluster === b.cluster ? a.file.localeCompare(b.file) : a.cluster.localeCompare(b.cluster)
     ),
     goldenRuns: [...input.goldenRunFiles].sort(),
+    goldenCanonicalRuns: [...(input.goldenCanonicalRunFiles ?? [])].sort(),
+    replays: (input.replays ?? [])
+      .map((r) => ({
+        name: r.name,
+        kind: r.kind,
+        title: r.title,
+        cluster: r.cluster,
+        generatedAt: r.generatedAt,
+        arms: r.arms.map((a) => a.label || a.key),
+        events: r.arms.reduce((n, a) => n + a.events.length, 0),
+        models: Array.from(
+          new Set(r.arms.flatMap((a) => Object.values(a.fingerprint?.models ?? {}).filter((m): m is string => Boolean(m))))
+        ).sort(),
+        costMicroUsd: r.costMicroUsd ?? null,
+      }))
+      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
     rubric: parseRubric(input.rubric),
   };
 }

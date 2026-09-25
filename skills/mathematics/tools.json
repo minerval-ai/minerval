@@ -33,13 +33,13 @@
   },
   {
     "name": "lean_elaborate",
-    "description": "Type-check a candidate Lean 4 statement file against the pinned Mathlib on the warm lane. Returns either the errors with positions, or the elaborated form (pp_type, expr_hash, constants, definitions_axioms, witness_present) plus any vacuity warnings. The intended loop is draft, elaborate, fix, repeat, then publish. Elaboration checks that the statement is well-typed; it says nothing about whether it is faithful to the canonical form, which is your judgment.",
+    "description": "Type-check a candidate Lean 4 statement file against the pinned Mathlib on the warm lane. The file must follow the checker's statement convention: first line exactly `import Mathlib` (the only import allowed), then `set_option autoImplicit false`, then exactly one `namespace Minerval.S<8 hex>_v<n>` where <8 hex> is the first eight hex digits of the claim id and <n> the version (1 for a claim with no statement yet), a `def Statement : Prop :=` inside it, an optional witness `example : ... :=`, and a closing `end Minerval.S<8 hex>_v<n>` as the last line. Returns either the errors with positions, or the elaborated form (pp_type, expr_hash, constants, definitions_axioms, witness_present) plus any vacuity warnings. The intended loop is draft, elaborate, fix, repeat, then publish. Elaboration checks that the statement is well-typed; it says nothing about whether it is faithful to the canonical form, which is your judgment.",
     "input_schema": {
       "type": "object",
       "properties": {
         "statement": {
           "type": "string",
-          "description": "The Lean 4 source to elaborate: imports, the theorem or definition statement, and any local definitions it needs."
+          "description": "The Lean 4 statement file to elaborate, in the convention above: `import Mathlib`, `set_option autoImplicit false`, `namespace Minerval.S<8 hex>_v<n>`, any local definitions, `def Statement : Prop := ...`, an optional witness `example`, `end Minerval.S<8 hex>_v<n>`."
         },
         "note": {
           "type": "string",
@@ -57,7 +57,7 @@
   },
   {
     "name": "lean_check",
-    "description": "Check a proof against a stored formal statement on the cold lane. Pass the proof text, or a reference to an existing lean_checks row or a solver attempt, so an artifact can be re-checked without pasting it. Repeated checks of an identical (formalization_id, sha256, checker_version, mode) return the stored row unless force is set. A timeout is a result (verdict \"error\"), not an exception. The verdict is about the proof compiling against the statement; fidelity of the statement to the claim remains your judgment.",
+    "description": "Check a proof against a stored formal statement on the cold lane. Pass the proof text, or a reference to an existing lean_checks row or a solver attempt, so an artifact can be re-checked without pasting it. Submission convention: the checker prepends its own header (the only `import`, and `set_option autoImplicit false`), so the proof text must contain no `import` line and no `set_option autoImplicit`; it must declare the target constant under its full name, `theorem <namespace>.proof : <namespace>.Statement := ...` for kind \"proof\" or `theorem <namespace>.disproof : ¬ <namespace>.Statement := ...` for kind \"disproof\", where <namespace> is the formalization's namespace (`Minerval.S<8 hex>_v<n>`, shown on the formalization); `Statement` is not in scope unqualified. The static policy also refuses sorry, admit, axiom, native_decide, unsafe, partial, and set_option outside maxHeartbeats/maxRecDepth. A submission that visibly breaks the convention is refused here without spending a check; a rejection at the static_policy, compile, or target gate repeats the convention. Repeated checks of an identical (formalization_id, sha256, checker_version, mode) return the stored row unless force is set. A timeout is a result (verdict \"error\"), not an exception. The verdict is about the proof compiling against the statement; fidelity of the statement to the claim remains your judgment.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -75,7 +75,7 @@
         },
         "proof": {
           "type": "string",
-          "description": "The proof text. Omit when passing lean_check_id or attempt_id."
+          "description": "The proof text, without any `import` or `set_option autoImplicit` line, declaring `theorem <namespace>.proof : <namespace>.Statement := ...` (or `.disproof : ¬ <namespace>.Statement`). Omit when passing lean_check_id or attempt_id."
         },
         "lean_check_id": {
           "type": "string",

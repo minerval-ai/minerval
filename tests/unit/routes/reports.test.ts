@@ -198,6 +198,18 @@ describe("PATCH /reports/:id", () => {
     });
   });
 
+  it("rejects a triage_note over the limit with 400 and never reaches the service", async () => {
+    const app = await buildApp(true);
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/reports/${REPORT_ID}`,
+      payload: { status: "triaged", triage_note: "x".repeat(4001) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/4000/);
+    expect(mocks.triageAgentReport).not.toHaveBeenCalled();
+  });
+
   it("surfaces a triage rule violation as 400", async () => {
     mocks.triageAgentReport.mockRejectedValue(
       new Error("a duplicate report must name the report it duplicates")

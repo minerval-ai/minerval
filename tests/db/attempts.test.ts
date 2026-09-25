@@ -184,8 +184,8 @@ describe("opening an attempt", () => {
     const f = await fixture("open-cap");
     await rawQuery(
       `INSERT INTO llm_usage (model, agent, cost_micro_usd, claim_id)
-       VALUES ('claude-fable-5-1', 'math_solver', $1, $2),
-              ('claude-fable-5-1', 'steward', $1, $2)`,
+       VALUES ('claude-opus-5-5', 'math_solver', $1, $2),
+              ('claude-opus-5-5', 'steward', $1, $2)`,
       [500 * OWL, f.claimId]
     );
     expect(await claimLifetimeAttemptSpendMicroUsd(f.claimId)).toBe(500 * OWL);
@@ -218,12 +218,12 @@ describe("the live attempt", () => {
       actionId: f.actionId,
       turns: 3,
       spentMicroUsd: 1_234_567,
-      servedModels: ["claude-fable-5-1"],
+      servedModels: ["claude-opus-5-5"],
     });
     const row = (await getAttempt(attempt.id))!;
     expect(row.turns).toBe(3);
     expect(row.spent_micro_usd).toBe(1_234_567);
-    expect(row.served_models).toEqual(["claude-fable-5-1"]);
+    expect(row.served_models).toEqual(["claude-opus-5-5"]);
     expect(row.heartbeat_at).not.toBeNull();
     const [after] = await rawQuery<{ updated_at: Date }>(`SELECT updated_at FROM actions WHERE id = $1`, [f.actionId]);
     expect(after!.updated_at.getTime()).toBeGreaterThan(before!.updated_at.getTime());
@@ -458,7 +458,7 @@ describe("the transcript and the cost series", () => {
 
   it("estimates the solver's cost from runs keyed by run_id, per variant, once five exist", async () => {
     resetCostEstimateCache();
-    const model = `claude-fable-5-1-dbtest-${randomUUID().slice(0, 8)}`;
+    const model = `claude-opus-5-5-dbtest-${randomUUID().slice(0, 8)}`;
     const claimId = await seedClaim("estimate");
     const formalization = await seedFormalization(claimId);
     // Six max attempts on ONE claim at 10, 20, ..., 60 owls, each its own run.
@@ -491,7 +491,7 @@ describe("the transcript and the cost series", () => {
   it("the daily breaker sums today's math_solver rows and raises the budget error at the cap", async () => {
     const before = await solverSpentTodayMicroUsd();
     await rawQuery(
-      `INSERT INTO llm_usage (model, agent, cost_micro_usd) VALUES ('claude-fable-5-1', 'math_solver', $1)`,
+      `INSERT INTO llm_usage (model, agent, cost_micro_usd) VALUES ('claude-opus-5-5', 'math_solver', $1)`,
       [OWL]
     );
     expect(await solverSpentTodayMicroUsd()).toBe(before + OWL);
@@ -499,7 +499,7 @@ describe("the transcript and the cost series", () => {
     // breaker raises the budget error the worker treats as a rest.
     const cap = solverDailyCapMicroUsd();
     await rawQuery(
-      `INSERT INTO llm_usage (model, agent, cost_micro_usd) VALUES ('claude-fable-5-1', 'math_solver', $1)`,
+      `INSERT INTO llm_usage (model, agent, cost_micro_usd) VALUES ('claude-opus-5-5', 'math_solver', $1)`,
       [cap]
     );
     await expect(checkSolverBudget()).rejects.toMatchObject({
@@ -511,8 +511,8 @@ describe("the transcript and the cost series", () => {
     const spent = await solverSpentTodayMicroUsd();
     await rawQuery(
       `INSERT INTO llm_usage (model, agent, cost_micro_usd, created_at)
-       VALUES ('claude-fable-5-1', 'steward', $1, now()),
-              ('claude-fable-5-1', 'math_solver', $1, now() - interval '2 days')`,
+       VALUES ('claude-opus-5-5', 'steward', $1, now()),
+              ('claude-opus-5-5', 'math_solver', $1, now() - interval '2 days')`,
       [cap]
     );
     expect(await solverSpentTodayMicroUsd()).toBe(spent);

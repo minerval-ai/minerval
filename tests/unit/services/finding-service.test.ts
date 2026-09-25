@@ -41,7 +41,7 @@ const GOOD = {
   ],
   importance: 5,
   agent: "steward",
-  model: "claude-fable-5-1",
+  model: "claude-opus-5-5",
   runId: null,
   jobId: null,
   skills: [],
@@ -128,7 +128,7 @@ describe("noteFinding", () => {
     expect(params![4]).toBe(5);
     expect(params![5]).toBe("[0.1,0.2,0.3]");
     expect(params![6]).toBe("steward");
-    expect(params![7]).toBe("claude-fable-5-1");
+    expect(params![7]).toBe("claude-opus-5-5");
   });
 
   it("drops refs that do not resolve and names them, still recording", async () => {

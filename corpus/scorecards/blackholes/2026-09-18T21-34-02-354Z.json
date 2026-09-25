@@ -1,0 +1,144 @@
+{
+  "generatedAt": "2026-09-18T21:34:02.354Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 2,
+      "stewardMaxRuns": 5,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 0,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 25
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "cern-lhc-safety",
+      "giddings-mangano-2008"
+    ],
+    "capped": true,
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "cluster": "blackholes",
+    "profile": null,
+    "observed": {
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "gitCommit": "4a7d757",
+    "startedAt": "2026-09-18T16:20:20.007Z",
+    "finishedAt": "2026-09-18T21:33:45.129Z",
+    "registryId": "44278cd7-8432-46c2-9bf8-067ef1994370",
+    "costMicroUsd": 795508,
+    "pipelineEpoch": "2026-09-domain-skills",
+    "postsIngested": 2,
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 16,
+      "instances": 31,
+      "totalClaims": 32,
+      "claimsPer1kWords": 22.053756030323914,
+      "typeDistribution": {
+        "causal": 1,
+        "empirical_verifiable": 8,
+        "empirical_derived": 23
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 15,
+        "p90": 24,
+        "max": 31,
+        "mean": 15.5
+      },
+      "overLongShare": 0.0625
+    },
+    "matching": {
+      "dedupRatio": 1.9375
+    },
+    "decomposition": {
+      "maxDepth": 6,
+      "depthHistogram": {
+        "0": 10,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1
+      },
+      "atomicShare": 0.813,
+      "meanChildrenPerParent": 4.67
+    },
+    "crossDoc": {
+      "sharedSubclaims": 4
+    },
+    "assessment": {
+      "statusDistribution": {
+        "supported": 1,
+        "contested": 4
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 2991
+    },
+    "importance": {
+      "mean": 0.355,
+      "histogram": {
+        "0.4-0.6": 12,
+        "0.2-0.4": 15,
+        "0.0-0.2": 4,
+        "0.6-0.8": 1
+      },
+      "meanAtomic": 0.335,
+      "meanCompound": 0.442
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 11,
+      "withProposal": 11,
+      "rewriteRate": 0.182,
+      "rewriteMagnitude": 0.606,
+      "meanWordDelta": -1.5,
+      "matched": {
+        "count": 2,
+        "deniesShare": 0,
+        "meanProposalDistance": 0.52
+      }
+    }
+  },
+  "judged": null,
+  "cost": null,
+  "cascade": {
+    "R": 0,
+    "rReassessment": null,
+    "oscillations": 0,
+    "roots": 5,
+    "propagating": 0,
+    "maxSize": 1,
+    "maxDepth": 0,
+    "coalescingShare": 0.886,
+    "drainMonotone": false,
+    "drainSource": "reconstructed",
+    "runs": 5,
+    "reading": "R = 0.00: each changed assessment led to 0.00 materially changed downstream reassessments on average (0 of 5), so cascades die out. Of 6 notifications sent by root runs, 0 led to a run and 0 to a material change (materiality 0%). Coalescing absorbed 89% of 35 steward enqueues. 5 root(s), 0 of which propagated; largest cascade 1 run(s), deepest 0 generation(s). No oscillations. Pending depth (reconstructed from the telemetry, approximate) peaked at 1 and ended at 1 with 3 rise(s) after the peak."
+  }
+}

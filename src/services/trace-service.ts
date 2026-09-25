@@ -54,6 +54,13 @@ export interface AgentTrace {
   runId: string;
   /** Next step sequence number; mutated by recordAgentStep. */
   seq: { n: number };
+  /**
+   * Settles once the agent_runs row is in (or its insert failed). Step
+   * writes wait on it: the first step (the prompt) is recorded the moment a
+   * loop starts, and without this it raced the run row and lost to the
+   * foreign key.
+   */
+  ready: Promise<void>;
 }
 
 export interface RunAttribution {
@@ -96,7 +103,21 @@ export function traceable(agent: string): boolean {
 
 // A step's content is capped so a pathological tool output can't bloat the
 // table; the cap is generous because whole-transcript fidelity is the point.
+// The "prompt" step (the agent's whole setup: system prompt, initial
+// messages, tool descriptors) has a cap of its own, an order of magnitude
+// higher: the constitution plus a role prompt plus domain skills runs past
+// 200k characters, and a replay reader must see exactly what the agent was
+// given, whole, not a preview of it.
 const MAX_STEP_CONTENT_CHARS = 200_000;
+const MAX_PROMPT_STEP_CONTENT_CHARS = 2_000_000;
+
+/**
+ * Step kinds: "prompt" (once per tool loop or single-shot completion: the
+ * setup the model was given, verbatim), "assistant" (one model turn: stop
+ * reason + content blocks), "tool_results" (the executed tools of that turn:
+ * name, input, output), "completion" (a single-shot call: prompt and output).
+ */
+export type AgentStepKind = "prompt" | "assistant" | "tool_results" | "completion";
 
 /**
  * Open a run for `agent`, snapshotting the ambient attribution. Returns null
@@ -108,7 +129,7 @@ export function startAgentRun(
 ): AgentTrace | null {
   if (!traceable(agent)) return null;
   const runId = randomUUID();
-  void (async () => {
+  const ready = (async () => {
     try {
       await getDb().insert(agentRuns).values({
         id: runId,
@@ -125,7 +146,7 @@ export function startAgentRun(
       );
     }
   })();
-  return { runId, seq: { n: 0 } };
+  return { runId, seq: { n: 0 }, ready };
 }
 
 /**
@@ -140,6 +161,7 @@ export function recordAgentRunSkills(
 ): void {
   void (async () => {
     try {
+      await trace.ready;
       await getDb()
         .update(agentRuns)
         .set({ skills: [...skills] })
@@ -161,6 +183,7 @@ export function finishAgentRun(
 ): void {
   void (async () => {
     try {
+      await trace.ready;
       await getDb()
         .update(agentRuns)
         .set({
@@ -185,17 +208,21 @@ export function finishAgentRun(
 /** Append one step to the run. Sequence is claimed synchronously. */
 export function recordAgentStep(
   trace: AgentTrace,
-  kind: "assistant" | "tool_results" | "completion",
+  kind: AgentStepKind,
   content: unknown
 ): void {
   const seq = trace.seq.n++;
   void (async () => {
     try {
+      await trace.ready;
       await getDb().insert(agentSteps).values({
         runId: trace.runId,
         seq,
         kind,
-        content: capContent(content),
+        content: capContent(
+          content,
+          kind === "prompt" ? MAX_PROMPT_STEP_CONTENT_CHARS : MAX_STEP_CONTENT_CHARS
+        ),
       });
     } catch (err) {
       console.error(
@@ -206,14 +233,14 @@ export function recordAgentStep(
   })();
 }
 
-function capContent(content: unknown): unknown {
+function capContent(content: unknown, cap: number): unknown {
   try {
     const serialized = JSON.stringify(content);
-    if (serialized.length <= MAX_STEP_CONTENT_CHARS) return content;
+    if (serialized.length <= cap) return content;
     return {
       truncated: true,
       originalChars: serialized.length,
-      preview: serialized.slice(0, MAX_STEP_CONTENT_CHARS),
+      preview: serialized.slice(0, cap),
     };
   } catch {
     // Circular or otherwise unserializable content: record that it existed.

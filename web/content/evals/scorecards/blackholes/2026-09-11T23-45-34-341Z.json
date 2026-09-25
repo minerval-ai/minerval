@@ -1,0 +1,252 @@
+{
+  "generatedAt": "2026-09-11T23:45:34.341Z",
+  "cluster": "blackholes",
+  "database": "episteme_corpus_blackholes",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 3,
+      "stewardMaxRuns": 8,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 8000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 25
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "cern-lhc-safety",
+      "giddings-mangano-2008",
+      "wikipedia-safety-overview",
+      "plaga-2008"
+    ],
+    "capped": true,
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "cluster": "blackholes",
+    "profile": null,
+    "observed": {
+      "matcher": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "steward": [
+        "z-ai/glm-5.3-flash"
+      ],
+      "extractor": [
+        "z-ai/glm-5.3-flash"
+      ]
+    },
+    "gitCommit": "08be745",
+    "startedAt": "2026-09-11T21:57:08.797Z",
+    "finishedAt": "2026-09-11T23:36:03.973Z",
+    "registryId": "3edddc5e-5625-422e-9e5b-6f10a6f3784e",
+    "costMicroUsd": 377286,
+    "pipelineEpoch": "2026-09-domain-skills",
+    "postsIngested": 4,
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 24,
+      "instances": 27,
+      "totalClaims": 29,
+      "claimsPer1kWords": 10.673536989326463,
+      "typeDistribution": {
+        "empirical_derived": 22,
+        "evaluative": 2,
+        "empirical_verifiable": 3,
+        "causal": 2
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 14,
+        "p90": 17,
+        "max": 18,
+        "mean": 13.5
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1.125
+    },
+    "decomposition": {
+      "maxDepth": 1,
+      "depthHistogram": {
+        "0": 22,
+        "1": 2
+      },
+      "atomicShare": 0.931,
+      "meanChildrenPerParent": 2.5
+    },
+    "crossDoc": {
+      "sharedSubclaims": 0
+    },
+    "assessment": {
+      "statusDistribution": {
+        "verified": 4
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 1989
+    },
+    "importance": {
+      "mean": 0.266,
+      "histogram": {
+        "0.0-0.2": 10,
+        "0.2-0.4": 14,
+        "0.4-0.6": 5
+      },
+      "meanAtomic": 0.267,
+      "meanCompound": 0.25
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 24,
+      "withProposal": 24,
+      "rewriteRate": 0,
+      "rewriteMagnitude": null,
+      "meanWordDelta": null,
+      "matched": {
+        "count": 3,
+        "deniesShare": 0,
+        "meanProposalDistance": 0.787
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 4,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.21,
+      "meanJudged": 0.21,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.25,
+      "reasoningFit": 4.25,
+      "impartiality": 4.5
+    },
+    "granularity": {
+      "n_a": 2,
+      "good": 2
+    },
+    "flags": {
+      "hallucination_risk": 2,
+      "opaque_ids": 1,
+      "other": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 4
+      },
+      "hedging": {
+        "calibrated": 4
+      },
+      "canonicalForm": {
+        "good": 4
+      },
+      "politicalBias": {
+        "none": 4
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "bcacb48a-5c1b-4ac8-b74d-ecb4e9c9c865",
+        "text": "Particle collisions well above the fundamental gravitational scale are predicted to form microscopic black holes.",
+        "importanceStored": 0.2,
+        "status": "verified",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "n_a",
+        "importance_judged": 0.2,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "hallucination_risk"
+        ],
+        "note": "The verified status is defensible for a settled theoretical-prediction claim with correctly scoped \"predicted\" wording, but the verdict rests entirely on uncited background knowledge with no search performed, so the citations (D'Eath–Payne, Eardley–Giddings, Park) carry hallucination risk and the \"evidence examined directly\" bar is not strictly met. Importance 0.2 is right: load-bearing for collider phenomenology but settled textbook material."
+      },
+      {
+        "id": "d8c22ac2-e828-42d9-b70e-7ffa0412f532",
+        "text": "Under the Standard Model, the LHC's energies are too low to produce black holes.",
+        "importanceStored": 0.35,
+        "status": "verified",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.35,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [],
+        "note": "A model audit: the derivation is the load-bearing check rather than the single affirming source, the hyper-literal \"SM contains no gravity\" ambiguity is surfaced and correctly resolved as scoping rather than contest, and the unassessed subclaims are correctly treated as prioritization on a settled proposition. Only residual softness is that the three-load-bearing documents were not read this run, which the reasoning discloses honestly; verified at 0.95 is still defensible since the dimensional argument stands on its own."
+      },
+      {
+        "id": "dc96f326-3742-4d08-9b5d-f4f88766bd83",
+        "text": "Some theories with extra spatial dimensions predict the LHC could produce microscopic black holes.",
+        "importanceStored": 0.15,
+        "status": "verified",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.15,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "opaque_ids",
+          "hallucination_risk"
+        ],
+        "note": "The claim verifies as a statement of theory content, and the two subclaims correctly capture the real discourse structure (TeV-gravity scale, semiclassical formation) with LHC energy properly kept in prose. Two deductions: the reasoning cites subclaims by opaque node IDs rather than by what they say, and part of the corroboration (Giddings–Thomas, Dimopoulos–Landsberg, the safety review) is asserted from established knowledge rather than read this run, so the confidence rests partly on an uninspected evidence base — acceptable here because the core proposition is settled, but it should be stated as such with slightly lower confidence. The importance of 0.15 is right: this is settled theory content, not a live question."
+      },
+      {
+        "id": "db5c8fa9-6a62-48f4-a259-ffdd9a561aad",
+        "text": "In some theories with extra spatial dimensions, the fundamental gravitational scale lies near the TeV range.",
+        "importanceStored": 0.15,
+        "status": "verified",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 5,
+        "claim_bar": "yes",
+        "decomposition_granularity": "n_a",
+        "importance_judged": 0.15,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "other"
+        ],
+        "note": "Correctly identified as settled theory-content (ADD 1998/1999), not a live dispute about whether nature realizes it; verified status, ~15-word canonical form, and 0.15 importance are all right, and treating \"no contradicting instance\" as an evidential input is harmless given the discourse cited. Minor defect: zero source instances were attached, and the verdict rests wholly on uncorroborated background knowledge (no search was possible), so citing ADD only in reasoning rather than as a source leaves the claim's provenance thin for a graph meant to be a cross-source unit of reference."
+      }
+    ]
+  },
+  "cost": {
+    "calls": 4,
+    "usd": 0
+  }
+}

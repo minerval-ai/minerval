@@ -1,0 +1,598 @@
+{
+  "generatedAt": "2026-09-18T17:42:30.814Z",
+  "kind": "golden-canonical",
+  "extractorModel": "z-ai/glm-5.3-flash",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "maxClaims": 3,
+  "gitCommit": "91c17e0",
+  "profile": null,
+  "pipelineEpoch": "2026-09-domain-skills",
+  "summary": {
+    "total": 26,
+    "passed": 10,
+    "passRate": 0.385,
+    "byCategory": {
+      "direction": {
+        "total": 5,
+        "passed": 0
+      },
+      "neutrality": {
+        "total": 4,
+        "passed": 3
+      },
+      "scope": {
+        "total": 4,
+        "passed": 1
+      },
+      "survive": {
+        "total": 5,
+        "passed": 2
+      },
+      "hedging": {
+        "total": 4,
+        "passed": 2
+      },
+      "specificity": {
+        "total": 4,
+        "passed": 2
+      }
+    },
+    "misses": {
+      "noProposal": 0,
+      "proposition": 11,
+      "direction": 7,
+      "neutrality": 13
+    },
+    "reading": "10 of 26 pinned canonical forms survived extraction (39%). 7 came back in the wrong direction — the Extractor bent the form toward the source's stance instead of the debated affirmative. 13 lost neutrality or gained specificity no source committed to. 11 stated a different proposition than the excerpt turns on. 3 of 5 already-correct forms were rewritten in substance — the regression this suite exists to catch."
+  },
+  "costMicroUsd": 102812,
+  "results": [
+    {
+      "id": "dir-01",
+      "category": "direction",
+      "expected": "Microscopic black holes produced at the LHC could grow to endanger the Earth.",
+      "proposals": [
+        "Stable microscopic black holes pose no danger to Earth.",
+        "A stable microscopic black hole would accrete ordinary matter at a negligible rate."
+      ],
+      "proposed": "Stable microscopic black holes pose no danger to Earth.",
+      "similarity": 0.709,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form states the source's own negative conclusion (conditioned on stability) rather than the debated motion that microscopic black holes could grow to endanger the Earth, so it asserts the opposite of the expected form and takes the source's side.",
+        "same_direction": false,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "dir-02",
+      "category": "direction",
+      "expected": "Eating up to one egg a day raises heart disease risk in healthy adults.",
+      "proposals": [
+        "Eating up to one egg per day is not associated with increased heart disease risk in healthy people.",
+        "Eating an egg a day is safe for healthy people."
+      ],
+      "proposed": "Eating up to one egg per day is not associated with increased heart disease risk in healthy people.",
+      "similarity": 0.872,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "The proposed form states the source's null conclusion (\"not associated with increased risk\"), which contradicts the expected form's affirmative debate motion (\"raises risk\") instead of restating it; wording and specificity (up to one egg, healthy people) are otherwise equivalent and clean.",
+        "same_direction": false,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped"
+      ]
+    },
+    {
+      "id": "dir-03",
+      "category": "direction",
+      "expected": "The Wuhan Institute of Virology possessed a virus close enough to serve as a progenitor of SARS-CoV-2.",
+      "proposals": [
+        "Engineering SARS-CoV-2 would have required a close progenitor virus as its backbone.",
+        "RaTG13 is too divergent from SARS-CoV-2 to have served as its engineering backbone.",
+        "RaTG13 is the closest published relative of SARS-CoV-2, with about 4% sequence divergence."
+      ],
+      "proposed": "Engineering SARS-CoV-2 would have required a close progenitor virus as its backbone.",
+      "similarity": 0.641,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "The proposed form states only the argument's conditional premise — that engineering would require a close progenitor — and omits the actually contested claim, whether the WIV possessed such a virus, so it neither affirms nor matches the expected proposition.",
+        "same_direction": false,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped"
+      ]
+    },
+    {
+      "id": "dir-04",
+      "category": "direction",
+      "expected": "Aligning AI requires generalizing across a drastic distribution shift from low to high intelligence.",
+      "proposals": [
+        "AI training strategies need not handle a drastic distribution shift from low to high intelligence.",
+        "Foreseeable AI development involves continuous training as intelligence increases, not a large transfer between intelligence levels."
+      ],
+      "proposed": "AI training strategies need not handle a drastic distribution shift from low to high intelligence.",
+      "similarity": 0.696,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form is the logical negation of the expected one — it states the source's own denial (\"need not handle\") as the form, whereas the expected form poses the disputed motion affirmatively (\"aligning AI requires generalizing across the shift\"), which the excerpt argues against.",
+        "same_direction": false,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "dir-05",
+      "category": "direction",
+      "expected": "AI capabilities will increase sharply rather than gradually.",
+      "proposals": [
+        "AI progress will feature sharp, discontinuous capability gains rather than gradual improvement.",
+        "Eliezer Yudkowsky is overconfident in expecting sharp, discontinuous AI capability gains.",
+        "Human evolution from other primates is a good analogy for sharp AI capability gains."
+      ],
+      "proposed": "AI progress will feature sharp, discontinuous capability gains rather than gradual improvement.",
+      "similarity": 0.785,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form poses the same sharp-versus-gradual takeoff claim in the same direction, but \"discontinuous\" is an added qualifier that sharpens \"sharp\" into a stronger jump/break-in-trend claim neither the expected form nor the source's wording commits to.",
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": false,
+      "failures": [
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "neu-01",
+      "category": "neutrality",
+      "expected": "The outbreak's origin in Wuhan, home of the WIV, is strong evidence for a laboratory origin of SARS-CoV-2.",
+      "proposals": [
+        "The COVID-19 outbreak's emergence in Wuhan is strong evidence for a lab-related origin.",
+        "Wildlife spillovers of SARS-like viruses typically originate in rural areas far from major virology institutes.",
+        "The Wuhan Institute of Virology conducted research capable of producing a SARS-like virus."
+      ],
+      "proposed": "The COVID-19 outbreak's emergence in Wuhan is strong evidence for a lab-related origin.",
+      "similarity": 0.821,
+      "verdict": {
+        "note": "The proposed form drops the WIV, which is the crux the argument turns on — Wuhan matters because it hosts the WIV, not merely because the outbreak emerged there.",
+        "same_direction": true,
+        "same_proposition": true,
+        "neutral_no_invented_specificity": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "neu-02",
+      "category": "neutrality",
+      "expected": "The survival of white dwarfs and neutron stars excludes dangerous metastable black holes from collider collisions.",
+      "proposals": [
+        "Survival of white dwarfs and neutron stars does not constrain dangerous metastable vacuum decay.",
+        "Astrophysical survival arguments assume dangerous black holes are stopped and retained by stars."
+      ],
+      "proposed": "Survival of white dwarfs and neutron stars does not constrain dangerous metastable vacuum decay.",
+      "similarity": 0.806,
+      "verdict": {
+        "same_proposition": false,
+        "same_direction": false,
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form states Plaga's conclusion (survival does NOT constrain) — the negation of the debated motion — and also swaps the object from collider-produced metastable black holes to vacuum decay generally, so it is a stance-bearing contrary rather than a neutral restatement of the expected proposition."
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "neu-03",
+      "category": "neutrality",
+      "expected": "Ending the acute AI risk period requires a discrete pivotal act by a small number of actors.",
+      "proposals": [
+        "Ending the acute risk period from advanced AI is necessary to avert catastrophe.",
+        "Ending the acute risk period requires a discrete unilateral action by a small number of actors."
+      ],
+      "proposed": "Ending the acute risk period requires a discrete unilateral action by a small number of actors.",
+      "similarity": 0.879,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "Substantively the same affirmative claim — \"unilateral action\" is the source's own gloss on \"pivotal act\" — with the only real difference being that the proposed form drops the \"AI\" qualifier, leaving the risk period's domain implicit rather than explicit.",
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "neu-04",
+      "category": "neutrality",
+      "expected": "Saturated fat raises blood cholesterol far more than dietary cholesterol does.",
+      "proposals": [
+        "Dietary cholesterol from egg yolks is not the main dietary concern for heart health.",
+        "Saturated fat raises blood cholesterol much more than dietary cholesterol does."
+      ],
+      "proposed": "Saturated fat raises blood cholesterol much more than dietary cholesterol does.",
+      "similarity": 0.968,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "Equivalent — \"much more\" and \"far more\" are interchangeable intensifiers for the same comparative claim, with no numbers, thresholds, or sharpening added by either form.",
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "sco-01",
+      "category": "scope",
+      "expected": "Daily egg consumption raises heart disease risk in people with diabetes.",
+      "proposals": [
+        "Eating one or more eggs a day is associated with increased heart disease risk among people with diabetes.",
+        "The association between egg intake and heart disease risk differs between people with and without diabetes."
+      ],
+      "proposed": "Eating one or more eggs a day is associated with increased heart disease risk among people with diabetes.",
+      "similarity": 0.838,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form swaps the debated causal claim (\"raises\") for a hedged associational one (\"is associated with\"), importing the observational-study qualification into the form instead of leaving it on the instance.",
+        "same_direction": true,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "sco-02",
+      "category": "scope",
+      "expected": "The LHC can produce microscopic black holes only if extra spatial dimensions exist.",
+      "proposals": [
+        "The Standard Model predicts the LHC's energies are far too low to produce black holes.",
+        "Theories with extra spatial dimensions predict the LHC could produce microscopic black holes."
+      ],
+      "proposed": "Theories with extra spatial dimensions predict the LHC could produce microscopic black holes.",
+      "similarity": 0.819,
+      "verdict": {
+        "note": "The proposed form frames the conditional as what extra-dimension theories predict, while the expected states the bare necessary condition, but the substance (microscopic black-hole production at the LHC requires extra spatial dimensions) and direction match.",
+        "same_proposition": true,
+        "same_direction": true,
+        "neutral_no_invented_specificity": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "sco-03",
+      "category": "scope",
+      "expected": "The two early SARS-CoV-2 lineages reflect at least two separate introductions into humans at the Huanan market.",
+      "proposals": [
+        "SARS-CoV-2 entered humans through at least two separate spillover events at the Huanan market within days",
+        "Two near-simultaneous market introductions of SARS-CoV-2 favor animal origin over a single laboratory escape"
+      ],
+      "proposed": "SARS-CoV-2 entered humans through at least two separate spillover events at the Huanan market within days",
+      "similarity": 0.769,
+      "verdict": {
+        "same_proposition": true,
+        "same_direction": true,
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form adds the timing qualifier \"within days,\" which the expected form does not carry, narrowing the proposition beyond what it commits to."
+      },
+      "pass": false,
+      "failures": [
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "sco-04",
+      "category": "scope",
+      "expected": "Adding eggs to a diet raises LDL cholesterol relative to a no-egg diet.",
+      "proposals": [
+        "Raising LDL cholesterol does not by itself establish that a food causes cardiovascular disease.",
+        "Eggs' effect on LDL depends on whether they are added to the diet or replace other foods."
+      ],
+      "proposed": "Eggs' effect on LDL depends on whether they are added to the diet or replace other foods.",
+      "similarity": 0.772,
+      "verdict": {
+        "same_proposition": false,
+        "same_direction": false,
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form asserts a substitution-dependence claim, which is the excerpt's secondary hedge, not the core disputed proposition that adding eggs raises LDL relative to a no-egg diet."
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "sur-01",
+      "category": "survive",
+      "expected": "The algorithms that best solve the problems we want an AI to solve readily generalize to problems we would rather it not solve.",
+      "proposals": [
+        "AI capabilities generalize across tasks more readily than alignment or targeting does.",
+        "Capabilities found by optimization generalize beyond the specific instances they were trained on."
+      ],
+      "proposed": "AI capabilities generalize across tasks more readily than alignment or targeting does.",
+      "similarity": 0.49,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "The proposed form shifts the claim from \"best algorithms for wanted tasks generalize to unwanted ones\" to a comparison of capability generalization versus alignment/targeting, a different proposition with an invented contrast.",
+        "same_direction": false,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "direction flipped"
+      ]
+    },
+    {
+      "id": "sur-02",
+      "category": "survive",
+      "expected": "AI capabilities generalize further than alignment.",
+      "proposals": [
+        "AI capabilities generalize better than alignment."
+      ],
+      "proposed": "AI capabilities generalize better than alignment.",
+      "similarity": 0.962,
+      "verdict": {
+        "note": "equivalent — \"better\" vs \"further\" are interchangeable renderings of \"generalizes better than alignment\"; same proposition, direction, and precision.",
+        "same_direction": true,
+        "neutral_no_invented_specificity": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "sur-03",
+      "category": "survive",
+      "expected": "The furin cleavage site of SARS-CoV-2 is evidence of laboratory engineering.",
+      "proposals": [
+        "SARS-CoV-2's furin cleavage site is absent from its closest known relatives and uses an uncommon CGG codon.",
+        "SARS-CoV-2's furin cleavage site is evidence of laboratory engineering rather than natural evolution."
+      ],
+      "proposed": "SARS-CoV-2's furin cleavage site is evidence of laboratory engineering rather than natural evolution.",
+      "similarity": 0.877,
+      "verdict": {
+        "note": "Same proposition and direction, but the proposed form appends an explicit contrast (\"rather than natural evolution\") that sharpens the expected form's bare evidentiary claim.",
+        "same_direction": true,
+        "same_proposition": true,
+        "neutral_no_invented_specificity": false
+      },
+      "pass": false,
+      "failures": [
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "sur-04",
+      "category": "survive",
+      "expected": "The observed stability of white dwarfs and neutron stars excludes dangerous LHC black holes even without Hawking radiation.",
+      "proposals": [
+        "Black holes possibly produced at the LHC pose no significant risk.",
+        "The stability of white dwarfs and neutron stars bounds any danger from microscopic black holes.",
+        "Microscopic black holes evaporate essentially instantly via Hawking radiation."
+      ],
+      "proposed": "The stability of white dwarfs and neutron stars bounds any danger from microscopic black holes.",
+      "similarity": 0.793,
+      "verdict": {
+        "note": "The proposed form drops both the LHC context and the crucial point that the bound holds even without Hawking radiation, making it substantially more generic than the discourse.",
+        "neutral_no_invented_specificity": true,
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "sur-05",
+      "category": "survive",
+      "expected": "Powerful AI systems have a substantial chance of deliberately and irreversibly disempowering humanity.",
+      "proposals": [
+        "Powerful AI systems are likely to deliberately and irreversibly disempower humanity.",
+        "AI disempowering humanity is a more likely failure mode than human-caused catastrophe via destructive physical technologies."
+      ],
+      "proposed": "Powerful AI systems are likely to deliberately and irreversibly disempower humanity.",
+      "similarity": 0.971,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "\"Likely\" asserts probability above 50%, sharpening the source's weaker \"a good chance\" into a stronger claim the author did not commit to.",
+        "same_direction": true,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "hed-01",
+      "category": "hedging",
+      "expected": "The 2018 DEFUSE proposal documents an intent to engineer the features that distinguish SARS-CoV-2.",
+      "proposals": [
+        "The 2018 DEFUSE proposal described constructing viruses with features matching SARS-CoV-2.",
+        "The DEFUSE proposal constitutes strong circumstantial evidence for the lab-leak hypothesis of SARS-CoV-2's origin."
+      ],
+      "proposed": "The 2018 DEFUSE proposal described constructing viruses with features matching SARS-CoV-2.",
+      "similarity": 0.853,
+      "verdict": {
+        "same_proposition": true,
+        "same_direction": true,
+        "neutral_no_invented_specificity": true,
+        "note": "Equivalent — \"described constructing\" in a proposal fairly renders \"documents an intent to engineer,\" with no added specificity."
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "hed-02",
+      "category": "hedging",
+      "expected": "Black holes emit Hawking radiation.",
+      "proposals": [
+        "Hawking radiation is real, but no experiment has yet directly detected it."
+      ],
+      "proposed": "Hawking radiation is real, but no experiment has yet directly detected it.",
+      "similarity": 0.617,
+      "verdict": {
+        "note": "The proposed form adds the source's evidential hedge (\"no experiment has yet directly detected it\") that the expected form deliberately strips out.",
+        "neutral_no_invented_specificity": false,
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": false,
+      "failures": [
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "hed-03",
+      "category": "hedging",
+      "expected": "Dietary cholesterol has only a weak effect on blood cholesterol in most people.",
+      "proposals": [
+        "Dietary cholesterol is not a nutrient of concern for overconsumption.",
+        "Dietary cholesterol has only a weak and variable effect on blood cholesterol for most people."
+      ],
+      "proposed": "Dietary cholesterol has only a weak and variable effect on blood cholesterol for most people.",
+      "similarity": 0.934,
+      "verdict": {
+        "note": "equivalent",
+        "same_direction": true,
+        "same_proposition": true,
+        "neutral_no_invented_specificity": false
+      },
+      "pass": false,
+      "failures": [
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "hed-04",
+      "category": "hedging",
+      "expected": "The probability of a catastrophic outcome from collider experiments cannot be shown to be zero, only bounded.",
+      "proposals": [
+        "A zero probability of catastrophic outcomes from particle collider experiments cannot be demonstrated, only bounded.",
+        "The risk of a doomsday scenario from the Relativistic Heavy Ion Collider is at most 1 in 50 million."
+      ],
+      "proposed": "A zero probability of catastrophic outcomes from particle collider experiments cannot be demonstrated, only bounded.",
+      "similarity": 0.918,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "Equivalent in substance and direction; \"particle collider experiments\" adds nothing beyond \"collider experiments\" and the form carries no author framing or invented precision.",
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "spe-01",
+      "category": "specificity",
+      "expected": "Humanity cannot coordinate to refrain from building AGI.",
+      "proposals": [
+        "A unilateral decision not to develop AGI cannot prevent AGI from being developed.",
+        "Within roughly two years of one actor acquiring AGI capability, five other actors will also have it.",
+        "The hardware and algorithmic knowledge needed to build AGI are widely available and spreading."
+      ],
+      "proposed": "A unilateral decision not to develop AGI cannot prevent AGI from being developed.",
+      "similarity": 0.568,
+      "verdict": {
+        "same_proposition": false,
+        "same_direction": true,
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form swaps the expected's claim of collective coordination failure for the distinct claim that unilateral abstention is futile — a claim a coordination-optimist could affirm while denying that humanity cannot coordinate — and \"unilateral\" is a narrowing qualifier the expected form does not carry, though both are stated as impossibility claims."
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "spe-02",
+      "category": "specificity",
+      "expected": "The failure to find an infected intermediate host is evidence against a market spillover origin of SARS-CoV-2.",
+      "proposals": [
+        "No SARS-CoV-2-infected intermediate host animal has been identified despite extensive testing",
+        "Huanan market environmental samples containing SARS-CoV-2 RNA do not establish an infected animal source",
+        "The failure to identify an intermediate host animal is evidence against SARS-CoV-2 market spillover"
+      ],
+      "proposed": "The failure to identify an intermediate host animal is evidence against SARS-CoV-2 market spillover",
+      "similarity": 0.887,
+      "verdict": {
+        "same_proposition": true,
+        "same_direction": true,
+        "neutral_no_invented_specificity": true,
+        "note": "Substantively equivalent — the proposed form drops 'infected' but 'intermediate host animal' entails an infected carrier, and both state the same evidential claim (absence of a host counts against market spillover) in the same neutral direction with no added specificity."
+      },
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "spe-03",
+      "category": "specificity",
+      "expected": "Observed associations between egg consumption and heart disease are largely explained by confounding.",
+      "proposals": [
+        "Observed health associations of egg consumption are confounded by overall dietary pattern.",
+        "Egg consumption correlates with smoking, exercise, overall diet, and socioeconomic status.",
+        "In some populations and eras, frequent egg eaters ate more processed meat and fewer vegetables."
+      ],
+      "proposed": "Observed health associations of egg consumption are confounded by overall dietary pattern.",
+      "similarity": 0.829,
+      "verdict": {
+        "neutral_no_invented_specificity": false,
+        "note": "The proposed form commits the confounding specifically to overall dietary pattern, whereas the source offers dietary pattern as just one example among several confounders (smoking, exercise, diet, socioeconomic status) and the expected form states the general confounding claim.",
+        "same_direction": true,
+        "same_proposition": false
+      },
+      "pass": false,
+      "failures": [
+        "different proposition",
+        "not neutral or added specificity"
+      ]
+    },
+    {
+      "id": "spe-04",
+      "category": "specificity",
+      "expected": "The probability of producing a strangelet decreases as collision energy increases.",
+      "proposals": [
+        "The probability of producing strangelets decreases as collision energy increases",
+        "The LHC is less likely to produce dangerous strangelets than lower-energy colliders",
+        "Lower-energy colliders ran for years without producing dangerous strangelets"
+      ],
+      "proposed": "The probability of producing strangelets decreases as collision energy increases",
+      "similarity": 0.967,
+      "verdict": {
+        "neutral_no_invented_specificity": true,
+        "note": "Equivalent — the only difference is singular \"a strangelet\" versus plural \"strangelets\", a stylistic variant with no change in substance, direction, or specificity.",
+        "same_direction": true,
+        "same_proposition": true
+      },
+      "pass": true,
+      "failures": []
+    }
+  ]
+}

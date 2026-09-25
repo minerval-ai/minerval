@@ -69,6 +69,49 @@ describe("match_claim tool wrapper", () => {
     expect(out.direction_note).toBeNull();
   });
 
+  it("passes an undecided outcome through with a do-not-create note (#419)", async () => {
+    // A Matcher timeout used to arrive as is_match:false, indistinguishable
+    // from a genuine no-match, so a trusting caller minted a duplicate.
+    mockMatchClaim.mockResolvedValueOnce({
+      outcome: "undecided",
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "affirms",
+      direction_note: null,
+      confidence: 0,
+      reasoning: "Matcher did not submit a decision within its search budget.",
+      alternative_matches: [],
+      relationship_notes: null,
+    });
+
+    const out = JSON.parse(
+      await executeMatcherTool("match_claim", { text: "some proposition" })
+    );
+    expect(out.outcome).toBe("undecided");
+    expect(out.note).toMatch(/Do not create a new claim/);
+    expect(out.new_canonical_form).toBeNull();
+  });
+
+  it("carries the decided outcome and no note otherwise", async () => {
+    mockMatchClaim.mockResolvedValueOnce({
+      outcome: "new",
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: "A wording",
+      instance_stance: "affirms",
+      confidence: 0.7,
+      reasoning: "Novel.",
+      alternative_matches: [],
+      relationship_notes: null,
+    });
+    const out = JSON.parse(
+      await executeMatcherTool("match_claim", { text: "some proposition" })
+    );
+    expect(out.outcome).toBe("new");
+    expect(out).not.toHaveProperty("note");
+  });
+
   it("still rejects empty text", async () => {
     const out = JSON.parse(await executeMatcherTool("match_claim", { text: " " }));
     expect(out.error).toContain("non-empty");

@@ -36,7 +36,8 @@ metered per account.
  ┌──────────────────────────────────────┐      ┌───────────┐     web ·
  │ Claim Steward (decompose + assess) · │◀────▶│    API    │──▶  extension ·
  │ Curator · Contribution Reviewer ·    │      │ (Fastify) │     MCP clients
- │ Dispute Arbitrator · Audit Agent     │      └───────────┘
+ │ Dispute Arbitrator · Audit Agent ·   │      └───────────┘
+ │ Grantmaker · Lookout                 │
  └──────────────────────────────────────┘
 ```
 
@@ -54,7 +55,7 @@ PostgreSQL with the `pgvector` extension as the single store, carrying vector
 search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
-Fable 5.1. Any agent can be pointed at OpenAI or OpenRouter instead with a
+Opus 5.5. Any agent can be pointed at OpenAI or OpenRouter instead with a
 single env var — the Matcher runs on GLM 5.3 Flash this way — see
 [Providers](#providers).
 
@@ -69,14 +70,20 @@ epistemic core, where `──<` reads "has many":
 
 ```
   Source ──< Instance >── Claim ──< Relationship >── Claim
-                            │           (decomposition edge;
-                            │            argument_id groups edges
-                            │            into a line of reasoning)
-                            ├──< Assessment   (verdict history; one is_current)
+                            │           (decomposition edge)
+                            │                │
+                            │                └──< ArgumentSubclaim >──┐
+                            │                     (membership: which   │
+                            │                      arguments group     │
+                            │                      the edge)           │
+                            ├──< Assessment   (verdict history;        │
+                            │                  one is_current)         │
+                            │                                          │
+                            ├──< Argument      (a named line of ───────┘
+                            │                   reasoning)
                             │
-                            └──< Argument      (a named line of reasoning;
-                                                relationship edges point back
-                                                to it via argument_id)
+                            └──< Link >── Claim  (lateral see-also; symmetric,
+                                                  never a dependency)
 ```
 
 ### Claims
@@ -239,9 +246,13 @@ Two design decisions follow:
   (reasoning visible, open to challenge). It is reader-facing prose, not a
   discussion surface: contributor exchanges stay in the contribution record.
 - **Arguments are optional and non-exhaustive.** A claim with one natural
-  decomposition needs no explicitly named argument; edges simply carry a null
-  `argument_id`. Admins create arguments when a line of reasoning is live in
+  decomposition needs no explicitly named argument; its edges simply have no
+  membership row. Admins create arguments when a line of reasoning is live in
   the discourse, not preemptively.
+- **Arguments may share subclaims.** Membership is a relation between an
+  argument and an edge (`argument_subclaims`), not a column on the edge, so
+  the same premise can be grouped under several of a claim's arguments,
+  arranged differently in each written form.
 
 When the *validity of an argument's framework* is itself disputed in the
 discourse, "this framework is valid" is added as a subclaim within that
@@ -253,10 +264,18 @@ layer, where decomposition, assessment, and contribution already operate.
 
 Decomposition is recorded as **claim relationships**: directed edges from a
 parent claim to a child claim. Each edge has a `relation_type`, a free-text
-`reasoning`, a `confidence`, and an optional `argument_id` linking it to the
-argument it belongs to. A child can appear under multiple arguments (shared
-subclaims); a uniqueness constraint prevents duplicate parent/child/relation
-triples, and self-edges are rejected outright. The relation types are:
+`reasoning`, and a `confidence`. Which named arguments an edge belongs to is
+recorded separately, in `argument_subclaims` (one row per argument and edge),
+so a child can appear under multiple arguments (shared subclaims) while the
+dependency itself is stated once; an edge with no membership row is part of
+the claim's ungrouped basis. A uniqueness constraint prevents duplicate
+parent/child/relation triples, and self-edges are rejected outright. Edges
+are the only relations propagation and assessment read; a relation between
+claims that is *not* a dependency (a rival explanation, two halves of one
+position, two formulations kept apart because identity was unclear) is a
+**claim link** in its own table, symmetric and non-evaluative, rendered as a
+see-also on both claim pages and invisible to the tree. The relation types
+are:
 
 | Relation | Meaning |
 |----------|---------|
@@ -597,27 +616,61 @@ These act through tools over the life of a claim and the graph:
   suspensions are severe but not one-way: the suspended contributor can
   still appeal their own contributions, and the Arbitrator can lift a
   suspension whose basis an appeal dissolves.
+  The allocation engine's decisions are judging too, so the Audit carries a
+  read-only cross-cut of the action ledger and the mandate plan surface
+  (`inspect_ledger`, services/ledger-inspection-service.ts): every row in
+  scope in every status with its allocation history, and every plan item
+  targeting those rows with its recorded standing checked against the row
+  it names, so a report about the ledger is verified there instead of taken
+  on the reporter's word.
+- **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
+  in conversation with a funder it surveys the territory, quotes honest
+  costs, and drafts or refuses a mandate; once the mandate is live it takes
+  autonomous review passes that value the open action ledger, grow the
+  plan, pace the spend, and move budget between peer mandates.
+- **Lookout** is the cheapest administrator with the narrowest question: a
+  standing watch a mandate's Grantmaker posts with a brief (scope in words,
+  where to look, what warrants work), woken by a heartbeat or a trigger (the
+  daily Crossref retraction poll, a poke), that reads the graph, the
+  retraction record, and the open web and raises *candidates*: a claim to
+  reassess, valued on the mandate's behalf up to a ceiling the Grantmaker
+  delegated; a source to ingest, appended to the mandate's plan; a note for
+  the next review pass. It judges relevance, never truth: it writes no
+  assessment, sets no importance, and moves no money, and every flag is
+  recorded with what became of it, so its precision is on the record and
+  its Grantmaker can tighten or retire a watch that raises noise
+  (docs/allocation.md, "Lookouts").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in
 the agent's own words, for a system failure, a gap in its own tools, or a
 concrete improvement idea arrived at from having just done the work;
 `update_issue`, the reporter's own edit path (re-rate the severity, add
-what it found since, or withdraw a report that was its own mistake); and
-`search_issues`, a search of the reports on record by meaning, for an agent
-that wants to know whether a failure is known and what the maintainers
-said before it works around it. All three are fire-and-forget (they always
-acknowledge and can never fail a run) and the policies say raising is never
-a substitute for acting. Reports land in `agent_reports`, not `audit_log`:
-they are about the machinery, not the graph, so they carry ids rather than
-content and are retained and purged separately. Repeats collapse: a
-verbatim repeat onto the dedupe key, and a paraphrase through the same
-match-before-write the findings channel uses — the report is embedded and
-searched against the reports on record, and a near match is shown to the
-agent with its status and triage note before anything is written, the
-agent answering with `joins` (a sighting, recorded in
-`agent_report_sightings` with its own account) or `distinct_from`. A
-sighting of a report already `actioned` is a regression and reopens it.
+what it found since, or withdraw a report that was its own mistake);
+`search_issues`, a search of the reports on record by keyword and by
+meaning, or with no query a listing of what was seen most recently on a
+surface; and `get_issue`, one report in full with its triage note, its
+sightings, and the reports collapsed onto it. All are fire-and-forget
+(they always acknowledge and can never fail a run) and the policies say
+raising is never a substitute for acting. Reports land in `agent_reports`,
+not `audit_log`: they are about the machinery, not the graph, so they
+carry ids rather than content and are retained and purged separately.
+The record is navigable rather than gated (#432): a verbatim repeat
+collapses onto the dedupe key, an agent that has found its predecessor
+raises with `joins` (a sighting, recorded in `agent_report_sightings`
+with its own account, and a regression if the report was `actioned`,
+which reopens it), and a report written anyway comes back with the near
+reports on record as advice, with their status and triage note. Whether
+two reports are the same problem is otherwise the Audit Agent's call at
+triage, which collapses duplicates onto their representative. The search
+matches two ways and unions them: by meaning (cosine similarity over the
+stored embedding, at or above the bar) and by wording (every content word
+of the query, stemmed, appears in a report's title or body), wording hits
+first, so a report is never invisible to its own title even when it has
+no embedding or a paraphrase outscores it. A report recorded while the
+embedder was down is stored without a vector; the report embedding
+backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
+such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
 rule holds for this channel too. External agents on the MCP surface get
@@ -627,7 +680,11 @@ than findings.
 
 The far end of the channel is GitHub. Every report written on first
 sighting is filed as an issue in `GITHUB_ISSUES_REPO`, labelled
-`agent-generated` with its kind and severity (`github-issue-service.ts`);
+`agent-generated` with its kind and severity (`github-issue-service.ts`),
+written as the minerval-agents GitHub App: `github-app-auth.ts` signs a
+JWT with the App's private key and exchanges it for an hourly installation
+token, so the service never holds a long-lived credential (a plain
+`GITHUB_TOKEN` serves local runs);
 a `joins` with an account, an `update_issue` note, a regression, and every
 milestone count follow it there as comments, and a triage decision or a
 withdrawal closes it with the note. The filing is asynchronous and the
@@ -638,7 +695,9 @@ failed. The audit scheduler still requests a `report_triage` audit for each
 period that saw new reports; the Audit Agent clusters them by underlying
 gap, ranks by frequency and severity, and records a reading through
 `triage_report` that the service-scoped `/reports` API exposes to
-maintainers and that closes or annotates the issue.
+maintainers and that closes or annotates the issue. The triage note is
+stored whole up to `TRIAGE_NOTE_MAX_LENGTH` (4,000 characters); a longer
+one is refused with an error naming the limit, never cut (#439).
 
 The administrators (Steward, Curator, Grantmaker, Contribution Reviewer,
 Dispute Arbitrator, Audit Agent) also carry a **`note_finding`** tool, the
@@ -660,8 +719,9 @@ finding, saying what the earlier one lacks). Findings live in
 `agent_findings` with the same no-FK attribution snapshot as reports, so a
 note outlives the trace it came from; the read side computes a `stale`
 flag when a cited assessment is no longer the claim's current one. The
-extension chat, the MCP surface, the Extractor, the Matcher, and the solver
-do not carry the tool: an outside agent's discovery is a contribution.
+extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
+and the solver do not carry the tool: an outside agent's discovery is a
+contribution, and a Lookout's is a flag for a Steward to judge.
 
 One agent lives outside governance entirely. The **Extension Agent** is the
 read-only companion behind the browser extension: it judges the phrasings on a
@@ -952,19 +1012,22 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger · Matcher | GLM 5.3 Flash (via OpenRouter) |
+| Tagger · Matcher · Lookout | GLM 5.3 Flash (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
 | Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
-| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Fable 5.1 |
-| Solver (`math_solver`) | Claude Fable 5.1 at effort `max` (`SOLVER_MODEL`), fallbacks off |
-| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.1 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5 (`RESEARCHER_STANDARD_MODEL`), or GLM 5.3 Flash (`RESEARCHER_CHEAP_MODEL`) |
+| Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Opus 5.5 |
+| Solver (`math_solver`) | Claude Opus 5.5 at effort `max` (`SOLVER_MODEL`), fallbacks off |
+| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Opus 5.5 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5 (`RESEARCHER_STANDARD_MODEL`), or GLM 5.3 Flash (`RESEARCHER_CHEAP_MODEL`) |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a
 non-Anthropic model. The tagger's is narrower still ("which of these
 existing tags, at what grain?"), makes no epistemic call, and runs over
 every claim, so it shares that tier: the cheapest capable model, in
-production as in dev. The load-bearing epistemic work
-(stewardship, structural adjudication, arbitration, audit) runs on Fable 5.1,
+production as in dev. The Lookout's question ("did something happen that
+warrants work in my scope?") is relevance, not truth, and it runs often,
+so it shares the tier too, and a Grantmaker can pin a stronger model on
+one lookout whose brief warrants it. The load-bearing epistemic work
+(stewardship, structural adjudication, arbitration, audit) runs on Opus 5.5,
 with a server-side fallback to Opus 4.8 so a safety-classifier refusal degrades
 gracefully instead of failing the job. Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and the
@@ -989,7 +1052,7 @@ Which backend serves a call is decided by the **shape of the model id**
 
 | ID shape | Provider | Example |
 |----------|----------|---------|
-| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-fable-5-1` |
+| `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
@@ -1022,11 +1085,18 @@ has no equivalent surface for our purposes and keeps the Chat Completions
 translation in `providers/openai-dialect.ts`; the dialect-independent helpers
 stay shared between the two.
 
-**Anthropic-only, by design:** server tools (`web_search`), container-backed
-execution, ephemeral prompt-cache breakpoints, and the server-side Opus refusal
-fallback. Routing an agent that uses a server tool — the Claim Steward does — to
-a non-Anthropic model fails immediately with a message naming the capability,
-rather than silently dropping it. OpenAI's own hosted tools are not wired up
+**Anthropic-only, by design:** server tools, container-backed execution,
+ephemeral prompt-cache breakpoints, and the server-side Opus refusal
+fallback. No agent hard-codes a server tool: the agents that want web search
+(the Claim Steward, the Grantmaker in every mode — conversation, planning,
+review — and lookouts) ask `tools/web-search-tool.ts` for one `web_search`, which is the Anthropic server tool on a Claude model
+that runs it and, everywhere else, a client-side tool of the same name and
+shape that the loop executes through OpenRouter's web plugin
+(`openrouterWebSearch` in `providers/openrouter.ts`: one metered
+completion on the cheap tier whose citation annotations are the hits). A
+request that still carries a server tool to a non-Anthropic model fails
+immediately with a message naming the capability, rather than silently
+dropping it. OpenAI's own hosted tools are not wired up
 yet, but they are ordinary entries in the Responses `tools` array, so the slot
 for them is the one `toResponsesTools` already builds. OpenAI gets automatic
 prefix caching with a stable `prompt_cache_key` per agent instead of explicit
@@ -1093,9 +1163,10 @@ a billing hiccup.
 
 The graph is stored relationally in **PostgreSQL**, accessed through Drizzle
 ORM, not in a dedicated graph database. Claims are rows; decomposition is an
-adjacency table (`claim_relationships`) whose `argument_id` column attaches
-each edge to its line of reasoning; arguments, assessments, instances and
-sources are their own tables. A relational store keyed by foreign keys is more
+adjacency table (`claim_relationships`) that holds only what propagation
+walks; a membership table (`argument_subclaims`) attaches each edge to the
+line(s) of reasoning it serves; arguments, assessments, instances and sources
+are their own tables. A relational store keyed by foreign keys is more
 than adequate for the tree-shaped reads the product needs, and it lets the same
 engine carry vector search and full-text search without a second system to
 operate.
@@ -1105,18 +1176,24 @@ level by level with a visited set, so each node and edge is fetched exactly
 once even where shared subclaims give the DAG a diamond shape. The walk is
 bounded by a cap of 500 nodes per response (`MAX_TREE_NODES`); children
 dropped by the cap are flagged on their parent (`children_truncated`), never
-silently. Each edge's `argument_id`, `argument_name`, `argument_stance`, and
-`argument_content` are carried onto the node, so a client can group a claim's
-children by argument and render each argument's written form.
+silently. Each edge is joined to its argument memberships, and the
+`argument_id`, `argument_name`, `argument_stance`, and `argument_content` are
+carried onto the node, so a client can group a claim's children by argument
+and render each argument's written form. An edge grouped under two arguments
+appears once in each group; its subtree renders at the first occurrence and
+is collapsed at the second, as for any shared subclaim.
 
 ### Schema at a glance
 
 ```
 claims ──< claim_relationships >── claims     (parent / child adjacency)
   │              │
-  │              └── argument_id ─▶ arguments ──▶ claims
-  │                                    └──▶ argument_evaluations
+  │              └──< argument_subclaims >── arguments ──▶ claims
+  │                   (which arguments group     └──▶ argument_evaluations
+  │                    an edge; none = basis)
   │                                         (inference verdicts; one is_current per argument)
+  ├──< claim_links >── claims          (lateral see-also: related, rival
+  │                                     explanation, counterpart; never walked)
   ├──▶ assessments        (verdict history; one is_current per claim)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
   │        ├──▶ claim_instance_readings         (does the source bear its own assertion)

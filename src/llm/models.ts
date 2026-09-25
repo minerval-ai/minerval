@@ -16,20 +16,25 @@
  */
 export const MODELS = {
   /**
-   * Fable 5.1 — the load-bearing agents (Steward, Curator, Audit, Arbitration)
-   * run on it in production (issue #77). Thinking is always on (never send a
-   * `thinking` config), and its safety classifiers can refuse benign-adjacent
-   * requests, so the client opts into the server-side Opus fallback for it —
-   * see modelNeedsRefusalFallback and client.ts.
+   * Opus 5.5 — the strong tier: the load-bearing agents (Steward, Curator,
+   * Audit, Arbitration, Extractor, Grantmaker, solver) run on it in production
+   * (issue #77; moved off Fable 5.1). $4/$20 per MTok with cache reads at
+   * $0.20 — well under Fable's $10/$50.
    *
-   * Successor to Fable 5 in the same tier at the same per-token price. Three
-   * differences matter to this codebase: forced tool use (`tool_choice` "any"
-   * or "tool") 400s — the Anthropic adapter never sends one, and must not
-   * start; thinking blocks are bound to the model that produced them; and
-   * editing an earlier turn invalidates the thinking blocks after it, so an
-   * agent loop replaying `rawContent` has to stay append-only (client.ts is).
+   * Its request surface matches Fable 5.1's, and each difference matters to
+   * this codebase: thinking is always on (never send a `thinking` config —
+   * `disabled` and `budget_tokens` 400 at every effort level); forced tool use
+   * (`tool_choice` "any" or "tool") 400s — the Anthropic adapter never sends
+   * one, and must not start; thinking blocks are bound to the model and the
+   * conversation that produced them, so an agent loop replaying `rawContent`
+   * has to stay append-only (client.ts is); and its cyber/bio safety
+   * classifiers can refuse benign-adjacent requests, so the client opts into
+   * the server-side Opus fallback for it — see modelNeedsRefusalFallback.
+   *
+   * Unlike Fable, an omitted `effort` defaults to `medium`, not `high`.
    */
-  fable: "claude-fable-5-1",
+  strong: "claude-opus-5-5",
+  /** The refusal-fallback target for the strong tier (and a direct override option). */
   opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5",
   haiku: "claude-haiku-4-5-20251001",
@@ -90,7 +95,7 @@ export function isAnthropicModelId(id: string): boolean {
 
 /**
  * Whether a model accepts the `temperature` request parameter. The Claude 5
- * family (Fable 5.1, Sonnet 5) and Opus 4.7+ reject non-default sampling params
+ * family (Opus 5.5, Fable 5.1, Sonnet 5) and Opus 4.7+ reject non-default sampling params
  * with a 400 — and the client sends `temperature: 0`, which counts as
  * non-default — so this is an ALLOWLIST of families known to accept it
  * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. The version is
@@ -108,10 +113,12 @@ export function modelAcceptsTemperature(id: string): boolean {
  * (HTTP 200 with stop_reason "refusal") and should opt into the server-side
  * Opus fallback (`server-side-fallback-2026-06-01`) so a false positive
  * degrades to Opus instead of failing the agent run. Currently the Fable /
- * Mythos family.
+ * Mythos family and Opus 5.5 (whose classifiers add `bio` and
+ * `reasoning_extraction` to Opus 5's `cyber`). Opus 5 itself is not listed —
+ * the match is exact on the 5.5 version, so `claude-opus-5` stays out.
  */
 export function modelNeedsRefusalFallback(id: string): boolean {
-  return /^claude-(fable|mythos)-/.test(id);
+  return /^claude-(fable-|mythos-|opus-5-5)/.test(id);
 }
 
 /**

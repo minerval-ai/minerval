@@ -7,11 +7,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, and } from "drizzle-orm";
-import { getDb, rawQuery } from "../../db/client.js";
+import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import {
   claims,
   assessments,
-  claimRelationships,
   claimInstances,
   auditLog,
 } from "../../db/schema.js";
@@ -28,11 +27,22 @@ import {
   setArgumentContent,
   setArgumentEvaluation,
 } from "../../services/argument-service.js";
+import {
+  attachEdgeToArgument,
+  getClaimBasisSubclaims,
+  insertRelationshipEdge,
+} from "../../services/relationship-service.js";
+import { linkClaims } from "../../services/reconciliation-service.js";
+import { isClaimLinkKind } from "../../services/claim-link-service.js";
 import { loadConfig } from "../../config.js";
 import {
   RELATION_TYPES,
   RELATION_GUIDANCE,
+  CLAIM_LINK_KINDS,
+  CLAIM_LINK_GUIDANCE,
   claimTypeEnum,
+  INSTANCE_STANCES,
+  isInstanceStance,
 } from "../../schemas/common.js";
 import { knownDomains } from "../prompts/skills.js";
 import {
@@ -42,6 +52,16 @@ import {
 } from "../../services/queue-service.js";
 import { getUsageContext } from "../usage-context.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
+
+/** The assessment status enum the tool accepts and the graph stores (§10). */
+const ASSESSMENT_STATUSES = [
+  "verified",
+  "supported",
+  "contested",
+  "unsupported",
+  "contradicted",
+  "unknown",
+] as const satisfies readonly string[];
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -97,14 +117,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           status: {
             type: "string",
-            enum: [
-              "verified",
-              "supported",
-              "contested",
-              "unsupported",
-              "contradicted",
-              "unknown",
-            ],
+            enum: [...ASSESSMENT_STATUSES],
             description: "New assessment status",
           },
           confidence: {
@@ -219,10 +232,12 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           stance: {
             type: "string",
-            enum: ["affirms", "denies"],
+            enum: [...INSTANCE_STANCES],
             description:
-              "Whether this source asserts the canonical claim (affirms) or " +
-              "its negation (denies).",
+              "Whether this source asserts the canonical claim (affirms), " +
+              "its negation (denies), or states the proposition as an open " +
+              "question without endorsing either side (poses: a conjecture " +
+              "as a survey states it).",
           },
           speaker: {
             type: "string",
@@ -259,6 +274,87 @@ export function getStewardToolDefinitions(): Tool[] {
           },
         },
         required: ["claim_id", "url", "verbatim_text", "stance"],
+      },
+    },
+    {
+      name: "update_claim_instance",
+      description:
+        "Correct an already-recorded instance of the claim you steward " +
+        "(#420): its stance, confidence, speaker, or the passage it rests " +
+        "on. Recording is deduplicated per (claim, source), so this is the " +
+        "only way to fix an instance that misrepresents its source — a " +
+        "neutral report recorded as an affirmation, a quote attributed to " +
+        "the outlet instead of the person quoted, a stance read backwards. " +
+        "A source that only mentions the claim, questions it, or reports " +
+        "the debate without taking a side is not an assertion: keep its row " +
+        "for provenance but lower its confidence toward 0 so it no longer " +
+        "counts as a voice on the claim. Every correction requires a " +
+        "reasoning note, which is written to the claim's audit trail.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim the instance belongs to",
+          },
+          instance_id: {
+            type: "string",
+            description:
+              "The UUID of the instance to correct, as listed among the " +
+              "claim's source instances (or returned by a deduplicated " +
+              "record_claim_instance call).",
+          },
+          stance: {
+            type: "string",
+            enum: [...INSTANCE_STANCES],
+            description:
+              "Corrected stance: whether this source asserts the canonical " +
+              "claim (affirms), its negation (denies), or states the " +
+              "proposition as an open question without taking a side " +
+              "(poses). Omit to leave as is.",
+          },
+          confidence: {
+            type: "number",
+            description:
+              "Corrected 0.0-1.0 confidence that this is a genuine assertion " +
+              "of THIS claim. Use a value near 0 for a passing mention or a " +
+              "neutral report. Omit to leave as is.",
+          },
+          speaker: {
+            type: "string",
+            description:
+              "Corrected speaker: who actually asserted it (for a quote, the " +
+              "person quoted, not the outlet). Omit to leave as is.",
+          },
+          publication: {
+            type: "string",
+            description: "Corrected publication/outlet. Omit to leave as is.",
+          },
+          source_date: {
+            type: "string",
+            description:
+              "Corrected date, ISO-8601 to the precision known. Omit to " +
+              "leave as is.",
+          },
+          verbatim_text: {
+            type: "string",
+            description:
+              "Corrected passage, verbatim, where the recorded one is not " +
+              "the statement that carries the stance. Omit to leave as is.",
+          },
+          context: {
+            type: "string",
+            description:
+              "Corrected surrounding context. Omit to leave as is.",
+          },
+          reasoning: {
+            type: "string",
+            description:
+              "Why the recorded instance was wrong and what you read that " +
+              "shows it: the note the audit trail keeps next to the change.",
+          },
+        },
+        required: ["claim_id", "instance_id", "reasoning"],
       },
     },
     {
@@ -423,7 +519,12 @@ export function getStewardToolDefinitions(): Tool[] {
         "Attach an EXISTING claim as a subclaim, by id. Use this when match_claim " +
         "found that the dependency you want already exists (as itself, a rewording, " +
         "or its negation): link it instead of minting a duplicate. Edges to your " +
-        "claim's decomposition are yours to own.",
+        "claim's decomposition are yours to own. A subclaim may belong to several " +
+        "of the claim's arguments (§7): calling this again for an edge that already " +
+        "exists, with another argument_id, groups that edge under the second " +
+        "argument too (the edge itself is not duplicated). The result says whether " +
+        "the edge was created or already existed, and whether the grouping was " +
+        "added or already there.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -447,11 +548,44 @@ export function getStewardToolDefinitions(): Tool[] {
           argument_id: {
             type: "string",
             description:
-              "Optional UUID of an argument (from add_argument) to group this " +
-              "subclaim under",
+              "Optional UUID of an argument (from add_argument, on parent_id) to " +
+              "group this subclaim under. Repeat the call with another " +
+              "argument_id to share the subclaim between arguments.",
           },
         },
         required: ["parent_id", "child_id", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "add_related_claim",
+      description:
+        "Record a lateral link from your claim to another that is neither its " +
+        "premise nor its conclusion (§19): a rival explanation, the other half of " +
+        "one public position, or a formulation kept separate because identity was " +
+        "unclear. Symmetric and non-evaluative: it renders as a see-also on both " +
+        "pages and never enters propagation or your assessment. Use it instead of " +
+        "stretching 'assumes' or leaving the connection in prose. If the other " +
+        "claim being false would make yours false, ill-posed, or less credible, " +
+        "that is a decomposition edge, not a link.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the claim you steward" },
+          other_claim_id: {
+            type: "string",
+            description: "The UUID of the related claim (an existing claim; match_claim first)",
+          },
+          kind: {
+            type: "string",
+            enum: [...CLAIM_LINK_KINDS],
+            description: CLAIM_LINK_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why a reader of either claim would want the other",
+          },
+        },
+        required: ["claim_id", "other_claim_id", "kind", "reasoning"],
       },
     },
     {
@@ -544,8 +678,123 @@ export function getStewardToolDefinitions(): Tool[] {
               "list when the subclaim belongs to a different domain than its " +
               "parent, as when a mathematical claim rests on an empirical one.",
           },
+          claim_type: {
+            type: "string",
+            enum: [...CLAIM_TYPE_VALUES],
+            description:
+              "The subclaim's proposition kind. Omit to inherit the parent's; " +
+              "pass it when the subclaim is of another kind, as when a " +
+              "mathematical proposition rests on an empirical_derived claim " +
+              "about a proof or a dataset.",
+          },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "add_parent_claim",
+      description:
+        "Create a NEW claim ABOVE the claim you steward and attach yours to it " +
+        "as a subclaim: the proposition your claim is an argument for, a " +
+        "meta-claim about (\"X's paper proves P\" is about P), or a special case " +
+        "of. Use only after match_claim confirms the proposition does NOT " +
+        "already exist; when it exists, use propose_parent_edge instead, since " +
+        "edges into an existing claim belong to its own Steward. The new claim " +
+        "is onboarded like any other and its Steward owns it from then on; " +
+        "the edge you create is its starting structure, not a verdict. Same " +
+        "claim bar as a subclaim (§2): a reusable proposition of the discourse, " +
+        "not a heading invented to hang things under. Say in reasoning which " +
+        "claims led you to it.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim you steward (it becomes the subclaim)",
+          },
+          parent_text: {
+            type: "string",
+            description: "Canonical text of the new parent claim (§3)",
+          },
+          relation: {
+            type: "string",
+            enum: [...RELATION_TYPES],
+            description:
+              "How YOUR claim bears on the new parent, read from the parent's " +
+              "side: supports when yours is evidence or an argument for it (a " +
+              "claimed proof of P supports P), specifies when yours is a " +
+              "special case, requires when the parent is false without yours. " +
+              RELATION_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description:
+              "Why the graph needs this node and why your claim sits under it; " +
+              "name the claims that led you here",
+          },
+          claim_type: {
+            type: "string",
+            enum: [...CLAIM_TYPE_VALUES],
+            description:
+              "The parent's proposition kind. Omit to inherit yours; pass it when " +
+              "the parent is of another kind, as when a claim about a proof " +
+              "(empirical_derived) sits under a mathematical proposition.",
+          },
+          importance: {
+            type: "number",
+            description:
+              "How much it is worth getting the parent right, 0..1 " +
+              "(consequence-if-wrong × liveness). Below the decomposition " +
+              "threshold it is left an embedded stub; defaults to 0.5.",
+          },
+          contestation: {
+            type: "number",
+            description:
+              "How live the parent is in the discourse at large (0.0-1.0), " +
+              "recorded separately from importance.",
+          },
+          domains: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "The parent's domain tags, from the closed list of domains that " +
+              "have a skill. Omit to inherit yours.",
+          },
+        },
+        required: ["claim_id", "parent_text", "relation", "reasoning"],
+      },
+    },
+    {
+      name: "propose_parent_edge",
+      description:
+        "Propose that an EXISTING claim adopt yours as a subclaim: the " +
+        "proposition your claim is an argument for, about, or a special case " +
+        "of, when match_claim found it already in the graph but the edge is " +
+        "missing. Edges into another claim's decomposition are its Steward's " +
+        "to write (Part VIII), so this enqueues that Steward with your case; " +
+        "it writes nothing itself.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim you steward (the would-be subclaim)",
+          },
+          parent_id: {
+            type: "string",
+            description: "The UUID of the existing claim that should gain yours as a subclaim",
+          },
+          relation: {
+            type: "string",
+            enum: [...RELATION_TYPES],
+            description: "The relation you propose, read from the parent's side. " + RELATION_GUIDANCE,
+          },
+          reasoning: {
+            type: "string",
+            description: "Why the edge holds; the parent's Steward reads this and decides",
+          },
+        },
+        required: ["claim_id", "parent_id", "relation", "reasoning"],
       },
     },
     {
@@ -724,7 +973,19 @@ export async function executeStewardTool(
         // but the enum — and every reader — is lowercase; normalize like the
         // relation-type writes do so a prose-following model can't persist an
         // out-of-enum value.
-        const status = String(input.status).toLowerCase();
+        const status = String(input.status ?? "").toLowerCase();
+        // ...and a status that is missing or still out of the enum bounces the
+        // write back rather than persisting the literal "undefined" (GLM 5.3
+        // Flash omitted the field on half its assessments in a corpus run; the
+        // reasoning argued "supported" while the row said nothing).
+        if (!(ASSESSMENT_STATUSES as readonly string[]).includes(status)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Assessment NOT recorded: status ${input.status === undefined ? "is missing" : `"${String(input.status)}" is not one of`} ` +
+              `${ASSESSMENT_STATUSES.join(" | ")}. Call update_claim_assessment again with a valid status.`,
+          });
+        }
         const confidence = input.confidence as number;
         // Optional: only recorded where a probability of truth is meaningful
         // (constitution §10). null, not 0 — "no credence stated" is a distinct
@@ -890,12 +1151,14 @@ export async function executeStewardTool(
               `surrounding document.`,
           });
         }
-        if (stance !== "affirms" && stance !== "denies") {
+        if (!isInstanceStance(stance)) {
           return JSON.stringify({
             success: false,
             message:
               `Unknown stance "${stance}". Use "affirms" (the source asserts ` +
-              `the canonical claim) or "denies" (it asserts the negation).`,
+              `the canonical claim), "denies" (it asserts the negation), or ` +
+              `"poses" (it states the proposition as an open question ` +
+              `without taking a side).`,
           });
         }
 
@@ -939,8 +1202,10 @@ export async function executeStewardTool(
               (existing.stance !== stance
                 ? ` Note: the existing instance's stance differs from the one ` +
                   `you just observed — if the source genuinely takes both ` +
-                  `sides, or the recorded stance looks wrong, weigh that in ` +
-                  `your assessment and note it in your reasoning_trace.`
+                  `sides, weigh that in your assessment and note it in your ` +
+                  `reasoning_trace; if the recorded stance is simply wrong, ` +
+                  `correct it with update_claim_instance (instance_id ` +
+                  `${existing.id}) and say why.`
                 : ""),
           });
         }
@@ -971,6 +1236,152 @@ export async function executeStewardTool(
             `Recorded a ${stance} instance of claim ${claimId} from ` +
             `${source.url ?? url}. It now counts among the claim's source ` +
             `instances; weigh its stance in your assessment like any other.`,
+        });
+      }
+
+      case "update_claim_instance": {
+        const claimId = input.claim_id as string;
+        const instanceId =
+          typeof input.instance_id === "string" ? input.instance_id.trim() : "";
+        const reasoning =
+          typeof input.reasoning === "string" ? input.reasoning.trim() : "";
+        const optText = (v: unknown): string | undefined =>
+          typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+        if (!instanceId) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "instance_id is required: the UUID of the recorded instance " +
+              "to correct, as listed among the claim's source instances.",
+          });
+        }
+        // A correction without its reason is an unexplained edit to another
+        // agent's record; the audit trail is the point.
+        if (!reasoning) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "reasoning is required: say what you read that shows the " +
+              "recorded instance misrepresents its source.",
+          });
+        }
+
+        const patch: Partial<typeof claimInstances.$inferInsert> = {};
+        if (input.stance !== undefined && input.stance !== null) {
+          const stance = String(input.stance).toLowerCase();
+          if (!isInstanceStance(stance)) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Unknown stance "${stance}". Use "affirms" (the source ` +
+                `asserts the canonical claim), "denies" (it asserts the ` +
+                `negation), or "poses" (it states the proposition as an open ` +
+                `question without taking a side). A source that only ` +
+                `mentions the claim in passing keeps its stance and gets a ` +
+                `confidence near 0 instead.`,
+            });
+          }
+          patch.stance = stance;
+        }
+        if (input.confidence !== undefined && input.confidence !== null) {
+          const confidence = clampUnit(input.confidence);
+          if (confidence === undefined) {
+            return JSON.stringify({
+              success: false,
+              message: "confidence must be a number in [0, 1].",
+            });
+          }
+          patch.confidence = confidence;
+        }
+        const verbatimText = optText(input.verbatim_text);
+        if (verbatimText !== undefined) {
+          if (verbatimText.length > 2000) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `verbatim_text is ${verbatimText.length} chars; keep it ` +
+                `under 2000. Record the passage that states the claim, not ` +
+                `the surrounding document.`,
+            });
+          }
+          patch.verbatimText = verbatimText;
+        }
+        const speaker = optText(input.speaker);
+        if (speaker !== undefined) patch.speaker = speaker;
+        const publication = optText(input.publication);
+        if (publication !== undefined) patch.publication = publication;
+        const sourceDate = optText(input.source_date);
+        if (sourceDate !== undefined) patch.sourceDate = sourceDate;
+        const context = optText(input.context);
+        if (context !== undefined) patch.context = context;
+
+        if (Object.keys(patch).length === 0) {
+          return JSON.stringify({
+            success: false,
+            message:
+              "Nothing to change: give at least one of stance, confidence, " +
+              "speaker, publication, source_date, verbatim_text, or context.",
+          });
+        }
+
+        // The instance must belong to the claim this steward is responsible
+        // for; a hallucinated or foreign id gets a readable bounce, never a
+        // silent no-op or an edit to another claim's record.
+        const [existing] = await rawQuery<{
+          id: string;
+          stance: string;
+          confidence: number;
+          speaker: string | null;
+          source_url: string | null;
+        }>(
+          `SELECT ci.id, ci.stance, ci.confidence, ci.speaker, s.url AS source_url
+           FROM claim_instances ci
+           JOIN sources s ON s.id = ci.source_id
+           WHERE ci.id = $1 AND ci.claim_id = $2
+           LIMIT 1`,
+          [instanceId, claimId]
+        );
+        if (!existing) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Instance not found: ${instanceId} is not a recorded instance ` +
+              `of claim ${claimId}.`,
+          });
+        }
+
+        const db = getDb();
+        await db
+          .update(claimInstances)
+          .set(patch)
+          .where(eq(claimInstances.id, instanceId));
+
+        // The correction lands in the claim's audit trail with its reason,
+        // so the change to another agent's record is inspectable.
+        const changed = Object.entries(patch)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join(", ");
+        await db.insert(auditLog).values({
+          claimId,
+          action: "updated_claim_instance",
+          reasoning:
+            `Instance ${instanceId} (${existing.source_url ?? "source"}): ` +
+            `was stance=${existing.stance}, confidence=${existing.confidence}` +
+            (existing.speaker ? `, speaker=${existing.speaker}` : "") +
+            `; set ${changed}. ${reasoning}`,
+          createdBy: "claim_steward",
+        });
+
+        return JSON.stringify({
+          success: true,
+          instance_id: instanceId,
+          updated: Object.keys(patch),
+          message:
+            `Updated instance ${instanceId} of claim ${claimId} ` +
+            `(${changed}); the correction and your reasoning are in the ` +
+            `claim's audit trail. Its stance and confidence now feed your ` +
+            `assessment as corrected.`,
         });
       }
 
@@ -1187,8 +1598,10 @@ export async function executeStewardTool(
             message:
               `These linked claims are not subclaims of this argument: ` +
               `${unknown.join(", ")}. Link only claims attached to the ` +
-              `argument via add_relationship_edge / add_decomposition_edge ` +
-              `(attach the edge first if it is missing).`,
+              `argument via add_relationship_edge / add_decomposition_edge. ` +
+              `A claim that is already a subclaim (in the basis, or under ` +
+              `another argument) joins this one when you call ` +
+              `add_relationship_edge again with this argument_id.`,
           });
         }
 
@@ -1259,24 +1672,35 @@ export async function executeStewardTool(
           });
         }
 
-        // Any linked claim must belong to this argument (or be the parent
-        // claim); and when the argument has attached subclaims, the
-        // load-bearing analysis should point at them — require at least one
-        // link then. An argument whose premises live only in its written-form
-        // prose has nothing to link, so zero links is allowed in that case.
+        // Any linked claim must be a subclaim of this argument, one of the
+        // parent claim's ungrouped basis subclaims (a framework assumption
+        // that sits at the claim level and bears on several arguments, #434),
+        // or the parent claim itself; and when the argument has attached
+        // subclaims, the load-bearing analysis should point at them — require
+        // at least one link then. An argument whose premises live only in its
+        // written-form prose has nothing to link, so zero links is allowed in
+        // that case.
         const subclaims = await getArgumentSubclaims(argumentId);
+        const basis = await getClaimBasisSubclaims(argument.claimId);
         const links = parseClaimLinks(content);
-        const subclaimIds = new Set(subclaims.map((s) => s.id));
+        const linkable = new Set([
+          ...subclaims.map((s) => s.id),
+          ...basis.map((s) => s.id),
+          argument.claimId,
+        ]);
         const unknown = [...new Set(links.map((l) => l.claimId))].filter(
-          (id) => !subclaimIds.has(id) && id !== argument.claimId
+          (id) => !linkable.has(id)
         );
         if (unknown.length > 0) {
           return JSON.stringify({
             success: false,
             message:
-              `These linked claims are not subclaims of this argument: ` +
-              `${unknown.join(", ")}. Link only claims attached to the argument ` +
-              `(or the claim it is about).`,
+              `These linked claims are neither subclaims of this argument nor ` +
+              `ungrouped basis subclaims of the claim it is about: ` +
+              `${unknown.join(", ")}. Link the argument's own subclaims, the ` +
+              `claim's basis, or the claim itself; a subclaim grouped under ` +
+              `another argument joins this one via add_relationship_edge ` +
+              `with this argument_id.`,
           });
         }
         if (subclaims.length > 0 && links.length === 0) {
@@ -1328,7 +1752,7 @@ export async function executeStewardTool(
       case "add_relationship_edge": {
         const parentId = input.parent_id as string;
         const childId = input.child_id as string;
-        const relation = input.relation as string;
+        const relation = String(input.relation ?? "").toLowerCase();
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
 
@@ -1339,28 +1763,129 @@ export async function executeStewardTool(
           });
         }
 
+        // Validate the grouping target before touching the graph, so a bad
+        // argument id never leaves a half-done write behind.
+        let argument: Awaited<ReturnType<typeof getArgument>> = null;
+        if (argumentId) {
+          argument = await getArgument(argumentId);
+          if (!argument) {
+            return JSON.stringify({
+              success: false,
+              message: `Argument not found: ${argumentId}`,
+            });
+          }
+          if (argument.claimId !== parentId) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Argument ${argumentId} belongs to claim ${argument.claimId}, ` +
+                `not to ${parentId}; an argument groups only edges of its own claim.`,
+            });
+          }
+        }
+
         const db = getDb();
+        const [child] = await db
+          .select({ id: claims.id, state: claims.state })
+          .from(claims)
+          .where(eq(claims.id, childId))
+          .limit(1);
+        if (!child) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${childId}. Link only real claims (ids from ` +
+              `match_claim, get_claim_subclaims, or add_decomposition_edge).`,
+          });
+        }
 
         // Link an already-existing claim; it has (or will have) its own steward
-        // processing, so no enqueue here — just the edge.
-        try {
-          await db.insert(claimRelationships).values({
-            parentClaimId: parentId,
-            childClaimId: childId,
-            relationType: relation.toLowerCase(),
-            reasoning,
-            confidence: 1.0,
-            argumentId,
-            createdBy: "claim_steward",
-          });
-        } catch {
-          // Unique constraint -- this edge already exists; idempotent, ignore.
+        // processing, so no enqueue here — just the edge and its grouping.
+        // A duplicate edge is reported, not disguised as a fresh link (#437);
+        // any other failure propagates to the tool-level error handler.
+        const edge = await insertRelationshipEdge({
+          parentId,
+          childId,
+          relationType: relation,
+          reasoning,
+          confidence: 1.0,
+          createdBy: "claim_steward",
+        });
+
+        let grouped = false;
+        if (argumentId) {
+          ({ grouped } = await attachEdgeToArgument(argumentId, edge.id));
         }
+
+        const argumentLabel = argument
+          ? `argument "${argument.name ?? argumentId}"`
+          : null;
+        const message =
+          (edge.created
+            ? `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`
+            : `Edge ${parentId} -> ${childId} (${relation}) already existed; ` +
+              `nothing was re-linked.`) +
+          (argumentLabel
+            ? grouped
+              ? ` Grouped it under ${argumentLabel}.`
+              : ` It was already grouped under ${argumentLabel}.`
+            : "");
 
         return JSON.stringify({
           success: true,
-          message: `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`,
+          message,
           child_claim_id: childId,
+          relationship_id: edge.id,
+          created: edge.created,
+          ...(argumentId ? { argument_id: argumentId, grouped } : {}),
+        });
+      }
+
+      case "add_related_claim": {
+        const claimId = input.claim_id as string;
+        const otherClaimId = input.other_claim_id as string;
+        const kind = String(input.kind ?? "").toLowerCase();
+        if (!isClaimLinkKind(kind)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`,
+          });
+        }
+        if (claimId === otherClaimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be linked to itself.",
+          });
+        }
+        const db = getDb();
+        const [other] = await db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.id, otherClaimId))
+          .limit(1);
+        if (!other) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
+              `match_claim or get_claim_details).`,
+          });
+        }
+        const { linked, linkId } = await linkClaims({
+          claimId,
+          otherClaimId,
+          kind,
+          reasoning: (input.reasoning as string) ?? "",
+          createdBy: "claim_steward",
+        });
+        return JSON.stringify({
+          success: true,
+          linked,
+          link_id: linkId,
+          message: linked
+            ? `Linked ${claimId} <-> ${otherClaimId} (${kind}); it now shows as a ` +
+              `see-also on both claims.`
+            : `A ${kind} link between these claims already existed; nothing was written.`,
         });
       }
 
@@ -1370,6 +1895,25 @@ export async function executeStewardTool(
         const relation = input.relation as string;
         const reasoning = input.reasoning as string;
         const argumentId = (input.argument_id as string) ?? null;
+        // Validate the grouping target first: a bad argument id must not mint
+        // an orphan subclaim on its way to failing.
+        if (argumentId) {
+          const argument = await getArgument(argumentId);
+          if (!argument) {
+            return JSON.stringify({
+              success: false,
+              message: `Argument not found: ${argumentId}`,
+            });
+          }
+          if (argument.claimId !== parentId) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Argument ${argumentId} belongs to claim ${argument.claimId}, ` +
+                `not to ${parentId}; an argument groups only edges of its own claim.`,
+            });
+          }
+        }
         const importance = clampUnit(input.importance);
         // Recorded on the new subclaim for the eventual stakes/yield split
         // (#172 phase 1); the deferral gate below still reads only importance.
@@ -1412,17 +1956,39 @@ export async function executeStewardTool(
           domainsSource = "steward";
         }
 
+        // Proposition kind (#468): the Steward's own value when it passes
+        // one, else the parent's, so a subclaim of a mathematical claim is
+        // not minted empirical_derived by default. Falls back to the schema
+        // default only when the parent row cannot be read.
+        let claimType: string | undefined =
+          typeof input.claim_type === "string" && input.claim_type.trim()
+            ? input.claim_type.trim().toLowerCase()
+            : undefined;
+        if (claimType !== undefined && !CLAIM_TYPE_VALUES.includes(claimType)) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown claim_type "${claimType}". Use one of: ` +
+              CLAIM_TYPE_VALUES.join(", "),
+          });
+        }
+
         const db = getDb();
 
-        if (domainsSource === null) {
+        if (domainsSource === null || claimType === undefined) {
           const [parent] = await db
-            .select({ domains: claims.domains })
+            .select({ claimType: claims.claimType, domains: claims.domains })
             .from(claims)
             .where(eq(claims.id, parentId))
             .limit(1);
-          const inherited = parseDomains(parent?.domains ?? []);
-          domains = "domains" in inherited ? inherited.domains : [];
-          domainsSource = domains.length > 0 ? "inherited" : null;
+          if (domainsSource === null) {
+            const inherited = parseDomains(parent?.domains ?? []);
+            domains = "domains" in inherited ? inherited.domains : [];
+            domainsSource = domains.length > 0 ? "inherited" : null;
+          }
+          if (claimType === undefined) {
+            claimType = parent?.claimType ?? undefined;
+          }
         }
 
         // Create the subclaim
@@ -1450,42 +2016,54 @@ export async function executeStewardTool(
           stewardEnqueueMinImportance > 0 &&
           effectiveImportance < stewardEnqueueMinImportance;
 
-        const [newClaim] = await db
-          .insert(claims)
-          .values({
-            text: childText,
-            claimType: "empirical_derived",
-            embedding: embedding ?? undefined,
-            ...(importance !== undefined ? { importance } : {}),
-            ...(contestation !== undefined ? { contestation } : {}),
-            ...(seedCredence !== undefined ? { seedCredence } : {}),
-            ...(seedNote !== undefined ? { seedNote } : {}),
-            // Provenance for the mechanical "preliminary" label: which claim's
-            // Steward wrote the seed. Stamped whenever any seed field is given.
-            ...(seedCredence !== undefined || seedNote !== undefined
-              ? { seedSourceClaimId: parentId }
-              : {}),
-            ...(gated ? { stewardState: "deferred" } : {}),
-            ...(domainsSource !== null ? { domains, domainsSource } : {}),
-            pipelineEpoch,
-            createdBy: "claim_steward",
-          })
-          .returning();
+        // The subclaim row, its edge, and its argument membership (#437) are
+        // one transaction: a subclaim exists only as part of a decomposition,
+        // so if the edge cannot be written (a bad relation type, a schema the
+        // running code no longer matches, an outage) the claim row rolls back
+        // with it rather than surviving as an orphan with no parent. Issue
+        // #451 was exactly that: the edge insert failed silently mid-deploy
+        // and five parentless subclaims were left behind. Failures propagate.
+        const newClaim = await withTransaction(async (tx) => {
+          const [created] = await tx.db
+            .insert(claims)
+            .values({
+              text: childText,
+              claimType: (claimType ?? "empirical_derived") as (typeof claimTypeEnum.options)[number],
+              embedding: embedding ?? undefined,
+              ...(importance !== undefined ? { importance } : {}),
+              ...(contestation !== undefined ? { contestation } : {}),
+              ...(seedCredence !== undefined ? { seedCredence } : {}),
+              ...(seedNote !== undefined ? { seedNote } : {}),
+              // Provenance for the mechanical "preliminary" label: which
+              // claim's Steward wrote the seed. Stamped whenever any seed
+              // field is given.
+              ...(seedCredence !== undefined || seedNote !== undefined
+                ? { seedSourceClaimId: parentId }
+                : {}),
+              ...(gated ? { stewardState: "deferred" } : {}),
+              ...(domainsSource !== null ? { domains, domainsSource } : {}),
+              pipelineEpoch,
+              createdBy: "claim_steward",
+            })
+            .returning();
 
-        // Create relationship
-        try {
-          await db.insert(claimRelationships).values({
-            parentClaimId: parentId,
-            childClaimId: newClaim!.id,
-            relationType: relation.toLowerCase(),
-            reasoning,
-            confidence: 1.0,
-            argumentId,
-            createdBy: "claim_steward",
-          });
-        } catch {
-          // Unique constraint -- relationship may already exist
-        }
+          // The child is brand new, so the edge cannot collide.
+          const edge = await insertRelationshipEdge(
+            {
+              parentId,
+              childId: created!.id,
+              relationType: relation,
+              reasoning,
+              confidence: 1.0,
+              createdBy: "claim_steward",
+            },
+            tx
+          );
+          if (argumentId) {
+            await attachEdgeToArgument(argumentId, edge.id, tx);
+          }
+          return created!;
+        });
 
         // The new claim is created already embedded (above), so it is a valid,
         // dedup-able stub even if it is never processed. When NOT gated, we onboard
@@ -1497,7 +2075,7 @@ export async function executeStewardTool(
         // looping into it.
         if (!gated) {
           await enqueueClaimPipeline({
-            claimId: newClaim!.id,
+            claimId: newClaim.id,
             jobId: "steward",
           });
         }
@@ -1519,8 +2097,203 @@ export async function executeStewardTool(
               : "") +
             (domainsSource !== null
               ? `; domains [${domains.join(", ")}] (${domainsSource})`
+              : "") +
+            `; claim_type ${claimType ?? "empirical_derived"}` +
+            (input.claim_type === undefined && claimType !== undefined ? " (inherited)" : ""),
+          child_claim_id: newClaim.id,
+        });
+      }
+
+      case "add_parent_claim": {
+        const claimId = input.claim_id as string;
+        const parentText = String(input.parent_text ?? "").trim();
+        const relation = String(input.relation ?? "").toLowerCase();
+        const reasoning = input.reasoning as string;
+        if (!parentText) {
+          return JSON.stringify({
+            success: false,
+            message: "parent_text is required: the canonical text of the new parent claim.",
+          });
+        }
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
+        if (input.claim_type !== undefined && !CLAIM_TYPE_VALUES.includes(String(input.claim_type))) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Unknown claim_type "${String(input.claim_type)}". Use one of: ` +
+              `${CLAIM_TYPE_VALUES.join(", ")}, or omit it to inherit yours.`,
+          });
+        }
+
+        const db = getDb();
+        // The child is the claim this run stewards; it must be real, and its
+        // type and domains are the defaults the parent inherits (the same
+        // inheritance a subclaim gets from its parent, in the other direction).
+        const [child] = await db
+          .select({ id: claims.id, claimType: claims.claimType, domains: claims.domains })
+          .from(claims)
+          .where(eq(claims.id, claimId))
+          .limit(1);
+        if (!child) {
+          return JSON.stringify({
+            success: false,
+            message: `Claim not found: ${claimId}. Pass the id of the claim you steward.`,
+          });
+        }
+
+        let domains: string[] = [];
+        let domainsSource: "steward" | "inherited" | null = null;
+        if (input.domains !== undefined) {
+          const parsed = parseDomains(input.domains);
+          if ("error" in parsed) {
+            return JSON.stringify({ success: false, message: parsed.error });
+          }
+          domains = parsed.domains;
+          domainsSource = "steward";
+        } else {
+          const inherited = parseDomains(child.domains ?? []);
+          domains = "domains" in inherited ? inherited.domains : [];
+          domainsSource = domains.length > 0 ? "inherited" : null;
+        }
+        const claimType =
+          input.claim_type !== undefined ? String(input.claim_type) : child.claimType;
+
+        const importance = clampUnit(input.importance);
+        const contestation = clampUnit(input.contestation);
+
+        let embedding: number[] | undefined;
+        try {
+          embedding = await generateEmbedding(parentText);
+        } catch {
+          // Continue without embedding
+        }
+
+        // The same economic brake as add_decomposition_edge: a parent judged
+        // peripheral is created as a deferred embedded stub, matchable but not
+        // stewarded until something re-triggers it.
+        const { stewardEnqueueMinImportance, pipelineEpoch } = loadConfig();
+        const effectiveImportance = importance ?? 0.5;
+        const gated =
+          stewardEnqueueMinImportance > 0 &&
+          effectiveImportance < stewardEnqueueMinImportance;
+
+        const [parent] = await db
+          .insert(claims)
+          .values({
+            text: parentText,
+            claimType,
+            embedding: embedding ?? undefined,
+            ...(importance !== undefined ? { importance } : {}),
+            ...(contestation !== undefined ? { contestation } : {}),
+            ...(gated ? { stewardState: "deferred" } : {}),
+            ...(domainsSource !== null ? { domains, domainsSource } : {}),
+            pipelineEpoch,
+            createdBy: "claim_steward",
+          })
+          .returning();
+
+        // Brand-new parent, so the edge cannot collide. The child's Steward
+        // wrote it; the parent's Steward, enqueued below, owns it from here.
+        const edge = await insertRelationshipEdge({
+          parentId: parent!.id,
+          childId: claimId,
+          relationType: relation,
+          reasoning,
+          confidence: 1.0,
+          createdBy: "claim_steward",
+        });
+
+        // Provenance in the audit trail: the graph's shape above this claim
+        // came from a Steward's judgment, not from a source, and the record
+        // says which claim's Steward and why.
+        await db.insert(auditLog).values({
+          claimId,
+          action: "add_parent_claim",
+          reasoning:
+            `Minted parent claim ${parent!.id} ("${parentText}") and attached ` +
+            `this claim as its subclaim (${relation}): ${reasoning}`,
+          createdBy: "claim_steward",
+        });
+
+        if (!gated) {
+          await enqueueClaimPipeline({
+            claimId: parent!.id,
+            jobId: "steward",
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message:
+            `Created parent claim "${parentText}" and attached ${claimId} as its ` +
+            `subclaim (${relation})` +
+            (gated
+              ? `; kept as a deferred embedded stub (importance ` +
+                `${effectiveImportance} below the decomposition threshold ` +
+                `${stewardEnqueueMinImportance}); its Steward will not run until ` +
+                `something re-triggers it.`
+              : `; its own Steward will structure and assess it.`) +
+            (domainsSource !== null
+              ? ` Domains [${domains.join(", ")}] (${domainsSource}).`
               : ""),
-          child_claim_id: newClaim!.id,
+          parent_claim_id: parent!.id,
+          relationship_id: edge.id,
+        });
+      }
+
+      case "propose_parent_edge": {
+        const claimId = input.claim_id as string;
+        const parentId = input.parent_id as string;
+        const relation = String(input.relation ?? "").toLowerCase();
+        const reasoning = String(input.reasoning ?? "");
+        if (parentId === claimId) {
+          return JSON.stringify({
+            success: false,
+            message: "A claim cannot be its own parent.",
+          });
+        }
+        if (!(RELATION_TYPES as readonly string[]).includes(relation)) {
+          return JSON.stringify({
+            success: false,
+            message: `Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`,
+          });
+        }
+        const db = getDb();
+        const [parent] = await db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.id, parentId))
+          .limit(1);
+        if (!parent) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Claim not found: ${parentId}. Propose edges only into real claims ` +
+              `(ids from match_claim or get_claim_details); if the proposition ` +
+              `does not exist, mint it with add_parent_claim.`,
+          });
+        }
+        // The same handoff the Curator's suggest_edge_to_steward makes: the
+        // parent's Steward is enqueued with the case and decides; nothing is
+        // written across the boundary (Part VIII, "Working Together").
+        await enqueueSteward({
+          claimId: parentId,
+          trigger: "edge_proposal",
+          context:
+            `The Steward of claim ${claimId} proposes that it be attached as your ` +
+            `subclaim (${relation}): ${reasoning}. If apt, attach it with ` +
+            `add_relationship_edge.`,
+        });
+        return JSON.stringify({
+          success: true,
+          message:
+            `Proposed the edge ${parentId} -> ${claimId} (${relation}) to the ` +
+            `Steward of ${parentId}; it decides whether to adopt it.`,
         });
       }
 

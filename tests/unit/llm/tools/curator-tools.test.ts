@@ -9,6 +9,8 @@ vi.mock("../../../../src/services/reconciliation-service.js", () => ({
   addRelationshipEdge: vi.fn(async () => ({ added: true })),
   removeRelationshipEdge: vi.fn(async () => ({ removed: 1 })),
   reassignInstance: vi.fn(async () => ({ reassigned: true })),
+  linkClaims: vi.fn(async () => ({ linked: true, linkId: "dddddddd-dddd-dddd-dddd-dddddddddddd" })),
+  unlinkClaims: vi.fn(async () => ({ removed: 1 })),
 }));
 
 vi.mock("../../../../src/services/queue-service.js", () => ({
@@ -16,7 +18,11 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
 }));
 
 import { executeCuratorTool } from "../../../../src/llm/tools/curator-tools.js";
-import { mergeClaims } from "../../../../src/services/reconciliation-service.js";
+import {
+  mergeClaims,
+  linkClaims,
+  unlinkClaims,
+} from "../../../../src/services/reconciliation-service.js";
 
 describe("curator merge_claims stance_relation (#182)", () => {
   const SURVIVOR = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -68,5 +74,73 @@ describe("curator merge_claims stance_relation (#182)", () => {
     expect(mergeClaims).toHaveBeenCalledWith(
       expect.objectContaining({ stanceRelation: "same" })
     );
+  });
+});
+
+describe("curator link_claims / unlink_claims (#436)", () => {
+  const X = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const Y = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("records a lateral link as a logged direct write", async () => {
+    const out = JSON.parse(
+      await executeCuratorTool("link_claims", {
+        claim_id: X,
+        other_claim_id: Y,
+        kind: "Rival_Explanation",
+        reasoning: "competing accounts of the same crisis",
+      })
+    );
+    expect(out).toMatchObject({ success: true, linked: true });
+    expect(linkClaims).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claimId: X,
+        otherClaimId: Y,
+        kind: "rival_explanation", // normalized like the relation tokens
+        createdBy: "curator",
+      })
+    );
+  });
+
+  it("reports an existing link rather than claiming a write", async () => {
+    vi.mocked(linkClaims).mockResolvedValueOnce({ linked: false, linkId: "l" });
+    const out = JSON.parse(
+      await executeCuratorTool("link_claims", {
+        claim_id: X,
+        other_claim_id: Y,
+        kind: "related",
+        reasoning: "r",
+      })
+    );
+    expect(out).toMatchObject({ success: true, linked: false });
+    expect(out.message).toContain("already existed");
+  });
+
+  it("bounces an unknown kind and a self-link without writing", async () => {
+    for (const bad of [
+      { claim_id: X, other_claim_id: Y, kind: "premise", reasoning: "r" },
+      { claim_id: X, other_claim_id: X, kind: "related", reasoning: "r" },
+    ]) {
+      const out = JSON.parse(await executeCuratorTool("link_claims", bad));
+      expect(out.success).toBe(false);
+    }
+    expect(linkClaims).not.toHaveBeenCalled();
+  });
+
+  it("unlinks one kind or every kind between the pair", async () => {
+    await executeCuratorTool("unlink_claims", {
+      claim_id: X,
+      other_claim_id: Y,
+      kind: "related",
+      reasoning: "not actually related",
+    });
+    expect(unlinkClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: X, otherClaimId: Y, kind: "related" })
+    );
+    await executeCuratorTool("unlink_claims", { claim_id: X, other_claim_id: Y, reasoning: "none" });
+    expect(vi.mocked(unlinkClaims).mock.calls[1]![0]).toMatchObject({ kind: undefined });
   });
 });

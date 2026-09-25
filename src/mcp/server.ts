@@ -66,6 +66,8 @@ import {
 import { claimTypeEnum } from "../schemas/common.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { extractClaims } from "../llm/agents/extractor.js";
+import { inferDomainPrior } from "../llm/agents/domain-prior.js";
+import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   getContributionById,
@@ -181,12 +183,34 @@ async function agentic<T>(
   return { ok: true, value: run.value };
 }
 
-/** Match one assertion against the graph and shape the shared result. */
-async function matchAssertion(assertion: string, context?: string) {
+/**
+ * Match one assertion against the graph and shape the shared result.
+ * `domains` are the Extractor's prior when the assertion came out of an
+ * extraction; a bare assertion gets its prior made here, so the Matcher
+ * carries the domain skills the claim calls for (#469).
+ */
+async function matchAssertion(
+  assertion: string,
+  context?: string,
+  domains?: readonly string[]
+) {
   const decision = await matchClaim({
     extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
     proposedCanonical: assertion,
+    domains:
+      domains ?? (await inferDomainPrior({ text: assertion, context: context ?? null })),
   });
+
+  // No verdict (#419): `matched: null`, distinct from `false`. The Matcher
+  // ran out of search budget; this says nothing about whether the claim
+  // exists, so no canonical form is proposed.
+  if (decision.outcome === "undecided") {
+    return {
+      matched: null,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+    };
+  }
 
   if (!decision.is_match || !decision.matched_claim_id) {
     return {
@@ -212,7 +236,8 @@ async function matchAssertion(assertion: string, context?: string) {
         }
       : { id: decision.matched_claim_id },
     // "affirms": the assertion states the canonical claim. "denies": it states
-    // the negation, so the canonical assessment applies inverted.
+    // the negation, so the canonical assessment applies inverted. "poses": it
+    // states the proposition as an open question and takes no side (#445).
     stance: decision.instance_stance,
     assessment: formatAssessment(assessment),
     confidence: decision.confidence,
@@ -660,17 +685,22 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         for (const c of extracted) {
           const match = await matchAssertion(
             c.verbatim_text,
-            c.context ?? undefined
+            c.context ?? undefined,
+            sanitizeDomains(c.domains)
           );
           judgments.push({
             verbatim_text: c.verbatim_text,
             proposed_canonical_form: c.proposed_canonical_form,
             claim_type: c.claim_type,
             // "unknown": the graph has no canonical claim for this assertion.
+            // "undecided": the Matcher reached no verdict (#419).
             // "unassessed": it exists but has no current assessment yet.
-            verdict: !match.matched
-              ? "unknown"
-              : (match.assessment?.status ?? "unassessed"),
+            verdict:
+              match.matched === null
+                ? "undecided"
+                : !match.matched
+                  ? "unknown"
+                  : (match.assessment?.status ?? "unassessed"),
             ...match,
           });
         }
@@ -807,15 +837,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .uuid()
           .optional()
           .describe(
-            "The id of a report the tool showed you, when yours is the same " +
-              "problem: your body is added to it as a sighting."
-          ),
-        distinct_from: z
-          .array(z.string().uuid())
-          .optional()
-          .describe(
-            "The ids of reports the tool showed you that yours is not, when " +
-              "you are raising despite them."
+            "The id of a report on record that yours repeats (a related " +
+              "report from an earlier raise): your body is added to it as a " +
+              "sighting and nothing new is filed."
           ),
       },
     },
@@ -859,29 +883,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         agent: "mcp",
         reporterContributorId: contributor.id,
         joins: input.joins ?? null,
-        distinctFrom: input.distinct_from ?? null,
       });
-      if (result.matches) {
-        // Match-before-write: nothing recorded until the caller says whether
-        // this is one of the reports on record (joins) or not (distinct_from).
-        return jsonResult({
-          status: "possible_duplicate",
-          matches: result.matches.map((m) => ({
-            id: m.id,
-            title: m.title,
-            kind: m.kind,
-            severity: m.severity,
-            status: m.status,
-            occurrence_count: m.occurrence_count,
-            last_seen_at: m.last_seen_at,
-          })),
-          message:
-            "Not yet recorded: a report already on record may be the same " +
-            "problem. Call again with joins set to its id to add yours as a " +
-            "sighting, or with distinct_from listing these ids to raise a " +
-            "new report.",
-        });
-      }
       if (!result.reportId) {
         return errorResult(
           "REPORT_NOT_RECORDED",
@@ -895,6 +897,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           occurrence_count: result.occurrenceCount,
           deduplicated: result.deduplicated,
         },
+        // Reports on record that read like this one, as advice: if yours is
+        // one of them, raise again with joins set to its id.
+        related: (result.related ?? []).map((m) => ({
+          id: m.id,
+          title: m.title,
+          status: m.status,
+          occurrence_count: m.occurrence_count,
+          last_seen_at: m.last_seen_at,
+        })),
       });
     }
   );
@@ -1041,6 +1052,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               "long. For each judged claim, report the verdict the graph " +
               "returned, not your own recollection. A verdict of `unknown` " +
               "means the graph holds no canonical claim for that assertion; " +
+              "`undecided` means the Matcher reached no verdict (say so, do " +
+              "not read it as unknown); " +
               "`unassessed` means the claim exists but has no assessment yet. " +
               "Watch the `stance` field: `denies` means the document asserts " +
               "the negation of the canonical claim, so invert the assessment " +

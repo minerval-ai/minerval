@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema.js";
 import { loadConfig } from "../config.js";
@@ -56,6 +56,13 @@ export async function rawQuery<T>(
 /** Query runner bound to one transaction's connection. */
 export interface TxQuery {
   query<T>(queryText: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * A Drizzle handle on the same connection, for writes the query builder
+   * expresses better than raw SQL (vector columns, wide optional rows). A
+   * row inserted through `db` and a row inserted through `query` commit or
+   * roll back together.
+   */
+  db: NodePgDatabase<typeof schema>;
 }
 
 /**
@@ -76,6 +83,7 @@ export async function withTransaction<T>(
         const result = await client.query(queryText, params);
         return result.rows as R[];
       },
+      db: drizzle(client, { schema }),
     };
     const value = await fn(tx);
     await client.query("COMMIT");

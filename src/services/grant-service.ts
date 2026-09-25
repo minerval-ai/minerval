@@ -20,6 +20,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
+import type { PlanItemLedger } from "./action-service.js";
 import {
   getJobSpentMicroUsd,
   refundUnspentBudget,
@@ -58,6 +59,131 @@ export interface PlanItem {
   variant?: "standard" | "max";
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
+  /**
+   * The item's standing on the ledger, written by the plan-to-ledger
+   * materializer (action-service.ts) on every sweep and on extend_plan:
+   * the row it became, or why it could not (#416). Absent until the first
+   * materialization.
+   */
+  ledger?: PlanItemLedger;
+}
+
+/**
+ * What each plan kind needs before it becomes ledger work, in the words
+ * the Grantmaker tools show. One text, so every agent reads the same rules
+ * (#416: a plan item that quietly never became work is the failure this
+ * exists to prevent).
+ */
+export const PLAN_KIND_RULES =
+  "What each kind needs to become a priced ledger row (the tool result " +
+  "and grant_overview report each item's standing as open, running, " +
+  "done, cancelled, waiting, or blocked, with the reason): " +
+  "assess/reassess/deepen: an active claim; the item queues the claim for " +
+  "its Steward and opens (or keeps) its assess group, once per item " +
+  "(a finished pass stays finished, whichever lane ran it; add another " +
+  "item for another pass). assess on a claim that already carries an " +
+  "assessment reads done: reassess is the ask for a fresh pass. " +
+  "deepen also releases the claim's deferred subclaims into the queue. " +
+  "ingest: an http(s) url; executes in plan order from your escrow. " +
+  "formalize: an active claim with NO published statement whose recorded " +
+  "domains carry the Steward's publish_formalization tool (the " +
+  "mathematics domain); otherwise blocked, and a formalize run would be " +
+  "refused. One row per claim, two strong passes; a run that ends without " +
+  "a statement is retried on the review cadence. " +
+  "attempt_proof: a claim with a PUBLISHED statement; waits (not blocked) " +
+  "until a formalize item has published one. The n-th attempt_proof item " +
+  "on a claim entitles the n-th attempt group; an earlier open group and " +
+  "the mandate's attempt cooldown both hold the next one back, and only a " +
+  "rationale of twenty characters or more waives the cooldown.";
+
+/**
+ * The JSON schema of one plan item, as the Grantmaker's tools show it
+ * (propose_mandate, adjust_plan, extend_plan, submit_plan). One schema, so
+ * every mode of the mandate's agent proposes the same shape.
+ */
+export const PLAN_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: [
+        "assess",
+        "reassess",
+        "deepen",
+        "ingest",
+        "formalize",
+        "attempt_proof",
+      ],
+    },
+    claim_id: {
+      type: "string",
+      description:
+        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
+        "for ingest. " +
+        PLAN_KIND_RULES,
+    },
+    url: {
+      type: "string",
+      description: "Required for ingest; the source URL to extract and match.",
+    },
+    rationale: { type: "string" },
+    variant: {
+      type: "string",
+      enum: ["standard", "max"],
+      description: "attempt_proof only: the solver's effort variant.",
+    },
+    is_calibration: {
+      type: "boolean",
+      description:
+        "attempt_proof only: a calibration run on a settled problem.",
+    },
+    lifetime_cap_owls: {
+      type: "number",
+      description:
+        "attempt_proof only: raise this claim's lifetime attempt spend " +
+        "above the policy key (bounded at twice it).",
+    },
+  },
+  required: ["action", "rationale"],
+};
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const PLAN_ACTIONS = new Set<PlanItem["action"]>([
+  "assess",
+  "reassess",
+  "deepen",
+  "ingest",
+  "formalize",
+  "attempt_proof",
+]);
+
+/**
+ * The mechanical check every plan goes through before it is recorded: a
+ * known action, an http(s) url for an ingest, a claim id for everything
+ * else. Returns the problem in the agent's words, or null when the items
+ * are well-formed. Whether the ids are REAL is the ledger's business (a
+ * missing claim blocks the item there, with the reason).
+ */
+export function validatePlanItems(items: readonly PlanItem[]): string | null {
+  for (const item of items) {
+    if (!item || typeof item !== "object") return "each plan item must be an object";
+    if (!PLAN_ACTIONS.has(item.action)) {
+      return `unknown plan action "${String(item.action)}" (one of ${[...PLAN_ACTIONS].join(", ")})`;
+    }
+    if (typeof item.rationale !== "string" || !item.rationale.trim()) {
+      return `${item.action} item needs a rationale`;
+    }
+    if (item.action === "ingest") {
+      if (!item.url || !/^https?:\/\//.test(item.url)) {
+        return `ingest item needs an http(s) url (got: ${item.url ?? "none"})`;
+      }
+    } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
+      return `${item.action} item needs a claim_id from your survey results`;
+    }
+  }
+  return null;
 }
 
 export type CreateGrantResult =

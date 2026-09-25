@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   executeMatcherTool: vi.fn(async () => JSON.stringify({ is_match: false })),
   config: {
     env: "test",
-    stewardModel: "claude-fable-5-1",
+    stewardModel: "claude-opus-5-5",
     stewardMaxIterations: 50,
     stewardMaxNewSubclaimsPerRun: 20,
     stewardMaxInstancesPerRun: 10,
@@ -59,10 +59,14 @@ vi.mock("../../../src/llm/tools/lean-tools.js", () => {
   return {
     LEAN_TOOL_NAMES: names,
     isLeanTool: (name: string) => names.includes(name),
-    registerLeanTools: (register: (name: string, executor: () => Promise<string>) => void) => {
+    registerLeanTools: (register: (name: string, executor: (input: Record<string, unknown>) => Promise<string>) => void) => {
       for (const name of names) {
-        register(name, async () =>
-          JSON.stringify({ success: false, message: `${name}: stub executor reached` })
+        register(name, async (input: Record<string, unknown>) =>
+          JSON.stringify({
+            success: false,
+            message: `${name}: stub executor reached`,
+            ...(input?.proof === "not-a-submission" ? { not_submitted: true } : {}),
+          })
         );
       }
     },
@@ -73,6 +77,13 @@ vi.mock("../../../src/services/formalization-service.js", async (importOriginal)
   ...(await importOriginal<typeof import("../../../src/services/formalization-service.js")>()),
   getFormalizationById: vi.fn(async () => null),
   listFormalizations: vi.fn(async () => []),
+}));
+
+vi.mock("../../../src/llm/tools/steward-tools.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/llm/tools/steward-tools.js")>()),
+  executeStewardTool: vi.fn(async (name: string) =>
+    JSON.stringify(name === "update_claim_assessment" ? { success: true } : { ok: true })
+  ),
 }));
 
 vi.mock("../../../src/llm/tools/matcher-tools.js", () => ({
@@ -105,6 +116,7 @@ type LoopOptions = {
   system: string[];
   initialMessages: Array<{ content: string }>;
   executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+  finalToolNudge: { max: number; message: string; when: () => boolean };
 };
 
 async function run(domains: string[]): Promise<LoopOptions> {
@@ -141,12 +153,13 @@ describe("Steward toolset without a domain tag", () => {
     expect(names.slice(first, first + PROVENANCE_TOOLS.length)).toEqual(PROVENANCE_TOOLS);
     // The delegation channel (#298) sits after the skill tools, before the
     // report and finding channels and web_search.
-    expect(names.slice(-7)).toEqual([
+    expect(names.slice(-8)).toEqual([
       "delegate_research",
       "get_research_run",
       "raise_issue",
       "update_issue",
       "search_issues",
+      "get_issue",
       "note_finding",
       "web_search",
     ]);
@@ -190,12 +203,13 @@ describe("Steward toolset with the mathematics tag", () => {
     ]);
     // The delegation channel (#298) sits after the skill tools, before the
     // report and finding channels and web_search.
-    expect(names.slice(-7)).toEqual([
+    expect(names.slice(-8)).toEqual([
       "delegate_research",
       "get_research_run",
       "raise_issue",
       "update_issue",
       "search_issues",
+      "get_issue",
       "note_finding",
       "web_search",
     ]);
@@ -204,7 +218,7 @@ describe("Steward toolset with the mathematics tag", () => {
       ...getSkill("mathematics").tools.map((t) => t.name),
       ...PROVENANCE_TOOLS,
     ];
-    expect(names.slice(first, -7)).toEqual(skillTools);
+    expect(names.slice(first, -8)).toEqual(skillTools);
 
     // Three cached blocks: the constitution-plus-role block, unchanged, then
     // each skill's Steward view as its own block, in skill order.
@@ -285,6 +299,21 @@ describe("per-run Lean caps", () => {
     expect(over.message).toMatch(/used 3 of its 3 proof checks/);
   });
 
+  it("does not count a lean_check the executor refused before submitting (#453)", async () => {
+    const opts = await run(["mathematics"]);
+    const base = { formalization_id: "f", kind: "proof" };
+    for (let i = 0; i < 3; i++) {
+      const out = JSON.parse(await opts.executeTool("lean_check", { ...base, proof: "not-a-submission" }));
+      expect(out.not_submitted).toBe(true);
+    }
+    for (let i = 0; i < 3; i++) {
+      const out = JSON.parse(await opts.executeTool("lean_check", base));
+      expect(out.message).toMatch(/stub executor reached/);
+    }
+    const over = JSON.parse(await opts.executeTool("lean_check", base));
+    expect(over.message).toMatch(/used 3 of its 3 proof checks/);
+  });
+
   it("leaves publish_formalization uncapped", async () => {
     const opts = await run(["mathematics"]);
     for (let i = 0; i < 5; i++) {
@@ -334,5 +363,45 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     expect(without).toEqual(
       withChecker.filter((n) => !n.startsWith("lean_") && n !== "publish_formalization")
     );
+  });
+});
+
+describe("Steward toolset on a non-Anthropic model", () => {
+  const onModel = async (model: string) => {
+    const saved = mocks.config.stewardModel;
+    mocks.config.stewardModel = model;
+    try {
+      return await run([]);
+    } finally {
+      mocks.config.stewardModel = saved;
+    }
+  };
+
+  it("carries the client-side web_search in the server tool's place, with nothing said in the task", async () => {
+    const opts = await onModel("z-ai/glm-5.3-flash");
+    const last = opts.tools.at(-1)!;
+    expect(last.name).toBe("web_search");
+    expect("input_schema" in last).toBe(true);
+    expect(opts.initialMessages[0]!.content).not.toContain("web_search is unavailable");
+  });
+
+  it("keeps the server web_search on a Claude model", async () => {
+    const opts = await onModel("claude-sonnet-5");
+    const last = opts.tools.at(-1)!;
+    expect(last.name).toBe("web_search");
+    expect("input_schema" in last).toBe(false);
+  });
+});
+
+describe("Steward final-action nudge", () => {
+  it("nudges only while no assessment has been recorded", async () => {
+    const opts = await run([]);
+    expect(opts.finalToolNudge.max).toBe(1);
+    expect(opts.finalToolNudge.message).toContain("update_claim_assessment");
+    expect(opts.finalToolNudge.when()).toBe(true);
+    await opts.executeTool("log_stewardship_decision", {});
+    expect(opts.finalToolNudge.when()).toBe(true);
+    await opts.executeTool("update_claim_assessment", { status: "supported" });
+    expect(opts.finalToolNudge.when()).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const REPORT_ID = "33333333-3333-4333-8333-333333333333";
 
 const CLAIM_ROW = {
   id: CLAIM_ID,
@@ -54,6 +55,7 @@ const mocks = vi.hoisted(() => ({
   listLeanChecksForClaim: vi.fn(async () => [] as unknown[]),
   getBountyTerms: vi.fn(async () => null as unknown),
   matchClaim: vi.fn(),
+  inferDomainPrior: vi.fn(async () => [] as string[]),
   extractClaims: vi.fn(),
   createContribution: vi.fn(),
   getContributionById: vi.fn(),
@@ -102,6 +104,9 @@ vi.mock("../../../src/llm/agents/matcher.js", () => ({
 }));
 vi.mock("../../../src/llm/agents/extractor.js", () => ({
   extractClaims: mocks.extractClaims,
+}));
+vi.mock("../../../src/llm/agents/domain-prior.js", () => ({
+  inferDomainPrior: mocks.inferDomainPrior,
 }));
 vi.mock("../../../src/services/contribution-service.js", () => ({
   createContribution: mocks.createContribution,
@@ -221,6 +226,7 @@ beforeEach(async () => {
     text: CLAIM_ROW.text,
     children: [],
   });
+  mocks.inferDomainPrior.mockReset().mockResolvedValue([]);
   mocks.matchClaim.mockReset().mockImplementation(async () => {
     const { getUsageContext } = await import(
       "../../../src/llm/usage-context.js"
@@ -558,6 +564,47 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  it("match_claim makes a domain prior for the bare assertion and hands it to the Matcher (#469)", async () => {
+    mocks.inferDomainPrior.mockResolvedValueOnce(["mathematics"]);
+    await client.callTool({
+      name: "match_claim",
+      arguments: {
+        assertion: "Every polynomial map with nonzero constant Jacobian is invertible",
+        context: "From a survey of the Jacobian conjecture",
+      },
+    });
+    expect(mocks.inferDomainPrior).toHaveBeenCalledWith({
+      text: "Every polynomial map with nonzero constant Jacobian is invertible",
+      context: "From a survey of the Jacobian conjecture",
+    });
+    expect(mocks.matchClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ domains: ["mathematics"] })
+    );
+    await client.close();
+  });
+
+  it("match_claim reports a Matcher timeout as matched: null, not a no-match (#419)", async () => {
+    mocks.matchClaim.mockImplementationOnce(async () => ({
+      outcome: "undecided",
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: null,
+      instance_stance: "affirms",
+      confidence: 0,
+      reasoning: "No verdict.",
+      alternative_matches: [],
+      relationship_notes: null,
+    }));
+    const result = await client.callTool({
+      name: "match_claim",
+      arguments: { assertion: "Supply chains caused 2022 inflation" },
+    });
+    const payload = parseText(result);
+    expect(payload.matched).toBeNull();
+    expect(payload).not.toHaveProperty("proposed_canonical_form");
+    await client.close();
+  });
+
   it("assess_text composes extract → match → graph verdicts", async () => {
     mocks.extractClaims.mockResolvedValueOnce([
       {
@@ -568,6 +615,7 @@ describe("MCP tools", () => {
         confidence: 0.9,
         importance: 0.8,
         source_location: null,
+        domains: ["mathematics"],
       },
       {
         verbatim_text: "The moon is made of cheese",
@@ -613,6 +661,17 @@ describe("MCP tools", () => {
     expect(payload.judgments[1]).toMatchObject({ verdict: "unknown" });
     expect(mocks.extractClaims).toHaveBeenCalledWith(
       expect.objectContaining({ maxClaims: 5 })
+    );
+    // Extracted claims carry the Extractor's own domain prior to the
+    // Matcher; no second prior is made for them (#469).
+    expect(mocks.inferDomainPrior).not.toHaveBeenCalled();
+    expect(mocks.matchClaim).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ domains: ["mathematics"] })
+    );
+    expect(mocks.matchClaim).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ domains: [] })
     );
     await client.close();
   });
@@ -880,13 +939,13 @@ describe("MCP tools", () => {
     await client.close();
   });
 
-  it("raise_issue answers a near match as possible_duplicate and passes joins through", async () => {
+  it("raise_issue records, hands back related reports as advice, and passes joins through", async () => {
     mocks.raiseIssue.mockResolvedValueOnce({
       acknowledged: true,
-      reportId: null,
-      occurrenceCount: null,
+      reportId: REPORT_ID,
+      occurrenceCount: 1,
       deduplicated: false,
-      matches: [
+      related: [
         {
           id: OTHER_ID,
           title: "get_claim omits the reasoning",
@@ -899,7 +958,9 @@ describe("MCP tools", () => {
           first_seen_at: "2026-08-01T00:00:00.000Z",
           last_seen_at: "2026-08-02T00:00:00.000Z",
           github_issue_url: "https://github.com/minerval-ai/minerval/issues/9",
+          duplicate_of_id: null,
           similarity: 0.9,
+          matched_by: "meaning",
         },
       ],
     });
@@ -909,15 +970,13 @@ describe("MCP tools", () => {
     });
     expect(first.isError).toBeFalsy();
     const parsed = parseText(first);
-    expect(parsed.status).toBe("possible_duplicate");
-    // An external caller sees what it needs to answer, not the triage note
+    expect(parsed.report).toMatchObject({ id: REPORT_ID, status: "new", deduplicated: false });
+    // An external caller sees what it needs to decide, not the triage note
     // or the tracker link.
-    expect(parsed.matches).toEqual([
+    expect(parsed.related).toEqual([
       {
         id: OTHER_ID,
         title: "get_claim omits the reasoning",
-        kind: "tool_gap",
-        severity: "degraded",
         status: "triaged",
         occurrence_count: 3,
         last_seen_at: "2026-08-02T00:00:00.000Z",
@@ -947,6 +1006,7 @@ describe("MCP tools", () => {
       occurrence_count: 4,
       deduplicated: true,
     });
+    expect(parseText(second).related).toEqual([]);
     expect(mocks.raiseIssue).toHaveBeenLastCalledWith(
       expect.objectContaining({ joins: OTHER_ID, origin: "external" })
     );

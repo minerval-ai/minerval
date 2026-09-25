@@ -17,7 +17,16 @@
  *   --posts=id1,id2        only these post IDs
  *   --profile=production   run on the production model pins (lib.ts)
  *   --swap=<agent>:<model> one agent on another model, on top of the profile
- *   --order=reverse|shuffle:<seed>  ingest the selected posts in another order
+ *   --order=reverse|shuffle:<seed>|role:<role>|adversarial
+ *                          ingest the selected posts in another order (role:/adversarial
+ *                          put a manifest role — or the most partisan one — first)
+ *   --dup-suffix=<k>|<a>..<b>|<k1,k2>  (#295 dup-flood) submit every selected post
+ *                          again under url?dup=<k>, once per suffix; pair with --no-reset
+ *   --foreign=<cluster>:<postId>[,<postId>]  (#295 locality) ingest that other cluster's
+ *                          post(s) instead of this cluster's (unless --posts names some)
+ *   --reassess-all         (#295 fixpoint) with --no-reset: re-enqueue every stewarded
+ *                          claim with trigger staleness_check and drain, ingesting nothing
+ *                          unless --posts names posts
  *   --score[=N]            emit a scorecard afterwards (judge sample N)
  *
  * Examples:
@@ -39,6 +48,7 @@ import { eq } from "drizzle-orm";
 import {
   argFlag,
   assertCorpusDb,
+  CORPUS_DATABASE_URL,
   CORPUS_PROFILE,
   CORPUS_SWAP,
   gitCommit,
@@ -59,11 +69,18 @@ import { resolveProvider } from "../../src/llm/providers/routing.js";
 import { getJobById } from "../../src/services/job-service.js";
 import { buildApp } from "../../src/server/app.js";
 import { drainLocalQueues } from "../../src/workers/local-runner.js";
+import { pendingStewardCount } from "../../src/workers/steward-pipeline.js";
+import { getGeneralMandate } from "../../src/services/allocation-policy-service.js";
+import { enqueueSteward } from "../../src/services/queue-service.js";
+import { analyzeCascade, readCascade } from "./cascade-lib.js";
+import { loadCascadeInput } from "./cascade-load.js";
 import type { DrainStats, RunnerEvent } from "../../src/workers/local-runner.js";
 import { resetCorpusDb } from "./reset.js";
 import { generateReport } from "./report.js";
 import { scoreRun, type RunFingerprint } from "./score.js";
 import { observedModels } from "./fingerprint.js";
+import { assembleReplay, collectArm, fingerprintFromRecord, replayName, writeReplay } from "./replay.js";
+import { dbNameOf } from "./snapshot-core.js";
 
 function formatActivity(stats: DrainStats): string {
   const acts = Object.entries(stats.processed).map(([q, n]) => `${q} ${n}`);
@@ -188,7 +205,10 @@ async function printUsage(label: string): Promise<void> {
   }
 }
 
-function selectPosts(all: ManifestPost[]): ManifestPost[] {
+/** A selected post, with the cluster whose posts/ dir holds its markdown. */
+type SelectedPost = ManifestPost & { cluster: string };
+
+function selectPosts(cluster: string, all: ManifestPost[]): SelectedPost[] {
   const only = argFlag("posts")
     ?.split(",")
     .map((s) => s.trim())
@@ -202,10 +222,91 @@ function selectPosts(all: ManifestPost[]): ManifestPost[] {
       process.exit(1);
     }
   }
-  let posts = all;
+  let posts: SelectedPost[] = all.map((p) => ({ ...p, cluster }));
   if (only?.length) posts = posts.filter((p) => only.includes(p.id));
   if (limit !== undefined) posts = posts.slice(0, limit);
-  return orderPosts(posts, argFlag("order"));
+  // --- #295 S3 flags (property arms) ------------------------------------
+  // --foreign: posts from ANOTHER cluster (locality's arm B). They replace
+  // this cluster's selection unless --posts named some of it explicitly.
+  const foreign = parseForeign(argFlag("foreign"));
+  if (foreign) {
+    const other = loadManifest(foreign.cluster);
+    const picked = foreign.ids.map((id) => {
+      const p = other.posts.find((x) => x.id === id);
+      if (!p) throw new Error(`--foreign: post "${id}" is not in corpus/${foreign.cluster}/manifest.json`);
+      return { ...p, cluster: foreign.cluster };
+    });
+    posts = only?.length ? [...posts, ...picked] : picked;
+  }
+  // --reassess-all: an empty ingest unless --posts named some.
+  if (hasFlag("reassess-all") && !only?.length && !foreign) posts = [];
+  // -----------------------------------------------------------------------
+  return orderPosts(posts, argFlag("order"), (p) => p.role);
+}
+
+/** `<cluster>:<id>[,<id>]` → the other cluster and its post ids. */
+export function parseForeign(raw: string | undefined): { cluster: string; ids: string[] } | null {
+  if (!raw) return null;
+  const i = raw.indexOf(":");
+  if (i <= 0 || i === raw.length - 1) throw new Error(`--foreign must be <cluster>:<postId>[,<postId>], got "${raw}"`);
+  const ids = raw.slice(i + 1).split(",").map((s) => s.trim()).filter(Boolean);
+  if (ids.length === 0) throw new Error(`--foreign must name at least one post id, got "${raw}"`);
+  return { cluster: raw.slice(0, i), ids };
+}
+
+/**
+ * Duplicate suffixes (#295 dup-flood): `3` → ["3"], `1..3` → ["1","2","3"],
+ * `a,b` → ["a","b"]. Each selected post is submitted once per suffix under
+ * `<url>?dup=<k>` — a distinct URL, so the sources table's uniqueness lets
+ * it in and extraction runs again over the same text.
+ */
+export function parseDupSuffixes(raw: string | undefined): string[] {
+  if (raw === undefined || raw === "") return [];
+  const range = /^(\d+)\.\.(\d+)$/.exec(raw);
+  if (range) {
+    const lo = Number(range[1]);
+    const hi = Number(range[2]);
+    if (hi < lo) throw new Error(`--dup-suffix range must ascend, got "${raw}"`);
+    return Array.from({ length: hi - lo + 1 }, (_, i) => String(lo + i));
+  }
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.some((p) => !/^[A-Za-z0-9_-]+$/.test(p))) throw new Error(`--dup-suffix parts must be [A-Za-z0-9_-], got "${raw}"`);
+  return parts;
+}
+
+/** `<url>?dup=<k>` (or `&dup=<k>` when the url already has a query). */
+export function dupUrl(url: string, suffix: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}dup=${encodeURIComponent(suffix)}`;
+}
+
+/**
+ * Which manifest role counts as the most partisan, for `--order=adversarial`
+ * (#295's adversarial ordering: anchor the graph on the most one-sided
+ * source and see whether it gets first-mover advantage). Roles are free
+ * text in manifest.json; the first keyword here that some role contains
+ * wins, and when none matches the LAST post goes first (clusters are
+ * ordered foundational → dissent, so the last is the usual dissenter).
+ */
+export const PARTISAN_ROLE_KEYWORDS = [
+  "dissent",
+  "skeptic",
+  "contrarian",
+  "lab-leak-case",
+  "counterargument",
+  "conflicting",
+  "primary-source",
+  "case",
+  "anchor",
+  "response",
+] as const;
+
+export function pickAdversarialFirst<T>(posts: T[], roleOf: (p: T) => string | undefined): number {
+  if (posts.length === 0) return -1;
+  for (const kw of PARTISAN_ROLE_KEYWORDS) {
+    const i = posts.findIndex((p) => (roleOf(p) ?? "").toLowerCase().includes(kw));
+    if (i >= 0) return i;
+  }
+  return posts.length - 1;
 }
 
 /**
@@ -215,9 +316,23 @@ function selectPosts(all: ManifestPost[]): ManifestPost[] {
  * graph. `reverse` and `shuffle:<seed>` (a seeded Fisher–Yates, so a
  * permutation is reproducible) let the property runner build the second arm.
  */
-export function orderPosts<T>(posts: T[], order: string | undefined): T[] {
+export function orderPosts<T>(posts: T[], order: string | undefined, roleOf?: (p: T) => string | undefined): T[] {
   if (!order) return posts;
   if (order === "reverse") return [...posts].reverse();
+  // --- #295 adversarial ordering: a role first, or the most partisan one.
+  if (order === "adversarial" || order.startsWith("role:")) {
+    const role = (p: T) => (roleOf ? roleOf(p) : (p as { role?: string }).role);
+    if (order === "adversarial") {
+      const i = pickAdversarialFirst(posts, role);
+      if (i < 0) return posts;
+      return [posts[i]!, ...posts.filter((_, j) => j !== i)];
+    }
+    const wanted = order.slice(5);
+    const first = posts.filter((p) => role(p) === wanted);
+    if (first.length === 0) throw new Error(`--order=role:${wanted}: no selected post carries that role`);
+    return [...first, ...posts.filter((p) => role(p) !== wanted)];
+  }
+  // -----------------------------------------------------------------------
   const m = /^shuffle:(\d+)$/.exec(order);
   if (m) {
     let seed = Number(m[1]) >>> 0;
@@ -236,13 +351,21 @@ export function orderPosts<T>(posts: T[], order: string | undefined): T[] {
     }
     return out;
   }
-  throw new Error(`--order must be "reverse" or "shuffle:<seed>", got "${order}"`);
+  throw new Error(`--order must be "reverse", "shuffle:<seed>", "role:<role>" or "adversarial", got "${order}"`);
 }
 
 async function main(): Promise<void> {
   const cluster = positional(0) ?? "lethalities";
   const manifest = loadManifest(cluster);
-  const posts = selectPosts(manifest.posts);
+  const posts = selectPosts(cluster, manifest.posts);
+  // --- #295 S3 flags: duplicates, and a re-stewarding pass over the graph.
+  const dupSuffixes = parseDupSuffixes(argFlag("dup-suffix"));
+  const reassessAll = hasFlag("reassess-all");
+  if ((reassessAll || dupSuffixes.length > 0) && !hasFlag("no-reset")) {
+    console.error("--reassess-all and --dup-suffix act on an existing graph: pass --no-reset (restore a snapshot first).");
+    process.exit(1);
+  }
+  // -----------------------------------------------------------------------
 
   // Preflight: an embeddings key plus a key for every provider the configured
   // agent models route to.
@@ -253,7 +376,7 @@ async function main(): Promise<void> {
   }
 
   // Don't run a destructive reset just to ingest nothing.
-  if (posts.length === 0) {
+  if (posts.length === 0 && !reassessAll) {
     console.error("No posts selected (check --posts / --limit / manifest). Not resetting.");
     process.exit(1);
   }
@@ -291,7 +414,14 @@ async function main(): Promise<void> {
       .values({
         cluster,
         kind: "ingest",
-        config: { ...fingerprint, posts: posts.map((p) => p.id), noReset: hasFlag("no-reset") },
+        config: {
+          ...fingerprint,
+          posts: posts.map((p) => p.id),
+          noReset: hasFlag("no-reset"),
+          dupSuffixes,
+          foreign: argFlag("foreign") ?? null,
+          reassessAll,
+        },
         runDir,
       })
       .returning({ id: evalRuns.id });
@@ -304,23 +434,52 @@ async function main(): Promise<void> {
     );
   }
 
+  // Stewardship is funded work: the lane runs only actions a General mandate
+  // covers, or, with BACKGROUND_FALLBACK_LANE_ENABLED=true, direct budgeted
+  // runs with no mandate behind them. A reset corpus DB has no mandate, so
+  // without the flag every claim sits pending and the run assesses nothing —
+  // say so up front rather than after the spend on extraction and matching.
+  if (!(await getGeneralMandate()) && !loadConfig().backgroundFallbackLaneEnabled) {
+    console.warn(
+      "  WARNING: no active General mandate and BACKGROUND_FALLBACK_LANE_ENABLED is not " +
+        "\"true\" — claims will be extracted and matched but NOT stewarded (no " +
+        "decomposition, no assessment). Set BACKGROUND_FALLBACK_LANE_ENABLED=true for a " +
+        "corpus run, or seed a mandate and use --no-reset."
+    );
+  }
+
+  // STEWARD_MAX_RUNS bounds Steward invocations for the WHOLE run (the README's
+  // main spend guardrail). drainLocalQueues applies it per drain, and this
+  // loop drains once per post, so the cap is handed down as what remains.
+  const stewardMaxRuns = loadConfig().stewardMaxRuns;
+  const stewardTasksSoFar = () => trace.filter((e) => e.queue === "steward").length;
+  const stewardTasksRemaining = () =>
+    stewardMaxRuns > 0 ? Math.max(0, stewardMaxRuns - stewardTasksSoFar()) : undefined;
+
   // The actual production app, pointed at the corpus DB.
   const app = await buildApp();
   let succeeded = 0;
   let anyCapped = false;
 
+  // --- #295 dup-flood: each post once per suffix, under a distinct url.
+  const items: Array<SelectedPost & { url: string; dup: string | null }> =
+    dupSuffixes.length > 0
+      ? dupSuffixes.flatMap((k) => posts.map((p) => ({ ...p, url: dupUrl(postUrl(p), k), dup: k })))
+      : posts.map((p) => ({ ...p, url: postUrl(p), dup: null }));
+  if (dupSuffixes.length > 0) console.log(`  --dup-suffix: ${posts.length} post(s) × ${dupSuffixes.length} suffix(es) = ${items.length} submission(s)`);
+  // -----------------------------------------------------------------------
   try {
-    for (const [i, p] of posts.entries()) {
-      const tag = `[${i + 1}/${posts.length}]`;
-      const mdPath = postMarkdownPath(cluster, p.id);
+    for (const [i, p] of items.entries()) {
+      const tag = `[${i + 1}/${items.length}]`;
+      const mdPath = postMarkdownPath(p.cluster, p.id);
       if (!existsSync(mdPath)) {
         console.log(`  ${tag} ${p.id} — MISSING markdown; run \`npm run corpus:fetch\` first`);
         continue;
       }
       const content = readFileSync(mdPath, "utf8");
-      const url = postUrl(p);
+      const url = p.url;
 
-      process.stdout.write(`  ${tag} ${p.title.slice(0, 50).padEnd(50)} submit…`);
+      process.stdout.write(`  ${tag} ${(p.dup ? `[dup ${p.dup}] ` : "") + p.title.slice(0, 50).padEnd(50)} submit…`);
       const started = Date.now();
       try {
         // Submit through the real route, exactly as an API client would.
@@ -337,7 +496,10 @@ async function main(): Promise<void> {
 
         // Drive the whole organization to a stable state, tracing every message.
         const before = trace.length;
-        const stats = await drainLocalQueues({ onEvent: (e) => trace.push(e) });
+        const stats = await drainLocalQueues({
+          onEvent: (e) => trace.push(e),
+          maxStewardTasks: stewardTasksRemaining(),
+        });
 
         if (stats.capped) anyCapped = true;
 
@@ -355,13 +517,46 @@ async function main(): Promise<void> {
         console.log(` ✗ ${msg}`);
         // Drain whatever this post already enqueued so partial work is processed
         // and attributed here, not orphaned or leaked into the next post.
-        await drainLocalQueues({ onEvent: (e) => trace.push(e) }).catch(() => {});
+        await drainLocalQueues({
+          onEvent: (e) => trace.push(e),
+          maxStewardTasks: stewardTasksRemaining(),
+        }).catch(() => {});
         if (/budget/i.test(msg)) {
           console.log("\nLLM budget exceeded — stopping early. Report covers what was ingested.");
           break;
         }
       }
     }
+    // --- #295 fixpoint: re-enqueue every stewarded claim and drain again.
+    // The trigger is the staleness sweep's, so the Steward is asked exactly
+    // what a cadence check asks: re-examine, and re-affirm cheaply if
+    // nothing moved. A stable graph should come back unchanged.
+    if (reassessAll) {
+      const done = await rawQuery<{ id: string }>(
+        `SELECT id FROM claims WHERE state = 'active' AND steward_state = 'done' ORDER BY importance DESC`
+      );
+      console.log(`  --reassess-all: re-enqueueing ${done.length} stewarded claim(s) with trigger staleness_check…`);
+      for (const c of done) {
+        await enqueueSteward({
+          claimId: c.id,
+          trigger: "staleness_check",
+          context:
+            "Fixpoint check (corpus:property fixpoint): nothing is known to have changed. " +
+            "Re-examine whether the evidence landscape has moved; if nothing material changed, " +
+            "re-affirm cheaply and record a low marginal_yield.",
+        });
+      }
+      const before = trace.length;
+      const started = Date.now();
+      try {
+        const stats = await drainLocalQueues({ onEvent: (e) => trace.push(e) });
+        if (stats.capped) anyCapped = true;
+        console.log(`  reassessed in ${((Date.now() - started) / 1000).toFixed(0)}s, ${trace.length - before} agent msgs\n      agents: ${formatActivity(stats)}`);
+      } catch (err) {
+        console.log(`  reassess-all drain failed: ${(err as Error).message}`);
+      }
+    }
+    // -----------------------------------------------------------------------
   } finally {
     await app.close();
   }
@@ -383,6 +578,9 @@ async function main(): Promise<void> {
     startedAt: RUN_STARTED_AT.toISOString(),
     finishedAt: new Date().toISOString(),
     posts: posts.map((p) => p.id),
+    postClusters: posts.map((p) => p.cluster),
+    dupSuffixes,
+    reassessAll,
     postsIngested: succeeded,
     capped: anyCapped,
     costMicroUsd,
@@ -407,11 +605,73 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log(`\n${succeeded}/${posts.length} posts ingested. Generating report…`);
+  // Claims left pending are work the run did not do: either the cap above
+  // stopped it (expected on a bounded test run) or nothing funded it.
+  const stillPending = await pendingStewardCount().catch(() => 0);
+  if (stillPending > 0) {
+    const why =
+      stewardMaxRuns > 0 && stewardTasksSoFar() >= stewardMaxRuns
+        ? `STEWARD_MAX_RUNS=${stewardMaxRuns} reached`
+        : "unfunded: no active General mandate and BACKGROUND_FALLBACK_LANE_ENABLED is not \"true\"";
+    console.log(`  note: ${stillPending} claim(s) still pending stewardship (${why}).`);
+  }
+
+  console.log(`\n${succeeded}/${items.length} posts ingested. Generating report…`);
   const reportPath = await generateReport(cluster, runDir);
   console.log(`\nReport: ${reportPath}`);
   console.log(`Trace:  ${join(runDir, "trace.jsonl")} (${trace.length} agent messages)`);
   console.log("Read the report alongside corpus/RUBRIC.md.");
+
+  // The recording of the run (#334, the evals page's "show me" half): every
+  // agent run in the window with its steps, the graph deltas credited to
+  // them, written as replay.json + replay-events/ in the run dir.
+  // Best-effort: a replay failure never fails the run that produced it.
+  try {
+    const models = [...new Set(Object.values(fingerprint.models).filter(Boolean))].join(", ");
+    const arm = await collectArm({
+      since: RUN_STARTED_AT,
+      key: "run",
+      label: cluster,
+      variation: null,
+      fingerprint: fingerprintFromRecord(finished),
+      database: dbNameOf(CORPUS_DATABASE_URL),
+      capped: anyCapped,
+      sourceKeys: Object.fromEntries(posts.map((p) => [postUrl(p), p.id])),
+    });
+    const replay = assembleReplay({
+      kind: "ingest",
+      name: replayName(cluster, RUN_STARTED_AT.toISOString()),
+      title: `${cluster}: ${succeeded} post${succeeded === 1 ? "" : "s"} on ${models}`,
+      cluster,
+      about:
+        `${succeeded} post${succeeded === 1 ? "" : "s"} of the ${cluster} cluster submitted one by one and drained to quiescence: ` +
+        "each source landing, the Extractor listing its claims, the Matcher searching the graph and deciding identity for each, " +
+        "and each claim's Steward structuring and assessing it, with the graph rebuilt from those decisions as they land.",
+      arms: [arm],
+      evalRunId: registryId,
+    });
+    console.log(`Replay: ${writeReplay(runDir, replay)}`);
+  } catch (err) {
+    console.warn("[run] replay export failed (report and trace are intact):", err instanceof Error ? err.message : err);
+  }
+  // --- #295 cascade stability: the propagation this run's drains produced,
+  // reconstructed from the telemetry of the run window (corpus:cascade for
+  // the full table). Best-effort: a telemetry hiccup must never fail a run.
+  try {
+    const cascade = analyzeCascade(
+      await loadCascadeInput(process.env.DATABASE_URL!, { since: RUN_STARTED_AT.toISOString() })
+    );
+    const f = (x: number | null) => (x === null ? "n/a" : x.toFixed(2));
+    console.log(
+      `\nCascade: R ${f(cascade.R)} · ${cascade.cascades.roots} root(s), ${cascade.cascades.propagating} propagating, max size ${cascade.cascades.maxSize} / depth ${cascade.cascades.maxDepth}` +
+        ` · oscillations ${cascade.oscillations.status + cascade.oscillations.credence} · coalesced ${f(cascade.coalescing.share)}`
+    );
+    console.log(`  ${readCascade(cascade)}`);
+    writeFileSync(join(runDir, "cascade.json"), JSON.stringify({ generatedAt: new Date().toISOString(), since: RUN_STARTED_AT.toISOString(), report: cascade }, null, 2));
+  } catch (err) {
+    console.log(`  cascade summary unavailable (${err instanceof Error ? err.message : err})`);
+  }
+  // -----------------------------------------------------------------------
 
   // Optional scored scorecard (#99). --score emits structural metrics + a
   // bounded LLM-judge sample into the same run dir; --score=N sets the sample

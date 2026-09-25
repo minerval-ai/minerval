@@ -37,7 +37,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       claim_credence: null,
       summary: `The dispute turns on [[claim:${SUB_ID}]].`,
       reasoning_trace: `Weighed [[claim:${SUB_ID}|the supply-chain premise]] against the data.`,
-      model: "claude-fable-5-1",
+      model: "claude-opus-5-5",
       assessed_at: "2026-07-30T00:00:00.000Z",
     },
     arguments: [
@@ -177,6 +177,26 @@ describe("evidenceRecordToTrig", () => {
     // still appears as an instance node.
     expect(trig).toContain('"An offline pamphlet"');
     expect(trig).not.toContain("cito:supports <https://example.com/column>");
+  });
+
+  it("types a posing source as cito:discusses, neither supporting nor disputing (#445)", () => {
+    const base = record();
+    const trig = evidenceRecordToTrig(
+      record({
+        instances: [
+          {
+            ...base.instances[0],
+            stance: "poses",
+            source: { ...base.instances[0].source, url: "https://example.com/survey" },
+          },
+        ],
+      }),
+      opts
+    );
+    expect(trig).toContain(`<https://example.com/survey> cito:discusses <${CLAIM_URI}>`);
+    expect(trig).not.toContain("cito:supports <https://example.com/survey>");
+    expect(trig).not.toContain(`<https://example.com/survey> cito:supports`);
+    expect(trig).not.toContain(`<https://example.com/survey> cito:disputes`);
   });
 
   it("pins the assessment version and attribution in pubinfo", () => {

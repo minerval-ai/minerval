@@ -30,6 +30,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -76,6 +77,7 @@ async function runCuratorImpl(input: {
   // One cached block for the constitution and role, plus one per active skill.
   const system = getCuratorSystemPromptBlocks({ skills });
 
+  const CURATOR_MAX_TURNS = 40;
   const userMessage = `You have been triggered to curate the graph around a claim.
 
 Trigger: ${input.trigger}
@@ -91,7 +93,9 @@ Proceed:
    claims. For a routine edge into a claim you are not reconciling, use
    suggest_edge_to_steward (do not write it yourself).
 4. Be conservative: act only when the structure is clearly wrong. Doing
-   nothing is a fine outcome.`;
+   nothing is a fine outcome.
+
+${turnBudgetLine(CURATOR_MAX_TURNS)}`;
 
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -106,7 +110,7 @@ Proceed:
     maxTokens: 16384,
     // Backstop only; one reconciliation can take many steps. Total Curator spend
     // is bounded by curatorMaxRuns + the LLM budget tracker.
-    maxIterations: 40,
+    maxIterations: CURATOR_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);

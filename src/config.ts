@@ -27,6 +27,18 @@ const modelId = (defaultId: string) =>
     })
     .default(defaultId);
 
+/**
+ * A PEM private key arrives from Secrets Manager with its newlines intact,
+ * but an operator pasting it into a .env line writes "\n" and some tools
+ * hand it over base64-encoded whole. Accept all three.
+ */
+function normalizePrivateKey(raw: string): string {
+  const unescaped = raw.replace(/\\n/g, "\n").trim();
+  if (!unescaped || unescaped.includes("-----BEGIN")) return unescaped;
+  const decoded = Buffer.from(unescaped, "base64").toString("utf8");
+  return decoded.includes("-----BEGIN") ? decoded.trim() : unescaped;
+}
+
 const configSchema = z.object({
   env: z
     .enum(["development", "staging", "production"])
@@ -122,6 +134,10 @@ const configSchema = z.object({
   capExtensionAnalysisOwls: z.coerce.number().default(0.1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
   capTextAnalysisOwls: z.coerce.number().default(0.1),
+  // One lookout run (kind 'lookout_run'): a cheap-tier agent reading its
+  // brief, the graph, and the open web, and raising candidates. Set near
+  // the average cost of a run that finds nothing, which is most of them.
+  capLookoutRunOwls: z.coerce.number().default(0.05),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
@@ -286,6 +302,12 @@ const configSchema = z.object({
   // obvious non-claims ("i am"), not a quality judgment — judging claim
   // well-formedness belongs to agents (the intake reviewer, the Steward),
   // per the constitution's "Judgment over Mechanism". 0 disables.
+  // Output budget for one extraction call. A document's claims fit in far
+  // less, but a reasoning model that writes its thinking into the same
+  // budget (GLM 5.3 Flash does, see OPENROUTER_MODELS) can exhaust 16k on a
+  // long post before the structured list is emitted, and the whole source
+  // then fails to extract. Raise it for such a model; the tokens are billed.
+  extractionMaxTokens: z.coerce.number().int().min(1024).default(16384),
   extractionMinConfidence: z.coerce.number().default(0.3),
   // Importance prior for user-proposed claims admitted through intake review
   // (#157). Deliberately below the 0.5 default: an approved suggestion enters
@@ -406,6 +428,18 @@ const configSchema = z.object({
   // Grantmaker chat is not bound by them (a human is in the loop).
   mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
   mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
+  // Lookout runs (kind 'lookout_run'): the cap on how many runs a day the
+  // ledger will FUND per lookout, the same shape as the review-pass cap. A
+  // lookout wakes on its heartbeat and on queued events, and a burst of
+  // events (a poller matching many retractions at once) must not turn into
+  // a burst of runs; the events wait for the next funded run, which reads
+  // them all. 0 is the off-switch: no lookout runs get funded.
+  lookoutMaxRunsPerDay: z.coerce.number().int().min(0).default(6),
+  // The retraction poller (workers/lookout-triggers.ts): how often to ask
+  // Crossref for retractions and corrections added since the last poll and
+  // match them against the graph's sources (0 disables). Each match queues
+  // an event on every active lookout that watches for retractions.
+  lookoutRetractionPollHours: z.coerce.number().min(0).default(24),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -519,13 +553,13 @@ const configSchema = z.object({
           code: z.ZodIssueCode.custom,
           message:
             `SOLVER_MODEL "${id}" is not a strong-tier model the long-run ` +
-            "loop can drive (claude-fable, claude-mythos, claude-opus-5 " +
+            "loop can drive (claude-opus-5, claude-fable, claude-mythos " +
             "families); the solver needs effort, streaming, and the " +
             "long-run betas.",
         });
       }
     })
-    .default(MODELS.fable),
+    .default(MODELS.strong),
   // The solver's own kill switch: the worker exits its loop when false.
   // Off by default so no deployment runs multi-hour attempts without
   // someone choosing that. Same string convention as enableContributions
@@ -560,11 +594,11 @@ const configSchema = z.object({
           code: z.ZodIssueCode.custom,
           message:
             `RESEARCHER_STRONG_MODEL "${id}" is not a strong-tier model the long-run ` +
-            "loop can drive (claude-fable, claude-mythos, claude-opus-5 families).",
+            "loop can drive (claude-opus-5, claude-fable, claude-mythos families).",
         });
       }
     })
-    .default(MODELS.fable),
+    .default(MODELS.strong),
   researcherStandardModel: modelId(MODELS.sonnet),
   researcherCheapModel: modelId(OPENROUTER_MODELS.flash),
   // Kill switch for launching new runs; a run in flight also polls the
@@ -720,17 +754,17 @@ const configSchema = z.object({
   //
   // Consequence: the Matcher routes to OpenRouter, so OPENROUTER_API_KEY is
   // required for anything that matches. The adapter fails loudly naming the
-  // key; set MATCHER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only.
+  // key; set MATCHER_MODEL to an Anthropic id (MODELS) to run Anthropic-only.
   matcherModel: modelId(OPENROUTER_MODELS.flash),
   // The Steward assesses AND decomposes the "main" claims — the load-bearing
   // epistemic work. Default Sonnet keeps tests cheap; production sets
-  // STEWARD_MODEL=claude-fable-5-1 so the most important claims get the deepest
-  // judgment (issue #77). The importance-priority drain means Fable only ever
-  // runs on the top of the queue.
+  // STEWARD_MODEL=claude-opus-5-5 so the most important claims get the deepest
+  // judgment (issue #77). The importance-priority drain means the strong tier
+  // only ever runs on the top of the queue.
   stewardModel: modelId(MODELS.sonnet),
   // The Curator adjudicates merges/splits and proposes structure — recognizing
   // duplicates saturates, but a contested split is judgment, so production runs
-  // it on Fable (CURATOR_MODEL).
+  // it on the strong tier, Opus 5.5 (CURATOR_MODEL).
   curatorModel: modelId(MODELS.sonnet),
   // The Extractor authors the graph's language: given an arbitrary document —
   // whose framing it must not adopt and whose text is wholly untrusted — it
@@ -740,18 +774,19 @@ const configSchema = z.object({
   // It also runs ONCE PER DOCUMENT rather than once per claim (6 sources
   // yielded 41 claims in the first live epoch), so tier here is cheap
   // leverage, and its cost is already attributed to the mandate that chose
-  // the source. Production sets EXTRACTOR_MODEL=claude-fable-5-1.
+  // the source. Production sets EXTRACTOR_MODEL=claude-opus-5-5.
   //
   // Until this existed the extractor had no knob at all: no env, no config,
   // and no model passed by its caller, so it silently ran the cheap
   // DEFAULT_MODEL — the exact regression the production guard below was
   // written to prevent, through a door that guard did not cover.
   extractorModel: modelId(MODELS.sonnet),
-  // Where extraction retries when the chosen tier REFUSES. Fable declines
-  // bio-adjacent material (issue #78) and has already done so on this graph's
-  // virology cluster, and LlmRefusalError means the server-side Opus fallback
-  // refused too — so the retry has to leave the family. Without it, moving
-  // extraction to Fable would turn "this paper is about pathogens" into a
+  // Where extraction retries when the chosen tier REFUSES. The strong tier's
+  // classifiers decline bio-adjacent material (issue #78; Fable did so on this
+  // graph's virology cluster, and Opus 5.5 carries the same bio classifier),
+  // and LlmRefusalError means the server-side Opus fallback refused too — so
+  // the retry has to leave the family. Without it, moving extraction to the
+  // strong tier would turn "this paper is about pathogens" into a
   // cancelled ingest with the mandate's fetch money already spent.
   extractorFallbackModel: modelId(MODELS.sonnet),
   // Shared by the Contribution Reviewer. The Audit Agent has its own knob
@@ -759,7 +794,7 @@ const configSchema = z.object({
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
   // Arbitration is the highest-stakes governance call; production sets
-  // ARBITRATION_MODEL=claude-fable-5-1.
+  // ARBITRATION_MODEL=claude-opus-5-5.
   arbitrationModel: modelId(MODELS.sonnet),
   // The extension agent judges on-page phrasings against graph state and
   // powers the extension chat — user-facing latency-sensitive work (#72).
@@ -768,11 +803,11 @@ const configSchema = z.object({
   // quoting, and the authority to refuse mandates that would warp the
   // graph. Always the best available model — this is judgment-heavy,
   // user-facing work where a weak model would be a false economy.
-  grantmakerModel: modelId(MODELS.fable),
+  grantmakerModel: modelId(MODELS.strong),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
-  // Default Sonnet; raise to Opus/Fable for a higher-confidence judge.
+  // Default Sonnet; raise to Opus for a higher-confidence judge.
   judgeModel: modelId(MODELS.sonnet),
   // The tagger (#272): the first agent on the nano tier. It labels what a
   // claim is ABOUT (topic tags over the open vocabulary in `tags`), makes no
@@ -782,9 +817,18 @@ const configSchema = z.object({
   // the cheap tier (#257) applies with more force here: the whole judgment is "which of these existing tags, at what
   // grain?" over candidates it retrieves itself, in the same tool-use loop.
   // Same key requirement as the Matcher (OPENROUTER_API_KEY); set
-  // TAGGER_MODEL=claude-haiku-4-5-20251001 to run Anthropic-only. Pinned
+  // TAGGER_MODEL to an Anthropic id (MODELS) to run Anthropic-only. Pinned
   // identically in infra/lib/api-stack.ts; the model guard covers it.
   taggerModel: modelId(OPENROUTER_MODELS.flash),
+  // The Lookout: a standing watch a mandate funds (docs/allocation.md,
+  // "Lookouts"). Its judgment is "did something happen that warrants work
+  // in my scope?" — relevance, not truth — and it runs often, so it belongs
+  // on the cheap tier (OPENROUTER_MODELS.flash), the Matcher's and the
+  // tagger's model, with web search like every model (tools/web-search-tool.ts).
+  // A Grantmaker pins a stronger model on a lookout (lookouts.model) where
+  // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
+  // model guard covers it.
+  lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
@@ -805,6 +849,30 @@ const configSchema = z.object({
   // A suspension that has stood unexamined this many days gets a
   // contributor_review audit asking whether it should still hold.
   auditStaleSuspensionDays: z.coerce.number().default(14),
+  // Production monitors (#334 S9, docs/monitors.md). The sweep hands the
+  // two candidate detectors' hits (performed settling, empty chairs) to the
+  // Audit Agent as anomaly_investigation INPUT, at most one sweep per this
+  // many hours. 0 (the default) = off: the signals stay readable at
+  // GET /monitors and `npm run monitors` without feeding anything.
+  monitorSweepIntervalHours: z.coerce.number().default(0),
+  // A claim flagged by a monitor is not re-flagged within this many days
+  // (the dedupe key on audit_runs carries the period bucket).
+  monitorReflagDays: z.coerce.number().default(14),
+  // Most claims one sweep hands to the Audit Agent, most important first.
+  monitorSweepMaxFlags: z.coerce.number().int().min(0).default(5),
+  // The thresholds behind the signals. A verdict counts as "settled" at or
+  // above this confidence with status verified/contradicted ...
+  monitorSettledConfidence: z.coerce.number().min(0).max(1).default(0.8),
+  // ... a credence move of at least this much is "material" (also the
+  // reversal criterion for overturn-rate discrimination) ...
+  monitorMaterialCredenceDelta: z.coerce.number().min(0).max(1).default(0.1),
+  // ... an accepted challenge this recent counts as live disagreement ...
+  monitorRecentChallengeDays: z.coerce.number().default(30),
+  // ... an evidence-monotonicity check tolerates a credence move against
+  // the contribution's sign up to this much (LLM noise, not a violation),
+  // and looks for the re-assessment within this many days of acceptance.
+  monitorMonotonicityTolerance: z.coerce.number().min(0).max(1).default(0.05),
+  monitorMonotonicityHorizonDays: z.coerce.number().default(30),
   // Agent reports (#366). The most raise_issue calls one agent run may
   // record; past the cap the tool acknowledges without writing, so a chatty
   // run cannot flood the table. 0 = unlimited.
@@ -816,18 +884,30 @@ const configSchema = z.object({
   // skipped when no new reports arrived. 0 disables triage sweeps (reports
   // still record; the /reports API still serves them).
   reportTriageIntervalHours: z.coerce.number().default(24),
-  // Match-before-write for reports (the findings mechanism, #394, applied
-  // to raise_issue): a report on record at or above this cosine similarity
-  // (title + body against title + body) is shown to the agent instead of
-  // being written, and the agent answers with joins or distinct_from. The
-  // exact-title dedupe key catches verbatim repeats before this runs.
+  // Related reports for raise_issue: a report on record at or above this
+  // cosine similarity (title + body against title + body) comes back with
+  // the newly recorded report as advice, with its status and triage note;
+  // search_issues uses a bar 0.2 lower. The exact-title dedupe key catches
+  // verbatim repeats before this runs, and a wording match runs alongside.
   reportMatchSimilarity: z.coerce.number().default(0.8),
+  // The embedding backfill worker (#432): a report recorded while the
+  // embedder was down carries no vector and is invisible to the match
+  // search, so its repeats file as new issues. Every tick embeds at most
+  // this many such reports, oldest first. 0 disables the worker.
+  reportEmbeddingBackfillPerTick: z.coerce.number().default(20),
+  reportEmbeddingBackfillIntervalSeconds: z.coerce.number().default(300),
   // GitHub issue filing for agent reports: every report written on first
   // sighting is filed as an issue in GITHUB_ISSUES_REPO ("owner/repo"),
   // labelled GITHUB_ISSUES_LABEL so agent-generated issues are told apart
-  // from human ones. Off unless both the token and the repo are set;
-  // never blocks or fails the report write.
+  // from human ones. Off unless a credential and the repo are set; never
+  // blocks or fails the report write. The credential is the minerval-agents
+  // GitHub App (id, installation id, private key; production) or a plain
+  // token (a fine-grained PAT; local runs). The App wins when both are set.
+  // See services/github-app-auth.ts.
   githubToken: z.string().default(""),
+  githubAppId: z.string().default(""),
+  githubAppInstallationId: z.string().default(""),
+  githubAppPrivateKey: z.string().default("").transform(normalizePrivateKey),
   githubIssuesRepo: z.string().default(""),
   githubIssuesLabel: z.string().default("agent-generated"),
   githubApiBaseUrl: z.string().default("https://api.github.com"),
@@ -900,6 +980,7 @@ export function loadConfig(): Config {
     capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
+    capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
@@ -927,6 +1008,7 @@ export function loadConfig(): Config {
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     extractionMinConfidence: process.env.EXTRACTION_MIN_CONFIDENCE,
+    extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
       process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
     valueContestationFloor: process.env.VALUE_CONTESTATION_FLOOR,
@@ -948,6 +1030,8 @@ export function loadConfig(): Config {
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
     mandateReviewMoveFractionPerDay:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
+    lookoutMaxRunsPerDay: process.env.LOOKOUT_MAX_RUNS_PER_DAY,
+    lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
@@ -1033,16 +1117,32 @@ export function loadConfig(): Config {
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
+    lookoutModel: process.env.LOOKOUT_MODEL,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,
     auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
     auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,
+    monitorSweepIntervalHours: process.env.MONITOR_SWEEP_INTERVAL_HOURS,
+    monitorReflagDays: process.env.MONITOR_REFLAG_DAYS,
+    monitorSweepMaxFlags: process.env.MONITOR_SWEEP_MAX_FLAGS,
+    monitorSettledConfidence: process.env.MONITOR_SETTLED_CONFIDENCE,
+    monitorMaterialCredenceDelta: process.env.MONITOR_MATERIAL_CREDENCE_DELTA,
+    monitorRecentChallengeDays: process.env.MONITOR_RECENT_CHALLENGE_DAYS,
+    monitorMonotonicityTolerance: process.env.MONITOR_MONOTONICITY_TOLERANCE,
+    monitorMonotonicityHorizonDays: process.env.MONITOR_MONOTONICITY_HORIZON_DAYS,
     agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
+    reportEmbeddingBackfillPerTick:
+      process.env.REPORT_EMBEDDING_BACKFILL_PER_TICK,
+    reportEmbeddingBackfillIntervalSeconds:
+      process.env.REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS,
     githubToken: process.env.GITHUB_TOKEN,
+    githubAppId: process.env.GITHUB_APP_ID,
+    githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,
+    githubAppPrivateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     githubIssuesRepo: process.env.GITHUB_ISSUES_REPO,
     githubIssuesLabel: process.env.GITHUB_ISSUES_LABEL,
     githubApiBaseUrl: process.env.GITHUB_API_BASE_URL,
@@ -1119,10 +1219,10 @@ export function loadConfig(): Config {
       console.warn(
         `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
           "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.fable}, ` +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.strong}, ` +
           "and the Steward's money triggers on STEWARD_MODEL. " +
           "Fine for local dev; set the env(s) (production uses " +
-          "claude-fable-5-1) if this environment does real assessment work."
+          "claude-opus-5-5) if this environment does real assessment work."
       );
     }
   }

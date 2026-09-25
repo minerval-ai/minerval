@@ -45,6 +45,11 @@ describe("isTransientApiError", () => {
     }
   });
 
+  it("treats undici's terminated stream and a failed fetch as transient", () => {
+    expect(isTransientApiError(new Error("terminated"))).toBe(true);
+    expect(isTransientApiError(new TypeError("fetch failed"))).toBe(true);
+  });
+
   it("recognizes network/overload phrasing in the message", () => {
     for (const msg of [
       "Overloaded",
@@ -71,7 +76,7 @@ describe("isTransientApiError", () => {
   });
 
   it("does not treat a refusal as transient (it is a real, non-retryable stop)", () => {
-    expect(isTransientApiError(new LlmRefusalError("claude-fable-5-1", "some_policy"))).toBe(
+    expect(isTransientApiError(new LlmRefusalError("claude-opus-5-5", "some_policy"))).toBe(
       false
     );
   });

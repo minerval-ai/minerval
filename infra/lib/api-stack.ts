@@ -40,6 +40,7 @@ export interface ApiStackProps extends cdk.StackProps {
   stripeSecretKeySecret: secretsmanager.Secret;
   stripeWebhookSecretSecret: secretsmanager.Secret;
   githubTokenSecret: secretsmanager.Secret;
+  githubAppPrivateKeySecret: secretsmanager.ISecret;
   leanChecker?: LeanCheckerWiring;
 }
 
@@ -73,6 +74,7 @@ export class ApiStack extends cdk.Stack {
     props.elicitApiKeySecret.grantRead(taskDef.taskRole);
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.githubTokenSecret.grantRead(taskDef.taskRole);
+    props.githubAppPrivateKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
     // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
@@ -156,14 +158,14 @@ export class ApiStack extends cdk.Stack {
         // the registered namespace 302s to the claim page, and stays valid
         // across any future domain move.
         CITATION_URL_BASE: "https://w3id.org/minerval/claim",
-        // The Steward assesses/decomposes the main claims — use Fable 5.1 there
-        // (issue #77). The importance-priority drain means Fable only ever runs
+        // The Steward assesses/decomposes the main claims — use Opus 5.5 there
+        // (issue #77). The importance-priority drain means it only ever runs
         // on the top of the queue; the rest stay embedded stubs until budget
         // allows.
-        STEWARD_MODEL: "claude-fable-5-1",
+        STEWARD_MODEL: "claude-opus-5-5",
         // The solver runs on the strong tier; config refuses production
         // without it (docs/mathematics.md §7.8).
-        SOLVER_MODEL: "claude-fable-5-1",
+        SOLVER_MODEL: "claude-opus-5-5",
         // The Steward's six money triggers (formalize, formalization_review,
         // prize_claim, prize_claim_voided, prize_window_closed,
         // attempt_completed) run on this tier from the workers that own
@@ -171,16 +173,16 @@ export class ApiStack extends cdk.Stack {
         // production without it (docs/mathematics.md §6.4). Setting it also
         // turns on model tiering: every assess/reassess group carries a
         // 'strong' variant the allocators buy by marginal return.
-        STEWARD_STRONG_MODEL: "claude-fable-5-1",
-        // The other load-bearing governance agents also run on Fable: the
+        STEWARD_STRONG_MODEL: "claude-opus-5-5",
+        // The other load-bearing governance agents also run on Opus 5.5: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations
         // and appeals. The Contribution Reviewer stays on the Sonnet default
         // (governanceModel). Refusal false-positives degrade to Opus 4.8 via
         // the server-side fallback in src/llm/client.ts.
-        CURATOR_MODEL: "claude-fable-5-1",
-        AUDIT_MODEL: "claude-fable-5-1",
-        ARBITRATION_MODEL: "claude-fable-5-1",
+        CURATOR_MODEL: "claude-opus-5-5",
+        AUDIT_MODEL: "claude-opus-5-5",
+        ARBITRATION_MODEL: "claude-opus-5-5",
         // The Extractor authors the graph's canonical language from arbitrary,
         // wholly untrusted documents whose framing it must not adopt, and
         // everything downstream inherits its wording. It also runs once per
@@ -190,11 +192,12 @@ export class ApiStack extends cdk.Stack {
         // on the Sonnet default through that whole epoch only because it had
         // no knob; config.ts now requires this env in production.
         //
-        // Bio-adjacent refusals are the known failure here (#78) and Fable's
-        // server-side Opus fallback refuses with it, so extraction retries on
+        // Bio-adjacent refusals are the known failure here (#78): Opus 5.5
+        // carries a bio classifier, and its server-side Opus fallback can
+        // refuse with it, so extraction retries on
         // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
         // document.
-        EXTRACTOR_MODEL: "claude-fable-5-1",
+        EXTRACTOR_MODEL: "claude-opus-5-5",
         // The Matcher's judgment is narrow (same proposition?) over candidates
         // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on
         // quality and price (#257), now GLM 5.3 Flash (see OPENROUTER_MODELS
@@ -209,16 +212,22 @@ export class ApiStack extends cdk.Stack {
         // judgment — the Matcher's tier for the Matcher's reasons (#257).
         // Pinned to the config default so the model guard covers it.
         TAGGER_MODEL: "z-ai/glm-5.3-flash",
+        // The Lookout (docs/allocation.md, "Lookouts"): a mandate's cheap
+        // standing watch. Its judgment is relevance, not truth, so it runs
+        // on the cheap tier. Pinned to the config default so the model
+        // guard covers it; a lookout can carry its own model override.
+        LOOKOUT_MODEL: "z-ai/glm-5.3-flash",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses
         // when spent). Tune to taste — these counters are per-process, so they
-        // scale with the autoscaled task count. NOTE: Fable is priced 2x Opus
-        // per token ($10/$50 vs $5/$25 per MTok). Lowered to a 500k-token/day
+        // scale with the autoscaled task count. Lowered to a 500k-token/day
         // ceiling, with the other three limits scaled proportionally (1/3 of the
         // first-window values), to hold down spend on the load-bearing agents
         // (issue #77); the drain works the top of the importance queue each
-        // window and pauses when spent.
+        // window and pauses when spent. NOTE: these were sized when the strong
+        // tier was Fable 5.1 ($10/$50 per MTok); Opus 5.5 is $4/$20 (cache reads
+        // $0.20), so the same ceiling now caps well under half the spend.
         LLM_HOURLY_CALL_LIMIT: "167",
         LLM_DAILY_CALL_LIMIT: "1667",
         LLM_HOURLY_TOKEN_LIMIT: "133333",
@@ -246,8 +255,12 @@ export class ApiStack extends cdk.Stack {
         TRACE_RETENTION_DAYS: "30",
         // Agent reports (#366) are filed as GitHub issues in this repo,
         // labelled agent-generated, on first sighting; the sync worker files
-        // the backlog. Inert until episteme/github-token is populated.
+        // the backlog. Written as the minerval-agents GitHub App: these two
+        // ids plus the private key secret below (github-app-auth.ts). The
+        // installation id is the App's installation on the minerval-ai org.
         GITHUB_ISSUES_REPO: "minerval-ai/minerval",
+        GITHUB_APP_ID: "4911585",
+        GITHUB_APP_INSTALLATION_ID: "160924398",
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
@@ -278,6 +291,9 @@ export class ApiStack extends cdk.Stack {
           props.stripeSecretKeySecret
         ),
         GITHUB_TOKEN: ecs.Secret.fromSecretsManager(props.githubTokenSecret),
+        GITHUB_APP_PRIVATE_KEY: ecs.Secret.fromSecretsManager(
+          props.githubAppPrivateKeySecret
+        ),
         STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
           props.stripeWebhookSecretSecret
         ),

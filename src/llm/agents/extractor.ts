@@ -105,14 +105,14 @@ async function extractClaimsImpl(input: {
       schemaName: "ExtractedClaim",
       system,
       ...(model ? { model } : {}),
-      maxTokens: 16384,
+      maxTokens: config.extractionMaxTokens,
     });
 
   // The chosen tier decides which propositions become claims and how they are
   // worded, so it is worth the strongest model available. But a REFUSAL is not
   // a judgment about the document's claims — it is the model declining the
   // subject matter, and this graph's live work includes a virology cluster
-  // Fable has refused before (#78). LlmRefusalError means the server-side
+  // the strong tier has refused before (#78). LlmRefusalError means the server-side
   // Opus fallback refused too, so the retry must leave the family.
   //
   // Without this, a mandate that funds "ingest this pathogen paper" pays for

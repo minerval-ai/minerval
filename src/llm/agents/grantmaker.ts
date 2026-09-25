@@ -32,10 +32,16 @@ import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
-import { surveyScope } from "./grantor.js";
-import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
-import { microUsdToOwls, capOwls } from "../../services/owl.js";
-import type { PlanItem } from "../../services/grant-service.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { createMandateTools } from "../tools/mandate-tools.js";
+import { microUsdToOwls } from "../../services/owl.js";
+import {
+  PLAN_ITEM_SCHEMA,
+  validatePlanItems,
+  type PlanItem,
+} from "../../services/grant-service.js";
+import { materializePlanItems } from "../../services/action-service.js";
+import { countPlanItems, describePlanItems } from "../../services/plan-state.js";
 import { getMandatePipeline } from "../../services/mandate-service.js";
 import {
   getJobContributions,
@@ -49,6 +55,10 @@ import {
   getLiveBountyForClaim,
   formatOwls,
 } from "../../services/bounty-service.js";
+import {
+  executeLookoutManagementTool,
+  getLookoutManagementToolDefinitions,
+} from "../tools/lookout-management-tools.js";
 
 export interface GrantMandate {
   /** Agent-written working title, shown only on the funder's dashboard. */
@@ -72,51 +82,6 @@ export interface GrantmakerTurnResult {
   mandate?: GrantMandate;
   declined?: { reason: string };
 }
-
-const PLAN_ITEM_SCHEMA = {
-  type: "object",
-  properties: {
-    action: {
-      type: "string",
-      enum: [
-        "assess",
-        "reassess",
-        "deepen",
-        "ingest",
-        "formalize",
-        "attempt_proof",
-      ],
-    },
-    claim_id: {
-      type: "string",
-      description:
-        "Required for assess/reassess/deepen/formalize/attempt_proof; omit " +
-        "for ingest.",
-    },
-    url: {
-      type: "string",
-      description: "Required for ingest; the source URL to extract and match.",
-    },
-    rationale: { type: "string" },
-    variant: {
-      type: "string",
-      enum: ["standard", "max"],
-      description: "attempt_proof only: the solver's effort variant.",
-    },
-    is_calibration: {
-      type: "boolean",
-      description:
-        "attempt_proof only: a calibration run on a settled problem.",
-    },
-    lifetime_cap_owls: {
-      type: "number",
-      description:
-        "attempt_proof only: raise this claim's lifetime attempt spend " +
-        "above the policy key (bounded at twice it).",
-    },
-  },
-  required: ["action", "rationale"],
-};
 
 const MANDATE_SCHEMA = {
   type: "object" as const,
@@ -202,16 +167,7 @@ export function validateMandate(raw: GrantMandate): string | null {
   if (!(raw.expected_cost_owls > 0)) {
     return "expected_cost_owls must be positive";
   }
-  for (const item of raw.plan.items) {
-    if (item.action === "ingest") {
-      if (!item.url || !/^https?:\/\//.test(item.url)) {
-        return `ingest item needs an http(s) url (got: ${item.url ?? "none"})`;
-      }
-    } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
-      return `${item.action} item needs a claim_id from your survey results`;
-    }
-  }
-  return null;
+  return validatePlanItems(raw.plan.items);
 }
 
 export interface TranscriptMessage {
@@ -244,48 +200,6 @@ async function runGrantmakerTurnImpl(input: {
   // goes through hybridSearch like every other search path, and the three
   // reads beside it were previously MCP-only.
   const graphReadTools = getGraphReadToolDefinitions();
-  const surveyTool: Tool = {
-    name: "survey_scope",
-    description:
-      "Survey a scope (a claim's subtree and/or a keyword query) with the " +
-      "allocation signals: importance, contestation, assessment state and " +
-      "age, expected gain from another pass, deferred subclaims. Paginate " +
-      "with offset.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        claim_id: { type: "string", description: "Subtree root (optional)." },
-        query: { type: "string", description: "Keyword scope (optional)." },
-        offset: { type: "number" },
-      },
-      required: [],
-    },
-  };
-  const costTool: Tool = {
-    name: "estimate_costs",
-    description:
-      "Quote expected costs in owls for a bundle of work, from the live " +
-      "metered averages (falling back to priors). Owls map to dollars of " +
-      "platform spend one for one; quotes are estimates, and the funder " +
-      "pays metered actuals against the escrowed budget.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        assessments: {
-          type: "number",
-          description: "Steward passes on unassessed claims (best model).",
-        },
-        reassessments: { type: "number" },
-        deepen_claims: {
-          type: "number",
-          description:
-            "Claims to deepen (each roughly three passes over its subtree).",
-        },
-        sources_to_ingest: { type: "number" },
-      },
-      required: [],
-    },
-  };
   const proposeTool: Tool = {
     name: "propose_mandate",
     description:
@@ -502,6 +416,9 @@ async function runGrantmakerTurnImpl(input: {
   };
 
   const bountyTools = getBountyToolDefinitions();
+  // The lookout tools (docs/allocation.md, "Lookouts"): standing watches
+  // the mandate funds, shared with the review pass.
+  const lookoutTools = getLookoutManagementToolDefinitions();
 
   let mandate: GrantMandate | undefined;
   let declined: { reason: string } | undefined;
@@ -515,8 +432,18 @@ async function runGrantmakerTurnImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  // Web search on every provider (tools/web-search-tool.ts): a funder who
+  // says "ingest the best writing on X" is asking the Grantmaker to go and
+  // find it, in the conversation as much as on a review pass.
+  const webSearch = createWebSearch(model, 5);
+  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  // and — once a mandate is live — its workspace, one implementation
+  // shared with the planning and review passes.
+  const mandateTools = createMandateTools({ grantId: input.grantId ?? null });
   // The delegation channel (#298): a survey or a check the mandate needs,
   // launched from this run and funded by it; a claim may be named per call.
+  // Only a funded mandate carries it: a conversation that has not yet
+  // proposed one has no budget for the researcher's spend to ride on.
   const researchTools = createResearchTools({
     requestedBy: "grantmaker",
     grantId: input.grantId ?? null,
@@ -524,9 +451,8 @@ async function runGrantmakerTurnImpl(input: {
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
-    ...researchTools.definitions,
-    surveyTool,
-    costTool,
+    ...mandateTools.definitions,
+    ...(managed ? researchTools.definitions : []),
     ...(managed
       ? [
           overviewTool,
@@ -541,6 +467,7 @@ async function runGrantmakerTurnImpl(input: {
           spawnTool,
           rateTool,
           ...bountyTools,
+          ...lookoutTools,
         ]
       : [proposeTool, declineTool]),
   ];
@@ -573,69 +500,28 @@ async function runGrantmakerTurnImpl(input: {
       role: m.role,
       content: m.content,
     })),
-    tools,
+    tools: [webSearch.tool, ...tools],
     system,
     model,
     maxTokens: 4096,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
-      const research = await researchTools.execute(name, toolInput);
-      if (research !== null) return research;
+      if (managed) {
+        const research = await researchTools.execute(name, toolInput);
+        if (research !== null) return research;
+      }
       // Shared graph reads first; returns null for anything it doesn't own,
       // so the mandate-specific handlers below still get their turn.
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
-      if (name === "survey_scope") {
-        const rows = await surveyScope({
-          scopeClaimId:
-            typeof toolInput.claim_id === "string" && toolInput.claim_id
-              ? toolInput.claim_id
-              : null,
-          scopeQuery:
-            typeof toolInput.query === "string" && toolInput.query
-              ? toolInput.query
-              : null,
-          offset: Number(toolInput.offset ?? 0),
-          limit: 40,
-        });
-        return JSON.stringify({ count: rows.length, claims: rows });
-      }
-      if (name === "estimate_costs") {
-        const tiers = await stewardTierCostEstimates();
-        const passOwls = microUsdToOwls(tiers.strongMicroUsd);
-        const n = (v: unknown) => Math.max(0, Number(v ?? 0) || 0);
-        const assessments = n(toolInput.assessments);
-        const reassessments = n(toolInput.reassessments);
-        const deepen = n(toolInput.deepen_claims);
-        const sources = n(toolInput.sources_to_ingest);
-        const ingestOwls = capOwls("source_ingest");
-        const lines = {
-          assessment_each_owls: passOwls,
-          reassessment_each_owls: passOwls,
-          deepen_each_owls: Math.round(passOwls * 3 * 1000) / 1000,
-          ingest_each_owls: ingestOwls,
-        };
-        const subtotal =
-          (assessments + reassessments) * passOwls +
-          deepen * passOwls * 3 +
-          sources * ingestOwls;
-        // Conversation + planning overhead rides on the mandate.
-        const overhead = Math.max(0.25, Math.round(subtotal * 0.05 * 100) / 100);
-        return JSON.stringify({
-          unit_estimates: lines,
-          subtotal_owls: Math.round(subtotal * 100) / 100,
-          suggested_overhead_owls: overhead,
-          suggested_total_owls: Math.round((subtotal + overhead) * 100) / 100,
-          note:
-            "Estimates from live metered averages where available, priors " +
-            "otherwise. Actual spend is metered; unspent budget refunds.",
-        });
-      }
+      const mandateTool = await mandateTools.execute(name, toolInput);
+      if (mandateTool !== null) return mandateTool;
       if (name === "propose_mandate") {
         const raw = toolInput as unknown as GrantMandate;
         const problem = validateMandate(raw);
@@ -753,6 +639,8 @@ export interface ManagementToolOptions {
   passStartedAt?: Date;
   /** A person present who can confirm a posting at or above the threshold. */
   confirmedBy?: string | null;
+  /** Which path is acting, recorded on lookouts it stands up. */
+  actor?: string;
 }
 
 /** How long a recorded bounty request stays confirmable by a later pass. */
@@ -852,6 +740,12 @@ export async function executeManagementTool(
   toolInput: Record<string, unknown>,
   opts: ManagementToolOptions = {}
 ): Promise<string | null> {
+  // The lookout tools (spawn_lookout, list_lookouts, lookout_report,
+  // update_lookout, poke_lookout); null means "not one of them".
+  const lookout = await executeLookoutManagementTool(grantId, name, toolInput, {
+    createdBy: opts.actor ?? (opts.confirmedBy ? "grantmaker:chat" : "grantmaker:review"),
+  });
+  if (lookout !== null) return lookout;
   if (name === "post_bounty") {
     return executePostBounty(grantId, toolInput, opts);
   }
@@ -905,15 +799,12 @@ export async function executeManagementTool(
       ),
       contributors: contributions.length,
       strategy: grant.plan?.strategy ?? null,
-      plan: (grant.plan?.items ?? []).map((item, i) => ({
-        ...item,
-        state:
-          i < grant.plan_cursor
-            ? "done"
-            : i === grant.plan_cursor
-              ? "current"
-              : "queued",
-      })),
+      // Each item's standing on the ledger (plan-state.ts): a blocked or
+      // waiting item says why, so a slow queue and a dead one read
+      // differently (#416). The counts are the executed tally: "done" is
+      // the items whose work ran, not the cursor's position (#427).
+      plan_counts: countPlanItems(grant.plan?.items ?? [], grant.plan_cursor),
+      plan: describePlanItems(grant.plan?.items ?? [], grant.plan_cursor),
     });
   }
   if (name === "list_funded_assessments") {
@@ -1120,10 +1011,28 @@ export async function executeManagementTool(
         problem: "grant is not active; the plan can no longer be amended",
       });
     }
+    // The new items materialize now, so the owner's chat sees each one's
+    // standing in the same turn (#416); a failure here never loses the
+    // amendment, the sweep retries on cadence.
+    const kept = Number(rows[0]!.plan_cursor);
+    let materialized: unknown[] = [];
+    let materializeProblem: string | null = null;
+    try {
+      materialized = await materializePlanItems(
+        grantId,
+        items.map((_, i) => kept + i)
+      );
+    } catch (err) {
+      materializeProblem = err instanceof Error ? err.message : String(err);
+    }
     return JSON.stringify({
       success: true,
-      executed_items_kept: rows[0]!.plan_cursor,
+      executed_items_kept: kept,
       new_remaining_items: items.length,
+      items: materialized,
+      ...(materializeProblem
+        ? { note: `amended, but not yet materialized onto the ledger: ${materializeProblem}` }
+        : {}),
       note_recorded: note,
     });
   }

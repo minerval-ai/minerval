@@ -174,7 +174,8 @@ const AGENT_INLINE_TOOL_NAMES = [
   "continue_review",
   "complete_mandate",
   "ingestion_report",
-  "submit_allocation_plan",
+  "submit_plan",
+  "read_page",
 ];
 
 /** Every tool name the existing families define, plus the inline ones above. */

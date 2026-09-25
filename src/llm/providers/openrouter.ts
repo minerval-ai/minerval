@@ -32,6 +32,7 @@ import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
+import { OPENROUTER_MODELS } from "../models.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
 import {
   assertAnthropicOnlyCapabilitiesUnused,
@@ -146,6 +147,56 @@ function firstChoice(
   return choice;
 }
 
+/**
+ * An upstream host failing mid-generation comes back as HTTP 200 with
+ * `finish_reason: "error"` and an `error` on the choice, which the SDK's own
+ * retry (on HTTP status) never sees. It says nothing about the request — the
+ * same call succeeds on the next host — so retry it here, and when the
+ * retries are spent throw it as the transient failure it is (a status of
+ * 502 is what isTransientApiError keys off), naming the upstream message.
+ */
+const UPSTREAM_ERROR_RETRIES = Number(process.env.LLM_MAX_RETRIES ?? 4);
+/** Attempts at a forced structured call before its absence is reported as the model's. */
+const STRUCTURED_ATTEMPTS = 3;
+
+function upstreamError(
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice
+): string | null {
+  const err = (choice as { error?: { message?: string; code?: number } }).error;
+  if (choice.finish_reason === ("error" as string) || err) {
+    return err?.message ?? "finish_reason: error";
+  }
+  return null;
+}
+
+async function createWithUpstreamRetry(
+  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  model: string
+): Promise<{
+  completion: OpenAI.Chat.Completions.ChatCompletion;
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice;
+}> {
+  let lastError = "";
+  for (let attempt = 0; attempt <= UPSTREAM_ERROR_RETRIES; attempt++) {
+    const completion = await getClient().chat.completions.create(params);
+    const choice = firstChoice(completion, model);
+    const err = upstreamError(choice);
+    if (err === null) return { completion, choice };
+    lastError = err;
+    // The failed attempt is still billed for what it produced.
+    meter(completion, model);
+    if (attempt < UPSTREAM_ERROR_RETRIES) {
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
+  const error = new Error(
+    `OpenRouter upstream error for "${model}" after ${UPSTREAM_ERROR_RETRIES + 1} ` +
+      `attempts (bad gateway): ${lastError}`
+  );
+  (error as { status?: number }).status = 502;
+  throw error;
+}
+
 function checkRefusal(
   choice: OpenAI.Chat.Completions.ChatCompletion.Choice,
   model: string
@@ -157,21 +208,73 @@ function checkRefusal(
   }
 }
 
+/** One hit from a web search: where, what it is called, and an excerpt. */
+export interface WebSearchHit {
+  url: string;
+  title: string;
+  /** The page excerpt the search engine returned, capped per hit. */
+  excerpt: string;
+}
+
+/** Characters of excerpt kept per hit: enough to judge relevance, not the page. */
+const WEB_SEARCH_EXCERPT_CHARS = 1500;
+
+/**
+ * A web search through OpenRouter's `web` plugin, for any model on any
+ * provider.
+ *
+ * OpenRouter has no standalone search endpoint: the plugin runs a search
+ * for the request's last user message, injects the hits into the prompt,
+ * and returns them as `url_citation` annotations on the reply. So a search
+ * is one chat completion on the cheap tier with the query as its only
+ * message and `max_tokens: 1` — the reply is discarded, the annotations are
+ * the result. The engine is pinned to Exa so the shape does not change with
+ * whichever model fills the tier (a model with a native engine would run
+ * that instead, and its annotations arrive on its own terms). Metered like
+ * any other call: OpenRouter's reported cost covers the search fee.
+ */
+export async function openrouterWebSearch(
+  query: string,
+  maxResults: number
+): Promise<WebSearchHit[]> {
+  const model = OPENROUTER_MODELS.flash;
+  const completion = await getClient().chat.completions.create({
+    ...baseParams({ model, maxTokens: 1 }),
+    messages: [{ role: "user", content: query }],
+    plugins: [{ id: "web", engine: "exa", max_results: maxResults }],
+  } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+  meter(completion, model);
+  const choice = completion.choices[0];
+  const err = choice ? upstreamError(choice) : null;
+  if (!choice || err) {
+    throw new Error(`OpenRouter web search failed: ${err ?? "no choices"}`);
+  }
+  const annotations =
+    (choice.message as { annotations?: Array<{ type?: string; url_citation?: { url?: string; title?: string; content?: string } }> })
+      .annotations ?? [];
+  return annotations
+    .filter((a) => a.type === "url_citation" && a.url_citation?.url)
+    .map((a) => ({
+      url: a.url_citation!.url!,
+      title: a.url_citation!.title ?? "",
+      excerpt: (a.url_citation!.content ?? "").slice(0, WEB_SEARCH_EXCERPT_CHARS),
+    }));
+}
+
 export const openrouterAdapter: ProviderAdapter = {
   name: "openrouter",
 
   async complete(req: CompleteRequest): Promise<CompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
 
-    const completion = await getClient().chat.completions.create({
+    const { completion, choice } = await createWithUpstreamRetry({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       ...(req.tools && req.tools.length > 0
         ? { tools: toChatTools(req.tools) }
         : {}),
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
 
-    const choice = firstChoice(completion, req.model);
     checkRefusal(choice, req.model);
     const usage = meter(completion, req.model);
 
@@ -187,14 +290,13 @@ export const openrouterAdapter: ProviderAdapter = {
   async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
     assertAnthropicOnlyCapabilitiesUnused("OpenRouter", req.model, req);
 
-    const completion = await getClient().chat.completions.create({
+    const { completion, choice } = await createWithUpstreamRetry({
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       tools: toChatTools(req.tools),
       tool_choice: "auto",
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, req.model);
 
-    const choice = firstChoice(completion, req.model);
     checkRefusal(choice, req.model);
     const usage = meter(completion, req.model);
     const turn = fromChatMessage(choice.message);
@@ -211,7 +313,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async completeStructured<T>(req: StructuredRequest): Promise<T> {
-    const completion = await getClient().chat.completions.create({
+    const params = {
       ...baseParams(req),
       messages: toChatMessages(req.messages, req.system),
       tools: [
@@ -225,42 +327,48 @@ export const openrouterAdapter: ProviderAdapter = {
         },
       ],
       tool_choice: { type: "function", function: { name: "respond" } },
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
 
-    const choice = firstChoice(completion, req.model);
-    checkRefusal(choice, req.model);
-    meter(completion, req.model);
+    // A forced tool call that comes back without the call, or with arguments
+    // that are not JSON, is a host-level flake as often as a model limit:
+    // GLM 5.3 Flash answered an extraction with no tool call and
+    // finish_reason null after five minutes, and the source was lost. A
+    // truncation (finish_reason "length") is the caller's to fix; anything
+    // else is retried a couple of times, each attempt billed, before the
+    // error names the model.
+    let lastReason = "";
+    for (let attempt = 0; attempt < STRUCTURED_ATTEMPTS; attempt++) {
+      const { completion, choice } = await createWithUpstreamRetry(params, req.model);
+      checkRefusal(choice, req.model);
+      meter(completion, req.model);
 
-    const call = (choice.message.tool_calls ?? []).find(
-      (c) => c.type === "function" && c.function.name === "respond"
-    );
-
-    if (!call || call.type !== "function") {
-      if (choice.finish_reason === "length") {
-        throw new Error(
-          `Structured response "${req.schemaName}" was truncated at ` +
-            `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
-            `maxTokens or reduce the input size.`
-        );
+      const call = (choice.message.tool_calls ?? []).find(
+        (c) => c.type === "function" && c.function.name === "respond"
+      );
+      if (!call || call.type !== "function") {
+        if (choice.finish_reason === "length") {
+          throw new Error(
+            `Structured response "${req.schemaName}" was truncated at ` +
+              `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
+              `maxTokens or reduce the input size.`
+          );
+        }
+        lastReason = `no "respond" tool call (finish_reason: ${choice.finish_reason ?? "unknown"})`;
+        continue;
       }
-      // Tool-calling support varies across OpenRouter's zoo — name the model so
-      // the fix (pick a tool-calling model) is obvious from the log line alone.
-      throw new Error(
-        `OpenRouter model "${req.model}" did not return the forced "respond" ` +
-          `tool call for schema "${req.schemaName}" (finish_reason: ` +
-          `${choice.finish_reason ?? "unknown"}). This model may not support ` +
-          `tool calling — choose one that does, or route this agent to a ` +
-          `"claude-…" or "gpt-…" model.`
-      );
+      try {
+        return parseToolArguments(call.function.arguments, "respond") as T;
+      } catch {
+        lastReason = "tool-call arguments were not valid JSON";
+      }
     }
-
-    try {
-      return parseToolArguments(call.function.arguments, "respond") as T;
-    } catch {
-      throw new Error(
-        `Structured response "${req.schemaName}" from OpenRouter model ` +
-          `"${req.model}" was not valid JSON.`
-      );
-    }
+    // Tool-calling support varies across OpenRouter's zoo — name the model so
+    // the fix (pick a tool-calling model) is obvious from the log line alone.
+    throw new Error(
+      `OpenRouter model "${req.model}" did not return a usable forced "respond" ` +
+        `tool call for schema "${req.schemaName}" in ${STRUCTURED_ATTEMPTS} attempts ` +
+        `(last: ${lastReason}). This model may not support tool calling — choose ` +
+        `one that does, or route this agent to a "claude-…" or "gpt-…" model.`
+    );
   },
 };

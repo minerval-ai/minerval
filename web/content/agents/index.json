@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 8395,
-    "fullChars": 58150,
+    "roleChars": 8686,
+    "fullChars": 58672,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 9883,
-    "fullChars": 59638,
+    "roleChars": 11507,
+    "fullChars": 61493,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 19426,
-    "fullChars": 69181,
+    "roleChars": 20251,
+    "fullChars": 70237,
     "skills": [
       {
         "name": "mathematics",
@@ -79,10 +79,10 @@
     "group": "governance",
     "tagline": "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 32741,
-    "fullChars": 82496,
+    "roleChars": 37746,
+    "fullChars": 87732,
     "skills": [
       {
         "name": "mathematics",
@@ -116,10 +116,10 @@
     "group": "governance",
     "tagline": "The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.",
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13565,
-    "fullChars": 63320,
+    "roleChars": 15344,
+    "fullChars": 65330,
     "skills": [
       {
         "name": "mathematics",
@@ -145,10 +145,10 @@
     "group": "governance",
     "tagline": "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17025,
-    "fullChars": 66780,
+    "roleChars": 17850,
+    "fullChars": 67836,
     "skills": [
       {
         "name": "mathematics",
@@ -172,10 +172,10 @@
     "group": "governance",
     "tagline": "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17648,
-    "fullChars": 67403,
+    "roleChars": 19111,
+    "fullChars": 69097,
     "skills": [
       {
         "name": "mathematics",
@@ -211,10 +211,10 @@
     "group": "governance",
     "tagline": "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17647,
-    "fullChars": 67402,
+    "roleChars": 19177,
+    "fullChars": 69163,
     "skills": [
       {
         "name": "mathematics",
@@ -232,13 +232,39 @@
     ]
   },
   {
+    "key": "lookout",
+    "name": "Lookout",
+    "stage": 9,
+    "group": "governance",
+    "tagline": "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
+    "model": "GLM 5.3 Flash",
+    "hasConstitution": true,
+    "roleChars": 10467,
+    "fullChars": 60453,
+    "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      }
+    ]
+  },
+  {
     "key": "math-solver",
     "name": "Solver",
-    "stage": 9,
+    "stage": 10,
     "group": "instruments",
     "tagline": "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
-    "model": "Claude Fable 5.1",
+    "model": "Claude Opus 5.5",
     "hasConstitution": false,
     "roleChars": 4526,
     "fullChars": 4526,
@@ -251,10 +277,10 @@
     "group": "instruments",
     "tagline": "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
-    "model": "Chosen per launch: Claude Fable 5.1 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
+    "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
     "hasConstitution": true,
     "roleChars": 4180,
-    "fullChars": 53935,
+    "fullChars": 54166,
     "skills": [
       {
         "name": "provenance",

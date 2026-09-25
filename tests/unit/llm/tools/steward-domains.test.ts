@@ -34,11 +34,27 @@ vi.mock("../../../../src/db/client.js", () => {
       return { where: async () => undefined };
     },
   });
+  const rawQuery = vi.fn(async () => []);
+  const db = { insert: () => ({ values }), select, update };
   return {
-    getDb: () => ({ insert: () => ({ values }), select, update }),
-    rawQuery: vi.fn(async () => []),
+    getDb: () => db,
+    rawQuery,
+    // add_decomposition_edge writes the claim, edge, and membership in one
+    // transaction; here the callback just runs against the same stubs.
+    withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ query: rawQuery, db })
+    ),
   };
 });
+
+vi.mock("../../../../src/services/relationship-service.js", () => ({
+  insertRelationshipEdge: vi.fn(async () => ({
+    id: "22222222-2222-2222-2222-222222222222",
+    created: true,
+  })),
+  attachEdgeToArgument: vi.fn(async () => ({ grouped: true })),
+  getClaimBasisSubclaims: vi.fn(async () => []),
+}));
 
 vi.mock("../../../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async () => [0.1, 0.2, 0.3]),
@@ -159,17 +175,78 @@ describe("add_decomposition_edge domains", () => {
 
   it("takes the Steward's own list over the parent's, source steward", async () => {
     selectRows.push([{ domains: ["mathematics"] }]);
-    const out = JSON.parse(await edge({ domains: [] }));
+    const out = JSON.parse(await edge({ domains: [], claim_type: "empirical_derived" }));
     expect(out.success).toBe(true);
     const row = insertedValues.find((r) => "text" in r);
     expect(row).toMatchObject({ domains: [], domainsSource: "steward" });
-    // The parent was not consulted: its row is still queued.
+    // With both domains and claim_type given, the parent was not consulted:
+    // its row is still queued.
     expect(selectRows).toHaveLength(1);
   });
 
   it("refuses an unknown domain without creating the subclaim", async () => {
     const out = JSON.parse(await edge({ domains: ["alchemy"] }));
     expect(out.success).toBe(false);
+    expect(insertedValues).toEqual([]);
+  });
+});
+
+describe("add_decomposition_edge claim_type (#468)", () => {
+  const edge = (extra: Record<string, unknown> = {}) =>
+    executeStewardTool("add_decomposition_edge", {
+      parent_id: PARENT,
+      child_text: "A dependency",
+      relation: "requires",
+      reasoning: "needed",
+      ...extra,
+    });
+
+  it("exposes claim_type as an optional enum on the tool schema", () => {
+    const def = getStewardToolDefinitions().find((t) => t.name === "add_decomposition_edge");
+    expect(def).toBeDefined();
+    const prop = (def!.input_schema.properties as Record<string, { enum?: string[] }>).claim_type;
+    expect(prop.enum).toContain("mathematical");
+    expect(def!.input_schema.required).not.toContain("claim_type");
+  });
+
+  it("inherits the parent's type when the Steward passes none", async () => {
+    selectRows.push([{ claimType: "mathematical", domains: ["mathematics"] }]);
+    const out = JSON.parse(await edge());
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/claim_type mathematical \(inherited\)/);
+    const row = insertedValues.find((r) => "text" in r);
+    expect(row).toMatchObject({ claimType: "mathematical", domains: ["mathematics"] });
+  });
+
+  it("inherits the parent's type even when the Steward passes its own domains", async () => {
+    selectRows.push([{ claimType: "mathematical", domains: ["mathematics"] }]);
+    const out = JSON.parse(await edge({ domains: [] }));
+    expect(out.success).toBe(true);
+    const row = insertedValues.find((r) => "text" in r);
+    expect(row).toMatchObject({ claimType: "mathematical", domains: [], domainsSource: "steward" });
+  });
+
+  it("takes the Steward's own type over the parent's", async () => {
+    selectRows.push([{ claimType: "mathematical", domains: ["mathematics"] }]);
+    const out = JSON.parse(await edge({ claim_type: "empirical_derived" }));
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/claim_type empirical_derived$/);
+    const row = insertedValues.find((r) => "text" in r);
+    expect(row).toMatchObject({ claimType: "empirical_derived", domainsSource: "inherited" });
+  });
+
+  it("falls back to empirical_derived only when the parent row cannot be read", async () => {
+    selectRows.push([]);
+    const out = JSON.parse(await edge());
+    expect(out.success).toBe(true);
+    const row = insertedValues.find((r) => "text" in r);
+    expect(row).toMatchObject({ claimType: "empirical_derived" });
+  });
+
+  it("refuses an unknown claim_type without creating the subclaim", async () => {
+    const out = JSON.parse(await edge({ claim_type: "astrological" }));
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/Unknown claim_type/);
     expect(insertedValues).toEqual([]);
   });
 });

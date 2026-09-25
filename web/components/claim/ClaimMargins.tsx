@@ -5,6 +5,7 @@ import { ClaimView } from "@/components/ClaimView";
 import { DecompositionCompass } from "./DecompositionCompass";
 import { MapCard } from "./MapCard";
 import { DependentsRail } from "./DependentsRail";
+import { RelatedRail } from "./RelatedRail";
 import styles from "./margins.module.css";
 
 // The claim page in its full three-column form (issue #42): the decomposition
@@ -44,6 +45,7 @@ export function ClaimMargins({ detail, source }: { detail: ClaimDetail; source: 
         {/* RIGHT — what depends on this claim */}
         <div className={styles.rightRail}>
           <DependentsRail dependents={detail.dependents ?? []} />
+          <RelatedRail related={detail.related ?? []} />
         </div>
       </div>
     </div>

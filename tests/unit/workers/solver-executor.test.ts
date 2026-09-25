@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * and after spend, and the direct Steward invocation on attempt_completed.
  */
 const state = vi.hoisted(() => ({
-  config: { solverEnabled: true, solverModel: "claude-fable-5-1" },
+  config: { solverEnabled: true, solverModel: "claude-opus-5-5" },
   budgetError: null as null | Error,
   calibrationBudgetError: null as null | Error,
   action: null as null | Record<string, unknown>,
@@ -171,7 +171,7 @@ function attempt(over: Record<string, unknown> = {}) {
     run_id: null,
     grant_id: "g1",
     job_id: "job-1",
-    model: "claude-fable-5-1",
+    model: "claude-opus-5-5",
     variant: "max",
     effort: "max",
     status: "running",
@@ -196,7 +196,7 @@ function attempt(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  state.config = { solverEnabled: true, solverModel: "claude-fable-5-1" };
+  state.config = { solverEnabled: true, solverModel: "claude-opus-5-5" };
   state.budgetError = null;
   state.calibrationBudgetError = null;
   state.action = {
@@ -225,7 +225,7 @@ beforeEach(() => {
     leanCheckId: null,
     turns: 12,
     stopReason: "final_tool",
-    servedModels: ["claude-fable-5-1"],
+    servedModels: ["claude-opus-5-5"],
     error: null,
   };
   state.solverThrows = null;
@@ -319,7 +319,7 @@ describe("processNextSolverAction", () => {
           error: null,
           spentMicroUsd: 42_000_000,
           turns: 12,
-          servedModels: ["claude-fable-5-1"],
+          servedModels: ["claude-opus-5-5"],
         },
       },
     ]);

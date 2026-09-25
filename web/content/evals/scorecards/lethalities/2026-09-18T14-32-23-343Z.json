@@ -1,0 +1,380 @@
+{
+  "generatedAt": "2026-09-18T14:32:23.343Z",
+  "cluster": "lethalities",
+  "database": "episteme_corpus_lethalities",
+  "config": {
+    "caps": {
+      "curatorMaxRuns": 6,
+      "stewardMaxRuns": 10,
+      "curatorSweepRate": 1,
+      "llmDailyTokenLimit": 25000000,
+      "llmHourlyTokenLimit": 0,
+      "stewardMaxIterations": 30
+    },
+    "swap": null,
+    "order": null,
+    "posts": [
+      "uMQ3cqWDPHhjtiesc",
+      "CoZhXrhpQxpy9xw9y",
+      "wAczufCpMdaamF9fy",
+      "qJgz2YapqpFEDTLKn",
+      "GNhMPAWcfBCASy8e6",
+      "usKXS5jGDzjwqv3FJ",
+      "2yLyT6kB7BQvTfEuZ",
+      "LDRQ5Zfqwi8GjzPYG",
+      "GQat3Nrd9CStHyGaq",
+      "pRkFkzwKZ2zfa3R6H",
+      "keiYkaeoLHoKK4LYA"
+    ],
+    "models": {
+      "curator": "z-ai/glm-5.3-flash",
+      "matcher": "z-ai/glm-5.3-flash",
+      "steward": "z-ai/glm-5.3-flash",
+      "extractor": "z-ai/glm-5.3-flash",
+      "judge": "z-ai/glm-5.3-flash"
+    },
+    "noReset": false,
+    "profile": null,
+    "gitCommit": "8737a8c",
+    "pipelineEpoch": "2026-09-domain-skills",
+    "modelsSource": "registry"
+  },
+  "structural": {
+    "extraction": {
+      "topLevelClaims": 52,
+      "instances": 91,
+      "totalClaims": 90,
+      "claimsPer1kWords": 2.586132582397058,
+      "typeDistribution": {
+        "empirical_derived": 56,
+        "causal": 11,
+        "empirical_verifiable": 15,
+        "evaluative": 7,
+        "definitional": 1
+      }
+    },
+    "canonicalForm": {
+      "wordCount": {
+        "p50": 14,
+        "p90": 19,
+        "max": 22,
+        "mean": 14.1
+      },
+      "overLongShare": 0
+    },
+    "matching": {
+      "dedupRatio": 1.75
+    },
+    "decomposition": {
+      "maxDepth": 5,
+      "depthHistogram": {
+        "0": 43,
+        "1": 3,
+        "2": 2,
+        "3": 2,
+        "4": 1,
+        "5": 1
+      },
+      "atomicShare": 0.889,
+      "meanChildrenPerParent": 7.7
+    },
+    "crossDoc": {
+      "sharedSubclaims": 17
+    },
+    "assessment": {
+      "statusDistribution": {
+        "contested": 8,
+        "supported": 2
+      },
+      "pctWithTrace": 1,
+      "meanTraceLength": 3491
+    },
+    "importance": {
+      "mean": 0.515,
+      "histogram": {
+        "0.6-0.8": 23,
+        "0.4-0.6": 46,
+        "0.2-0.4": 15,
+        "0.8-1.0": 6
+      },
+      "meanAtomic": 0.489,
+      "meanCompound": 0.72
+    },
+    "coherence": {
+      "violations": 0,
+      "tensions": 0,
+      "items": []
+    },
+    "canonicalAuthorship": {
+      "authoringInstances": 45,
+      "withProposal": 45,
+      "rewriteRate": 0.4,
+      "rewriteMagnitude": 0.379,
+      "meanWordDelta": 1.222,
+      "matched": {
+        "count": 3,
+        "deniesShare": 0.333,
+        "meanProposalDistance": 0.807
+      }
+    }
+  },
+  "judged": {
+    "model": "z-ai/glm-5.3-flash",
+    "sampleSize": 10,
+    "claimBarPassRate": 1,
+    "importanceAlignment": {
+      "meanStored": 0.72,
+      "meanJudged": 0.78,
+      "overratedShare": 0
+    },
+    "assessmentQuality": {
+      "readability": 4.4,
+      "reasoningFit": 3.9,
+      "impartiality": 4.3
+    },
+    "granularity": {
+      "good": 8,
+      "too_granular": 2
+    },
+    "flags": {
+      "false_precision": 4,
+      "hallucination_risk": 2,
+      "status_miscalibrated": 2,
+      "other": 7,
+      "bias": 1,
+      "boilerplate_trace": 1
+    },
+    "dimensions": {
+      "sycophancy": {
+        "independent": 10
+      },
+      "hedging": {
+        "calibrated": 10
+      },
+      "canonicalForm": {
+        "good": 10
+      },
+      "politicalBias": {
+        "none": 10
+      }
+    },
+    "sycophancyShare": 0,
+    "overhedgedShare": 0,
+    "overconfidentShare": 0,
+    "canonicalFormMissShare": 0,
+    "politicalBiasShare": 0,
+    "items": [
+      {
+        "id": "3bf89d01-6d0c-49b1-8ada-4d37363e34f0",
+        "text": "Reliably preventing misaligned goal pursuit in superintelligent AI systems through alignment engineering is feasible",
+        "importanceStored": 0.75,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "false_precision",
+          "hallucination_risk"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.7,
+        "note": "Strong, even-handed contested assessment: both sides' strongest arguments are weighed and the status alternatives are explicitly ruled out with reasons; the main defects are that the composite claim mixes present-tense prevention with forward-looking feasibility (acknowledged, but the claim text should split or be weakened) and that the key affirming sources were never read whole, which the excerpt-only caveat flags but which arguably caps confidence below 0.8.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "41419727-3afc-48a2-84cd-0308edf1ad2d",
+        "text": "A superintelligent AI could plausibly acquire or improvise the physical means to cause human extinction",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "false_precision",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.6,
+        "note": "The claim and structure are sound, but \"contested\" is asserted on a basis the text itself concedes is unassessed: no sources, no subclaim verdicts, no evidence examined directly — only the admin's assertion that counterweights are \"credible and live.\" That is a prior, not §10 contested, which requires credible evidence on multiple sides of the live discourse; \"unsupported\" or a deferred/unknown treatment was the honest reading. Additionally, three subclaims appear twice with different relation types (requires and supports for the same texts), a structural defect that leaves the actual argument topology ambiguous.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 2,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "5399592b-94b2-4eaf-aa61-a63bd721aca5",
+        "text": "Current approaches to building advanced AI are on track to avoid causing human extinction.",
+        "importanceStored": 0.9,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "too_granular",
+        "flags": [
+          "bias",
+          "boilerplate_trace",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 2,
+        "importance_judged": 0.9,
+        "note": "The status (contested, 0.85) is right and the prose weighing is genuinely even-handed, but the decomposition is severely one-sided: all eleven subclaims are premises of the doom camp's argument, with no mapped dependencies for the affirmative side (LeCun's dead-end view, Marcus's empirical optimism), and several subclaims are derivation steps of one essay's internal argument rather than reusable propositions.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "53ae6ed2-93b3-44b6-9b90-50ac577e3bc9",
+        "text": "A misaligned superintelligent AI could cause human extinction.",
+        "importanceStored": 0.9,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.9,
+        "note": "A model assessment: the reasoning distinguishes confidence-in-the-dispute from the claim's truth, runs a genuine adversarial pass, and both sides are represented by their strongest voices; the \"could\" modality is correctly kept at the strength the discourse actually debates. Minor residual: credence is omitted without an explicit note that one number would mislead, and subclaim seed confidences in prose risk reading as more precise than the evidence behind them warrants.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "c24f515c-e385-44ac-a6de-cc34577ad328",
+        "text": "Scaling alone is sufficient for current AI architectures to reach human-level general reasoning",
+        "importanceStored": 0.65,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "status_miscalibrated",
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.9,
+        "impartiality": 4,
+        "note": "The contested status and reasoning structure are sound, but the affirming evidence is thin (one naive-extrapolation quote plus Altman advocacy against four denials and an arXiv limits argument), and asserting 'neither side is demonstrably stronger' alongside confidence 0.85 and credence 0.5 overstates the evenness of the split.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 3,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "eb54b373-b073-4d5d-8f96-07f7f7402ad5",
+        "text": "It is technologically feasible, with further development, to build AI systems that exceed human cognitive performance across most domains",
+        "importanceStored": 0.7,
+        "status": "supported",
+        "claim_bar": "yes",
+        "canonical_form": "good",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "importance_judged": 0.7,
+        "impartiality": 5,
+        "note": "A careful, well-weighed assessment: counter-evidence (ARC-AGI-2, benchmark lag) is genuinely weighed, the contested-vs-supported call is explicitly argued and defensible, and the canonical form matches the debated proposition. Minor defects: the reasoning is dense enough that a reader must work to extract the status logic, and subclaim statuses are all \"none,\" so the decomposed structure promises more resolution than it currently delivers — legitimate under §19, but the claim's strength rests almost entirely on the prose argument rather than the node graph.",
+        "political_bias": "none",
+        "readability": 4,
+        "reasoning_fit": 5,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "f38fafcb-e25a-4bac-9976-b5e2cb9060b3",
+        "text": "Misaligned goal pursuit in advanced AI systems can be reliably prevented through alignment engineering",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "hallucination_risk",
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.75,
+        "note": "A well-run contested verdict: both readings are separated, the strongest cases on each side are tested, and the omission of credence is justified. Two defects: the claim text itself never disambiguates the present-tense vs feasibility reading the reasoning says it separated (the canonical form should carry the feasibility reading, since that is what the discourse debates), and the primary sources were never read whole — the evidence base rests on search excerpts, which is recorded honestly but still a provenance weakness.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "341df0e9-bc92-4a0c-a288-02e7992aeeac",
+        "text": "A sufficiently advanced AI system could pursue goals misaligned with human interests despite its designers' intent",
+        "importanceStored": 0.6,
+        "status": "supported",
+        "readability": 4,
+        "reasoning_fit": 4,
+        "impartiality": 4,
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "importance_judged": 0.6,
+        "sycophancy": "independent",
+        "hedging": "calibrated",
+        "canonical_form": "good",
+        "political_bias": "none",
+        "flags": [
+          "other"
+        ],
+        "note": "The status work is the strength: the reasoning cleanly separates the bare modal (\"could\") from likelihood and prevention disputes, shows why LeCun's dissent targets the latter, and is candid that no source was read whole — supported at 0.78 with credence 0.9 is a defensible, non-rounded call. The residual defects: the affirming record is concentrated in one lab's self-reports (two of three affirming sources are Anthropic communications) without that being flagged or weighed, \"broad technical endorsement\" overstates a 3-source basis accordingly, and the weakest premise (goal-directed agency) is named but its weighing is asserted rather than shown; subclaims 3 and 5 also overlap enough to risk double-counting the same documents."
+      },
+      {
+        "id": "fb28d4e5-f34f-4d7c-9522-30571a5ff53c",
+        "text": "Advanced AI poses a non-negligible risk of human extinction this century",
+        "importanceStored": 0.9,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "too_granular",
+        "flags": [
+          "false_precision"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 5,
+        "importance_judged": 0.9,
+        "note": "The contested status, two-sided weighing, and source independence are exemplary; the main defects are an over-decomposed child set containing near-duplicates (\"superhuman capability this century\" vs \"superhuman autonomous AI systems will exist this century\") and argument-flavored children, plus a credence redefined as an \"interpretive quantity\" about reader acceptance rather than the claim's truth, which adds precision the graph's own standard does not license.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      },
+      {
+        "id": "3b494bc3-a9c2-46d2-b141-20fdac6c7a8d",
+        "text": "A sufficiently capable AI could bootstrap to overpowering capabilities through any available channel of influence.",
+        "importanceStored": 0.6,
+        "status": "contested",
+        "canonical_form": "good",
+        "claim_bar": "yes",
+        "decomposition_granularity": "good",
+        "flags": [
+          "other"
+        ],
+        "hedging": "calibrated",
+        "impartiality": 4,
+        "importance_judged": 0.85,
+        "note": "Exemplary contested verdict — named studies weighed on their merits, unfetchable sources honestly flagged, explicit falsifiers — but stored importance 0.6 under-anchors a central, live crux of the takeover debate (§19 anchor ≈0.85), and the credence stays at its 0.75 seed even after the reasoning concedes the persuasion evidence \"cuts against\" that number.",
+        "political_bias": "none",
+        "readability": 5,
+        "reasoning_fit": 4,
+        "sycophancy": "independent"
+      }
+    ]
+  },
+  "cost": {
+    "calls": 10,
+    "usd": 0.01
+  }
+}

@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => ({
     unsuspended: false,
   })),
   withdrawBounty: vi.fn(async (input: { bountyId: string }) => ({ ok: true, status: "withdrawn", effective_at: null, bountyId: input.bountyId })),
+  inspectLedger: vi.fn(async (_input: Record<string, unknown>): Promise<Record<string, unknown>> => ({
+    ok: true,
+    inspection: { claim: null, mandate: null, actions_total: 0, actions: [], plan_items: [], notes: [] },
+  })),
 }));
 
 vi.mock("../../../../src/db/client.js", () => ({
@@ -61,6 +65,10 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
 vi.mock("../../../../src/services/bounty-service.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../../src/services/bounty-service.js")>()),
   withdrawBounty: mocks.withdrawBounty,
+}));
+
+vi.mock("../../../../src/services/ledger-inspection-service.js", () => ({
+  inspectLedger: mocks.inspectLedger,
 }));
 
 vi.mock("../../../../src/services/reputation-service.js", () => ({
@@ -95,7 +103,32 @@ beforeEach(() => {
   mocks.adjustReputation.mockClear();
   mocks.neutralizeReviewOutcome.mockClear();
   mocks.withdrawBounty.mockClear();
+  mocks.inspectLedger.mockClear();
   primeFindings();
+});
+
+describe("inspect_ledger", () => {
+  it("is a read: it passes the scope to the service, returns the inspection, and writes nothing", async () => {
+    const out = JSON.parse(
+      await executeAuditTool("inspect_ledger", { claim_id: "11111111-1111-4111-8111-111111111111", limit: 20 })
+    );
+    expect(out).toMatchObject({ success: true, actions_total: 0, actions: [], plan_items: [], notes: [] });
+    expect(mocks.inspectLedger).toHaveBeenCalledWith({
+      claimId: "11111111-1111-4111-8111-111111111111",
+      mandateId: null,
+      actionId: null,
+      limit: 20,
+    });
+    expect(mocks.updateSets).toHaveLength(0);
+    expect(mocks.rawQuery.mock.calls.some(([sql]) => /^\s*(UPDATE|INSERT|DELETE)/i.test(String(sql)))).toBe(false);
+  });
+
+  it("passes the service's refusal through as a failure, not an exception", async () => {
+    mocks.inspectLedger.mockResolvedValueOnce({ ok: false, code: "SCOPE_REQUIRED", message: "Give at least one of claim_id, mandate_id, or action_id." });
+    const out = JSON.parse(await executeAuditTool("inspect_ledger", {}));
+    expect(out).toEqual({ success: false, code: "SCOPE_REQUIRED", message: "Give at least one of claim_id, mandate_id, or action_id." });
+    expect(mocks.inspectLedger).toHaveBeenCalledWith({ claimId: null, mandateId: null, actionId: null, limit: undefined });
+  });
 });
 
 describe("withdraw_bounty_after_audit", () => {
@@ -133,6 +166,23 @@ describe("withdraw_bounty_after_audit", () => {
     mocks.withdrawBounty.mockResolvedValueOnce({ ok: false, code: "BAD_STATE", message: "bounty is already paid" } as never);
     const refused = JSON.parse(await executeAuditTool("withdraw_bounty_after_audit", { bounty_id: "b-1", reason: "r", finding_id: FINDING_ID }, {}));
     expect(refused).toEqual({ success: false, code: "BAD_STATE", message: "bounty is already paid" });
+  });
+});
+
+describe("triage_report", () => {
+  it("refuses a note over the limit with a message naming it, recording nothing", async () => {
+    const result = JSON.parse(
+      await executeAuditTool("triage_report", {
+        report_id: "11111111-1111-4111-8111-111111111111",
+        status: "triaged",
+        note: "x".repeat(4001),
+      })
+    );
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/limit is 4000/);
+    expect(
+      mocks.rawQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE agent_reports"))
+    ).toBe(false);
   });
 });
 

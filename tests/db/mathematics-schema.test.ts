@@ -623,7 +623,7 @@ describe("proof_attempts and platform_flags", () => {
       rawQuery<{ id: string; status: string; is_calibration: boolean }>(
         `INSERT INTO proof_attempts
            (claim_id, formalization_id, model, variant, effort, ceiling_micro_usd)
-         VALUES ($1, $2, 'claude-fable-5-1', 'max', 'max', $3)
+         VALUES ($1, $2, 'claude-opus-5-5', 'max', 'max', $3)
          RETURNING id, status, is_calibration`,
         [claimId, formalizationId, ceiling]
       );

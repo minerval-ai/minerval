@@ -120,7 +120,7 @@ export function ContributionDiagram() {
       <Arrow d="M 300 90 L 360 90" label="escalate" lx={330} ly={104} />
       <Arrow d="M 300 100 L 360 150" label="reject" lx={318} ly={140} />
       <Box x={362} y={20} w={110} h={40} label="Steward" sub="applies the change" />
-      <Box x={362} y={70} w={110} h={40} label="Arbitrator" sub="Fable" />
+      <Box x={362} y={70} w={110} h={40} label="Arbitrator" sub="Opus 5.5" />
       <Box x={362} y={130} w={110} h={40} label="appeal" sub="if the script says so" dashed />
       <Arrow d="M 417 130 L 417 112" />
       <Arrow d="M 472 90 L 540 90" />

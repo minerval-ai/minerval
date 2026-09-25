@@ -27,6 +27,10 @@ export default function EvalsIndex() {
       <p className="lede" style={{ fontSize: "1.02rem", marginBottom: "1.2rem" }}>
         The properties of the claim graph we can measure, and the test for each. Click a row.
       </p>
+      <p className={s.small} style={{ margin: "-0.6rem 0 1.2rem" }}>
+        <Link href="/docs/evals/replays">Watch a run</Link>: the agents building a graph, played back event by event
+        {d.index.replays?.length ? ` · ${d.index.replays.length} recording${d.index.replays.length === 1 ? "" : "s"}` : " · no recordings committed yet"}.
+      </p>
 
       <div style={{ overflowX: "auto" }}>
         <table className={s.index}>

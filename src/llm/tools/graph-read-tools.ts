@@ -39,6 +39,7 @@ import {
   getTagsForSubject,
   resolveTagBySlug,
 } from "../../services/tag-service.js";
+import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
 
 /** Depth defaults shared with the MCP/REST surfaces: shallow unless asked. */
 const DEFAULT_TREE_DEPTH = 3;
@@ -89,7 +90,16 @@ export function getGraphReadToolDefinitions(): Tool[] {
         "`include` — the named arguments bearing on it, where it was seen in " +
         "the wild (provenance), and the claims that directly depend on it. " +
         "Use this when a scalar is not enough and you need to know why a " +
-        "claim landed where it did.",
+        "claim landed where it did. A mathematical claim also carries its " +
+        "formalization record: `formalization` is the published Lean " +
+        "statement (source, hashes, Mathlib pin, correspondence note, " +
+        "review-period end) or null; `formalization_pending` is the newest " +
+        "draft or reviewed version still awaiting publication, with the " +
+        "reviewer's notes; `formalization_history` lists every version's " +
+        "status, retired ones included; `verification` is the " +
+        "machine-checked badge; `lean_checks` are the newest checker " +
+        "verdicts on any version. Empty history means formalize has never " +
+        "recorded anything on this claim.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -267,6 +277,12 @@ export async function executeGraphReadTool(
         tags: (await getTagsForSubject("claim", claimId).catch(() => [])).map((t) => t.slug),
       },
       assessment: formatAssessment(await getCurrentAssessment(claimId)),
+      // The formalization record (#435): a Grantmaker valuing attempt_proof
+      // must read the published statement for fidelity, and one valuing
+      // formalize must see whether an earlier run left a draft, a reviewed
+      // row, or a retirement behind. One query for a claim with no
+      // statement, so every claim pays for it.
+      ...(await getClaimFormalizationRecord(claimId)),
       subclaim_count: await getSubclaimCount(claimId),
     };
     if (include.includes("arguments")) {

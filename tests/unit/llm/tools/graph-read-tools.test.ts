@@ -20,6 +20,14 @@ vi.mock("../../../../src/services/tree-service.js", () => ({
   getSubclaimCount: vi.fn(),
   listClaimDependents: vi.fn(),
 }));
+vi.mock("../../../../src/services/tag-service.js", () => ({
+  attachClaimTags: vi.fn(async (rows: unknown[]) => rows.map((r) => ({ ...(r as object), tags: [] }))),
+  getTagsForSubject: vi.fn(async () => []),
+  resolveTagBySlug: vi.fn(),
+}));
+vi.mock("../../../../src/services/formalization-service.js", () => ({
+  getClaimFormalizationRecord: vi.fn(),
+}));
 
 import {
   executeGraphReadTool,
@@ -34,6 +42,7 @@ import {
   getClaimTree,
   getSubclaimCount,
 } from "../../../../src/services/tree-service.js";
+import { getClaimFormalizationRecord } from "../../../../src/services/formalization-service.js";
 
 const mockHybrid = vi.mocked(hybridSearch);
 const mockRawQuery = vi.mocked(rawQuery);
@@ -42,10 +51,21 @@ const mockAssessment = vi.mocked(getCurrentAssessment);
 const mockTree = vi.mocked(getClaimTree);
 const mockTransitiveDeps = vi.mocked(getTransitiveDependents);
 const mockSubclaimCount = vi.mocked(getSubclaimCount);
+const mockFormalizationRecord = vi.mocked(getClaimFormalizationRecord);
+
+const EMPTY_RECORD = {
+  formalization: null,
+  formalization_pending: null,
+  formalization_history: [],
+  verification: null,
+  lean_checks: [],
+  lean_checks_total: 0,
+};
 
 describe("graph-read-tools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFormalizationRecord.mockResolvedValue(EMPTY_RECORD as never);
   });
 
   it("exposes the four reads every agent gets", () => {
@@ -173,7 +193,7 @@ describe("graph-read-tools", () => {
         summary: "Reader-facing body",
         reasoningTrace: "The audit trail",
         assessedAt: new Date("2026-01-01T00:00:00Z"),
-        model: "claude-fable-5-1",
+        model: "claude-opus-5-5",
       } as never);
 
       const out = JSON.parse(
@@ -184,6 +204,72 @@ describe("graph-read-tools", () => {
       expect(out.assessment.reasoning_trace).toBe("The audit trail");
       expect(out.assessment.claim_credence).toBeNull();
       expect(out.subclaim_count).toBe(3);
+    });
+
+    // #435: a Grantmaker valuing attempt_proof must read the published
+    // statement for fidelity, and one valuing formalize must be able to tell
+    // whether an earlier run ran at all. The record rides on every read.
+    it("carries the formalization record: statement, pending version, history, and checks", async () => {
+      mockGetClaim.mockResolvedValue({ id: "c1", text: "A claim" } as never);
+      mockSubclaimCount.mockResolvedValue(0 as never);
+      mockAssessment.mockResolvedValue(null as never);
+      mockFormalizationRecord.mockResolvedValue({
+        formalization: {
+          id: "f2",
+          version: 2,
+          status: "published",
+          statement_source: "theorem ...",
+          source_hash: "abc",
+          pin_id: "mathlib-v4.33.1",
+          correspondence: "Statement 2 says what the claim says.",
+          review_period_ends_at: "2026-10-01T00:00:00Z",
+        },
+        formalization_pending: {
+          id: "f3",
+          version: 3,
+          status: "reviewed",
+          review_notes: "Hypothesis tightened; awaiting second pass.",
+        },
+        formalization_history: [
+          { id: "f3", version: 3, status: "reviewed" },
+          { id: "f2", version: 2, status: "published" },
+          { id: "f1", version: 1, status: "retired", retire_reason: "vacuous" },
+        ],
+        verification: null,
+        lean_checks: [{ id: "lc1", verdict: "rejected", mode: "attempt", failed_gate: "kernel" }],
+        lean_checks_total: 1,
+      } as never);
+
+      const out = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "c1" }))!
+      );
+
+      expect(mockFormalizationRecord).toHaveBeenCalledWith("c1");
+      expect(out.formalization.statement_source).toBe("theorem ...");
+      expect(out.formalization.review_period_ends_at).toBe("2026-10-01T00:00:00Z");
+      expect(out.formalization_pending.status).toBe("reviewed");
+      expect(out.formalization_history.map((h: { status: string }) => h.status)).toEqual([
+        "reviewed",
+        "published",
+        "retired",
+      ]);
+      expect(out.lean_checks[0].failed_gate).toBe("kernel");
+      expect(out.lean_checks_total).toBe(1);
+    });
+
+    it("says explicitly when nothing has ever been formalized", async () => {
+      mockGetClaim.mockResolvedValue({ id: "c1", text: "A claim" } as never);
+      mockSubclaimCount.mockResolvedValue(0 as never);
+      mockAssessment.mockResolvedValue(null as never);
+
+      const out = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "c1" }))!
+      );
+
+      expect(out.formalization).toBeNull();
+      expect(out.formalization_pending).toBeNull();
+      expect(out.formalization_history).toEqual([]);
+      expect(out.lean_checks_total).toBe(0);
     });
   });
 });

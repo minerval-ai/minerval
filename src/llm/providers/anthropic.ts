@@ -4,7 +4,7 @@
  * Everything Anthropic-specific lives here and NOWHERE else: prompt caching via
  * ephemeral cache_control breakpoints (one per system block, one on the tool
  * list, and a moving one on the message history of a tool loop), the
- * Fable/Mythos server-side Opus refusal fallback, container threading for
+ * server-side Opus refusal fallback (Opus 5.5, Fable/Mythos), container threading for
  * container-backed server tools, the temperature allowlist, `output_config`
  * (effort and native structured outputs), and the streamed long-run path with
  * its betas. None of it is abstracted into a cross-provider layer, and none of
@@ -247,8 +247,9 @@ function toolMessages(req: ToolCompleteRequest): LlmMessage[] {
 }
 
 /**
- * Create one message, routing Fable-family models through the beta endpoint
- * with the server-side Opus fallback: their safety classifiers can decline a
+ * Create one message, routing classifier-gated models (Opus 5.5 and the
+ * Fable/Mythos family — see modelNeedsRefusalFallback) through the beta
+ * endpoint with the server-side Opus fallback: their safety classifiers can decline a
  * benign-adjacent request (HTTP 200, stop_reason "refusal"), and the fallback
  * re-serves it on Opus 4.8 inside the same call instead of failing the agent
  * run. Other models use the plain Messages endpoint unchanged.
@@ -276,7 +277,7 @@ async function createMessage(
  * Fail loudly on stop_reason "refusal" instead of returning empty content (or
  * schema-violating output from completeStructured — on a refusal the API does
  * not guarantee the output matches the requested schema, so this must run
- * before any parsing). On Fable models this fires only when the Opus fallback
+ * before any parsing). On fallback-gated models this fires only when the Opus fallback
  * refused too.
  */
 function checkRefusal(response: Anthropic.Message, model: string): void {

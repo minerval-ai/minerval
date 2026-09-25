@@ -27,6 +27,8 @@ import crypto from "crypto";
 import { loadConfig } from "../config.js";
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
+import { sanitizeDomains } from "../llm/agents/skill-selection.js";
+import type { InstanceStance } from "../schemas/common.js";
 import {
   assessPageClaims,
   type ClaimForAssessment,
@@ -56,8 +58,8 @@ export interface PageAnnotation {
   /** One-line reader-facing explanation (hover card). */
   why: string;
   confidence: number;
-  /** Whether the page affirms or denies the canonical claim. */
-  stance: "affirms" | "denies";
+  /** Whether the page affirms, denies, or merely poses the canonical claim. */
+  stance: InstanceStance;
   /** Matched canonical claim, or null when the claim is new/unknown. */
   claim: {
     id: string;
@@ -184,7 +186,9 @@ export function buildAnnotations(input: {
     verbatim_text: string;
     context: string | null;
     source_location: string | null;
-    stance: "affirms" | "denies";
+    stance: InstanceStance;
+    /** The Matcher ran out of budget without a verdict (#419). */
+    undecided?: boolean;
     matched: {
       claimId: string;
       canonicalForm: string;
@@ -208,7 +212,9 @@ export function buildAnnotations(input: {
         context: c.context,
         source_location: c.source_location,
         verdict: "unknown" as const,
-        why: "This claim isn't in the Minerval graph yet.",
+        why: c.undecided
+          ? "Minerval could not decide whether this claim is in the graph."
+          : "This claim isn't in the Minerval graph yet.",
         confidence: 0,
         stance: c.stance,
         claim: null,
@@ -441,6 +447,8 @@ async function analyzePageUncached(
     const decision = await matchClaim({
       extractedText: c.verbatim_text,
       proposedCanonical: c.proposed_canonical_form,
+      // The Extractor's domain prior selects the Matcher's skills (#469).
+      domains: sanitizeDomains(c.domains),
     });
 
     const base = {
@@ -449,6 +457,9 @@ async function analyzePageUncached(
       source_location: c.source_location,
       stance: decision.instance_stance,
       matchConfidence: decision.confidence,
+      // The Matcher reached no verdict (#419): distinct from "not in the
+      // graph" so the annotation can say so.
+      undecided: decision.outcome === "undecided",
     };
 
     if (!decision.is_match || !decision.matched_claim_id) {

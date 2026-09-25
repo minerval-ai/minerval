@@ -15,6 +15,7 @@ import {
   type RubricSection,
 } from "@/lib/evals";
 import s from "./evals.module.css";
+import { MORE_GROUPS, MORE_TOPICS, moreIndexRow } from "./guide-more";
 
 // The guide's topics (#368). Each is a short page of collapsed sections. The
 // rule for the copy: show the artifact (a prompt, a fixture, a standard, a
@@ -89,6 +90,7 @@ export const GROUPS: Array<{ key: string; title: string; note?: string }> = [
   { key: "stable", title: "Is the pipeline stable?", note: "Build it twice and measure the difference." },
   { key: "governance", title: "Does governance work?" },
   { key: "reality", title: "Where can reality check it?" },
+  ...MORE_GROUPS,
   { key: "background", title: "Background" },
 ];
 
@@ -595,7 +597,7 @@ npm run corpus:compare -- db:<idA> db:<idB>         # single runs: deltas, no ve
           body: <p>How the Matcher does on cases we did not write. Thirty pairs, mostly from one cluster&rsquo;s subject, passed in full on the first run. It catches a regression on those thirty.</p>,
         },
         { title: "Run it", body: <Cmd>{`npm run corpus:golden -- --profile=production
-npm run corpus:golden -- --category=negation --model=claude-haiku-4-5-20251001
+npm run corpus:golden -- --category=negation --model=claude-sonnet-5
 npm run corpus:golden -- --min-pass=0.95              # the CI gate`}</Cmd> },
       ];
     },
@@ -647,8 +649,8 @@ npm run corpus:agreement -- snap:run1 db --confirm`}</Cmd> },
     kind: "eval",
     group: "stable",
     title: "Same graph twice",
-    line: "Build the graph twice with nothing changed (the noise floor), or with the documents in a different order (which should not matter).",
-    tags: () => [{ text: "built; never run", kind: "notyet" }, { text: "two runs", kind: "cost" }],
+    line: "Build the graph twice with nothing changed (the noise floor), with the documents reordered, flooded with duplicates, joined by an unrelated document, or reassessed in place. None of it should matter.",
+    tags: () => [{ text: "six properties built; idempotency and path independence run once on the cheap tier, arms lost", kind: "notyet" }, { text: "two drains, or one drain plus a perturbation", kind: "cost" }],
     sections: () => [
       {
         title: "Two arms",
@@ -658,16 +660,43 @@ npm run corpus:agreement -- snap:run1 db --confirm`}</Cmd> },
             <TwoArmDiagram change="same, or shuffled order" />
             <p><strong>Idempotency:</strong> the same setup twice. The disagreement between the arms is the pipeline&rsquo;s own noise, and the floor every other comparison is read against.</p>
             <p><strong>Path independence:</strong> arm B reads the documents in a seeded random order. The <G t="Matcher" /> is stateful, since the first wording it sees becomes the claim, so order can change the graph; <C n="2" /> and <C n="3" /> say it should not.</p>
-            <p>Both arms are child runs, saved as <G t="snapshot">snapshots</G>, and compared by <Link href="/docs/evals/graph-agreement">graph agreement</Link>. One pair of arms is one sample.</p>
+            <p><strong>Adversarial order</strong> is the attack on path independence: arm B reads the most partisan document first (by its role in the manifest, or <code>--role</code>), and the summary reports the first-mover effect: the mean signed credence move of matched claims toward the first document&rsquo;s stance.</p>
+            <p><strong>Duplicate flood:</strong> arm B is arm A&rsquo;s graph plus the same documents submitted again three times under distinct URLs. Instance count is provenance, not evidence weight, so the reading is inflation: the mean signed credence move toward what the sources said, plus the claims only B has (duplicates the Matcher failed to absorb).</p>
+            <p><strong>Locality:</strong> arm B is arm A&rsquo;s graph plus one document from another cluster. The reading is churn: the share of A&rsquo;s claims whose status changed or credence moved by 0.1 or more.</p>
+            <p><strong>Fixpoint:</strong> arm B is arm A&rsquo;s graph with every stewarded claim re-enqueued on the staleness trigger and drained. The reading says whether stewardship settles: verdicts moved, claims and edges added or removed.</p>
+            <p>Every property also reports <strong>granularity stability</strong>: the share of matched claims with the same number of children and the same depth in both arms.</p>
+            <p>Arms are child runs, saved as <G t="snapshot">snapshots</G>, and compared by <Link href="/docs/evals/graph-agreement">graph agreement</Link>, whose report now carries a per-claim block (children, depth, verdicts, instances with source and stance) for every matched pair. The tier-two arms restore A&rsquo;s snapshot and perturb it, so they cost one drain plus the perturbation. One pair of arms is one sample.</p>
           </>
         ),
       },
       {
+        title: "How an arm is built, step by step",
+        body: (
+          <ol>
+            <li><strong>Arm A</strong> is a child <code>corpus:run</code> with the flags given, snapshotted when it drains.</li>
+            <li><strong>Arm B</strong> is a second child run: for idempotency the same flags; for path independence <code>--order=shuffle:&lt;seed&gt;</code>; for adversarial order <code>--order=adversarial</code> or <code>--order=role:&lt;role&gt;</code>; for the tier-two properties the runner first restores A&rsquo;s snapshot and runs with <code>--no-reset</code> plus <code>--dup-suffix</code>, <code>--foreign=&lt;cluster&gt;:&lt;post&gt;</code>, or <code>--reassess-all</code>.</li>
+            <li><strong>Agreement</strong> between the two snapshots: claims matched one to one by text, then by embedding, the ambiguous band judged when <code>--confirm</code> is given.</li>
+            <li><strong>Summary</strong> in plain language with the property&rsquo;s own reading (noise floor, first-mover effect, inflation, churn, settling) and each arm&rsquo;s exact cost, registered as kind property, with a two-arm <Link href="/docs/evals/replays">replay</Link> of both arms.</li>
+          </ol>
+        ),
+      },
+      {
         title: "What it cannot show",
-        body: <p>Anything under hostile input. The rule is that every invariance is tested benign and adversarial; the adversarial arms (a hostile order, a hostile rewording) are not built. Nor are the other invariances in the plan: paraphrase, cascade stability, granularity.</p>,
+        body: (
+          <ul>
+            <li>Paraphrase and frame invariance (the same proposition reworded, or stated by a proponent and a critic) have no arm yet; the golden pairs cover the Matcher half of paraphrase.</li>
+            <li>A matched duplicate never re-triggers the Steward, so a duplicate flood can inflate credence only where duplicates minted new nodes or edges; the instrument shows Matcher leakage reliably and inflation only where the pipeline re-triggers.</li>
+            <li>Which document is most partisan is a keyword heuristic over the manifest roles unless <code>--role</code> says.</li>
+            <li>A capped fixpoint drain reassesses only the highest-priority claims.</li>
+          </ul>
+        ),
       },
       { title: "Run it", body: <Cmd>{`npm run corpus:property -- idempotency blackholes --profile=production
-npm run corpus:property -- path-independence blackholes --seed=3 --baseline=<snapshot>`}</Cmd> },
+npm run corpus:property -- path-independence blackholes --seed=3 --baseline=<snapshot>
+npm run corpus:property -- adversarial-order lableak
+npm run corpus:property -- dup-flood blackholes --dups=3 --baseline=<snapshot>
+npm run corpus:property -- locality eggs --foreign=blackholes:cern-lhc-safety --baseline=<snapshot>
+npm run corpus:property -- fixpoint eggs --baseline=<snapshot>`}</Cmd> },
     ],
   },
   {
@@ -945,7 +974,7 @@ npm run predictions -- score`}</Cmd> },
             <li><strong>Two places reality can check the graph:</strong> <Link href="/docs/evals/predictions">predictions</Link>, which resolve slowly, and <Link href="/docs/evals/model-swap">agreement between models</Link>, which is fast but relative. Neither becomes a truth score for the rest.</li>
             <li><strong>Expert consensus is never the referent.</strong> Distance from consensus is reported, never used as a gate.</li>
             <li><strong>One run is one sample.</strong> Groups of about three, and a change must clear the spread (<Link href="/docs/evals/noise-band">comparing runs</Link>).</li>
-            <li><strong>Every invariance is tested benign and adversarial.</strong> The adversarial case shows the invariance is not empty. Not yet met.</li>
+            <li><strong>Every invariance is tested benign and adversarial.</strong> The adversarial case shows the invariance is not empty. Path independence and idempotency now have their attacks (a hostile order, a duplicate flood); paraphrase and frame do not.</li>
             <li><strong>Numbers inform; they never decide.</strong> No eval score changes a verdict or a claim&rsquo;s importance (<C n="judgment">judgment over mechanism</C>).</li>
             <li><strong>Stability plus calibration is the argument.</strong> A graph that is stable under changes that should not matter, and calibrated where it can be checked, has earned some trust where it cannot be.</li>
             <li><strong>Judges are reviewed before they are trusted.</strong> No judge number feeds a decision until a person has read its verdicts (<Link href="/docs/evals/judge-review">judge review</Link>).</li>
@@ -987,7 +1016,7 @@ npm run predictions -- score`}</Cmd> },
         body: (
           <>
             <p>The registry is in each developer&rsquo;s test database, so it is a per-machine index, not shared history. The committed files are the record: <a href={`${GH}/corpus/scorecards`}>scorecards</a>, golden runs beside them, <a href={`${GH}/corpus/calibration`}>review sheets</a>. This guide renders only from those files.</p>
-            <p>Agreement, swap, property and contribution runs have no committed home yet: they register locally and report into a directory git ignores. Until an export exists they reach this guide by hand.</p>
+            <p>Agreement, swap, property, contribution, adversarial and persona runs register locally and report into a directory git ignores; each also writes a <Link href="/docs/evals/replays-guide">replay</Link>, and the replays worth showing are committed under <a href={`${GH}/corpus/replays`}>corpus/replays</a> and played on this site.</p>
           </>
         ),
       },
@@ -1005,14 +1034,15 @@ npm run predictions -- score`}</Cmd> },
         open: true,
         body: (
           <ul>
-            <li><strong>Anything on the production models.</strong> The one scored run used a Sonnet Steward, capped, with the Matcher mis-recorded. The next thing to do is three production-profile runs of one cluster.</li>
-            <li><strong>The noise floor.</strong> Idempotency has never been run, so no comparison has a scale.</li>
-            <li><strong>Anything adversarial.</strong> No hostile inputs, no attacker, no campaigns.</li>
-            <li><strong>Governance.</strong> The Reviewer and Arbitrator have never been read under controlled input.</li>
+            <li><strong>Anything on the production models.</strong> Every committed run so far is on the cheap tier or the development defaults, capped. The next thing to do is three production-profile runs of one cluster.</li>
+            <li><strong>The noise floor.</strong> Idempotency ran once on the cheap tier and lost its second arm; no comparison has a scale yet.</li>
+            <li><strong>Anything adversarial, in results.</strong> The suite, the gambit library and the red team are built; no arm has run.</li>
+            <li><strong>Governance under simulated people.</strong> The scenario and the personas are built; the Reviewer and Arbitrator have been read once, under the scripted scenario, on the cheap tier.</li>
             <li><strong>Model fidelity.</strong> No swap has run; the allocator&rsquo;s tiering rests on a guess.</li>
-            <li><strong>The judge&rsquo;s newest dimensions.</strong> Sycophancy, hedging, canonical-form strength and political bias: never judged on a real run, never reviewed.</li>
+            <li><strong>The judge&rsquo;s newest dimensions.</strong> Sycophancy, hedging, canonical-form strength and political bias: judged on cheap-tier runs, never reviewed.</li>
             <li><strong>Calibration.</strong> Nothing seeded into production, nothing resolved, no market baseline.</li>
-            <li><strong>The live graph.</strong> Every eval runs on test graphs. Nothing measures the quality of what visitors read.</li>
+            <li><strong>Paraphrase and frame invariance.</strong> The same proposition reworded, or stated by a proponent and a critic, has no arm.</li>
+            <li><strong>The live graph, as read.</strong> The monitors read it; nothing measures the quality of what visitors read.</li>
           </ul>
         ),
       },
@@ -1020,7 +1050,7 @@ npm run predictions -- score`}</Cmd> },
         title: "Where the design may be wrong",
         body: (
           <ul>
-            <li><strong>The judge is weaker than the judged.</strong> Sonnet grades Fable, one model family, no second judge.</li>
+            <li><strong>The judge is weaker than the judged.</strong> Sonnet grades Opus 5.5, one model family, no second judge.</li>
             <li><strong>The judge&rsquo;s reviewer wrote its prompt.</strong> An outside reader would be a stronger check.</li>
             <li><strong>Agreement is measured by another matcher</strong>, with a hand-picked embedding threshold never checked against the golden pairs.</li>
             <li><strong>The golden suite is thirty in-house pairs at its ceiling.</strong> It will catch regressions on those thirty.</li>
@@ -1040,15 +1070,15 @@ npm run predictions -- score`}</Cmd> },
               <thead><tr><th>suite</th><th>what</th><th>standing</th></tr></thead>
               <tbody>
                 {([
-                  ["S1", "per-PR golden suite", "built, in CI"],
+                  ["S1", "per-PR golden suite", "Matcher pairs in CI; canonical-form goldens built"],
                   ["S2", "quality scorecard", "built; newest four dimensions unreviewed"],
-                  ["S3", "properties and stability", "idempotency, path independence, coherence rules; no adversarial arms"],
-                  ["S4", "adversarial robustness", "not built"],
-                  ["S5", "downstream-reasoner probe", "not built"],
+                  ["S3", "properties and stability", "six properties, cascade stability and assessment history built; paraphrase and frame invariance not"],
+                  ["S4", "adversarial robustness", "all four cells built; never run"],
+                  ["S5", "downstream-reasoner probe", "built; never run"],
                   ["S6", "calibration track", "built; not seeded into production"],
-                  ["S7", "model economics and lifecycle", "guard and swap runner; discover and adopt not built"],
-                  ["S8", "persona simulation", "not built"],
-                  ["S9", "production monitors", "not built"],
+                  ["S7", "model economics and lifecycle", "guard, swap, discover and adopt built"],
+                  ["S8", "persona simulation", "phase one built (twenty personas); never run"],
+                  ["S9", "production monitors", "built; scheduler off by default"],
                 ] as const).map(([k, what, standing]) => <tr key={k}><td>{k}</td><td>{what}</td><td className={s.note}>{standing}</td></tr>)}
               </tbody>
             </table>
@@ -1104,6 +1134,8 @@ npm run predictions -- seed --corpus --drain`}</Cmd>
   },
 ];
 
+TOPICS.push(...MORE_TOPICS);
+
 export function topicBySlug(slug: string): Topic | undefined {
   return TOPICS.find((t) => t.slug === slug);
 }
@@ -1149,6 +1181,6 @@ export function indexRow(slug: string, d: EvalsData): IndexRow | null {
     case "predictions":
       return { property: "the Steward's probabilities are calibrated against outcomes", status: "seeded", statusKind: "notyet", lastRun: none, result: `${d.index.predictions.count} questions, 0 resolved`, cost: "≈ 22 Steward runs" };
     default:
-      return null;
+      return moreIndexRow(slug, d);
   }
 }

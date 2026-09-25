@@ -27,6 +27,8 @@ import { DEFAULT_MODEL } from "./models.js";
 import { getUsageContext } from "./usage-context.js";
 import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
+import { malformedToolArguments } from "./providers/openai-dialect.js";
+import { resolveProvider } from "./providers/routing.js";
 import type {
   CompletionResult,
   EffortLevel,
@@ -73,8 +75,52 @@ export async function complete(options: {
     system: options.system,
     output: result.content,
     stopReason: result.stopReason,
+    maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+    effort: options.effort,
+    temperature: options.temperature,
   });
   return result;
+}
+
+/**
+ * The setup a model was given, recorded verbatim as one "prompt" step at the
+ * start of every tool-use loop and before every single-shot completion (the
+ * replay's "inspect all the way down" requirement): the full system prompt
+ * (string or cached blocks — the constitution, the role, the domain skills),
+ * the initial messages, the tool descriptors (name, description, input
+ * schema for client tools; server tool descriptors as given), and the
+ * sampling parameters. Fire-and-forget through recordAgentStep, like every
+ * other step: a prompt step never throws or slows the loop, and nothing is
+ * recorded without a trace on the context.
+ */
+function recordPromptStep(step: {
+  model: string;
+  system?: SystemPrompt;
+  initialMessages: MessageParam[];
+  tools?: ToolUnion[];
+  maxTokens?: number;
+  effort?: EffortLevel;
+  temperature?: number;
+  schemaName?: string;
+  schema?: Record<string, unknown>;
+}): void {
+  const trace = getUsageContext().trace;
+  if (!trace) return;
+  const tools = (step.tools ?? []).map((t) =>
+    "input_schema" in t
+      ? { name: t.name, description: t.description ?? null, input_schema: t.input_schema }
+      : t
+  );
+  recordAgentStep(trace, "prompt", {
+    model: step.model,
+    effort: step.effort ?? null,
+    maxTokens: step.maxTokens ?? null,
+    temperature: step.temperature ?? null,
+    system: step.system ?? null,
+    initialMessages: step.initialMessages,
+    tools,
+    ...(step.schemaName ? { schemaName: step.schemaName, schema: step.schema ?? null } : {}),
+  });
 }
 
 /**
@@ -90,11 +136,27 @@ function recordCompletionStep(step: {
   messages: MessageParam[];
   system?: SystemPrompt;
   schemaName?: string;
+  schema?: Record<string, unknown>;
   output: unknown;
   stopReason?: string | null;
+  maxTokens?: number;
+  effort?: EffortLevel;
+  temperature?: number;
 }): void {
   const trace = getUsageContext().trace;
   if (!trace) return;
+  // The prompt first, whole; the completion step keeps its shape (system
+  // prompt by size) for the readers that predate the prompt step.
+  recordPromptStep({
+    model: step.model,
+    system: step.system,
+    initialMessages: step.messages,
+    maxTokens: step.maxTokens,
+    effort: step.effort,
+    temperature: step.temperature,
+    schemaName: step.schemaName,
+    schema: step.schema,
+  });
   // The system prompt may be several cached blocks (constitution-plus-role,
   // then one per domain skill); the size recorded is the total.
   const systemChars =
@@ -162,7 +224,11 @@ export async function completeStructured<T>(options: {
     messages: options.messages,
     system: options.system,
     schemaName: options.schemaName,
+    schema: options.schema,
     output: result,
+    maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+    effort: options.effort,
+    temperature: options.temperature,
   });
   return result;
 }
@@ -232,6 +298,24 @@ export async function completeStructuredList<T>(options: {
  * history whose earlier turns changed, and the moving cache breakpoint in the
  * Anthropic adapter only pays off when the prefix it caches stays put.
  */
+/** The running turn counter's wording (#474), one line after the tool results. */
+export function turnCounterLine(used: number, max: number): string {
+  return `Turn ${used} of ${max} used; ${max - used} remain.`;
+}
+
+/**
+ * The budget notice an agent gets when it sets none of its own (#474): every
+ * agent records its conclusions through a tool call, so every agent needs
+ * telling, shortly before the cut, that unrecorded conclusions are lost.
+ */
+export const DEFAULT_ITERATION_BUDGET_NOTICE = {
+  warnWithin: 2,
+  message: (remaining: number): string =>
+    `Budget notice: ${remaining} tool-use turn(s) remain, the last of them ` +
+    `included. Whatever is not recorded through a tool call when the run ` +
+    `ends is lost: stop exploring and make your concluding tool call(s) now.`,
+};
+
 export async function toolUseLoop(options: {
   initialMessages: MessageParam[];
   tools: ToolUnion[];
@@ -251,14 +335,51 @@ export async function toolUseLoop(options: {
    * off mid-task at maxIterations. The string is the agent-facing wording.
    */
   iterationBudgetNotice?: { warnWithin: number; message: (remaining: number) => string };
+  /**
+   * A running counter appended to every tool-result message (#474): "Turn 3
+   * of 12 used; 9 remain." A budget stated once up front stops meaning
+   * anything by turn 20 of a 40-turn run, because a model does not track its
+   * own turn count across a long transcript; a continuous signal lets it
+   * pace. On by default; false turns it off.
+   */
+  turnCounter?: boolean;
+  /**
+   * When the agent's whole output is one final tool call (the Matcher's
+   * decision), a turn that ends in prose instead — "resubmitting now", and
+   * then nothing — loses the run. With this set, such a turn is answered with
+   * `message` as a user turn and the loop continues, at most `max` times per
+   * loop; each nudge still counts against maxIterations. Only turns with NO
+   * tool use are nudged; a final tool the loop accepted ends it as before.
+   */
+  finalToolNudge?: {
+    message: string;
+    max: number;
+    /** Nudge only while this holds (e.g. "no decision recorded yet"); default always. */
+    when?: () => boolean;
+  };
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
+  const notice = options.iterationBudgetNotice ?? DEFAULT_ITERATION_BUDGET_NOTICE;
+  const turnCounter = options.turnCounter ?? true;
   let lastResult: ToolCompletionResult | null = null;
+  let nudges = 0;
+  let maxTokensRecoveries = 0;
   // Trace handle from the enclosing withAgent, when tracing is enabled: the
   // loop is where the transcript exists, so it's where steps are recorded
   // (#334 L0). Absent handle = record nothing, zero overhead.
   const trace = getUsageContext().trace;
+  if (trace) {
+    recordPromptStep({
+      model: options.model ?? DEFAULT_MODEL,
+      system: options.system,
+      initialMessages: options.initialMessages,
+      tools: options.tools,
+      maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+      effort: options.effort,
+      temperature: options.temperature,
+    });
+  }
   // Container-backed server tools (web_search_20260209 runs via code execution)
   // mint a container on first use that MUST be passed back on every later turn of
   // the loop, or the API rejects the request. Thread the latest id through.
@@ -305,10 +426,59 @@ export async function toolUseLoop(options: {
     // best-effort result instead — the caller (e.g. the Steward) has already
     // been told to record its conclusion before the budget runs out.
     if (result.stopReason === "max_tokens") {
+      // Without server tools there is nothing half-emitted to strand, and a
+      // cutoff is recoverable: a model that reasons in its output (GLM 5.3
+      // Flash) hit the cap on most Steward turns and a majority of Matcher
+      // turns in the corpus run, and every one of those runs ended with no
+      // assessment or decision. Tell it what happened and let it finish, at
+      // most twice per loop; the assistant turn is replayed only when it has
+      // content (an empty one the Anthropic API rejects).
+      const hasServerTools = options.tools.some((t) => !("input_schema" in t));
+      const provider = resolveProvider(options.model ?? DEFAULT_MODEL);
+      const canResume =
+        !hasServerTools &&
+        maxTokensRecoveries < 2 &&
+        i < maxIter - 1 &&
+        (result.rawContent.length > 0 || provider !== "anthropic");
+      if (canResume) {
+        maxTokensRecoveries++;
+        if (result.rawContent.length > 0) {
+          messages.push({ role: "assistant", content: result.rawContent });
+        }
+        const note =
+          "Your previous turn was cut off at the output limit (max_tokens) before " +
+          "it finished, and nothing from it was recorded. Do not repeat it. Continue " +
+          "from here far more concisely: decide, and make the tool call now.";
+        messages.push({ role: "user", content: [{ type: "text", text: note }] });
+        if (trace) {
+          recordAgentStep(trace, "tool_results", [
+            { name: "max_tokens_recovery", input: {}, output: note },
+          ]);
+        }
+        continue;
+      }
       return result;
     }
 
     if (result.stopReason === "end_turn" || result.toolUses.length === 0) {
+      const nudge = options.finalToolNudge;
+      if (
+        nudge &&
+        result.toolUses.length === 0 &&
+        nudges < nudge.max &&
+        i < maxIter - 1 &&
+        (nudge.when?.() ?? true)
+      ) {
+        nudges++;
+        messages.push({ role: "assistant", content: result.rawContent });
+        messages.push({ role: "user", content: [{ type: "text", text: nudge.message }] });
+        if (trace) {
+          recordAgentStep(trace, "tool_results", [
+            { name: "final_tool_nudge", input: {}, output: nudge.message },
+          ]);
+        }
+        continue;
+      }
       return result;
     }
 
@@ -326,7 +496,9 @@ export async function toolUseLoop(options: {
     const toolResults: ToolResultBlockParam[] = [];
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
-      const output = await options.executeTool(tu.name, tu.input);
+      const output =
+        malformedToolArguments(tu.input) ??
+        (await options.executeTool(tu.name, tu.input));
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
@@ -338,14 +510,17 @@ export async function toolUseLoop(options: {
       recordAgentStep(trace, "tool_results", executedTools);
     }
 
-    // If the iteration budget is nearly spent, tell the agent so it can wrap up
-    // its essential actions on the next turn rather than being hard-cut.
+    // Tell the agent where it stands after every turn (#474), and, once the
+    // budget is nearly spent, that it should wrap up its essential actions on
+    // the next turn rather than being hard-cut.
     const remaining = maxIter - 1 - i;
-    const notice = options.iterationBudgetNotice;
     const userContent: Array<ToolResultBlockParam | { type: "text"; text: string }> = [
       ...toolResults,
     ];
-    if (notice && remaining > 0 && remaining <= notice.warnWithin) {
+    if (turnCounter) {
+      userContent.push({ type: "text", text: turnCounterLine(i + 1, maxIter) });
+    }
+    if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });
     }
 
@@ -477,6 +652,17 @@ export async function longRunToolLoop(options: {
     cacheCreationTokens: 0,
   };
   const trace = getUsageContext().trace;
+  if (trace) {
+    recordPromptStep({
+      model,
+      system: options.system,
+      initialMessages: options.initialMessages,
+      tools: options.tools,
+      maxTokens: options.maxTokens,
+      effort: options.effort,
+      temperature: options.temperature,
+    });
+  }
   let containerId: string | undefined;
   let turns = 0;
   let lastResult: ToolCompletionResult | null = null;
@@ -571,7 +757,9 @@ export async function longRunToolLoop(options: {
     const toolResults: ToolResultBlockParam[] = [];
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
-      const output = await options.executeTool(tu.name, tu.input);
+      const output =
+        malformedToolArguments(tu.input) ??
+        (await options.executeTool(tu.name, tu.input));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: output });
       executedTools.push({ name: tu.name, input: tu.input, output });
     }

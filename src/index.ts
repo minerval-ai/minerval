@@ -9,12 +9,15 @@ import { getDb, closeDb } from "./db/client.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
+import { startMonitorScheduler } from "./workers/monitor-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
+import { startLookoutTriggers } from "./workers/lookout-triggers.js";
 import { startGithubIssueSync } from "./workers/github-issue-sync.js";
+import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfill.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -117,6 +120,12 @@ async function main() {
   // the DB, so running it in every task is safe — exactly one request wins.
   pollers.push(startAuditScheduler({ logger }));
 
+  // The monitor scheduler (#334 S9) hands the candidate detectors' hits
+  // (performed settling, empty chairs) to the Audit Agent as input, deduped
+  // per claim per reflag period in the DB. Off unless
+  // MONITOR_SWEEP_INTERVAL_HOURS > 0; safe in every task when on.
+  pollers.push(startMonitorScheduler({ logger }));
+
   // The allocation scheduler refreshes composite queue priorities and feeds
   // the cadence-based staleness_check re-enqueues (#283), with a bounded
   // per-sweep inflow (#295). Both jobs are idempotent, so running it in
@@ -148,6 +157,17 @@ async function main() {
   // that failed — a bounded batch per tick. The row records the issue
   // number, so every task may run it. Silent no-op unless configured.
   pollers.push(startGithubIssueSync({ logger }));
+
+  // The report embedding backfill (#432) gives a vector to every report
+  // recorded without one, so the match-before-write search and
+  // search_issues can see it. The update lands only where the embedding
+  // is still null, so every task may run it.
+  pollers.push(startReportEmbeddingBackfill({ logger }));
+
+  // Lookout triggers (docs/allocation.md, "Lookouts"): the daily Crossref
+  // retraction poll that queues inputs for the mandates' standing watches.
+  // High-water-marked in platform_flags, so every task may run it.
+  pollers.push(startLookoutTriggers({ logger }));
 
   // Graceful shutdown
   const shutdown = async () => {

@@ -20,6 +20,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -58,6 +59,7 @@ async function runArbitrationImpl(input: {
   // One cached block for the constitution and role, plus one per active skill.
   const system = getDisputeArbitratorSystemPromptBlocks({ skills });
 
+  const ARBITRATION_MAX_TURNS = 12;
   let userMessage = `You have been called to arbitrate a dispute.
 
 Trigger: ${input.trigger}
@@ -77,7 +79,9 @@ Please:
 5. Apply your decision framework: gather context, analyze policies, assess evidence, decide.
 6. Record your decision using record_arbitration_decision.
 7. Use notify_claim_steward if the outcome affects the claim.
-8. Use flag_for_human_review if the situation exceeds automated capacity.`;
+8. Use flag_for_human_review if the situation exceeds automated capacity.
+
+${turnBudgetLine(ARBITRATION_MAX_TURNS)}`;
 
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -90,7 +94,7 @@ Please:
     // the extractor's post-incident ceiling; pacing belongs to the iteration
     // budget notice, not this cap.
     maxTokens: 16384,
-    maxIterations: 12,
+    maxIterations: ARBITRATION_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);

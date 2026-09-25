@@ -128,14 +128,17 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   per-node assessment status: contested-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
-  `stance`) plus its assessment, or `matched: false` for new/unknown.
+  `stance`) plus its assessment, `matched: false` for new/unknown, or
+  `matched: null` when the Matcher ran out of search budget without a
+  verdict (not a finding that the claim is new; retry).
 - **`extract_claims`** `{text, source_type?, max_claims?}` — run text through
   the Extractor agent → discrete checkable claims with proposed canonical
   forms.
 - **`assess_text`** `{text, max_claims?}` — the judgment surface: extract the
   passage's claims, match each into the graph, and return per-claim verdicts
   (`well_supported`/`disputed`/… from the graph's assessments, `unassessed`
-  if matched but not yet assessed, `unknown` if the graph has no such claim).
+  if matched but not yet assessed, `unknown` if the graph has no such claim,
+  `undecided` if the Matcher reached no verdict for that claim).
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
   assessment applies inverted.
@@ -158,14 +161,14 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   to know what would count as a solution; the statement file itself is at
   `GET /claims/:id/formalization.lean`.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
-  joins?, distinct_from?}` — report a problem with this server or its tools
+  joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea
   (`improvement`), never a judgment about a claim. Severity is `blocking` /
-  `degraded` / `annoyance` / `idea`. Repeats of the same title collapse into
-  one report with an occurrence count, and a report that reads like one
-  already on record is not written: the response is `possible_duplicate`
-  with the candidates, and the caller answers on a second call with `joins`
-  (its body is added as a sighting) or `distinct_from`. Free, attributed,
+  `degraded` / `annoyance` / `idea`. Always recorded in one call: repeats
+  of the same title collapse into one report with an occurrence count, and
+  a new report comes back with `related`, the reports on record that read
+  like it; if one of them is yours, raise again with `joins` set to its id
+  and your body is added to it as a sighting instead. Free, attributed,
   rate-limited; returns the report id.
 
 Claiming a prize over MCP (`claim_prize`) is deferred until the first prize

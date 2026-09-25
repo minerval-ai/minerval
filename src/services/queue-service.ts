@@ -56,11 +56,25 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A mandate's plan asked for a pass on this claim (an assess, reassess
+    // or deepen item, materialized by the reconcile sweep or by the
+    // Grantmaker's extend_plan in the same turn, #416). The context carries
+    // the mandate's name and the item's rationale.
+    | "mandate_plan"
+    // A mandate's lookout (docs/allocation.md, "Lookouts") reports a
+    // development bearing on this claim — a retraction, a new result, a
+    // moved dependency — and asks for a fresh look. The context carries
+    // what it saw; the ledger row it valued decides whether the pass runs.
+    | "lookout_flag"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review
     // and reconcile (re-assess; adopt the suggested edge if apt).
     | "curator_change"
+    // Another claim's Steward proposes that this claim adopt it as a subclaim
+    // (propose_parent_edge): the claim it stewards is an argument for, about,
+    // or a special case of this one. Review and adopt the edge if apt.
+    | "edge_proposal"
     // One-shot backfill (issue #129): named arguments predating write_argument
     // lack a written form — write one for each.
     | "argument_written_form_backfill"
@@ -88,10 +102,10 @@ export interface CuratorMessage {
   trigger:
     // A Steward flagged something structural (likely duplicate, needs split, …).
     | "steward_escalation"
-    // Look across a new claim's neighborhood for duplicates / missing edges.
-    // No longer produced: the unconditional post-extraction sweep was removed
-    // (it wrote nothing across 122 runs). Kept so an in-flight message from
-    // before that change still deserializes.
+    // Look across a claim's neighborhood for duplicates / missing edges.
+    // The unconditional post-extraction sweep that produced this was removed
+    // (it wrote nothing across 122 runs); it is now produced only by the
+    // one-shot scripts/sweep-fallback-matches.ts (#419, #438).
     | "neighborhood_sweep";
   // The claim whose neighborhood to reconcile (the escalating/anchor claim).
   claimId: string;
@@ -378,6 +392,10 @@ export async function requestAudit(input: {
     | "suspension_review"
     | "report_triage"
     | "manual"
+    // A production monitor's candidate detector (#334 S9): a performed-
+    // settling or empty-chairs hit handed over as anomaly_investigation
+    // INPUT, deduped per claim per reflag period (monitor-scheduler.ts).
+    | "monitor_signal"
     // The prize triggers (docs/mathematics.md §8.1, §8.4, §8.5): a bounty
     // opened at or above the sign-off threshold, a Steward's acceptance of
     // a prize claim, and a checker failure that holds a statement's queue.

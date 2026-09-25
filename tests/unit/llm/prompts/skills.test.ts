@@ -187,6 +187,9 @@ describe("ROLE_VIEW", () => {
     expect(ROLE_VIEW["claim-steward"]).toEqual(every);
     expect(ROLE_VIEW["audit-agent"]).toEqual([...every, "Standards for judging"]);
     expect(ROLE_VIEW.grantmaker).toEqual(["For every administrator", "For the Grantmaker"]);
+    // The Lookout judges relevance on a mandate's behalf, never truth: the
+    // section addressed to everyone, and nothing role-specific.
+    expect(ROLE_VIEW.lookout).toEqual(["For every administrator"]);
     expect(ROLE_VIEW["contribution-reviewer"]).toEqual([
       "For every administrator",
       "For the Contribution Reviewer and the Dispute Arbitrator",
@@ -204,6 +207,7 @@ describe("ROLE_VIEW", () => {
       "claim-steward",
       "audit-agent",
       "grantmaker",
+      "lookout",
       "contribution-reviewer",
       "dispute-arbitrator",
       "curator",
@@ -280,15 +284,25 @@ describe("views", () => {
   it("lists the skills in the catalog with the role's sections", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog).toMatch(
-      /^Skills that exist: mathematics \(version 1; activated by domain mathematics; you receive: For every administrator, For the Grantmaker\); provenance \(version 1; a method skill, carried on every run; you receive: For every administrator\)\.$/
+      /^Skills that exist: mathematics \(version 1; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
     );
     expect(getSkillCatalog("claim-steward")).toContain(
-      "provenance (version 1; a method skill, carried on every run; you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
+      "provenance (version 1; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
     );
     const section = domainSkillsSection("claim-steward");
     expect(section.startsWith("## Domain skills\n")).toBe(true);
     expect(section).toContain("never outranks either");
     expect(section).toContain(getSkillCatalog("claim-steward"));
+    // A run on an untagged claim carries no domain skill block by design,
+    // and the role prompt says so, so the agent does not report a delivery
+    // fault (#469).
+    expect(section).toContain("activates no domain skill");
+    expect(getSkillCatalog("matcher")).toContain(
+      "mathematics (version 1; activated by domain mathematics; when active, you receive: For the Matcher)"
+    );
+    expect(getSkillCatalog("matcher")).toContain(
+      "provenance (version 1; a method skill, carried on every run; you receive none of its sections)"
+    );
   });
 
   it("hands each role only the tools declared for it, in the Anthropic shape", () => {

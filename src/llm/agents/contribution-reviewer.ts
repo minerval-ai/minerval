@@ -20,6 +20,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -53,6 +54,7 @@ async function runContributionReviewImpl(input: {
   // One cached block for the constitution and role, plus one per active skill.
   const system = getContributionReviewerSystemPromptBlocks({ skills });
 
+  const REVIEW_MAX_TURNS = 8;
   const userMessage = `A new contribution has been submitted for review.
 
 Contribution ID: ${input.contributionId}
@@ -64,7 +66,15 @@ Please review this contribution:
 4. Evaluate the contribution against the acceptance criteria for its type.
 5. Record your decision using record_review_decision (accept, reject, or escalate).
 6. If you accept a contribution on an existing claim, use notify_claim_steward so the steward can integrate the change. Accepted INTAKE contributions are materialized automatically by record_review_decision (matching/canonicalization, then claim creation or extraction); do not call notify_claim_steward for those; the result is reported back to you in the tool result.
-7. If you escalate, use escalate_to_arbitrator with your reasoning.`;
+7. If you escalate, use escalate_to_arbitrator with your reasoning.
+
+${turnBudgetLine(REVIEW_MAX_TURNS)}`;
+
+  // A review that ends without record_review_decision leaves the contribution
+  // claimed-and-pending until the reclaim window passes (two of ten in the
+  // GLM 5.3 Flash corpus scenario ended in prose instead). One nudge, only
+  // while no decision has been recorded.
+  let decisionRecorded = false;
 
   await withSkills(skills.map((s) => s.name), () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -72,7 +82,14 @@ Please review this contribution:
     system,
     model,
     maxTokens: 8192,
-    maxIterations: 8,
+    maxIterations: REVIEW_MAX_TURNS,
+    finalToolNudge: {
+      max: 1,
+      when: () => !decisionRecorded,
+      message:
+        "No review decision has been recorded for this contribution. Call " +
+        "record_review_decision now (accept, reject, or escalate) with your reasoning.",
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
@@ -83,7 +100,15 @@ Please review this contribution:
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      return executeReviewerTool(name, toolInput);
+      const output = await executeReviewerTool(name, toolInput);
+      if (name === "record_review_decision") {
+        try {
+          decisionRecorded = (JSON.parse(output) as { success?: boolean }).success !== false;
+        } catch {
+          decisionRecorded = true;
+        }
+      }
+      return output;
     },
   }));
 }

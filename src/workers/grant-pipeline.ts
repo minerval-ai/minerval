@@ -347,6 +347,7 @@ export async function processNextGrantTask(
         WHERE id = $1`,
       [target.id]
     );
+    await closeAssessRowForDirectRun(target.id, grant.budget_job_id, model);
     await rawQuery(`UPDATE grants SET updated_at = now() WHERE id = $1`, [
       grant.id,
     ]);
@@ -379,6 +380,47 @@ export async function processNextGrantTask(
       ok: false,
       error: msg,
     };
+  }
+}
+
+/**
+ * The pass this lane just ran is the pass the claim's open assess row (and
+ * the plan item behind it) was waiting for: close the row as done so the
+ * ledger, the plan item and the executed count all say the work ran
+ * (#427). Left open, the row was retired by the reconcile sweep as
+ * "assessed elsewhere" and the item read cancelled. The run was metered to
+ * the mandate's escrow through llm_usage already, so the row closes at
+ * zero metered cost: nothing is consumed from whoever else had backed the
+ * row, and their unspent allocations settle back to them as on any
+ * completed action. Never fatal: the pass has run whatever happens here,
+ * and the sweep's "assessed since" reading reaches the same state.
+ */
+async function closeAssessRowForDirectRun(
+  claimId: string,
+  budgetJobId: string,
+  model: string
+): Promise<void> {
+  try {
+    const { ASSESS_GROUP, completeAction } = await import(
+      "../services/action-service.js"
+    );
+    const config = loadConfig();
+    const tier = model === config.stewardStrongModel ? "strong" : "standard";
+    const [row] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions
+        WHERE exclusion_group = $1 AND status IN ('open', 'running')
+        ORDER BY (variant = $2) DESC, updated_at ASC
+        LIMIT 1`,
+      [ASSESS_GROUP(claimId), tier]
+    );
+    if (!row) return;
+    await completeAction(row.id, 0, { meteredJobId: budgetJobId });
+  } catch (err) {
+    console.error(
+      `[grant] could not close the assess row for claim ${claimId} after a direct run: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
   }
 }
 

@@ -21,6 +21,7 @@ import {
   writeFileSync,
   mkdirSync,
   copyFileSync,
+  cpSync,
   readFileSync,
   readdirSync,
   existsSync,
@@ -32,9 +33,15 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { execSync } from "child_process";
 
 import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
-import { buildEvalsIndex, type ClusterInput, type ContributionScenarioInput } from "./evals-content.js";
+import {
+  buildEvalsIndex,
+  modelLabel,
+  type ClusterInput,
+  type ContributionScenarioInput,
+  type ReplayIndexInput,
+} from "./evals-content.js";
 import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
-import { MODELS } from "../src/llm/models.js";
+import { MODELS, OPENROUTER_MODELS } from "../src/llm/models.js";
 
 import { getExtractorSystemPrompt } from "../src/llm/prompts/extractor.js";
 import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
@@ -44,10 +51,43 @@ import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
 import { getGrantmakerSystemPrompt } from "../src/llm/prompts/grantmaker.js";
+import { getLookoutSystemPrompt } from "../src/llm/prompts/lookout.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { getResearcherSystemPrompt } from "../src/llm/prompts/researcher.js";
 import { buildJudgePrompt, CONSTITUTION_STANDARDS, JUDGE_SCHEMA } from "./corpus/judge.js";
 import { PAIR_JUDGE_SCHEMA, pairJudgePrompt } from "./corpus/graph-agreement.js";
+import {
+  buildWithGraphPrompt,
+  buildWithoutGraphPrompt,
+  PROBE_WITH_GRAPH_SCHEMA,
+  PROBE_WITHOUT_GRAPH_SCHEMA,
+  retractionContext,
+} from "./corpus/probe-prompts.js";
+import {
+  buildCanonicalJudgePrompt,
+  CANONICAL_FORM_STANDARD,
+  CANONICAL_JUDGE_SCHEMA,
+} from "./corpus/golden-canonical-lib.js";
+import {
+  BLIND_JUDGE_SCHEMA,
+  blindJudgePrompt,
+  HOLISTIC_JUDGE_SCHEMA,
+  holisticJudgePrompt,
+  REDTEAM_ACTION_TOOLS,
+  REDTEAM_NOTES_TOOL,
+  redteamEpisodePrompt,
+  redteamFeedbackPrompt,
+  redteamSystemPrompt,
+} from "./corpus/adversarial-prompts.js";
+import { GAMBIT_DESCRIPTIONS } from "./corpus/adversarial-lib.js";
+import {
+  buildPersonaOpeningMessage,
+  buildPersonaSystemPrompt,
+  personaActionToolDefinitions,
+  personaToolNames,
+  SIMULATION_NOTICE,
+} from "./corpus/persona-prompts.js";
+import type { PersonaEntry } from "./corpus/personas-lib.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -93,7 +133,7 @@ const AGENTS: AgentMeta[] = [
   { key: "matcher", name: "Matcher", stage: 2, group: "processing",
     tagline: "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     invokedWhen: "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
-    model: "GLM 5.3 Flash", fn: getMatcherSystemPrompt },
+    model: modelLabel(OPENROUTER_MODELS.flash), fn: getMatcherSystemPrompt },
   { key: "contribution-reviewer", name: "Contribution Reviewer", stage: 3, group: "governance",
     tagline: "Evaluates incoming contributions against policy — accept, reject, or escalate.",
     invokedWhen: "A contributor submits a challenge, support, merge, edit, instance, or argument.",
@@ -101,31 +141,35 @@ const AGENTS: AgentMeta[] = [
   { key: "claim-steward", name: "Claim Steward", stage: 4, group: "governance",
     tagline: "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     invokedWhen: "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
-    model: "Claude Fable 5.1", fn: getClaimStewardSystemPrompt },
+    model: "Claude Opus 5.5", fn: getClaimStewardSystemPrompt },
   { key: "curator", name: "Curator", stage: 5, group: "governance",
     tagline: "The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.",
     invokedWhen: "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
-    model: "Claude Fable 5.1", fn: getCuratorSystemPrompt },
+    model: "Claude Opus 5.5", fn: getCuratorSystemPrompt },
   { key: "dispute-arbitrator", name: "Dispute Arbitrator", stage: 6, group: "governance",
     tagline: "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
     invokedWhen: "A review is escalated, an appeal is filed, or a claim is persistently contested.",
-    model: "Claude Fable 5.1", fn: getDisputeArbitratorSystemPrompt },
+    model: "Claude Opus 5.5", fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
     invokedWhen: "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
-    model: "Claude Fable 5.1", fn: getAuditAgentSystemPrompt },
+    model: "Claude Opus 5.5", fn: getAuditAgentSystemPrompt },
   { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
     invokedWhen: "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
-    model: "Claude Fable 5.1", fn: getGrantmakerSystemPrompt },
+    model: "Claude Opus 5.5", fn: getGrantmakerSystemPrompt },
+  { key: "lookout", name: "Lookout", stage: 9, group: "governance",
+    tagline: "A standing watch a mandate funds: the cheapest agent with the narrowest question. Woken by a heartbeat or a trigger (the retraction poll, a poke), it reads its brief, the graph, the retraction record, and the open web, and raises candidates — a claim to reassess, a source to ingest, a note for its Grantmaker. It judges relevance, never truth, and can neither write an assessment nor move money.",
+    invokedWhen: "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
+    model: modelLabel(OPENROUTER_MODELS.flash), fn: getLookoutSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the
   // one short block written without the skill or the constitution.
-  { key: "math-solver", name: "Solver", stage: 9, group: "instruments",
+  { key: "math-solver", name: "Solver", stage: 10, group: "instruments",
     tagline: "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     invokedWhen: "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
-    model: "Claude Fable 5.1", fn: getMathSolverSystemPrompt },
+    model: "Claude Opus 5.5", fn: getMathSolverSystemPrompt },
   // The researcher (#298): the general instrument, of which the solver is
   // the special case. An administrator briefs it, picks its tier and budget,
   // and chooses whether it carries the constitution (the default). It
@@ -134,7 +178,7 @@ const AGENTS: AgentMeta[] = [
   { key: "researcher", name: "Researcher", stage: 10, group: "instruments",
     tagline: "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
     invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
-    model: "Chosen per launch: Claude Fable 5.1 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)", fn: getResearcherSystemPrompt },
+    model: "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)", fn: getResearcherSystemPrompt },
 ];
 
 export interface AgentIndexEntry {
@@ -285,6 +329,7 @@ export function syncEvalsContent(contentDir: string): {
   goldenPairs: number;
   predictions: number;
   contributions: number;
+  replays: number;
   pinnedAgents: number;
   gitCommit: string | null;
 } {
@@ -294,14 +339,16 @@ export function syncEvalsContent(contentDir: string): {
   mkdirSync(evalsDir, { recursive: true });
 
   const jsonFiles = (dir: string) =>
-    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+    existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "baselines.json").sort() : [];
   const readJson = <T,>(path: string) => JSON.parse(readFileSync(path, "utf8")) as T;
   const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
   // Clusters: every corpus/<dir>/manifest.json, sized over its committed posts.
   const clusters: ClusterInput[] = readdirSync(corpusDir)
     .filter((d) => existsSync(join(corpusDir, d, "manifest.json")) && statSync(join(corpusDir, d)).isDirectory())
-    .filter((d) => d !== "predictions")
+    // A cluster's manifest lists posts; the predictions set and the persona
+    // manifest live in the same shape of directory and are not clusters.
+    .filter((d) => Array.isArray(readJson<{ posts?: unknown }>(join(corpusDir, d, "manifest.json")).posts))
     .sort()
     .map((key) => {
       const manifest = readJson<{
@@ -322,13 +369,22 @@ export function syncEvalsContent(contentDir: string): {
   // Scorecards and golden runs, copied file for file under the same names.
   const scorecardFiles: Array<{ cluster: string; file: string }> = [];
   const goldenRunFiles: string[] = [];
+  const goldenCanonicalRunFiles: string[] = [];
   const scorecardsRoot = join(corpusDir, "scorecards");
   for (const cluster of readdirSync(scorecardsRoot).filter((d) => statSync(join(scorecardsRoot, d)).isDirectory()).sort()) {
-    const target = cluster === "golden-matcher" ? resolve(evalsDir, "golden-runs") : resolve(evalsDir, "scorecards", cluster);
+    // The two golden suites file their runs beside the cluster scorecards but
+    // are not scorecards: they get their own directories and index lists.
+    const target =
+      cluster === "golden-matcher"
+        ? resolve(evalsDir, "golden-runs")
+        : cluster === "golden-canonical"
+          ? resolve(evalsDir, "golden-canonical-runs")
+          : resolve(evalsDir, "scorecards", cluster);
     mkdirSync(target, { recursive: true });
     for (const file of jsonFiles(join(scorecardsRoot, cluster))) {
       copyFileSync(join(scorecardsRoot, cluster, file), resolve(target, file));
       if (cluster === "golden-matcher") goldenRunFiles.push(file);
+      else if (cluster === "golden-canonical") goldenCanonicalRunFiles.push(file);
       else scorecardFiles.push({ cluster, file });
     }
   }
@@ -349,6 +405,31 @@ export function syncEvalsContent(contentDir: string): {
     copyFileSync(join(corpusDir, "contributions", file), resolve(evalsDir, "contributions", file));
     return readJson<ContributionScenarioInput>(join(corpusDir, "contributions", file));
   });
+
+  // Replays (corpus/replays/README.md): one directory per committed recording,
+  // holding replay.json (the index the page renders) and replay-events/
+  // (the full per-event detail, one file per event). The index goes to
+  // web/content/evals/replays/<name>.json; the detail files go under
+  // web/public/evals/replays/<name>/events/... so the player fetches an
+  // event's untrimmed transcript only when the reader opens it.
+  const replaysDir = join(corpusDir, "replays");
+  const publicReplaysDir = resolve(contentDir, "..", "public", "evals", "replays");
+  rmSync(publicReplaysDir, { recursive: true, force: true });
+  mkdirSync(resolve(evalsDir, "replays"), { recursive: true });
+  const replays: ReplayIndexInput[] = (existsSync(replaysDir) ? readdirSync(replaysDir) : [])
+    .filter((d) => statSync(join(replaysDir, d)).isDirectory() && existsSync(join(replaysDir, d, "replay.json")))
+    .sort()
+    .map((name) => {
+      const index = readJson<ReplayIndexInput>(join(replaysDir, name, "replay.json"));
+      copyFileSync(join(replaysDir, name, "replay.json"), resolve(evalsDir, "replays", `${name}.json`));
+      const events = join(replaysDir, name, "replay-events");
+      if (existsSync(events)) {
+        const target = resolve(publicReplaysDir, name, "events");
+        mkdirSync(target, { recursive: true });
+        cpSync(events, target, { recursive: true });
+      }
+      return { ...index, name };
+    });
 
   let gitCommit: string | null = null;
   try {
@@ -382,6 +463,140 @@ export function syncEvalsContent(contentDir: string): {
   copyFileSync(resolve(corpusDir, "RUBRIC.md"), resolve(evalsDir, "rubric.md"));
   copyFileSync(resolve(corpusDir, "SCORING.md"), resolve(evalsDir, "scoring.md"));
 
+  // The reasoner probe (S5): its two prompts with placeholders, the retraction
+  // context, the schemas, and the pinned questions per cluster.
+  writeFileSync(
+    resolve(evalsDir, "probe-prompts.json"),
+    JSON.stringify(
+      {
+        withGraph: buildWithGraphPrompt("<the question>", [
+          {
+            id: "<claim id>",
+            text: "<a claim's canonical text>",
+            status: "<status>",
+            confidence: 0.8,
+            credence: 0.7,
+            summary: "<the Steward's assessment summary>",
+            similarity: 0.9,
+          },
+        ]),
+        withoutGraph: buildWithoutGraphPrompt("<the question>"),
+        retraction: retractionContext({ title: "<source title>", url: "<source url>" }),
+        withGraphSchema: PROBE_WITH_GRAPH_SCHEMA,
+        withoutGraphSchema: PROBE_WITHOUT_GRAPH_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  mkdirSync(resolve(evalsDir, "probes"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "probes"))) {
+    copyFileSync(join(corpusDir, "probes", file), resolve(evalsDir, "probes", file));
+  }
+
+  // The canonical-form golden suite (S1 addendum): the fixture, the judge's
+  // prompt with placeholders, the §3 standard it pins, and its schema.
+  copyFileSync(join(corpusDir, "golden", "canonical-forms.json"), resolve(evalsDir, "canonical-forms.json"));
+  writeFileSync(
+    resolve(evalsDir, "canonical-judge.json"),
+    JSON.stringify(
+      {
+        prompt: buildCanonicalJudgePrompt({
+          excerpt: "<the source excerpt, verbatim>",
+          expected: "<the pinned canonical form>",
+          proposed: "<the form the Extractor proposed>",
+        }),
+        standard: CANONICAL_FORM_STANDARD,
+        schema: CANONICAL_JUDGE_SCHEMA,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The adversarial suite (S4): the scenarios, the gambit list, the two
+  // judges' prompts and schemas, and the attacker's prompts (attack and
+  // benign variants) with its tools.
+  mkdirSync(resolve(evalsDir, "adversarial"), { recursive: true });
+  for (const file of jsonFiles(join(corpusDir, "adversarial"))) {
+    copyFileSync(join(corpusDir, "adversarial", file), resolve(evalsDir, "adversarial", file));
+  }
+  const placeholderAssessment = (n: string) => ({
+    status: `<status of assessment ${n}>`,
+    credence: 0.5,
+    confidence: 0.8,
+    summary: `<assessment ${n}, verbatim>`,
+    reasoning: `<reasoning trace ${n}, verbatim>`,
+  });
+  const brief = (mode: "attack" | "benign") => ({
+    mode,
+    target: { id: "<claim id>", text: "<the target claim's text>" },
+    direction: "down" as const,
+    campaign: null,
+    budget: 3,
+    tier: "standard",
+    episode: 1,
+    episodes: 5,
+  });
+  writeFileSync(
+    resolve(evalsDir, "adversarial-prompts.json"),
+    JSON.stringify(
+      {
+        gambits: GAMBIT_DESCRIPTIONS,
+        blindJudge: { prompt: blindJudgePrompt({ claimText: "<the claim's text>", first: placeholderAssessment("ONE"), second: placeholderAssessment("TWO") }), schema: BLIND_JUDGE_SCHEMA },
+        holisticJudge: {
+          prompt: holisticJudgePrompt({
+            cluster: "<cluster>",
+            description: "<the cluster's description>",
+            first: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [{ relation: "requires", text: "<a direct subclaim>", status: "<status>" }] }],
+            second: [{ text: "<a top-level claim>", status: "<status>", credence: 0.5, importance: 0.5, children: [] }],
+          }),
+          schema: HOLISTIC_JUDGE_SCHEMA,
+        },
+        redteam: {
+          attackSystem: redteamSystemPrompt(brief("attack")),
+          benignSystem: redteamSystemPrompt(brief("benign")),
+          campaignSystem: redteamSystemPrompt({ ...brief("attack"), target: null, campaign: { cluster: "<cluster>", goal: "<the framing goal>" } }),
+          episode: redteamEpisodePrompt({ brief: brief("attack"), targetView: "<the target claim with its assessment, decomposition and dependents>", notes: "<the notes file from earlier episodes>" }),
+          feedback: redteamFeedbackPrompt({ brief: brief("attack"), before: "<the assessment before>", after: "<the assessment after>", decisions: "<each contribution's review decision and reasoning>", personaStanding: "<the account's reputation and flags>", notes: "<the notes file>" }),
+          tools: [...REDTEAM_ACTION_TOOLS, REDTEAM_NOTES_TOOL],
+        },
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The persona simulation (S8): the manifest, and the exact system prompt
+  // and opening message each persona is given, with the tools by kind.
+  const personaManifest = readJson<{ name?: string; description?: string; personas: PersonaEntry[] }>(join(corpusDir, "personas", "manifest.json"));
+  copyFileSync(join(corpusDir, "personas", "manifest.json"), resolve(evalsDir, "personas.json"));
+  const clusterDescription = (key: string) => clusters.find((c) => c.key === key)?.description ?? null;
+  writeFileSync(
+    resolve(evalsDir, "persona-prompts.json"),
+    JSON.stringify(
+      {
+        notice: SIMULATION_NOTICE,
+        tools: personaActionToolDefinitions(),
+        prompts: personaManifest.personas.map((entry) => {
+          const cluster = entry.clusters.find((c) => c !== "*") ?? clusters[0]?.key ?? "blackholes";
+          return {
+            key: entry.key,
+            cluster,
+            tools: personaToolNames(entry.kind),
+            system: buildPersonaSystemPrompt(entry, { cluster, clusterDescription: clusterDescription(cluster) }),
+            opening: buildPersonaOpeningMessage(entry),
+          };
+        }),
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  // The production monitors (S9): the document that carries every query verbatim.
+  copyFileSync(resolve(root, "docs", "monitors.md"), resolve(evalsDir, "monitors.md"));
+
   const evalsIndex = buildEvalsIndex({
     syncedAt: new Date().toISOString(),
     gitCommit,
@@ -396,6 +611,8 @@ export function syncEvalsContent(contentDir: string): {
     reviews,
     scorecardFiles,
     goldenRunFiles,
+    goldenCanonicalRunFiles,
+    replays,
     rubric: readFileSync(resolve(corpusDir, "RUBRIC.md"), "utf8"),
   });
   writeFileSync(resolve(evalsDir, "index.json"), JSON.stringify(evalsIndex, null, 2));
@@ -408,6 +625,7 @@ export function syncEvalsContent(contentDir: string): {
     goldenPairs: evalsIndex.golden.pairs,
     predictions: evalsIndex.predictions.count,
     contributions: contributions.length,
+    replays: replays.length,
     pinnedAgents: evalsIndex.pins.length,
     gitCommit,
   };
@@ -442,6 +660,6 @@ if (invokedDirectly) {
     `Synced the eval record into web/content/evals/: ${evals.scorecards} scorecard(s), ` +
       `${evals.goldenRuns} golden run(s), ${evals.reviews} review sheet(s), ` +
       `${evals.clusters} clusters, ${evals.goldenPairs} golden pairs, ${evals.predictions} predictions, ` +
-      `${evals.contributions} contribution scenario(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
+      `${evals.contributions} contribution scenario(s), ${evals.replays} replay(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
   );
 }

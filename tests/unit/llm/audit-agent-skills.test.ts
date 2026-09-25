@@ -85,12 +85,13 @@ describe("Audit toolset without a domain", () => {
     expect(names).not.toContain("get_proof_attempt");
     // The method skill (#286) brings Audit its two read tools and nothing
     // that writes.
-    expect(names.slice(-6)).toEqual([
+    expect(names.slice(-7)).toEqual([
       "provenance_get_map",
       "provenance_read_source",
       "raise_issue",
       "update_issue",
       "search_issues",
+      "get_issue",
       "note_finding",
     ]);
     expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
@@ -108,7 +109,7 @@ describe("Audit toolset with the mathematics domain", () => {
     const own = names.indexOf("record_prize_audit_outcome");
     // The skills' tools follow the Audit's own, in skill order; the report
     // channel (#366) and the finding channel (#394) close the toolset.
-    expect(names.slice(-8)).toEqual([
+    expect(names.slice(-9)).toEqual([
       "get_proof_attempt",
       "get_prize_claim",
       "provenance_get_map",
@@ -116,6 +117,7 @@ describe("Audit toolset with the mathematics domain", () => {
       "raise_issue",
       "update_issue",
       "search_issues",
+      "get_issue",
       "note_finding",
     ]);
     expect(own).toBeGreaterThan(-1);

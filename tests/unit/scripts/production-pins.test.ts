@@ -10,12 +10,12 @@ describe("parseModelPins", () => {
     const source = `
       environment: {
         // production sets STEWARD_MODEL=claude-x here; see EXTRACTOR_FALLBACK_MODEL (Sonnet).
-        STEWARD_MODEL: "claude-fable-5-1",
+        STEWARD_MODEL: "claude-opus-5-5",
         MATCHER_MODEL: "deepseek/deepseek-v4-flash",
         NOT_A_PIN: "value",
       }`;
     expect(parseModelPins(source)).toEqual([
-      { envVar: "STEWARD_MODEL", model: "claude-fable-5-1" },
+      { envVar: "STEWARD_MODEL", model: "claude-opus-5-5" },
       { envVar: "MATCHER_MODEL", model: "deepseek/deepseek-v4-flash" },
     ]);
   });

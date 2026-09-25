@@ -59,6 +59,7 @@ new ApiStack(app, "EpistemeApi", {
   stripeSecretKeySecret: secrets.stripeSecretKeySecret,
   stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
   githubTokenSecret: secrets.githubTokenSecret,
+  githubAppPrivateKeySecret: secrets.githubAppPrivateKeySecret,
   leanChecker: {
     url: leanChecker.serviceUrl,
     tokenSecret: leanChecker.tokenSecret,
@@ -71,7 +72,7 @@ new ApiStack(app, "EpistemeApi", {
 
 // The solver worker (docs/mathematics.md 7.9, 13.1): its own Fargate service
 // running `npm run worker:solver`, off unless the deploy says otherwise:
-//   cdk deploy -c solverEnabled=true [-c solverModel=claude-fable-5-1]
+//   cdk deploy -c solverEnabled=true [-c solverModel=claude-opus-5-5]
 new SolverStack(app, "EpistemeSolver", {
   env,
   vpc: network.vpc,

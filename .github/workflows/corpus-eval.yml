@@ -1,0 +1,196 @@
+name: Corpus eval
+
+# The corpus harness (corpus/README.md) on a hosted runner: open egress, so
+# the Steward's source reads and the lookouts' page reads work, and one job
+# per cluster in parallel. Manual only — a run is a real LLM workload that
+# costs dollars and hours, so nothing here fires on a push. Every job needs
+# the three provider secrets (the production profile routes the load-bearing
+# agents to Anthropic, the cheap tier to OpenRouter, embeddings to OpenAI);
+# unlike the golden suite this workflow fails, rather than skips, without
+# them, because someone asked for the run.
+#
+# What comes back: each job uploads its runs/<cluster>-<stamp>/ directory
+# (report.md, scorecard.md/json, trace.jsonl, graph.json, run.json) and the
+# scorecard corpus:score filed under corpus/scorecards/<cluster>/, and prints
+# the run's usage + cost report into the job summary. Commit a scorecard
+# from the artifact when a run should stand as a baseline.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clusters:
+        description: "Comma-separated clusters to run, one job each (eggs, blackholes, lableak, lethalities)"
+        default: "eggs,blackholes,lableak"
+        required: true
+      profile:
+        description: "Model profile: production (the CDK pins, needs all three keys) or default (config.ts defaults plus the env below)"
+        type: choice
+        options: [production, default]
+        default: production
+      limit:
+        description: "Only the first N posts of each cluster (empty = the whole cluster)"
+        default: ""
+      steward_max_runs:
+        description: "STEWARD_MAX_RUNS for the whole run (0 = uncapped; the main spend guardrail)"
+        default: "0"
+      steward_max_iterations:
+        description: "STEWARD_MAX_ITERATIONS per Steward run"
+        default: "200"
+      curator_max_runs:
+        description: "CURATOR_MAX_RUNS (0 = uncapped)"
+        default: "0"
+      llm_daily_token_limit:
+        description: "LLM_DAILY_TOKEN_LIMIT circuit breaker for the job (0 = unlimited)"
+        default: "0"
+      score_sample:
+        description: "Claims to LLM-judge in the scorecard (0 = structural only)"
+        default: "15"
+      judge_model:
+        description: "JUDGE_MODEL (empty = config default; must differ from the Steward model unless allow_same_model_judge)"
+        default: ""
+      allow_same_model_judge:
+        description: "Pass --allow-same-model-judge (a cheap-tier smoke, never a baseline)"
+        type: boolean
+        default: false
+      contributions:
+        description: "After the blackholes ingest, run corpus:contributions blackholes in the same job"
+        type: boolean
+        default: false
+      extraction_max_tokens:
+        description: "EXTRACTION_MAX_TOKENS (raise for a model that reasons in its output)"
+        default: "16384"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      clusters: ${{ steps.matrix.outputs.clusters }}
+    steps:
+      - id: matrix
+        run: |
+          list=$(echo "${{ inputs.clusters }}" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | jq -R . | jq -cs .)
+          echo "clusters=$list" >> "$GITHUB_OUTPUT"
+          echo "clusters: $list"
+
+  corpus:
+    needs: plan
+    runs-on: ubuntu-latest
+    # Hosted jobs stop at 6 hours; the cheap tier's latency can approach it on
+    # the biggest cluster, so cap it just under and let the artifact upload
+    # (if: always()) keep whatever the run wrote.
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        cluster: ${{ fromJSON(needs.plan.outputs.clusters) }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: episteme
+          POSTGRES_PASSWORD: episteme
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U episteme"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # lib.ts pins every corpus script to this database; corpus:reset creates
+      # and migrates it. Never the main graph, by construction.
+      CORPUS_DATABASE_URL: postgresql://episteme:episteme@localhost:5432/episteme_corpus
+      # Stewardship is funded work and a fresh corpus DB has no General
+      # mandate: without the fallback lane a run extracts and matches but never
+      # assesses (corpus/README.md, Prerequisites).
+      BACKGROUND_FALLBACK_LANE_ENABLED: "true"
+      BACKGROUND_DAILY_BUDGET_OWLS: "0"
+      # The runner submits through the real route with no key, relying on the
+      # non-production auth bypass; any API_KEYS would 401 every submit.
+      API_KEYS: ""
+      # No paid Elicit calls from an eval run unless someone adds the secret.
+      ELICIT_API_KEY: ${{ secrets.ELICIT_API_KEY }}
+      STEWARD_MAX_RUNS: ${{ inputs.steward_max_runs }}
+      STEWARD_MAX_ITERATIONS: ${{ inputs.steward_max_iterations }}
+      CURATOR_MAX_RUNS: ${{ inputs.curator_max_runs }}
+      LLM_DAILY_TOKEN_LIMIT: ${{ inputs.llm_daily_token_limit }}
+      EXTRACTION_MAX_TOKENS: ${{ inputs.extraction_max_tokens }}
+      JUDGE_MODEL: ${{ inputs.judge_model }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check for provider keys
+        run: |
+          missing=""
+          [ -n "$OPENAI_API_KEY" ] || missing="$missing OPENAI_API_KEY"
+          [ -n "$OPENROUTER_API_KEY" ] || missing="$missing OPENROUTER_API_KEY"
+          if [ "${{ inputs.profile }}" = "production" ]; then
+            [ -n "$ANTHROPIC_API_KEY" ] || missing="$missing ANTHROPIC_API_KEY"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error title=Corpus eval cannot run::Missing repository secret(s):$missing. Add them under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Reset the corpus database
+        run: npm run corpus:reset
+
+      - name: Ingest, drain, and score ${{ matrix.cluster }}
+        run: |
+          set -o pipefail
+          args="${{ matrix.cluster }} --score=${{ inputs.score_sample }}"
+          [ "${{ inputs.profile }}" = "production" ] && args="$args --profile=production"
+          [ -n "${{ inputs.limit }}" ] && args="$args --limit=${{ inputs.limit }}"
+          [ "${{ inputs.allow_same_model_judge }}" = "true" ] && args="$args --allow-same-model-judge"
+          echo "npm run corpus:run -- $args"
+          npm run corpus:run -- $args 2>&1 | tee corpus-run.log
+
+      - name: Contribution scenario (blackholes)
+        if: inputs.contributions && matrix.cluster == 'blackholes'
+        run: |
+          set -o pipefail
+          npm run corpus:contributions -- blackholes 2>&1 | tee contributions.log
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## corpus:run ${{ matrix.cluster }} (${{ inputs.profile }})"
+            echo
+            echo '```'
+            # The per-post lines, the pending-stewardship note, and the usage +
+            # cost report the run prints at the end.
+            grep -E '^\s+\[[0-9]+/[0-9]+\]|note:|WARNING|=== LLM usage|calls:|input:|output:|^\s{4}\S+\s+\S+\s+[0-9]+ calls|metered cost|Scorecard:' corpus-run.log || true
+            echo '```'
+            if [ -f contributions.log ]; then
+              echo
+              echo "## corpus:contributions blackholes"
+              echo
+              echo '```'
+              sed -n '/=== outcome ===/,$p' contributions.log || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.cluster }}
+          path: |
+            runs/
+            corpus/scorecards/${{ matrix.cluster }}/
+            corpus-run.log
+            contributions.log
+          if-no-files-found: ignore

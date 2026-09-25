@@ -8,17 +8,30 @@ import { findSimilarClaims } from "../../services/search-service.js";
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { INSTANCE_STANCES, isInstanceStance, type InstanceStance } from "../../schemas/common.js";
+
+/**
+ * How the Matcher's run ended (#419). `match` and `new` are verdicts the
+ * Matcher submitted; `undecided` means it ran out of search budget without
+ * submitting one. An undecided result is NOT a negative identity verdict:
+ * nothing was compared, so a caller must not mint a claim from it.
+ */
+export type MatchOutcome = "match" | "new" | "undecided";
 
 export interface MatchDecision {
+  outcome: MatchOutcome;
   is_match: boolean;
   matched_claim_id: string | null;
   new_canonical_form: string | null;
   /**
-   * Whether this source asserts the claim as canonically stated ("affirms") or
-   * asserts its negation/contrary ("denies"). Lets a claim and its denial share
-   * one canonical node while preserving which side each source takes.
+   * Whether this source asserts the claim as canonically stated ("affirms"),
+   * asserts its negation/contrary ("denies"), or states the proposition as an
+   * open question without taking a side ("poses", #445). Lets a claim and its
+   * denial share one canonical node while preserving which side each source
+   * takes, and lets a conjecture statement be recorded without a polarity it
+   * does not have.
    */
-  instance_stance: "affirms" | "denies";
+  instance_stance: InstanceStance;
   /**
    * For a new claim: one sentence on why the canonical form is stated in the
    * direction it is (#360). The direction is chosen on the proposition's own
@@ -37,17 +50,27 @@ const MATCH_DECISION_SCHEMA = {
   type: "object" as const,
   properties: {
     is_match: { type: "boolean", description: "Whether the claim matches an existing claim (including its negation/counterpart)" },
-    matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True" },
+    matched_claim_id: { type: ["string", "null"], description: "ID of the matched claim if is_match is True, copied exactly from a search_similar_claims result" },
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
-    instance_stance: { type: "string", enum: ["affirms", "denies"], description: "Whether this source asserts the canonical claim as stated (affirms) or its negation/contrary (denies), judged against the canonical direction, not assumed from the source" },
+    instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
-    alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered" },
+    alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
     relationship_notes: { type: ["string", "null"], description: "Notes on relationships to other claims" },
   },
   required: ["is_match", "confidence", "reasoning", "instance_stance"],
 };
+
+/**
+ * The first run's tool-use turn cap (#467). A halting guard in the
+ * constitution's sense (Part IX), so it sits clear of normal use: the role
+ * prompt asks for four or more framings plus the decision, and a max_tokens
+ * recovery, a nudge, a refused submission, or a raise_issue call each cost a
+ * turn without a search. The Matcher is told this number in its prompt so it
+ * can pace itself, and may batch several searches into one turn.
+ */
+const MATCHER_TURN_BUDGET = 12;
 
 /**
  * The agentic Matcher is the single decider of claim identity (issue #25).
@@ -86,8 +109,12 @@ async function matchClaimImpl(input: {
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
-  const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical);
   const skills = skillsForDomains(input.domains, "matcher");
+  const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
+    domains: input.domains ?? [],
+    skills,
+    turnBudget: MATCHER_TURN_BUDGET,
+  });
   // One cached block for the constitution and role, plus one per active skill.
   const system = getMatcherSystemPromptBlocks({ skills });
 
@@ -116,22 +143,155 @@ async function matchClaimImpl(input: {
 
   let finalResult: MatchDecision | null = null;
   const model = input.model ?? config.matcherModel;
+
+  // Every search the Matcher ran, with its top hits (#467). The retry loop is
+  // a fresh transcript: without this, a first run that spent its budget
+  // searching leaves nothing behind and the retry re-derives retrieval from
+  // scratch. The constitution asks an admin under a bounded budget to record
+  // its best current conclusions before the budget expires; the searches are
+  // the part of that record the agent itself already holds, so it is kept
+  // here rather than asked for through one more tool call the budget cannot
+  // spare.
+  type SearchHit = { id: string; canonical_form: string; score: number };
+  const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
+
+  // Every claim id the Matcher has been shown (#470). Its searches are its
+  // only source of ids, so an id in a submitted decision that none of them
+  // returned is a transcription error: a model retyping a UUID into its
+  // structured output has spliced two neighbours' ids into one that resolves
+  // to nothing, and a caller told to weigh alternative_matches then reads a
+  // phantom near-miss as evidence. Resolve each submitted id against this
+  // set: exact, or by its first UUID group when that names one retrieved
+  // claim; anything else is not an id the Matcher could have meant.
+  const retrievedIds = new Set<string>();
+  const UUID_GROUP_CHARS = 8;
+  const resolveRetrievedId = (id: unknown): string | null => {
+    if (typeof id !== "string" || id.length === 0) return null;
+    if (retrievedIds.has(id)) return id;
+    if (id.length < UUID_GROUP_CHARS) return null;
+    const group = id.slice(0, UUID_GROUP_CHARS);
+    const candidates = [...retrievedIds].filter((r) => r.startsWith(group));
+    return candidates.length === 1 ? candidates[0]! : null;
+  };
+
+  // A submitted decision is accepted only when it is whole. The schema marks
+  // is_match required, but not every provider enforces tool schemas: GLM 5.3
+  // Flash on OpenRouter has submitted decisions whose reasoning names the
+  // matched claim with 0.9+ confidence and that carry neither is_match nor
+  // matched_claim_id — read as-is, `undefined` is falsy and a match the model
+  // made becomes a duplicate node. Refuse the call instead and let the model
+  // resubmit; it costs one more turn and keeps the decision the model made.
+  const decisionDefect = (raw: Record<string, unknown>): string | null => {
+    if (typeof raw.is_match !== "boolean") return "is_match must be true or false";
+    if (raw.is_match && typeof raw.matched_claim_id !== "string") {
+      return "matched_claim_id is required when is_match is true";
+    }
+    if (raw.is_match && resolveRetrievedId(raw.matched_claim_id) === null) {
+      return (
+        `matched_claim_id ${JSON.stringify(raw.matched_claim_id)} was not returned by ` +
+        `any search_similar_claims call in this run; copy the id exactly from a search result`
+      );
+    }
+    if (!isInstanceStance(raw.instance_stance)) {
+      return 'instance_stance must be "affirms", "denies", or "poses"';
+    }
+    return null;
+  };
+  const rejectDecision = (defect: string): string =>
+    JSON.stringify({
+      success: false,
+      message:
+        `Decision NOT recorded: ${defect}. Call submit_match_decision again NOW, ` +
+        `in this turn, with every required field set explicitly: is_match, ` +
+        `matched_claim_id (when is_match is true), instance_stance, confidence, ` +
+        `reasoning. Every claim id must be copied exactly from a ` +
+        `search_similar_claims result. Do not end your turn without the call.`,
+    });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
-    initialMessages: [{ role: "user", content: userPrompt }],
+  const acceptDecision = (toolInput: Record<string, unknown>): MatchDecision => {
+    const submitted = toolInput as unknown as Omit<MatchDecision, "outcome">;
+    // Ids are taken from the retrieved set, not from the model's retyping
+    // (#470): decisionDefect has already established that a match's id
+    // resolves, so here it is normalised; an alternative that resolves to
+    // nothing is dropped rather than handed to a caller as a near-miss.
+    const matched_claim_id = submitted.is_match
+      ? resolveRetrievedId(submitted.matched_claim_id)
+      : null;
+    const alternative_matches: string[] = [];
+    for (const raw of Array.isArray(submitted.alternative_matches) ? submitted.alternative_matches : []) {
+      const id = resolveRetrievedId(raw);
+      if (id === null) {
+        console.warn(
+          `[matcher] dropping alternative_matches id ${JSON.stringify(raw)}: ` +
+            `not returned by any search in this run (#470)`
+        );
+        continue;
+      }
+      if (id !== matched_claim_id && !alternative_matches.includes(id)) alternative_matches.push(id);
+    }
+    // The outcome is derived here, never trusted from the model: a match
+    // without an id is not a match a caller can link to.
+    const outcome: MatchOutcome = submitted.is_match && matched_claim_id ? "match" : "new";
+    finalResult = { ...submitted, matched_claim_id, alternative_matches, outcome };
+    return finalResult;
+  };
+
+  // One search loop. `retryNote`, when set, is the second attempt's framing
+  // (#419): the first run spent its budget without submitting, so this one
+  // is short and told to decide.
+  const runLoop = (opts: { maxIterations: number; retryNote?: string }) =>
+    toolUseLoop({
+    initialMessages: [
+      {
+        role: "user",
+        content: opts.retryNote
+          ? [
+              { type: "text", text: userPrompt },
+              { type: "text", text: opts.retryNote },
+            ]
+          : userPrompt,
+      },
+    ],
     tools: [searchTool, submitTool, ...reportTools.definitions],
     system,
     model,
-    maxTokens: 4096,
-    maxIterations: 8,
+    // A cap, not a target: the decision itself is a few hundred tokens. But a
+    // model that writes its reasoning into the turn (GLM 5.3 Flash) hit 4096
+    // mid-thought on a third of the golden pairs, and a turn cut at
+    // max_tokens ends the loop with no decision — a duplicate node.
+    maxTokens: 16384,
+    maxIterations: opts.maxIterations,
+    // Tell the Matcher before it is cut off (#419): a run that ends without a
+    // submission is an undecided result the caller cannot act on, so a
+    // decision at honest confidence beats one more search.
+    iterationBudgetNotice: {
+      warnWithin: 2,
+      message: (remaining) =>
+        `Search budget notice: ${remaining} tool-use iteration(s) remain. ` +
+        `Call submit_match_decision on your next turn with your best ` +
+        `judgment from the searches so far, at honest confidence. A run ` +
+        `that ends without a submission counts as no decision at all.`,
+    },
+    // A turn that ends in prose with no decision (GLM 5.3 Flash, after a
+    // refused submission: "Resubmitting with every required field." and then
+    // end_turn) would otherwise end the run undecided. One nudge.
+    finalToolNudge: {
+      max: 1,
+      message:
+        "No decision has been recorded. Call submit_match_decision now with " +
+        "every required field (is_match, matched_claim_id when is_match is " +
+        "true, instance_stance, confidence, reasoning).",
+    },
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       if (name === "submit_match_decision") {
-        finalResult = toolInput as unknown as MatchDecision;
+        const defect = decisionDefect(toolInput);
+        if (defect) return rejectDecision(defect);
+        acceptDecision(toolInput);
         return JSON.stringify({ success: true });
       }
       if (name === "search_similar_claims") {
@@ -149,43 +309,97 @@ async function matchClaimImpl(input: {
         } catch (err) {
           return `Error searching: ${err instanceof Error ? err.message : String(err)}`;
         }
-        return JSON.stringify({
-          query,
-          count: results.length,
-          results: results.map((r) => ({
-            id: r.id,
-            canonical_form: r.text,
-            score: Number(r.similarity_score.toFixed(3)),
-          })),
-        });
+        const hits: SearchHit[] = results.map((r) => ({
+          id: r.id,
+          canonical_form: r.text,
+          score: Number(r.similarity_score.toFixed(3)),
+        }));
+        searchLog.push({ query, results: hits });
+        for (const hit of hits) retrievedIds.add(hit.id);
+        return JSON.stringify({ query, count: hits.length, results: hits });
       }
       return `Error: Unknown tool: ${name}`;
     },
     onFinalTool: (name, toolInput) => {
       if (name === "submit_match_decision") {
-        finalResult = toolInput as unknown as MatchDecision;
-        return finalResult;
+        // A defective submission is not final: executeTool answers it with
+        // the refusal above and the loop continues.
+        if (decisionDefect(toolInput)) return null;
+        return acceptDecision(toolInput);
       }
       return null;
     },
-  }));
+  });
+
+  await withSkills(skills.map((s) => s.name), async () => {
+    await runLoop({ maxIterations: MATCHER_TURN_BUDGET });
+    if (finalResult) return;
+    // One bounded retry (#419): most timeouts are a Matcher mid-search, not
+    // stuck, so a short second run told to decide usually yields a verdict.
+    await runLoop({
+      maxIterations: 3,
+      retryNote:
+        "Your previous attempt at this decision ran out of search budget " +
+        "without calling submit_match_decision. " +
+        priorSearchesNote(searchLog) +
+        "Run at most one more search_similar_claims query, then submit " +
+        "your decision at honest confidence. Do not end without submitting.",
+    });
+  });
 
   if (finalResult) return finalResult;
 
-  // The matcher never submitted a decision (e.g. hit the iteration cap). Treat
-  // the claim as novel so ingestion proceeds; the steward can re-match later.
-  // The stance is a guess here, not a judgment: no direction was chosen, so
-  // nothing was compared, and the low confidence says so.
+  // The Matcher never submitted a decision, even after the retry. This is
+  // signalled as undecided, not as "new" (#419): a timeout is not a negative
+  // identity verdict, and a caller that minted from it would manufacture a
+  // duplicate. `new_canonical_form` is null so nothing can be created from
+  // this result by accident; the stance is a placeholder, not a judgment.
   return {
+    outcome: "undecided",
     is_match: false,
     matched_claim_id: null,
-    new_canonical_form: input.proposedCanonical,
+    new_canonical_form: null,
     instance_stance: "affirms",
     direction_note: null,
-    confidence: 0.3,
+    confidence: 0,
     reasoning:
-      "Matcher did not submit a decision within the search budget; defaulting to a new claim.",
+      "Matcher did not submit a decision within its search budget (after one retry). " +
+      "No identity verdict was reached: this is not a finding that the claim is new.",
     alternative_matches: [],
     relationship_notes: null,
   };
+}
+
+/**
+ * The first run's searches as a note for the retry (#467): each query with
+ * its top hits, so the retry confirms prior work instead of repeating it.
+ * Capped per query and in wording length so a long first run does not turn
+ * the short retry's prompt into the transcript it replaces.
+ */
+const PRIOR_HITS_PER_QUERY = 5;
+const PRIOR_HIT_TEXT_CHARS = 200;
+
+export function priorSearchesNote(
+  searchLog: ReadonlyArray<{
+    query: string;
+    results: ReadonlyArray<{ id: string; canonical_form: string; score: number }>;
+  }>
+): string {
+  if (searchLog.length === 0) return "";
+  const clip = (text: string): string =>
+    text.length > PRIOR_HIT_TEXT_CHARS ? `${text.slice(0, PRIOR_HIT_TEXT_CHARS - 1)}…` : text;
+  const lines = searchLog.map((entry, i) => {
+    const hits = entry.results
+      .slice(0, PRIOR_HITS_PER_QUERY)
+      .map((r) => `  - ${r.id} (score ${r.score}): ${clip(r.canonical_form)}`);
+    const body = hits.length > 0 ? hits.join("\n") : "  (no results above the floor)";
+    return `${i + 1}. Query: ${JSON.stringify(entry.query)}\n${body}`;
+  });
+  return (
+    "Its searches and their top hits are recorded below; treat them as " +
+    "already run and do not repeat them.\n\n" +
+    `Searches from the previous attempt (${searchLog.length}):\n` +
+    lines.join("\n") +
+    "\n\n"
+  );
 }

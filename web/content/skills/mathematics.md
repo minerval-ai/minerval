@@ -158,7 +158,14 @@ unelaborated string. `lean_check` when a proof artifact exists that bears
 on the claim: a contributor's proof, a solver's proof, a formalization
 project's proof. Do not spend a check to learn what an `accepted` row
 already says, and do not check a proof against a statement other than the
-one it was written for. A check that returns `error` is not a verdict;
+one it was written for. A submission is appended after a checker-supplied
+header that is the only `import` and forces `autoImplicit` off, so the
+proof text carries no `import` and no `set_option autoImplicit`; it refers
+to the statement by its full path and declares the target under its full
+name, `theorem Minerval.S<8 hex>_v<n>.proof : Minerval.S<8 hex>_v<n>.Statement`
+(or `.disproof : ¬ ...Statement`), with the namespace taken from the
+formalization. A submission that visibly breaks this is refused without
+spending a check. A check that returns `error` is not a verdict;
 record that verification was unavailable and assess on the informal
 evidence. A proof of a statement with a live bounty that arrives by any door
 other than the prize pipeline (an argument contribution, a link in a
@@ -239,6 +246,36 @@ route is visible. `prize_review` is self-funded when a bounty draws a claim
 and is never billed to the claimant. A bounty appears nowhere in any
 valuation. Quote attempts honestly, Lean checks included.
 
+**How a plan item becomes work.** A `formalize` item opens one ledger row
+per claim only when the claim is active, has no published statement, and
+its recorded domains carry the Steward's `publish_formalization` tool:
+the mathematics domain. A claim typed or discussed as mathematical but not
+tagged with the domain is `blocked`, and the item says so; a Steward pass
+with `set_claim_domains` (or a `reassess` item asking for one) unblocks
+it, and a formalize run on such a claim would be refused rather than
+spent. The row is priced at two strong passes; a run that ends without a
+published statement closes the row and the sweep reopens it a day later
+while the claim still lacks one. An `attempt_proof` item is `waiting`, not
+blocked, until a statement is published; the n-th item on a claim
+entitles the n-th attempt group, an earlier open group holds the next one
+back, and the mandate's attempt cooldown holds it back too unless the
+entitling item's rationale states a reason of at least twenty characters.
+Every item's standing (open, running, done, cancelled, waiting, blocked,
+with the reason) comes back from `extend_plan` in the same turn and from
+`grant_overview` at any time; read it before valuing, and before filing a
+report that work never appeared.
+
+**Reading the formalization record.** `get_claim` carries it on every
+read: `formalization` is the published statement (source, hashes, pin,
+correspondence note, review-period end) or null; `formalization_pending`
+is a draft or reviewed version still awaiting its second-pass publish;
+`formalization_history` lists every version's status, retired ones with
+the reason; `lean_checks` are the newest checker verdicts. Read the
+published statement there for fidelity before valuing `attempt_proof`,
+and value attempts only where it is non-null. An empty history means no
+formalize run has recorded anything on the claim; a pending or retired
+version means one ran and stopped short.
+
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it
@@ -310,8 +347,9 @@ a fallback-served acceptance is always a send-back.
 
 ## For the Curator
 
-Equivalent formulations whose equivalence is a theorem stay two nodes with
-the equivalence recorded as an argument on each; watch such pairs. Problem
+Where the discourse keeps two equivalent formulations as distinct
+propositions, record the equivalence as an argument on each rather than
+merging them. Problem
 families (an Erdős problem and its variants) are distinct claims joined by
 `specifies` where one is a special case, otherwise laterally. A merge keeps
 the survivor's published formal statement and retires the absorbed one; a
@@ -321,13 +359,14 @@ to republish.
 
 ## For the Matcher
 
-Notational variants are one claim. A theorem and its negation are one node.
-A generalization and its special case are different claims. The same
-proposition over different structures is a different claim when the
-discourse treats it so. "X holds," "X has been proven," and "X is provable
-in ZFC" are three claims. Equivalent formulations whose equivalence is a
-theorem are two claims. A problem-list number is a strong identity signal;
-search it before concluding a claim is new.
+The node is the proposition as the discourse consults it. Notational
+variants, and a named conjecture stated in another base field, wording, or
+generality, are one claim. A theorem and its negation are one node. A
+generalization and its special case are different claims. Whether two
+formulations the discourse treats as distinct are one claim or two is the
+same-considerations test, judged by how the discourse treats them, not by
+whether a proof connects them. A problem-list number is a strong identity
+signal; search it before concluding a claim is new.
 
 ## For the Extractor
 
@@ -359,6 +398,7 @@ unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
 authority on fidelity. A conjecture recorded as `contested` because it is
-open. Equivalent formulations merged on the strength of a theorem. A
+open. Claim identity decided by whether a proof connects two formulations
+rather than by how the discourse treats them. A
 solver's trivial proof recorded as a result rather than a defect. A
 rediscovery or a calibration solve noted as a finding.

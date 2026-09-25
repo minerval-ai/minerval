@@ -30,7 +30,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { resolveProvider } from "../providers/routing.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
@@ -40,16 +40,17 @@ import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
-import { surveyScope } from "./grantor.js";
+import { createMandateTools } from "../tools/mandate-tools.js";
 import {
   validateMandate,
   executeManagementTool,
   type GrantMandate,
   getBountyToolDefinitions,
 } from "./grantmaker.js";
-import type { PlanItem } from "../../services/grant-service.js";
-import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
-import { microUsdToOwls, owlsToMicroUsd, capOwls } from "../../services/owl.js";
+import { PLAN_KIND_RULES, type PlanItem } from "../../services/grant-service.js";
+import { countPlanItems, describePlanCounts } from "../../services/plan-state.js";
+import { materializePlanItems } from "../../services/action-service.js";
+import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
   listOpenActions,
   setMandateValuations,
@@ -65,6 +66,12 @@ import {
   mandateClosureBlockers,
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
+import { getLookoutManagementToolDefinitions } from "../tools/lookout-management-tools.js";
+import { turnBudgetLine } from "../prompts/turn-budget.js";
+import {
+  listMandateLookoutFlags,
+  summarizeLookouts,
+} from "../../services/lookout-service.js";
 
 export interface MandateReviewResult {
   note: string;
@@ -74,9 +81,6 @@ export interface MandateReviewResult {
    * the passes-per-day funding cap, not by refusing the request). */
   continueRequested: boolean;
 }
-
-/** Generous but bounded working memory: ~100KB of the agent's own notes. */
-const WORKSPACE_MAX_CHARS = 100_000;
 
 export function runMandateReview(
   input: Parameters<typeof runMandateReviewImpl>[0]
@@ -125,19 +129,15 @@ async function runMandateReviewImpl(input: {
     budgetJobId: grant.budget_job_id,
   });
 
-  // Web search is an Anthropic server tool; on other providers the pass
-  // degrades gracefully to graph-only surveying rather than failing.
+  // Web search on every provider: the server runs it on an Anthropic model,
+  // the loop executes it elsewhere (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
-  const webSearchAvailable = resolveProvider(model) === "anthropic";
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: 5,
-  };
+  const webSearch = createWebSearch(model, 5);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
+  const mandateTools = createMandateTools({ grantId: grant.id, surveyLimit: 25 });
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
@@ -146,22 +146,10 @@ async function runMandateReviewImpl(input: {
     // not answerable from keyword hits and scalars — it needs the claim's
     // reasoning, what it rests on, and what rests on it.
     ...getGraphReadToolDefinitions(),
-    {
-      name: "survey_scope",
-      description:
-        "Survey a subtree and/or keyword slice of the graph with the " +
-        "allocation signals: importance, contestation, assessment state " +
-        "and age, expected gain from another pass. Paginate with offset.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: { type: "string", description: "Subtree root (optional)." },
-          query: { type: "string", description: "Keyword slice (optional)." },
-          offset: { type: "number" },
-        },
-        required: [],
-      },
-    },
+    // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+    // update_workspace — one implementation shared with the planning pass
+    // and the granting conversation.
+    ...mandateTools.definitions,
     {
       name: "list_open_actions",
       description:
@@ -265,29 +253,18 @@ async function runMandateReviewImpl(input: {
       },
     },
     {
-      name: "estimate_costs",
-      description:
-        "Quote expected costs in owls for a bundle of work, from live " +
-        "metered averages (priors otherwise). Use before growing the plan.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          assessments: { type: "number" },
-          reassessments: { type: "number" },
-          deepen_claims: { type: "number" },
-          sources_to_ingest: { type: "number" },
-        },
-        required: [],
-      },
-    },
-    {
       name: "extend_plan",
       description:
         "Append new items to your mandate's plan — the systems-building " +
         "move: sources you found that should be ingested, claims that " +
         "need passes. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else. Appends only; " +
-        "already-planned work stays.",
+        "already-planned work stays. The items are materialized onto the " +
+        "ledger in this same call and the result reports each one's " +
+        "standing (open, running, done, cancelled, waiting, blocked) with " +
+        "the reason, so read it: a blocked item will not become work until " +
+        "you change something. " +
+        PLAN_KIND_RULES,
       input_schema: {
         type: "object" as const,
         properties: {
@@ -362,22 +339,6 @@ async function runMandateReviewImpl(input: {
       },
     },
     {
-      name: "update_workspace",
-      description:
-        "Rewrite your workspace — your own durable working memory, read " +
-        "back to you in full at the start of every pass. Keep here what a " +
-        "person running this mission would keep in their working notes: " +
-        "the map of the territory so far, the source backlog and what " +
-        "each yielded, strategy, open questions, what the next pass " +
-        "should do. Replaces the whole document; carry forward what " +
-        "still matters.",
-      input_schema: {
-        type: "object" as const,
-        properties: { content: { type: "string" } },
-        required: ["content"],
-      },
-    },
-    {
       name: "set_daily_rate",
       description:
         "Set your mandate's own daily allocation rate, in owls per day — " +
@@ -419,6 +380,10 @@ async function runMandateReviewImpl(input: {
     // The bounty tools (docs/mathematics.md §8.1): the same implementation
     // as the management chat, two-pass by construction.
     ...getBountyToolDefinitions(),
+    // The lookout tools (docs/allocation.md, "Lookouts"): the standing
+    // watches this mandate funds. Same implementation as the management
+    // chat, through executeManagementTool below.
+    ...getLookoutManagementToolDefinitions(),
     {
       name: "complete_mandate",
       description:
@@ -460,6 +425,43 @@ async function runMandateReviewImpl(input: {
   const mandateText = grant.mandate
     ? JSON.stringify(grant.mandate, null, 2)
     : `(untitled mandate "${grant.name}")`;
+
+  // The mandate's lookouts and what they raised since the last review: the
+  // cheap eyes between passes report here, and their precision is how the
+  // Grantmaker decides whether each watch is earning its runs.
+  const lastReviewAt = (grant.mandate as { last_review?: { at?: string } } | null)
+    ?.last_review?.at;
+  const lookouts = await summarizeLookouts(grant.id).catch(() => []);
+  const lookoutFlags = await listMandateLookoutFlags(grant.id, {
+    since: lastReviewAt ? new Date(lastReviewAt) : null,
+    limit: 40,
+  }).catch(() => []);
+  const lookoutText =
+    lookouts.length === 0
+      ? `(none — spawn_lookout posts a cheap standing watch over part of the ` +
+        `mission: a retraction watch over your sources, a new-results watch ` +
+        `on a live crux.)`
+      : lookouts
+          .map(
+            (l) =>
+              `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; ceiling ${l.max_value}/10] ` +
+              `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
+              `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
+              `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}`
+          )
+          .join("\n") +
+        (lookoutFlags.length === 0
+          ? `\n\nNo flags since your last pass.`
+          : `\n\nFlags since your last pass:\n` +
+            lookoutFlags
+              .map(
+                (f) =>
+                  `- [${f.lookout_title}] ${f.kind}${f.claim_id ? ` claim ${f.claim_id}` : ""}` +
+                  `${f.url ? ` ${f.url}` : ""}${f.value_written !== null ? ` valued ${f.value_written}` : ""}: ` +
+                  `${f.rationale.slice(0, 240)}`
+              )
+              .join("\n"));
   const items = grant.plan?.items ?? [];
   // A mandate gets the valuation lever its policy actually reads. For a
   // formula mandate the two would fight: the bulk refresh upserts the same
@@ -471,6 +473,7 @@ async function runMandateReviewImpl(input: {
       `have learned about allocation itself warrants it ` +
       `(update_allocation_policy)`
     : `revise your valuations over the open ledger`;
+  const REVIEW_PASS_MAX_TURNS = 24;
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -480,7 +483,9 @@ async function runMandateReviewImpl(input: {
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
     `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
-    `(yours to set). Plan: ${items.length} items, ${grant.plan_cursor} executed.\n\n` +
+    `(yours to set). Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
+    `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
     (grant.workspace?.trim()
       ? grant.workspace
@@ -490,7 +495,8 @@ async function runMandateReviewImpl(input: {
     `Do what the mandate needs this pass: survey (graph and web), ` +
     `${valuationClause}, extend the plan with the work ` +
     `you discovered, adjust your pacing, regrant or spawn where part of ` +
-    `the mission belongs in other hands. Skip what doesn't need doing. ` +
+    `the mission belongs in other hands, post or tighten lookouts where ` +
+    `the mission needs eyes between your passes. Skip what doesn't need doing. ` +
     `Before finishing, update your workspace so the next pass starts ` +
     `where this one stopped; call continue_review if the mission needs ` +
     `another pass today. Finish with a short note (recorded on the ` +
@@ -552,15 +558,16 @@ async function runMandateReviewImpl(input: {
   );
 
   const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
-    initialMessages: [{ role: "user", content: briefing }],
-    tools: webSearchAvailable
-      ? [webSearchTool, ...availableTools]
-      : availableTools,
+    initialMessages: [
+      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}` },
+    ],
+    tools: [webSearch.tool, ...availableTools],
     system,
     model,
     maxTokens: 4096,
-    maxIterations: 24,
+    maxIterations: REVIEW_PASS_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -570,21 +577,8 @@ async function runMandateReviewImpl(input: {
       // handlers below still run.
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
-      if (name === "survey_scope") {
-        const rows = await surveyScope({
-          scopeClaimId:
-            typeof toolInput.claim_id === "string" && toolInput.claim_id
-              ? toolInput.claim_id
-              : null,
-          scopeQuery:
-            typeof toolInput.query === "string" && toolInput.query
-              ? toolInput.query
-              : null,
-          offset: Number(toolInput.offset ?? 0),
-          limit: 25,
-        });
-        return JSON.stringify(rows);
-      }
+      const mandateTool = await mandateTools.execute(name, toolInput);
+      if (mandateTool !== null) return mandateTool;
       if (name === "list_open_actions") {
         const res = await listOpenActions({
           grantId: grant.id,
@@ -607,26 +601,12 @@ async function runMandateReviewImpl(input: {
       // implementation, honesty guard included. Null means "not mine".
       const management = await executeManagementTool(grant.id, name, toolInput, {
         passStartedAt,
+        actor: "grantmaker:review",
         // No person is present on the autonomous pass: a posting at or
         // above the autonomy threshold parks at confirm_pending.
         confirmedBy: null,
       });
       if (management !== null) return management;
-      if (name === "estimate_costs") {
-        const tiers = await stewardTierCostEstimates();
-        const passOwls = microUsdToOwls(tiers.strongMicroUsd);
-        const n = (v: unknown) => Math.max(0, Number(v ?? 0) || 0);
-        const subtotal =
-          (n(toolInput.assessments) + n(toolInput.reassessments)) * passOwls +
-          n(toolInput.deepen_claims) * passOwls * 3 +
-          n(toolInput.sources_to_ingest) * capOwls("source_ingest");
-        return JSON.stringify({
-          assessment_each_owls: passOwls,
-          ingest_each_owls: capOwls("source_ingest"),
-          subtotal_owls: Math.round(subtotal * 100) / 100,
-          note: "Estimates; actual spend is metered and unspent budget refunds.",
-        });
-      }
       if (name === "extend_plan") {
         const newItems = (toolInput.items ?? []) as PlanItem[];
         if (newItems.length === 0) {
@@ -640,17 +620,55 @@ async function runMandateReviewImpl(input: {
         };
         const problem = validateMandate(probe);
         if (problem) return JSON.stringify({ success: false, problem });
-        await rawQuery(
+        const [appended] = await rawQuery<{ before: number }>(
           `UPDATE grants
               SET plan = jsonb_set(
                     COALESCE(plan, '{"items": []}'::jsonb), '{items}',
                     COALESCE(plan->'items', '[]'::jsonb) || $2::jsonb),
                   updated_at = now()
-            WHERE id = $1 AND status = 'active'`,
-          [grant.id, JSON.stringify(newItems)]
+            WHERE id = $1 AND status = 'active'
+            RETURNING jsonb_array_length(COALESCE(plan->'items', '[]'::jsonb))
+                      - $3::int AS before`,
+          [grant.id, JSON.stringify(newItems), newItems.length]
         );
+        if (!appended) {
+          return JSON.stringify({
+            success: false,
+            problem: "the mandate is not active; the plan can no longer grow",
+          });
+        }
         planItemsAdded += newItems.length;
-        return JSON.stringify({ success: true, appended: newItems.length });
+        // Materialize now, so the pass learns in this turn whether each
+        // item became work and, if not, why (#416). A materializer
+        // failure never loses the append: the sweep retries on cadence.
+        const before = Number(appended.before);
+        const indices = newItems.map((_, i) => before + i);
+        let outcomes: Array<{ index: number; action: string; ledger: unknown }> = [];
+        let materializeProblem: string | null = null;
+        try {
+          outcomes = await materializePlanItems(grant.id, indices);
+        } catch (err) {
+          materializeProblem = err instanceof Error ? err.message : String(err);
+        }
+        return JSON.stringify({
+          success: true,
+          appended: newItems.length,
+          items: outcomes.map((o) => ({
+            index: o.index,
+            action: o.action,
+            ...("claim_id" in o && o.claim_id ? { claim_id: o.claim_id } : {}),
+            ...("url" in o && o.url ? { url: o.url } : {}),
+            ledger: o.ledger,
+          })),
+          ...(materializeProblem
+            ? {
+                note:
+                  "appended, but not yet materialized onto the ledger: " +
+                  `${materializeProblem}. The reconcile sweep retries on its cadence; ` +
+                  "grant_overview shows each item's standing.",
+              }
+            : {}),
+        });
       }
       if (name === "regrant") {
         const owls = Number(toolInput.owls ?? 0);
@@ -682,17 +700,6 @@ async function runMandateReviewImpl(input: {
         });
         if (res.ok) recordMove(owls);
         return JSON.stringify(res);
-      }
-      if (name === "update_workspace") {
-        const content = String(toolInput.content ?? "").slice(
-          0,
-          WORKSPACE_MAX_CHARS
-        );
-        await rawQuery(
-          `UPDATE grants SET workspace = $2, updated_at = now() WHERE id = $1`,
-          [grant.id, content]
-        );
-        return JSON.stringify({ success: true, chars: content.length });
       }
       if (name === "set_daily_rate") {
         const owlsPerDay = Number(toolInput.owls_per_day);

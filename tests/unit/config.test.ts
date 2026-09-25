@@ -9,7 +9,7 @@ describe("model IDs", () => {
 
   it("accepts Anthropic API IDs", () => {
     expect(isAnthropicModelId("claude-sonnet-5")).toBe(true);
-    expect(isAnthropicModelId("claude-fable-5-1")).toBe(true);
+    expect(isAnthropicModelId("claude-opus-5-5")).toBe(true);
     expect(isAnthropicModelId("claude-haiku-4-5-20251001")).toBe(true);
   });
 
@@ -121,9 +121,9 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
 
   it("names only the missing envs", async () => {
     process.env.ENVIRONMENT = "production";
-    process.env.STEWARD_MODEL = "claude-fable-5-1";
-    process.env.CURATOR_MODEL = "claude-fable-5-1";
-    process.env.AUDIT_MODEL = "claude-fable-5-1";
+    process.env.STEWARD_MODEL = "claude-opus-5-5";
+    process.env.CURATOR_MODEL = "claude-opus-5-5";
+    process.env.AUDIT_MODEL = "claude-opus-5-5";
     const { loadConfig } = await import("../../src/config.js");
     let message = "";
     try {
@@ -142,10 +142,10 @@ describe("loadConfig load-bearing model env guard (#100)", () => {
 
   it("loads in production when all load-bearing model envs are set", async () => {
     process.env.ENVIRONMENT = "production";
-    for (const k of MODEL_ENV) process.env[k] = "claude-fable-5-1";
+    for (const k of MODEL_ENV) process.env[k] = "claude-opus-5-5";
     const { loadConfig } = await import("../../src/config.js");
     const config = loadConfig();
-    expect(config.stewardModel).toBe("claude-fable-5-1");
+    expect(config.stewardModel).toBe("claude-opus-5-5");
   });
 
   it("only warns outside production (and stays quiet under vitest)", async () => {
@@ -247,7 +247,7 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(c.formalizationReviewPeriodDays).toBe(14);
     expect(c.formalizationReviewAwardOwls).toBe(100);
     // §7: the solver, on the strong tier, off by default.
-    expect(c.solverModel).toBe(MODELS.fable);
+    expect(c.solverModel).toBe(MODELS.strong);
     expect(c.solverEnabled).toBe(false);
     expect(c.solverDailyCapOwls).toBe(400);
     expect(c.solverCalibrationDailyCapOwls).toBe(100);

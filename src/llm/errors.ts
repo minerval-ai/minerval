@@ -1,8 +1,8 @@
 /**
  * Thrown when the model declines a request (stop_reason "refusal" — an HTTP
- * 200, not an API error). For Fable models the request already retried on the
- * server-side Opus fallback (see client.ts), so seeing this means the whole
- * chain refused. Callers that previously read empty content or got a
+ * 200, not an API error). For fallback-gated models (Opus 5.5, Fable/Mythos)
+ * the request already retried on the server-side Opus fallback (see
+ * client.ts), so seeing this means the whole chain refused. Callers that previously read empty content or got a
  * misleading structured-output parse failure now fail loudly with the
  * policy category instead.
  */
@@ -107,6 +107,11 @@ export function isTransientApiError(err: unknown): boolean {
     message.includes("econnrefused") ||
     message.includes("etimedout") ||
     message.includes("socket hang up") ||
+    // undici's wording for a connection or body stream closed under it, and
+    // Node's for a fetch that never connected — both hit the Steward mid-run.
+    message === "terminated" ||
+    message.includes("terminated") ||
+    message.includes("fetch failed") ||
     message.includes("network error") ||
     message.includes("connection error") ||
     message.includes("service unavailable") ||

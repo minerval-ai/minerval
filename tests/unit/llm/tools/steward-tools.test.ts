@@ -26,14 +26,32 @@ vi.mock("../../../../src/db/client.js", () => {
       return { where: async () => undefined };
     },
   });
+  const rawQuery = vi.fn(async () => []);
+  const db = { insert: () => ({ values }), select, update };
   return {
-    getDb: () => ({ insert: () => ({ values }), select, update }),
-    rawQuery: vi.fn(async () => []),
+    getDb: () => db,
+    rawQuery,
+    // add_decomposition_edge writes the claim, edge, and membership in one
+    // transaction; here the callback just runs against the same stubs.
+    withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ query: rawQuery, db })
+    ),
   };
 });
 
 vi.mock("../../../../src/services/embedding-service.js", () => ({
   generateEmbedding: vi.fn(async () => [0.1, 0.2, 0.3]),
+}));
+
+// The edge and its argument membership go through relationship-service
+// (#437); these tests are about the subclaim row, so stub the edge writes.
+vi.mock("../../../../src/services/relationship-service.js", () => ({
+  insertRelationshipEdge: vi.fn(async () => ({
+    id: "22222222-2222-2222-2222-222222222222",
+    created: true,
+  })),
+  attachEdgeToArgument: vi.fn(async () => ({ grouped: true })),
+  getClaimBasisSubclaims: vi.fn(async () => []),
 }));
 
 vi.mock("../../../../src/services/queue-service.js", () => ({
@@ -58,12 +76,37 @@ import {
   enqueueClaimPipeline,
   enqueueSteward,
 } from "../../../../src/services/queue-service.js";
-import { rawQuery } from "../../../../src/db/client.js";
+import { rawQuery, withTransaction } from "../../../../src/db/client.js";
+import { insertRelationshipEdge } from "../../../../src/services/relationship-service.js";
 
 describe("steward add_decomposition_edge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     insertedValues.length = 0;
+  });
+
+  it("writes the claim and its edge in one transaction, and does not onboard a subclaim whose edge failed (#451)", async () => {
+    vi.mocked(insertRelationshipEdge).mockRejectedValueOnce(
+      new Error('column "argument_id" does not exist')
+    );
+    const out = await executeStewardTool("add_decomposition_edge", {
+      parent_id: "22222222-2222-2222-2222-222222222222",
+      child_text: "Subclaim whose edge cannot be written",
+      relation: "supports",
+      reasoning: "load-bearing",
+    }).catch((e: Error) => e);
+
+    // The failure is surfaced (the tool runner relays thrown errors as
+    // "Error: ..." text), not swallowed as success.
+    const text = out instanceof Error ? out.message : String(out);
+    expect(text).toContain("argument_id");
+    expect(text).not.toContain('"success":true');
+    // The claim row was written inside the transaction that the edge failure
+    // rolls back, so no orphan survives ...
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(insertedValues.some((r) => "text" in r)).toBe(true);
+    // ... and nothing was enqueued for a subclaim that no longer exists.
+    expect(enqueueClaimPipeline).not.toHaveBeenCalled();
   });
 
   it("enqueues the newly created subclaim for the claim pipeline (not orphaned)", async () => {
@@ -324,7 +367,20 @@ describe("steward record_claim_instance", () => {
     const parsed = JSON.parse(out);
     expect(parsed.deduplicated).toBe(true);
     expect(parsed.message).toMatch(/stance differs/);
+    expect(parsed.message).toMatch(/update_claim_instance/);
     expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
+  });
+
+  it("records a posing instance: a source that states the claim as an open question (#445)", async () => {
+    claimExists();
+    await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/survey",
+      verbatim_text: "The Jacobian conjecture asks whether such a map has a polynomial inverse.",
+      stance: "poses",
+    });
+    const row = insertedValues.find((r) => "verbatimText" in r);
+    expect(row?.stance).toBe("poses");
   });
 
   it("bounces an out-of-enum stance without writing anything", async () => {
@@ -373,6 +429,139 @@ describe("steward record_claim_instance", () => {
     });
     expect(JSON.parse(out).success).toBe(false);
     expect(insertedValues).toHaveLength(0);
+  });
+});
+
+describe("steward update_claim_instance", () => {
+  const CLAIM = "22222222-2222-2222-2222-222222222222";
+  const INSTANCE = "55555555-5555-5555-5555-555555555555";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    insertedValues.length = 0;
+    updatedValues.length = 0;
+  });
+
+  /** The ownership check finds the instance on this claim. */
+  const instanceExists = () =>
+    vi.mocked(rawQuery).mockResolvedValueOnce([
+      {
+        id: INSTANCE,
+        stance: "affirms",
+        confidence: 0.97,
+        speaker: null,
+        source_url: "https://example.org/report",
+      },
+    ]);
+
+  it("re-stances an instance and writes the reason to the audit trail (#420)", async () => {
+    instanceExists();
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "DENIES",
+      speaker: "Peter Scholze",
+      reasoning: "The passage quotes Scholze denying the proof, not affirming it.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.instance_id).toBe(INSTANCE);
+    expect(parsed.updated).toEqual(["stance", "speaker"]);
+
+    // Stance is enum-normalized like record_claim_instance's; untouched
+    // fields are absent from the patch, never reset.
+    expect(updatedValues).toHaveLength(1);
+    expect(updatedValues[0]).toEqual({ stance: "denies", speaker: "Peter Scholze" });
+
+    const audit = insertedValues.find((r) => r.action === "updated_claim_instance");
+    expect(audit).toMatchObject({ claimId: CLAIM, createdBy: "claim_steward" });
+    expect(audit?.reasoning).toMatch(/was stance=affirms, confidence=0.97/);
+    expect(audit?.reasoning).toMatch(/quotes Scholze denying/);
+  });
+
+  it("lowers a mention's confidence toward 0 without touching its stance", async () => {
+    instanceExists();
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      confidence: 0.05,
+      reasoning: "A neutral report ('supposedly prove'), not an assertion.",
+    });
+    expect(JSON.parse(out).success).toBe(true);
+    expect(updatedValues[0]).toEqual({ confidence: 0.05 });
+  });
+
+  it("clamps confidence into [0, 1]", async () => {
+    instanceExists();
+    await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      confidence: -3,
+      reasoning: "Mention only.",
+    });
+    expect(updatedValues[0]).toEqual({ confidence: 0 });
+  });
+
+  it("requires a reasoning note — a correction without its reason is not written", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "denies",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/reasoning/);
+    expect(updatedValues).toHaveLength(0);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces an out-of-enum stance without writing anything", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      stance: "mentions",
+      reasoning: "It only mentions the claim.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/confidence near 0/);
+    expect(updatedValues).toHaveLength(0);
+  });
+
+  it("bounces a call with nothing to change", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      reasoning: "No change.",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(updatedValues).toHaveLength(0);
+  });
+
+  it("bounces an instance that is not on this claim (no edit to another claim's record)", async () => {
+    // The ownership check finds nothing (default rawQuery mock returns []).
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: "99999999-9999-9999-9999-999999999999",
+      stance: "denies",
+      reasoning: "Wrong stance.",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toMatch(/not found/i);
+    expect(updatedValues).toHaveLength(0);
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it("bounces a document-sized verbatim_text", async () => {
+    const out = await executeStewardTool("update_claim_instance", {
+      claim_id: CLAIM,
+      instance_id: INSTANCE,
+      verbatim_text: "x".repeat(2100),
+      reasoning: "Whole page pasted.",
+    });
+    expect(JSON.parse(out).success).toBe(false);
+    expect(updatedValues).toHaveLength(0);
   });
 });
 
@@ -501,6 +690,34 @@ describe("steward update_claim_assessment", () => {
     expect(row?.status).toBe("verified");
   });
 
+  it("bounces a write whose status is missing instead of persisting \"undefined\"", async () => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        confidence: 0.7,
+        assessment: "Supported on the evidence.",
+        reasoning_trace: "Trace.",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain("status is missing");
+    expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
+  });
+
+  it("bounces an out-of-enum status", async () => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        status: "probably",
+        confidence: 0.7,
+        assessment: "x",
+        reasoning_trace: "y",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain('"probably" is not one of');
+  });
+
   it("records the run's actual trigger and context on the assessment row (#182)", async () => {
     await executeStewardTool(
       "update_claim_assessment",
@@ -536,11 +753,11 @@ describe("steward update_claim_assessment", () => {
         assessment: "Supported.",
         reasoning_trace: "Trace.",
       },
-      { trigger: "structure_and_assess", model: "claude-fable-5-1" }
+      { trigger: "structure_and_assess", model: "claude-opus-5-5" }
     );
     const row = insertedValues.find((r) => "reasoningTrace" in r);
     // Every verdict names its assessor: the model id the run resolved to.
-    expect(row?.model).toBe("claude-fable-5-1");
+    expect(row?.model).toBe("claude-opus-5-5");
   });
 
   it("writes a null model when the run doesn't carry one (legacy call sites)", async () => {

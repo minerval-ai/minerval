@@ -27,6 +27,7 @@ const { state, queries } = vi.hoisted(() => ({
     attemptGroups: { groups: 0, live: 0 },
     publishedFor: new Set<string>(),
     lastAttemptFinishedAt: null as Date | null,
+    dueLookouts: [] as Array<{ id: string; title: string }>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -35,7 +36,14 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     queries.push({ q, params });
     if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return [];
+    // The materializer's per-item standing lookup: every claim the tests
+    // name is active and assessed; published iff the test says so.
+    if (q.includes("FROM claims c WHERE c.id = $1")) {
+      const id = params[0] as string;
+      return [{ id, state: "active", steward_state: "done", published: state.publishedFor.has(id) }];
+    }
     if (q.includes("FROM grants") && q.includes("plan_cursor")) return [state.grant];
+    if (q.includes("FROM lookouts l")) return state.dueLookouts;
     if (q.includes("FROM claim_formalizations") && q.includes("status = 'published'") && q.startsWith("SELECT id")) {
       return state.publishedFor.has(params[0] as string) ? [{ id: FORMALIZATION_B }] : [];
     }
@@ -49,7 +57,24 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardStrongModel: "strong", owlCostMicroUsd: 1_000_000 }),
+  loadConfig: () => ({ stewardStrongModel: "strong", owlCostMicroUsd: 1_000_000, capLookoutRunOwls: 0.05 }),
+}));
+
+// The formalize gate (#416): the claim's domains carry the publishing tool
+// unless a test says otherwise.
+const gate = vi.hoisted(() => ({ missing: [] as string[] }));
+vi.mock("../../../src/workers/steward-direct.js", () => ({
+  missingTriggerTools: vi.fn(async () => ({
+    skills: gate.missing.length > 0 ? [] : ["mathematics"],
+    active: [],
+    missing: gate.missing,
+  })),
+}));
+vi.mock("../../../src/services/queue-service.js", () => ({
+  enqueueSteward: vi.fn(async () => {}),
+}));
+vi.mock("../../../src/services/report-service.js", () => ({
+  raiseIssue: vi.fn(async () => ({ acknowledged: true })),
 }));
 
 vi.mock("../../../src/services/cost-estimate-service.js", () => ({
@@ -70,6 +95,7 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
 import {
   ATTEMPT_GROUP,
   FORMALIZE_GROUP,
+  LOOKOUT_GROUP,
   reconcileActions,
 } from "../../../src/services/action-service.js";
 
@@ -83,6 +109,28 @@ beforeEach(() => {
   state.attemptGroups = { groups: 0, live: 0 };
   state.publishedFor = new Set();
   state.lastAttemptFinishedAt = null;
+  state.dueLookouts = [];
+});
+
+describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
+  it("opens one standard row per due lookout in group lookout:<id>, reopening a closed row only when the lookout is due again", async () => {
+    state.dueLookouts = [{ id: "l-1", title: "Retraction watch" }];
+    await reconcileActions();
+    const due = queries.find((x) => x.q.includes("FROM lookouts l"))!;
+    // Due = heartbeat passed, or an unconsumed event waits; active on both sides.
+    expect(due.q).toContain("l.next_due_at <= now()");
+    expect(due.q).toContain("consumed_at IS NULL");
+    expect(due.q).toContain("g.status = 'active'");
+    const rows = inserts("lookout_run");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000]);
+    expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
+  });
+
+  it("opens nothing when no lookout is due", async () => {
+    await reconcileActions();
+    expect(inserts("lookout_run")).toHaveLength(0);
+  });
 });
 
 describe("formalize rows from plan items", () => {
@@ -220,5 +268,90 @@ describe("cancellation and the reopen rule", () => {
     expect(reopen!.q).toContain("kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes'");
     expect(reopen!.q).toContain("kind = 'ingest' AND updated_at < now() - interval '24 hours'");
     expect(reopen!.q).toContain("kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => 3)");
+  });
+});
+
+describe("plan-to-ledger materialization writes each item's standing back (#416)", () => {
+  const ledgerWrites = () =>
+    queries.filter((x) => x.q.includes("UPDATE grants") && x.q.includes("jsonb_set(plan, $2::text[]"));
+  const ledgerOf = (index: number) => {
+    const w = ledgerWrites().find((x) => (x.params[1] as string[])[1] === String(index));
+    return w ? (JSON.parse(w.params[2] as string) as { status: string; reason?: string }) : null;
+  };
+
+  it("blocks a formalize item whose claim's domains carry no publish_formalization tool, and opens no row", async () => {
+    gate.missing = ["publish_formalization"];
+    try {
+      state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_A, rationale: "r" }];
+      await reconcileActions();
+      expect(inserts("formalize")).toHaveLength(0);
+      const ledger = ledgerOf(0);
+      expect(ledger?.status).toBe("blocked");
+      expect(ledger?.reason).toContain("publish_formalization");
+      expect(ledger?.reason).toContain("set_claim_domains");
+    } finally {
+      gate.missing = [];
+    }
+  });
+
+  it("marks an attempt_proof item on a claim without a published statement as waiting, with the reason", async () => {
+    state.grant.plan.items = [{ action: "attempt_proof", claim_id: CLAIM_B, rationale: "r" }];
+    await reconcileActions();
+    const ledger = ledgerOf(0);
+    expect(ledger?.status).toBe("waiting");
+    expect(ledger?.reason).toContain("no published formal statement");
+  });
+
+  it("reads a formalize item on a claim that already has a published statement as done", async () => {
+    state.publishedFor.add(CLAIM_B);
+    state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_B, rationale: "r" }];
+    await reconcileActions();
+    expect(inserts("formalize")).toHaveLength(0);
+    expect(ledgerOf(0)?.status).toBe("done");
+  });
+
+  it("holds strong-tier items as waiting, not blocked, while the mandate is not active", async () => {
+    state.grant.status = "planning";
+    state.grant.plan.items = [
+      { action: "formalize", claim_id: CLAIM_A, rationale: "r" },
+      { action: "assess", claim_id: CLAIM_A, rationale: "r" },
+    ];
+    await reconcileActions();
+    expect(ledgerOf(0)?.status).toBe("waiting");
+    expect(ledgerOf(0)?.reason).toContain("not active");
+    expect(ledgerOf(1)?.status).toBe("waiting");
+  });
+
+  it("does not rewrite a standing that has not changed", async () => {
+    state.grant.plan.items = [
+      {
+        action: "attempt_proof",
+        claim_id: CLAIM_B,
+        rationale: "r",
+        ledger: {
+          status: "waiting",
+          reason:
+            "the claim has no published formal statement; an attempt opens only " +
+            "once a formalize item has published one (docs/mathematics.md §7.2)",
+          checked_at: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ];
+    await reconcileActions();
+    expect(ledgerWrites()).toHaveLength(0);
+  });
+
+  it("isolates one mandate's failure: the sweep reports it and finishes", async () => {
+    const { raiseIssue } = await import("../../../src/services/report-service.js");
+    state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_A, rationale: "r" }];
+    const { stewardTierCostEstimates } = await import("../../../src/services/cost-estimate-service.js");
+    (stewardTierCostEstimates as unknown as { mockRejectedValueOnce: (e: Error) => void })
+      .mockRejectedValueOnce(new Error("estimator down"));
+    const result = await reconcileActions();
+    // The item's failure is its own blocked reason, not a sweep abort.
+    expect(result.plansFailed).toBe(0);
+    expect(ledgerOf(0)?.status).toBe("blocked");
+    expect(ledgerOf(0)?.reason).toContain("estimator down");
+    expect(raiseIssue).not.toHaveBeenCalled();
   });
 });

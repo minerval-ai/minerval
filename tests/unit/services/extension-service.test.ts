@@ -77,6 +77,16 @@ describe("buildAnnotations", () => {
     stance: "affirms" as const,
   };
 
+  it("says so when the Matcher reached no verdict, rather than 'not in the graph' (#419)", () => {
+    const [a] = buildAnnotations({
+      claims: [{ ...base, undecided: true, matched: null }],
+      verdicts: new Map(),
+    });
+    expect(a!.verdict).toBe("unknown");
+    expect(a!.why).toMatch(/could not decide/);
+    expect(a!.claim).toBeNull();
+  });
+
   it("carries the assessor's verdict for matched claims", () => {
     const verdicts = new Map<number, ClaimVerdict>([
       [0, { index: 0, verdict: "egregious", why: "why", confidence: 0.9 }],

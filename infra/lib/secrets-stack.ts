@@ -11,6 +11,7 @@ export class SecretsStack extends cdk.Stack {
   public readonly stripeSecretKeySecret: secretsmanager.Secret;
   public readonly stripeWebhookSecretSecret: secretsmanager.Secret;
   public readonly githubTokenSecret: secretsmanager.Secret;
+  public readonly githubAppPrivateKeySecret: secretsmanager.ISecret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -99,12 +100,10 @@ export class SecretsStack extends cdk.Stack {
     );
 
     // GitHub issue filing for agent reports (#366): the raise_issue channel's
-    // far end. A fine-grained PAT (or GitHub App installation token) with
-    // Issues: read/write on GITHUB_ISSUES_REPO. Holds a CDK-generated
-    // placeholder until populated; the sync is off until the token is real
-    // — githubIssuesConfigured() only checks that it is non-empty, so a
-    // placeholder fails at GitHub (401) and is logged, never thrown. Populate,
-    // then force a new service deployment.
+    // far end. Production writes as the minerval-agents GitHub App (below);
+    // this plain-token slot is the alternative, a fine-grained PAT with
+    // Issues: read/write on GITHUB_ISSUES_REPO, and is ignored while the App
+    // is configured. It holds a CDK-generated placeholder.
     this.githubTokenSecret = new secretsmanager.Secret(
       this,
       "GithubTokenSecret",
@@ -114,6 +113,18 @@ export class SecretsStack extends cdk.Stack {
           "GitHub token with Issues read/write on the agent-reports repo " +
           "(#366). Must be manually populated after deploy.",
       }
+    );
+
+    // The minerval-agents GitHub App's private key (src/services/
+    // github-app-auth.ts exchanges it for hourly installation tokens). Unlike
+    // the placeholders above this secret is imported, not created: it was
+    // populated by hand on 2026-09-11 before the stack knew of it, and
+    // CloudFormation must not try to create the name. The app id and the
+    // installation id are not secrets and sit in the API task's environment.
+    this.githubAppPrivateKeySecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "GithubAppPrivateKeySecret",
+      "episteme/github-app-private-key"
     );
 
     this.apiKeysSecret = new secretsmanager.Secret(this, "ApiKeysSecret", {

@@ -1,0 +1,16 @@
+{
+  "cluster": "blackholes",
+  "description": "Questions a downstream reasoner might be asked about the LHC micro black hole safety case, authored from corpus/blackholes/posts. Factual, comparative, what-is-the-crux and how-confident-should-I-be forms. The probe asks a reasoner each one with and without the graph's record (#334 S5); diagnostic only.",
+  "questions": [
+    { "id": "bh-01", "kind": "factual", "question": "Could a black hole produced at the LHC grow to endanger the Earth?", "note": "The headline question the cluster settles; the record should carry a near-settled 'no' with high credence." },
+    { "id": "bh-02", "kind": "factual", "question": "Can the LHC produce microscopic black holes at all, and under what theoretical assumptions?", "note": "Standard Model says no; extra-dimensional models say yes at ~1/s. Tests whether the conditional scope survives." },
+    { "id": "bh-03", "kind": "factual", "question": "Has Hawking radiation been directly observed experimentally?", "note": "The record should say: broad consensus on its reality, no direct experimental evidence. A reasoner conflating consensus with observation is the miss." },
+    { "id": "bh-04", "kind": "comparative", "question": "Which argument for LHC safety is more robust: that micro black holes evaporate via Hawking radiation, or that white dwarfs and neutron stars would already have been destroyed by cosmic-ray-produced black holes?", "note": "Giddings & Mangano hold the astrophysical bound stands even without Hawking radiation." },
+    { "id": "bh-05", "kind": "comparative", "question": "How does the strangelet risk at the LHC compare with the risk at lower-energy colliders such as RHIC?", "note": "Strangelet production probability decreases with energy." },
+    { "id": "bh-06", "kind": "crux", "question": "What is the crux between Plaga's metastable black hole scenario and the Giddings–Mangano safety argument?", "note": "Whether metastable black holes escape the white-dwarf/neutron-star bounds; G&M say the scenario is internally inconsistent." },
+    { "id": "bh-07", "kind": "crux", "question": "What is the strongest remaining objection to the claim that the LHC poses no conceivable danger, and has it been answered?", "note": "Plaga 2008; rebutted by G&M and Casadio et al.; not peer-reviewed." },
+    { "id": "bh-08", "kind": "confidence", "question": "How confident should I be that cosmic-ray collisions have already produced everything the LHC can produce?", "note": "The load-bearing 'nature has already run the experiment' premise." },
+    { "id": "bh-09", "kind": "confidence", "question": "How confident should I be that a stable microscopic black hole trapped inside the Earth would accrete matter too slowly to matter?", "note": "The Planck-length accretion argument; the record should hold it as supported/verified." },
+    { "id": "bh-10", "kind": "confidence", "question": "How confident should I be that the LSAG safety review was independent of CERN's institutional interest in running the LHC?", "note": "Johnson's epistemic objection (specialists are invested). Tests whether the reasoner reaches past the physics claims to the sociology the record may not carry." }
+  ]
+}

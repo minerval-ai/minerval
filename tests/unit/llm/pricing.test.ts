@@ -118,6 +118,28 @@ describe("provider-reported cost override", () => {
   });
 });
 
+describe("Opus 5.5 pricing", () => {
+  it("has its own entry rather than resolving to the claude-opus-5 prefix", () => {
+    expect(ratesForModel("claude-opus-5-5")).toEqual({
+      inputPerMtok: 4,
+      outputPerMtok: 20,
+      cacheReadMultiplier: 0.05,
+    });
+    expect(ratesForModel("claude-opus-5").inputPerMtok).toBe(5);
+  });
+
+  it("meters $4/$20, cache reads at $0.20 and 5-minute writes at $5 per MTok", () => {
+    const micro = costMicroUsd("claude-opus-5-5", {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+    });
+    // 4 + 20 + 0.2 + 5 = 29.2 USD
+    expect(micro).toBe(29_200_000);
+  });
+});
+
 describe("Fable 5.1 cache reads", () => {
   it("meters cache reads at 0.025× input ($0.25 per MTok), not the 0.1× default", () => {
     expect(ratesForModel("claude-fable-5-1").cacheReadMultiplier).toBe(0.025);

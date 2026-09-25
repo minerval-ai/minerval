@@ -27,6 +27,8 @@ import { hasWrittenForm } from "../../services/argument-service.js";
 import { getClaimSourceMap } from "../../services/source-map-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { listFindings } from "../../services/finding-service.js";
+import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
+import { listRelatedClaims } from "../../services/claim-link-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -35,7 +37,10 @@ export function getGovernanceToolDefinitions(): Tool[] {
       description:
         "Get comprehensive context about a claim: its text, type, current " +
         "assessment, subclaims, instances, and arguments. Use this to " +
-        "understand the full state of a claim before making decisions.",
+        "understand the full state of a claim before making decisions. " +
+        "decomposition_status \"complete\" only means the claim was handed " +
+        "to its Steward; read steward_state and stewarded_at to tell whether " +
+        "a Steward has actually worked it (stewarded_at null = never run).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -213,8 +218,11 @@ async function getClaimWithContext(claimId: string) {
     .limit(1);
 
   // Subclaims (with the argument each edge belongs to, so the steward can see
-  // which line of reasoning a subclaim serves — and write_argument accordingly)
+  // which line of reasoning a subclaim serves — and write_argument accordingly).
+  // An edge grouped under several arguments (#437) is listed once per
+  // argument; an ungrouped basis edge once, with a null argument.
   const subclaims = await rawQuery<{
+    edge_id: string;
     child_id: string;
     child_text: string;
     child_type: string;
@@ -225,15 +233,17 @@ async function getClaimWithContext(claimId: string) {
     argument_id: string | null;
     argument_name: string | null;
   }>(
-    `SELECT cr.child_claim_id AS child_id, c.text AS child_text,
+    `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
-            cr.argument_id, arg.name AS argument_name
+            am.argument_id, arg.name AS argument_name
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.child_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
-     LEFT JOIN arguments arg ON arg.id = cr.argument_id
-     WHERE cr.parent_claim_id = $1`,
+     LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
+     LEFT JOIN arguments arg ON arg.id = am.argument_id
+     WHERE cr.parent_claim_id = $1
+     ORDER BY cr.created_at, cr.id, am.created_at`,
     [claimId]
   );
 
@@ -312,6 +322,17 @@ async function getClaimWithContext(claimId: string) {
   // current, so the Steward knows the graph has moved since it was written.
   const findingsNoted = await listFindings({ claimId, limit: 10 }).catch(() => []);
 
+  // The claim's formal statement and the checks on it (#435): the published
+  // version, any draft or reviewed one awaiting publication, every version's
+  // status, and the checker's verdicts. The Steward reads this before
+  // formalizing (is there already a statement, or a draft to review?) and
+  // after an attempt (which statement did it run against, what did the
+  // checker say). Empty history means nothing has ever been recorded.
+  const formalizationRecord = await getClaimFormalizationRecord(claimId);
+  // Lateral links (#436): claims a reader of this one would want beside it,
+  // with the reason. Not dependencies; they never enter the assessment.
+  const relatedClaims = await listRelatedClaims(claimId);
+
   return {
     claim: {
       id: claim.id,
@@ -319,9 +340,26 @@ async function getClaimWithContext(claimId: string) {
       claim_type: claim.claimType,
       state: claim.state,
       decomposition_status: claim.decompositionStatus,
+      // Whether a Steward has actually worked this claim (#415).
+      // decomposition_status flips to "complete" at onboarding, when the
+      // claim is handed to its Steward, so on its own it cannot tell "never
+      // structured" from "structured and judged to need no children". The
+      // Steward queue state can: stewarded_at is null and steward_state is
+      // 'pending' or 'deferred' until a Steward run has started, and 'done'
+      // only once one has finished. A high-importance claim with no children,
+      // no assessment and no stewarded_at has simply not been worked yet.
+      steward_state: claim.stewardState,
+      stewarded_at: claim.stewardedAt?.toISOString() ?? null,
       importance: claim.importance,
-      children_total: claim.childrenTotal,
-      children_assessed: claim.childrenAssessed,
+      // Derived from the subclaims loaded below, never from a stored counter
+      // (#417): every edge in claim_relationships counts once, argument-grouped
+      // or not — an edge shared by two arguments is two rows above but one
+      // child (#437) — and a child is assessed when it has a current
+      // assessment.
+      children_total: new Set(subclaims.map((sc) => sc.edge_id)).size,
+      children_assessed: new Set(
+        subclaims.filter((sc) => sc.child_status != null).map((sc) => sc.edge_id)
+      ).size,
       // Why the canonical form runs in the direction it does (#360): chosen
       // on the proposition's terms when the claim was minted, so a Steward
       // improving the wording keeps the polarity every stance is read
@@ -339,6 +377,7 @@ async function getClaimWithContext(claimId: string) {
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    ...formalizationRecord,
     findings_noted: findingsNoted.map((f) => ({
       id: f.id,
       noted_at: f.first_noted_at instanceof Date ? f.first_noted_at.toISOString() : f.first_noted_at,
@@ -348,6 +387,13 @@ async function getClaimWithContext(claimId: string) {
       headline: f.headline,
       cites: (Array.isArray(f.refs) ? f.refs : []).map((r) => `${r.kind} ${r.id}`),
       ...(f.stale ? { stale: "cites an assessment that is no longer current" } : {}),
+    })),
+    related_claims: relatedClaims.map((r) => ({
+      id: r.id,
+      text: r.text,
+      kind: r.kind,
+      reasoning: r.reasoning,
+      assessment_status: r.assessment_status,
     })),
     subclaims: subclaims.map((sc) => ({
       id: sc.child_id,
