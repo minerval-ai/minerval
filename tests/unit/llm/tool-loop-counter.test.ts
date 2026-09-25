@@ -72,6 +72,45 @@ describe("toolUseLoop turn counter", () => {
     expect(turnCounterLine(3, 6)).toBe("Turn 3 of 6 used; 3 remain.");
   });
 
+  it("lets the caller replace the counter's line with its own, and runs beforeTurn before every call", async () => {
+    createMock
+      .mockResolvedValueOnce(search)
+      .mockResolvedValueOnce(search)
+      .mockResolvedValueOnce(done);
+    const before: number[] = [];
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "go" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 6,
+      executeTool: async () => "ok",
+      turnNote: (used, max) => `Spent this much after ${used} of ${max}.`,
+      beforeTurn: (turn) => {
+        before.push(turn);
+      },
+    });
+    expect(trailingText(2)[0]).toBe("Spent this much after 1 of 6.");
+    expect(trailingText(3)[0]).toBe("Spent this much after 2 of 6.");
+    expect(before).toEqual([0, 1, 2]);
+  });
+
+  it("ends the loop when beforeTurn throws, before the call", async () => {
+    createMock.mockResolvedValue(search);
+    await expect(
+      toolUseLoop({
+        initialMessages: [{ role: "user", content: "go" }],
+        tools,
+        model: MODELS.haiku,
+        maxIterations: 6,
+        executeTool: async () => "ok",
+        beforeTurn: (turn) => {
+          if (turn === 1) throw new Error("stop");
+        },
+      })
+    ).rejects.toThrow("stop");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
   it("adds the default budget notice two turns out when the agent set none", async () => {
     createMock
       .mockResolvedValueOnce(search)

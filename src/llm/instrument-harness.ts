@@ -14,7 +14,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ToolCompletionResult } from "./client.js";
 import { getUsageContext } from "./usage-context.js";
-import { ratesForModel } from "./pricing.js";
+import { hasExplicitRates, ratesForModel } from "./pricing.js";
 import { meterExternalUsage } from "../services/usage-service.js";
 
 /** Why a harness stopped the loop, as `hookStop` reports it. */
@@ -94,4 +94,91 @@ export async function meterCodeExecution(seconds: number): Promise<void> {
     unitKind: "container_seconds",
     costMicroUsd: (s / 3600) * CODE_EXECUTION_USD_PER_HOUR * 1_000_000,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Budget legibility
+//
+// A model told "$2.00" has no reliable sense of what that buys: it does not
+// know its own price, and the dominant cost of a tool loop (every turn
+// re-reading a growing history) is not one it can intuit. So the harness
+// does the arithmetic. Up front, a rough translation from the rate table;
+// after every turn, a spend line read from the meter, which is exact and
+// needs no rates at all.
+// ---------------------------------------------------------------------------
+
+/** Assumptions behind the up-front estimate: a typical turn's output, what the history grows by, a page read in full. */
+export const TYPICAL_OUTPUT_TOKENS = { longRun: 2_500, ordinary: 800 } as const;
+export const TYPICAL_TOOL_RESULT_TOKENS = 1_500;
+export const PAGE_TOKENS = 3_000;
+const CHARS_PER_TOKEN = 4;
+
+export interface BudgetEstimate {
+  /** About how many turns of typical size the ceiling buys. */
+  turns: number;
+  /** About what one page read in full on the first turn costs by the last. */
+  pageUsd: number;
+}
+
+/**
+ * The up-front translation of a dollar ceiling into turns, for a model with
+ * list rates in the table. Null for a model priced by its provider per call
+ * (OpenRouter), where the table has nothing honest to say; the spend line
+ * covers that model from its first turn.
+ */
+export function estimateBudget(input: {
+  model: string;
+  ceilingMicroUsd: number;
+  /** The system prompt and task message, in characters. */
+  promptChars: number;
+  longRun: boolean;
+}): BudgetEstimate | null {
+  if (!hasExplicitRates(input.model)) return null;
+  const rates = ratesForModel(input.model);
+  const perTok = rates.inputPerMtok / 1_000_000;
+  const read = perTok * (rates.cacheReadMultiplier ?? 0.1);
+  const write = perTok * (rates.cacheWriteMultiplier ?? 1.25);
+  const out = rates.outputPerMtok / 1_000_000;
+  const outputTokens = input.longRun ? TYPICAL_OUTPUT_TOKENS.longRun : TYPICAL_OUTPUT_TOKENS.ordinary;
+  const growth = outputTokens + TYPICAL_TOOL_RESULT_TOKENS;
+  const budget = Math.max(0, input.ceilingMicroUsd) / 1_000_000;
+  let context = input.promptChars / CHARS_PER_TOKEN;
+  // The first turn writes the prompt to the cache; each later one reads the
+  // history, writes what the last turn added, and produces its output.
+  let spent = context * write + outputTokens * out;
+  let turns = spent <= budget ? 1 : 0;
+  while (turns > 0 && turns < MAX_TURNS_GUARD) {
+    const next = context * read + growth * write + outputTokens * out;
+    if (spent + next > budget) break;
+    spent += next;
+    context += growth;
+    turns++;
+  }
+  const pageUsd = PAGE_TOKENS * (write + read * Math.max(0, turns - 1));
+  return { turns, pageUsd };
+}
+
+function usd(micro: number): string {
+  return `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+}
+
+/**
+ * The line shown after every turn: what has been spent, of what, and about
+ * how many turns remain at the last turn's cost. Turns grow dearer as the
+ * history grows, so the count is an upper bound and says so.
+ */
+export function spendLine(input: {
+  spentMicroUsd: number;
+  ceilingMicroUsd: number;
+  lastTurnMicroUsd: number;
+}): string {
+  const { spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: last } = input;
+  const pct = ceiling > 0 ? Math.min(100, Math.round((100 * spent) / ceiling)) : 100;
+  const head = `Budget: ${usd(spent)} of ${usd(ceiling)} spent (${pct}%).`;
+  if (last <= 0 || spent >= ceiling) return head;
+  const left = Math.floor((ceiling - spent) / last);
+  return (
+    `${head} Your last turn cost ${usd(last)}; at that rate about ${left} ` +
+    `turn${left === 1 ? "" : "s"} remain, fewer as the conversation grows.`
+  );
 }

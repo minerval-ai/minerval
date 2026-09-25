@@ -39,12 +39,14 @@ import { resolveProvider } from "../providers/routing.js";
 import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
 import {
   CODE_EXECUTION_TOOL,
+  estimateBudget,
   MAX_TURNS_GUARD,
   REMINDER_FRACTION,
   STOP_CEILING,
   STOP_PAUSED,
   meterCodeExecution,
   meterMicroUsd,
+  spendLine,
   taskBudgetTokens,
   turnUsedCodeExecution,
 } from "../instrument-harness.js";
@@ -299,19 +301,49 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     includeConstitution: run.include_constitution,
     skills: skillsWithText,
   });
-  const taskMessage = buildResearcherTaskMessage({
+  const taskInput = {
     task: run.task,
     requestedBy: run.requested_by,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     budgetUsd: ceiling / 1_000_000,
+    model,
+    estimate: null,
+    maxTurns,
+    elicitMaxCalls: config.researcherElicitMaxCalls,
     toolNames,
     sandbox,
     notebook,
+  };
+  // The estimate is sized from the prompt the run will actually carry: the
+  // system blocks, the tool definitions, and the task message itself.
+  const promptChars =
+    system.reduce((n, b) => n + b.length, 0) +
+    JSON.stringify(tools).length +
+    buildResearcherTaskMessage(taskInput).length;
+  const taskMessage = buildResearcherTaskMessage({
+    ...taskInput,
+    estimate: estimateBudget({ model, ceilingMicroUsd: ceiling, promptChars, longRun }),
   });
 
   let reportInput: Record<string, unknown> | null = null;
   let elicitCalls = 0;
   let reminded = false;
+  // What the meter read after the previous turn, for the spend line.
+  let meterAtLastTurn = 0;
+  /**
+   * The note after every turn: the spend line, and, once, the wrap-up
+   * notice when the reminder fraction is crossed.
+   */
+  const turnNote = (): string => {
+    const spent = meterMicroUsd();
+    const line = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    meterAtLastTurn = spent;
+    if (!reminded && !halted && spent >= REMINDER_FRACTION * ceiling) {
+      reminded = true;
+      return `${line}\n\n${WRAP_UP_NOTICE}`;
+    }
+    return line;
+  };
   let halted: string | null = null;
   const servedModels = new Set<string>();
   let lastTurnEndedAt = now();
@@ -432,11 +464,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         if (await readResearcherPaused()) return { stop: STOP_PAUSED };
         return undefined;
       };
-      const reminder = (): string | null => {
-        if (reminded || meterMicroUsd() < REMINDER_FRACTION * ceiling) return null;
-        reminded = true;
-        return WRAP_UP_NOTICE;
-      };
+      // The spend line rides on every turn's user message, beside the
+      // provider's own task-budget countdown.
+      const reminder = (): string => turnNote();
       const afterTurn = async (state: LongRunLoopState, result: ToolCompletionResult) => {
         const served = result.servedModel ?? result.model;
         if (served) servedModels.add(served);
@@ -471,8 +501,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // reach the executor: it ends the run at the wall cap, and at the
     // ceiling or the operator's pause it allows one last turn, in which
     // every tool call is refused with the instruction to report, and then
-    // ends the run. The wrap-up notice rides on the first tool result past
-    // the reminder fraction. Container time is not metered per turn on this
+    // ends the run. The spend line, and the wrap-up notice once past the
+    // reminder fraction, ride on every turn's note. Container time is not metered per turn on this
     // path; the sandbox's free allowance covers a run of this size, and the
     // token meter binds.
     let turns = 0;
@@ -508,14 +538,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
             `Write what you have to the notebook and call report on your next turn.`,
         },
         beforeTurn,
-        executeTool: async (name, toolInput) => {
-          const out = await executeTool(name, toolInput);
-          if (!reminded && !halted && meterMicroUsd() >= REMINDER_FRACTION * ceiling) {
-            reminded = true;
-            return `${out}\n\n${WRAP_UP_NOTICE}`;
-          }
-          return out;
-        },
+        // The spend line replaces the turn counter: dollars bind first.
+        turnNote: () => turnNote(),
+        executeTool,
         onFinalTool,
       });
     } catch (err) {

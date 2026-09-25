@@ -344,6 +344,13 @@ export async function toolUseLoop(options: {
    */
   turnCounter?: boolean;
   /**
+   * Replaces the turn counter's line with the caller's own, asked for after
+   * every turn with the turns used and the cap: an instrument whose binding
+   * budget is dollars says what has been spent instead (instrument-harness
+   * spendLine). An empty string appends nothing.
+   */
+  turnNote?: (used: number, max: number) => string;
+  /**
    * When the agent's whole output is one final tool call (the Matcher's
    * decision), a turn that ends in prose instead — "resubmitting now", and
    * then nothing — loses the run. With this set, such a turn is answered with
@@ -527,7 +534,8 @@ export async function toolUseLoop(options: {
       ...toolResults,
     ];
     if (turnCounter) {
-      userContent.push({ type: "text", text: turnCounterLine(i + 1, maxIter) });
+      const line = options.turnNote ? options.turnNote(i + 1, maxIter) : turnCounterLine(i + 1, maxIter);
+      if (line) userContent.push({ type: "text", text: line });
     }
     if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });

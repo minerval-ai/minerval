@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
     // Extra tool calls the ordinary loop's model makes before it reports.
     calls: [] as Array<{ name: string; input: Record<string, unknown> }>,
     outputs: [] as string[],
+    // The turn notes the ordinary loop's model saw, and what each later turn billed.
+    notes: [] as string[],
+    bills: [] as number[],
     // Turns the ordinary loop runs through beforeTurn after the first.
     extraTurns: 0,
   },
@@ -97,7 +100,13 @@ vi.mock("../../../src/llm/client.js", () => ({
     const beforeTurn = options.beforeTurn as ((i: number) => Promise<void>) | undefined;
     await beforeTurn?.(0);
     const exec = options.executeTool as (n: string, i: Record<string, unknown>) => Promise<string>;
+    const turnNote = options.turnNote as ((u: number, m: number) => string) | undefined;
     for (const c of mocks.script.calls) mocks.script.outputs.push(await exec(c.name, c.input));
+    if (mocks.script.calls.length > 0 && turnNote) mocks.script.notes.push(turnNote(1, 40));
+    for (const bill of mocks.script.bills) {
+      mocks.meter.billedMicroUsd += bill;
+      if (turnNote) mocks.script.notes.push(turnNote(2, 40));
+    }
     for (let t = 1; t <= mocks.script.extraTurns; t++) await beforeTurn?.(t);
     const first = JSON.parse(await exec("notebook_write", { section: "thread", content: "started" }));
     if (!first.success) {
@@ -152,6 +161,8 @@ beforeEach(() => {
   mocks.script.report = true;
   mocks.script.calls = [];
   mocks.script.outputs = [];
+  mocks.script.notes = [];
+  mocks.script.bills = [];
   mocks.script.extraTurns = 0;
   mocks.paused = false;
   mocks.meter.billedMicroUsd = 0;
@@ -192,7 +203,14 @@ describe("toolset by model", () => {
     expect(result.toolNames).toEqual(names);
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("Trace the figure to its origin.");
-    expect(task).toContain("Budget: 2.00 USD");
+    // The budget in units the model can act on: turns on this model, what a
+    // page costs over the run, and what the tools cost beyond tokens.
+    expect(task).toMatch(/Budget: \$2\.00 of metered work\. On claude-sonnet-5 that is roughly \d+ turns/);
+    expect(task).toMatch(/a page read in full early on costs about \$0\.\d\d by the end of the run/);
+    expect(task).toContain("web_search carries a fee");
+    expect(task).toContain("read_page has no fee");
+    expect(task).toContain("code_execution is billed at $0.05 per container-hour");
+    expect(task).toContain("capped at 40 turns");
     expect(task).toContain("launched by the Claim Steward of the claim below");
     expect(task).toContain("The code-execution sandbox is available");
   });
@@ -228,6 +246,9 @@ describe("toolset by model", () => {
     expect(names.slice(-2)).toEqual(["report", "web_search"]);
     const task = (opts.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("There is no code-execution sandbox this run");
+    // A provider-priced model gets no up-front estimate, only the running line.
+    expect(task).toContain("priced by its provider per call, so there is no estimate up front");
+    expect(task).not.toContain("code_execution is billed");
   });
 
   it("offers Mathlib search on a mathematical claim only when a checker is configured", async () => {
@@ -348,15 +369,17 @@ describe("harness stops", () => {
     expect(result.turns).toBe(2);
   });
 
-  it("appends the wrap-up notice once, on the first tool result past 85 percent", async () => {
-    mocks.meter.billedMicroUsd = 1_800_000;
-    mocks.script.calls = [
-      { name: "notebook_read", input: {} },
-      { name: "notebook_read", input: {} },
-    ];
+  it("shows the spend after every turn, and the wrap-up notice once past 85 percent", async () => {
+    mocks.meter.billedMicroUsd = 1_000_000;
+    mocks.script.calls = [{ name: "notebook_read", input: {} }];
+    mocks.script.bills = [100_000, 700_000, 50_000];
     await runResearcher(input());
-    expect(mocks.script.outputs[0]).toContain("about fifteen percent");
-    expect(mocks.script.outputs[1]).not.toContain("about fifteen percent");
+    const notes = mocks.script.notes;
+    expect(notes[0]).toMatch(/^Budget: \$1\.00 of \$2\.00 spent \(50%\)\./);
+    expect(notes[1]).toContain("Your last turn cost $0.10; at that rate about 9 turns remain");
+    expect(notes[2]).toMatch(/^Budget: \$1\.80 of \$2\.00 spent \(90%\)/);
+    expect(notes[2]).toContain("about fifteen percent");
+    expect(notes[3]).not.toContain("about fifteen percent");
   });
 
   it("marks a run that ended without a report as no_report", async () => {

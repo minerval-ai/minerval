@@ -279,8 +279,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
     "hasConstitution": true,
-    "roleChars": 7817,
-    "fullChars": 57803,
+    "roleChars": 6367,
+    "fullChars": 56353,
     "skills": [
       {
         "name": "provenance",

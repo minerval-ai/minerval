@@ -929,6 +929,20 @@ the launching action is charged for it. The shared pieces of this harness,
 the stop reasons, the reminder fraction, the task budget, and the container
 metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
+**Budget legibility.** A model told "$2.00" does not know what that buys:
+it does not know its own price, and the dominant cost of a tool loop, every
+turn re-reading a growing history, is not one it can intuit. So the harness
+does the arithmetic (`src/llm/instrument-harness.ts`). The task message
+translates the ceiling, for a model with list rates in the table, into
+roughly how many turns of typical size it buys and what a page read early
+costs by the end of the run, and lists what each tool costs beyond its
+tokens; a model priced by its provider per call (the cheap tier) gets no
+up-front figure. After every turn, on both loops, the model sees a spend
+line read from the meter: what it has spent of what, and about how many
+turns remain at its last turn's cost. The line replaces the turn counter on
+the ordinary loop (`toolUseLoop`'s `turnNote`) and rides beside the
+provider's task-budget countdown on the long-run loop.
+
 **The record.** Each launch is a `research_runs` row: the brief, the model
 and tier, the ceiling, the spend, the turns, how the run ended (a run that
 ends on its own without calling report is `no_report`), the report, and the
