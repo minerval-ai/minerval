@@ -417,3 +417,15 @@ describe("what the researcher may write", () => {
     }
   });
 });
+
+describe("the budget guide", () => {
+  it("states Elicit's per-call price and cap when Elicit is in the toolset", async () => {
+    const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
+    const guide = budgetGuide({
+      task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5",
+      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      toolNames: ["elicit_search_papers", "report"], sandbox: false, notebook: {},
+    });
+    expect(guide).toContain("each elicit_ search costs $2.00, and they are capped at 5 calls this run");
+  });
+});
