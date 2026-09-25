@@ -241,6 +241,19 @@ async function plant(n: number, outDir: string): Promise<void> {
   writeFileSync(join(outDir, "baseline-read.json"), JSON.stringify(baseline, null, 2));
 }
 
+/**
+ * A read for the arm's report: a failed query is logged and reads as empty
+ * rather than discarding the arm, whose drain has already been paid for.
+ */
+async function safeRead<T>(label: string, q: string, params: unknown[]): Promise<T[]> {
+  try {
+    return await rawQuery<T & Record<string, unknown>>(q, params) as T[];
+  } catch (err) {
+    console.warn(`  [report] ${label} failed: ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // arm (child)
 // ---------------------------------------------------------------------------
@@ -325,10 +338,10 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   }
 
   // What ran, and what it changed.
-  const stewardRuns = await rawQuery<{
+  const stewardRuns = await safeRead<{
     claim_id: string; text: string; trigger: string | null; status: string; claim_credence: number | null;
     prev_status: string | null; prev_credence: number | null; summary: string | null; trigger_context: string | null;
-  }>(
+  }>("stewardRuns",
     `SELECT a.claim_id, c.text, a.trigger, a.status, a.claim_credence, a.summary, a.trigger_context,
             prev.status AS prev_status, prev.claim_credence AS prev_credence
        FROM assessments a
@@ -341,12 +354,12 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
       ORDER BY a.assessed_at`,
     [startedAt]
   );
-  const flags = await rawQuery<{
+  const flags = await safeRead<{
     id: string; kind: string; primary_claim_id: string; claim_ids: string[]; rationale: string;
     expected_gain: number; status_at_flag: string | null; credence_at_flag: number | null;
     action_status: string | null; status_now: string | null; credence_now: number | null; ran: boolean; moved: boolean;
     claim_text: string;
-  }>(
+  }>("flags",
     `SELECT f.id, f.kind, f.primary_claim_id, f.claim_ids, f.rationale, f.expected_gain,
             f.status_at_flag, f.credence_at_flag, x.status AS action_status, c.text AS claim_text,
             cur.status AS status_now, cur.claim_credence AS credence_now,
@@ -361,24 +374,24 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
       WHERE f.created_at >= $1 ORDER BY f.created_at`,
     [startedAt]
   );
-  const sweeps = await rawQuery(
+  const sweeps = await safeRead<Record<string, unknown>>("sweeps",
     `SELECT partition, tag_id, status, claims_in_scope, flags_raised, note, started_at, finished_at
        FROM consistency_sweeps WHERE started_at >= $1 ORDER BY started_at`,
     [startedAt]
   );
-  const cost = await rawQuery<{ agent: string; calls: number; usd: number }>(
+  const cost = await safeRead<{ agent: string; calls: number; usd: number }>("cost",
     `SELECT COALESCE(agent, '?') AS agent, COUNT(*)::int AS calls,
             ROUND(SUM(cost_micro_usd)::numeric / 1e6, 4)::float AS usd
        FROM llm_usage WHERE created_at >= $1 GROUP BY 1 ORDER BY 3 DESC`,
     [startedAt]
   );
-  const enqueues = await rawQuery<{ trigger: string; n: number; coalesced: number }>(
+  const enqueues = await safeRead<{ trigger: string; n: number; coalesced: number }>("enqueues",
     `SELECT COALESCE(trigger, '?') AS trigger, COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE coalesced)::int AS coalesced
        FROM enqueue_events WHERE queue = 'steward' AND created_at >= $1 GROUP BY 1 ORDER BY 2 DESC`,
     [startedAt]
   );
-  const allocations = await rawQuery<{ kind: string; n: number; usd: number }>(
+  const allocations = await safeRead<{ kind: string; n: number; usd: number }>("allocations",
     `SELECT x.kind, COUNT(*)::int AS n, ROUND(SUM(al.amount_micro_usd)::numeric / 1e6, 4)::float AS usd
        FROM action_allocations al JOIN actions x ON x.id = al.action_id
       WHERE al.created_at >= $1 GROUP BY 1`,
@@ -386,19 +399,20 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   );
   // The rest of the admin system's response: Curator work the passes
   // escalated, and issue reports agents raised during the arm.
-  const curatorRuns = await rawQuery<{ n: number }>(
+  const curatorRuns = await safeRead<{ n: number }>("curatorRuns",
     `SELECT COUNT(*)::int AS n FROM agent_runs WHERE agent = 'curator' AND started_at >= $1`,
     [startedAt]
   );
-  const reports = await rawQuery<{ agent: string; kind: string; severity: string; title: string }>(
-    `SELECT agent, kind, severity, title FROM agent_reports WHERE created_at >= $1 ORDER BY created_at`,
+  const reports = await safeRead<{ agent: string; kind: string; severity: string; title: string }>("reports",
+    `SELECT agent, kind, severity, title FROM agent_reports WHERE last_seen_at >= $1 ORDER BY last_seen_at`,
     [startedAt]
   );
-  const unfunded = await rawQuery<{ n: number; flagged: number }>(
+  const unfunded = await safeRead<{ n: number; flagged: number }>("unfunded",
     `SELECT COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM consistency_flags f
                                             WHERE f.action_id = x.id))::int AS flagged
-       FROM actions x WHERE x.status = 'open' AND x.kind IN ('assess', 'reassess')`
+       FROM actions x WHERE x.status = 'open' AND x.kind IN ('assess', 'reassess')`,
+    []
   );
 
   const plantOutcomes = [];
