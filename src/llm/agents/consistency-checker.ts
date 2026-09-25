@@ -44,10 +44,21 @@ import {
   type PartitionScope,
 } from "../../services/consistency-service.js";
 
+/** A flag as the agent proposed it (recorded in a dry run instead of written). */
+export interface ProposedFlag {
+  kind: string;
+  primary_claim_id: string;
+  claim_ids: string[];
+  rationale: string;
+  expected_gain: number;
+}
+
 export interface ConsistencyCheckerResult {
   note: string;
   flagsRaised: number;
   repeats: number;
+  /** Every flag the agent asked for, written or (in a dry run) not. */
+  proposed: ProposedFlag[];
   /** agent_runs.id when tracing is on. */
   runId: string | null;
 }
@@ -64,7 +75,8 @@ export function runConsistencyChecker(
 }
 
 async function runConsistencyCheckerImpl(input: {
-  sweepId: string;
+  /** Null in a dry run. */
+  sweepId: string | null;
   /** Human label of the partition, e.g. a tag slug or "residual". */
   partitionLabel: string;
   scope: PartitionScope;
@@ -74,6 +86,13 @@ async function runConsistencyCheckerImpl(input: {
   lastSweep: { started_at: Date; note: string | null } | null;
   maxFlags?: number;
   model?: string;
+  /**
+   * Read and judge, write nothing: flag_inconsistency records the proposal
+   * and returns without touching the ledger or the Steward queue. The eval
+   * harness uses this as a coherence measure of a graph (how much would a
+   * fresh sweep flag?) that leaves the graph as it found it.
+   */
+  dryRun?: boolean;
 }): Promise<ConsistencyCheckerResult> {
   const config = loadConfig();
   const model = input.model ?? config.consistencyModel;
@@ -183,6 +202,7 @@ async function runConsistencyCheckerImpl(input: {
 
   let flagsRaised = 0;
   let repeats = 0;
+  const proposed: ProposedFlag[] = [];
   let note = "";
   let closed = false;
 
@@ -238,6 +258,17 @@ async function runConsistencyCheckerImpl(input: {
               `Name any others in your finish_sweep note.`,
           });
         }
+        proposed.push({
+          kind: String(toolInput.kind ?? ""),
+          primary_claim_id: String(toolInput.primary_claim_id ?? ""),
+          claim_ids: Array.isArray(toolInput.claim_ids) ? toolInput.claim_ids.map(String) : [],
+          rationale: String(toolInput.rationale ?? ""),
+          expected_gain: Number(toolInput.expected_gain ?? 0.5),
+        });
+        if (input.dryRun) {
+          flagsRaised++;
+          return JSON.stringify({ ok: true, duplicate: false, note: "Recorded." });
+        }
         const res = await flagInconsistency({
           sweepId: input.sweepId,
           kind: String(toolInput.kind ?? ""),
@@ -268,6 +299,7 @@ async function runConsistencyCheckerImpl(input: {
     note: note.slice(0, CONSISTENCY_BOUNDS.noteChars),
     flagsRaised,
     repeats,
+    proposed,
     runId,
   };
 }

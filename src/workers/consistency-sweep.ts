@@ -11,7 +11,7 @@
  * run: one claim cannot be incoherent with anything in its partition.
  */
 import { loadConfig } from "../config.js";
-import { runConsistencyChecker } from "../llm/agents/consistency-checker.js";
+import { runConsistencyChecker, type ProposedFlag } from "../llm/agents/consistency-checker.js";
 import {
   finishSweep,
   lastSweepOf,
@@ -23,7 +23,8 @@ import {
 } from "../services/consistency-service.js";
 
 export interface SweepResult {
-  sweepId: string;
+  /** Null for a dry run, which records no sweep. */
+  sweepId: string | null;
   partition: SweepPartition;
   /** Assessed claims in the partition. */
   claimsInScope: number;
@@ -31,6 +32,7 @@ export interface SweepResult {
   agentRan: boolean;
   flagsRaised: number;
   repeats: number;
+  proposed: ProposedFlag[];
   note: string;
 }
 
@@ -44,6 +46,8 @@ export async function runConsistencySweep(
     partition?: SweepPartition;
     model?: string;
     maxFlags?: number;
+    /** Judge without writing: no sweep row, no flags (the eval's coherence read). */
+    dryRun?: boolean;
   } = {}
 ): Promise<SweepResult | null> {
   const config = loadConfig();
@@ -51,19 +55,21 @@ export async function runConsistencySweep(
   const partition = opts.partition ?? (await nextSweepPartition(minTagClaims));
   if (!partition) return null;
 
-  const [scope, lastSweep] = await Promise.all([
-    scopeForPartition(partition, minTagClaims),
-    lastSweepOf(partition),
-  ]);
+  const scope = await scopeForPartition(partition, minTagClaims);
+  // A dry run is a fresh reader: no memory of earlier sweeps, no record.
+  const lastSweep = opts.dryRun ? null : await lastSweepOf(partition);
   const { total: claimsInScope } = await partitionClaims(scope, { limit: 1 });
-  const sweepId = await startSweep(partition);
+  const sweepId = opts.dryRun ? null : await startSweep(partition);
   const base = { sweepId, partition, claimsInScope };
+  const close = async (fields: Omit<Parameters<typeof finishSweep>[0], "sweepId" | "claimsInScope">) => {
+    if (sweepId) await finishSweep({ sweepId, claimsInScope, ...fields });
+  };
 
   // One assessed claim cannot be incoherent with anything in its partition.
   if (claimsInScope < 2) {
     const note = `Only ${claimsInScope} assessed claim(s) in scope; nothing to read against.`;
-    await finishSweep({ sweepId, status: "done", claimsInScope, flagsRaised: 0, note });
-    return { ...base, agentRan: false, flagsRaised: 0, repeats: 0, note };
+    await close({ status: "done", flagsRaised: 0, note });
+    return { ...base, agentRan: false, flagsRaised: 0, repeats: 0, proposed: [], note };
   }
 
   try {
@@ -75,24 +81,19 @@ export async function runConsistencySweep(
       lastSweep,
       model: opts.model,
       maxFlags: opts.maxFlags,
+      dryRun: opts.dryRun,
     });
-    await finishSweep({
-      sweepId,
-      status: "done",
-      runId: run.runId,
-      claimsInScope,
+    await close({ status: "done", runId: run.runId, flagsRaised: run.flagsRaised, note: run.note });
+    return {
+      ...base,
+      agentRan: true,
       flagsRaised: run.flagsRaised,
+      repeats: run.repeats,
+      proposed: run.proposed,
       note: run.note,
-    });
-    return { ...base, agentRan: true, flagsRaised: run.flagsRaised, repeats: run.repeats, note: run.note };
+    };
   } catch (err) {
-    await finishSweep({
-      sweepId,
-      status: "error",
-      claimsInScope,
-      flagsRaised: 0,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    await close({ status: "error", flagsRaised: 0, error: err instanceof Error ? err.message : String(err) });
     throw err;
   }
 }
