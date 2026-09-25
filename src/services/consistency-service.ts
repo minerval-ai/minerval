@@ -36,6 +36,8 @@
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
+import { refreshQueuePriority } from "./priority-service.js";
+import { refreshGeneralValuations } from "./mandate-valuer-service.js";
 
 /**
  * What kind of incoherence a flag names. A label for the record and the
@@ -65,8 +67,11 @@ export const CONSISTENCY_BOUNDS = {
   noteChars: 4_000,
   /** Claims one flag or comparison may name. */
   maxClaims: 8,
-  /** A running sweep older than this is treated as abandoned. */
-  reclaimHours: 2,
+  /**
+   * A running sweep older than this is treated as abandoned. A sweep takes
+   * minutes; the ledger reopens a still-running action after an hour.
+   */
+  reclaimHours: 1,
   /**
    * A partition swept more recently than this is not due, however much in
    * it changed: the passes a sweep's own flags buy land one by one, and the
@@ -164,23 +169,32 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
        SELECT tag_id, partition, MAX(started_at) AS at
          FROM consistency_sweeps WHERE status = 'done'
         GROUP BY tag_id, partition
+     ),
+     keyed AS (
+       SELECT m.tag_id, m.claim_id, m.importance, ls.at
+         FROM members m
+         LEFT JOIN last_sweep ls
+                ON ls.tag_id IS NOT DISTINCT FROM m.tag_id
+               AND ls.partition = CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END
+     ),
+     changed AS (
+       SELECT k.tag_id, COUNT(a.id)::int AS n
+         FROM keyed k
+         JOIN assessments a ON a.claim_id = k.claim_id
+                           AND (k.at IS NULL OR a.assessed_at > k.at)
+        GROUP BY k.tag_id
      )
-     SELECT CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END AS partition,
-            m.tag_id,
+     SELECT CASE WHEN k.tag_id IS NULL THEN 'residual' ELSE 'tag' END AS partition,
+            k.tag_id,
             COALESCE(t.slug, 'residual') AS label,
             COUNT(*)::int AS claims,
-            COALESCE(SUM(m.importance), 0)::real AS importance_mass,
-            ls.at AS last_swept_at,
-            (SELECT COUNT(*)::int FROM assessments a
-              WHERE a.claim_id IN (SELECT claim_id FROM members m2
-                                    WHERE m2.tag_id IS NOT DISTINCT FROM m.tag_id)
-                AND (ls.at IS NULL OR a.assessed_at > ls.at)) AS changed_since
-       FROM members m
-       LEFT JOIN tags t ON t.id = m.tag_id
-       LEFT JOIN last_sweep ls
-              ON ls.tag_id IS NOT DISTINCT FROM m.tag_id
-             AND ls.partition = CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END
-      GROUP BY m.tag_id, t.slug, ls.at`,
+            COALESCE(SUM(k.importance), 0)::real AS importance_mass,
+            k.at AS last_swept_at,
+            COALESCE(MAX(ch.n), 0)::int AS changed_since
+       FROM keyed k
+       LEFT JOIN tags t ON t.id = k.tag_id
+       LEFT JOIN changed ch ON ch.tag_id IS NOT DISTINCT FROM k.tag_id
+      GROUP BY k.tag_id, t.slug, k.at`,
     [minTagClaims]
   );
   return rows.map((r) => ({
@@ -197,16 +211,20 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
  * importance. A partition where nothing was re-assessed since its last
  * sweep is not due (the sweep would read what it already read), nor is one
  * swept within CONSISTENCY_BOUNDS.resweepHours, nor one with a sweep still
- * running (younger than the reclaim window).
+ * running (younger than the reclaim window) or failed within the re-sweep
+ * interval.
  */
 export async function duePartitions(minTagClaims: number): Promise<SweepPartition[]> {
   const [partitions, running] = await Promise.all([
     listPartitions(minTagClaims),
+    // Busy: a sweep still running, or one that failed within the re-sweep
+    // interval (a partition whose sweeps keep failing must not take the
+    // day's cap by looking never-swept).
     rawQuery<{ tag_id: string | null; partition: string }>(
       `SELECT tag_id, partition FROM consistency_sweeps
-        WHERE status = 'running'
-          AND started_at > now() - make_interval(hours => $1)`,
-      [CONSISTENCY_BOUNDS.reclaimHours]
+        WHERE (status = 'running' AND started_at > now() - make_interval(hours => $1))
+           OR (status = 'error' AND started_at > now() - make_interval(hours => $2))`,
+      [CONSISTENCY_BOUNDS.reclaimHours, CONSISTENCY_BOUNDS.resweepHours]
     ),
   ]);
   const busy = (p: PartitionStatus) =>
@@ -396,7 +414,8 @@ export async function partitionClaims(
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.parent_claim_id = c.id) AS subclaims,
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.child_claim_id = c.id) AS dependents,
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
-                     WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')) AS flag_open,
+                     WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')
+                       AND f.assessment_id_at_flag = a.id) AS flag_open,
             (c.steward_state IN ('pending', 'running')) AS steward_pending,
             COUNT(*) OVER ()::int AS total
        FROM claims c
@@ -603,18 +622,46 @@ export function consistencyFlagContext(input: {
  * here writes a valuation: the formula prices the pass like any other,
  * and the allocator decides whether it runs.
  *
- * Folding: a flag on a primary that already carries an open flag (its
- * action open or running, or no action yet and under a week old) is a
- * repeat, not a new flag, and rewrites nothing.
+ * Folding: a flag on a primary whose earlier flag's pass has not landed
+ * is a repeat, not a new flag: its reading still reaches the waiting pass,
+ * and the earlier flag takes the larger gain and the union of claims.
  */
-export async function flagInconsistency(input: {
-  sweepId: string | null;
+/**
+ * Price the flagged pass now rather than at the allocation scheduler's next
+ * tick: the Steward lane's allocator runs on demand, and a flag raised
+ * mid-drain would otherwise wait while the day's room went to work valued
+ * before it existed. Also restamps the display priority, which
+ * enqueueSteward computed before the flag row was written.
+ */
+async function revalue(claimId: string): Promise<void> {
+  await refreshGeneralValuations();
+  await refreshQueuePriority(claimId);
+}
+
+type FlagInput = {
   kind: string;
   primaryClaimId: string;
   claimIds: unknown;
   rationale: string;
-  expectedGain: number;
-}): Promise<ConsistencyFlagResult> {
+};
+
+type CheckedFlag = {
+  ok: true;
+  rationale: string;
+  claimIds: string[];
+  primary: { id: string; text: string; status: string | null; claim_credence: number | null; assessment_id: string };
+  others: Array<{ id: string; text: string; status: string | null; claim_credence: number | null }>;
+};
+
+/**
+ * Validate a flag the way flag_inconsistency would, without writing: the
+ * kind, a real rationale, an active and assessed primary, and at least one
+ * other known claim. The dry-run read uses it so that what it counts is
+ * what a live sweep could actually have raised.
+ */
+export async function checkFlagInput(
+  input: FlagInput
+): Promise<CheckedFlag | { ok: false; code: string; problem: string }> {
   const rationale = String(input.rationale ?? "").trim().slice(0, CONSISTENCY_BOUNDS.rationaleChars);
   if (rationale.length < 20) {
     return { ok: false, code: "RATIONALE", problem: "Say what does not cohere and why, in a few sentences" };
@@ -648,48 +695,74 @@ export async function flagInconsistency(input: {
   if (missing.length > 0) {
     return { ok: false, code: "CLAIMS", problem: `Unknown claim id(s): ${missing.join(", ")}` };
   }
+  return {
+    ok: true,
+    rationale,
+    claimIds,
+    primary: { ...primary, assessment_id: primary.assessment_id },
+    others: claimIds.slice(1).map((id) => {
+      const r = byId.get(id)!;
+      return { id, text: r.text, status: r.status, claim_credence: r.claim_credence };
+    }),
+  };
+}
 
+export async function flagInconsistency(
+  input: FlagInput & { sweepId: string | null; expectedGain: number }
+): Promise<ConsistencyFlagResult> {
+  const checked = await checkFlagInput(input);
+  if (!checked.ok) return checked;
+  const { rationale, claimIds, primary, others } = checked;
+  const expectedGain = clampReal(input.expectedGain, 0, 1, 0.5);
+  const context = consistencyFlagContext({
+    kind: input.kind,
+    rationale,
+    primary: { id: primary.id, status: primary.status, claim_credence: primary.claim_credence },
+    others,
+  });
+
+  // An open flag is one whose pass has not landed: its action still open
+  // or running AND the primary's assessment still the one it was raised on
+  // (the assess row is reused when the claim is wanted again, so the row's
+  // status alone would revive a flag whose pass already ran).
   const [open] = await rawQuery<{ id: string; created_at: Date }>(
     `SELECT f.id, f.created_at
        FROM consistency_flags f
        LEFT JOIN actions a ON a.id = f.action_id
       WHERE f.primary_claim_id = $1
+        AND f.assessment_id_at_flag = $2
         AND (a.status IN ('open', 'running')
              OR (f.action_id IS NULL AND f.created_at > now() - interval '7 days'))
       ORDER BY f.created_at DESC LIMIT 1`,
-    [input.primaryClaimId]
+    [input.primaryClaimId, primary.assessment_id]
   );
   if (open) {
+    // A repeat: one pass is already asked for. Its Steward still gets this
+    // reading (a second tension on the same claim is information, and the
+    // queued context appends), the flag's gain rises to the larger
+    // estimate, and the claims in tension accumulate.
+    await enqueueSteward({ claimId: input.primaryClaimId, trigger: "consistency_flag", context });
     await rawQuery(
-      `UPDATE consistency_flags SET repeats = repeats + 1, updated_at = now() WHERE id = $1`,
-      [open.id]
+      `UPDATE consistency_flags
+          SET repeats = repeats + 1,
+              expected_gain = GREATEST(expected_gain, $2),
+              claim_ids = ARRAY(SELECT DISTINCT unnest(claim_ids || $3::uuid[])),
+              updated_at = now()
+        WHERE id = $1`,
+      [open.id, expectedGain, claimIds]
     );
+    await revalue(input.primaryClaimId);
     return {
       ok: true,
       flag_id: open.id,
       duplicate: true,
       note:
         `This claim was already flagged on ${new Date(open.created_at).toISOString().slice(0, 10)} ` +
-        `and its pass is still waiting; counted as a repeat, nothing rewritten.`,
+        `and its pass is still waiting; your reading was added to that pass, not raised as a new flag.`,
     };
   }
 
-  const expectedGain = clampReal(input.expectedGain, 0, 1, 0.5);
-  const others = claimIds.slice(1).map((id) => {
-    const r = byId.get(id)!;
-    return { id, text: r.text, status: r.status, claim_credence: r.claim_credence };
-  });
-
-  await enqueueSteward({
-    claimId: input.primaryClaimId,
-    trigger: "consistency_flag",
-    context: consistencyFlagContext({
-      kind: input.kind,
-      rationale,
-      primary: { id: primary.id, status: primary.status, claim_credence: primary.claim_credence },
-      others,
-    }),
-  });
+  await enqueueSteward({ claimId: input.primaryClaimId, trigger: "consistency_flag", context });
   await ensureAssessActions(input.primaryClaimId);
   const [standard] = await rawQuery<{ id: string }>(
     `SELECT id FROM actions
@@ -716,6 +789,7 @@ export async function flagInconsistency(input: {
       primary.assessment_id,
     ]
   );
+  await revalue(input.primaryClaimId);
   return {
     ok: true,
     flag_id: flag!.id,

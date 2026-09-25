@@ -365,6 +365,18 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // coverage record reads true and the partition can be due again.
   await reclaimAbandonedSweeps();
   const due = (await duePartitions(config.consistencyMinTagClaims)).slice(0, cap);
+  const refs = due.map((p) => CONSISTENCY_GROUP(partitionRef(p)));
+  // Only the most due stay open: a row the day cap left unfunded yields
+  // to whatever is more due now, so open rows never pile up across days.
+  await rawQuery(
+    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+      WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
+        AND NOT (a.exclusion_group = ANY($1::text[]))
+        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+                         WHERE al.exclusion_group = a.exclusion_group
+                           AND al.released_at IS NULL)`,
+    [refs]
+  );
   const cost = capMicroUsd("consistency_sweep");
   for (const p of due) {
     const ref = partitionRef(p);

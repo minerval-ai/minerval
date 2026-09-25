@@ -136,6 +136,60 @@ describe("consistency flags (#330)", () => {
     expect(rows[0]!.repeats).toBe(1);
   });
 
+  it("folds a repeat into the waiting flag: the larger gain, the union of claims", async () => {
+    const a = await seedClaim("primary");
+    const b = await seedClaim("b");
+    const c = await seedClaim("c");
+    for (const id of [a, b, c]) await assess(id, { status: "supported" });
+    const base = { sweepId: null, kind: "reasoning_conflict", primaryClaimId: a, rationale: "These assessments read the same data incompatibly." };
+    await flagInconsistency({ ...base, claimIds: [b], expectedGain: 0.3 });
+    await flagInconsistency({ ...base, claimIds: [c], expectedGain: 0.7 });
+    const [row] = await rawQuery<{ expected_gain: number; claim_ids: string[] }>(
+      `SELECT expected_gain, claim_ids FROM consistency_flags WHERE primary_claim_id = $1`,
+      [a]
+    );
+    expect(row!.expected_gain).toBeCloseTo(0.7);
+    expect([...row!.claim_ids].sort()).toEqual([a, b, c].sort());
+  });
+
+  it("lapses once its pass lands, even when the claim's assess row reopens later", async () => {
+    resetAllocationPolicyCache();
+    const funder = await seedUser("general-lapse");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000, policy: "general" });
+    const a = await seedClaim("flagged", 0.8);
+    const b = await seedClaim("neighbor");
+    await assess(a, { status: "supported", marginalYield: 0.1 });
+    await assess(b, { status: "supported" });
+    await flagInconsistency({
+      sweepId: null, kind: "overlooked_evidence", primaryClaimId: a, claimIds: [b],
+      rationale: "The flagged claim never weighs the neighbor's evidence.", expectedGain: 0.9,
+    });
+    const valueOf = async () => {
+      await refreshFormulaValuations(grantId, { scopeClaimId: a, scopeQuery: null });
+      const [row] = await rawQuery<{ value_est: number }>(
+        `SELECT mv.value_est FROM mandate_valuations mv JOIN actions x ON x.id = mv.action_id
+          WHERE mv.grant_id = $1 AND x.claim_id = $2 AND x.variant = 'standard'`,
+        [grantId, a]
+      );
+      return Number(row?.value_est ?? NaN);
+    };
+    const flagged = await valueOf();
+    // The pass lands: a new assessment, the row done. Later the claim is
+    // wanted again and the same row reopens.
+    await assess(a, { status: "contested", marginalYield: 0.1 });
+    await rawQuery(`UPDATE actions SET status = 'done' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
+    await rawQuery(`UPDATE actions SET status = 'open' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
+    const reopened = await valueOf();
+    expect(reopened).toBeLessThan(flagged);
+    expect(reopened / flagged).toBeCloseTo(0.1 / 0.9, 1);
+    // And a new flag on it is a new flag, not a repeat of the spent one.
+    const again = await flagInconsistency({
+      sweepId: null, kind: "stale_premise", primaryClaimId: a, claimIds: [b],
+      rationale: "Its new verdict still rests on the neighbor's old reading.", expectedGain: 0.5,
+    });
+    expect(again.ok && !again.duplicate).toBe(true);
+  });
+
   it("refuses what it cannot act on: no other claim, an unassessed primary, an unknown kind", async () => {
     const a = await seedClaim("primary");
     const b = await seedClaim("neighbor");

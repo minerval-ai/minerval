@@ -36,6 +36,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import {
+  checkFlagInput,
   compareAssessments,
   CONSISTENCY_BOUNDS,
   CONSISTENCY_FLAG_KINDS,
@@ -262,17 +263,33 @@ async function runConsistencyCheckerImpl(input: {
               `Name any others in your finish_sweep note.`,
           });
         }
-        proposed.push({
+        const proposal: ProposedFlag = {
           kind: String(toolInput.kind ?? ""),
           primary_claim_id: String(toolInput.primary_claim_id ?? ""),
           claim_ids: Array.isArray(toolInput.claim_ids) ? toolInput.claim_ids.map(String) : [],
           rationale: String(toolInput.rationale ?? ""),
           expected_gain: Number(toolInput.expected_gain ?? 0.5),
-        });
+        };
         if (input.dryRun) {
+          // Held to what a live flag would accept, and folded by primary
+          // as a live flag is, so a dry run counts what a sweep could
+          // actually have raised.
+          const checked = await checkFlagInput({
+            kind: proposal.kind,
+            primaryClaimId: proposal.primary_claim_id,
+            claimIds: proposal.claim_ids,
+            rationale: proposal.rationale,
+          });
+          if (!checked.ok) return JSON.stringify(checked);
+          if (proposed.some((p) => p.primary_claim_id === proposal.primary_claim_id)) {
+            repeats++;
+            return JSON.stringify({ ok: true, duplicate: true, note: "Already flagged this sweep." });
+          }
+          proposed.push({ ...proposal, claim_ids: checked.claimIds });
           flagsRaised++;
           return JSON.stringify({ ok: true, duplicate: false, note: "Recorded." });
         }
+        proposed.push(proposal);
         const res = await flagInconsistency({
           sweepId: input.sweepId,
           kind: String(toolInput.kind ?? ""),

@@ -506,7 +506,10 @@ export async function fundGrantSelfActions(): Promise<number> {
          -- A consistency sweep (#330) is the platform's own work: the
          -- General mandate funds it, as the formula mandate whose scope
          -- is the whole graph.
-         OR (a.kind = 'consistency_sweep' AND g.is_platform = true AND g.policy = 'general')
+         OR (a.kind = 'consistency_sweep' AND g.id = (
+              SELECT gg.id FROM grants gg
+               WHERE gg.is_platform = true AND gg.policy = 'general' AND gg.status = 'active'
+               ORDER BY gg.created_at ASC LIMIT 1))
          -- Any open ingest row a plan item names, wherever the cursor
          -- stands: the direct steward lane can move the cursor past an
          -- ingest item before its row ran (#427), and an open row is by

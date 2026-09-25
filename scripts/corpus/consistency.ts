@@ -103,16 +103,44 @@ function detects(flag: { primary_claim_id: string; claim_ids: string[] }, plant:
   return plant.alsoPrimary.includes(flag.primary_claim_id) && flag.claim_ids.includes(plant.expectedPrimary);
 }
 
-async function dryRunRead(label: string): Promise<{ proposed: ProposedFlagLite[]; note: string; claimsInScope: number }> {
+interface DryRead {
+  /** One entry per independent read: what a fresh sweep would flag. */
+  reads: Array<{ proposed: ProposedFlagLite[]; note: string }>;
+  claimsInScope: number;
+}
+
+/**
+ * The coherence read: `--reads` independent dry-run sweeps of the whole
+ * graph (a fresh checker each time, writing nothing). One LLM read is one
+ * sample; the summary reports the mean flag count and, per plant, in how
+ * many reads it was found.
+ */
+async function dryRunRead(label: string): Promise<DryRead> {
   const { runConsistencySweep } = await import("../../src/workers/consistency-sweep.js");
-  console.log(`  dry-run read (${label})…`);
-  const res = await runConsistencySweep({
-    partition: { partition: "graph", tagId: null, label: "whole graph" },
-    dryRun: true,
-    // A read, not a budgeted sweep: let it say everything it would flag.
-    maxFlags: 20,
-  });
-  return { proposed: res?.proposed ?? [], note: res?.note ?? "", claimsInScope: res?.claimsInScope ?? 0 };
+  const n = Math.max(1, Number(argFlag("reads") ?? 2));
+  const reads: DryRead["reads"] = [];
+  let claimsInScope = 0;
+  for (let i = 0; i < n; i++) {
+    console.log(`  dry-run read ${i + 1}/${n} (${label})…`);
+    const res = await runConsistencySweep({
+      partition: { partition: "graph", tagId: null, label: "whole graph" },
+      dryRun: true,
+      // A read, not a budgeted sweep: let it say everything it would flag.
+      maxFlags: 20,
+    });
+    reads.push({ proposed: res?.proposed ?? [], note: res?.note ?? "" });
+    claimsInScope = res?.claimsInScope ?? 0;
+  }
+  return { reads, claimsInScope };
+}
+
+function readStats(read: DryRead, plants: Plant[]) {
+  const mean = read.reads.reduce((s, r) => s + r.proposed.length, 0) / read.reads.length;
+  return {
+    meanFlags: Math.round(mean * 10) / 10,
+    plantHits: plants.map((p) => read.reads.filter((r) => r.proposed.some((f) => detects(f, p))).length),
+    reads: read.reads.length,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,14 +283,18 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   console.log(`\n=== arm ${name}: General mandate ${grantId.slice(0, 8)}, daily ${(daily / 1e6).toFixed(3)} USD (${passes} × ${(tiers.standardMicroUsd / 1e6).toFixed(4)}) ===`);
 
   // The cadence's candidates, identical in both arms: the formula's top
-  // assessed claims, as the staleness sweep would enqueue them.
+  // assessed claims, as the staleness sweep would enqueue them. The planted
+  // claims are left out, so a plant is revisited only if something found
+  // it: what either arm fixes of them is attributable.
+  const plantClaims = plants.flatMap((p) => p.claims);
   const cadence = await rawQuery<{ id: string }>(
     `SELECT c.id FROM claims c
        JOIN assessments a ON a.claim_id = c.id AND a.is_current
       WHERE c.state = 'active' AND c.steward_state NOT IN ('pending', 'running')
+        AND NOT (c.id = ANY($2::uuid[]))
       ORDER BY c.importance * (0.3 + 0.7 * COALESCE(c.contestation, 0)) DESC, c.id
       LIMIT $1`,
-    [cadenceK]
+    [cadenceK, plantClaims]
   );
   for (const c of cadence) {
     await enqueueSteward({ claimId: c.id, trigger: "staleness_check", context: "Periodic refresh (eval cadence)." });
@@ -307,8 +339,8 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     `SELECT f.id, f.kind, f.primary_claim_id, f.claim_ids, f.rationale, f.expected_gain,
             f.status_at_flag, f.credence_at_flag, x.status AS action_status, c.text AS claim_text,
             cur.status AS status_now, cur.claim_credence AS credence_now,
-            (cur.id IS DISTINCT FROM f.assessment_id_at_flag) AS ran,
-            (cur.id IS DISTINCT FROM f.assessment_id_at_flag
+            (cur.id IS NOT NULL AND cur.id IS DISTINCT FROM f.assessment_id_at_flag) AS ran,
+            (cur.id IS NOT NULL AND cur.id IS DISTINCT FROM f.assessment_id_at_flag
              AND (cur.status IS DISTINCT FROM f.status_at_flag
                   OR ABS(COALESCE(cur.claim_credence,0) - COALESCE(f.credence_at_flag,0)) > 0.1)) AS moved
        FROM consistency_flags f
@@ -380,10 +412,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     enqueues,
     cost,
     plants: plantOutcomes,
-    read: {
-      ...read,
-      plantsFlagged: plants.map((p) => read.proposed.some((f) => detects(f, p))),
-    },
+    read: { ...read, ...readStats(read, plants) },
     events,
   };
   writeFileSync(join(outDir, `${name}.json`), JSON.stringify(report, null, 2));
@@ -396,14 +425,14 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
 
 function summarize(outDir: string, arms: ArmName[]): string {
   const plants = JSON.parse(readFileSync(join(outDir, "plants.json"), "utf8")) as Plant[];
-  const baseline = JSON.parse(readFileSync(join(outDir, "baseline-read.json"), "utf8")) as { proposed: ProposedFlagLite[] };
+  const baseline = readStats(JSON.parse(readFileSync(join(outDir, "baseline-read.json"), "utf8")) as DryRead, plants);
   const lines: string[] = [];
   const w = (s = "") => lines.push(s);
   w(`# Consistency Checker eval`);
   w();
   w(`Plants: ${plants.map((p) => p.kind).join(", ")}.`);
-  w(`Baseline dry-run read of the planted graph: ${baseline.proposed.length} flag(s), ` +
-    `${plants.filter((p) => baseline.proposed.some((f) => detects(f, p))).length}/${plants.length} plants among them.`);
+  w(`Baseline dry-run read of the planted graph (${baseline.reads} read(s)): ${baseline.meanFlags} flag(s) per read; ` +
+    `plants found in ${baseline.plantHits.map((h) => `${h}/${baseline.reads}`).join(", ")} reads.`);
   w();
   for (const name of arms) {
     const r = JSON.parse(readFileSync(join(outDir, `${name}.json`), "utf8"));
@@ -422,7 +451,8 @@ function summarize(outDir: string, arms: ArmName[]): string {
     }
     w(`- Plants: ` + (r.plants as Array<{ kind: string; flagged: boolean; parentReassessed: boolean; childReassessed: boolean }>)
       .map((p) => `${p.kind} [flagged ${p.flagged ? "yes" : "no"}, parent reassessed ${p.parentReassessed ? "yes" : "no"}, child ${p.childReassessed ? "yes" : "no"}]`).join("; "));
-    w(`- Dry-run read after: ${r.read.proposed.length} flag(s); plants still flagged ${(r.read.plantsFlagged as boolean[]).filter(Boolean).length}/${plants.length}`);
+    w(`- Dry-run read after (${r.read.reads} read(s)): ${r.read.meanFlags} flag(s) per read; plants still found in ` +
+      `${(r.read.plantHits as number[]).map((h) => `${h}/${r.read.reads}`).join(", ")} reads`);
     w();
     if (r.flags.length > 0) {
       w(`### Flags raised`);
@@ -448,7 +478,7 @@ async function run(cluster: string): Promise<void> {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "_").toLowerCase();
   const outDir = join(RUNS_ROOT, `consistency-${cluster}-${stamp}`);
   mkdirSync(outDir, { recursive: true });
-  const passthrough = process.argv.slice(2).filter((a) => /^--(passes|cadence|plants)=/.test(a));
+  const passthrough = process.argv.slice(2).filter((a) => /^--(passes|cadence|plants|reads)=/.test(a));
   const planted = `cc_${stamp}_planted`;
 
   console.log(`\n=== consistency eval: ${cluster} from snapshot ${base} → ${outDir} ===`);

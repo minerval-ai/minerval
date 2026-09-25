@@ -51,6 +51,10 @@ vi.mock("../../../src/services/consistency-service.js", () => ({
   CONSISTENCY_BOUNDS: { maxClaims: 8, noteChars: 4_000 },
   CONSISTENCY_FLAG_KINDS: ["reasoning_conflict", "overlooked_evidence", "other"],
   compareAssessments: vi.fn(async () => ({ claims: [], relations: [], unknown: [] })),
+  checkFlagInput: vi.fn(async (input: { primaryClaimId: string; claimIds: string[] }) =>
+    input.primaryClaimId.length === 36
+      ? { ok: true, claimIds: input.claimIds }
+      : { ok: false, code: "CLAIM", problem: "bad id" }),
   partitionClaims: vi.fn(async (_scope: unknown, opts: Record<string, unknown>) => {
     state.listed.push(opts);
     return { total: 20, claims: [{ claim_id: PRIMARY, text: "t", summary: "s" }] };
@@ -146,11 +150,13 @@ describe("runConsistencyChecker", () => {
     expect(res.proposed).toHaveLength(2);
   });
 
-  it("writes nothing in a dry run but records every proposal", async () => {
-    state.script = [flag(), flag(OTHER)];
-    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true });
+  it("writes nothing in a dry run, and counts only valid, distinct proposals", async () => {
+    state.script = [flag(), flag(OTHER), flag(), flag("dd99c243")];
+    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true, maxFlags: 10 });
     expect(state.flags).toHaveLength(0);
     expect(res.proposed.map((p) => p.primary_claim_id)).toEqual([PRIMARY, OTHER]);
+    expect(res.repeats).toBe(1);
+    expect(JSON.parse(state.outputs[3]!)).toMatchObject({ ok: false, code: "CLAIM" });
   });
 
   it("closes on finish_sweep, keeps its note, and ends the loop at the next tool call", async () => {

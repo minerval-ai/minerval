@@ -87,7 +87,11 @@ async function valueSql(): Promise<{ sql: string; params: number[] }> {
               (SELECT MAX(f.expected_gain) FROM consistency_flags f
                  JOIN actions fx ON fx.id = f.action_id
                 WHERE f.primary_claim_id = c.id
-                  AND fx.status IN ('open', 'running')),
+                  AND fx.status IN ('open', 'running')
+                  AND f.assessment_id_at_flag = (
+                    SELECT a.id FROM assessments a
+                     WHERE a.claim_id = c.id AND a.is_current = true
+                     ORDER BY a.assessed_at DESC LIMIT 1)),
               0))
         + CASE WHEN c.created_by = 'user' THEN $4::real ELSE 0 END
       )`,
