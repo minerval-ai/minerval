@@ -1,48 +1,48 @@
 {
-  "syncedAt": "2026-09-18T23:00:46.325Z",
-  "gitCommit": "6a6d40b",
+  "syncedAt": "2026-09-25T18:28:23.603Z",
+  "gitCommit": "826d0df",
   "pins": [
     {
       "agent": "steward",
       "envVar": "STEWARD_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "solver",
       "envVar": "SOLVER_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "steward strong",
       "envVar": "STEWARD_STRONG_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "curator",
       "envVar": "CURATOR_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "audit",
       "envVar": "AUDIT_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "arbitration",
       "envVar": "ARBITRATION_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "extractor",
       "envVar": "EXTRACTOR_MODEL",
-      "model": "claude-fable-5-1",
-      "label": "Claude Fable 5.1"
+      "model": "claude-opus-5-5",
+      "label": "Claude Opus 5.5"
     },
     {
       "agent": "matcher",
@@ -61,6 +61,12 @@
       "envVar": "LOOKOUT_MODEL",
       "model": "z-ai/glm-5.3-flash",
       "label": "GLM 5.3 Flash"
+    },
+    {
+      "agent": "consistency",
+      "envVar": "CONSISTENCY_MODEL",
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
     }
   ],
   "judge": {
@@ -68,10 +74,10 @@
     "label": "Claude Sonnet 5"
   },
   "rates": {
-    "claude-fable-5-1": {
-      "inputPerMtok": 10,
-      "outputPerMtok": 50,
-      "cacheReadMultiplier": 0.025
+    "claude-opus-5-5": {
+      "inputPerMtok": 4,
+      "outputPerMtok": 20,
+      "cacheReadMultiplier": 0.05
     },
     "z-ai/glm-5.3-flash": null,
     "claude-sonnet-5": {
