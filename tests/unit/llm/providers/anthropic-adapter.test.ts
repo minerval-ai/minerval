@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   betaCreate: vi.fn(),
   betaStream: vi.fn(),
   constructed: [] as Array<Record<string, unknown>>,
+  meterExternal: vi.fn(async () => undefined),
 }));
 
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -26,6 +27,7 @@ vi.mock("../../../../src/config.js", () => ({
 
 vi.mock("../../../../src/services/usage-service.js", () => ({
   meterLlmUsage: vi.fn(),
+  meterExternalUsage: mocks.meterExternal,
 }));
 
 vi.mock("../../../../src/llm/budget-tracker.js", () => ({
@@ -119,6 +121,26 @@ afterEach(() => {
 });
 
 describe("system blocks", () => {
+  it("meters server-side web searches at $10 per 1,000, and nothing when there were none", async () => {
+    mocks.meterExternal.mockClear();
+    mocks.create.mockResolvedValueOnce(response());
+    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    expect(mocks.meterExternal).not.toHaveBeenCalled();
+    mocks.create.mockResolvedValueOnce(
+      response({
+        usage: { input_tokens: 10, output_tokens: 5, server_tool_use: { web_search_requests: 3 } },
+      })
+    );
+    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    expect(mocks.meterExternal).toHaveBeenCalledWith({
+      provider: "anthropic_web_search",
+      model: "anthropic/web_search",
+      units: 3,
+      unitKind: "search",
+      costMicroUsd: 30_000,
+    });
+  });
+
   it("keeps a plain string as one cached text block", async () => {
     await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64, system: "be terse" });
     expect(sentParams().system).toEqual([

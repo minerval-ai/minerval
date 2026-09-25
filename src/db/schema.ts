@@ -1039,7 +1039,7 @@ export const llmUsage = pgTable(
     // src/llm/providers/routing.ts). Defaults to anthropic so rows written
     // before multi-provider support keep their true provider. Non-token
     // spend (docs/mathematics.md §6.3) meters here too — provider `lean`,
-    // `elicit`, or `anthropic_code_execution`, model carrying the pinned
+    // `elicit`, `anthropic_code_execution`, or `anthropic_web_search`, model carrying the pinned
     // identity (`lean-checker/<pin_id>`, `elicit/search_papers`) — so every
     // escrow, budget-job, and cost-estimate query that sums cost_micro_usd
     // sees real money the token columns cannot.

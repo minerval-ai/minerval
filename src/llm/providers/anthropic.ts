@@ -21,6 +21,8 @@ import {
   modelNeedsRefusalFallback,
 } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
+import { meterExternalUsage } from "../../services/usage-service.js";
+import { ANTHROPIC_WEB_SEARCH_MICRO_USD } from "../pricing.js";
 import type {
   CompleteRequest,
   CompletionResult,
@@ -299,6 +301,19 @@ function meter(response: Anthropic.Message, model: string): ProviderUsage {
   const usage = normalizeUsage(response.usage);
   recordCallUsage("anthropic", response.model ?? model, usage);
   logCacheUsage("anthropic", usage);
+  // Server-side searches carry a per-search fee the token count does not
+  // include. Metered as external usage, so it lands on the same meter, job,
+  // and claim as the call that made them. Never throws.
+  const searches = response.usage.server_tool_use?.web_search_requests ?? 0;
+  if (searches > 0) {
+    void meterExternalUsage({
+      provider: "anthropic_web_search",
+      model: "anthropic/web_search",
+      units: searches,
+      unitKind: "search",
+      costMicroUsd: searches * ANTHROPIC_WEB_SEARCH_MICRO_USD,
+    });
+  }
   return usage;
 }
 

@@ -229,6 +229,11 @@ Configuration:
   spend budget this will fold into).
 - `ELICIT_MCP_URL` — Elicit's MCP endpoint (default
   `https://elicit.com/api/mcp`).
+- `ELICIT_USD_PER_CALL` — what one Elicit search costs, metered per call
+  into `llm_usage` (provider `elicit`) so the caller's cost meter, its
+  ceiling, and the daily caps see it. The default, `0.10`, is a
+  conservative placeholder rather than Elicit's published rate; set it to
+  the deployment's contracted price.
 - `STEWARD_ELICIT_MIN_IMPORTANCE` — importance gate, default `0.75`
   (between §19's Major ≈0.6 and Central ≈0.9 anchors).
 - `STEWARD_ELICIT_MAX_CALLS_PER_RUN` — per-run backstop, default `3`.

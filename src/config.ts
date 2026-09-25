@@ -493,6 +493,11 @@ const configSchema = z.object({
   // per deployment.
   elicitApiKey: z.string().default(""),
   elicitMcpUrl: z.string().default("https://elicit.com/api/mcp"),
+  // What one Elicit search costs, in USD, metered per call so the caller's
+  // ceiling and the daily caps see it. The default is a conservative
+  // placeholder, not Elicit's published rate: set it to the deployment's
+  // contracted price.
+  elicitUsdPerCall: z.coerce.number().min(0).default(0.1),
   // Importance gate (§19): only claims at or above this importance get the
   // Elicit tools in their Steward run's toolset. Default 0.75 sits between
   // the constitution's Major (≈0.6) and Central (≈0.9) anchors — Elicit is
@@ -1003,6 +1008,7 @@ export function loadConfig(): Config {
     stewardMaxInstancesPerRun: process.env.STEWARD_MAX_INSTANCES_PER_RUN,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
+    elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
     stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,
     stewardElicitMaxCallsPerRun: process.env.STEWARD_ELICIT_MAX_CALLS_PER_RUN,
     stewardLeanMaxSearchesPerRun: process.env.STEWARD_LEAN_MAX_SEARCHES_PER_RUN,
