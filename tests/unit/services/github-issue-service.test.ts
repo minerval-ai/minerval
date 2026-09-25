@@ -414,6 +414,38 @@ describe("syncTriageToIssue", () => {
     expect(requests().find(([m]) => m === "PATCH")![2]).toMatchObject({ state: "open" });
   });
 
+  it("leaves an issue a fix closed as completed closed, and records the report actioned", async () => {
+    const base = mocks.fetch.getMockImplementation()!;
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) =>
+      init.method === "GET"
+        ? response(200, { state: "closed", state_reason: "completed" })
+        : base(url, init)
+    );
+    await syncTriageToIssue({ ...WITH_ISSUE, status: "triaged", triage_note: "real gap" });
+    const reqs = requests();
+    const comment = reqs.find(([m, p]) => m === "POST" && p.endsWith("/comments"))!;
+    expect((comment[2] as { body: string }).body).toContain("already closed as completed");
+    expect(reqs.find(([m]) => m === "PATCH")![2]).toMatchObject({
+      state: "closed",
+      state_reason: "completed",
+      labels: expect.arrayContaining(["status/actioned"]),
+    });
+    const update = mocks.rawQuery.mock.calls.find(([sql]) => sql.includes("status = 'actioned'"));
+    expect(update?.[1]).toEqual([REPORT_ID]);
+  });
+
+  it("reopens an issue closed as not planned when triage moves it back to open", async () => {
+    const base = mocks.fetch.getMockImplementation()!;
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) =>
+      init.method === "GET"
+        ? response(200, { state: "closed", state_reason: "not_planned" })
+        : base(url, init)
+    );
+    await syncTriageToIssue({ ...WITH_ISSUE, status: "triaged" });
+    expect(requests().find(([m]) => m === "PATCH")![2]).toMatchObject({ state: "open" });
+    expect(mocks.rawQuery.mock.calls.some(([sql]) => sql.includes("status = 'actioned'"))).toBe(false);
+  });
+
   it("names a duplicate's target, and is a no-op without an issue", async () => {
     await syncTriageToIssue({
       ...WITH_ISSUE,
