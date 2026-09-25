@@ -1,0 +1,1 @@
+ALTER TABLE "claims" ADD COLUMN "steward_requeued" boolean DEFAULT false NOT NULL;

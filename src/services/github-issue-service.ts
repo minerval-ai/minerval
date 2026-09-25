@@ -287,13 +287,39 @@ export async function fileIssueForReport(
  * closing statuses close it with the matching state_reason. A report with
  * no issue (sync off when it was raised, or the filing failed) is a no-op.
  * Never throws.
+ *
+ * An open status (new, triaged) does not reopen an issue closed as
+ * completed. A merged fix closes the issue on GitHub while the report is
+ * still open here, so the next sweep triaging it would otherwise undo the
+ * fix's close. The report is recorded as actioned instead, so a later
+ * sighting reopens both as a regression through syncSightingToIssue().
+ * An issue closed as not planned (a reversed wontfix or duplicate) does
+ * reopen.
  */
 export async function syncTriageToIssue(row: AgentReportRow): Promise<void> {
   try {
     if (!githubIssuesConfigured() || row.github_issue_number == null) return;
     const repo = loadConfig().githubIssuesRepo;
     const issuePath = `/repos/${repo}/issues/${row.github_issue_number}`;
-    const reason = CLOSING_REASONS[row.status];
+    let reason = CLOSING_REASONS[row.status];
+    let status = row.status;
+    let closedByFix = false;
+    if (!reason) {
+      const issue = await githubRequest<{ state?: string; state_reason?: string | null }>(
+        "GET",
+        issuePath
+      );
+      closedByFix = issue.state === "closed" && issue.state_reason === "completed";
+    }
+    if (closedByFix) {
+      await rawQuery(
+        `UPDATE agent_reports SET status = 'actioned'
+          WHERE id = $1 AND status IN ('new', 'triaged')`,
+        [row.id]
+      );
+      reason = CLOSING_REASONS.actioned;
+      status = "actioned";
+    }
     const who = row.triaged_by ? ` by \`${row.triaged_by}\`` : "";
     const duplicateOf =
       row.status === "duplicate" && row.duplicate_of_id
@@ -308,9 +334,13 @@ export async function syncTriageToIssue(row: AgentReportRow): Promise<void> {
         heading +
         (row.triage_note ? `\n\n${fence(row.triage_note)}` : "") +
         duplicateOf +
+        (closedByFix
+          ? `\n\nThis issue was already closed as completed, so it stays closed and ` +
+            `the report is recorded as \`actioned\`. A new sighting reopens it as a regression.`
+          : "") +
         `\n\n_Seen ${Number(row.occurrence_count)} time(s) as of ${iso(row.last_seen_at)}._`,
     });
-    const labels = [...labelsForReport(row), `status/${row.status}`];
+    const labels = [...labelsForReport(row), `status/${status}`];
     await ensureLabels(labels);
     await githubRequest("PATCH", issuePath, {
       labels,

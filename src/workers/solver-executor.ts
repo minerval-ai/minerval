@@ -54,6 +54,7 @@ import {
   type FormalizationRow,
 } from "../services/attempt-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
+import { abandonStewardLeases } from "../services/steward-lease.js";
 import { assertSkillToolsRegistered } from "../llm/tools/skill-tools.js";
 
 export type SolverDrainStatus =
@@ -482,6 +483,8 @@ if (invokedDirectly) {
     }
     const shutdown = async () => {
       console.log("[solver] shutting down");
+      // A direct Steward pass still in flight hands its claim back (#482).
+      await abandonStewardLeases().catch(() => 0);
       await closeDb();
       process.exit(0);
     };

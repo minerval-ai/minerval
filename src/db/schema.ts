@@ -101,7 +101,8 @@ export const claims = pgTable(
     // Steward; the drain always picks the highest-`importance` pending claim, so
     // under a budget the most load-bearing claims are stewarded and the rest stay
     // "embedded stubs". Re-triggers (a changed subclaim, a Curator action) just
-    // set this back to 'pending', coalescing a propagation storm into one slot.
+    // set this back to 'pending', coalescing a propagation storm into one slot;
+    // a re-trigger on a 'running' claim sets steward_requeued instead (#482).
     // Lifecycle: pending → running → done | error (→ pending again on re-trigger).
     // 'deferred' is a low-importance subclaim intentionally held OUT of the drain
     // (#98 economic brake): created and embedded/matchable but not recursively
@@ -110,7 +111,15 @@ export const claims = pgTable(
     stewardTrigger: text("steward_trigger"),
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
+    // While 'running' this is the run's lease: set when a lane claims the row
+    // and refreshed by the run's heartbeat, so only a dead run goes stale
+    // (steward-lease.ts).
     stewardedAt: timestamp("stewarded_at", { withTimezone: true }),
+    // A message arrived while the claim was 'running' (#482). The row stays
+    // 'running' — flipping it to 'pending' mid-run handed the claim to a
+    // second lane while the first run was still writing — and the run's
+    // release turns it into 'pending' so the message still gets its pass.
+    stewardRequeued: boolean("steward_requeued").notNull().default(false),
     // Consecutive failed Steward attempts on this claim. Transient failures (API
     // budget/credit outage, 429, 5xx, network) return the claim to 'pending'
     // WITHOUT counting here — they are not the claim's fault (#97). Only genuine
