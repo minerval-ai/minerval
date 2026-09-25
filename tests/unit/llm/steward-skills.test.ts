@@ -28,6 +28,10 @@ const mocks = vi.hoisted(() => ({
     elicitApiKey: "",
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
+    researcherEnabled: true,
+    researcherMaxCeilingOwls: 3,
+    researcherMaxRunsPerLauncherRun: 3,
+    researcherMaxWallMinutes: 20,
   },
 }));
 
@@ -151,7 +155,11 @@ describe("Steward toolset without a domain tag", () => {
     const first = names.indexOf("provenance_get_map");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     expect(names.slice(first, first + PROVENANCE_TOOLS.length)).toEqual(PROVENANCE_TOOLS);
-    expect(names.slice(-6)).toEqual([
+    // The delegation channel (#298) sits after the skill tools, before the
+    // report and finding channels and web_search.
+    expect(names.slice(-8)).toEqual([
+      "delegate_research",
+      "get_research_run",
       "raise_issue",
       "update_issue",
       "search_issues",
@@ -197,7 +205,11 @@ describe("Steward toolset with the mathematics tag", () => {
       "lean_check",
       "publish_formalization",
     ]);
-    expect(names.slice(-6)).toEqual([
+    // The delegation channel (#298) sits after the skill tools, before the
+    // report and finding channels and web_search.
+    expect(names.slice(-8)).toEqual([
+      "delegate_research",
+      "get_research_run",
       "raise_issue",
       "update_issue",
       "search_issues",
@@ -210,7 +222,7 @@ describe("Steward toolset with the mathematics tag", () => {
       ...getSkill("mathematics").tools.map((t) => t.name),
       ...PROVENANCE_TOOLS,
     ];
-    expect(names.slice(first, -6)).toEqual(skillTools);
+    expect(names.slice(first, -8)).toEqual(skillTools);
 
     // Three cached blocks: the constitution-plus-role block, unchanged, then
     // each skill's Steward view as its own block, in skill order.

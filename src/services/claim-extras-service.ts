@@ -15,6 +15,7 @@ import type {
 } from "./claim-extras-types.js";
 import { loadAttemptExtras } from "./attempt-extras.js";
 import { loadPrizeExtras } from "./prize-extras.js";
+import { listResearchRunsForClaim } from "./research-run-service.js";
 import {
   getFormalizationSummary,
   getVerificationSummary,
@@ -27,6 +28,22 @@ export interface ClaimExtras {
   bounty: BountySummary | null;
   attempts: AttemptSummary[];
   prize_claims: PrizeClaimSummary[];
+  /** Investigations the Steward delegated to the researcher (#298), disclosed with their cost. */
+  research_runs: ResearchRunSummary[];
+}
+
+export interface ResearchRunSummary {
+  id: string;
+  requested_by: string;
+  /** The brief, disclosed for the Steward's runs; null for a Grantmaker's, whose brief comes out of a private funder conversation. */
+  task: string | null;
+  model: string;
+  model_tier: string;
+  status: string;
+  spent_micro_usd: number;
+  turns: number;
+  started_at: string;
+  finished_at: string | null;
 }
 
 export function emptyClaimExtras(): ClaimExtras {
@@ -37,6 +54,7 @@ export function emptyClaimExtras(): ClaimExtras {
     bounty: null,
     attempts: [],
     prize_claims: [],
+    research_runs: [],
   };
 }
 
@@ -49,12 +67,13 @@ async function loadDomains(claimId: string): Promise<string[]> {
 }
 
 export async function loadClaimExtras(claimId: string): Promise<ClaimExtras> {
-  const [formalization, verification, domains, prize, attempts] = await Promise.all([
+  const [formalization, verification, domains, prize, attempts, research] = await Promise.all([
     getFormalizationSummary(claimId),
     getVerificationSummary(claimId),
     loadDomains(claimId),
     loadPrizeExtras(claimId),
     loadAttemptExtras(claimId),
+    listResearchRunsForClaim(claimId).catch(() => []),
   ]);
   return {
     formalization,
@@ -63,5 +82,20 @@ export async function loadClaimExtras(claimId: string): Promise<ClaimExtras> {
     bounty: prize.bounty,
     attempts,
     prize_claims: prize.prize_claims,
+    // The report and notebook stay on the run (the launcher's get_research_run
+    // and the record); the page discloses the model and the cost of every
+    // run, and the brief of the Steward's.
+    research_runs: research.map((r) => ({
+      id: r.id,
+      requested_by: r.requested_by,
+      task: r.requested_by === "claim_steward" ? r.task : null,
+      model: r.model,
+      model_tier: r.model_tier,
+      status: r.status,
+      spent_micro_usd: r.spent_micro_usd,
+      turns: r.turns,
+      started_at: new Date(r.started_at).toISOString(),
+      finished_at: r.finished_at ? new Date(r.finished_at).toISOString() : null,
+    })),
   };
 }

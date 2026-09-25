@@ -21,6 +21,7 @@ import { FormalStatement } from "./claim/FormalStatement";
 import { MachineChecked } from "./claim/MachineChecked";
 import { Prize } from "./claim/Prize";
 import { AttemptLog } from "./claim/AttemptLog";
+import { ResearchLog } from "./claim/ResearchLog";
 import { SourceMapNote, InstanceReadingLine, ProvenanceRecord } from "./claim/SourceMap";
 
 function fmtDate(iso: string) {
@@ -232,6 +233,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       <FormalStatement claimId={claim.id} formalization={formalization} />
       <Prize claimId={claim.id} bounty={bounty} prizeClaims={prizeClaims} />
       <AttemptLog claimId={claim.id} attempts={attempts} />
+      <ResearchLog runs={detail.research_runs} />
 
       {/* decomposition */}
       <section>
