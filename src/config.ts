@@ -107,6 +107,12 @@ const configSchema = z.object({
   anthropicApiKey: z.string().default(""),
   // OpenRouter — the "vendor/model" provider (src/llm/providers/openrouter.ts).
   openrouterApiKey: z.string().default(""),
+  // How OpenRouter picks among a model's hosts. Unset (the default) keeps
+  // OpenRouter's own routing, which favors the cheapest host; "throughput"
+  // or "latency" prefers the fastest, which is what a long serial corpus
+  // run on a cheap-tier model wants (a slow host there turns an hour into a
+  // day). Any value still routes only to data_collection: deny hosts.
+  openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
@@ -952,6 +958,7 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
+    openrouterProviderSort: process.env.OPENROUTER_PROVIDER_SORT || undefined,
     awsRegion: process.env.AWS_REGION,
     owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
     capClaimProposalOwls: process.env.CAP_CLAIM_PROPOSAL_OWLS,

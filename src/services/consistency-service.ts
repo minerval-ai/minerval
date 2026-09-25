@@ -370,13 +370,19 @@ export interface PartitionClaim {
   dependents: number;
   /** A consistency flag on this claim is still waiting for its pass. */
   flag_open: boolean;
+  /**
+   * Its Steward is already queued or running (for any reason): its verdict
+   * is about to be looked at again, so flagging it adds nothing, but it
+   * stays in the listing as context for reading its neighbors.
+   */
+  steward_pending: boolean;
 }
 
 /**
  * The partition's assessed claims as a sweep reads them: those re-assessed
  * since `since` first (where new incoherence comes from), then by
- * importance. A claim whose Steward is pending or running is left out:
- * its assessment is about to change anyway.
+ * importance. A claim whose Steward is already queued is listed, and
+ * marked: it is still the context its neighbors are read against.
  */
 export async function partitionClaims(
   scope: PartitionScope,
@@ -398,11 +404,11 @@ export async function partitionClaims(
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.child_claim_id = c.id) AS dependents,
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
                      WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')) AS flag_open,
+            (c.steward_state IN ('pending', 'running')) AS steward_pending,
             COUNT(*) OVER ()::int AS total
        FROM claims c
        JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
       WHERE c.state = 'active' AND c.merged_into IS NULL
-        AND c.steward_state NOT IN ('pending', 'running')
         AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
       ORDER BY changed DESC, c.importance DESC, c.id
       LIMIT $4 OFFSET $5`,

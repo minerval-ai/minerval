@@ -78,7 +78,8 @@ partition's last sweep and the flags still open in it.
    decide what the pass is worth against everything else it could fund.
 5. Finish with finish_sweep. Your note is your memory of this partition:
    the next sweep of it starts from it. Say what you read and found
-   sound, what you flagged, and what deserves a look next time.
+   sound, what you flagged, and what deserves a look next time, citing
+   claims by their full ids so the next sweep can open them.
 
 ## Standing rules
 

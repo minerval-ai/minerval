@@ -112,8 +112,12 @@ async function runConsistencyCheckerImpl(input: {
         `This sweep's claims, ${PAGE} per page: every assessed claim in the ` +
         `partition, those re-assessed since your last sweep of it first ` +
         `(changed: true), then by importance. Each carries its verdict, ` +
-        `credence, summary, how many subclaims and dependents it has, and ` +
-        `whether a consistency flag on it is still open. Paginate with offset.`,
+        `credence, summary, how many subclaims and dependents it has, whether ` +
+        `a consistency flag on it is still open, and whether its Steward is ` +
+        `already queued (steward_pending: a pass is coming anyway; a flag on ` +
+        `it adds your reading to that pass, and it is still context for its ` +
+        `neighbors). ` +
+        `Paginate with offset.`,
       input_schema: {
         type: "object" as const,
         properties: { offset: { type: "number" } },
