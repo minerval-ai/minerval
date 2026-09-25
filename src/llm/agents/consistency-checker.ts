@@ -2,19 +2,22 @@
  * The Consistency Checker run: one sweep over one partition of the graph
  * (#330; docs/allocation.md, "Consistency sweeps").
  *
- * The mechanical pre-filter (coherence-service.ts) has already shortlisted
- * the pairs whose recorded verdicts look incompatible by their edge's own
- * logic; this agent does the part a rule cannot: it reads the verdicts and
- * the reasoning side by side and decides which tensions are real. Its
- * affordances are the graph reads, the shortlist, a side-by-side
- * comparison, and three ways to record a decision:
+ * Each Steward reads its own claim, its subclaims and its evidence; nobody
+ * reads the neighbors' reasoning against each other. This agent does: it
+ * reads a partition's assessments side by side and looks for reasoning in
+ * one that conflicts with another's, evidence recorded under one claim
+ * that another's assessment never weighed, verdicts that are not a
+ * defensible function of what they rest on. Its affordances are the graph
+ * reads (search reaches beyond the partition, which is how overlooked
+ * evidence is found), the partition listing, a side-by-side comparison,
+ * and two writes:
  *
  *  - flag_inconsistency: the primary claim becomes a candidate on the
- *    ledger (its Steward enqueued with the tension as context, its
- *    standard action valued on the General mandate within a ceiling);
- *  - dismiss_candidate: the pair was read and both verdicts stand, so it
- *    stays off later sweeps until one of its assessments changes;
- *  - finish_sweep: the note that closes the sweep.
+ *    ledger (its Steward enqueued with the tension as context), and the
+ *    checker's estimate that a pass would change something enters the
+ *    formula's expected-gain term for it;
+ *  - finish_sweep: the note that closes the sweep and briefs the next
+ *    sweep of the same partition.
  *
  * Like the Lookout, what it cannot do is the point: it writes no
  * assessment, edge or importance, and moves no money. Everything it raises
@@ -32,28 +35,27 @@ import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
-import type { CoherenceCandidate } from "../../services/coherence-service.js";
 import {
   compareAssessments,
   CONSISTENCY_BOUNDS,
   CONSISTENCY_FLAG_KINDS,
-  dismissCandidate,
   flagInconsistency,
+  partitionClaims,
+  type PartitionScope,
 } from "../../services/consistency-service.js";
 
 export interface ConsistencyCheckerResult {
   note: string;
   flagsRaised: number;
   repeats: number;
-  dismissed: number;
   /** agent_runs.id when tracing is on. */
   runId: string | null;
 }
 
-/** Tool calls per sweep: a read of a shortlist, not a survey of the graph. */
-const MAX_ITERATIONS = 24;
-/** Candidates per list_candidates page. */
-const PAGE = 10;
+/** Tool calls per sweep: a careful read of one partition. */
+const MAX_ITERATIONS = 30;
+/** Claims per list_partition_claims page. */
+const PAGE = 15;
 
 export function runConsistencyChecker(
   input: Parameters<typeof runConsistencyCheckerImpl>[0]
@@ -61,57 +63,38 @@ export function runConsistencyChecker(
   return withAgent("consistency_checker", () => runConsistencyCheckerImpl(input));
 }
 
-/** One candidate as the agent reads it in a list page. */
-export function renderCandidate(c: CoherenceCandidate, index: number): Record<string, unknown> {
-  const side = (e: CoherenceCandidate["primary"]) => ({
-    claim_id: e.claim_id,
-    text: e.text.slice(0, 240),
-    status: e.status,
-    credence: e.credence,
-    assessed_at: e.assessed_at.slice(0, 10),
-  });
-  return {
-    index,
-    kind: c.kind,
-    relation: c.relation,
-    importance: c.importance,
-    claim_ids: c.claim_ids,
-    primary: side(c.primary),
-    other: side(c.other),
-    ...(c.neighbor_status_then ? { other_status_when_primary_assessed: c.neighbor_status_then } : {}),
-  };
-}
-
 async function runConsistencyCheckerImpl(input: {
   sweepId: string;
   /** Human label of the partition, e.g. a tag slug or "residual". */
   partitionLabel: string;
-  candidates: CoherenceCandidate[];
-  /** Candidates the pre-filter found but a live dismissal or open flag suppressed. */
-  suppressed: number;
+  scope: PartitionScope;
+  /** Assessed claims in scope. */
+  claimsInScope: number;
+  /** The partition's last completed sweep, if any. */
+  lastSweep: { started_at: Date; note: string | null } | null;
   maxFlags?: number;
-  maxValue?: number;
   model?: string;
 }): Promise<ConsistencyCheckerResult> {
   const config = loadConfig();
   const model = input.model ?? config.consistencyModel;
   const maxFlags = input.maxFlags ?? config.consistencyMaxFlagsPerSweep;
-  const maxValue = input.maxValue ?? config.consistencyFlagMaxValue;
   const system = getConsistencyCheckerSystemPromptBlocks();
   const reportTools = createReportTools({ model });
   const runId = getUsageContext().runId ?? null;
+  const since = input.lastSweep?.started_at ?? null;
 
   const kinds = [...CONSISTENCY_FLAG_KINDS];
   const tools: Tool[] = [
     ...reportTools.definitions,
     ...getGraphReadToolDefinitions(),
     {
-      name: "list_candidates",
+      name: "list_partition_claims",
       description:
-        `This sweep's shortlist from the mechanical pre-filter, most important ` +
-        `first, ${PAGE} per page: each names the kind of check that fired, the ` +
-        `edge or link it runs along, and both sides' current verdicts. A ` +
-        `candidate is a place to look, never a finding. Paginate with offset.`,
+        `This sweep's claims, ${PAGE} per page: every assessed claim in the ` +
+        `partition, those re-assessed since your last sweep of it first ` +
+        `(changed: true), then by importance. Each carries its verdict, ` +
+        `credence, summary, how many subclaims and dependents it has, and ` +
+        `whether a consistency flag on it is still open. Paginate with offset.`,
       input_schema: {
         type: "object" as const,
         properties: { offset: { type: "number" } },
@@ -125,7 +108,7 @@ async function runConsistencyCheckerImpl(input: {
         `importance, current status, credence and confidence, when and by which ` +
         `model each was assessed, the summary and the head of the reasoning ` +
         `trace, and every edge or link among them with its reasoning. The read ` +
-        `a coherence judgment needs.`,
+        `a coherence judgment needs; the claims need not be in this partition.`,
       input_schema: {
         type: "object" as const,
         properties: { claim_ids: { type: "array", items: { type: "string" } } },
@@ -137,8 +120,9 @@ async function runConsistencyCheckerImpl(input: {
       description:
         "Raise a tension you judged real: the primary claim's Steward is asked " +
         "to reconcile it, and its reassessment becomes a candidate on the " +
-        "ledger valued at your urgency (clamped to your ceiling); the " +
-        "allocator decides whether it runs. The primary is the claim whose " +
+        "ledger, valued by the platform's formula (importance, contestation) " +
+        "with your expected_gain; the allocator decides whether it runs. " +
+        "The primary is the claim whose " +
         "assessment looks wrong. A primary already flagged and still waiting " +
         `counts as a repeat. At most ${maxFlags} new flag(s) this sweep.`,
       input_schema: {
@@ -154,41 +138,28 @@ async function runConsistencyCheckerImpl(input: {
           rationale: {
             type: "string",
             description:
-              "For the Steward: which verdicts, which edge, and what in the " +
-              "reasoning makes them incompatible.",
+              "For the Steward: what each assessment says, where exactly they " +
+              "conflict or what was overlooked, citing claim ids.",
           },
-          urgency: {
+          expected_gain: {
             type: "number",
             description:
-              "0–10: how much fixing this matters relative to everything else " +
-              "the platform could fund (importance × how far a reader is misled).",
+              "0–1: how likely a fresh pass by the primary's Steward is to " +
+              "change its verdict or reasoning materially, given what you read. " +
+              "Calibrate: 0.8 for a plain overlooked defeater, 0.3 for a tension " +
+              "the Steward may well defend. Importance is weighed separately.",
           },
         },
-        required: ["kind", "primary_claim_id", "claim_ids", "rationale", "urgency"],
-      },
-    },
-    {
-      name: "dismiss_candidate",
-      description:
-        "Record that you read a candidate and both verdicts can stand, with " +
-        "the reason. It stays off later sweeps until one of its assessments " +
-        "changes. Dismiss only what you actually read.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          kind: { type: "string", enum: kinds },
-          claim_ids: { type: "array", items: { type: "string" } },
-          reason: { type: "string" },
-        },
-        required: ["kind", "claim_ids", "reason"],
+        required: ["kind", "primary_claim_id", "claim_ids", "rationale", "expected_gain"],
       },
     },
     {
       name: "finish_sweep",
       description:
-        "Close the sweep with a short note: what you read, flagged and " +
-        "dismissed, and any pattern worth an operator's attention. Call it " +
-        "last, alone, then end your turn.",
+        "Close the sweep with your note on this partition: what you read and " +
+        "found sound, what you flagged, what deserves a look next time. The " +
+        "next sweep of this partition is briefed with it. Call it last, alone, " +
+        "then end your turn.",
       input_schema: {
         type: "object" as const,
         properties: { note: { type: "string" } },
@@ -199,24 +170,19 @@ async function runConsistencyCheckerImpl(input: {
 
   const briefing =
     `## Consistency sweep\n\n` +
-    `Partition: ${input.partitionLabel}. The pre-filter shortlisted ` +
-    `${input.candidates.length} candidate(s) here` +
-    (input.suppressed > 0
-      ? ` (and suppressed ${input.suppressed} already flagged or dismissed on the same assessments)`
-      : "") +
-    `.\n\n` +
-    `Your bounds: at most ${maxFlags} new flag(s); a flag's value is clamped to ` +
-    `${maxValue}/10; about ${MAX_ITERATIONS} tool turns.\n\n` +
-    (input.candidates.length === 0
-      ? `There is nothing on the shortlist. Finish the sweep with a one-line note.`
-      : `Read the shortlist, compare what needs comparing, record a decision on ` +
-        `each candidate you read, and finish the sweep with a note. Nobody is ` +
-        `watching this run; act with the judgment of a careful person paid to ` +
-        `find real defects and to leave sound work alone.`);
+    `Partition: ${input.partitionLabel}, ${input.claimsInScope} assessed claim(s).\n\n` +
+    (input.lastSweep
+      ? `Your last sweep of it was on ${input.lastSweep.started_at.toISOString().slice(0, 10)}. ` +
+        `Your note from it:\n\n${input.lastSweep.note?.trim() || "(none)"}\n\n`
+      : `This partition has never been swept.\n\n`) +
+    `Your bounds: at most ${maxFlags} new flag(s); about ${MAX_ITERATIONS} tool turns.\n\n` +
+    `Read the partition, compare what needs comparing, flag what does not ` +
+    `cohere, and finish with your note. Nobody is watching this run; act ` +
+    `with the judgment of a careful person paid to find real defects and to ` +
+    `leave sound work alone.`;
 
   let flagsRaised = 0;
   let repeats = 0;
-  let dismissed = 0;
   let note = "";
   let closed = false;
 
@@ -225,13 +191,13 @@ async function runConsistencyCheckerImpl(input: {
     tools,
     system,
     model,
-    maxTokens: 2048,
+    maxTokens: 4096,
     maxIterations: MAX_ITERATIONS,
     iterationBudgetNotice: {
       warnWithin: 3,
       message: (remaining) =>
         `You have ${remaining} tool turn${remaining === 1 ? "" : "s"} left. ` +
-        `Record what you are sure of and call finish_sweep.`,
+        `Flag what you are sure of and call finish_sweep.`,
     },
     // A model that keeps calling tools after finish_sweep ends the loop at
     // once: by then every decision it made has already executed.
@@ -245,16 +211,18 @@ async function runConsistencyCheckerImpl(input: {
       const graphRead = await executeGraphReadTool(name, toolInput);
       if (graphRead !== null) return graphRead;
 
-      if (name === "list_candidates") {
+      if (name === "list_partition_claims") {
         const offset = Math.max(0, Math.floor(Number(toolInput.offset ?? 0)) || 0);
-        const page = input.candidates
-          .slice(offset, offset + PAGE)
-          .map((c, i) => renderCandidate(c, offset + i));
+        const page = await partitionClaims(input.scope, { since, limit: PAGE, offset });
         return JSON.stringify({
-          total: input.candidates.length,
+          total: page.total,
           offset,
-          candidates: page,
-          ...(offset + PAGE < input.candidates.length ? { next_offset: offset + PAGE } : {}),
+          claims: page.claims.map((c) => ({
+            ...c,
+            text: c.text.slice(0, 300),
+            summary: c.summary ? c.summary.slice(0, 500) : null,
+          })),
+          ...(offset + PAGE < page.total ? { next_offset: offset + PAGE } : {}),
         });
       }
       if (name === "compare_assessments") {
@@ -276,8 +244,7 @@ async function runConsistencyCheckerImpl(input: {
           primaryClaimId: String(toolInput.primary_claim_id ?? ""),
           claimIds: toolInput.claim_ids,
           rationale: String(toolInput.rationale ?? ""),
-          urgency: Number(toolInput.urgency ?? 5),
-          maxValue,
+          expectedGain: Number(toolInput.expected_gain ?? 0.5),
         });
         if (res.ok && res.duplicate) repeats++;
         else if (res.ok) flagsRaised++;
@@ -292,16 +259,6 @@ async function runConsistencyCheckerImpl(input: {
         closed = true;
         return JSON.stringify({ ok: true, note: "Sweep closed. End your turn now; call no more tools." });
       }
-      if (name === "dismiss_candidate") {
-        const res = await dismissCandidate({
-          sweepId: input.sweepId,
-          kind: String(toolInput.kind ?? ""),
-          claimIds: toolInput.claim_ids,
-          reason: String(toolInput.reason ?? ""),
-        });
-        if (res.ok) dismissed++;
-        return JSON.stringify(res);
-      }
       return JSON.stringify({ error: `unknown tool ${name}` });
     },
   });
@@ -311,7 +268,6 @@ async function runConsistencyCheckerImpl(input: {
     note: note.slice(0, CONSISTENCY_BOUNDS.noteChars),
     flagsRaised,
     repeats,
-    dismissed,
     runId,
   };
 }

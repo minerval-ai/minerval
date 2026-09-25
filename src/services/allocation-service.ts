@@ -439,12 +439,18 @@ export async function fundGrantSelfActions(): Promise<number> {
     action_id: string;
     claim_id: string | null;
     grant_id: string;
+    kind: string;
+    sweeps_today: number;
     needed: number;
     headroom: number;
     /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
     day_room: number | null;
   }>(
-    `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id,
+    `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+            (SELECT COUNT(*)::int FROM action_allocations al
+              WHERE al.exclusion_group LIKE 'consistency:%'
+                AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+              AS sweeps_today,
             GREATEST(0, a.cost_est_micro_usd -
               COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                           FROM action_allocations al
@@ -497,6 +503,10 @@ export async function fundGrantSelfActions(): Promise<number> {
               SELECT 1 FROM lookouts l
                WHERE l.id::text = a.target_ref AND l.grant_id = g.id
                  AND l.status = 'active'))
+         -- A consistency sweep (#330) is the platform's own work: the
+         -- General mandate funds it, as the formula mandate whose scope
+         -- is the whole graph.
+         OR (a.kind = 'consistency_sweep' AND g.is_platform = true AND g.policy = 'general')
          -- Any open ingest row a plan item names, wherever the cursor
          -- stands: the direct steward lane can move the cursor past an
          -- ingest item before its row ran (#427), and an open row is by
@@ -508,7 +518,7 @@ export async function fundGrantSelfActions(): Promise<number> {
                  AND item->>'url' = a.target_ref))
        JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE a.status = 'open'
-        AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest')
+        AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest', 'consistency_sweep')
         AND g.status IN ('planning', 'active')
         AND j.status = 'running'
         -- Review passes are chainable but not unbounded: fund at most the
@@ -522,10 +532,18 @@ export async function fundGrantSelfActions(): Promise<number> {
                   WHERE al.exclusion_group = a.exclusion_group
                     AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
                 < (CASE WHEN a.kind = 'mandate_review' THEN $1::int ELSE $2::int END))
+        -- Consistency sweeps are capped per day across ALL partitions:
+        -- the cap bounds the platform's sweep spend, not each tag's.
+        AND (a.kind <> 'consistency_sweep'
+             OR (SELECT COUNT(*) FROM action_allocations al
+                  WHERE al.exclusion_group LIKE 'consistency:%'
+                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+                < $3::int)
       LIMIT 100`,
     [
       loadConfig().mandateReviewMaxPassesPerDay ?? 12,
       loadConfig().lookoutMaxRunsPerDay ?? 6,
+      loadConfig().consistencyMaxSweepsPerDay ?? 0,
     ]
   );
   let placed = 0;
@@ -533,9 +551,15 @@ export async function fundGrantSelfActions(): Promise<number> {
   // self-actions on the same grant has to draw them down itself — otherwise
   // each row sees the full room and together they overcommit.
   const spentThisPass = new Map<string, number>();
+  // The sweep cap is global, and the snapshot counts only earlier passes.
+  let sweepsThisPass = 0;
+  const sweepCap = loadConfig().consistencyMaxSweepsPerDay ?? 0;
   for (const row of rows) {
     const needed = Number(row.needed);
     if (needed <= 0) continue;
+    if (row.kind === "consistency_sweep" && Number(row.sweeps_today) + sweepsThisPass >= sweepCap) {
+      continue;
+    }
     const drawn = spentThisPass.get(row.grant_id) ?? 0;
     if (needed > Number(row.headroom) - drawn) continue;
     const dayRoom =
@@ -553,6 +577,7 @@ export async function fundGrantSelfActions(): Promise<number> {
     );
     if (inserted.length === 0) continue;
     placed++;
+    if (row.kind === "consistency_sweep") sweepsThisPass++;
     spentThisPass.set(row.grant_id, drawn + needed);
   }
   return placed;

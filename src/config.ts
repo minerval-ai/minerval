@@ -138,6 +138,11 @@ const configSchema = z.object({
   // brief, the graph, and the open web, and raising candidates. Set near
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
+  // One consistency sweep (kind 'consistency_sweep', #330): a cheap-tier
+  // agent reading one partition's assessments against each other. A sweep
+  // reads more than a lookout run and rarely finds nothing to open, so the
+  // cap sits above the lookout's.
+  capConsistencySweepOwls: z.coerce.number().default(0.15),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
@@ -789,28 +794,21 @@ const configSchema = z.object({
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
   // The Consistency Checker (#330; docs/allocation.md, "Consistency
-  // sweeps"): reads the coherence pre-filter's shortlist for one partition
-  // of the graph and judges which tensions are real. Like the Lookout it
-  // raises candidates, never conclusions (the flagged claim's Steward
-  // verifies and decides), so it runs on the cheap tier.
+  // sweeps"): reads one partition's assessments against each other and
+  // flags where they do not cohere. It raises candidates, never conclusions
+  // (the flagged claim's Steward verifies and decides), so it runs on the
+  // cheap tier. Pinned identically in infra/lib/api-stack.ts.
   consistencyModel: modelId(OPENROUTER_MODELS.flash),
-  // How often the consistency scheduler starts a sweep (hours; 0, the
-  // default, = off: the pre-filter stays readable at GET /coherence).
-  consistencySweepIntervalHours: z.coerce.number().min(0).default(0),
-  // Most sweeps started per UTC day, whatever the interval.
-  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(6),
-  // Most pre-filter candidates one sweep is shown (most important first).
-  consistencyMaxCandidatesPerSweep: z.coerce.number().int().min(1).default(40),
+  // Consistency sweeps the General mandate funds per UTC day, across all
+  // partitions (each a 'consistency_sweep' ledger action, capped at
+  // capConsistencySweepOwls). 0, the default, is the off-switch: no sweep
+  // rows are opened or funded.
+  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(0),
   // Most flags one sweep may raise: flag materially, not exhaustively.
   consistencyMaxFlagsPerSweep: z.coerce.number().int().min(0).default(5),
   // A tag is a sweep partition only when it carries at least this many live
   // claims; every claim no such tag covers falls in the residual bucket.
   consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
-  // The ceiling on the value a consistency flag writes on the General
-  // mandate's ledger (0–10, the Lookout's default ceiling). The mandate's
-  // formula refresh honors it while the flagged action stays open; its
-  // allocator decides whether it buys a pass.
-  consistencyFlagMaxValue: z.coerce.number().min(0).max(10).default(6),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
@@ -963,6 +961,7 @@ export function loadConfig(): Config {
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
+    capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
@@ -1090,12 +1089,9 @@ export function loadConfig(): Config {
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
-    consistencySweepIntervalHours: process.env.CONSISTENCY_SWEEP_INTERVAL_HOURS,
     consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
-    consistencyMaxCandidatesPerSweep: process.env.CONSISTENCY_MAX_CANDIDATES_PER_SWEEP,
     consistencyMaxFlagsPerSweep: process.env.CONSISTENCY_MAX_FLAGS_PER_SWEEP,
     consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
-    consistencyFlagMaxValue: process.env.CONSISTENCY_FLAG_MAX_VALUE,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,

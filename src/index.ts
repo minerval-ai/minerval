@@ -10,7 +10,6 @@ import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
 import { startMonitorScheduler } from "./workers/monitor-scheduler.js";
-import { startConsistencyScheduler } from "./workers/consistency-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
@@ -126,13 +125,6 @@ async function main() {
   // per claim per reflag period in the DB. Off unless
   // MONITOR_SWEEP_INTERVAL_HOURS > 0; safe in every task when on.
   pollers.push(startMonitorScheduler({ logger }));
-
-  // The consistency scheduler (#330) sweeps one partition of the graph per
-  // period for assessments that cannot all stand along their edges, and
-  // raises the real ones as ledger candidates. Off unless
-  // CONSISTENCY_SWEEP_INTERVAL_HOURS > 0; the per-period guard is in the DB,
-  // so it is safe in every task when on.
-  pollers.push(startConsistencyScheduler({ logger }));
 
   // The allocation scheduler refreshes composite queue priorities and feeds
   // the cadence-based staleness_check re-enqueues (#283), with a bounded

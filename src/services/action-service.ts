@@ -24,6 +24,7 @@ import { loadConfig } from "../config.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
+import { duePartitions, partitionRef } from "./consistency-service.js";
 
 export type ActionKind =
   | "assess"
@@ -61,13 +62,21 @@ export type ActionKind =
   // delegated ceiling, an ingest appended to the plan, a note for the
   // next review pass. Group `lookout:<lookout_id>`; self-funded from the
   // mandate's escrow like a review pass, bounded per day the same way.
-  | "lookout_run";
+  | "lookout_run"
+  // One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
+  // sweeps"): a cheap agent reading one partition of the graph (a tag, or
+  // the residual bucket) for assessments that do not cohere, raising
+  // flags. Group `consistency:<tag_id|residual>`, target_ref the same.
+  // The platform's own work: self-funded from the General mandate's escrow
+  // like a review pass, bounded per day across all partitions.
+  | "consistency_sweep";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 export const INGEST_GROUP = (url: string) => `ingest:${url}`;
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
+export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
 export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
@@ -305,6 +314,12 @@ export async function reconcileActions(): Promise<{
     );
   }
 
+  // Consistency sweeps (#330): one open row per partition due a sweep,
+  // at most the day's cap of them, most due first, so what the funding
+  // side covers is the most due. Off (and any open rows cancelled) when
+  // the cap is 0. Funding (fundGrantSelfActions) bounds sweeps per day.
+  await reconcileConsistencySweeps();
+
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
   const cancelled = await rawQuery<{ id: string }>(
@@ -334,6 +349,33 @@ export async function reconcileActions(): Promise<{
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
+}
+
+async function reconcileConsistencySweeps(): Promise<void> {
+  const config = loadConfig();
+  const cap = config.consistencyMaxSweepsPerDay ?? 0;
+  if (cap <= 0) {
+    await rawQuery(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE kind = 'consistency_sweep' AND status = 'open'`
+    );
+    return;
+  }
+  const due = (await duePartitions(config.consistencyMinTagClaims)).slice(0, cap);
+  const cost = capMicroUsd("consistency_sweep");
+  for (const p of due) {
+    const ref = partitionRef(p);
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+       VALUES ('consistency_sweep', $1, 'standard', $2, $3, $4)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+      [CONSISTENCY_GROUP(ref), ref, `Consistency sweep: ${p.label}`, cost]
+    );
+  }
 }
 
 /**

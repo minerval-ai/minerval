@@ -28,7 +28,7 @@ import { orderRoutes } from "../routes/orders.js";
 import { budgetJobRoutes } from "../routes/budget-jobs.js";
 import { queueRoutes } from "../routes/queue.js";
 import { monitorRoutes } from "../routes/monitors.js";
-import { coherenceRoutes } from "../routes/coherence.js";
+import { consistencyRoutes } from "../routes/consistency.js";
 import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
 import { mandateRoutes } from "../routes/mandates.js";
@@ -79,8 +79,8 @@ export async function buildApp() {
   await app.register(budgetJobRoutes, { prefix: "/budget-jobs" });
   await app.register(queueRoutes, { prefix: "/queue" });
   await app.register(monitorRoutes, { prefix: "/monitors" });
-  // The coherence pre-filter (#330): mechanically suspect assessment pairs.
-  await app.register(coherenceRoutes, { prefix: "/coherence" });
+  // The Consistency Checker's record (#330): sweeps, flags, precision.
+  await app.register(consistencyRoutes, { prefix: "/consistency" });
   await app.register(grantRoutes, { prefix: "/grants" });
   await app.register(grantConversationRoutes, {
     prefix: "/grant-conversations",

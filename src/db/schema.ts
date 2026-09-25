@@ -2029,10 +2029,11 @@ export type LookoutFlag = typeof lookoutFlags.$inferSelect;
 // consistency_sweeps
 //
 // One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
-// sweeps"): a partition of the graph (a tag, or the residual bucket of
-// claims no sweepable tag covers) read through the coherence pre-filter and
-// judged by the agent. The row is the coverage record the scheduler reads
-// ("tag X last swept at T") and the sweep's outcome counts.
+// sweeps"): the agent's read of one partition of the graph (a tag, or the
+// residual bucket of claims no sweepable tag covers). The row is the
+// coverage record the scheduler reads ("tag X last swept at T"), and its
+// note is the checker's memory of the partition: the next sweep of the
+// same partition is briefed with it.
 // ---------------------------------------------------------------------------
 export const consistencySweeps = pgTable(
   "consistency_sweeps",
@@ -2046,9 +2047,9 @@ export const consistencySweeps = pgTable(
     status: text("status").notNull().default("running"),
     // agent_runs.id of the checker's run (no FK: traces are pruned).
     runId: uuid("run_id"),
-    candidatesFound: integer("candidates_found").notNull().default(0),
+    // Assessed claims in the partition when the sweep started.
+    claimsInScope: integer("claims_in_scope").notNull().default(0),
     flagsRaised: integer("flags_raised").notNull().default(0),
-    dismissed: integer("dismissed").notNull().default(0),
     note: text("note"),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true })
@@ -2075,15 +2076,19 @@ export type ConsistencySweep = typeof consistencySweeps.$inferSelect;
 // ---------------------------------------------------------------------------
 // consistency_flags
 //
-// A place where assessments along the graph's edges cannot all stand, as
-// judged by the Consistency Checker: one row per flag, naming the PRIMARY
-// claim (the one whose Steward reconciles) and every claim in the tension.
-// Like lookout_flags, a flag is a candidate on the ledger, never a
-// conclusion: it enqueues the primary's Steward and values its standard
-// assess action on the mandate named here, and the value it wrote is
-// honored by that mandate's formula refresh while the action stays open.
-// The assessment at flag time is snapshotted so precision ("did the pass
-// move anything?") is a query.
+// A place where assessments do not cohere, as judged by the Consistency
+// Checker: reasoning that conflicts with a neighbor's, evidence recorded
+// under one claim that another's assessment never weighed, a verdict that
+// is not a defensible function of what it rests on. One row per flag,
+// naming the PRIMARY claim (the one whose Steward reconciles) and every
+// claim in the tension.
+// Like lookout_flags, a flag is a candidate, never a conclusion: it
+// enqueues the primary's Steward, and while the claim's assess action stays
+// open its expected_gain enters the formula mandates' expected-quality-gain
+// term (mandate-valuer-service.ts), so a pass the checker judges likely to
+// change something is valued like one, by the same formula as any other.
+// Whether it runs is the allocator's call. The assessment at flag time is
+// snapshotted so precision ("did the pass move anything?") is a query.
 // ---------------------------------------------------------------------------
 export const consistencyFlags = pgTable(
   "consistency_flags",
@@ -2092,26 +2097,21 @@ export const consistencyFlags = pgTable(
     sweepId: uuid("sweep_id").references(() => consistencySweeps.id, {
       onDelete: "set null",
     }),
-    // A coherence kind (coherence-service.ts) or 'other' for a tension the
-    // pre-filter cannot see.
+    // CONSISTENCY_FLAG_KINDS (consistency-service.ts).
     kind: text("kind").notNull(),
     primaryClaimId: uuid("primary_claim_id")
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     // Every claim in the tension, primary first.
     claimIds: uuid("claim_ids").array().notNull(),
-    // The mandate the flag valued on (the General mandate), and its row.
-    grantId: uuid("grant_id").references(() => grants.id, {
-      onDelete: "set null",
-    }),
+    // The claim's standard assess/reassess row when the flag was raised.
     actionId: uuid("action_id").references(() => actions.id, {
       onDelete: "set null",
     }),
     rationale: text("rationale").notNull(),
-    // The checker's urgency 0–10, before the ceiling.
-    urgency: real("urgency"),
-    // The value actually written, after the ceiling.
-    valueWritten: real("value_written"),
+    // The checker's estimate (0–1) that a fresh pass changes the primary's
+    // verdict or reasoning materially: the formula's expected-gain input.
+    expectedGain: real("expected_gain").notNull(),
     statusAtFlag: text("status_at_flag"),
     credenceAtFlag: real("credence_at_flag"),
     assessmentIdAtFlag: uuid("assessment_id_at_flag"),
@@ -2131,39 +2131,6 @@ export const consistencyFlags = pgTable(
 );
 
 export type ConsistencyFlag = typeof consistencyFlags.$inferSelect;
-
-// ---------------------------------------------------------------------------
-// consistency_dismissals
-//
-// A candidate the checker read and judged jointly tenable (the traces
-// already weigh the tension, or the edge does not carry the commitment the
-// rule assumes). The pair is suppressed from later sweeps while every
-// assessment it was judged on is still current: a new assessment on either
-// side reopens it.
-// ---------------------------------------------------------------------------
-export const consistencyDismissals = pgTable(
-  "consistency_dismissals",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    sweepId: uuid("sweep_id").references(() => consistencySweeps.id, {
-      onDelete: "set null",
-    }),
-    kind: text("kind").notNull(),
-    // Sorted, so a pair matches whichever side was primary.
-    claimIds: uuid("claim_ids").array().notNull(),
-    // The current assessments the judgment was made on.
-    assessmentIds: uuid("assessment_ids").array().notNull(),
-    reason: text("reason").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("idx_consistency_dismissals_claims").on(table.kind, table.claimIds),
-  ]
-);
-
-export type ConsistencyDismissal = typeof consistencyDismissals.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // grant_conversations

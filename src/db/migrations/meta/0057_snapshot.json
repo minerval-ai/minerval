@@ -1,5 +1,5 @@
 {
-  "id": "9c49b2bb-b7bc-4f3f-93dc-bbac2dc1976d",
+  "id": "4d4ec501-7ab4-4456-94c8-8400042ee2be",
   "prevId": "8be21179-40d0-4e7f-9c15-37d3fbdec513",
   "version": "7",
   "dialect": "postgresql",
@@ -5047,99 +5047,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.consistency_dismissals": {
-      "name": "consistency_dismissals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "sweep_id": {
-          "name": "sweep_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claim_ids": {
-          "name": "claim_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "assessment_ids": {
-          "name": "assessment_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_consistency_dismissals_claims": {
-          "name": "idx_consistency_dismissals_claims",
-          "columns": [
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "claim_ids",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "consistency_dismissals_sweep_id_consistency_sweeps_id_fk": {
-          "name": "consistency_dismissals_sweep_id_consistency_sweeps_id_fk",
-          "tableFrom": "consistency_dismissals",
-          "tableTo": "consistency_sweeps",
-          "columnsFrom": [
-            "sweep_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.consistency_flags": {
       "name": "consistency_flags",
       "schema": "",
@@ -5175,12 +5082,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "action_id": {
           "name": "action_id",
           "type": "uuid",
@@ -5193,17 +5094,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "urgency": {
-          "name": "urgency",
+        "expected_gain": {
+          "name": "expected_gain",
           "type": "real",
           "primaryKey": false,
-          "notNull": false
-        },
-        "value_written": {
-          "name": "value_written",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "status_at_flag": {
           "name": "status_at_flag",
@@ -5325,19 +5220,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "consistency_flags_grant_id_grants_id_fk": {
-          "name": "consistency_flags_grant_id_grants_id_fk",
-          "tableFrom": "consistency_flags",
-          "tableTo": "grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "consistency_flags_action_id_actions_id_fk": {
           "name": "consistency_flags_action_id_actions_id_fk",
           "tableFrom": "consistency_flags",
@@ -5394,8 +5276,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "candidates_found": {
-          "name": "candidates_found",
+        "claims_in_scope": {
+          "name": "claims_in_scope",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -5403,13 +5285,6 @@
         },
         "flags_raised": {
           "name": "flags_raised",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "dismissed": {
-          "name": "dismissed",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

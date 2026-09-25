@@ -42,6 +42,15 @@ import {
 /** The General formula for one claims row `c` and actions row `a`:
  * importance × contested-factor × expected-quality-gain + provenance
  * boost, strong variants multiplied by the policy's gain knob.
+ *
+ * Expected quality gain is the best of three estimates: the Steward's own
+ * marginal yield from its last pass (1.0 when unassessed), staleness, and
+ * an open consistency flag's expected_gain (#330): the Consistency
+ * Checker's estimate, made after reading the claim against its neighbors,
+ * that a fresh pass would change something. A flag counts while the assess
+ * group it was raised on is still open, and only raises the estimate;
+ * importance and contestation weigh it like any other.
+ *
  * Parameters: $1 contestation floor, $2 staleness saturation days,
  * $3 provenance boost, $4 strong gain multiplier. */
 const GENERAL_VALUE_SQL = `
@@ -59,23 +68,16 @@ const GENERAL_VALUE_SQL = `
             (SELECT x.assessed_at FROM assessments x
               WHERE x.claim_id = c.id AND x.is_current = true
               ORDER BY x.assessed_at DESC LIMIT 1))) / 86400.0
-            / NULLIF($2::real, 0), 0)))
+            / NULLIF($2::real, 0), 0)),
+        COALESCE(
+          (SELECT MAX(f.expected_gain) FROM consistency_flags f
+             JOIN actions fx ON fx.id = f.action_id
+            WHERE f.primary_claim_id = c.id
+              AND fx.exclusion_group = a.exclusion_group
+              AND fx.status IN ('open', 'running')),
+          0))
     + CASE WHEN c.created_by = 'user' THEN $3::real ELSE 0 END
   ) * CASE WHEN a.variant = 'strong' THEN $4::real ELSE 1.0 END`;
-
-/**
- * The floor a consistency flag (#330) puts under the formula: a flag the
- * Consistency Checker valued on THIS mandate ($5) stands while the flagged
- * action stays open. Without it the next refresh would overwrite the
- * flag's valuation with the formula's, and the flag would reach the
- * allocator for one tick at most. The flag's value is already clamped to
- * its ceiling (consistencyFlagMaxValue) when it is written.
- */
-const CONSISTENCY_FLAG_FLOOR_SQL = `
-  COALESCE(
-    (SELECT MAX(f.value_written) FROM consistency_flags f
-      WHERE f.action_id = a.id AND f.grant_id = $5),
-    0)`;
 
 /**
  * Refresh ONE formula mandate's valuations over the open assess/reassess
@@ -99,7 +101,7 @@ export async function refreshFormulaValuations(
          FROM claim_relationships cr JOIN subtree s ON cr.parent_claim_id = s.id
      )
      INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
-     SELECT $5, a.id, GREATEST(${GENERAL_VALUE_SQL}, ${CONSISTENCY_FLAG_FLOOR_SQL}), now()
+     SELECT $5, a.id, ${GENERAL_VALUE_SQL}, now()
        FROM actions a
        JOIN claims c ON c.id = a.claim_id
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')

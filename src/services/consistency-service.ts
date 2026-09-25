@@ -1,53 +1,69 @@
 /**
  * Consistency sweeps (#330; docs/allocation.md, "Consistency sweeps").
  *
- * The constitution asks for it in so many words (Part VII, §21): "The
- * graph's assessments must cohere along its edges... Periodic sweeps hunt
- * for incoherence. Each find is a defect in an assessment or in the
- * structure." This module is the MECHANISM around the agent that does the
- * hunting, in the ledger's sense:
+ * The constitution asks for it (Part VII, §21): the graph's assessments
+ * must cohere, and periodic sweeps hunt for incoherence. The incoherence
+ * worth hunting is rarely two verdicts flatly opposed; it is reasoning in
+ * one assessment that conflicts with reasoning in a neighbor's, evidence
+ * recorded under one claim that another's assessment never weighed, a
+ * verdict that is not a defensible function of what it rests on. Finding
+ * that takes reading, so the Consistency Checker is an agent that reads a
+ * partition of the graph; there is no mechanical pre-filter. This module
+ * is the MECHANISM around it, in the ledger's sense:
  *
  *   - sweep bookkeeping (consistency_sweeps): which partition of the graph
  *     a sweep covered, when, and what it found, which is the coverage
- *     record the scheduler reads to pick the next partition;
- *   - the candidate list a sweep is shown: the coherence pre-filter's
- *     shortlist (coherence-service.ts) minus what is already in hand (a
- *     primary with an open flag) or already judged tenable on the same
- *     assessments (a live dismissal);
- *   - the flag write path, which mirrors a Lookout's flag_reassessment
- *     step for step: the primary claim's Steward is enqueued with the
- *     tension as context, its assess group is ensured, and its standard
- *     action is valued on the General mandate at the checker's urgency,
- *     clamped to a ceiling. The General formula honors that value while
- *     the action stays open (mandate-valuer-service.ts); whether the pass
- *     RUNS is the allocator's call, like every other row;
+ *     record the scheduler reads to pick the next partition, and the
+ *     sweep's note, which briefs the next sweep of the same partition;
+ *   - the partition's claims as the agent reads them: assessed claims,
+ *     those re-assessed since the last sweep first, then by importance;
+ *   - the flag write path: the primary claim's Steward is enqueued with
+ *     the tension as context, which opens its assess group on the ledger,
+ *     and the flag records the checker's estimate that a fresh pass would
+ *     change something (expected_gain). That estimate is the flag's whole
+ *     say in allocation: while the group stays open it enters the formula
+ *     mandates' expected-quality-gain term beside the Steward's own
+ *     marginal-yield estimate and staleness (mandate-valuer-service.ts),
+ *     so importance and contestation weigh a flagged pass exactly as they
+ *     weigh any other, and the allocator decides whether it runs;
  *   - the flag record, so the checker's precision ("did the passes its
  *     flags bought change anything?") is a query, as a Lookout's is.
  *
- * What the checker can cause is deliberately a candidate on the ledger,
- * never a conclusion: it writes no assessment, no edge and no importance,
- * and it moves no money.
+ * What the checker can cause is deliberately a candidate, never a
+ * conclusion: it writes no assessment, no edge, no importance and no
+ * valuation, and it moves no money.
  */
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
-import { getGeneralMandate } from "./allocation-policy-service.js";
-import {
-  COHERENCE_KINDS,
-  listCoherenceCandidates,
-  type CoherenceCandidate,
-  type CoherenceScope,
-} from "./coherence-service.js";
-import { setMandateValuations } from "./mandate-valuer-service.js";
 import { enqueueSteward } from "./queue-service.js";
 
-/** Kinds a flag or dismissal may carry: the pre-filter's, or a tension it cannot see. */
-export const CONSISTENCY_FLAG_KINDS = [...COHERENCE_KINDS, "other"] as const;
+/**
+ * What kind of incoherence a flag names. A label for the record and the
+ * precision read, not a rule: the checker's rationale is the substance.
+ */
+export const CONSISTENCY_FLAG_KINDS = [
+  // Two assessments rest on reasoning that cannot both hold: one treats as
+  // established what the other argues is doubtful, or they read the same
+  // evidence in incompatible ways.
+  "reasoning_conflict",
+  // An assessment never weighs evidence or argument recorded under another
+  // claim that bears on it directly.
+  "overlooked_evidence",
+  // A verdict that is not a defensible function of its subclaims and direct
+  // evidence, or dependents that presuppose different verdicts on the same
+  // upstream claim.
+  "dependency_mismatch",
+  // An assessment that rests on a neighbor's verdict that has since changed.
+  "stale_premise",
+  "other",
+] as const;
 export type ConsistencyFlagKind = (typeof CONSISTENCY_FLAG_KINDS)[number];
 
 export const CONSISTENCY_BOUNDS = {
   rationaleChars: 2_000,
-  noteChars: 2_000,
-  /** Claims one flag, dismissal or comparison may name. */
+  /** The sweep note is the checker's memory of a partition. */
+  noteChars: 4_000,
+  /** Claims one flag or comparison may name. */
   maxClaims: 8,
   /** A running sweep older than this is treated as abandoned. */
   reclaimHours: 2,
@@ -170,12 +186,13 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
 }
 
 /**
- * The partition due next, or null when nothing has changed anywhere since
- * its last sweep: never-swept partitions first, then the most assessments
- * written since the last sweep, then the most importance. A partition with
- * a sweep still running (younger than the reclaim window) is skipped.
+ * The partitions due a sweep, most due first: never-swept partitions,
+ * then the most assessments written since the last sweep, then the most
+ * importance. A partition where nothing was re-assessed since its last
+ * sweep is not due (the sweep would read what it already read), nor is
+ * one with a sweep still running (younger than the reclaim window).
  */
-export async function nextSweepPartition(minTagClaims: number): Promise<SweepPartition | null> {
+export async function duePartitions(minTagClaims: number): Promise<SweepPartition[]> {
   const [partitions, running] = await Promise.all([
     listPartitions(minTagClaims),
     rawQuery<{ tag_id: string | null; partition: string }>(
@@ -197,11 +214,35 @@ export async function nextSweepPartition(minTagClaims: number): Promise<SweepPar
       if (a.changed_since !== b.changed_since) return b.changed_since - a.changed_since;
       return b.importance_mass - a.importance_mass;
     });
-  const next = due[0];
-  if (!next) return null;
-  return next.partition === "tag"
-    ? { partition: "tag", tagId: next.tag_id!, label: next.label }
-    : { partition: "residual", tagId: null, label: next.label };
+  return due.map(toSweepPartition);
+}
+
+function toSweepPartition(p: PartitionStatus): SweepPartition {
+  return p.partition === "tag"
+    ? { partition: "tag", tagId: p.tag_id!, label: p.label }
+    : { partition: "residual", tagId: null, label: p.label };
+}
+
+/** The partition due next, or null when none is. */
+export async function nextSweepPartition(minTagClaims: number): Promise<SweepPartition | null> {
+  return (await duePartitions(minTagClaims))[0] ?? null;
+}
+
+/** A sweep row's target_ref: the tag id, or "residual". */
+export function partitionRef(p: SweepPartition): string {
+  return p.partition === "tag" ? p.tagId : p.partition;
+}
+
+/** The partition a sweep row's target_ref names, or null if it no longer exists. */
+export async function partitionFromRef(ref: string): Promise<SweepPartition | null> {
+  if (ref === "residual") return { partition: "residual", tagId: null, label: "residual" };
+  if (ref === "graph") return { partition: "graph", tagId: null, label: "whole graph" };
+  if (!isUuid(ref)) return null;
+  const [tag] = await rawQuery<{ id: string; slug: string }>(
+    `SELECT id, slug FROM tags WHERE id = $1 AND status = 'active'`,
+    [ref]
+  );
+  return tag ? { partition: "tag", tagId: tag.id, label: tag.slug } : null;
 }
 
 /** The live claims no sweepable tag covers: the residual bucket's scope. */
@@ -225,11 +266,19 @@ export async function residualClaimIds(minTagClaims: number): Promise<string[]> 
   return rows.map((r) => r.id);
 }
 
-/** The pre-filter scope a partition covers. */
+/**
+ * The claims a partition covers: a tag's live claims, the residual
+ * bucket's, or null for the whole graph.
+ */
+export interface PartitionScope {
+  tagId?: string | null;
+  claimIds?: string[] | null;
+}
+
 export async function scopeForPartition(
   p: SweepPartition,
   minTagClaims: number
-): Promise<CoherenceScope> {
+): Promise<PartitionScope> {
   if (p.partition === "tag") return { tagId: p.tagId };
   if (p.partition === "residual") return { claimIds: await residualClaimIds(minTagClaims) };
   return {};
@@ -247,25 +296,22 @@ export async function finishSweep(input: {
   sweepId: string;
   status: "done" | "error";
   runId?: string | null;
-  candidatesFound: number;
+  claimsInScope: number;
   flagsRaised: number;
-  dismissed: number;
   note?: string | null;
   error?: string | null;
 }): Promise<void> {
   await rawQuery(
     `UPDATE consistency_sweeps
-        SET status = $2, run_id = COALESCE($3, run_id), candidates_found = $4,
-            flags_raised = $5, dismissed = $6, note = $7, error = $8,
-            finished_at = now()
+        SET status = $2, run_id = COALESCE($3, run_id), claims_in_scope = $4,
+            flags_raised = $5, note = $6, error = $7, finished_at = now()
       WHERE id = $1`,
     [
       input.sweepId,
       input.status,
       input.runId ?? null,
-      input.candidatesFound,
+      input.claimsInScope,
       input.flagsRaised,
-      input.dismissed,
       input.note ? input.note.slice(0, CONSISTENCY_BOUNDS.noteChars) : null,
       input.error ? input.error.slice(0, 2_000) : null,
     ]
@@ -305,61 +351,84 @@ export async function reclaimAbandonedSweeps(): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Candidates
+// What a sweep reads
 // ---------------------------------------------------------------------------
 
-function pairKey(kind: string, claimIds: readonly string[]): string {
-  return `${kind}:${[...claimIds].sort().join(",")}`;
+export interface PartitionClaim {
+  claim_id: string;
+  text: string;
+  importance: number;
+  status: string;
+  credence: number | null;
+  confidence: number;
+  assessed_at: string;
+  /** Re-assessed since this partition's last sweep (or never swept). */
+  changed: boolean;
+  summary: string | null;
+  /** Edges out of (subclaims) and into (dependents) this claim. */
+  subclaims: number;
+  dependents: number;
+  /** A consistency flag on this claim is still waiting for its pass. */
+  flag_open: boolean;
 }
 
 /**
- * The shortlist a sweep is shown: the pre-filter's candidates in scope,
- * most important first, minus
- *  - pairs dismissed on assessments that are all still current (a new
- *    assessment on either side reopens the question), and
- *  - pairs whose primary already carries an open consistency flag (its
- *    pass is already asked for; the pre-filter itself drops a primary
- *    whose Steward is pending or running).
- * Returns the filtered list and how many were suppressed.
+ * The partition's assessed claims as a sweep reads them: those re-assessed
+ * since `since` first (where new incoherence comes from), then by
+ * importance. A claim whose Steward is pending or running is left out:
+ * its assessment is about to change anyway.
  */
-export async function sweepCandidates(
-  scope: CoherenceScope,
-  limit: number
-): Promise<{ candidates: CoherenceCandidate[]; suppressed: number }> {
-  // Over-fetch so suppression does not starve the sweep.
-  const raw = await listCoherenceCandidates(scope, { limit: Math.min(500, limit * 3) });
-  if (raw.length === 0) return { candidates: [], suppressed: 0 };
-  const ids = [...new Set(raw.flatMap((c) => c.claim_ids))];
-  const [dismissals, openFlags] = await Promise.all([
-    rawQuery<{ kind: string; claim_ids: string[] }>(
-      `SELECT d.kind, d.claim_ids FROM consistency_dismissals d
-        WHERE d.claim_ids && $1::uuid[]
-          AND NOT EXISTS (
-            SELECT 1 FROM unnest(d.assessment_ids) x(id)
-              LEFT JOIN assessments a ON a.id = x.id
-             WHERE a.is_current IS DISTINCT FROM true)`,
-      [ids]
-    ),
-    rawQuery<{ primary_claim_id: string }>(
-      `SELECT DISTINCT f.primary_claim_id FROM consistency_flags f
-         JOIN actions a ON a.id = f.action_id
-        WHERE f.primary_claim_id = ANY($1::uuid[])
-          AND a.status IN ('open', 'running')`,
-      [ids]
-    ),
-  ]);
-  const dismissed = new Set(dismissals.map((d) => pairKey(d.kind, d.claim_ids)));
-  const flagged = new Set(openFlags.map((f) => f.primary_claim_id));
-  const kept: CoherenceCandidate[] = [];
-  let suppressed = 0;
-  for (const c of raw) {
-    if (dismissed.has(pairKey(c.kind, c.claim_ids)) || flagged.has(c.primary_claim_id)) {
-      suppressed++;
-      continue;
-    }
-    if (kept.length < limit) kept.push(c);
-  }
-  return { candidates: kept, suppressed };
+export async function partitionClaims(
+  scope: PartitionScope,
+  opts: { since?: Date | null; limit?: number; offset?: number } = {}
+): Promise<{ total: number; claims: PartitionClaim[] }> {
+  const limit = Math.min(100, Math.max(1, opts.limit ?? 20));
+  const offset = Math.max(0, opts.offset ?? 0);
+  const rows = await rawQuery<PartitionClaim & { total: number; assessed_at: Date }>(
+    `WITH scoped AS (
+       SELECT subject_id AS claim_id FROM taggings
+        WHERE $1::uuid IS NOT NULL AND tag_id = $1::uuid AND subject_kind = 'claim'
+       UNION
+       SELECT unnest($2::uuid[])
+     )
+     SELECT c.id AS claim_id, c.text, c.importance, a.status, a.claim_credence AS credence,
+            a.confidence, a.assessed_at, a.summary,
+            ($3::timestamptz IS NULL OR a.assessed_at > $3) AS changed,
+            (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.parent_claim_id = c.id) AS subclaims,
+            (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.child_claim_id = c.id) AS dependents,
+            EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
+                     WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')) AS flag_open,
+            COUNT(*) OVER ()::int AS total
+       FROM claims c
+       JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+      WHERE c.state = 'active' AND c.merged_into IS NULL
+        AND c.steward_state NOT IN ('pending', 'running')
+        AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
+      ORDER BY changed DESC, c.importance DESC, c.id
+      LIMIT $4 OFFSET $5`,
+    [scope.tagId ?? null, scope.claimIds ?? null, opts.since ?? null, limit, offset]
+  );
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    claims: rows.map(({ total: _total, ...r }) => ({
+      ...r,
+      importance: Number(r.importance),
+      assessed_at: new Date(r.assessed_at).toISOString(),
+    })),
+  };
+}
+
+/** When this partition was last swept to completion, and that sweep's note. */
+export async function lastSweepOf(
+  p: SweepPartition
+): Promise<{ started_at: Date; note: string | null } | null> {
+  const [row] = await rawQuery<{ started_at: Date; note: string | null }>(
+    `SELECT started_at, note FROM consistency_sweeps
+      WHERE status = 'done' AND partition = $1 AND tag_id IS NOT DISTINCT FROM $2::uuid
+      ORDER BY started_at DESC LIMIT 1`,
+    [p.partition, p.tagId]
+  );
+  return row ?? null;
 }
 
 export interface ComparedClaim {
@@ -478,7 +547,7 @@ export async function compareAssessments(
 }
 
 // ---------------------------------------------------------------------------
-// Flags and dismissals
+// Flags
 // ---------------------------------------------------------------------------
 
 export type ConsistencyFlagResult =
@@ -487,7 +556,7 @@ export type ConsistencyFlagResult =
       flag_id: string;
       duplicate: false;
       action_id: string | null;
-      value_written: number | null;
+      expected_gain: number;
       note: string;
     }
   | { ok: true; flag_id: string; duplicate: true; note: string }
@@ -516,8 +585,7 @@ export function consistencyFlagContext(input: {
     .join("\n");
   return (
     `A consistency sweep finds that this claim's assessment (${describeAssessment(input.primary)}) ` +
-    `cannot stand together with its neighbors' as the edges between them read ` +
-    `(check: ${input.kind}).\n${neighbors}\n` +
+    `does not cohere with what the graph records about these claims (${input.kind}):\n${neighbors}\n` +
     `The checker's reading: ${input.rationale}\n` +
     `Reconcile it. The defect may be in this verdict (revise it), in a ` +
     `neighbor's (say so in your reasoning), or in the edge itself (fix it if ` +
@@ -530,11 +598,11 @@ export function consistencyFlagContext(input: {
 
 /**
  * Raise a flag: the primary claim becomes a candidate (enqueued to the
- * Steward lane with trigger consistency_flag, which opens its assess
- * group), and the General mandate values its standard variant at the
- * checker's urgency clamped to `maxValue`. The value is recorded on the
- * flag, and the General formula refresh keeps it as a floor while the
- * action stays open. Whether the pass runs is the allocator's call.
+ * Steward lane with trigger consistency_flag and the tension as context,
+ * which opens its assess group), and the flag's expected_gain enters the
+ * formula mandates' valuation of that group while it stays open. Nothing
+ * here writes a valuation: the formula prices the pass like any other,
+ * and the allocator decides whether it runs.
  *
  * Folding: a flag on a primary that already carries an open flag (its
  * action open or running, or no action yet and under a week old) is a
@@ -546,12 +614,11 @@ export async function flagInconsistency(input: {
   primaryClaimId: string;
   claimIds: unknown;
   rationale: string;
-  urgency: number;
-  maxValue: number;
+  expectedGain: number;
 }): Promise<ConsistencyFlagResult> {
   const rationale = String(input.rationale ?? "").trim().slice(0, CONSISTENCY_BOUNDS.rationaleChars);
   if (rationale.length < 20) {
-    return { ok: false, code: "RATIONALE", problem: "Say which verdicts cannot both stand and why, in a sentence or two" };
+    return { ok: false, code: "RATIONALE", problem: "Say what does not cohere and why, in a few sentences" };
   }
   if (!(CONSISTENCY_FLAG_KINDS as readonly string[]).includes(input.kind)) {
     return { ok: false, code: "KIND", problem: `kind must be one of ${CONSISTENCY_FLAG_KINDS.join(", ")}` };
@@ -574,6 +641,9 @@ export async function flagInconsistency(input: {
   const primary = byId.get(input.primaryClaimId);
   if (!primary || primary.state !== "active") {
     return { ok: false, code: "CLAIM", problem: "No active claim with that primary_claim_id" };
+  }
+  if (!primary.assessment_id) {
+    return { ok: false, code: "UNASSESSED", problem: "The primary claim has no assessment yet; there is nothing to reconcile" };
   }
   const missing = claimIds.filter((id) => !byId.has(id));
   if (missing.length > 0) {
@@ -605,8 +675,7 @@ export async function flagInconsistency(input: {
     };
   }
 
-  const urgency = clampReal(input.urgency, 0, 10, 5);
-  const value = Math.min(urgency, clampReal(input.maxValue, 0, 10, 0));
+  const expectedGain = clampReal(input.expectedGain, 0, 1, 0.5);
   const others = claimIds.slice(1).map((id) => {
     const r = byId.get(id)!;
     return { id, text: r.text, status: r.status, claim_credence: r.claim_credence };
@@ -625,34 +694,24 @@ export async function flagInconsistency(input: {
   await ensureAssessActions(input.primaryClaimId);
   const [standard] = await rawQuery<{ id: string }>(
     `SELECT id FROM actions
-      WHERE exclusion_group = $1 AND variant = 'standard' AND status = 'open'
+      WHERE exclusion_group = $1 AND variant = 'standard' AND status IN ('open', 'running')
       LIMIT 1`,
     [ASSESS_GROUP(input.primaryClaimId)]
   );
-  const general = await getGeneralMandate();
-  let valueWritten: number | null = null;
-  if (general && standard && value > 0) {
-    const res = await setMandateValuations(general.grantId, [
-      { action_id: standard.id, value, rationale: `[consistency] ${rationale}` },
-    ]);
-    if (res.written > 0) valueWritten = value;
-  }
   const [flag] = await rawQuery<{ id: string }>(
     `INSERT INTO consistency_flags
-       (sweep_id, kind, primary_claim_id, claim_ids, grant_id, action_id, rationale,
-        urgency, value_written, status_at_flag, credence_at_flag, assessment_id_at_flag)
-     VALUES ($1, $2, $3, $4::uuid[], $5, $6, $7, $8, $9, $10, $11, $12)
+       (sweep_id, kind, primary_claim_id, claim_ids, action_id, rationale,
+        expected_gain, status_at_flag, credence_at_flag, assessment_id_at_flag)
+     VALUES ($1, $2, $3, $4::uuid[], $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       input.sweepId,
       input.kind,
       input.primaryClaimId,
       claimIds,
-      valueWritten !== null ? general!.grantId : null,
       standard?.id ?? null,
       rationale,
-      urgency,
-      valueWritten,
+      expectedGain,
       primary.status,
       primary.claim_credence,
       primary.assessment_id,
@@ -663,47 +722,12 @@ export async function flagInconsistency(input: {
     flag_id: flag!.id,
     duplicate: false,
     action_id: standard?.id ?? null,
-    value_written: valueWritten,
+    expected_gain: expectedGain,
     note:
-      valueWritten === null
-        ? "Recorded, and the claim's Steward is queued with your reading; no valuation written (no General mandate, a ceiling of 0, or no open ledger row)."
-        : `Recorded. The claim is a candidate for a reassessment valued at ${valueWritten}/10; the allocator decides whether that buys a pass.`,
+      "Recorded, and the claim's Steward is queued with your reading. Its " +
+      "reassessment is valued by the platform's formula with your expected " +
+      "gain; the allocator decides whether it runs.",
   };
-}
-
-/**
- * Record that a candidate was read and judged jointly tenable. The pair is
- * suppressed from later sweeps while every assessment it was judged on
- * stays current.
- */
-export async function dismissCandidate(input: {
-  sweepId: string | null;
-  kind: string;
-  claimIds: unknown;
-  reason: string;
-}): Promise<{ ok: true; dismissal_id: string } | { ok: false; code: string; problem: string }> {
-  const reason = String(input.reason ?? "").trim().slice(0, CONSISTENCY_BOUNDS.rationaleChars);
-  if (reason.length < 10) return { ok: false, code: "REASON", problem: "Say why both verdicts can stand" };
-  if (!(CONSISTENCY_FLAG_KINDS as readonly string[]).includes(input.kind)) {
-    return { ok: false, code: "KIND", problem: `kind must be one of ${CONSISTENCY_FLAG_KINDS.join(", ")}` };
-  }
-  const ids = (Array.isArray(input.claimIds) ? input.claimIds : [])
-    .map((v) => String(v).trim())
-    .filter(isUuid)
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .slice(0, CONSISTENCY_BOUNDS.maxClaims)
-    .sort();
-  if (ids.length < 2) return { ok: false, code: "CLAIMS", problem: "Name the claims in the candidate (claim_ids)" };
-  const current = await rawQuery<{ id: string }>(
-    `SELECT id FROM assessments WHERE claim_id = ANY($1::uuid[]) AND is_current = true`,
-    [ids]
-  );
-  const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO consistency_dismissals (sweep_id, kind, claim_ids, assessment_ids, reason)
-     VALUES ($1, $2, $3::uuid[], $4::uuid[], $5) RETURNING id`,
-    [input.sweepId, input.kind, ids, current.map((c) => c.id), reason]
-  );
-  return { ok: true, dismissal_id: row!.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -720,8 +744,7 @@ export interface ConsistencyFlagRow {
   action_id: string | null;
   action_status: string | null;
   rationale: string;
-  urgency: number | null;
-  value_written: number | null;
+  expected_gain: number;
   status_at_flag: string | null;
   credence_at_flag: number | null;
   status_now: string | null;
@@ -736,7 +759,7 @@ export interface ConsistencyFlagRow {
 
 const FLAG_SELECT = `
   SELECT f.id, f.sweep_id, f.kind, f.primary_claim_id, c.text AS claim_text, f.claim_ids,
-         f.action_id, a.status AS action_status, f.rationale, f.urgency, f.value_written,
+         f.action_id, a.status AS action_status, f.rationale, f.expected_gain,
          f.status_at_flag, f.credence_at_flag,
          cur.status AS status_now, cur.claim_credence AS credence_now,
          (cur.id IS NOT NULL AND cur.id IS DISTINCT FROM f.assessment_id_at_flag) AS ran,
@@ -798,16 +821,15 @@ export async function listSweeps(limit = 20): Promise<Array<{
   tag_slug: string | null;
   partition: string;
   status: string;
-  candidates_found: number;
+  claims_in_scope: number;
   flags_raised: number;
-  dismissed: number;
   note: string | null;
   started_at: Date;
   finished_at: Date | null;
 }>> {
   return rawQuery(
-    `SELECT s.id, s.tag_id, t.slug AS tag_slug, s.partition, s.status, s.candidates_found,
-            s.flags_raised, s.dismissed, s.note, s.started_at, s.finished_at
+    `SELECT s.id, s.tag_id, t.slug AS tag_slug, s.partition, s.status, s.claims_in_scope,
+            s.flags_raised, s.note, s.started_at, s.finished_at
        FROM consistency_sweeps s LEFT JOIN tags t ON t.id = s.tag_id
       ORDER BY s.started_at DESC LIMIT $1`,
     [limit]

@@ -1,6 +1,7 @@
 /**
  * The engine executor — the drain over the action ledger's non-steward
- * kinds: grant_planning, ingest, mandate_review, lookout_run, formalize.
+ * kinds: grant_planning, ingest, mandate_review, lookout_run,
+ * consistency_sweep, formalize.
  *
  * Same posture as the steward executor: a dumb loop over covered rows.
  * Grants fund their own planning, review, and ingest actions from escrow
@@ -38,6 +39,9 @@ import { runGrantor } from "../llm/agents/grantor.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
+import { partitionFromRef } from "../services/consistency-service.js";
+import { getGeneralMandate } from "../services/allocation-policy-service.js";
+import { runConsistencySweep } from "./consistency-sweep.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
@@ -93,6 +97,7 @@ export async function processNextEngineAction(
     "grant_planning",
     "mandate_review",
     "lookout_run",
+    "consistency_sweep",
     "ingest",
     "formalize",
   ]);
@@ -101,6 +106,7 @@ export async function processNextEngineAction(
   if (action.kind === "ingest") return runIngestAction(action);
   if (action.kind === "formalize") return runFormalizeAction(action, opts);
   if (action.kind === "lookout_run") return runLookoutAction(action, opts);
+  if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
   return runGrantAgentAction(action, opts);
 }
 
@@ -309,6 +315,77 @@ async function runLookoutAction(
       actionId: action.id,
       kind: "lookout_run",
       grantId: lookout.grant_id,
+      ok: false,
+      error: msg,
+    };
+  }
+}
+
+/**
+ * consistency_sweep (#330): one Consistency Checker sweep over the
+ * partition named in target_ref, under the General mandate's funder,
+ * metered and consumed against the covering allocation. The checker runs
+ * on its own model (CONSISTENCY_MODEL), not the Steward override the drain
+ * may carry. A partition that no longer exists cancels the row; a failed
+ * sweep cancels it too, and the reconcile sweep reopens it while the
+ * partition is still due.
+ */
+async function runConsistencySweepAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const partition = await partitionFromRef(action.target_ref ?? "");
+  const general = await getGeneralMandate();
+  if (!partition || !general) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const [grant] = await rawQuery<{ funder_user_id: string }>(
+    `SELECT funder_user_id FROM grants WHERE id = $1`,
+    [general.grantId]
+  );
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  try {
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: grant?.funder_user_id ?? null, jobId: funder.jobId ?? general.budgetJobId },
+      () => withCostMeter(() => runConsistencySweep({ partition }))
+    );
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId ?? general.budgetJobId,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "consistency_sweep",
+      grantId: general.grantId,
+      ok: true,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return {
+        status: "transient",
+        actionId: action.id,
+        kind: "consistency_sweep",
+        grantId: general.grantId,
+        error: msg,
+      };
+    }
+    await cancelGroup(action.exclusion_group);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "consistency_sweep",
+      grantId: general.grantId,
       ok: false,
       error: msg,
     };
