@@ -145,10 +145,12 @@ const configSchema = z.object({
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
   // One consistency sweep (kind 'consistency_sweep', #330): a cheap-tier
-  // agent reading one partition's assessments against each other. A sweep
-  // reads more than a lookout run and rarely finds nothing to open, so the
-  // cap sits above the lookout's.
-  capConsistencySweepOwls: z.coerce.number().default(0.15),
+  // agent reading one partition's assessments against each other. The
+  // allocation reserves the whole cap against the General mandate's day
+  // until the run settles, so a cap far above the metered cost (about 0.02
+  // owl on the flash tier over a 30-claim partition) crowds out the passes
+  // the sweep asks for. The lookout's cap.
+  capConsistencySweepOwls: z.coerce.number().default(0.05),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.

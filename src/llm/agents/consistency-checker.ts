@@ -216,7 +216,11 @@ async function runConsistencyCheckerImpl(input: {
     tools,
     system,
     model,
-    maxTokens: 4096,
+    // The cheap tier reasons at length before it writes (the reasoning is
+    // billed output), and a partition's comparison reads are long: at 4096 a
+    // real sweep was cut off twice mid-thought and ended with nothing
+    // recorded. The Steward's and Curator's limit.
+    maxTokens: 16384,
     maxIterations: MAX_ITERATIONS,
     iterationBudgetNotice: {
       warnWithin: 3,

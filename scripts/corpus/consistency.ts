@@ -263,13 +263,21 @@ async function plant(n: number, outDir: string): Promise<void> {
             old?.reasoning_trace ?? ""
           )
         : await writePlantedAssessment(
-            `The new assessment reaches a MORE CONFIDENT verdict in favor of the claim than the ` +
-              `existing one, and never mentions or engages this consideration against it, which ` +
-              `must be absent from the reasoning: "${pick.c_text}". Keep everything else that ` +
-              `supports the claim.`,
+            `Write it as the assessment of a reviewer who argues from the evidence FOR the claim ` +
+              `and reaches a more confident supported verdict than the existing one. This reviewer ` +
+              `did not consider the following point, so it does not appear in their reasoning: ` +
+              `"${pick.c_text}".`,
             pick.p_text,
             old?.reasoning_trace ?? ""
           );
+    // A model that declines writes a refusal, not an assessment; a refusal
+    // planted as a verdict is not the defect under test. Skip the candidate.
+    if (/^\s*(I\s+(can.?t|cannot|won.?t|am unable)|I'm not able|Sorry)/i.test(`${written.summary} ${written.reasoning}`)) {
+      console.log(`  (skipped a ${kind} candidate: the writer declined)`);
+      used.delete(pick.parent);
+      used.delete(pick.child);
+      continue;
+    }
     const values =
       kind === "flipped_premise"
         ? { status: "contradicted", credence: 0.15, trigger: "staleness_check" }
@@ -472,8 +480,10 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     [startedAt]
   );
   const allocations = await safeRead<{ kind: string; n: number; usd: number }>("allocations",
-    `SELECT x.kind, COUNT(*)::int AS n, ROUND(SUM(al.amount_micro_usd)::numeric / 1e6, 4)::float AS usd
-       FROM action_allocations al JOIN actions x ON x.id = al.action_id
+    // Unpinned allocations carry no action_id; the group names the kind.
+    `SELECT split_part(al.exclusion_group, ':', 1) AS kind, COUNT(*)::int AS n,
+            ROUND(SUM(al.amount_micro_usd)::numeric / 1e6, 4)::float AS usd
+       FROM action_allocations al
       WHERE al.created_at >= $1 GROUP BY 1`,
     [startedAt]
   );
