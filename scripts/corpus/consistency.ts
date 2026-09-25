@@ -266,6 +266,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
   const config = loadConfig();
   const passes = Number(argFlag("passes") ?? 12);
   const cadenceK = Number(argFlag("cadence") ?? passes * 2);
+  const concurrency = Math.max(1, Number(argFlag("concurrency") ?? 1));
   const plants = JSON.parse(readFileSync(join(outDir, "plants.json"), "utf8")) as Plant[];
   const { stewardTierCostEstimates } = await import("../../src/services/cost-estimate-service.js");
   const { resetAllocationPolicyCache } = await import("../../src/services/allocation-policy-service.js");
@@ -305,11 +306,21 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     await reconcileActions();
     await refreshGeneralValuations();
     const before = events.length;
-    const stats = await drainLocalQueues({
-      onEvent: (e) => events.push({ round, queue: e.queue, message: e.message, ok: e.ok, error: e.error }),
-    });
+    // Parallel drains, as production runs several workers: the Steward and
+    // engine lanes claim their rows with SKIP LOCKED, so N loops never run
+    // the same unit twice.
+    const all = await Promise.all(
+      Array.from({ length: concurrency }, () =>
+        drainLocalQueues({
+          onEvent: (e) => events.push({ round, queue: e.queue, message: e.message, ok: e.ok, error: e.error }),
+        })
+      )
+    );
+    const processed: Record<string, number> = {};
+    for (const st of all) for (const [k, v] of Object.entries(st.processed)) processed[k] = (processed[k] ?? 0) + v;
+    const errors = all.flatMap((st) => Object.entries(st.errors));
     const ran = events.length - before;
-    console.log(`  round ${round}: ${ran} unit(s) ${JSON.stringify(stats.processed)}${Object.keys(stats.errors).length ? ` errors ${JSON.stringify(stats.errors)}` : ""}`);
+    console.log(`  round ${round}: ${ran} unit(s) ${JSON.stringify(processed)}${errors.length ? ` errors ${JSON.stringify(errors)}` : ""}`);
     if (ran === 0) break;
   }
 
@@ -373,6 +384,16 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
       WHERE al.created_at >= $1 GROUP BY 1`,
     [startedAt]
   );
+  // The rest of the admin system's response: Curator work the passes
+  // escalated, and issue reports agents raised during the arm.
+  const curatorRuns = await rawQuery<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM agent_runs WHERE agent = 'curator' AND started_at >= $1`,
+    [startedAt]
+  );
+  const reports = await rawQuery<{ agent: string; kind: string; severity: string; title: string }>(
+    `SELECT agent, kind, severity, title FROM agent_reports WHERE created_at >= $1 ORDER BY created_at`,
+    [startedAt]
+  );
   const unfunded = await rawQuery<{ n: number; flagged: number }>(
     `SELECT COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM consistency_flags f
@@ -410,6 +431,8 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     precision: await consistencyPrecision({ since: startedAt }),
     sweeps,
     enqueues,
+    curatorRuns: curatorRuns[0]?.n ?? 0,
+    reports,
     cost,
     plants: plantOutcomes,
     read: { ...read, ...readStats(read, plants) },
@@ -446,6 +469,7 @@ function summarize(outDir: string, arms: ArmName[]): string {
     w(`- Allocations: ${(r.allocations as Array<{ kind: string; n: number; usd: number }>).map((a) => `${a.kind} ×${a.n} ($${a.usd})`).join(", ") || "none"}; ` +
       `left open: ${r.unfundedAssessActions?.n ?? 0} assess action(s), ${r.unfundedAssessActions?.flagged ?? 0} of them flagged`);
     w(`- Steward enqueues by trigger: ${(r.enqueues as Array<{ trigger: string; n: number }>).map((e) => `${e.trigger} ${e.n}`).join(", ")}`);
+    w(`- Curator runs: ${r.curatorRuns}; issue reports: ${(r.reports as Array<{ agent: string; title: string }>).map((x) => `${x.agent}: ${x.title}`).join("; ") || "none"}`);
     if (name === "checker") {
       w(`- Sweeps: ${r.sweeps.length}; flags: ${r.flags.length}; precision ran ${r.precision.ran}/${r.precision.flagged}, moved ${r.precision.moved}`);
     }
@@ -478,7 +502,7 @@ async function run(cluster: string): Promise<void> {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "_").toLowerCase();
   const outDir = join(RUNS_ROOT, `consistency-${cluster}-${stamp}`);
   mkdirSync(outDir, { recursive: true });
-  const passthrough = process.argv.slice(2).filter((a) => /^--(passes|cadence|plants|reads)=/.test(a));
+  const passthrough = process.argv.slice(2).filter((a) => /^--(passes|cadence|plants|reads|concurrency)=/.test(a));
   const planted = `cc_${stamp}_planted`;
 
   console.log(`\n=== consistency eval: ${cluster} from snapshot ${base} → ${outDir} ===`);
