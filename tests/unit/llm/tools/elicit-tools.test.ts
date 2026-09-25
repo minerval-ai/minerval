@@ -19,6 +19,11 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: vi.fn(),
 }));
 
+const { mockMeterExternal } = vi.hoisted(() => ({ mockMeterExternal: vi.fn(async () => undefined) }));
+vi.mock("../../../../src/services/usage-service.js", () => ({
+  meterExternalUsage: mockMeterExternal,
+}));
+
 import {
   elicitConfigured,
   elicitEnabledForImportance,
@@ -34,6 +39,7 @@ const baseConfig = {
   elicitMcpUrl: "https://elicit.example/api/mcp",
   stewardElicitMinImportance: 0.75,
   stewardElicitMaxCallsPerRun: 3,
+  elicitUsdPerCall: 0.1,
 } as Config;
 
 const disabledConfig = { ...baseConfig, elicitApiKey: "" } as Config;
@@ -132,6 +138,22 @@ describe("executeElicitTool", () => {
       arguments: { query: "GLP-1 agonists for weight loss" },
     });
     expect(out).toBe('{"papers":[{"title":"A study"}]}');
+    // Every call that reached Elicit is metered at the configured per-call price.
+    expect(mockMeterExternal).toHaveBeenCalledWith({
+      provider: "elicit",
+      model: "elicit/search_papers",
+      units: 1,
+      unitKind: "call",
+      costMicroUsd: 100_000,
+    });
+  });
+
+  it("meters nothing for a call that never reached Elicit", async () => {
+    mockMeterExternal.mockClear();
+    await executeElicitTool("elicit_create_report", {}, baseConfig);
+    mockCallTool.mockRejectedValueOnce(new Error("down"));
+    await executeElicitTool("elicit_search_papers", { query: "x" }, baseConfig);
+    expect(mockMeterExternal).not.toHaveBeenCalled();
   });
 
   it("rejects tools outside the allowlist even with the prefix", async () => {
