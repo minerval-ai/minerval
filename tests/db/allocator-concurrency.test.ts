@@ -100,3 +100,47 @@ describe("runMandateAllocator", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("runMandateAllocator top-up of its own placement (#451)", () => {
+  it("replaces a short live placement with one covering row when the cost rose", async () => {
+    const funder = await seedUser("allocator-topup");
+    const { grantId } = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: 10 * OWL,
+      dailyBudgetMicroUsd: 1_000_000,
+    });
+    const claimId = await seedClaim("allocator-topup");
+    const group = `assess:${claimId}`;
+    const actionId = await seedAction({ group, costMicroUsd: 100_000, claimId });
+    await seedValuation({ grantId, actionId, valueEst: 5 });
+
+    // Yesterday's placement covered yesterday's estimate; the estimate has
+    // since risen to 140k.
+    await rawQuery(
+      `INSERT INTO action_allocations
+         (exclusion_group, claim_id, grant_id, amount_micro_usd, created_at)
+       VALUES ($1, $2, $3, 100000, now() - interval '2 days')`,
+      [group, claimId, grantId]
+    );
+    await rawQuery(
+      `UPDATE actions SET cost_est_micro_usd = 140000 WHERE id = $1`,
+      [actionId]
+    );
+
+    const result = await runMandateAllocator(grantId);
+    expect(result.allocated).toBe(1);
+    // New money is the increment; the live row carries the whole cost.
+    expect(result.allocatedMicroUsd).toBe(40_000);
+
+    const live = await rawQuery<{ amount_micro_usd: string }>(
+      `SELECT amount_micro_usd FROM action_allocations
+        WHERE grant_id = $1 AND released_at IS NULL`,
+      [grantId]
+    );
+    expect(live.map((r) => Number(r.amount_micro_usd))).toEqual([140_000]);
+
+    // Covered now, and a second pass leaves it alone.
+    const again = await runMandateAllocator(grantId);
+    expect(again.allocated).toBe(0);
+  });
+});

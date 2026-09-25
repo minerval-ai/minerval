@@ -378,8 +378,32 @@ export async function runMandateAllocator(
     if (dayRoom <= 0 || escrowRoom <= 0) break;
     // An upgrade only makes sense on top of a covered base.
     if (inc.isUpgrade && !baseCovered.has(inc.group)) continue;
-    if (inc.neededMicroUsd > dayRoom || inc.neededMicroUsd > escrowRoom) {
+    // This mandate's own live placement on the same (group, pin), if any.
+    // The live-placement index allows one, so a shortfall on a group it
+    // already backs (the cost estimate rose after it placed) cannot be a
+    // second row: the old placement is released and one row for the whole
+    // remaining cost replaces it. Without this the insert below hit ON
+    // CONFLICT DO NOTHING on every pass and the group stayed short forever
+    // (#451). The day is charged the full replacement, so a top-up never
+    // lets the rate overshoot; the escrow is charged only the increment.
+    const [own] = await tx.query<{ id: string; remaining: number }>(
+      `SELECT id, (amount_micro_usd - spent_micro_usd)::bigint AS remaining
+         FROM action_allocations
+        WHERE grant_id = $1 AND exclusion_group = $2
+          AND action_id IS NOT DISTINCT FROM $3
+          AND released_at IS NULL AND spent_micro_usd < amount_micro_usd`,
+      [grantId, inc.group, inc.actionId]
+    );
+    const ownRemaining = Number(own?.remaining ?? 0);
+    const amount = inc.neededMicroUsd + ownRemaining;
+    if (amount > dayRoom || inc.neededMicroUsd > escrowRoom) {
       continue;
+    }
+    if (own) {
+      await tx.query(
+        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        [own.id]
+      );
     }
     // ON CONFLICT backstop (uq_action_allocations_live_placement): even if
     // the advisory lock is bypassed, one mandate never holds two live
@@ -390,10 +414,10 @@ export async function runMandateAllocator(
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [inc.group, inc.actionId, inc.claimId, grantId, inc.neededMicroUsd]
+      [inc.group, inc.actionId, inc.claimId, grantId, amount]
     );
     if (placed.length === 0) continue;
-    dayRoom -= inc.neededMicroUsd;
+    dayRoom -= amount;
     escrowRoom -= inc.neededMicroUsd;
     result.allocated++;
     result.allocatedMicroUsd += inc.neededMicroUsd;
