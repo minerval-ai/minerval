@@ -248,6 +248,12 @@ export const STEWARD_CONTEXT_MAX_CHARS = 16000;
  * column, `structure_and_assess` outranks any re-trigger (the first pass
  * subsumes a re-assessment), otherwise the pending value is kept. Once the slot
  * is consumed (running/done/error), the next message starts a fresh context.
+ * A message for a claim that is mid-run does NOT flip it to 'pending' (#482):
+ * every lane treats 'pending' as free to claim, so that handed the claim to a
+ * second Steward while the first was still writing. The row stays 'running'
+ * with `steward_requeued` set, later messages coalesce into that slot as they
+ * would into a pending one, and the run's release (steward-lease.ts) turns it
+ * into 'pending' for the next pass.
  * The whole update is one statement, so concurrent enqueues cannot interleave.
  * Ordering is by the persisted `claims.importance` column, so the message
  * carries no importance of its own. Works identically in dev and prod — there
@@ -264,18 +270,26 @@ export async function enqueueSteward(
   // absorption #182 was built on but never measured). Still one statement:
   // concurrent enqueues serialize on the row lock and each sees the true
   // prior state.
-  const rows = await rawQuery<{ prev_state: string }>(
+  // "Queued" means pending, or running with a message already waiting: both
+  // are one open slot that new messages coalesce into.
+  const queued = `(steward_state = 'pending'
+                   OR (steward_state = 'running' AND steward_requeued))`;
+  const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean }>(
     `UPDATE claims
-        SET steward_state = 'pending',
+        SET steward_state = CASE
+              WHEN steward_state = 'running' THEN 'running'
+              ELSE 'pending'
+            END,
+            steward_requeued = (steward_state = 'running'),
             steward_trigger = CASE
-              WHEN steward_state = 'pending'
+              WHEN ${queued}
                    AND (steward_trigger = 'structure_and_assess'
                         OR $2 <> 'structure_and_assess')
                 THEN COALESCE(steward_trigger, $2)
               ELSE $2
             END,
             steward_context = CASE
-              WHEN steward_state = 'pending' AND COALESCE(steward_context, '') <> ''
+              WHEN ${queued} AND COALESCE(steward_context, '') <> ''
                 THEN CASE
                   WHEN length(steward_context || E'\\n\\n' || $3) > ${STEWARD_CONTEXT_MAX_CHARS}
                     THEN '[earlier context truncated]' || E'\\n'
@@ -285,11 +299,13 @@ export async function enqueueSteward(
               ELSE $3
             END,
             updated_at = now()
-       FROM (SELECT id, steward_state AS prev_state
+       FROM (SELECT id, steward_state AS prev_state,
+                    steward_requeued AS prev_requeued
                FROM claims WHERE id = $1 FOR UPDATE) prev
       WHERE claims.id = prev.id
         AND state = 'active'
-      RETURNING prev.prev_state AS prev_state`,
+      RETURNING prev.prev_state AS prev_state,
+                prev.prev_requeued AS prev_requeued`,
     [message.claimId, message.trigger, chunk]
   );
 
@@ -300,7 +316,9 @@ export async function enqueueSteward(
       queue: "steward",
       trigger: message.trigger,
       claimId: message.claimId,
-      coalesced: rows[0]!.prev_state === "pending",
+      coalesced:
+        rows[0]!.prev_state === "pending" ||
+        (rows[0]!.prev_state === "running" && rows[0]!.prev_requeued),
     });
   }
 

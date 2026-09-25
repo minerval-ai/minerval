@@ -20,6 +20,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
+import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -118,7 +119,8 @@ async function claimNextTarget(
         FOR UPDATE OF c SKIP LOCKED
      )
      UPDATE claims c
-        SET steward_state = 'running', stewarded_at = now()
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
        FROM target
       WHERE c.id = target.id
       RETURNING c.id, target.prior_state, c.decomposition_status,
@@ -230,15 +232,14 @@ export async function processNextBudgetJobTask(
     ".";
 
   try {
-    await runWithUsageContext({ userId: job.user_id, jobId: job.id }, () =>
-      runClaimSteward({ trigger, claimId: target.id, context, model })
+    await withStewardLease({ claimId: target.id }, () =>
+      runWithUsageContext({ userId: job.user_id, jobId: job.id }, () =>
+        runClaimSteward({ trigger, claimId: target.id, context, model })
+      )
     );
     await rawQuery(
       `UPDATE claims
-          SET steward_state = CASE
-                WHEN steward_state = 'running' THEN 'done'
-                ELSE steward_state
-              END,
+          SET ${stewardReleaseSet("'done'")},
               steward_error = NULL, steward_attempts = 0
         WHERE id = $1`,
       [target.id]
@@ -263,10 +264,7 @@ export async function processNextBudgetJobTask(
     // Put the target back exactly as found; classify like the other lanes.
     await rawQuery(
       `UPDATE claims
-          SET steward_state = CASE
-                WHEN steward_state = 'running' THEN $2
-                ELSE steward_state
-              END,
+          SET ${stewardReleaseSet("$2")},
               updated_at = now()
         WHERE id = $1`,
       [target.id, target.prior_state]

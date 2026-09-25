@@ -62,10 +62,11 @@ describe("enqueueSteward (#182 pending-slot append)", () => {
 
   it("appends to an already-pending slot instead of clobbering it", async () => {
     const sql = await call();
-    // Append only while the earlier message is still undelivered (pending with
+    // Append only while the earlier message is still undelivered (pending, or
+    // running with a message already queued behind the run, #482, and a
     // non-empty context); a consumed slot (running/done/error) starts fresh.
     expect(sql).toMatch(
-      /WHEN steward_state = 'pending' AND COALESCE\(steward_context, ''\) <> ''/
+      /WHEN \(steward_state = 'pending'\s+OR \(steward_state = 'running' AND steward_requeued\)\) AND COALESCE\(steward_context, ''\) <> ''/
     );
     expect(sql).toContain("steward_context || E'\\n\\n' || $3");
     expect(sql).toMatch(/ELSE \$3/);

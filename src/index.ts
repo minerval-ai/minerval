@@ -24,6 +24,7 @@ import { handleContributionMessage } from "./workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { handleCuratorMessage } from "./workers/curator-pipeline.js";
 import { handleAuditMessage } from "./workers/audit-pipeline.js";
+import { abandonStewardLeases } from "./services/steward-lease.js";
 import type {
   ClaimPipelineMessage,
   UrlExtractionMessage,
@@ -169,11 +170,24 @@ async function main() {
   // High-water-marked in platform_flags, so every task may run it.
   pollers.push(startLookoutTriggers({ logger }));
 
-  // Graceful shutdown
+  // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
+  // close gets a bounded wait; then any Steward run still in flight hands
+  // its claim back (#482) as the last DB write before exit, so the next
+  // task picks it up now rather than after the lease runs out.
   const shutdown = async () => {
     app.log.info("Shutting down...");
     for (const poller of pollers) poller.stop();
-    await app.close();
+    await Promise.race([
+      app.close(),
+      new Promise((r) => setTimeout(r, 20_000).unref()),
+    ]);
+    const abandoned = await abandonStewardLeases().catch((err) => {
+      app.log.error(err, "Releasing in-flight Steward claims failed");
+      return 0;
+    });
+    if (abandoned > 0) {
+      app.log.info(`Handed back ${abandoned} in-flight Steward claim(s)`);
+    }
     await closeDb();
     process.exit(0);
   };
