@@ -8,16 +8,19 @@
  * One experiment, every arm from the same planted snapshot:
  *
  *  1. PLANT. Starting from a drained graph (`--base`, a corpus:snapshot),
- *     plant known incoherences (`--plants=N`, default 4, alternating kinds):
- *       - flipped_premise: a child the parent rests on (requires/supports)
- *         gets a new assessment reversing its verdict, and the parent is
- *         not told: the parent's reasoning now stands on a premise the
- *         graph no longer holds.
- *       - overconfident_parent: a parent with a contested or weak
- *         `requires` child gets a new assessment at verified / 0.97 over
- *         its old reasoning, which still says the question is open.
+ *     plant known incoherences (`--plants=N`, default 4, alternating kinds),
+ *     each written by the Steward's own model in the style of the trace it
+ *     replaces and stamped like a Steward's pass, so the checker has to find
+ *     the incoherence, not the plant's fingerprints:
+ *       - flipped_premise: a claim a parent rests on (requires/supports),
+ *         assessed as holding, gets a plausible but wrong reversal. The
+ *         parent still stands on it; the neighbors recording its evidence
+ *         still say otherwise. A flag on the child or the parent catches it.
+ *       - ignored_counterevidence: a parent with a recorded 'contradicts'
+ *         consideration gets reasoning that never engages it, at a higher
+ *         credence. A flag on the parent catches it.
  *     Planted claims are the recall set; everything else a sweep flags is
- *     read for precision (flags.md).
+ *     read for precision (the flags in summary.md).
  *  2. ARMS. Each arm restores the planted snapshot, seeds a General mandate
  *     with the same daily budget (`--passes=N` standard Steward passes'
  *     worth), enqueues the same cadence candidates (the formula's top
@@ -53,7 +56,7 @@ import { loadConfig } from "../../src/config.js";
 type ArmName = "formula" | "checker";
 
 interface Plant {
-  kind: "flipped_premise" | "overconfident_parent";
+  kind: "flipped_premise" | "ignored_counterevidence";
   /** The claim a correct flag names as primary. */
   expectedPrimary: string;
   /** Also a correct primary, when the flag names expectedPrimary among its claims. */
@@ -98,9 +101,9 @@ async function currentAssessment(claimId: string): Promise<AssessmentSnap | null
     : null;
 }
 
+/** A flag catches a plant when its primary is the defective assessment (or, for a flip, the parent standing on it). */
 function detects(flag: { primary_claim_id: string; claim_ids: string[] }, plant: Plant): boolean {
-  if (flag.primary_claim_id === plant.expectedPrimary) return true;
-  return plant.alsoPrimary.includes(flag.primary_claim_id) && flag.claim_ids.includes(plant.expectedPrimary);
+  return flag.primary_claim_id === plant.expectedPrimary || plant.alsoPrimary.includes(flag.primary_claim_id);
 }
 
 interface DryRead {
@@ -147,15 +150,52 @@ function readStats(read: DryRead, plants: Plant[]) {
 // plant (child)
 // ---------------------------------------------------------------------------
 
-const FLIPPED_TRACE =
-  "Re-examined. The evidence previously cited for this claim does not establish it: " +
-  "the sources that assert it do so without independent support, and the strongest " +
-  "available evidence points the other way. On the record as it now stands the claim " +
-  "is not supported, and its negation is the better-supported reading.";
+interface WrittenAssessment {
+  summary: string;
+  reasoning: string;
+}
+
+const WRITTEN_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string", description: "One or two sentences, as the assessment's summary." },
+    reasoning: { type: "string", description: "The full reasoning trace, in the style of the original." },
+  },
+  required: ["summary", "reasoning"],
+};
+
+/**
+ * A planted assessment has to read like a Steward's, or the checker finds
+ * the plant by its fingerprints (a template trace, a model named 'plant',
+ * one shared timestamp) rather than by the incoherence. So the Steward's
+ * own model writes it, in the style of the trace it replaces.
+ */
+async function writePlantedAssessment(instruction: string, claimText: string, oldTrace: string): Promise<WrittenAssessment> {
+  const { completeStructured } = await import("../../src/llm/client.js");
+  return completeStructured<WrittenAssessment>({
+    model: loadConfig().stewardModel,
+    schema: WRITTEN_SCHEMA,
+    schemaName: "PlantedAssessment",
+    maxTokens: 6000,
+    messages: [{
+      role: "user",
+      content:
+        `You are generating a test fixture for an evaluation of a consistency checker. ` +
+        `Write a replacement assessment for the claim below, in the same voice, structure and ` +
+        `length as the existing reasoning trace, so that it is indistinguishable in style from ` +
+        `the original.\n\n${instruction}\n\nDo not mention that this is a test, a revision, ` +
+        `or a re-examination.\n\nCLAIM: ${claimText}\n\nEXISTING REASONING:\n${oldTrace.slice(0, 6000)}`,
+    }],
+  });
+}
 
 async function plant(n: number, outDir: string): Promise<void> {
+  const config = loadConfig();
   const plants: Plant[] = [];
   const used = new Set<string>();
+  // flipped_premise: a claim a parent rests on (requires/supports), assessed
+  // as holding, gets a plausible but wrong reversal. The parent still stands
+  // on it, and the neighbors that record the evidence still say otherwise.
   const flips = await rawQuery<{
     parent: string; child: string; p_text: string; c_text: string;
   }>(
@@ -170,7 +210,9 @@ async function plant(n: number, outDir: string): Promise<void> {
         AND pa.status IN ('supported', 'verified', 'contested')
       ORDER BY p.importance DESC, r.relation_type = 'requires' DESC, c.importance DESC`
   );
-  const overconfident = await rawQuery<{
+  // ignored_counterevidence: a parent with a recorded, credible 'contradicts'
+  // consideration gets reasoning that never engages it, at a higher credence.
+  const ignored = await rawQuery<{
     parent: string; child: string; p_text: string; c_text: string;
   }>(
     `SELECT r.parent_claim_id AS parent, r.child_claim_id AS child, p.text AS p_text, c.text AS c_text
@@ -179,62 +221,100 @@ async function plant(n: number, outDir: string): Promise<void> {
        JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
        JOIN assessments pa ON pa.claim_id = p.id AND pa.is_current
        JOIN assessments ca ON ca.claim_id = c.id AND ca.is_current
-      WHERE r.relation_type = 'requires'
-        AND pa.status IN ('contested', 'supported', 'unsupported')
-        AND (ca.status IN ('contested', 'unsupported') OR COALESCE(ca.claim_credence, 1) <= 0.6)
-      ORDER BY p.importance DESC`
+      WHERE r.relation_type = 'contradicts'
+        AND ca.status IN ('supported', 'verified', 'contested')
+        AND pa.status IN ('supported', 'contested', 'unsupported')
+      ORDER BY p.importance DESC, c.importance DESC`
   );
-  let fi = 0;
-  let oi = 0;
+  const pools = { flipped_premise: flips, ignored_counterevidence: ignored };
+  const cursor = { flipped_premise: 0, ignored_counterevidence: 0 };
   for (let k = 0; plants.length < n; k++) {
-    const wantFlip = k % 2 === 0;
-    const pool = wantFlip ? flips : overconfident;
+    const kind: Plant["kind"] = k % 2 === 0 ? "flipped_premise" : "ignored_counterevidence";
+    const pool = pools[kind];
     let pick: (typeof flips)[number] | undefined;
-    while (wantFlip ? fi < pool.length : oi < pool.length) {
-      const cand = pool[wantFlip ? fi++ : oi++]!;
+    while (cursor[kind] < pool.length) {
+      const cand = pool[cursor[kind]++]!;
       if (!used.has(cand.parent) && !used.has(cand.child)) {
         pick = cand;
         break;
       }
     }
     if (!pick) {
-      if (fi >= flips.length && oi >= overconfident.length) break;
+      if (cursor.flipped_premise >= flips.length && cursor.ignored_counterevidence >= ignored.length) break;
       continue;
     }
     used.add(pick.parent);
     used.add(pick.child);
     const parentBefore = (await currentAssessment(pick.parent))!;
     const childBefore = (await currentAssessment(pick.child))!;
-    const target = wantFlip ? pick.child : pick.parent;
-    const [old] = await rawQuery<{ reasoning_trace: string; summary: string | null; confidence: number }>(
-      `SELECT reasoning_trace, summary, confidence FROM assessments WHERE claim_id = $1 AND is_current`,
+    const target = kind === "flipped_premise" ? pick.child : pick.parent;
+    const [old] = await rawQuery<{ reasoning_trace: string; summary: string | null; claim_credence: number | null; assessed_at: Date }>(
+      `SELECT reasoning_trace, summary, claim_credence, assessed_at FROM assessments WHERE claim_id = $1 AND is_current`,
       [target]
     );
+    const written =
+      kind === "flipped_premise"
+        ? await writePlantedAssessment(
+            `The new assessment concludes the claim is CONTRADICTED (the evidence, properly read, ` +
+              `points against it). Argue it the way a careful but mistaken assessor might: ` +
+              `reinterpret the key evidence, lean on a real-sounding methodological objection, and ` +
+              `reach a confident negative verdict.`,
+            pick.c_text,
+            old?.reasoning_trace ?? ""
+          )
+        : await writePlantedAssessment(
+            `The new assessment reaches a MORE CONFIDENT verdict in favor of the claim than the ` +
+              `existing one, and never mentions or engages this consideration against it, which ` +
+              `must be absent from the reasoning: "${pick.c_text}". Keep everything else that ` +
+              `supports the claim.`,
+            pick.p_text,
+            old?.reasoning_trace ?? ""
+          );
+    const values =
+      kind === "flipped_premise"
+        ? { status: "contradicted", credence: 0.15, trigger: "staleness_check" }
+        : {
+            status: "supported",
+            credence: Math.min(0.95, Math.max(0.8, (old?.claim_credence ?? 0.6) + 0.25)),
+            trigger: "subclaim_change",
+          };
     await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1`, [target]);
+    // A plausible moment: after the assessment it replaces, before now,
+    // staggered so the plants do not share a timestamp.
     const [ins] = await rawQuery<{ id: string }>(
       `INSERT INTO assessments
          (claim_id, status, confidence, claim_credence, summary, reasoning_trace,
           is_current, assessed_at, model, trigger, marginal_yield)
-       VALUES ($1, $2, $3, $4, $5, $6, true, now(), 'plant', 'plant', 0.1)
+       VALUES ($1, $2, 0.75, $3, $4, $5, true,
+               GREATEST($6::timestamptz + interval '5 minutes', now() - make_interval(mins => $7)),
+               $8, $9, 0.2)
        RETURNING id`,
-      wantFlip
-        ? [target, "contradicted", 0.7, 0.1, "Re-examined: not supported; the evidence points the other way.", FLIPPED_TRACE]
-        : [target, "verified", 0.9, 0.97, old?.summary ?? null, old?.reasoning_trace ?? ""]
+      [
+        target,
+        values.status,
+        values.credence,
+        written.summary,
+        written.reasoning,
+        old!.assessed_at,
+        10 + plants.length * 17,
+        config.stewardModel,
+        values.trigger,
+      ]
     );
     plants.push({
-      kind: wantFlip ? "flipped_premise" : "overconfident_parent",
-      // A flipped premise leaves the PARENT standing on a premise the graph
-      // no longer holds; a flag on the thinly reassessed child naming the
-      // parent is as good a catch. An overconfident parent is its own defect.
-      expectedPrimary: pick.parent,
-      alsoPrimary: wantFlip ? [pick.child] : [],
+      kind,
+      // flipped_premise: the reversed child IS the bad assessment, and the
+      // parent now stands on a premise the graph no longer holds; a flag on
+      // either is a catch. ignored_counterevidence: the parent is the defect.
+      expectedPrimary: kind === "flipped_premise" ? pick.child : pick.parent,
+      alsoPrimary: kind === "flipped_premise" ? [pick.parent] : [],
       claims: [pick.parent, pick.child],
       parentText: pick.p_text,
       childText: pick.c_text,
       plantedAssessmentId: ins!.id,
       before: { parent: parentBefore, child: childBefore },
     });
-    console.log(`  planted ${plants[plants.length - 1]!.kind}: ${pick.p_text.slice(0, 70)}`);
+    console.log(`  planted ${kind}: ${(kind === "flipped_premise" ? pick.c_text : pick.p_text).slice(0, 80)}`);
   }
   writeFileSync(join(outDir, "plants.json"), JSON.stringify(plants, null, 2));
   const baseline = await dryRunRead("planted, before any arm");
@@ -423,7 +503,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
       kind: p.kind,
       parent: p.parentText.slice(0, 160),
       flagged: flags.some((f) => detects(f, p)),
-      parentReassessed: parentNow?.id !== (p.kind === "overconfident_parent" ? p.plantedAssessmentId : p.before.parent.id),
+      parentReassessed: parentNow?.id !== (p.kind === "ignored_counterevidence" ? p.plantedAssessmentId : p.before.parent.id),
       childReassessed: childNow?.id !== (p.kind === "flipped_premise" ? p.plantedAssessmentId : p.before.child.id),
       before: p.before,
       now: { parent: parentNow, child: childNow },
