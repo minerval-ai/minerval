@@ -494,10 +494,8 @@ const configSchema = z.object({
   elicitApiKey: z.string().default(""),
   elicitMcpUrl: z.string().default("https://elicit.com/api/mcp"),
   // What one Elicit search costs, in USD, metered per call so the caller's
-  // ceiling and the daily caps see it. The default is a conservative
-  // placeholder, not Elicit's published rate: set it to the deployment's
-  // contracted price.
-  elicitUsdPerCall: z.coerce.number().min(0).default(0.1),
+  // ceiling and the daily caps see it.
+  elicitUsdPerCall: z.coerce.number().min(0).default(2),
   // Importance gate (§19): only claims at or above this importance get the
   // Elicit tools in their Steward run's toolset. Default 0.75 sits between
   // the constitution's Major (≈0.6) and Central (≈0.9) anchors — Elicit is

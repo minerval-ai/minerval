@@ -176,6 +176,8 @@ export interface ResearcherTaskInput {
   maxTurns: number;
   /** The per-run cap on Elicit calls, when Elicit is in the toolset. */
   elicitMaxCalls: number;
+  /** What one Elicit call costs, in USD. */
+  elicitUsdPerCall: number;
   toolNames: string[];
   /** Whether the code-execution sandbox is in the toolset (Anthropic models only). */
   sandbox: boolean;
@@ -247,7 +249,9 @@ export function budgetGuide(input: ResearcherTaskInput): string {
   if (has("read_page")) costs.push("read_page has no fee, but the page (up to about 3,000 tokens) stays in the conversation");
   if (has("code_execution")) costs.push(`code_execution is billed at $${CODE_EXECUTION_USD_PER_HOUR.toFixed(2)} per container-hour, small next to tokens`);
   if (input.toolNames.some((n) => n.startsWith("elicit_"))) {
-    costs.push(`the elicit_ searches carry a per-call fee and are capped at ${input.elicitMaxCalls} calls this run`);
+    costs.push(
+      `each elicit_ search costs $${input.elicitUsdPerCall.toFixed(2)}, and they are capped at ${input.elicitMaxCalls} calls this run`
+    );
   }
   if (costs.length > 0) {
     lines.push(`Tool costs beyond tokens: ${costs.join("; ")}. The graph reads and the notebook cost only their tokens.`);

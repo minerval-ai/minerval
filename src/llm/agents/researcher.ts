@@ -310,6 +310,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     estimate: null,
     maxTurns,
     elicitMaxCalls: config.researcherElicitMaxCalls,
+    elicitUsdPerCall: config.elicitUsdPerCall,
     toolNames,
     sandbox,
     notebook,
