@@ -67,6 +67,12 @@ export const CONSISTENCY_BOUNDS = {
   maxClaims: 8,
   /** A running sweep older than this is treated as abandoned. */
   reclaimHours: 2,
+  /**
+   * A partition swept more recently than this is not due, however much in
+   * it changed: the passes a sweep's own flags buy land one by one, and the
+   * next sweep should read their outcome together, not chase each.
+   */
+  resweepHours: 24,
 } as const;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -189,8 +195,9 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
  * The partitions due a sweep, most due first: never-swept partitions,
  * then the most assessments written since the last sweep, then the most
  * importance. A partition where nothing was re-assessed since its last
- * sweep is not due (the sweep would read what it already read), nor is
- * one with a sweep still running (younger than the reclaim window).
+ * sweep is not due (the sweep would read what it already read), nor is one
+ * swept within CONSISTENCY_BOUNDS.resweepHours, nor one with a sweep still
+ * running (younger than the reclaim window).
  */
 export async function duePartitions(minTagClaims: number): Promise<SweepPartition[]> {
   const [partitions, running] = await Promise.all([
@@ -206,7 +213,12 @@ export async function duePartitions(minTagClaims: number): Promise<SweepPartitio
     running.some((r) => r.partition === p.partition && r.tag_id === p.tag_id);
   const due = partitions
     .filter((p) => p.claims > 0 && !busy(p))
-    .filter((p) => p.last_swept_at === null || p.changed_since > 0)
+    .filter(
+      (p) =>
+        p.last_swept_at === null ||
+        (p.changed_since > 0 &&
+          Date.now() - new Date(p.last_swept_at).getTime() >= CONSISTENCY_BOUNDS.resweepHours * 3_600_000)
+    )
     .sort((a, b) => {
       const neverA = a.last_swept_at === null ? 1 : 0;
       const neverB = b.last_swept_at === null ? 1 : 0;
@@ -316,25 +328,6 @@ export async function finishSweep(input: {
       input.error ? input.error.slice(0, 2_000) : null,
     ]
   );
-}
-
-/** Sweeps started at or after `since` (the per-period guard across tasks). */
-export async function sweepsStartedSince(since: Date): Promise<number> {
-  const [row] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM consistency_sweeps WHERE started_at >= $1`,
-    [since.toISOString()]
-  );
-  return Number(row?.n ?? 0);
-}
-
-/** Sweeps started since the start of the current UTC day (the daily cap). */
-export async function sweepsStartedToday(now: Date = new Date()): Promise<number> {
-  const [row] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM consistency_sweeps
-      WHERE started_at >= date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [now.toISOString()]
-  );
-  return Number(row?.n ?? 0);
 }
 
 /** Close sweeps left running past the reclaim window (a crashed process). */

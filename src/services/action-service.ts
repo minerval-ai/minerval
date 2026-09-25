@@ -24,7 +24,7 @@ import { loadConfig } from "../config.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
-import { duePartitions, partitionRef } from "./consistency-service.js";
+import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
 
 export type ActionKind =
   | "assess"
@@ -361,6 +361,9 @@ async function reconcileConsistencySweeps(): Promise<void> {
     );
     return;
   }
+  // A sweep whose process died leaves its row 'running'; close it so the
+  // coverage record reads true and the partition can be due again.
+  await reclaimAbandonedSweeps();
   const due = (await duePartitions(config.consistencyMinTagClaims)).slice(0, cap);
   const cost = capMicroUsd("consistency_sweep");
   for (const p of due) {

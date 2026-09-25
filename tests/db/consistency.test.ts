@@ -207,7 +207,7 @@ describe("partitions and sweeps (#330)", () => {
     expect(partitions.some((p) => p.partition === "residual")).toBe(true);
   });
 
-  it("is due until swept, then again only once something in it is re-assessed", async () => {
+  it("is due until swept, then again once something in it changed and the re-sweep interval passed", async () => {
     const isDue = async () => (await duePartitions(3)).some((p) => p.tagId === tagA);
     expect(await isDue()).toBe(true);
     const sweepId = await startSweep({ partition: "tag", tagId: tagA, label: "a" });
@@ -216,6 +216,10 @@ describe("partitions and sweeps (#330)", () => {
     await finishSweep({ sweepId, status: "done", claimsInScope: 3, flagsRaised: 0, note: "read all three" });
     expect(await isDue()).toBe(false);
     await assess(claimsA[2]!, { status: "contested", when: new Date(Date.now() + 1_000) });
+    // Changed, but swept moments ago: not yet.
+    expect(await isDue()).toBe(false);
+    await rawQuery(`UPDATE consistency_sweeps SET started_at = now() - interval '25 hours' WHERE id = $1`, [sweepId]);
+    await rawQuery(`UPDATE assessments SET assessed_at = now() WHERE claim_id = $1 AND is_current`, [claimsA[2]]);
     expect(await isDue()).toBe(true);
   });
 
