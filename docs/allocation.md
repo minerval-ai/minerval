@@ -234,6 +234,60 @@ margin sitting in the owl's purchase price, losing on the occasional
 expensive run of a public good is fine. Fixed prices anywhere would
 distort the very agents that must reason in value over cost.
 
+## Consistency sweeps: reading assessments against each other
+
+Each Steward reads its own claim, its subclaims and its evidence; nobody
+reads the neighbors' reasoning against each other. §21 asks for sweeps
+that do, and the **Consistency Checker** is that sweep
+(llm/agents/consistency-checker.ts, services/consistency-service.ts,
+issue #330). Flatly opposed verdicts are rare and easy; what it looks for
+lives in the reasoning: two assessments that read the same evidence in
+incompatible ways, one that treats as settled what another argues is
+doubtful, one that never weighs evidence the graph records beside it, a
+verdict that is not a defensible function of what it rests on, an
+assessment resting on a neighbor's verdict that has since changed. There
+is no mechanical pre-filter: finding these takes reading.
+
+**Partitions.** A sweep reads one region of the graph: a topic tag
+carrying at least `CONSISTENCY_MIN_TAG_CLAIMS` live claims, or the
+residual bucket of claims no such tag covers. It lists the partition's
+assessed claims (those re-assessed since its last sweep first, where new
+incoherence comes from), reads them side by side (`compare_assessments`:
+verdicts, the head of each trace, every edge and link among them), and
+searches the rest of the graph for evidence a Steward never saw. Its note
+closes the sweep and briefs the next sweep of the same partition: the
+checker's memory is per region.
+
+**Sweeps are ledger actions.** A partition is due when it has never been
+swept or something in it was re-assessed since its last sweep; the
+reconcile sweep opens a `consistency_sweep` row
+(`consistency:<tag_id|residual>`) for the most due partitions, and the
+General mandate funds them from its escrow and its daily rate like a
+review pass, at most `CONSISTENCY_MAX_SWEEPS_PER_DAY` across all
+partitions (0, the default, is off), each capped at
+`CAP_CONSISTENCY_SWEEP_OWLS`. Thinking about the work competes with the
+work: a day's sweeps come out of the same rate as the passes they ask for.
+
+**A flag is information, not money.** `flag_inconsistency` names a
+primary claim (the one whose assessment looks wrong: its Steward can
+revise only its own verdict), every claim in the tension, a rationale,
+and an **expected gain**: the checker's estimate (0–1) that a fresh pass
+would change the verdict or its reasoning materially. The primary's
+Steward is enqueued with trigger `consistency_flag` and the tension as
+context, which opens its assess group on the ledger, and while that group
+is open the flag's expected gain enters the formula's
+expected-quality-gain term beside the Steward's own marginal-yield
+estimate and staleness (below). So the formula prices a flagged pass the
+way it prices every pass, importance and contestation included, and the
+allocator decides whether it runs. The checker writes no valuation, no
+verdict, no edge and no importance; a second flag on a primary whose pass
+is still waiting is a repeat, folded into the first.
+
+**Precision is on the record,** as a lookout's is: each flag snapshots the
+primary's assessment, and `GET /consistency` shows the partitions and
+their coverage, recent sweeps with their notes, every flag with whether
+its pass ran and whether it moved the verdict or credence.
+
 ## How money reaches actions
 
 1. **Full funding (paid orders).** A user buys an assessment outright; it
@@ -268,7 +322,10 @@ distort the very agents that must reason in value over cost.
           × (floor + (1 − floor)×contestation)
           × expected quality gain            (marginal_yield; 1.0 when
                                               unassessed; revived by
-                                              staleness over 90 days)
+                                              staleness over 90 days;
+                                              raised by an open
+                                              consistency flag's
+                                              expected gain)
           + 0.15 if user-proposed            (provenance, #284)
 
 The multiplicative core is the essay's heuristic for the marginal value of
@@ -580,12 +637,16 @@ and legitimate — but the unit economics must stay visible
 4. Every allocation number (caps, estimates, budgets, spend) is
    inspectable by anyone.
 5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
-   sizes, per-run caps, lookout runs per day and flags per run — no
+   sizes, per-run caps, lookout runs per day and flags per run,
+   consistency sweeps per day and flags per sweep — no
    mechanism may cascade the candidate set.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
 6a. A lookout raises candidates, never conclusions: it writes no
     assessment, sets no importance, moves no money, and its flags carry
     at most the value its Grantmaker delegated.
+6b. The Consistency Checker raises candidates, never conclusions: it
+    writes no assessment and no valuation; its flag's only say in
+    allocation is an expected gain the formula weighs like any other.
 7. A bounty is not an allocation: it funds nothing, enters no valuation,
    and reduces nothing that remains to be covered.
 8. Prize money never enters a valuation, an importance, an assessment, or

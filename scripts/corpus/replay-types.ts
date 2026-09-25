@@ -43,6 +43,7 @@ export type ReplayAgent =
   | "dispute_arbitrator"
   | "audit"
   | "lookout"
+  | "consistency_checker"
   | "grantmaker"
   | "judge"
   | "redteam"      // the adversarial attacker (S4 cell 2)

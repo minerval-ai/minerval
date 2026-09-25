@@ -23,6 +23,7 @@ export type ReplayAgent =
   | "dispute_arbitrator"
   | "audit"
   | "lookout"
+  | "consistency_checker"
   | "grantmaker"
   | "judge"
   | "redteam"
