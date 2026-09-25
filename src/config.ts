@@ -788,6 +788,29 @@ const configSchema = z.object({
   // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
+  // The Consistency Checker (#330; docs/allocation.md, "Consistency
+  // sweeps"): reads the coherence pre-filter's shortlist for one partition
+  // of the graph and judges which tensions are real. Like the Lookout it
+  // raises candidates, never conclusions (the flagged claim's Steward
+  // verifies and decides), so it runs on the cheap tier.
+  consistencyModel: modelId(OPENROUTER_MODELS.flash),
+  // How often the consistency scheduler starts a sweep (hours; 0, the
+  // default, = off: the pre-filter stays readable at GET /coherence).
+  consistencySweepIntervalHours: z.coerce.number().min(0).default(0),
+  // Most sweeps started per UTC day, whatever the interval.
+  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(6),
+  // Most pre-filter candidates one sweep is shown (most important first).
+  consistencyMaxCandidatesPerSweep: z.coerce.number().int().min(1).default(40),
+  // Most flags one sweep may raise: flag materially, not exhaustively.
+  consistencyMaxFlagsPerSweep: z.coerce.number().int().min(0).default(5),
+  // A tag is a sweep partition only when it carries at least this many live
+  // claims; every claim no such tag covers falls in the residual bucket.
+  consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
+  // The ceiling on the value a consistency flag writes on the General
+  // mandate's ledger (0–10, the Lookout's default ceiling). The mandate's
+  // formula refresh honors it while the flagged action stays open; its
+  // allocator decides whether it buys a pass.
+  consistencyFlagMaxValue: z.coerce.number().min(0).max(10).default(6),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
@@ -1066,6 +1089,13 @@ export function loadConfig(): Config {
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
+    consistencyModel: process.env.CONSISTENCY_MODEL,
+    consistencySweepIntervalHours: process.env.CONSISTENCY_SWEEP_INTERVAL_HOURS,
+    consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
+    consistencyMaxCandidatesPerSweep: process.env.CONSISTENCY_MAX_CANDIDATES_PER_SWEEP,
+    consistencyMaxFlagsPerSweep: process.env.CONSISTENCY_MAX_FLAGS_PER_SWEEP,
+    consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
+    consistencyFlagMaxValue: process.env.CONSISTENCY_FLAG_MAX_VALUE,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,

@@ -2026,6 +2026,146 @@ export const lookoutFlags = pgTable(
 export type LookoutFlag = typeof lookoutFlags.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// consistency_sweeps
+//
+// One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
+// sweeps"): a partition of the graph (a tag, or the residual bucket of
+// claims no sweepable tag covers) read through the coherence pre-filter and
+// judged by the agent. The row is the coverage record the scheduler reads
+// ("tag X last swept at T") and the sweep's outcome counts.
+// ---------------------------------------------------------------------------
+export const consistencySweeps = pgTable(
+  "consistency_sweeps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Null for the residual bucket (or a whole-graph sweep).
+    tagId: uuid("tag_id").references(() => tags.id, { onDelete: "set null" }),
+    // 'tag' | 'residual' | 'graph': what the sweep covered.
+    partition: text("partition").notNull(),
+    // running | done | error
+    status: text("status").notNull().default("running"),
+    // agent_runs.id of the checker's run (no FK: traces are pruned).
+    runId: uuid("run_id"),
+    candidatesFound: integer("candidates_found").notNull().default(0),
+    flagsRaised: integer("flags_raised").notNull().default(0),
+    dismissed: integer("dismissed").notNull().default(0),
+    note: text("note"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_consistency_sweeps_tag").on(table.tagId, table.startedAt),
+    index("idx_consistency_sweeps_started").on(table.startedAt),
+    check(
+      "ck_consistency_sweeps_partition",
+      sql`${table.partition} IN ('tag', 'residual', 'graph')`
+    ),
+    check(
+      "ck_consistency_sweeps_status",
+      sql`${table.status} IN ('running', 'done', 'error')`
+    ),
+  ]
+);
+
+export type ConsistencySweep = typeof consistencySweeps.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// consistency_flags
+//
+// A place where assessments along the graph's edges cannot all stand, as
+// judged by the Consistency Checker: one row per flag, naming the PRIMARY
+// claim (the one whose Steward reconciles) and every claim in the tension.
+// Like lookout_flags, a flag is a candidate on the ledger, never a
+// conclusion: it enqueues the primary's Steward and values its standard
+// assess action on the mandate named here, and the value it wrote is
+// honored by that mandate's formula refresh while the action stays open.
+// The assessment at flag time is snapshotted so precision ("did the pass
+// move anything?") is a query.
+// ---------------------------------------------------------------------------
+export const consistencyFlags = pgTable(
+  "consistency_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sweepId: uuid("sweep_id").references(() => consistencySweeps.id, {
+      onDelete: "set null",
+    }),
+    // A coherence kind (coherence-service.ts) or 'other' for a tension the
+    // pre-filter cannot see.
+    kind: text("kind").notNull(),
+    primaryClaimId: uuid("primary_claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // Every claim in the tension, primary first.
+    claimIds: uuid("claim_ids").array().notNull(),
+    // The mandate the flag valued on (the General mandate), and its row.
+    grantId: uuid("grant_id").references(() => grants.id, {
+      onDelete: "set null",
+    }),
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    rationale: text("rationale").notNull(),
+    // The checker's urgency 0–10, before the ceiling.
+    urgency: real("urgency"),
+    // The value actually written, after the ceiling.
+    valueWritten: real("value_written"),
+    statusAtFlag: text("status_at_flag"),
+    credenceAtFlag: real("credence_at_flag"),
+    assessmentIdAtFlag: uuid("assessment_id_at_flag"),
+    repeats: integer("repeats").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_consistency_flags_primary").on(table.primaryClaimId, table.createdAt),
+    index("idx_consistency_flags_action").on(table.actionId),
+    index("idx_consistency_flags_sweep").on(table.sweepId),
+  ]
+);
+
+export type ConsistencyFlag = typeof consistencyFlags.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// consistency_dismissals
+//
+// A candidate the checker read and judged jointly tenable (the traces
+// already weigh the tension, or the edge does not carry the commitment the
+// rule assumes). The pair is suppressed from later sweeps while every
+// assessment it was judged on is still current: a new assessment on either
+// side reopens it.
+// ---------------------------------------------------------------------------
+export const consistencyDismissals = pgTable(
+  "consistency_dismissals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sweepId: uuid("sweep_id").references(() => consistencySweeps.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(),
+    // Sorted, so a pair matches whichever side was primary.
+    claimIds: uuid("claim_ids").array().notNull(),
+    // The current assessments the judgment was made on.
+    assessmentIds: uuid("assessment_ids").array().notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_consistency_dismissals_claims").on(table.kind, table.claimIds),
+  ]
+);
+
+export type ConsistencyDismissal = typeof consistencyDismissals.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // grant_conversations
 //
 // Grantmaking is a conversation, not a form: a funder talks a mandate

@@ -96,6 +96,12 @@ export interface CoherenceScope {
    * the pair counts). Null or undefined = the whole graph.
    */
   tagId?: string | null;
+  /**
+   * Restrict to tensions touching one of these claims (either end counts):
+   * the residual bucket a sweep covers when no sweepable tag does. Combined
+   * with tagId, either set admits a pair.
+   */
+  claimIds?: string[] | null;
 }
 
 interface CandidateRow {
@@ -120,7 +126,7 @@ interface CandidateRow {
  * rows of it. A claim already waiting for (or under) its Steward is left
  * out as a primary: a flag on it would be a repeat of work already queued.
  * Parameters: $1 tag id (nullable uuid), $2 requires margin, $3 high
- * credence, $4 rival tolerance.
+ * credence, $4 rival tolerance, $5 explicit claim ids (nullable uuid[]).
  */
 const CANDIDATE_CTE = `
   WITH cur AS (
@@ -140,6 +146,8 @@ const CANDIDATE_CTE = `
   scoped AS (
     SELECT subject_id AS claim_id FROM taggings
      WHERE $1::uuid IS NOT NULL AND tag_id = $1::uuid AND subject_kind = 'claim'
+    UNION
+    SELECT unnest($5::uuid[])
   ),
   -- Dependency edges with both ends live and assessed. p = parent, ch = child.
   edges AS (
@@ -153,7 +161,7 @@ const CANDIDATE_CTE = `
       FROM claim_relationships r
       JOIN cur p ON p.claim_id = r.parent_claim_id
       JOIN cur ch ON ch.claim_id = r.child_claim_id
-     WHERE ($1::uuid IS NULL
+     WHERE (($1::uuid IS NULL AND $5::uuid[] IS NULL)
             OR r.parent_claim_id IN (SELECT claim_id FROM scoped)
             OR r.child_claim_id IN (SELECT claim_id FROM scoped))
   ),
@@ -222,7 +230,7 @@ const CANDIDATE_CTE = `
      WHERE l.kind = 'rival_explanation'
        AND a.credence IS NOT NULL AND b.credence IS NOT NULL
        AND a.credence + b.credence > 1 + $4::real
-       AND ($1::uuid IS NULL
+       AND (($1::uuid IS NULL AND $5::uuid[] IS NULL)
             OR l.claim_a_id IN (SELECT claim_id FROM scoped)
             OR l.claim_b_id IN (SELECT claim_id FROM scoped))
        AND (CASE WHEN a.credence >= b.credence THEN a.steward_state ELSE b.steward_state END)
@@ -275,6 +283,7 @@ function scopeParams(scope: CoherenceScope): unknown[] {
     COHERENCE_THRESHOLDS.requiresMargin,
     COHERENCE_THRESHOLDS.highCredence,
     COHERENCE_THRESHOLDS.rivalTolerance,
+    scope.claimIds ?? null,
   ];
 }
 
@@ -294,7 +303,7 @@ export async function listCoherenceCandidates(
     `${CANDIDATE_CTE}
      SELECT * FROM candidates
       ORDER BY importance DESC, kind ASC, primary_claim_id ASC, other_claim_id ASC
-      LIMIT $5 OFFSET $6`,
+      LIMIT $6 OFFSET $7`,
     [...scopeParams(scope), limit, offset]
   );
   return rows.map((r) => ({
@@ -336,7 +345,8 @@ export async function coherenceStats(scope: CoherenceScope = {}): Promise<Cohere
     rawQuery<{ assessed_claims: number; assessed_edges: number; primaries: number }>(
       `${CANDIDATE_CTE}
        SELECT (SELECT COUNT(*)::int FROM cur
-                WHERE $1::uuid IS NULL OR claim_id IN (SELECT claim_id FROM scoped)) AS assessed_claims,
+                WHERE ($1::uuid IS NULL AND $5::uuid[] IS NULL)
+                   OR claim_id IN (SELECT claim_id FROM scoped)) AS assessed_claims,
               (SELECT COUNT(*)::int FROM edges) AS assessed_edges,
               (SELECT COUNT(DISTINCT primary_claim_id)::int FROM candidates) AS primaries`,
       scopeParams(scope)

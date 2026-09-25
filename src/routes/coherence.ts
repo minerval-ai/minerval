@@ -1,11 +1,13 @@
 /**
- * /coherence (#330, Phase 0): the mechanical coherence pre-filter, read-only.
+ * /coherence (#330): the mechanical coherence pre-filter and the
+ * Consistency Checker's record, read-only.
  *
- * What an operator watches before the Consistency Checker agent exists, and
- * what the agent's sweeps will read once it does: how often each kind of
- * mechanically suspect pair occurs on the live graph, and the shortlist
- * itself, importance first. Nothing here is a verdict (services/
- * coherence-service.ts); it is where to look.
+ * GET / is the pre-filter: how often each kind of mechanically suspect pair
+ * occurs on the live graph, and the shortlist itself, importance first.
+ * Nothing there is a verdict (services/coherence-service.ts); it is where
+ * to look. GET /sweeps is what the checker made of it: recent sweeps, the
+ * flags they raised with whether the passes they bought moved anything,
+ * and the precision over all flags (services/consistency-service.ts).
  */
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -15,6 +17,11 @@ import {
   coherenceStats,
   listCoherenceCandidates,
 } from "../services/coherence-service.js";
+import {
+  consistencyPrecision,
+  listConsistencyFlags,
+  listSweeps,
+} from "../services/consistency-service.js";
 import { resolveTagBySlug } from "../services/tag-service.js";
 
 const coherenceParams = z.object({
@@ -123,6 +130,33 @@ export async function coherenceRoutes(app: FastifyInstance): Promise<void> {
         stats,
         candidates,
       });
+    }
+  );
+
+  app.get<{ Querystring: Record<string, string> }>(
+    "/sweeps",
+    {
+      schema: {
+        tags: ["coherence"],
+        summary:
+          "The Consistency Checker's record: recent sweeps, their flags and " +
+          "what became of them, and the flags' precision (#330)",
+        querystring: {
+          type: "object",
+          properties: {
+            limit: { type: "integer", minimum: 1, maximum: 200, default: 20 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const limit = z.coerce.number().int().min(1).max(200).default(20).parse(request.query.limit);
+      const [sweeps, flags, precision] = await Promise.all([
+        listSweeps(limit),
+        listConsistencyFlags({ limit: limit * 5 }),
+        consistencyPrecision(),
+      ]);
+      return reply.send({ precision, sweeps, flags });
     }
   );
 }

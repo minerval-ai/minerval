@@ -64,6 +64,20 @@ const GENERAL_VALUE_SQL = `
   ) * CASE WHEN a.variant = 'strong' THEN $4::real ELSE 1.0 END`;
 
 /**
+ * The floor a consistency flag (#330) puts under the formula: a flag the
+ * Consistency Checker valued on THIS mandate ($5) stands while the flagged
+ * action stays open. Without it the next refresh would overwrite the
+ * flag's valuation with the formula's, and the flag would reach the
+ * allocator for one tick at most. The flag's value is already clamped to
+ * its ceiling (consistencyFlagMaxValue) when it is written.
+ */
+const CONSISTENCY_FLAG_FLOOR_SQL = `
+  COALESCE(
+    (SELECT MAX(f.value_written) FROM consistency_flags f
+      WHERE f.action_id = a.id AND f.grant_id = $5),
+    0)`;
+
+/**
  * Refresh ONE formula mandate's valuations over the open assess/reassess
  * actions inside its scope, using that mandate's own policy knobs. A
  * mandate with no scope (the platform's General assessment) values the
@@ -85,7 +99,7 @@ export async function refreshFormulaValuations(
          FROM claim_relationships cr JOIN subtree s ON cr.parent_claim_id = s.id
      )
      INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
-     SELECT $5, a.id, ${GENERAL_VALUE_SQL}, now()
+     SELECT $5, a.id, GREATEST(${GENERAL_VALUE_SQL}, ${CONSISTENCY_FLAG_FLOOR_SQL}), now()
        FROM actions a
        JOIN claims c ON c.id = a.claim_id
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
