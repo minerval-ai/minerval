@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   readResearcherPaused: vi.fn(async () => false),
   config: {
     researcherEnabled: true,
-    researcherStrongModel: "claude-fable-5-1",
+    researcherStrongModel: "claude-opus-5-5",
     researcherStandardModel: "claude-sonnet-5",
     researcherCheapModel: "z-ai/glm-5.3-flash",
     researcherMaxCeilingOwls: 3,
@@ -49,8 +49,10 @@ import {
   getResearchToolDefinitions,
 } from "../../../../src/llm/tools/research-tools.js";
 import type { ResearcherInput, ResearcherResult } from "../../../../src/llm/agents/researcher.js";
+import { getUsageContext, runWithUsageContext } from "../../../../src/llm/usage-context.js";
 
 const CLAIM = "aaaaaaaa-0000-4000-8000-000000000001";
+const RUN = "cccccccc-0000-4000-8000-000000000001";
 const BRIEF =
   "Trace the 40 percent figure in the report to its origin: which study, which table, what population, and whether the qualifications survived. Start from the report's own citation.";
 
@@ -171,7 +173,7 @@ describe("delegate_research", () => {
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     await tools.execute("delegate_research", { task: BRIEF, model_tier: "strong", budget_usd: 1, effort: "max" });
     expect(mocks.openResearchRun).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "claude-fable-5-1", modelTier: "strong", effort: "max" })
+      expect.objectContaining({ model: "claude-opus-5-5", modelTier: "strong", effort: "max" })
     );
   });
 
@@ -194,6 +196,8 @@ describe("delegate_research", () => {
     // The kill switch is read when the bundle is created, once per launcher run.
     mocks.config.researcherEnabled = false;
     const disabled = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+    // Off, the launcher is offered nothing, and a call anyway is refused.
+    expect(disabled.definitions).toEqual([]);
     expect(JSON.parse((await disabled.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message).toMatch(/disabled/);
   });
 
@@ -217,28 +221,57 @@ describe("delegate_research", () => {
     expect(runResearcher.mock.calls[0]![0].claim).toBeNull();
     await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: CLAIM });
     expect(mocks.openResearchRun).toHaveBeenLastCalledWith(expect.objectContaining({ claimId: CLAIM }));
+    const bad = JSON.parse((await createResearchTools({ requestedBy: "grantmaker", runResearcher }).execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: "nope" }))!);
+    expect(bad.message).toMatch(/not a claim id/);
+    const absent = "dddddddd-0000-4000-8000-000000000001";
     mocks.rawQuery.mockResolvedValueOnce([]);
-    const missing = JSON.parse((await createResearchTools({ requestedBy: "grantmaker", runResearcher }).execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: "nope" }))!);
-    expect(missing.message).toMatch(/No claim nope exists/);
+    const missing = JSON.parse((await createResearchTools({ requestedBy: "grantmaker", runResearcher }).execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: absent }))!);
+    expect(missing.message).toMatch(/No claim .* exists/);
+  });
+
+  it("adds what the researcher billed to the launcher's meter, and attributes a named claim", async () => {
+    let seenClaim: string | null | undefined;
+    const runResearcher = vi.fn(async () => {
+      seenClaim = getUsageContext().claimId;
+      getUsageContext().meter!.billedMicroUsd += 250_000;
+      return okResult();
+    });
+    const tools = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1", runResearcher });
+    const launcher = { billedMicroUsd: 1_000 };
+    await runWithUsageContext({ meter: launcher }, () =>
+      tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: CLAIM })
+    );
+    expect(launcher.billedMicroUsd).toBe(251_000);
+    expect(seenClaim).toBe(CLAIM);
+    expect(mocks.closeResearchRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ spentMicroUsd: 250_000 }));
   });
 });
 
 describe("get_research_run", () => {
-  it("returns the run with its report and notebook, and refuses another claim's run", async () => {
+  it("returns the run with its report and notebook, and refuses another claim's or mandate's run", async () => {
     mocks.getResearchRun.mockResolvedValue({
-      id: "run-1", claim_id: CLAIM, requested_by: "claim_steward", task: BRIEF, model: "m", model_tier: "cheap",
+      id: RUN, claim_id: CLAIM, grant_id: null, requested_by: "claim_steward", task: BRIEF, model: "m", model_tier: "cheap",
       status: "completed", spent_micro_usd: 123_456, turns: 3, tools: ["report"], started_at: new Date(0),
       finished_at: new Date(1), report: { answer: "a" }, notebook: { n: "x" }, error: null,
     });
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM });
-    const out = JSON.parse((await tools.execute("get_research_run", { research_run_id: "run-1" }))!);
+    const out = JSON.parse((await tools.execute("get_research_run", { research_run_id: RUN }))!);
     expect(out.success).toBe(true);
     expect(out.research_run.spent_usd).toBe(0.12);
     expect(out.research_run.report).toEqual({ answer: "a" });
     expect(out.research_run.notebook).toEqual({ n: "x" });
     const other = createResearchTools({ requestedBy: "claim_steward", claimId: "bbbbbbbb-0000-4000-8000-000000000001" });
-    expect(JSON.parse((await other.execute("get_research_run", { research_run_id: "run-1" }))!).message).toMatch(/another claim/);
+    expect(JSON.parse((await other.execute("get_research_run", { research_run_id: RUN }))!).message).toMatch(/another claim or mandate/);
+    // A Grantmaker reads only what its mandate launched.
+    const grantmaker = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1" });
+    expect(JSON.parse((await grantmaker.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
+    mocks.getResearchRun.mockResolvedValueOnce({ id: RUN, claim_id: null, grant_id: "grant-1", tools: [], notebook: {} });
+    expect(JSON.parse((await grantmaker.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(true);
+    // A malformed id is refused before it reaches the database.
+    const calls = mocks.getResearchRun.mock.calls.length;
+    expect(JSON.parse((await tools.execute("get_research_run", { research_run_id: "x" }))!).message).toMatch(/not a research run id/);
+    expect(mocks.getResearchRun.mock.calls.length).toBe(calls);
     mocks.getResearchRun.mockResolvedValueOnce(null);
-    expect(JSON.parse((await tools.execute("get_research_run", { research_run_id: "x" }))!).success).toBe(false);
+    expect(JSON.parse((await tools.execute("get_research_run", { research_run_id: RUN }))!).success).toBe(false);
   });
 });

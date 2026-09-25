@@ -28,6 +28,10 @@ const mocks = vi.hoisted(() => ({
     elicitApiKey: "",
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
+    researcherEnabled: true,
+    researcherMaxCeilingOwls: 3,
+    researcherMaxRunsPerLauncherRun: 3,
+    researcherMaxWallMinutes: 20,
   },
 }));
 

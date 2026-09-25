@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 37746,
-    "fullChars": 87732,
+    "roleChars": 38258,
+    "fullChars": 88244,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19177,
-    "fullChars": 69163,
+    "roleChars": 19314,
+    "fullChars": 69300,
     "skills": [
       {
         "name": "mathematics",
@@ -279,8 +279,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
     "hasConstitution": true,
-    "roleChars": 4180,
-    "fullChars": 54166,
+    "roleChars": 7817,
+    "fullChars": 57803,
     "skills": [
       {
         "name": "provenance",

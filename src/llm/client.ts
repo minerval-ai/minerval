@@ -357,6 +357,14 @@ export async function toolUseLoop(options: {
     /** Nudge only while this holds (e.g. "no decision recorded yet"); default always. */
     when?: () => boolean;
   };
+  /**
+   * Called before every model turn, pause_turn continuations included, with
+   * the 0-based turn index. An instrument's harness uses it to enforce what
+   * the executor alone cannot see (a dollar ceiling crossed by server tools,
+   * a wall-clock cap, an operator pause); to end the loop it throws, and the
+   * caller catches its own error.
+   */
+  beforeTurn?: (turn: number) => Promise<void> | void;
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
   const maxIter = options.maxIterations ?? 5;
@@ -387,6 +395,7 @@ export async function toolUseLoop(options: {
   let containerId: string | undefined;
 
   for (let i = 0; i < maxIter; i++) {
+    if (options.beforeTurn) await options.beforeTurn(i);
     const result = await completeWithTools({
       messages,
       tools: options.tools,

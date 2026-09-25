@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 // The researcher (#298) over scripted loops and a recording DB: the toolset
-// follows the model (server tools on Claude, none on the cheap tier; the
+// follows the model (web search on every tier, the sandbox on Claude only; the
 // long-run loop on the strong tier, the ordinary loop elsewhere), the
 // constitution is prepended when asked and not otherwise, the Provenance
 // skill's researcher view is spliced and its tools offered while
@@ -14,7 +14,15 @@ const mocks = vi.hoisted(() => ({
   writes: [] as Array<{ verb: string; table: string }>,
   longRunCalls: [] as Array<Record<string, unknown>>,
   toolLoopCalls: [] as Array<Record<string, unknown>>,
-  script: { report: true, hookStop: null as string | null },
+  script: {
+    report: true,
+    hookStop: null as string | null,
+    // Extra tool calls the ordinary loop's model makes before it reports.
+    calls: [] as Array<{ name: string; input: Record<string, unknown> }>,
+    outputs: [] as string[],
+    // Turns the ordinary loop runs through beforeTurn after the first.
+    extraTurns: 0,
+  },
   paused: false,
   meter: { billedMicroUsd: 0 },
   config: {
@@ -86,7 +94,11 @@ vi.mock("../../../src/llm/client.js", () => ({
   }),
   toolUseLoop: vi.fn(async (options: Record<string, unknown>) => {
     mocks.toolLoopCalls.push(options);
+    const beforeTurn = options.beforeTurn as ((i: number) => Promise<void>) | undefined;
+    await beforeTurn?.(0);
     const exec = options.executeTool as (n: string, i: Record<string, unknown>) => Promise<string>;
+    for (const c of mocks.script.calls) mocks.script.outputs.push(await exec(c.name, c.input));
+    for (let t = 1; t <= mocks.script.extraTurns; t++) await beforeTurn?.(t);
     const first = JSON.parse(await exec("notebook_write", { section: "thread", content: "started" }));
     if (!first.success) {
       // Halted by the ceiling or the pause flag: the model reports, as told.
@@ -120,6 +132,7 @@ function input(over: Partial<{ model: string; model_tier: string; include_consti
       id: "run-1",
       claim_id: over.claim === false ? null : CLAIM,
       grant_id: null,
+      requested_by: "claim_steward",
       task: "Trace the figure to its origin.",
       model: over.model ?? "claude-sonnet-5",
       model_tier: over.model_tier ?? "standard",
@@ -137,6 +150,9 @@ beforeEach(() => {
   mocks.longRunCalls.length = 0;
   mocks.toolLoopCalls.length = 0;
   mocks.script.report = true;
+  mocks.script.calls = [];
+  mocks.script.outputs = [];
+  mocks.script.extraTurns = 0;
   mocks.paused = false;
   mocks.meter.billedMicroUsd = 0;
 });
@@ -171,16 +187,18 @@ describe("toolset by model", () => {
     expect(names).not.toContain("delegate_research");
     expect(names).not.toContain("record_claim_instance");
     expect(names).not.toContain("lean_search");
-    expect(names.slice(-3)).toEqual(["report", "code_execution", "web_search"]);
+    expect(names).toContain("read_page");
+    expect(names.slice(-3)).toEqual(["report", "web_search", "code_execution"]);
     expect(result.toolNames).toEqual(names);
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("Trace the figure to its origin.");
     expect(task).toContain("Budget: 2.00 USD");
-    expect(task).toContain("Web search and the code-execution sandbox are available.");
+    expect(task).toContain("launched by the Claim Steward of the claim below");
+    expect(task).toContain("The code-execution sandbox is available");
   });
 
   it("runs the strong tier on the long-run loop with effort and a task budget", async () => {
-    const result = await runResearcher(input({ model: "claude-fable-5-1", model_tier: "strong" }));
+    const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("completed");
     expect(mocks.longRunCalls).toHaveLength(1);
     const opts = mocks.longRunCalls[0]!;
@@ -192,18 +210,24 @@ describe("toolset by model", () => {
     expect(names).toContain("code_execution");
   });
 
-  it("runs the cheap tier with client tools only, and says so in the task", async () => {
+  it("runs the cheap tier with client-side web search and no sandbox, and says so in the task", async () => {
     await runResearcher(input({ model: "z-ai/glm-5.3-flash", model_tier: "cheap" }));
     expect(mocks.longRunCalls).toHaveLength(0);
     const opts = mocks.toolLoopCalls[0]!;
     const names = (opts.tools as Array<{ name: string }>).map((t) => t.name);
-    expect(names).not.toContain("web_search");
     expect(names).not.toContain("code_execution");
     expect(names).toContain("provenance_read_source");
     expect(names).toContain("search_claims");
-    expect(names.at(-1)).toBe("report");
+    expect(names).toContain("read_page");
+    // The client-side web_search (OpenRouter), not the Anthropic server tool.
+    const search = (opts.tools as Array<{ name: string; type?: string; input_schema?: unknown }>).find(
+      (t) => t.name === "web_search"
+    )!;
+    expect(search.type).toBeUndefined();
+    expect(search.input_schema).toBeDefined();
+    expect(names.slice(-2)).toEqual(["report", "web_search"]);
     const task = (opts.initialMessages as Array<{ content: string }>)[0]!.content;
-    expect(task).toContain("No web search and no code-execution sandbox this run");
+    expect(task).toContain("There is no code-execution sandbox this run");
   });
 
   it("offers Mathlib search on a mathematical claim only when a checker is configured", async () => {
@@ -223,10 +247,20 @@ describe("toolset by model", () => {
     }
   });
 
-  it("leaves the claim-scoped provenance tools present off a claim, where they refuse to write", async () => {
+  it("offers no provenance tools off a claim, and says so in the task", async () => {
     await runResearcher(input({ claim: false }));
+    const names = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("provenance_"))).toEqual([]);
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("serves a mandate rather than one claim");
+  });
+
+  it("names the launcher in the task message", async () => {
+    const i = input();
+    i.run.requested_by = "grantmaker";
+    await runResearcher(i);
+    const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain("launched by the Grantmaker of a funded mandate");
   });
 });
 
@@ -247,14 +281,14 @@ describe("the prompt", () => {
     await runResearcher(input({ include_constitution: false }));
     const system = mocks.toolLoopCalls[0]!.system as string[];
     expect(system[0]).not.toContain("# Epistemic Graph Administrator Constitution");
-    expect(system[0]!.startsWith("You are the researcher")).toBe(true);
+    expect(system[0]!.startsWith("# Your Role: Researcher")).toBe(true);
   });
 });
 
 describe("harness stops", () => {
   it("stops the long-run loop at the ceiling before the turn, as budget", async () => {
     mocks.meter.billedMicroUsd = 2_000_000;
-    const result = await runResearcher(input({ model: "claude-fable-5-1", model_tier: "strong" }));
+    const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("budget");
     expect(result.report).toBeNull();
     expect(result.error).toMatch(/cost ceiling/);
@@ -262,13 +296,13 @@ describe("harness stops", () => {
 
   it("stops the long-run loop when the operator pauses, as paused", async () => {
     mocks.paused = true;
-    const result = await runResearcher(input({ model: "claude-fable-5-1", model_tier: "strong" }));
+    const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("paused");
   });
 
   it("reports a wall-cap stop without a report as timeout", async () => {
     mocks.script.report = false;
-    const result = await runResearcher(input({ model: "claude-fable-5-1", model_tier: "strong" }));
+    const result = await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     expect(result.status).toBe("timeout");
   });
 
@@ -280,19 +314,78 @@ describe("harness stops", () => {
     expect(result.stopReason).toBe("final_tool");
   });
 
-  it("marks a run that ended without a report", async () => {
+  it("stops the ordinary loop at the wall cap, as timeout", async () => {
+    mocks.script.report = false;
+    mocks.script.extraTurns = 3;
+    let t = 0;
+    const result = await runResearcher({ ...input(), maxWallMs: 1000, now: () => (t += 600) });
+    expect(result.status).toBe("timeout");
+    expect(result.stopReason).toBe("max_wall");
+  });
+
+  it("gives the ordinary loop one last turn past the ceiling, then stops it, as budget", async () => {
+    // Crossed by what the executor never sees (a server tool, a
+    // pause_turn continuation): beforeTurn catches it.
+    mocks.script.report = false;
+    mocks.script.extraTurns = 3;
+    mocks.script.calls = [{ name: "notebook_read", input: {} }];
+    mocks.meter.billedMicroUsd = 3_000_000;
+    const result = await runResearcher(input());
+    expect(JSON.parse(mocks.script.outputs[0]!).message).toMatch(/cost ceiling/);
+    expect(result.status).toBe("budget");
+    expect(result.stopReason).toBe("hook");
+    expect(result.turns).toBe(1);
+  });
+
+  it("counts model turns, not tool calls", async () => {
+    mocks.script.calls = [
+      { name: "notebook_read", input: {} },
+      { name: "notebook_read", input: {} },
+      { name: "notebook_read", input: {} },
+    ];
+    mocks.script.extraTurns = 1;
+    const result = await runResearcher(input());
+    expect(result.turns).toBe(2);
+  });
+
+  it("appends the wrap-up notice once, on the first tool result past 85 percent", async () => {
+    mocks.meter.billedMicroUsd = 1_800_000;
+    mocks.script.calls = [
+      { name: "notebook_read", input: {} },
+      { name: "notebook_read", input: {} },
+    ];
+    await runResearcher(input());
+    expect(mocks.script.outputs[0]).toContain("about fifteen percent");
+    expect(mocks.script.outputs[1]).not.toContain("about fifteen percent");
+  });
+
+  it("marks a run that ended without a report as no_report", async () => {
     mocks.script.report = false;
     const result = await runResearcher(input());
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("no_report");
     expect(result.report).toBeNull();
     expect(result.error).toMatch(/without calling report/);
   });
 });
 
 describe("what the researcher may write", () => {
+  it("refuses a tool it was not offered, and a provenance call on another claim", async () => {
+    mocks.script.calls = [
+      { name: "provenance_write_map", input: { summary: "x" } },
+      { name: "record_claim_instance", input: {} },
+      { name: "provenance_record_reading", input: { claim_id: "bbbbbbbb-0000-4000-8000-000000000002" } },
+    ];
+    await runResearcher(input());
+    expect(JSON.parse(mocks.script.outputs[0]!).message).toMatch(/not in this run's toolset/);
+    expect(JSON.parse(mocks.script.outputs[1]!).message).toMatch(/not in this run's toolset/);
+    expect(JSON.parse(mocks.script.outputs[2]!).message).toMatch(/provenance tools work on it alone/);
+    const tables = new Set(mocks.writes.map((w) => w.table));
+    expect(tables.has("claim_source_maps")).toBe(false);
+  });
+
   it("writes only its own run row and the notebook; never a claim, an assessment, an argument, an edge, or an instance", async () => {
     await runResearcher(input());
-    await runResearcher(input({ model: "claude-fable-5-1", model_tier: "strong" }));
+    await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
     const tables = new Set(mocks.writes.map((w) => w.table));
     for (const forbidden of FORBIDDEN_TABLES) expect(tables.has(forbidden)).toBe(false);
     expect(tables.has("research_runs")).toBe(true);

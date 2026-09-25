@@ -867,65 +867,79 @@ the statement.
 
 `researcher` (`src/llm/agents/researcher.ts`, #298) is the general
 instrument, of which the solver is the special case. An administrator (the
-Claim Steward on its claim, a Grantmaker for its mandate) launches it with
-`delegate_research`: a brief written for a capable assistant that knows
-nothing of the claim, a model tier, a dollar ceiling, an effort level, and
-whether the constitution is prepended to its prompt, which it is by default.
-The run is synchronous: the launcher's tool call blocks until the researcher
-reports, and the report is the tool result. It answers only to its
-launcher, owns nothing, and cannot launch instruments of its own.
+Claim Steward on its claim, a Grantmaker on a funded mandate) launches it
+with `delegate_research`: a brief written for a capable assistant that
+knows nothing of the claim and cannot ask a question back, a model tier, a
+dollar ceiling, an effort level, and whether the constitution is prepended
+to its prompt, which it is by default. The run is synchronous: the
+launcher's tool call blocks until the researcher reports, and the report is
+the tool result. It answers only to its launcher, owns nothing, and cannot
+launch instruments of its own. The report opens with an outcome (answered,
+partly answered, not answered, ill posed) and gives each finding with its
+locator and the words or numbers it rests on, so the launcher can check the
+load-bearing ones cheaply.
 
 **Tiers.** The launcher chooses from three, named for the role rather than
 the vendor (`RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`,
 `RESEARCHER_CHEAP_MODEL`). Strong runs the long-run loop with `effort` and
-the task budget, for work where the best model class pays: a proof attempt
-outside the formal pipeline, a replication. Standard runs the ordinary loop
-on a Claude model. Both carry Anthropic's server tools, web search and the
-code-execution sandbox (Python, no network). Cheap runs the ordinary loop on
-the cheap tier with client tools only, since server tools are Anthropic's,
-and is the right choice for reading and mapping a large literature
-economically. Every tier has the graph's read tools (`search_claims`,
-`get_claim`, `get_decomposition`, `get_dependents`), the Elicit search tools
-where configured, a notebook, and, on a claim-scoped task, the Provenance
-skill's tools except `provenance_write_map`; on a mathematical claim with a
-checker configured it also has `lean_search` and `lean_elaborate`. The task
-message names the toolset, so the researcher knows what it can and cannot
-do, and the tool description names the tiers' affordances, so the launcher
-can brief it accordingly.
+the task budget, for work where the best model class pays, such as a
+replication. Standard runs the ordinary loop on a Claude model. Both carry
+the code-execution sandbox (Python, no network), an Anthropic server tool.
+Cheap runs the ordinary loop on the cheap tier without the sandbox, and is
+the right choice for reading and mapping a large literature economically.
+Every tier has `web_search` (the server tool on Claude, the client-side
+OpenRouter search elsewhere) and `read_page`, the graph's read tools
+(`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
+Elicit search tools where configured, a notebook, and, on a claim-scoped
+task, the Provenance skill's tools except `provenance_write_map`; on a
+mathematical claim with a checker configured it also has `lean_search` and
+`lean_elaborate`. The task message names the toolset, so the researcher
+knows what it can and cannot do, and the tool description names the tiers'
+affordances, so the launcher can brief it accordingly.
 
 **What it may write.** Its notebook, the provenance tables through the
 skill's tools (a reading only for a source it opened, an edge only with the
 located passage), and the stored copy of a source it fetched. It has no
 tool that writes a claim, an assessment, an argument, an edge between
-claims, or an instance, and a unit test holds the line. Its report is the
-instrument's narrative and is data: the launcher reads it against the
-sources it names and records what it concludes in its own reasoning (§9,
-§11). Provenance rows it recorded are reviewed by the Steward with
-`provenance_get_map`, and the map's reader-facing summary stays the
-Steward's to write.
+claims, or an instance, and the executor refuses any tool name that was not
+offered and any provenance call that names a claim other than the run's, so
+a name read off a page or invented by the model runs nothing. A unit test
+holds the line. Its report is the instrument's narrative and is data: the
+launcher reads it against the sources it names and records what it
+concludes in its own reasoning (§9, §11). Provenance rows it recorded are
+reviewed by the Steward with `provenance_get_map`, and the map's reader-
+facing summary stays the Steward's to write.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
-(at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter each turn,
-a wrap-up notice at 85 percent of it, a wall cap
-(`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); a
-launcher may start at most `RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in
-one pass; a durable daily cap across processes
-(`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past it; `RESEARCHER_ENABLED`
-is the kill switch for new launches and a `researcher_paused` row in
-`platform_flags` halts a run in flight. The spend is metered under the
-launcher's usage context, so it lands on the claim and the job that funded
-the launching run, and appears in `llm_usage` under agent `researcher`. The
-shared pieces of this harness, the stop reasons, the reminder fraction, the
-task budget, and the container metering, live in
-`src/llm/instrument-harness.ts` and serve the solver too.
+(at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter before
+every turn on both loops, a wrap-up notice at 85 percent of it, a wall cap
+(`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
+the ordinary loop, a run past its ceiling or paused gets one last turn, in
+which every tool call is refused with the instruction to report, and is
+then stopped. A launcher may start at most
+`RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
+cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
+it; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+the solver is, and while off no launcher is offered `delegate_research`),
+and a `researcher_paused` row in `platform_flags` halts a run in flight.
+The spend is metered under the launcher's usage context, so it lands on the
+claim and the job that funded the launching run, appears in `llm_usage`
+under agent `researcher`, and is added to the launcher's own cost meter, so
+the launching action is charged for it. The shared pieces of this harness,
+the stop reasons, the reminder fraction, the task budget, and the container
+metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
 **The record.** Each launch is a `research_runs` row: the brief, the model
-and tier, the ceiling, the spend, the turns, how the run ended, the report,
-and the notebook. The launcher rereads a run with `get_research_run`. On the
-claim page the runs are disclosed like solver attempts, with the brief, the
-model, and the cost; the report is not presented to readers as the graph's
-voice. The researcher's prompt is published on the agents pages with the
-constitution in its default position.
+and tier, the ceiling, the spend, the turns, how the run ended (a run that
+ends on its own without calling report is `no_report`), the report, and the
+notebook. A launcher rereads its own runs with `get_research_run`: a
+Steward those on its claim, a Grantmaker those its mandate launched. On the
+claim page the runs are disclosed like solver attempts, with the model and
+the cost, and with the brief when the Steward launched the run (a
+Grantmaker's brief comes out of a private funder conversation and is
+withheld); the report and notebook are not served, and are not presented to
+readers as the graph's voice. The researcher's prompt is published on the
+agents pages with the constitution in its default position.
 
 ### The prize-check worker and the money triggers
 

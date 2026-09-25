@@ -18,11 +18,12 @@
  * tools, and the stored copy of a source it fetched. Nothing else; a unit
  * test holds that line.
  *
- * The toolset follows the model. A strong-tier model runs the long-run loop
- * with web search and the code-execution sandbox; a standard Claude model
- * runs the ordinary loop with the same server tools; the cheap tier runs the
- * ordinary loop with client tools only, since server tools are Anthropic's.
- * The task message tells the researcher which it has.
+ * The toolset follows the model. Every tier has web_search and read_page
+ * (tools/web-search-tool.ts serves the search on any provider). A
+ * strong-tier model runs the long-run loop with the code-execution sandbox;
+ * a standard Claude model runs the ordinary loop with the same sandbox; the
+ * cheap tier runs the ordinary loop without it, since the sandbox is an
+ * Anthropic server tool. The task message tells the researcher which it has.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../../config.js";
@@ -59,6 +60,8 @@ import {
   isSkillTool,
 } from "../tools/skill-tools.js";
 import { isLeanTool } from "../tools/lean-tools.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from "../tools/read-page-tool.js";
 import {
   elicitConfigured,
   executeElicitTool,
@@ -85,6 +88,15 @@ import {
 type Tool = Anthropic.Tool;
 type ToolUnion = Anthropic.Messages.ToolUnion;
 
+const PROVENANCE_PREFIX = "provenance_";
+
+/** Thrown from the ordinary loop's beforeTurn hook to end the run. */
+class HarnessStop extends Error {
+  constructor(readonly stopReason: "hook" | "max_wall") {
+    super(`researcher harness stop: ${stopReason}`);
+  }
+}
+
 export const WRAP_UP_NOTICE =
   "Harness notice: about fifteen percent of this investigation's budget remains. " +
   "Stop exploring. Write what you have to the notebook and call report now; the " +
@@ -98,29 +110,48 @@ export const PAUSED_REFUSAL =
   "The operator has paused the researcher. No further tool call will run. " +
   "Call report now with what you have.";
 
+export const RESEARCH_OUTCOMES = ["answered", "partly_answered", "not_answered", "ill_posed"] as const;
+
 /** The terminal tool's schema. */
 export const RESEARCH_REPORT_TOOL: Tool = {
   name: "report",
   description:
     "End the investigation with your report to the administrator that launched you. " +
-    "Call it exactly once: when you have answered the task, exhausted the routes you " +
-    "can see, or received the budget notice. A precise negative report is a good outcome.",
+    "Call it exactly once: when you have answered the question, exhausted the routes you " +
+    "can see, or received the budget notice. A precise negative result is a good outcome.",
   input_schema: {
     type: "object",
     properties: {
+      outcome: {
+        type: "string",
+        enum: [...RESEARCH_OUTCOMES],
+        description:
+          "answered, partly_answered, not_answered (the routes you could see did not settle it), " +
+          "or ill_posed (the question as briefed cannot be answered as asked; say why in answer).",
+      },
       answer: {
         type: "string",
-        description: "The direct answer to the task, in plain prose, for the administrator.",
+        description:
+          "The direct answer in two to six sentences, conclusion first, with the reading of " +
+          "the brief you took if it was ambiguous.",
       },
       findings: {
         type: "array",
-        description: "Each finding with the evidence it rests on and your confidence in it.",
+        description: "Each finding a single claim, with the evidence it rests on and your confidence in it.",
         items: {
           type: "object",
           properties: {
             finding: { type: "string" },
-            evidence: { type: "string", description: "What it rests on: the source, the passage, the computation." },
-            confidence: { type: "number", description: "0 to 1." },
+            evidence: {
+              type: "string",
+              description:
+                "The source, the locator (page, section, table, or URL), and the exact words or " +
+                "numbers that carry the weight, or the computation and its output.",
+            },
+            confidence: {
+              type: "number",
+              description: "Your probability, 0 to 1, that the finding is correct as stated.",
+            },
           },
           required: ["finding", "evidence", "confidence"],
           additionalProperties: false,
@@ -151,7 +182,7 @@ export const RESEARCH_REPORT_TOOL: Tool = {
         description: "What the administrator might do or delegate next.",
       },
     },
-    required: ["answer", "findings", "sources_consulted", "provenance_recorded", "caveats", "what_would_change", "suggested_next_steps"],
+    required: ["outcome", "answer", "findings", "sources_consulted", "provenance_recorded", "caveats", "what_would_change", "suggested_next_steps"],
     additionalProperties: false,
   },
 };
@@ -182,7 +213,7 @@ const NOTEBOOK_READ_TOOL: Tool = {
 export interface ResearcherInput {
   run: Pick<
     ResearchRunRow,
-    "id" | "claim_id" | "grant_id" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
+    "id" | "claim_id" | "grant_id" | "requested_by" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
   >;
   claim: { id: string; text: string; domains: string[] } | null;
   /** Wall-clock cap for the run; defaults to RESEARCHER_MAX_WALL_MINUTES. */
@@ -222,9 +253,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const now = input.now ?? Date.now;
   const run = input.run;
   const model = run.model;
-  const provider = resolveProvider(model);
-  const serverTools = provider === "anthropic";
-  const longRun = serverTools && modelSupportsLongRun(model);
+  // The sandbox is an Anthropic server tool; web search is served on every
+  // provider (client-side through OpenRouter elsewhere).
+  const sandbox = resolveProvider(model) === "anthropic";
+  const longRun = sandbox && modelSupportsLongRun(model);
   const ceiling = Math.max(1, run.ceiling_micro_usd);
   const maxWallMs = input.maxWallMs ?? config.researcherMaxWallMinutes * 60_000;
   const maxTurns = input.maxTurns ?? config.researcherMaxTurns;
@@ -236,29 +268,30 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const skills: Skill[] = skillsForDomains(claimDomains, "researcher");
   const skillsWithText = skills.filter((s) => sectionsForRole(s, "researcher").length > 0);
   const checker = leanCheckerConfigured(config);
+  // Mathlib tools only with a checker to run them; the provenance tools only
+  // on a claim, since every one of them reads or records on a claim.
   const skillTools = getActiveSkillToolDefinitions(skills, "researcher").filter(
-    (t) => checker || !isLeanTool(t.name)
+    (t) => (checker || !isLeanTool(t.name)) && (input.claim || !t.name.startsWith(PROVENANCE_PREFIX))
   );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
 
-  const webSearchTool: Anthropic.Messages.WebSearchTool20260209 = {
-    type: "web_search_20260209",
-    name: "web_search",
-    max_uses: Math.max(1, config.researcherWebSearchMaxUses),
-  };
+  const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
     ...graphReadTools,
+    getReadPageToolDefinition(),
     ...elicitTools,
     ...skillTools,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     RESEARCH_REPORT_TOOL,
-    ...(serverTools ? [CODE_EXECUTION_TOOL, webSearchTool] : []),
+    webSearch.tool,
+    ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
   const toolNames = tools.map((t) => (t as { name: string }).name);
+  const offered = new Set(toolNames);
   await stampResearchRun(run.id, { runId: getUsageContext().runId ?? null, tools: toolNames });
 
   const notebook: Record<string, string> = { ...(run.notebook ?? {}) };
@@ -268,10 +301,11 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   });
   const taskMessage = buildResearcherTaskMessage({
     task: run.task,
+    requestedBy: run.requested_by,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     budgetUsd: ceiling / 1_000_000,
     toolNames,
-    serverTools,
+    sandbox,
     notebook,
   });
 
@@ -312,11 +346,18 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       halted = CEILING_REFUSAL;
       return JSON.stringify({ success: false, message: halted });
     }
+    // Only what was offered runs: a name the model invents, or reads off a
+    // page, is refused here, whatever executor would otherwise accept it.
+    if (!offered.has(name)) {
+      return JSON.stringify({ success: false, message: `${name} is not in this run's toolset.` });
+    }
     if (name === "notebook_write") return executeNotebookWrite(toolInput);
     if (name === "notebook_read") return JSON.stringify({ success: true, notebook });
     if (name === "report") {
       return JSON.stringify({ success: false, message: "report was already received." });
     }
+    if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+    if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;
@@ -333,6 +374,17 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       return executeElicitTool(name, toolInput, config);
     }
     if (isSkillTool(name)) {
+      // Provenance records land on the run's claim and no other: a claim_id
+      // in the input that names a different one is refused, not honoured.
+      if (name.startsWith(PROVENANCE_PREFIX) && input.claim) {
+        const named = typeof toolInput.claim_id === "string" ? toolInput.claim_id.trim() : "";
+        if (named && named !== input.claim.id) {
+          return JSON.stringify({
+            success: false,
+            message: `This investigation serves claim ${input.claim.id}; provenance tools work on it alone.`,
+          });
+        }
+      }
       return executeSkillTool(name, toolInput, {
         role: "researcher",
         ...(input.claim ? { claimId: input.claim.id } : {}),
@@ -414,48 +466,74 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       return { turns: loop.turns, stopReason: loop.stopReason, hookStop: loop.hookStop };
     }
 
-    // The ordinary loop: turns are bounded by maxTurns, the ceiling and the
-    // pause flag by the executor above, and the wrap-up notice rides on the
-    // loop's own iteration notice. Container time is not metered per turn on
-    // this path (the loop exposes no per-turn hook); the sandbox's published
-    // free allowance covers a run of this size, and the token meter binds.
+    // The ordinary loop. Its beforeTurn hook is the backstop the executor
+    // cannot be alone, since server tools and pause_turn continuations never
+    // reach the executor: it ends the run at the wall cap, and at the
+    // ceiling or the operator's pause it allows one last turn, in which
+    // every tool call is refused with the instruction to report, and then
+    // ends the run. The wrap-up notice rides on the first tool result past
+    // the reminder fraction. Container time is not metered per turn on this
+    // path; the sandbox's free allowance covers a run of this size, and the
+    // token meter binds.
     let turns = 0;
-    const result = await toolUseLoop({
-      initialMessages: [{ role: "user", content: taskMessage }],
-      tools,
-      system,
-      model,
-      maxTokens: 16384,
-      maxIterations: maxTurns,
-      iterationBudgetNotice: {
-        warnWithin: 3,
-        message: (remaining) =>
-          `Harness notice: ${remaining} turn(s) remain before this investigation is stopped. ` +
-          `Write what you have to the notebook and call report on your next turn.`,
-      },
-      executeTool: async (name, toolInput) => {
-        turns++;
-        if (!halted && (await readResearcherPaused())) halted = PAUSED_REFUSAL;
-        const out = await executeTool(name, toolInput);
-        await progress(turns);
-        return out;
-      },
-      onFinalTool,
-    });
-    const served = result.servedModel ?? result.model;
+    let lastTurn = false;
+    const startedAt = now();
+    const beforeTurn = async (turn: number) => {
+      if (now() - startedAt >= maxWallMs) throw new HarnessStop("max_wall");
+      if (!halted) {
+        if (meterMicroUsd() >= ceiling) halted = CEILING_REFUSAL;
+        else if (await readResearcherPaused()) halted = PAUSED_REFUSAL;
+      }
+      if (halted) {
+        if (lastTurn) throw new HarnessStop("hook");
+        lastTurn = true;
+      }
+      turns = turn + 1;
+      await progress(turns);
+    };
+    let stopped: HarnessStop | null = null;
+    let result: ToolCompletionResult | null = null;
+    try {
+      result = await toolUseLoop({
+        initialMessages: [{ role: "user", content: taskMessage }],
+        tools,
+        system,
+        model,
+        maxTokens: 16384,
+        maxIterations: maxTurns,
+        iterationBudgetNotice: {
+          warnWithin: 3,
+          message: (remaining) =>
+            `Harness notice: ${remaining} turn(s) remain before this investigation is stopped. ` +
+            `Write what you have to the notebook and call report on your next turn.`,
+        },
+        beforeTurn,
+        executeTool: async (name, toolInput) => {
+          const out = await executeTool(name, toolInput);
+          if (!reminded && !halted && meterMicroUsd() >= REMINDER_FRACTION * ceiling) {
+            reminded = true;
+            return `${out}\n\n${WRAP_UP_NOTICE}`;
+          }
+          return out;
+        },
+        onFinalTool,
+      });
+    } catch (err) {
+      if (!(err instanceof HarnessStop)) throw err;
+      stopped = err;
+    }
+    const served = result ? (result.servedModel ?? result.model) : null;
     if (served) servedModels.add(served);
+    const hookStop = halted === CEILING_REFUSAL ? STOP_CEILING : halted === PAUSED_REFUSAL ? STOP_PAUSED : undefined;
     const stopReason = reportInput
       ? "final_tool"
-      : halted === CEILING_REFUSAL
-        ? "hook"
-        : halted === PAUSED_REFUSAL
-          ? "hook"
-          : result.stopReason === "max_tokens"
-            ? "max_tokens"
-            : turns >= maxTurns
-              ? "max_iterations"
-              : "end_turn";
-    const hookStop = halted === CEILING_REFUSAL ? STOP_CEILING : halted === PAUSED_REFUSAL ? STOP_PAUSED : undefined;
+      : stopped
+        ? stopped.stopReason
+        : result?.stopReason === "max_tokens"
+          ? "max_tokens"
+          : turns >= maxTurns
+            ? "max_iterations"
+            : "end_turn";
     return { turns, stopReason, hookStop };
   };
   let loop: { turns: number; stopReason: string; hookStop?: string };
@@ -482,7 +560,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     return finish("timeout", loop.turns, loop.stopReason, "the investigation reached its wall-clock cap before reporting");
   }
   return finish(
-    "completed",
+    "no_report",
     loop.turns,
     loop.stopReason,
     `the researcher ended (${loop.stopReason}) without calling report`

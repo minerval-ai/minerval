@@ -11,6 +11,7 @@ import { modelDisplayName } from "@/lib/model-names";
 
 const STATUS_LINE: Record<string, string> = {
   completed: "reported",
+  no_report: "ended without a report",
   budget: "reached its budget before reporting",
   paused: "paused by the operator",
   timeout: "reached its time cap before reporting",
@@ -28,9 +29,9 @@ export function ResearchLog({ runs }: { runs: ResearchRunSummary[] | null | unde
     <section>
       <h2>Research</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-        Investigations the claim&rsquo;s Steward delegated to the platform&rsquo;s researcher.
-        Each is disclosed with its cost; what it found entered the assessment only as
-        evidence the Steward weighed.
+        Investigations delegated to the platform&rsquo;s researcher on this claim, by its
+        Steward or by a mandate&rsquo;s Grantmaker. Each is disclosed with its cost; what it
+        found entered the assessment only as evidence the Steward weighed.
       </p>
       <ul className="attempt-log">
         {sorted.map((r) => (
@@ -42,12 +43,15 @@ export function ResearchLog({ runs }: { runs: ResearchRunSummary[] | null | unde
               <span className="mono">{formatUsd(r.spent_micro_usd)}</span> of compute
               {" · "}
               {STATUS_LINE[r.status] ?? r.status}
-              <details className="reasoning-detail" style={{ margin: ".3rem 0 0" }}>
-                <summary>The brief</summary>
-                <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: ".4rem 0 0" }}>
-                  {r.task}
-                </p>
-              </details>
+              {r.requested_by === "grantmaker" ? " · launched by a mandate’s Grantmaker" : null}
+              {r.task ? (
+                <details className="reasoning-detail" style={{ margin: ".3rem 0 0" }}>
+                  <summary>The brief</summary>
+                  <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--ink-soft)", whiteSpace: "pre-wrap", margin: ".4rem 0 0" }}>
+                    {r.task}
+                  </p>
+                </details>
+              ) : null}
             </span>
           </li>
         ))}

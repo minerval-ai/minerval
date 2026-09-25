@@ -35,7 +35,8 @@ export interface ClaimExtras {
 export interface ResearchRunSummary {
   id: string;
   requested_by: string;
-  task: string;
+  /** The brief, disclosed for the Steward's runs; null for a Grantmaker's, whose brief comes out of a private funder conversation. */
+  task: string | null;
   model: string;
   model_tier: string;
   status: string;
@@ -81,12 +82,13 @@ export async function loadClaimExtras(claimId: string): Promise<ClaimExtras> {
     bounty: prize.bounty,
     attempts,
     prize_claims: prize.prize_claims,
-    // The report and notebook stay on the run (the Steward's get_research_run
-    // and the record); the page discloses the brief, the model, and the cost.
+    // The report and notebook stay on the run (the launcher's get_research_run
+    // and the record); the page discloses the model and the cost of every
+    // run, and the brief of the Steward's.
     research_runs: research.map((r) => ({
       id: r.id,
       requested_by: r.requested_by,
-      task: r.task,
+      task: r.requested_by === "claim_steward" ? r.task : null,
       model: r.model,
       model_tier: r.model_tier,
       status: r.status,

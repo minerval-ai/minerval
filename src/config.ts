@@ -602,11 +602,13 @@ const configSchema = z.object({
   researcherStandardModel: modelId(MODELS.sonnet),
   researcherCheapModel: modelId(OPENROUTER_MODELS.flash),
   // Kill switch for launching new runs; a run in flight also polls the
-  // researcher_paused platform flag each turn.
+  // researcher_paused platform flag each turn. Off by default, as the
+  // solver is, so no deployment starts spending on delegated research
+  // without someone choosing that.
   researcherEnabled: z
     .string()
     .transform((s) => s === "true")
-    .default("true"),
+    .default("false"),
   // Backstops, never decisions: the durable daily cap on researcher spend
   // across processes, the most one run may be given, the most runs one
   // launching administrator's run may start, and the wall and turn caps on

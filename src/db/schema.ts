@@ -2799,7 +2799,7 @@ export const researchRuns = pgTable(
     effort: text("effort"),
     // Whether the constitution was prepended to the instrument's prompt.
     includeConstitution: boolean("include_constitution").notNull().default(true),
-    // running | completed | budget | paused | timeout | refused | failed
+    // running | completed | no_report | budget | paused | timeout | refused | failed
     status: text("status").notNull().default("running"),
     // The tools the run was offered, by name, so a reader of the report knows
     // what the instrument could and could not do.

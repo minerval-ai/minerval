@@ -21,6 +21,9 @@ export const RESEARCHER_AGENT = "researcher";
 export const RESEARCH_RUN_STATUSES = [
   "running",
   "completed",
+  // The run ended on its own (end_turn, turn cap, max_tokens) without
+  // calling report; its notebook is all there is.
+  "no_report",
   "budget",
   "paused",
   "timeout",
@@ -188,13 +191,23 @@ export async function getResearchRun(id: string): Promise<ResearchRunRow | null>
   return rows[0] ? normalize(rows[0]) : null;
 }
 
-/** The runs launched for one claim, newest first. */
-export async function listResearchRunsForClaim(claimId: string): Promise<ResearchRunRow[]> {
-  const rows = await rawQuery<ResearchRunRow>(
-    `SELECT ${COLUMNS} FROM research_runs WHERE claim_id = $1 ORDER BY started_at DESC`,
+export type ResearchRunListing = Pick<
+  ResearchRunRow,
+  "id" | "requested_by" | "task" | "model" | "model_tier" | "status" | "spent_micro_usd" | "turns" | "started_at" | "finished_at"
+>;
+
+/**
+ * The runs launched for one claim, newest first, without their reports and
+ * notebooks: this serves the public claim page, which discloses neither.
+ */
+export async function listResearchRunsForClaim(claimId: string): Promise<ResearchRunListing[]> {
+  const rows = await rawQuery<ResearchRunListing>(
+    `SELECT id, requested_by, task, model, model_tier, status,
+            spent_micro_usd::bigint AS spent_micro_usd, turns, started_at, finished_at
+       FROM research_runs WHERE claim_id = $1 ORDER BY started_at DESC`,
     [claimId]
   );
-  return rows.map(normalize);
+  return rows.map((r) => ({ ...r, spent_micro_usd: Number(r.spent_micro_usd), turns: Number(r.turns) }));
 }
 
 export async function writeResearchNotebookSection(

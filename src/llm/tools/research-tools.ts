@@ -21,7 +21,7 @@ type Tool = Anthropic.Tool;
 import { loadConfig } from "../../config.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
-import { getUsageContext, withCostMeter } from "../usage-context.js";
+import { getUsageContext, runWithUsageContext, withCostMeter } from "../usage-context.js";
 import { owlsToMicroUsd } from "../../services/owl.js";
 import {
   RESEARCH_MODEL_TIERS,
@@ -82,14 +82,13 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
         "the formal pipeline. Write the brief the way you would for a capable assistant " +
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
-        "Tiers and what each can do: 'strong' runs the best model class on the long-run " +
-        "loop with web search and a code-execution sandbox (Python, no network), for work " +
-        "where the best model pays; 'standard' runs a Claude model with the same web search " +
-        "and sandbox, for most delegated reading and checking; 'cheap' runs the cheap tier " +
-        "with client tools only (the graph's own record, fetching and reading sources, " +
-        "scholarly search where configured), no web search and no sandbox, and is right for " +
-        "reading and mapping a large literature economically. Every tier has the " +
-        "provenance tools on a claim-scoped task, a notebook, and the claim's own record. " +
+        "Every tier has web search, read_page, the graph's read tools, scholarly search " +
+        "where configured, a notebook, and the provenance tools on a claim-scoped task. " +
+        "Tiers: 'strong' runs the best model class on the long-run loop with a " +
+        "code-execution sandbox (Python, no network), for a replication or an analysis " +
+        "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
+        "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
+        "sandbox, and is right for reading and mapping a large literature economically. " +
         `Budget is in USD of metered work, at most ${maxOwls} per run; you may launch at most ` +
         `${maxRuns} runs in this pass. The call blocks until the researcher reports (a wall ` +
         `cap of ${config.researcherMaxWallMinutes} minutes applies). Its findings are evidence ` +
@@ -165,11 +164,14 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
   const config = loadConfig();
   const claimScoped = !!options.claimId;
-  const definitions = getResearchToolDefinitions({ claimScoped });
+  // A deployment with the researcher off offers nothing: a tool that only
+  // refuses would cost every launcher's prompt and invite wasted calls.
+  const definitions = config.researcherEnabled ? getResearchToolDefinitions({ claimScoped }) : [];
   const run = options.runResearcher ?? runResearcher;
   let launched = 0;
 
@@ -221,6 +223,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     }
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
+    if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
     let claim: { id: string; text: string; domains: string[] } | null = null;
     if (claimId) {
       const [row] = await rawQuery<{ id: string; text: string; domains: string[] | null }>(
@@ -251,13 +254,21 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     let result: ResearcherResult | null = null;
     let billed = 0;
     let failure: unknown = null;
+    // The researcher runs under its own meter, so its ceiling reads only its
+    // own spend; that meter shadows the launcher's, so what it billed is
+    // added back to the launcher's below, where the launcher's action and
+    // allocation accounting read it.
+    const launcherMeter = ctx.meter;
     try {
-      const metered = await withCostMeter(() =>
+      // A Grantmaker that names a claim attributes the spend to it, as the
+      // Steward's context already does.
+      const metered = await runWithUsageContext(claim ? { claimId: claim.id } : {}, () => withCostMeter(() =>
         run({
           run: {
             id: row.id,
             claim_id: row.claim_id,
             grant_id: row.grant_id,
+            requested_by: row.requested_by,
             task: row.task,
             model: row.model,
             model_tier: row.model_tier,
@@ -268,12 +279,13 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
           },
           claim,
         })
-      );
+      ));
       result = metered.value;
       billed = metered.billedMicroUsd;
     } catch (err) {
       failure = err;
     }
+    if (launcherMeter) launcherMeter.billedMicroUsd += billed;
 
     if (failure || !result) {
       const message = failure instanceof Error ? failure.message : String(failure);
@@ -322,11 +334,15 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const get = async (input: Record<string, unknown>): Promise<string> => {
     const id = str(input.research_run_id);
     if (!id) return refuse("research_run_id is required.");
+    if (!UUID_RE.test(id)) return refuse(`"${id}" is not a research run id.`);
     const row = await getResearchRun(id);
     if (!row) return refuse(`No research run ${id} exists.`);
-    if (options.claimId && row.claim_id && row.claim_id !== options.claimId) {
-      return refuse("That run served another claim.");
-    }
+    // A launcher reads its own runs: a Steward those on its claim, a
+    // Grantmaker those its mandate launched.
+    const mine = options.claimId
+      ? row.claim_id === options.claimId
+      : !!options.grantId && row.grant_id === options.grantId;
+    if (!mine) return refuse("That run was launched for another claim or mandate.");
     return JSON.stringify({
       success: true,
       research_run: {

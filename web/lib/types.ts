@@ -797,12 +797,13 @@ export interface PrizeClaimSummary {
 
 export type AttemptOutcome = "proof" | "disproof" | "partial" | "reduction" | "negative" | "none";
 
-// A research run (#298): an investigation the Steward delegated to the
-// researcher, disclosed on the claim page with its brief, model, and cost.
+// A research run (#298): an investigation the Steward (or a Grantmaker)
+// delegated to the researcher, disclosed on the claim page with its model
+// and cost, and with its brief when the Steward launched it.
 export interface ResearchRunSummary {
   id: string;
   requested_by: string;
-  task: string;
+  task: string | null;
   model: string;
   model_tier: string;
   status: string;
