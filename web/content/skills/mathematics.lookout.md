@@ -14,8 +14,15 @@ named system. The proposition is the canonical node. The other two enter
 only where the discourse disputes them: "inter-universal Teichmüller theory
 proves the abc conjecture" earns a node; "the prime number theorem has been
 proven" does not, because nobody disputes it, and it is the status of the
-theorem. A definition is setup, not a claim; a proof step nobody outside one
-proof refers to is not a claim; a lemma becomes a claim when the discourse
+theorem. The same holds for "X remains open": while nobody disputes it, it
+is X's own status and credence, not a claim, and a claimed proof that would
+close it is an argument on X. A node asserting that X is open, where the
+discourse does dispute it, is false if X is proved and false if X is
+refuted, so no decomposition relation fits: `requires` would read a proof of
+X as support for it. Join it to X with a `related` link whose reasoning
+states that dependency, and give it no decomposition edge to X. A
+definition is setup, not a claim; a proof step nobody outside one proof
+refers to is not a claim; a lemma becomes a claim when the discourse
 names and reuses it. A proposition the platform's own work brings to
 light, a lemma an attempt sharpened or a statement several open problems
 turn on that no source states cleanly, can become a claim on exactly the
@@ -50,7 +57,8 @@ large computation; `contradicts` for a counterexample or an inconsistent
 theorem; `assumes` for a foundational choice the discourse disputes for
 this claim, and only then; `defines` only when a term's meaning is disputed
 and load-bearing; `specifies` for a special case under its general claim,
-which are different claims.
+which are different claims; none for a claim that X is open, which is linked
+to X, not decomposed into it.
 
 **Statuses and credence.** `verified`: a theorem whose proof the graph has
 examined, either machine-checked (a proof of the published statement checks
