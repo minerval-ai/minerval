@@ -10,7 +10,15 @@
  * pass after the run, the direct (money-trigger) lock, the heartbeat, and
  * the shutdown hand-back.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Before any module reads config: the drain's fallback lane on, and its
+// daily budget off (0), since other files in the suite record unattributed
+// spend today that would otherwise exhaust it (attempts.test.ts).
+vi.hoisted(() => {
+  process.env.BACKGROUND_FALLBACK_LANE_ENABLED = "true";
+  process.env.BACKGROUND_DAILY_BUDGET_OWLS = "0";
+});
 
 const mocks = vi.hoisted(() => ({
   runClaimSteward: vi.fn(async (_input: { claimId: string; trigger: string; context: string }) => undefined),
@@ -83,10 +91,6 @@ async function seedHeadClaim(label: string): Promise<string> {
   await toHead(id);
   return id;
 }
-
-beforeAll(() => {
-  process.env.BACKGROUND_FALLBACK_LANE_ENABLED = "true";
-});
 
 beforeEach(() => {
   mocks.runClaimSteward.mockReset();
