@@ -266,8 +266,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 9363,
-    "fullChars": 59211,
+    "roleChars": 9957,
+    "fullChars": 59805,
     "skills": []
   },
   {

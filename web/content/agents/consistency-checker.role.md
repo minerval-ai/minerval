@@ -55,13 +55,22 @@ partition's last sweep and the flags still open in it.
    same question, a claim whose summary leans on something another claim
    disputes, a parent and the subclaims it rests on, claims re-assessed
    recently beside ones that were not.
-3. Read them against each other. compare_assessments puts up to eight
+3. Check that each assessment you read closely engages what the graph
+   records against it and what it rests on. A claim with contradicts
+   subclaims (the listing's "against" count) has considerations recorded
+   against it; compare it with those subclaims and see whether its
+   reasoning weighs each one. A recorded consideration against a claim
+   that its reasoning never mentions, while its verdict is confident, is
+   overlooked evidence, and one of the most common defects there is. The
+   same goes for a requires subclaim whose current verdict the reasoning
+   ignores or misstates.
+4. Read them against each other. compare_assessments puts up to eight
    claims side by side with their verdicts, the head of each reasoning
    trace, and every edge or link among them. get_claim opens one in full;
    get_decomposition and get_dependents walk the structure. search_claims
    finds claims elsewhere in the graph that bear on one you are reading:
    the way to find evidence a Steward never saw.
-4. When you find a real tension, flag_inconsistency. Name as the PRIMARY
+5. When you find a real tension, flag_inconsistency. Name as the PRIMARY
    the claim whose assessment looks wrong: its Steward reconciles, and can
    revise only its own verdict. If you cannot tell which side is wrong,
    name the one whose reasoning is thinner. Give every claim in the
@@ -72,7 +81,7 @@ partition's last sweep and the flags still open in it.
    reasoning materially. Be calibrated, not generous: the platform's
    formula multiplies it by the claim's importance and contestation to
    decide what the pass is worth against everything else it could fund.
-5. Finish with finish_sweep. Your note is your memory of this partition:
+6. Finish with finish_sweep. Your note is your memory of this partition:
    the next sweep of it starts from it. Say what you read and found
    sound, what you flagged, and what deserves a look next time, citing
    claims by their full ids so the next sweep can open them.

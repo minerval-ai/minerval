@@ -379,6 +379,13 @@ export interface PartitionClaim {
   /** Edges out of (subclaims) and into (dependents) this claim. */
   subclaims: number;
   dependents: number;
+  /**
+   * Of its subclaims, how many are recorded AGAINST it (contradicts) and
+   * how many it needs (requires): the considerations its reasoning has to
+   * engage, so where an overlooked one would be.
+   */
+  against: number;
+  required: number;
   /** A consistency flag on this claim is still waiting for its pass. */
   flag_open: boolean;
   /**
@@ -413,6 +420,10 @@ export async function partitionClaims(
             ($3::timestamptz IS NULL OR a.assessed_at > $3) AS changed,
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.parent_claim_id = c.id) AS subclaims,
             (SELECT COUNT(*)::int FROM claim_relationships r WHERE r.child_claim_id = c.id) AS dependents,
+            (SELECT COUNT(*)::int FROM claim_relationships r
+              WHERE r.parent_claim_id = c.id AND r.relation_type = 'contradicts') AS against,
+            (SELECT COUNT(*)::int FROM claim_relationships r
+              WHERE r.parent_claim_id = c.id AND r.relation_type = 'requires') AS required,
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
                      WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')
                        AND f.assessment_id_at_flag = a.id) AS flag_open,
@@ -472,7 +483,9 @@ export interface ComparedRelation {
   reasoning: string;
 }
 
-const TRACE_EXCERPT_CHARS = 2_500;
+// Long enough to see whether a trace engages a given consideration, which
+// is the read an overlooked-evidence judgment turns on.
+const TRACE_EXCERPT_CHARS = 5_000;
 
 /**
  * Up to CONSISTENCY_BOUNDS.maxClaims claims side by side with their current
