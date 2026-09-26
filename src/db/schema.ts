@@ -101,7 +101,8 @@ export const claims = pgTable(
     // Steward; the drain always picks the highest-`importance` pending claim, so
     // under a budget the most load-bearing claims are stewarded and the rest stay
     // "embedded stubs". Re-triggers (a changed subclaim, a Curator action) just
-    // set this back to 'pending', coalescing a propagation storm into one slot.
+    // set this back to 'pending', coalescing a propagation storm into one slot;
+    // a re-trigger on a 'running' claim sets steward_requeued instead (#482).
     // Lifecycle: pending → running → done | error (→ pending again on re-trigger).
     // 'deferred' is a low-importance subclaim intentionally held OUT of the drain
     // (#98 economic brake): created and embedded/matchable but not recursively
@@ -110,7 +111,15 @@ export const claims = pgTable(
     stewardTrigger: text("steward_trigger"),
     stewardContext: text("steward_context"),
     stewardError: text("steward_error"),
+    // While 'running' this is the run's lease: set when a lane claims the row
+    // and refreshed by the run's heartbeat, so only a dead run goes stale
+    // (steward-lease.ts).
     stewardedAt: timestamp("stewarded_at", { withTimezone: true }),
+    // A message arrived while the claim was 'running' (#482). The row stays
+    // 'running' — flipping it to 'pending' mid-run handed the claim to a
+    // second lane while the first run was still writing — and the run's
+    // release turns it into 'pending' so the message still gets its pass.
+    stewardRequeued: boolean("steward_requeued").notNull().default(false),
     // Consecutive failed Steward attempts on this claim. Transient failures (API
     // budget/credit outage, 429, 5xx, network) return the claim to 'pending'
     // WITHOUT counting here — they are not the claim's fault (#97). Only genuine
@@ -1030,7 +1039,7 @@ export const llmUsage = pgTable(
     // src/llm/providers/routing.ts). Defaults to anthropic so rows written
     // before multi-provider support keep their true provider. Non-token
     // spend (docs/mathematics.md §6.3) meters here too — provider `lean`,
-    // `elicit`, or `anthropic_code_execution`, model carrying the pinned
+    // `elicit`, `anthropic_code_execution`, or `anthropic_web_search`, model carrying the pinned
     // identity (`lean-checker/<pin_id>`, `elicit/search_papers`) — so every
     // escrow, budget-job, and cost-estimate query that sums cost_micro_usd
     // sees real money the token columns cannot.
@@ -2865,6 +2874,70 @@ export const platformFlags = pgTable("platform_flags", {
     .notNull()
     .defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// research_runs (#298)
+//
+// One bounded investigation by the researcher: an instrument an administrator
+// (the Claim Steward, or a Grantmaker for its mandate) launches with a task,
+// a model tier, and a dollar ceiling, and that answers only to the agent that
+// launched it. The row is the durable record of the delegation: what was
+// asked, on which model, what it cost, how it ended, the report it returned,
+// and the notebook it kept. The researcher writes nothing to the graph
+// beyond the provenance tables the Provenance skill gives it; its report is
+// context the launching administrator weighs, never a verdict of its own.
+// Same shape as proof_attempts, whose solver is the special case of this
+// instrument that runs with Lean, no network, and no constitution.
+// ---------------------------------------------------------------------------
+export const researchRuns = pgTable(
+  "research_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The claim the investigation serves, when it serves one. Cascade: a
+    // deleted claim takes its research record with it, as it takes its
+    // instances and assessments.
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
+    // The mandate whose Grantmaker launched it, when one did.
+    grantId: uuid("grant_id"),
+    // The agent key of the launcher (claim_steward, grantmaker) and its
+    // agent_runs row, so a report is traceable to the run that asked for it.
+    requestedBy: text("requested_by").notNull(),
+    requesterRunId: uuid("requester_run_id"),
+    // The researcher's own agent_runs row, and the job the spend rides on.
+    runId: uuid("run_id"),
+    jobId: uuid("job_id"),
+    // The launcher's brief, verbatim: the question, the context, and the
+    // guidance it wrote for the instrument.
+    task: text("task").notNull(),
+    model: text("model").notNull(),
+    // strong | standard | cheap: the tier the launcher chose.
+    modelTier: text("model_tier").notNull(),
+    effort: text("effort"),
+    // Whether the constitution was prepended to the instrument's prompt.
+    includeConstitution: boolean("include_constitution").notNull().default(true),
+    // running | completed | no_report | budget | paused | timeout | refused | failed
+    status: text("status").notNull().default("running"),
+    // The tools the run was offered, by name, so a reader of the report knows
+    // what the instrument could and could not do.
+    tools: jsonb("tools").notNull().default([]),
+    ceilingMicroUsd: bigint("ceiling_micro_usd", { mode: "number" }).notNull(),
+    spentMicroUsd: bigint("spent_micro_usd", { mode: "number" }).notNull().default(0),
+    turns: integer("turns").notNull().default(0),
+    servedModels: jsonb("served_models"),
+    report: jsonb("report"),
+    notebook: jsonb("notebook").notNull().default({}),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (table) => [
+    index("idx_research_runs_claim").on(table.claimId),
+    index("idx_research_runs_grant").on(table.grantId),
+    index("idx_research_runs_status").on(table.status),
+    check("ck_research_runs_ceiling", sql`ceiling_micro_usd > 0`),
+    check("ck_research_runs_spent", sql`spent_micro_usd >= 0`),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // bounties

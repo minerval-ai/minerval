@@ -23,8 +23,11 @@
  *    General mandate seeded (dev, tests) fall back to direct budgeted
  *    runs under backgroundDailyBudgetOwls.
  *  - `FOR UPDATE SKIP LOCKED` + atomic action claiming make it safe for
- *    several prod tasks to drain concurrently; a 'running' claim stuck
- *    >15m (crashed worker) is reclaimable.
+ *    several prod tasks to drain concurrently (a rolling deploy runs two).
+ *    That holds only because 'pending' means no run is live: a message for
+ *    a running claim sets `steward_requeued` rather than re-pending it
+ *    (#482). A live run heartbeats its lease, so only a 'running' claim
+ *    whose lease is >15m old (crashed worker) is reclaimable.
  *
  * Failure handling (#97): a failed Steward run is classified, not blindly parked.
  * Budget-tracker and transient API/infra failures (billing/credit outage, 429,
@@ -50,6 +53,11 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import {
+  STEWARD_LEASE_STALE_MINUTES,
+  stewardReleaseSet,
+  withStewardLease,
+} from "../services/steward-lease.js";
 
 interface StewardTaskRow {
   id: string;
@@ -174,13 +182,15 @@ export async function processNextStewardTask(
   }
   const rows = await rawQuery<StewardTaskRow>(
     `UPDATE claims
-        SET steward_state = 'running', stewarded_at = now()
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
       WHERE id = (
         SELECT id FROM claims
          WHERE state = 'active'
            AND (steward_state = 'pending'
                 OR (steward_state = 'running'
-                    AND stewarded_at < now() - interval '15 minutes'))
+                    AND stewarded_at < now()
+                          - make_interval(mins => ${STEWARD_LEASE_STALE_MINUTES})))
          ORDER BY queue_priority DESC, updated_at ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED
@@ -213,11 +223,13 @@ async function runCoveredAction(
   // Claim the claim row, guarding against a concurrent express-lane run.
   const rows = await rawQuery<StewardTaskRow>(
     `UPDATE claims
-        SET steward_state = 'running', stewarded_at = now()
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
       WHERE id = $1 AND state = 'active'
         AND (steward_state = 'pending'
              OR (steward_state = 'running'
-                 AND stewarded_at < now() - interval '15 minutes'))
+                 AND stewarded_at < now()
+                       - make_interval(mins => ${STEWARD_LEASE_STALE_MINUTES})))
       RETURNING id, steward_trigger, steward_context, steward_attempts,
                 queue_priority`,
     [action.claim_id]
@@ -278,16 +290,18 @@ async function runStewardOnClaim(
   const action = input.action;
 
   try {
-    const { billedMicroUsd } = await runWithUsageContext(
-      input.usageCtx ?? {},
+    const { billedMicroUsd } = await withStewardLease(
+      { claimId: task.id, ...(action ? { actionId: action.id } : {}) },
       () =>
-        withCostMeter(() =>
-          runClaimSteward({
-            trigger,
-            claimId: task.id,
-            context: task.steward_context ?? "",
-            model: input.model,
-          })
+        runWithUsageContext(input.usageCtx ?? {}, () =>
+          withCostMeter(() =>
+            runClaimSteward({
+              trigger,
+              claimId: task.id,
+              context: task.steward_context ?? "",
+              model: input.model,
+            })
+          )
         )
     );
     // Close the ledger group: winner done, siblings superseded, losing
@@ -306,16 +320,12 @@ async function runStewardOnClaim(
       );
     }
     // Success clears the error state AND the attempt counter, so a claim that
-    // failed transiently before is treated fresh next time. The state write is
-    // guarded on the row still being 'running': if a new message re-pended the
-    // claim mid-run, completing THIS run must not clobber that pending slot
-    // (#182) — the message would be silently lost.
+    // failed transiently before is treated fresh next time. A message that
+    // arrived mid-run (#182) turns the release into 'pending' rather than
+    // 'done' (#482) — the message would otherwise be silently lost.
     await rawQuery(
       `UPDATE claims
-          SET steward_state = CASE
-                WHEN steward_state = 'running' THEN 'done'
-                ELSE steward_state
-              END,
+          SET ${stewardReleaseSet("'done'")},
               steward_error = NULL, steward_attempts = 0
         WHERE id = $1`,
       [task.id]
@@ -336,14 +346,20 @@ async function runStewardOnClaim(
     // rather than being re-picked immediately.
     if (err instanceof LlmBudgetExceededError) {
       await rawQuery(
-        `UPDATE claims SET steward_state = 'pending', updated_at = now() WHERE id = $1`,
+        `UPDATE claims
+            SET steward_state = 'pending', steward_requeued = false,
+                updated_at = now()
+          WHERE id = $1`,
         [task.id]
       );
       return { status: "budget", claimId: task.id };
     }
     if (isTransientApiError(err)) {
       await rawQuery(
-        `UPDATE claims SET steward_state = 'pending', updated_at = now() WHERE id = $1`,
+        `UPDATE claims
+            SET steward_state = 'pending', steward_requeued = false,
+                updated_at = now()
+          WHERE id = $1`,
         [task.id]
       );
       console.warn(
@@ -356,16 +372,13 @@ async function runStewardOnClaim(
     // then park as 'error' so the drain stops spinning on a poison claim.
     const nextAttempts = attempts + 1;
     if (nextAttempts >= MAX_STEWARD_ATTEMPTS) {
-      // Same mid-run guard as the success path: a message that re-pended the
-      // claim during this run survives the park. The attempt counter is still
-      // recorded, so a genuinely poisoned claim converges to 'error' anyway
-      // after its retriggered runs also fail.
+      // Same mid-run rule as the success path: a message that arrived during
+      // this run survives the park. The attempt counter is still recorded, so
+      // a genuinely poisoned claim converges to 'error' anyway after its
+      // retriggered runs also fail.
       await rawQuery(
         `UPDATE claims
-            SET steward_state = CASE
-                  WHEN steward_state = 'running' THEN 'error'
-                  ELSE steward_state
-                END,
+            SET ${stewardReleaseSet("'error'")},
                 steward_error = $2, steward_attempts = $3
           WHERE id = $1`,
         [task.id, msg, nextAttempts]
@@ -385,8 +398,8 @@ async function runStewardOnClaim(
     } else {
       await rawQuery(
         `UPDATE claims
-            SET steward_state = 'pending', steward_error = $2,
-                steward_attempts = $3, updated_at = now()
+            SET steward_state = 'pending', steward_requeued = false,
+                steward_error = $2, steward_attempts = $3, updated_at = now()
           WHERE id = $1`,
         [task.id, msg, nextAttempts]
       );

@@ -27,6 +27,11 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import {
+  acquireStewardLock,
+  releaseStewardLock,
+  withStewardLease,
+} from "../services/steward-lease.js";
 
 export const MONEY_TRIGGERS = [
   "formalize",
@@ -119,7 +124,10 @@ export async function assertTriggerToolsActive(trigger: MoneyTrigger, claimId: s
 
 /**
  * Run the Steward on one claim for one money trigger, now, on the strong
- * tier, metered against the funding job. Never goes through enqueueSteward.
+ * tier, metered against the funding job. Never goes through enqueueSteward,
+ * but takes the claim's lock like every lane (#482): if another Steward is
+ * mid-run on the claim this waits for it, and throws a retryable
+ * StewardBusyError if it does not come free.
  */
 export async function invokeStewardDirect(input: DirectStewardInput): Promise<DirectStewardResult> {
   if (!isMoneyTrigger(input.trigger)) {
@@ -127,21 +135,38 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
   }
   const model = moneyTriggerModel(input.trigger, input.model);
   await assertTriggerToolsActive(input.trigger, input.claimId);
-  const { billedMicroUsd } = await runWithUsageContext(
-    {
-      ...(input.jobId ? { jobId: input.jobId } : {}),
-      ...(input.userId ? { userId: input.userId } : {}),
-      claimId: input.claimId,
-    },
-    () =>
-      withCostMeter(() =>
-        runClaimSteward({
-          trigger: input.trigger,
+  const restore = await acquireStewardLock(input.claimId);
+  try {
+    const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
+      runWithUsageContext(
+        {
+          ...(input.jobId ? { jobId: input.jobId } : {}),
+          ...(input.userId ? { userId: input.userId } : {}),
           claimId: input.claimId,
-          context: input.context,
-          model,
-        })
+        },
+        () =>
+          withCostMeter(() =>
+            runClaimSteward({
+              trigger: input.trigger,
+              claimId: input.claimId,
+              context: input.context,
+              model,
+            })
+          )
       )
-  );
-  return { model, billedMicroUsd };
+    );
+    return { model, billedMicroUsd };
+  } finally {
+    // A money run does not consume the queue slot: the claim goes back as
+    // found (or to 'pending' if a message arrived meanwhile). A failed
+    // release must not mask the run's own outcome; the lease runs out in 15
+    // minutes and the claim is reclaimable then.
+    await releaseStewardLock(input.claimId, restore).catch((err) =>
+      console.error(
+        `[steward-direct] releasing claim ${input.claimId} failed: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+  }
 }

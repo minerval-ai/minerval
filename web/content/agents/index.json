@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 8686,
-    "fullChars": 58534,
+    "fullChars": 59601,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 11507,
-    "fullChars": 61355,
+    "fullChars": 62422,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 20251,
-    "fullChars": 70099,
+    "fullChars": 71166,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 36461,
-    "fullChars": 86309,
+    "roleChars": 39079,
+    "fullChars": 89994,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 15344,
-    "fullChars": 65192,
+    "fullChars": 66259,
     "skills": [
       {
         "name": "mathematics",
@@ -148,7 +148,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 17850,
-    "fullChars": 67698,
+    "fullChars": 68765,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19111,
-    "fullChars": 68959,
+    "fullChars": 70026,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 18211,
-    "fullChars": 68059,
+    "roleChars": 19314,
+    "fullChars": 70229,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 10467,
-    "fullChars": 60315,
+    "fullChars": 61382,
     "skills": [
       {
         "name": "mathematics",
@@ -267,7 +267,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 9957,
-    "fullChars": 59805,
+    "fullChars": 60872,
     "skills": []
   },
   {
@@ -282,5 +282,25 @@
     "roleChars": 4526,
     "fullChars": 4526,
     "skills": []
+  },
+  {
+    "key": "researcher",
+    "name": "Researcher",
+    "stage": 10,
+    "group": "instruments",
+    "tagline": "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
+    "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
+    "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
+    "hasConstitution": true,
+    "roleChars": 6367,
+    "fullChars": 57282,
+    "skills": [
+      {
+        "name": "provenance",
+        "sections": [
+          "For the researcher"
+        ]
+      }
+    ]
   }
 ]

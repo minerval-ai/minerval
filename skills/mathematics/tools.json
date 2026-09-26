@@ -1,7 +1,7 @@
 [
   {
     "name": "lean_search",
-    "description": "Search Mathlib for declarations. The default backend is the platform's own Loogle mirror pinned to the platform's Mathlib: patterns use ?a metavariables and a \u22a2 conclusion, for example \"?a + ?b = ?b + ?a\" or \"Nat.Prime, \u22a2 Infinite\". When configured, a natural-language backend accepts a sentence instead. A hosted index may run ahead of the pin, so confirm any name you intend to use with lean_elaborate before relying on it. Returns matching declarations with their types and module paths.",
+    "description": "Search Mathlib for declarations. The default backend is the platform's own Loogle mirror pinned to the platform's Mathlib: patterns use ?a metavariables and a ⊢ conclusion, for example \"?a + ?b = ?b + ?a\" or \"Nat.Prime, ⊢ Infinite\". When configured, a natural-language backend accepts a sentence instead. A hosted index may run ahead of the pin, so confirm any name you intend to use with lean_elaborate before relying on it. Returns matching declarations with their types and module paths.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -27,7 +27,8 @@
       ]
     },
     "roles": [
-      "claim-steward"
+      "claim-steward",
+      "researcher"
     ]
   },
   {
@@ -50,7 +51,8 @@
       ]
     },
     "roles": [
-      "claim-steward"
+      "claim-steward",
+      "researcher"
     ]
   },
   {

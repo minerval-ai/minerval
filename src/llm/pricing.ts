@@ -157,6 +157,14 @@ export function costMicroUsd(model: string, usage: UsageTokens): number {
   return Math.round(usd * 1_000_000);
 }
 
+/**
+ * Anthropic's server-side web search: $10 per 1,000 searches, billed per
+ * search on top of the tokens its results add. The response reports the
+ * count (usage.server_tool_use.web_search_requests); the token meter never
+ * saw it, so every agent's searches were unpriced.
+ */
+export const ANTHROPIC_WEB_SEARCH_MICRO_USD = 10_000;
+
 /** Format a micro-USD amount for display/logs, e.g. 1234567 → "$1.2346". */
 export function formatMicroUsd(micro: number): string {
   return `$${(micro / 1_000_000).toFixed(4)}`;

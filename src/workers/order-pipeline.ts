@@ -24,6 +24,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -78,10 +79,7 @@ async function requeueOrder(orderId: string): Promise<void> {
 async function releaseClaim(claimId: string, state: string): Promise<void> {
   await rawQuery(
     `UPDATE claims
-        SET steward_state = CASE
-              WHEN steward_state = 'running' THEN $2
-              ELSE steward_state
-            END,
+        SET ${stewardReleaseSet("$2")},
             updated_at = now()
       WHERE id = $1`,
     [claimId, state]
@@ -134,7 +132,8 @@ export async function processNextOrderTask(
     decomposition_status: string;
   }>(
     `UPDATE claims c
-        SET steward_state = 'running', stewarded_at = now()
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
        FROM (SELECT id, steward_state AS prior_state FROM claims WHERE id = $1) prior
       WHERE c.id = prior.id AND c.state = 'active'
         AND (c.steward_state <> 'running'
@@ -204,11 +203,13 @@ export async function processNextOrderTask(
       "evidence with fresh eyes and record a current assessment.";
 
   try {
-    const { billedMicroUsd } = await runWithUsageContext(
-      { userId: order.user_id, jobId: order.id },
+    const { billedMicroUsd } = await withStewardLease(
+      { claimId: order.claim_id },
       () =>
-        withCostMeter(() =>
-          runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+        runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
+          withCostMeter(() =>
+            runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+          )
         )
     );
 

@@ -47,30 +47,75 @@ export type QuoteCheckResult = (typeof QUOTE_CHECK_RESULTS)[number];
 // Text handling
 // ---------------------------------------------------------------------------
 
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  ndash: "–",
-  mdash: "—",
-  hellip: "…",
-  lsquo: "‘",
-  rsquo: "’",
-  ldquo: "“",
-  rdquo: "”",
+/**
+ * The named character references of HTML 4 (Latin-1, symbols and Greek,
+ * special), plus `apos` and a few HTML5 spellings that science pages use.
+ * Not the full HTML5 table of two thousand names, but enough that a page's
+ * `&ne;` or `&alpha;` reads as the character the browser shows (#483).
+ */
+const LATIN1 =
+  "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr " +
+  "deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest " +
+  "Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml " +
+  "ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig " +
+  "agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml " +
+  "eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml";
+const GREEK =
+  "Alpha Beta Gamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda Mu Nu Xi Omicron Pi Rho";
+const GREEK_TAIL = "Sigma Tau Upsilon Phi Chi Psi Omega";
+const NAMED_CODEPOINTS: Record<string, number> = {
+  quot: 34, amp: 38, apos: 39, lt: 60, gt: 62,
+  fnof: 402, OElig: 338, oelig: 339, Scaron: 352, scaron: 353, Yuml: 376, circ: 710, tilde: 732,
+  sigmaf: 962, thetasym: 977, upsih: 978, piv: 982,
+  ensp: 8194, emsp: 8195, thinsp: 8201, zwnj: 8204, zwj: 8205, lrm: 8206, rlm: 8207,
+  ndash: 8211, mdash: 8212, lsquo: 8216, rsquo: 8217, sbquo: 8218, ldquo: 8220, rdquo: 8221,
+  bdquo: 8222, dagger: 8224, Dagger: 8225, bull: 8226, hellip: 8230, permil: 8240, prime: 8242,
+  Prime: 8243, lsaquo: 8249, rsaquo: 8250, oline: 8254, frasl: 8260, euro: 8364, image: 8465,
+  weierp: 8472, real: 8476, trade: 8482, alefsym: 8501,
+  larr: 8592, uarr: 8593, rarr: 8594, darr: 8595, harr: 8596, crarr: 8629,
+  lArr: 8656, uArr: 8657, rArr: 8658, dArr: 8659, hArr: 8660,
+  forall: 8704, part: 8706, exist: 8707, empty: 8709, nabla: 8711, isin: 8712, notin: 8713,
+  ni: 8715, prod: 8719, sum: 8721, minus: 8722, lowast: 8727, radic: 8730, prop: 8733,
+  infin: 8734, ang: 8736, and: 8743, or: 8744, cap: 8745, cup: 8746, int: 8747, there4: 8756,
+  sim: 8764, cong: 8773, asymp: 8776, ne: 8800, equiv: 8801, le: 8804, ge: 8805, sub: 8834,
+  sup: 8835, nsub: 8836, sube: 8838, supe: 8839, oplus: 8853, otimes: 8855, perp: 8869,
+  sdot: 8901, lceil: 8968, rceil: 8969, lfloor: 8970, rfloor: 8971, lang: 10216, rang: 10217,
+  loz: 9674, spades: 9824, clubs: 9827, hearts: 9829, diams: 9830,
+  // HTML5 spellings common on science pages.
+  pm: 177, half: 189, centerdot: 183, neq: 8800, leq: 8804, geq: 8805, approx: 8776,
+  hyphen: 8208, minusplus: 8723, mp: 8723,
 };
 
-function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, body: string) => {
+const ENTITIES: Record<string, string> = (() => {
+  const table: Record<string, string> = {};
+  LATIN1.split(" ").forEach((name, i) => (table[name] = String.fromCodePoint(160 + i)));
+  GREEK.split(" ").forEach((name, i) => {
+    table[name] = String.fromCodePoint(913 + i);
+    table[name.toLowerCase()] = String.fromCodePoint(945 + i);
+  });
+  // No capital final sigma: the upper-case block skips U+03A2.
+  GREEK_TAIL.split(" ").forEach((name, i) => {
+    table[name] = String.fromCodePoint(931 + i);
+    table[name.toLowerCase()] = String.fromCodePoint(963 + i);
+  });
+  for (const [name, code] of Object.entries(NAMED_CODEPOINTS)) table[name] = String.fromCodePoint(code);
+  return table;
+})();
+
+/**
+ * Decode character references: numeric ones always, named ones from the
+ * table above. Names are case-sensitive (`&Delta;` is not `&delta;`), with a
+ * lower-case fallback for spellings like `&AMP;`. An unknown name is left
+ * as written rather than guessed at.
+ */
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (whole, body: string) => {
     if (body[0] === "#") {
       const code =
         body[1]?.toLowerCase() === "x" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
       return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : whole;
     }
-    return ENTITIES[body.toLowerCase()] ?? whole;
+    return ENTITIES[body] ?? ENTITIES[body.toLowerCase()] ?? whole;
   });
 }
 
@@ -83,12 +128,15 @@ export function looksLikeHtml(content: string): boolean {
 /**
  * Reduce an HTML document to readable text: scripts, styles, and markup
  * removed, block boundaries kept as line breaks, entities decoded, and
- * whitespace collapsed. Plain text passes through with only its whitespace
- * normalized. Good enough to read a page and to test a quote against; not
- * a layout engine.
+ * whitespace collapsed. Plain text passes through with its entities decoded
+ * and its whitespace normalized: an extractor that stripped the tags can
+ * still leave `&ne;` behind (#483). Good enough to read a page and to test
+ * a quote against; not a layout engine.
  */
 export function htmlToText(content: string): string {
-  if (!looksLikeHtml(content)) return content.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+  if (!looksLikeHtml(content)) {
+    return decodeEntities(content).replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+  }
   let text = content
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<(head|script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/gi, " ")
@@ -108,7 +156,9 @@ export function htmlToText(content: string): string {
  * The normal form both sides of a quote check are reduced to: lower case,
  * every dash a hyphen, every quotation mark straight, no punctuation at all,
  * one space between words. Generous on purpose: a quotation that survived a
- * copy with curly quotes and a soft hyphen is still the quotation.
+ * copy with curly quotes and a soft hyphen is still the quotation. Math
+ * symbols are kept, each set off by spaces, because they carry meaning
+ * punctuation does not: "P = NP" is not a quotation of "P ≠ NP" (#483).
  */
 export function normalizeForQuoteCheck(text: string): string {
   return text
@@ -118,14 +168,16 @@ export function normalizeForQuoteCheck(text: string): string {
     .replace(/[‘’‚‛]/g, "'")
     .replace(/[“”„‟]/g, '"')
     .replace(/­/g, "")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/[^\p{L}\p{N}\p{Sm}\s]/gu, " ")
+    .replace(/\p{Sm}/gu, " $& ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 /**
- * Whether `quote` appears in `content`: verbatim, after normalization, or
- * not at all. `no_stored_content` when there is nothing to check against.
+ * Whether `quote` appears in `content`: verbatim (in the stored copy, or in
+ * its readable text with markup removed and entities decoded), after
+ * normalization, or not at all. `no_stored_content` when there is nothing to check against.
  * Mechanical, and the only judgment-free field on a reading.
  */
 export function quoteCheck(quote: string, content: string | null | undefined): QuoteCheckResult {
@@ -133,9 +185,12 @@ export function quoteCheck(quote: string, content: string | null | undefined): Q
   const q = quote.trim();
   if (!q) return "not_found";
   if (content.includes(q)) return "verbatim";
-  const text = looksLikeHtml(content) ? htmlToText(content) : content;
-  if (text.includes(q)) return "verbatim";
-  const nq = normalizeForQuoteCheck(q);
+  // Both sides entity-decoded, so a quotation of the rendered page matches a
+  // stored copy that kept `&ne;`, and one copied from the raw copy matches too.
+  const text = htmlToText(content);
+  const dq = decodeEntities(q);
+  if (text.includes(dq)) return "verbatim";
+  const nq = normalizeForQuoteCheck(dq);
   if (!nq) return "not_found";
   return normalizeForQuoteCheck(text).includes(nq) ? "normalized_match" : "not_found";
 }

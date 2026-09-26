@@ -16,6 +16,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({ runClaimSteward: mocks.runClaimSteward }));
 vi.mock("../../../src/config.js", () => ({ loadConfig: () => mocks.config }));
+// The claim's lock (#482) is exercised against real SQL in
+// tests/db/steward-lock.test.ts; here it always comes free.
+vi.mock("../../../src/services/steward-lease.js", () => ({
+  acquireStewardLock: vi.fn(async () => "done"),
+  releaseStewardLock: vi.fn(async () => undefined),
+  withStewardLease: vi.fn((_lease: unknown, fn: () => Promise<unknown>) => fn()),
+}));
 vi.mock("../../../src/llm/agents/skill-selection.js", () => ({
   skillsForClaim: vi.fn(async () => mocks.skills),
 }));

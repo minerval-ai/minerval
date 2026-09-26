@@ -27,6 +27,7 @@ vi.mock("../../../src/services/url-guard.js", () => ({
 
 import {
   SourceMapError,
+  decodeEntities,
   htmlToText,
   looksLikeHtml,
   normalizeForQuoteCheck,
@@ -99,9 +100,31 @@ describe("quoteCheck", () => {
     expect(quoteCheck("First para", "<p>First para</p>")).toBe("verbatim");
   });
 
+  it("decodes entities on both sides, so a quotation of the rendered page is found (#483)", () => {
+    // A stored copy that kept `&ne;`, plain text or markup.
+    expect(quoteCheck("P ≠ NP", "It is widely believed that P &ne; NP.")).toBe("verbatim");
+    expect(quoteCheck("P ≠ NP", "<p>It is widely believed that P &ne; NP.</p>")).toBe("verbatim");
+    // A quotation copied from the raw copy still matches the rendered text.
+    expect(quoteCheck("P &ne; NP", "<p>It is widely believed that P ≠ NP.</p>")).toBe("verbatim");
+    expect(quoteCheck("α ≤ β", "for all &alpha; &le; &beta; and &Delta;")).toBe("verbatim");
+    expect(quoteCheck("P = NP", "It is widely believed that P &ne; NP.")).toBe("not_found");
+  });
+
+  it("decodes named, numeric, and case-sensitive entities, leaving unknown ones alone", () => {
+    expect(decodeEntities("&ne; &#8800; &#x2260; &Delta;&delta; &times;&divide;&yuml; &AMP; &bogus;")).toBe(
+      "≠ ≠ ≠ Δδ ×÷ÿ & &bogus;"
+    );
+    expect(decodeEntities("&Sigma;&sigmaf;&sigma;&Omega;&omega;")).toBe("ΣςσΩω");
+    expect(htmlToText("Plain text: P &ne; NP")).toBe("Plain text: P ≠ NP");
+  });
+
   it("normalizes dashes, quotes, punctuation, case, and whitespace", () => {
     expect(normalizeForQuoteCheck("  “Hello”, — World!  ")).toBe("hello world");
     expect(normalizeForQuoteCheck("Naïve   café")).toBe("naïve café");
+    // Math symbols carry meaning, so they survive, spaced, where punctuation does not.
+    expect(normalizeForQuoteCheck("P≠NP, and x < 5!")).toBe("p ≠ np and x < 5");
+    expect(quoteCheck("x<5", "we require x < 5.")).toBe("normalized_match");
+    expect(quoteCheck("x > 5", "we require x < 5.")).toBe("not_found");
   });
 });
 

@@ -90,6 +90,14 @@ const { handleQuery } = vi.hoisted(() => ({
       if (state.fundedPending[0] === id) state.fundedPending.shift();
       return serve(id);
     }
+    // A run's release (steward-lease.ts stewardReleaseSet): the lane's end
+    // state, or 'pending' only if a message arrived mid-run (#482) — which
+    // no run in this mock does. Match it before the plain requeue below, or
+    // its 'pending' branch reads as one.
+    if (q.includes("WHEN steward_requeued THEN 'pending'")) {
+      if (q.includes("ELSE 'error'")) state.markedError.push(params[0] as string);
+      return [];
+    }
     if (q.startsWith("UPDATE")) {
       const id = params[0] as string;
       if (q.includes("'error'")) {

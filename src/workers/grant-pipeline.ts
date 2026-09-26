@@ -28,6 +28,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
+import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -165,7 +166,8 @@ async function claimDeepenTarget(
         LIMIT 1
         FOR UPDATE OF c SKIP LOCKED
      )
-     UPDATE claims c SET steward_state = 'running', stewarded_at = now()
+     UPDATE claims c SET steward_state = 'running', stewarded_at = now(),
+                         steward_requeued = false
        FROM target WHERE c.id = target.id
      RETURNING c.id, target.prior_state, c.decomposition_status,
                c.steward_trigger, c.steward_context`,
@@ -178,7 +180,8 @@ async function claimDeepenTarget(
 async function claimSpecificTarget(claimId: string): Promise<TargetRow | null> {
   const rows = await rawQuery<TargetRow>(
     `UPDATE claims c
-        SET steward_state = 'running', stewarded_at = now()
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
        FROM (SELECT id, steward_state AS prior_state FROM claims
               WHERE id = $1) prior
       WHERE c.id = prior.id AND c.state = 'active'
@@ -210,8 +213,7 @@ async function advancePlanCursorIfNeeded(
 async function releaseClaim(claimId: string, state: string): Promise<void> {
   await rawQuery(
     `UPDATE claims
-        SET steward_state = CASE WHEN steward_state = 'running' THEN $2
-                                 ELSE steward_state END,
+        SET ${stewardReleaseSet("$2")},
             updated_at = now()
       WHERE id = $1`,
     [claimId, state]
@@ -335,14 +337,15 @@ export async function processNextGrantTask(
     opts.model ?? (config.stewardStrongModel || config.stewardModel);
 
   try {
-    await runWithUsageContext(
-      { userId: grant.funder_user_id, jobId: grant.budget_job_id },
-      () => runClaimSteward({ trigger, claimId: target.id, context, model })
+    await withStewardLease({ claimId: target.id }, () =>
+      runWithUsageContext(
+        { userId: grant.funder_user_id, jobId: grant.budget_job_id },
+        () => runClaimSteward({ trigger, claimId: target.id, context, model })
+      )
     );
     await rawQuery(
       `UPDATE claims
-          SET steward_state = CASE WHEN steward_state = 'running' THEN 'done'
-                                   ELSE steward_state END,
+          SET ${stewardReleaseSet("'done'")},
               steward_error = NULL, steward_attempts = 0
         WHERE id = $1`,
       [target.id]

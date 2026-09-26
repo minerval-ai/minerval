@@ -14,7 +14,8 @@
     },
     "roles": [
       "claim-steward",
-      "audit-agent"
+      "audit-agent",
+      "researcher"
     ]
   },
   {
@@ -44,7 +45,8 @@
     },
     "roles": [
       "claim-steward",
-      "audit-agent"
+      "audit-agent",
+      "researcher"
     ]
   },
   {
@@ -97,7 +99,8 @@
       ]
     },
     "roles": [
-      "claim-steward"
+      "claim-steward",
+      "researcher"
     ]
   },
   {
@@ -173,7 +176,8 @@
       ]
     },
     "roles": [
-      "claim-steward"
+      "claim-steward",
+      "researcher"
     ]
   },
   {
@@ -216,7 +220,8 @@
       ]
     },
     "roles": [
-      "claim-steward"
+      "claim-steward",
+      "researcher"
     ]
   },
   {

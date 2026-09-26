@@ -26,6 +26,7 @@ type Tool = Anthropic.Tool;
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig, type Config } from "../../config.js";
+import { meterExternalUsage } from "../../services/usage-service.js";
 
 export const ELICIT_TOOL_PREFIX = "elicit_";
 
@@ -141,6 +142,14 @@ export async function executeElicitTool(
     const result = await client.callTool({
       name: providerTool,
       arguments: input,
+    });
+    // The call went through, so it is billed, error result or not.
+    await meterExternalUsage({
+      provider: "elicit",
+      model: `elicit/${providerTool}`,
+      units: 1,
+      unitKind: "call",
+      costMicroUsd: config.elicitUsdPerCall * 1_000_000,
     });
     const text = (result.content as Array<{ type: string; text?: string }>)
       .filter((block) => block.type === "text" && typeof block.text === "string")
