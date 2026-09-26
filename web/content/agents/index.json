@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 8686,
-    "fullChars": 58672,
+    "fullChars": 59601,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 11507,
-    "fullChars": 61493,
+    "fullChars": 62422,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
     "roleChars": 20251,
-    "fullChars": 70237,
+    "fullChars": 71166,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 38258,
-    "fullChars": 88244,
+    "roleChars": 39079,
+    "fullChars": 89994,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 15344,
-    "fullChars": 65330,
+    "fullChars": 66259,
     "skills": [
       {
         "name": "mathematics",
@@ -148,7 +148,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 17850,
-    "fullChars": 67836,
+    "fullChars": 68765,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19111,
-    "fullChars": 69097,
+    "fullChars": 70026,
     "skills": [
       {
         "name": "mathematics",
@@ -214,7 +214,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19314,
-    "fullChars": 69300,
+    "fullChars": 70229,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
     "roleChars": 10467,
-    "fullChars": 60453,
+    "fullChars": 61382,
     "skills": [
       {
         "name": "mathematics",
@@ -258,9 +258,22 @@
     ]
   },
   {
+    "key": "consistency-checker",
+    "name": "Consistency Checker",
+    "stage": 10,
+    "group": "governance",
+    "tagline": "The sweep that reads assessments against one another. Each Steward reads its own claim; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises each find with the Steward whose claim looks wrong, as a reassessment the ledger prices and funds like any other; it writes no verdict and owns no claim.",
+    "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
+    "model": "GLM 5.3 Flash",
+    "hasConstitution": true,
+    "roleChars": 9957,
+    "fullChars": 60872,
+    "skills": []
+  },
+  {
     "key": "math-solver",
     "name": "Solver",
-    "stage": 10,
+    "stage": 11,
     "group": "instruments",
     "tagline": "The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.",
     "invokedWhen": "A funded attempt_proof action on a claim with a published formal statement is covered on the ledger; the solver worker runs it and hands the result to the Steward.",
@@ -280,7 +293,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)",
     "hasConstitution": true,
     "roleChars": 6367,
-    "fullChars": 56353,
+    "fullChars": 57282,
     "skills": [
       {
         "name": "provenance",

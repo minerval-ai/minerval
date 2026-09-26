@@ -14,7 +14,8 @@
  *                                               marginal_yield, 1.0 when
  *                                               unassessed, revived by
  *                                               staleness as evidence
- *                                               drifts)
+ *                                               drifts, or raised by an
+ *                                               open consistency flag)
  *         + provenance boost                   (a human proposed it, #284)
  *
  * Money appears NOWHERE in this estimate. Reader contributions toward a
@@ -79,7 +80,19 @@ async function valueSql(): Promise<{ sql: string; params: number[] }> {
                 (SELECT a.assessed_at FROM assessments a
                   WHERE a.claim_id = c.id AND a.is_current = true
                   ORDER BY a.assessed_at DESC LIMIT 1))) / 86400.0
-                / NULLIF($3::real, 0), 0)))
+                / NULLIF($3::real, 0), 0)),
+            -- An open consistency flag's expected gain (#330), as in
+            -- mandate-valuer-service.ts's GENERAL_VALUE_SQL.
+            COALESCE(
+              (SELECT MAX(f.expected_gain) FROM consistency_flags f
+                 JOIN actions fx ON fx.id = f.action_id
+                WHERE f.primary_claim_id = c.id
+                  AND fx.status IN ('open', 'running')
+                  AND f.assessment_id_at_flag = (
+                    SELECT a.id FROM assessments a
+                     WHERE a.claim_id = c.id AND a.is_current = true
+                     ORDER BY a.assessed_at DESC LIMIT 1)),
+              0))
         + CASE WHEN c.created_by = 'user' THEN $4::real ELSE 0 END
       )`,
     params: [

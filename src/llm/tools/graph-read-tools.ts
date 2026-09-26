@@ -235,6 +235,25 @@ export async function executeGraphReadTool(
   name: string,
   input: Record<string, unknown>
 ): Promise<string | null> {
+  try {
+    return await executeGraphReadToolUnchecked(name, input);
+  } catch (err) {
+    // A model that cites a claim by a shortened or mangled id gets a tool
+    // error it can recover from, not a query error that ends its run
+    // (Postgres rejects the malformed uuid with 22P02).
+    if ((err as { code?: string } | null)?.code === "22P02") {
+      return JSON.stringify({
+        error: "claim_id must be a full claim id (a uuid) exactly as a tool result gave it",
+      });
+    }
+    throw err;
+  }
+}
+
+async function executeGraphReadToolUnchecked(
+  name: string,
+  input: Record<string, unknown>
+): Promise<string | null> {
   if (name === "search_claims") {
     const limit = Math.min(30, Math.max(1, Number(input.limit ?? 15)));
     let tagId: string | undefined;

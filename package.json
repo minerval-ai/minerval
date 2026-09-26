@@ -38,6 +38,7 @@
     "corpus:adopt": "tsx scripts/corpus/adopt.ts",
     "corpus:gate": "tsx scripts/corpus/gate.ts",
     "corpus:golden-canonical": "tsx scripts/corpus/golden-canonical.ts",
+    "corpus:consistency": "tsx scripts/corpus/consistency.ts",
     "models:discover": "tsx scripts/models-discover.ts",
     "monitors": "tsx scripts/monitors.ts",
     "corpus:personas": "tsx scripts/corpus/personas.ts",

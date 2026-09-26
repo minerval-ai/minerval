@@ -42,6 +42,17 @@ import {
 /** The General formula for one claims row `c` and actions row `a`:
  * importance × contested-factor × expected-quality-gain + provenance
  * boost, strong variants multiplied by the policy's gain knob.
+ *
+ * Expected quality gain is the best of three estimates: the Steward's own
+ * marginal yield from its last pass (1.0 when unassessed), staleness, and
+ * an open consistency flag's expected_gain (#330): the Consistency
+ * Checker's estimate, made after reading the claim against its neighbors,
+ * that a fresh pass would change something. A flag counts while the assess
+ * group it was raised on is still open and no newer assessment has landed
+ * on the claim (the pass it asked for has not run), and only raises the
+ * estimate;
+ * importance and contestation weigh it like any other.
+ *
  * Parameters: $1 contestation floor, $2 staleness saturation days,
  * $3 provenance boost, $4 strong gain multiplier. */
 const GENERAL_VALUE_SQL = `
@@ -59,7 +70,21 @@ const GENERAL_VALUE_SQL = `
             (SELECT x.assessed_at FROM assessments x
               WHERE x.claim_id = c.id AND x.is_current = true
               ORDER BY x.assessed_at DESC LIMIT 1))) / 86400.0
-            / NULLIF($2::real, 0), 0)))
+            / NULLIF($2::real, 0), 0)),
+        COALESCE(
+          (SELECT MAX(f.expected_gain) FROM consistency_flags f
+             JOIN actions fx ON fx.id = f.action_id
+            WHERE f.primary_claim_id = c.id
+              AND fx.exclusion_group = a.exclusion_group
+              AND fx.status IN ('open', 'running')
+              -- The pass the flag asked for has not landed yet: the assess
+              -- row is reused when a claim is wanted again, so the row's
+              -- status alone would revive an old flag.
+              AND f.assessment_id_at_flag = (
+                SELECT x.id FROM assessments x
+                 WHERE x.claim_id = c.id AND x.is_current = true
+                 ORDER BY x.assessed_at DESC LIMIT 1)),
+          0))
     + CASE WHEN c.created_by = 'user' THEN $3::real ELSE 0 END
   ) * CASE WHEN a.variant = 'strong' THEN $4::real ELSE 1.0 END`;
 

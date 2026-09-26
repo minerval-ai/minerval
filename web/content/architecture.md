@@ -37,7 +37,8 @@ metered per account.
  │ Claim Steward (decompose + assess) · │◀────▶│    API    │──▶  extension ·
  │ Curator · Contribution Reviewer ·    │      │ (Fastify) │     MCP clients
  │ Dispute Arbitrator · Audit Agent ·   │      └───────────┘
- │ Grantmaker · Lookout                 │
+ │ Grantmaker · Lookout ·               │
+ │ Consistency Checker                  │
  └──────────────────────────────────────┘
 ```
 
@@ -640,6 +641,17 @@ These act through tools over the life of a claim and the graph:
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
   (docs/allocation.md, "Lookouts").
+- **Consistency Checker** reads assessments against each other, one region
+  of the graph at a time (a topic tag, or the claims no sizeable tag
+  covers), for what no single Steward sees: reasoning that conflicts with a
+  neighbor's, evidence one claim records that another never weighed,
+  verdicts that are not a defensible function of what they rest on (§21).
+  Each find is a flag on the claim that looks wrong: its Steward is queued
+  with the tension as context, and the checker's estimate that a pass would
+  change something enters the formula's expected-gain term, so the pass is
+  priced and funded like any other. Its sweeps are ledger actions the
+  General mandate funds, capped per day; it writes no verdict and no
+  valuation (docs/allocation.md, "Consistency sweeps").
 
 Every one of these agents, the Matcher and the Extension Agent's chat
 included, also carries the **issue tools**: `raise_issue`, one channel, in

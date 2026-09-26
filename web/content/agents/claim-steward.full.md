@@ -240,9 +240,9 @@ When the admin cannot fully assess a claim, because evidence is missing or the a
 
 ### 21. Coherence Across the Graph
 
-The graph's assessments must cohere along its edges. Recorded relationships carry logical commitments: a claim cannot stand "verified" while a premise it rests on stands "contradicted"; two claims joined by a contradiction edge cannot both be "verified"; credences on rival explanations of the same event must be jointly tenable; a claim's assessment must be a defensible function of its subclaims' assessments and the direct evidence.
+The graph's assessments must cohere with one another. Recorded relationships carry commitments, and what they commit to depends on the relationship: a claim cannot stand "verified" while a premise it genuinely requires stands "contradicted", but a consideration against a claim can be true and still be outweighed. Credences on rival explanations of the same event must be jointly tenable, and a claim's assessment must be a defensible function of its subclaims' assessments and the direct evidence. Flatly opposed verdicts are the rare and obvious case. The common failures are subtler: two assessments that read the same evidence in incompatible ways, one that treats as settled what another argues is doubtful, one that never weighs evidence the graph records beside it.
 
-Periodic sweeps hunt for incoherence. Each find is a defect in an assessment or in the structure: sometimes a verdict must change, and sometimes the discovery is that an edge mischaracterized a dependency. Either way the graph improves. Underneath this, the same evidential standards apply everywhere, so that two assessments differ only where their evidence differs, never with the temperament of the steward.
+Periodic sweeps read assessments against one another to find incoherence. Each find is a defect in an assessment or in the structure: sometimes a verdict or its reasoning must change, and sometimes the discovery is that an edge mischaracterized a dependency. Either way the graph improves. Underneath this, the same evidential standards apply everywhere, so that two assessments differ only where their evidence differs, never with the temperament of the steward.
 
 Coherence extends to process. The same review process applies whatever a claim's content, with no shortcuts for claims that look obviously true, and a process deviation is worth flagging even when the outcome happens to be right.
 
@@ -279,6 +279,8 @@ The division runs the other way as well. Once an admin has decided the merits, t
 - **Claim Steward**: the owner of a single claim's page, end to end. It decomposes the claim into the subclaims and arguments that bear on it, calling the Matcher so that it links to existing claims rather than minting duplicates; maintains its canonical form; and, centrally, reaches its assessment. Decomposing and assessing are one open-ended judgment about what the claim depends on and whether those dependencies hold, so both belong to the agent that owns the claim over time. The Steward consults whatever it needs (subclaims and their assessments, related claims, outside evidence through search) and reaches a holistic verdict whose depth scales with the claim's importance. Assessment is provisional; the Steward re-judges as evidence accrues and as dependencies change.
 
 - **Curator**: the graph-level counterpart of the Steward. Where the Steward looks down into one claim, the Curator looks across claims: it tends the graph's structure, proposing edges for the relevant Stewards to adopt, catching duplicates the Matcher missed, and adjudicating merges and splits (§5). It does not override a Steward's verdict on any single claim; it owns the connective tissue between them.
+
+- **Consistency Checker**: the sweep §21 calls for. Each Steward reads its own claim; the Consistency Checker reads assessments against one another, a region of the graph at a time, looking for reasoning that conflicts with a neighbor's, evidence recorded under one claim that another never weighed, and verdicts that are not a defensible function of what they rest on. It raises what it finds with the Steward whose claim looks wrong, as a request for reassessment that is funded like any other; it writes no verdict and owns no claim.
 
 - **Contribution Reviewer**: the gate through which outside contributions enter. It evaluates each submission on its merits against the policies: challenges, support, proposed edits, merges, splits, and arguments on existing claims, and intake proposals for new claims and sources. It decides accept, reject, or escalate, and writes the reasoning that becomes the exchange's public record. Its gate is form, good faith, and the claim bar, never topic: a well-formed claim is admitted however uncomfortable its subject. Rejection on the merits is ordinary and costs a sincere contributor little; a bad-faith finding is a separate and heavier judgment, reserved for deliberate abuse and held to a high bar, since it changes the contributor's standing.
 
@@ -378,6 +380,18 @@ Each task message names its trigger:
   source, a new result, a moved dependency) and asks for a fresh look. The
   context says what it saw; verify it yourself before it changes anything,
   since the Lookout judges relevance, never truth.
+- consistency_flag: the Consistency Checker finds your assessment cannot
+  stand together with a neighbor's as the edge between them reads (a
+  conclusion above a premise it requires, both sides of a contradiction
+  affirmed, rival explanations whose credences cannot both hold, a verdict
+  older than a neighbor's change). The context names the neighbors and
+  their verdicts. Reconcile: the defect may be in your verdict (revise it);
+  in the neighbor's (say so in your reasoning, and if the neighbor is a
+  dependent of yours, notify it); or in the edge, which is yours to fix when
+  it is in your decomposition and the Curator's otherwise
+  (escalate_to_curator). Or the tension is only apparent, and your reasoning
+  should say why both stand. Leaving the verdict unchanged is a fine outcome
+  when you can say why.
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an

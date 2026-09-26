@@ -176,6 +176,22 @@ describe("graph-read-tools", () => {
       expect(out.error).toBe("claim not found");
     });
 
+    it("answers a malformed id with a tool error, not a thrown query error", async () => {
+      mockGetClaim.mockRejectedValue(Object.assign(new Error("invalid input syntax for type uuid"), { code: "22P02" }) as never);
+
+      const out = JSON.parse(
+        (await executeGraphReadTool("get_claim", { claim_id: "dd99c243" }))!
+      );
+
+      expect(out.error).toMatch(/full claim id/);
+    });
+
+    it("still throws any other failure", async () => {
+      mockGetClaim.mockRejectedValue(new Error("connection reset") as never);
+
+      await expect(executeGraphReadTool("get_claim", { claim_id: "c1" })).rejects.toThrow("connection reset");
+    });
+
     it("carries the assessment's reasoning, not just its status", async () => {
       mockGetClaim.mockResolvedValue({
         id: "c1",
