@@ -323,12 +323,13 @@ describe("cascade health", () => {
     const after = await cascadeHealth(T);
     expect(after.materialRuns - before.materialRuns).toBe(2); // parent + B
     expect(after.materialChildren - before.materialChildren).toBe(1); // B only
-    const today = new Date().toISOString().slice(0, 10);
-    const day = after.days.find((d) => d.day === today);
-    expect(day).toBeDefined();
-    expect(day!.runs).toBeGreaterThanOrEqual(3);
-    expect(day!.coalesced).toBeGreaterThanOrEqual(1);
-    expect(day!.enqueues).toBeGreaterThanOrEqual(2);
+    // The seeds sit 48..60 minutes back, which straddles UTC midnight in the
+    // first hour of the day: compare totals across days, not today's row.
+    const total = (h: typeof after, k: "runs" | "coalesced" | "enqueues") =>
+      h.days.reduce((s, d) => s + d[k], 0);
+    expect(total(after, "runs") - total(before, "runs")).toBeGreaterThanOrEqual(3);
+    expect(total(after, "coalesced") - total(before, "coalesced")).toBeGreaterThanOrEqual(1);
+    expect(total(after, "enqueues") - total(before, "enqueues")).toBeGreaterThanOrEqual(2);
   });
 });
 
