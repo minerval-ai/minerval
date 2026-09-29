@@ -130,9 +130,10 @@ export interface ReportMatch {
    * (every content word of the query appears in the report's title or
    * body), `both`, or `recent` (listed without a query). A wording hit is
    * shown even when the report has no embedding, so a report on record is
-   * never invisible to its own title.
+   * never invisible to its own title. `issue_number`: the query cited the
+   * report's GitHub issue number (`#480`) and this is that report (#493).
    */
-  matched_by: "meaning" | "wording" | "both" | "recent";
+  matched_by: "meaning" | "wording" | "both" | "recent" | "issue_number";
 }
 
 export interface RaiseIssueResult {
@@ -351,7 +352,7 @@ type MatchRow = AgentReportRow & {
   by_wording: boolean;
 };
 
-function toMatch(r: MatchRow): ReportMatch {
+function toMatch(r: MatchRow & { by_issue_number?: boolean }): ReportMatch {
   return {
     id: r.id,
     title: r.title,
@@ -366,7 +367,9 @@ function toMatch(r: MatchRow): ReportMatch {
     github_issue_url: r.github_issue_url,
     duplicate_of_id: r.duplicate_of_id,
     similarity: Number(r.similarity),
-    matched_by: r.by_meaning && r.by_wording
+    matched_by: r.by_issue_number
+      ? "issue_number"
+      : r.by_meaning && r.by_wording
       ? "both"
       : r.by_wording
         ? "wording"
@@ -450,6 +453,51 @@ export async function findNearReports(
   return rows.map(toMatch);
 }
 
+/** Most issue numbers one query is resolved for; a citation names a few. */
+const ISSUE_NUMBERS_PER_QUERY = 5;
+
+/**
+ * GitHub issue numbers a query cites (#493): `#480`, `owner/repo#480`, an
+ * issues or pull URL, or a query that is a bare number. Agents cite the
+ * tracker by number, and a report's number is on its row but in neither
+ * its text nor its embedding, so neither half of the search can find it.
+ * The pattern is returned stripped out so the rest of the query still
+ * searches as words.
+ */
+export function parseIssueNumbers(query: string): { numbers: number[]; rest: string } {
+  const numbers = new Set<number>();
+  const take = (n: string) => {
+    const v = Number(n);
+    if (Number.isSafeInteger(v) && v > 0 && numbers.size < ISSUE_NUMBERS_PER_QUERY) numbers.add(v);
+  };
+  let rest = query.replace(
+    /(?:https?:\/\/github\.com\/[^/\s]+\/[^/\s]+\/(?:issues|pull)\/(\d+)\S*)|(?:[\w.-]+\/[\w.-]+)?#(\d{1,9})\b/g,
+    (_m, url: string | undefined, hash: string | undefined) => {
+      take(url ?? hash ?? "");
+      return " ";
+    }
+  );
+  // A bare number is taken as an issue number too, but left in the words:
+  // it may as well be an error code.
+  if (/^\s*\d{1,9}\s*$/.test(rest)) take(rest.trim());
+  rest = rest.replace(/\s+/g, " ").trim();
+  return { numbers: [...numbers], rest: /\w/.test(rest) ? rest : "" };
+}
+
+/** Reports filed as these GitHub issue numbers, origin-scoped. */
+async function findReportsByIssueNumber(
+  numbers: number[],
+  origin: ReportOrigin
+): Promise<AgentReportRow[]> {
+  if (!numbers.length) return [];
+  return rawQuery<AgentReportRow>(
+    `SELECT ${REPORT_COLUMNS} FROM agent_reports
+      WHERE github_issue_number = ANY($1::int[]) AND origin = $2
+      ORDER BY github_issue_number`,
+    [numbers, origin]
+  );
+}
+
 export interface SearchReportsOptions {
   origin?: ReportOrigin;
   surface?: string | null;
@@ -465,16 +513,46 @@ export interface SearchReportsOptions {
  * than emptying it, because the caller is usually holding a title and a
  * title finds its own report. Without a query, the recent reports, most
  * recently seen first, so an agent can read what is on record about a
- * surface before it starts. Never throws.
+ * surface before it starts. A GitHub issue number in the query (`#480`)
+ * is looked up exactly and its report leads; a number no report was filed
+ * as comes back as unmatched, so a citation can be checked (#493). Never
+ * throws.
  */
 export async function searchReports(
   query: string | null | undefined,
   opts: SearchReportsOptions = {}
-): Promise<{ matches: ReportMatch[]; problem?: string }> {
-  const text = String(query ?? "").trim();
+): Promise<{
+  matches: ReportMatch[];
+  /**
+   * Issue numbers the query cited that no report was filed as (#493). The
+   * tracker numbers issues and pull requests together, so such a number
+   * may be a pull request or an issue a person filed, neither of which is
+   * in this record.
+   */
+  unmatched_issue_numbers?: number[];
+  problem?: string;
+}> {
   const origin = opts.origin ?? "internal";
   const limit = Math.max(1, Math.min(REPORT_SEARCH_MAX_RESULTS, opts.limit ?? REPORT_SEARCH_MAX_RESULTS));
+  const { numbers, rest } = parseIssueNumbers(String(query ?? "").trim());
   try {
+    // A cited number is an exact lookup: its report comes first, whatever
+    // the filters, since the caller named it.
+    const citedRows = await findReportsByIssueNumber(numbers, origin);
+    const cited = citedRows.map((r) =>
+      toMatch({ ...r, similarity: 0, by_meaning: false, by_wording: false, by_issue_number: true })
+    );
+    const citedPart = numbers.length
+      ? {
+          unmatched_issue_numbers: numbers.filter(
+            (n) => !citedRows.some((r) => Number(r.github_issue_number) === n)
+          ),
+        }
+      : {};
+    if (numbers.length && !rest) return { matches: cited, ...citedPart };
+    const text = rest;
+    const merge = (found: ReportMatch[]) =>
+      [...cited, ...found.filter((m) => !cited.some((c) => c.id === m.id))].slice(0, limit);
     if (!text) {
       const rows = await listAgentReports({
         origin,
@@ -483,9 +561,11 @@ export async function searchReports(
         limit,
       });
       return {
-        matches: rows
-          .filter((r) => r.status !== "withdrawn")
-          .map((r) => toMatch({ ...r, similarity: 0, by_meaning: false, by_wording: false })),
+        matches: merge(
+          rows
+            .filter((r) => r.status !== "withdrawn")
+            .map((r) => toMatch({ ...r, similarity: 0, by_meaning: false, by_wording: false }))
+        ),
       };
     }
     let embedding: number[] | null = null;
@@ -503,9 +583,10 @@ export async function searchReports(
       text,
       surface: opts.surface ?? null,
       status: opts.status ?? null,
+      exclude: cited.map((m) => m.id),
       limit,
     });
-    return { matches };
+    return { matches: merge(matches), ...citedPart };
   } catch (err) {
     console.error(
       "[reports] search failed:",
@@ -529,21 +610,31 @@ export interface ReportView {
 /**
  * get_issue: read one report in full, the way a maintainer would follow a
  * link: body, triage note, the latest sightings with their accounts, the
- * reports collapsed onto it, and the report it was collapsed onto.
- * Origin-scoped like the search. Null when there is no such report.
+ * reports collapsed onto it, and the report it was collapsed onto. Found
+ * by its id or by its GitHub issue number. Origin-scoped like the search.
+ * Null when there is no such report.
  */
 export async function getReportView(
   id: string,
   opts: { origin?: ReportOrigin } = {}
 ): Promise<ReportView | null> {
-  const reportId = uuidOrNull(id);
-  if (!reportId) return null;
   const origin = opts.origin ?? "internal";
-  const [report] = await rawQuery<AgentReportRow>(
-    `SELECT ${REPORT_COLUMNS} FROM agent_reports WHERE id = $1 AND origin = $2`,
-    [reportId, origin]
-  );
+  let report: AgentReportRow | undefined;
+  const uuid = uuidOrNull(id);
+  if (uuid) {
+    [report] = await rawQuery<AgentReportRow>(
+      `SELECT ${REPORT_COLUMNS} FROM agent_reports WHERE id = $1 AND origin = $2`,
+      [uuid, origin]
+    );
+  } else {
+    // A GitHub issue number (`#480`, `480`, or the issue's URL), as agents
+    // cite the tracker (#493).
+    const { numbers, rest } = parseIssueNumbers(String(id ?? "").trim());
+    if (numbers.length !== 1 || (rest && rest !== String(numbers[0]))) return null;
+    [report] = await findReportsByIssueNumber(numbers, origin);
+  }
   if (!report) return null;
+  const reportId = report.id;
   const [sightings, duplicates, parents] = await Promise.all([
     rawQuery<AgentReportSightingRow>(
       `SELECT ${SIGHTING_COLUMNS} FROM agent_report_sightings

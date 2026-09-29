@@ -32,7 +32,9 @@ import {
   isSightingMilestone,
   labelsForReport,
   renderIssueBody,
+  resetClosureCursor,
   resetGithubLabelCache,
+  syncIssueClosures,
   syncSightingToIssue,
   syncTriageToIssue,
 } from "../../../src/services/github-issue-service.js";
@@ -108,6 +110,7 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", mocks.fetch);
   resetGithubLabelCache();
+  resetClosureCursor();
   resetGithubAppTokenCache();
   mocks.config.githubToken = "ghp_test";
   mocks.config.githubAppId = "";
@@ -458,5 +461,90 @@ describe("syncTriageToIssue", () => {
     mocks.fetch.mockClear();
     await syncTriageToIssue({ ...ROW, status: "wontfix" });
     expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncIssueClosures (#493)", () => {
+  function github(issues: unknown[], closer: unknown) {
+    mocks.fetch.mockImplementation(async (url: string, init: RequestInit) => {
+      const path = String(url);
+      if (init.method === "GET" && path.includes("/issues?state=closed")) return response(200, issues);
+      if (init.method === "POST" && path.endsWith("/graphql")) {
+        return response(200, {
+          data: { repository: { issue: { timelineItems: { nodes: [closer] } } } },
+        });
+      }
+      if (init.method === "POST" && path.endsWith("/labels")) return response(422, {});
+      return response(200, {});
+    });
+  }
+
+  function db(open: AgentReportRow[]) {
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("min(first_seen_at)")) return [{ since: open.length ? ROW.first_seen_at : null }];
+      if (sql.startsWith("SELECT") && sql.includes("github_issue_number = ANY")) {
+        return open.filter((r) => (params![0] as number[]).includes(r.github_issue_number!));
+      }
+      if (sql.includes("UPDATE agent_reports")) {
+        const row = open.find((r) => r.id === params![0]);
+        return row ? [{ ...row, status: params![1] }] : [];
+      }
+      return [];
+    });
+  }
+
+  it("moves an open report whose issue was closed as completed to actioned, naming the pull request", async () => {
+    db([{ ...WITH_ISSUE, status: "triaged", triage_note: "audit note" }]);
+    github(
+      [
+        { number: 41, state_reason: "completed", updated_at: "2026-09-26T00:00:00Z" },
+        { number: 42, state_reason: "completed", updated_at: "2026-09-26T00:00:01Z", pull_request: {} },
+      ],
+      { actor: { login: "jackson" }, closer: { __typename: "PullRequest", number: 491, url: "https://github.com/minerval-ai/minerval/pull/491" } }
+    );
+    const result = await syncIssueClosures();
+    expect(result).toEqual({ checked: 1, actioned: 1, declined: 0 });
+    const list = requests().find(([m, p]) => m === "GET" && p.includes("state=closed"))!;
+    expect(list[1]).toContain("labels=agent-generated");
+    expect(list[1]).toContain("since=2026-08-01T00%3A00%3A00.000Z");
+    const update = mocks.rawQuery.mock.calls.find(([sql]) => String(sql).includes("UPDATE agent_reports"))!;
+    expect(update[0]).toContain("status IN ('new', 'triaged')");
+    expect(update[0]).toContain("Earlier note: ");
+    expect(update[1]).toEqual([
+      REPORT_ID,
+      "actioned",
+      "Closed on GitHub as completed by @jackson, with pull request #491 (https://github.com/minerval-ai/minerval/pull/491).",
+      "github:jackson",
+    ]);
+    const patch = requests().find(([m, p]) => m === "PATCH" && p.endsWith("/issues/41"))!;
+    expect((patch[2] as { labels: string[] }).labels).toContain("status/actioned");
+    expect(patch[2]).not.toHaveProperty("state");
+  });
+
+  it("records not planned as wontfix, skips other reasons, and resumes from its cursor", async () => {
+    db([
+      { ...WITH_ISSUE },
+      { ...WITH_ISSUE, id: RUN_ID, github_issue_number: 43 },
+    ]);
+    github(
+      [
+        { number: 41, state_reason: "not_planned", updated_at: "2026-09-26T00:00:00Z" },
+        { number: 43, state_reason: "duplicate", updated_at: "2026-09-27T00:00:00Z" },
+      ],
+      { actor: { login: "jackson" }, closer: null }
+    );
+    expect(await syncIssueClosures()).toEqual({ checked: 2, actioned: 0, declined: 1 });
+    mocks.fetch.mockClear();
+    await syncIssueClosures();
+    const list = requests().find(([m, p]) => m === "GET" && p.includes("state=closed"))!;
+    expect(list[1]).toContain("since=2026-09-27T00%3A00%3A00Z");
+  });
+
+  it("does nothing without an open report that has an issue, and never throws", async () => {
+    db([]);
+    expect(await syncIssueClosures()).toEqual({ checked: 0, actioned: 0, declined: 0 });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    mocks.rawQuery.mockRejectedValue(new Error("db down"));
+    expect(await syncIssueClosures()).toEqual({ checked: 0, actioned: 0, declined: 0 });
   });
 });

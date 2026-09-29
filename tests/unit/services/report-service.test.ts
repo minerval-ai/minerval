@@ -39,6 +39,7 @@ import {
   computeDedupeKey,
   formatAgentReport,
   listReportsAwaitingIssue,
+  parseIssueNumbers,
   raiseIssue,
   resetReportRateLimiter,
   searchReports,
@@ -590,6 +591,53 @@ describe("searchReports", () => {
     expect(params[4]).toBe("add_relationship_edge has no relation type for counterparts");
   });
 
+  it("reads GitHub issue numbers out of a query (#493)", () => {
+    expect(parseIssueNumbers("minerval-ai/minerval#491, closing #480")).toEqual({
+      numbers: [491, 480],
+      rest: ", closing",
+    });
+    expect(parseIssueNumbers("#491, #480")).toEqual({ numbers: [491, 480], rest: "" });
+    expect(parseIssueNumbers("480")).toEqual({ numbers: [480], rest: "480" });
+    expect(parseIssueNumbers("https://github.com/minerval-ai/minerval/pull/491 skill policy")).toEqual({
+      numbers: [491],
+      rest: "skill policy",
+    });
+    expect(parseIssueNumbers("remains open relation")).toEqual({
+      numbers: [],
+      rest: "remains open relation",
+    });
+  });
+
+  it("looks a cited issue number up exactly and says which numbers have no report (#493)", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("github_issue_number = ANY")) {
+        expect(params).toEqual([[491, 480], "internal"]);
+        return [{ ...ROW, github_issue_number: 480 }];
+      }
+      return [];
+    });
+    const result = await searchReports("#491 #480");
+    expect(mocks.generateEmbedding).not.toHaveBeenCalled();
+    expect(result.matches.map((m) => [m.id, m.matched_by])).toEqual([[REPORT_ID, "issue_number"]]);
+    expect(result.unmatched_issue_numbers).toEqual([491]);
+  });
+
+  it("puts a cited report ahead of the word search over the rest of the query", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("github_issue_number = ANY")) return [{ ...ROW, github_issue_number: 480 }];
+      if (sql.includes("<=>")) {
+        return [{ ...ROW, id: OTHER_ID, similarity: 0.7, by_meaning: true, by_wording: false }];
+      }
+      return [];
+    });
+    const result = await searchReports("#480 remains open");
+    expect(result.matches.map((m) => m.id)).toEqual([REPORT_ID, OTHER_ID]);
+    const [, params] = calls("<=>")[0]!;
+    expect(params[3]).toEqual([REPORT_ID]);
+    expect(params[4]).toBe("remains open");
+    expect(result.unmatched_issue_numbers).toEqual([]);
+  });
+
   it("says the search is unavailable when the database fails", async () => {
     mocks.rawQuery.mockRejectedValue(new Error("db down"));
     const result = await searchReports("anything");
@@ -620,6 +668,18 @@ describe("getReportView", () => {
     expect(view!.sightings).toHaveLength(1);
     expect(view!.duplicates).toEqual([]);
     expect(view!.duplicate_of).toMatchObject({ id: OTHER_ID, status: "wontfix" });
+  });
+
+  it("finds a report by its GitHub issue number (#493)", async () => {
+    mocks.rawQuery.mockImplementation(async (sql: string, params?: unknown[]) =>
+      sql.includes("github_issue_number = ANY") && (params![0] as number[])[0] === 480
+        ? [{ ...ROW, github_issue_number: 480 }]
+        : []
+    );
+    expect((await getReportView("#480"))!.report.id).toBe(REPORT_ID);
+    expect((await getReportView("480"))!.report.id).toBe(REPORT_ID);
+    expect(await getReportView("#491")).toBeNull();
+    expect(await getReportView("#480 #481")).toBeNull();
   });
 
   it("returns null for a bad id, an unknown id, and another origin's report", async () => {

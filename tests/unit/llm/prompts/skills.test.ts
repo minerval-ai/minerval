@@ -284,10 +284,10 @@ describe("views", () => {
   it("lists the skills in the catalog with the role's sections", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog).toMatch(
-      /^Skills that exist: mathematics \(version 1; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
+      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
     );
     expect(getSkillCatalog("claim-steward")).toContain(
-      "provenance (version 1; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
+      "provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
     );
     const section = domainSkillsSection("claim-steward");
     expect(section.startsWith("## Domain skills\n")).toBe(true);
@@ -298,10 +298,10 @@ describe("views", () => {
     // fault (#469).
     expect(section).toContain("activates no domain skill");
     expect(getSkillCatalog("matcher")).toContain(
-      "mathematics (version 1; activated by domain mathematics; when active, you receive: For the Matcher)"
+      "mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For the Matcher)"
     );
     expect(getSkillCatalog("matcher")).toContain(
-      "provenance (version 1; a method skill, carried on every run; you receive none of its sections)"
+      "provenance (version 1, as first written; a method skill, carried on every run; you receive none of its sections)"
     );
   });
 
@@ -347,6 +347,9 @@ metadata:
     version: 2
     since_epoch: 2026-09-domain-skills
     domains: [sample, samples]
+    changelog:
+      1: First version.
+      2: Adds the Matcher's section: how to match samples.
 ---
 `;
 
@@ -364,6 +367,10 @@ metadata:
     expect(skill.version).toBe(2);
     expect(skill.sinceEpoch).toBe("2026-09-domain-skills");
     expect(skill.domains).toEqual(["sample", "samples"]);
+    expect(skill.changelog).toEqual([
+      { version: 2, change: "Adds the Matcher's section: how to match samples." },
+      { version: 1, change: "First version." },
+    ]);
     expect(skill.sections.map((s) => s.heading)).toEqual([
       "For every administrator",
       "For the Matcher",
@@ -372,6 +379,20 @@ metadata:
     expect(skill.tools[0]!.roles).toEqual(["matcher"]);
     expect(getSkillToolDefinitions(skill, "matcher")).toHaveLength(1);
     expect(getSkillToolDefinitions(skill, "curator")).toHaveLength(0);
+  });
+
+  it("requires a changelog entry for a version past 1, and only for versions that exist (#493)", () => {
+    const body = "\n## For every administrator\n\nBody.\n";
+    const without = frontmatter.replace(/    changelog:\n(?:      .*\n)+/, "");
+    expect(() => parseSkill({ raw: without + body, path: "sample/SKILL.md" })).toThrow(
+      /needs an entry for version 2/
+    );
+    const ahead = frontmatter.replace("2: Adds", "3: Adds");
+    expect(() => parseSkill({ raw: ahead + body, path: "sample/SKILL.md" })).toThrow(
+      /key "3" must be a version from 1 to 2/
+    );
+    const first = without.replace("version: 2", "version: 1");
+    expect(parseSkill({ raw: first + body, path: "sample/SKILL.md" }).changelog).toEqual([]);
   });
 
   it("rejects an unrecognized H2 heading", () => {

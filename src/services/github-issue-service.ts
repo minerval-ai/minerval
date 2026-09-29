@@ -11,7 +11,9 @@
  * status moves, so a wontfix closes its issue and a triage note reaches it.
  * The github-issue-sync worker (workers/github-issue-sync.ts) files the
  * backlog: reports raised before the sync existed, and any filing that
- * failed at raise time.
+ * failed at raise time. The same worker runs syncIssueClosures(), the one
+ * path back: an issue a maintainer closes on GitHub moves its open report
+ * to actioned or wontfix (#493).
  *
  * Two commitments, inherited from the channel this serves:
  *
@@ -166,7 +168,9 @@ function labelDescription(name: string): string {
   return group && value ? `Agent report ${group}: ${value.replace(/_/g, " ")}` : "";
 }
 
-export function labelsForReport(row: AgentReportRow): string[] {
+export function labelsForReport(
+  row: Pick<AgentReportRow, "kind" | "severity" | "origin">
+): string[] {
   const labels = [
     loadConfig().githubIssuesLabel,
     `kind/${row.kind}`,
@@ -429,4 +433,208 @@ export async function syncSightingToIssue(
       err instanceof Error ? err.message : String(err)
     );
   }
+}
+
+/** Pages of closed issues one closure sync reads at most (100 per page). */
+const CLOSURE_PAGES_PER_TICK = 3;
+
+/**
+ * Where the closure sync reads from next: the latest updated_at it has
+ * seen. Per process; a fresh process starts from the oldest open report
+ * that has an issue, so nothing closed while it was down is missed.
+ */
+let closureCursor: string | null = null;
+
+/** Test hook. */
+export function resetClosureCursor(): void {
+  closureCursor = null;
+}
+
+interface ClosedIssue {
+  number: number;
+  state_reason?: string | null;
+  updated_at: string;
+  pull_request?: unknown;
+}
+
+/** What the closure sync reads of a report: enough to relabel its issue. */
+type ClosableRow = Pick<
+  AgentReportRow,
+  "id" | "kind" | "severity" | "origin" | "status" | "github_issue_number"
+>;
+const CLOSABLE_COLUMNS = "id, kind, severity, origin, status, github_issue_number";
+
+interface Closer {
+  actor: string | null;
+  /** "pull request #491 (url)" or "commit abc1234 (url)", when GitHub knows. */
+  by: string | null;
+}
+
+/**
+ * Who closed the issue and with what, from its last ClosedEvent. GraphQL
+ * because REST does not name a closing pull request. Best effort: a failure
+ * is logged and the closure is recorded without it.
+ */
+async function findCloser(issueNumber: number): Promise<Closer> {
+  const [owner, name] = loadConfig().githubIssuesRepo.split("/");
+  try {
+    const res = await githubRequest<{
+      data?: {
+        repository?: {
+          issue?: {
+            timelineItems?: {
+              nodes?: Array<{
+                actor?: { login?: string } | null;
+                closer?: {
+                  __typename?: string;
+                  number?: number;
+                  url?: string;
+                  abbreviatedOid?: string;
+                } | null;
+              } | null>;
+            };
+          } | null;
+        } | null;
+      };
+    }>("POST", "/graphql", {
+      query: `query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          issue(number: $number) {
+            timelineItems(itemTypes: [CLOSED_EVENT], last: 1) {
+              nodes {
+                ... on ClosedEvent {
+                  actor { login }
+                  closer {
+                    __typename
+                    ... on PullRequest { number url }
+                    ... on Commit { abbreviatedOid url }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      variables: { owner, name, number: issueNumber },
+    });
+    const event = res.data?.repository?.issue?.timelineItems?.nodes?.[0];
+    const closer = event?.closer;
+    const by =
+      closer?.__typename === "PullRequest" && closer.number
+        ? `pull request #${closer.number}${closer.url ? ` (${closer.url})` : ""}`
+        : closer?.__typename === "Commit" && closer.abbreviatedOid
+          ? `commit ${closer.abbreviatedOid}${closer.url ? ` (${closer.url})` : ""}`
+          : null;
+    return { actor: event?.actor?.login ?? null, by };
+  } catch (err) {
+    console.error(
+      `[reports] could not read who closed issue #${issueNumber}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return { actor: null, by: null };
+  }
+}
+
+export interface ClosureSyncResult {
+  /** Closed issues read from GitHub. */
+  checked: number;
+  /** Open reports moved to actioned (closed as completed). */
+  actioned: number;
+  /** Open reports moved to wontfix (closed as not planned). */
+  declined: number;
+}
+
+/**
+ * Carry a close on GitHub back to the report (#493). A maintainer who
+ * merges a fix closes the issue, and until now the report stayed new or
+ * triaged, so an agent reading it could not tell a shipped fix from an
+ * open one. Closed as completed moves an open report to actioned; closed
+ * as not planned moves it to wontfix. The note records who closed it and,
+ * for a fix, the pull request or commit that did, ahead of any earlier
+ * note. A report already in a closed status is left alone: its own triage
+ * closed the issue. Reads closed issues by last update, from a per-process
+ * cursor, a bounded number of pages per tick. Never throws.
+ */
+export async function syncIssueClosures(): Promise<ClosureSyncResult> {
+  const result: ClosureSyncResult = { checked: 0, actioned: 0, declined: 0 };
+  try {
+    if (!githubIssuesConfigured()) return result;
+    const [oldest] = await rawQuery<{ since: Date | string | null }>(
+      `SELECT min(first_seen_at) AS since FROM agent_reports
+        WHERE status IN ('new', 'triaged') AND github_issue_number IS NOT NULL`
+    );
+    if (!oldest?.since) return result;
+    const floor = iso(oldest.since);
+    const since =
+      closureCursor && Date.parse(closureCursor) > Date.parse(floor) ? closureCursor : floor;
+    let next = since;
+    const config = loadConfig();
+    const label = encodeURIComponent(config.githubIssuesLabel);
+    for (let page = 1; page <= CLOSURE_PAGES_PER_TICK; page++) {
+      const issues = await githubRequest<ClosedIssue[]>(
+        "GET",
+        `/repos/${config.githubIssuesRepo}/issues?state=closed&labels=${label}` +
+          `&sort=updated&direction=asc&per_page=100&page=${page}` +
+          `&since=${encodeURIComponent(since)}`
+      );
+      const closed = issues.filter((i) => !i.pull_request);
+      result.checked += closed.length;
+      const byNumber = new Map(closed.map((i) => [i.number, i]));
+      const rows = byNumber.size
+        ? await rawQuery<ClosableRow>(
+            `SELECT ${CLOSABLE_COLUMNS} FROM agent_reports
+              WHERE github_issue_number = ANY($1::int[])
+                AND status IN ('new', 'triaged')`,
+            [[...byNumber.keys()]]
+          )
+        : [];
+      for (const row of rows) {
+        const issue = byNumber.get(Number(row.github_issue_number));
+        const status =
+          issue?.state_reason === "completed"
+            ? "actioned"
+            : issue?.state_reason === "not_planned"
+              ? "wontfix"
+              : null;
+        if (!issue || !status) continue;
+        const closer = await findCloser(issue.number);
+        const note =
+          `Closed on GitHub as ${status === "actioned" ? "completed" : "not planned"}` +
+          (closer.actor ? ` by @${closer.actor}` : "") +
+          (closer.by ? `, with ${closer.by}` : "") +
+          ".";
+        const updated = await rawQuery<ClosableRow>(
+          `UPDATE agent_reports
+              SET status = $2,
+                  triage_note = $3 || COALESCE(E'\n\nEarlier note: ' || triage_note, ''),
+                  triaged_by = $4,
+                  triaged_at = now(),
+                  github_synced_at = now()
+            WHERE id = $1 AND status IN ('new', 'triaged')
+            RETURNING ${CLOSABLE_COLUMNS}`,
+          [row.id, status, note, `github:${closer.actor ?? "unknown"}`.slice(0, 128)]
+        );
+        if (!updated[0]) continue;
+        if (status === "actioned") result.actioned++;
+        else result.declined++;
+        const labels = [...labelsForReport(updated[0]), `status/${status}`];
+        await ensureLabels(labels);
+        await githubRequest("PATCH", `/repos/${config.githubIssuesRepo}/issues/${issue.number}`, {
+          labels,
+        });
+      }
+      const last = issues[issues.length - 1];
+      if (last?.updated_at && Date.parse(last.updated_at) > Date.parse(next)) {
+        next = last.updated_at;
+      }
+      if (issues.length < 100) break;
+    }
+    closureCursor = next;
+  } catch (err) {
+    console.error(
+      "[reports] failed to sync issue closures from GitHub:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+  return result;
 }

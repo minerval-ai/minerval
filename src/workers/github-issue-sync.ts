@@ -8,7 +8,9 @@
  * a rate limit, a bad token) — and files them, oldest first, at most
  * GITHUB_ISSUES_BACKFILL_PER_TICK per tick so the first run after a deploy
  * is a bounded burst rather than a storm at GitHub's content-creation
- * limits.
+ * limits. After filing it reads back the issues closed on GitHub, so a
+ * merged fix or a maintainer's "not planned" reaches the report an agent
+ * reads (#493).
  *
  * Idempotent through the row: fileIssueForReport records the issue number
  * only where none is recorded yet, so two API tasks ticking at once can at
@@ -20,6 +22,7 @@ import { loadConfig } from "../config.js";
 import {
   fileIssueForReport,
   githubIssuesConfigured,
+  syncIssueClosures,
 } from "../services/github-issue-service.js";
 import { listReportsAwaitingIssue } from "../services/report-service.js";
 
@@ -27,12 +30,19 @@ export interface GithubIssueSyncTickResult {
   pending: number;
   filed: number;
   failed: number;
+  /** Open reports moved to actioned or wontfix by a close on GitHub. */
+  closed: number;
 }
 
 /** One sync pass; exported separately so tests can drive it. */
 export async function githubIssueSyncTick(): Promise<GithubIssueSyncTickResult> {
   const config = loadConfig();
-  const result: GithubIssueSyncTickResult = { pending: 0, filed: 0, failed: 0 };
+  const result: GithubIssueSyncTickResult = {
+    pending: 0,
+    filed: 0,
+    failed: 0,
+    closed: 0,
+  };
   if (!githubIssuesConfigured() || config.githubIssuesBackfillPerTick <= 0) {
     return result;
   }
@@ -45,6 +55,8 @@ export async function githubIssueSyncTick(): Promise<GithubIssueSyncTickResult> 
     if (ref) result.filed++;
     else result.failed++;
   }
+  const closures = await syncIssueClosures();
+  result.closed = closures.actioned + closures.declined;
   return result;
 }
 
@@ -77,6 +89,11 @@ export function startGithubIssueSync(options: {
         options.logger.info(
           `GitHub issue sync: ${result.filed} filed, ${result.failed} failed ` +
             `of ${result.pending} pending report(s)`
+        );
+      }
+      if (result.closed > 0) {
+        options.logger.info(
+          `GitHub issue sync: ${result.closed} report(s) closed from GitHub`
         );
       }
     } catch (err) {

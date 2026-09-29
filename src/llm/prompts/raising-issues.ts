@@ -49,8 +49,11 @@ The record is yours to read, and you have the tools a maintainer has.
 search_issues finds reports by keyword and by meaning, up to ten at a
 time with their status and the maintainers' note; searching is cheap, so
 try more than one wording, and lead with the rare token (the tool name,
-the error text) rather than a paraphrase. With no query it lists what
-was seen most recently, narrowed to a surface or a status if you like.
+the error text) rather than a paraphrase. A GitHub issue number (#480)
+is looked up exactly, which is how you check a contribution or a note
+that cites the tracker; a number with no report may be a pull request,
+which this record does not hold. With no query it lists what was seen
+most recently, narrowed to a surface or a status if you like.
 get_issue reads one report in full: its body, the triage note, its
 sightings, the reports collapsed onto it, and the report it was
 collapsed onto. Follow ids the way you would follow links.

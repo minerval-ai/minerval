@@ -62,6 +62,11 @@ The file opens with YAML frontmatter:
   or the tools.
 - `metadata.minerval.since_epoch`: the pipeline epoch the current version
   took effect under (`config.pipelineEpoch`).
+- `metadata.minerval.changelog`: a map from version to a one-line account
+  of what that version changed, at most 300 characters. Required for the
+  current version once it is past 1. The latest entry is shown on the
+  skill's line in every role's catalog, so an agent told that a skill "now
+  covers" a case can check the claim instead of trusting it (#493).
 - `metadata.minerval.kind`: `domain` (the default) or `method`. A domain
   skill covers one subject and is activated by a claim's recorded domains.
   A method skill covers one kind of work any claim can call for; it claims
@@ -114,7 +119,8 @@ collides with an existing tool family.
 ## Versioning
 
 Skills version with the code: same repository, same pull request. Bump
-`version` on any change and update `since_epoch` when the change is
+`version` on any change, add its `changelog` entry, and update `since_epoch`
+when the change is
 material enough to form a new claim cohort (see `docs/graph-epochs.md`).
 Assessments and agent runs record the skills they were made under, so
 "which assessments were made under version N" is a query.

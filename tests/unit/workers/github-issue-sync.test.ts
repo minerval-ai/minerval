@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listReportsAwaitingIssue: vi.fn(async (): Promise<unknown[]> => []),
   fileIssueForReport: vi.fn(async (): Promise<unknown> => null),
   githubIssuesConfigured: vi.fn(() => true),
+  syncIssueClosures: vi.fn(async () => ({ checked: 0, actioned: 0, declined: 0 })),
   config: {
     githubIssuesBackfillPerTick: 20,
     githubIssuesIncludeExternal: false,
@@ -23,6 +24,7 @@ vi.mock("../../../src/services/report-service.js", () => ({
 vi.mock("../../../src/services/github-issue-service.js", () => ({
   fileIssueForReport: mocks.fileIssueForReport,
   githubIssuesConfigured: mocks.githubIssuesConfigured,
+  syncIssueClosures: mocks.syncIssueClosures,
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => mocks.config,
@@ -37,6 +39,9 @@ beforeEach(() => {
   mocks.listReportsAwaitingIssue.mockReset().mockResolvedValue([]);
   mocks.fileIssueForReport.mockReset().mockResolvedValue(null);
   mocks.githubIssuesConfigured.mockReset().mockReturnValue(true);
+  mocks.syncIssueClosures
+    .mockReset()
+    .mockResolvedValue({ checked: 0, actioned: 0, declined: 0 });
   mocks.config.githubIssuesBackfillPerTick = 20;
   mocks.config.githubIssuesIncludeExternal = false;
 });
@@ -49,9 +54,15 @@ describe("githubIssueSyncTick", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ number: 3, url: "u3" });
     const result = await githubIssueSyncTick();
-    expect(result).toEqual({ pending: 3, filed: 2, failed: 1 });
+    expect(result).toEqual({ pending: 3, filed: 2, failed: 1, closed: 0 });
     expect(mocks.listReportsAwaitingIssue).toHaveBeenCalledWith(20, { includeExternal: false });
     expect(mocks.fileIssueForReport).toHaveBeenCalledTimes(3);
+  });
+
+  it("reads closures back from GitHub after filing and counts them (#493)", async () => {
+    mocks.syncIssueClosures.mockResolvedValue({ checked: 4, actioned: 2, declined: 1 });
+    expect(await githubIssueSyncTick()).toEqual({ pending: 0, filed: 0, failed: 0, closed: 3 });
+    expect(mocks.syncIssueClosures).toHaveBeenCalledTimes(1);
   });
 
   it("passes the external opt-in through", async () => {
@@ -63,11 +74,12 @@ describe("githubIssueSyncTick", () => {
 
   it("does nothing when unconfigured or when the per-tick cap is 0", async () => {
     mocks.githubIssuesConfigured.mockReturnValue(false);
-    expect(await githubIssueSyncTick()).toEqual({ pending: 0, filed: 0, failed: 0 });
+    expect(await githubIssueSyncTick()).toEqual({ pending: 0, filed: 0, failed: 0, closed: 0 });
     mocks.githubIssuesConfigured.mockReturnValue(true);
     mocks.config.githubIssuesBackfillPerTick = 0;
-    expect(await githubIssueSyncTick()).toEqual({ pending: 0, filed: 0, failed: 0 });
+    expect(await githubIssueSyncTick()).toEqual({ pending: 0, filed: 0, failed: 0, closed: 0 });
     expect(mocks.listReportsAwaitingIssue).not.toHaveBeenCalled();
+    expect(mocks.syncIssueClosures).not.toHaveBeenCalled();
   });
 });
 

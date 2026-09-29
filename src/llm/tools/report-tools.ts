@@ -214,17 +214,19 @@ export function getReportToolDefinitions(): Tool[] {
         "guidance; an actioned one means the fix shipped), to find the " +
         "report yours repeats, or to find one to update. Searching is " +
         "cheap: a rare token (the tool name, the error text) finds more " +
-        "than a paraphrase, so try more than one wording. With no query it " +
-        "lists the most recently seen reports, so you can read what is on " +
-        "record about a surface before you start. Read-only; free.",
+        "than a paraphrase, so try more than one wording. A GitHub issue " +
+        "number (#480) is looked up exactly: use it to check a citation of " +
+        "the tracker, and a number no report was filed as is said so. With " +
+        "no query it lists the most recently seen reports, so you can read " +
+        "what is on record about a surface before you start. Read-only; free.",
       input_schema: {
         type: "object" as const,
         properties: {
           query: {
             type: "string",
             description:
-              "Keywords or the problem in a sentence. Omit to list recent " +
-              "reports instead.",
+              "Keywords, the problem in a sentence, or a GitHub issue number " +
+              "(#480). Omit to list recent reports instead.",
           },
           surface: {
             type: "string",
@@ -248,13 +250,14 @@ export function getReportToolDefinitions(): Tool[] {
         "its issue link, the latest sightings with the reporters' accounts, " +
         "the reports collapsed onto it as duplicates, and the report it was " +
         "collapsed onto if it is itself a duplicate. Follow ids from " +
-        "search_issues or from a related report here. Read-only; free.",
+        "search_issues or from a related report here, or a GitHub issue " +
+        "number (#480) someone cited. Read-only; free.",
       input_schema: {
         type: "object" as const,
         properties: {
           report_id: {
             type: "string",
-            description: "The report's id.",
+            description: "The report's id, or its GitHub issue number (#480).",
           },
         },
         required: ["report_id"],
@@ -468,17 +471,27 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
         message: `Search unavailable: ${result.problem}. Continue with your task.`,
       });
     }
+    const unmatched = result.unmatched_issue_numbers ?? [];
+    const unmatchedNote = unmatched.length
+      ? ` No report was filed as ${unmatched.map((n) => `#${n}`).join(", ")}. The tracker ` +
+        `numbers issues and pull requests together, so such a number may be a pull ` +
+        `request or an issue a person filed; neither is in this record, so a claim ` +
+        `resting on it cannot be confirmed here.`
+      : "";
     return JSON.stringify({
       success: true,
       matches: result.matches,
+      ...(unmatched.length ? { unmatched_issue_numbers: unmatched } : {}),
       message: result.matches.length
-        ? `${result.matches.length} report(s) on record. ` +
+        ? `${result.matches.length} report(s) on record.${unmatchedNote} ` +
           result.matches.map(describeMatch).join(" ") +
           ` get_issue reads one in full. A wontfix note is the maintainers' ` +
           `guidance; an actioned report means the fix shipped, so seeing it ` +
           `again is a regression worth raising with joins.`
-        : `No report on record matches. Try other words (the tool name, the ` +
-          `error text) before concluding it is unknown; if it is a real problem, raise it.`,
+        : unmatched.length
+          ? unmatchedNote.trim()
+          : `No report on record matches. Try other words (the tool name, the ` +
+            `error text) before concluding it is unknown; if it is a real problem, raise it.`,
     });
   };
 
@@ -487,7 +500,10 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
     if (!view) {
       return JSON.stringify({
         success: false,
-        message: `No report on record with that id. search_issues finds reports by keyword or meaning.`,
+        message:
+          `No report on record with that id or issue number. search_issues finds ` +
+          `reports by keyword or meaning; an issue number with no report may be a ` +
+          `pull request or a person's issue, which this record does not hold.`,
       });
     }
     const r = view.report;
