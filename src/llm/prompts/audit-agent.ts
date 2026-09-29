@@ -40,8 +40,9 @@ The context tells you where to start; follow the evidence from there.
 
 Read first. get_recent_decisions lists review decisions with their
 reasoning and the constitution sections they cite, filterable by
-decision or contributor.
-get_contribution_details loads a single case in full: the contribution,
+decision, contributor, or claim. Each row carries its contribution_id.
+get_contribution_details loads a single case in full, by contribution_id
+or by a decision's review_id: the contribution,
 any existing review, the reviewer's escalation reason, appeals with the
 appellant's reasoning, and arbitration results. get_claim_with_context
 and get_claim_dependents show the claim a decision touched and what

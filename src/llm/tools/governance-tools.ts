@@ -58,7 +58,9 @@ export function getGovernanceToolDefinitions(): Tool[] {
         "Get full details about a contribution, including the contributor, " +
         "the target claim, any existing review, the reviewer's escalation " +
         "reason, any appeals (with the appellant's reasoning), and prior " +
-        "arbitration results.",
+        "arbitration results. Pass contribution_id, or a review_id (as " +
+        "get_recent_decisions returns) to load the contribution that " +
+        "review decided.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -66,8 +68,13 @@ export function getGovernanceToolDefinitions(): Tool[] {
             type: "string",
             description: "The UUID of the contribution",
           },
+          review_id: {
+            type: "string",
+            description:
+              "The UUID of a review decision; loads the contribution it " +
+              "reviewed. Use when you have a review but not its contribution.",
+          },
         },
-        required: ["contribution_id"],
       },
     },
     {
@@ -106,7 +113,9 @@ export function getGovernanceToolDefinitions(): Tool[] {
       name: "get_recent_decisions",
       description:
         "Get recent contribution review decisions, optionally filtered. " +
-        "Useful for audit agents analyzing patterns.",
+        "Useful for audit agents analyzing patterns. Each row carries the " +
+        "contribution_id, so get_contribution_details can load the text " +
+        "that was reviewed.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -121,6 +130,10 @@ export function getGovernanceToolDefinitions(): Tool[] {
           contributor_id: {
             type: "string",
             description: "Filter by contributor ID",
+          },
+          claim_id: {
+            type: "string",
+            description: "Filter to decisions on contributions targeting this claim",
           },
         },
       },
@@ -159,7 +172,10 @@ export async function executeGovernanceTool(
 
       case "get_contribution_details":
         return JSON.stringify(
-          await getContributionDetails(input.contribution_id as string),
+          await getContributionDetails(
+            input.contribution_id as string | undefined,
+            input.review_id as string | undefined
+          ),
           null,
           2
         );
@@ -183,7 +199,8 @@ export async function executeGovernanceTool(
           await getRecentDecisions(
             (input.limit as number) ?? 20,
             input.decision_filter as string | undefined,
-            input.contributor_id as string | undefined
+            input.contributor_id as string | undefined,
+            input.claim_id as string | undefined
           ),
           null,
           2
@@ -467,8 +484,27 @@ async function getClaimWithContext(claimId: string) {
   };
 }
 
-async function getContributionDetails(contributionId: string) {
+async function getContributionDetails(
+  contributionIdInput: string | undefined,
+  reviewId: string | undefined
+) {
   const db = getDb();
+
+  // A review id is an alternative key (#495): get_recent_decisions lists
+  // reviews, and audit needs the text a review decided on. Any review row
+  // resolves, superseded ones included, since audit reads history too.
+  let contributionId = contributionIdInput;
+  if (!contributionId && reviewId) {
+    const [byReview] = await db
+      .select({ contributionId: contributionReviews.contributionId })
+      .from(contributionReviews)
+      .where(eq(contributionReviews.id, reviewId))
+      .limit(1);
+    if (!byReview) return { error: `Review not found: ${reviewId}` };
+    contributionId = byReview.contributionId;
+  }
+  if (!contributionId)
+    return { error: "Pass contribution_id or review_id" };
 
   const [contribution] = await db
     .select()
@@ -597,6 +633,7 @@ async function getContributionDetails(contributionId: string) {
       : null,
     existing_review: review
       ? {
+          id: review.id,
           decision: review.decision,
           reasoning: review.reasoning,
           confidence: review.confidence,
@@ -703,7 +740,8 @@ async function getClaimDependents(claimId: string) {
 async function getRecentDecisions(
   limit: number,
   decisionFilter?: string,
-  contributorId?: string
+  contributorId?: string,
+  claimId?: string
 ) {
   const db = getDb();
 
@@ -716,10 +754,14 @@ async function getRecentDecisions(
   if (contributorId) {
     conditions = sql`${conditions} AND ${contributions.contributorId} = ${contributorId}`;
   }
+  if (claimId) {
+    conditions = sql`${conditions} AND ${contributions.claimId} = ${claimId}`;
+  }
 
   const rows = await db
     .select({
       reviewId: contributionReviews.id,
+      contributionId: contributionReviews.contributionId,
       decision: contributionReviews.decision,
       reasoning: contributionReviews.reasoning,
       confidence: contributionReviews.confidence,
@@ -741,6 +783,9 @@ async function getRecentDecisions(
   return {
     decisions: rows.map((r) => ({
       review_id: r.reviewId,
+      // The key get_contribution_details takes (#495): without it audit
+      // can read a reviewer's reasoning but not what was reviewed.
+      contribution_id: r.contributionId,
       decision: r.decision,
       reasoning: r.reasoning,
       confidence: r.confidence,

@@ -174,3 +174,74 @@ describe("get_contribution_details", () => {
     expect(out.contributor).toBeNull();
   });
 });
+
+// Audit reaches a decision through get_recent_decisions and must be able to
+// load the contribution behind it (#495).
+describe("decision → contribution link", () => {
+  it("get_recent_decisions rows carry contribution_id", async () => {
+    mocks.rows.contribution_reviews = [
+      {
+        reviewId: REVIEW_ID,
+        contributionId: CONTRIBUTION_ID,
+        decision: "accept",
+        reasoning: "Sound edit.",
+        confidence: 0.72,
+        policyCitations: [],
+        reviewedAt: new Date("2026-07-02T00:00:00Z"),
+        contributionType: "propose_edit",
+        contributorId: CONTRIBUTOR_ID,
+        claimId: null,
+      },
+    ];
+
+    const out = JSON.parse(
+      await executeGovernanceTool("get_recent_decisions", {
+        claim_id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      })
+    );
+
+    expect(out.decisions[0]).toMatchObject({
+      review_id: REVIEW_ID,
+      contribution_id: CONTRIBUTION_ID,
+    });
+  });
+
+  it("get_contribution_details accepts a review_id", async () => {
+    mocks.rows.contributions = [baseContribution()];
+    mocks.rows.contribution_reviews = [
+      {
+        id: REVIEW_ID,
+        contributionId: CONTRIBUTION_ID,
+        decision: "accept",
+        reasoning: "Sound edit.",
+        confidence: 0.72,
+        policyCitations: [],
+        reviewedAt: new Date("2026-07-02T00:00:00Z"),
+      },
+    ];
+
+    const out = JSON.parse(
+      await executeGovernanceTool("get_contribution_details", {
+        review_id: REVIEW_ID,
+      })
+    );
+
+    expect(out.contribution.id).toBe(CONTRIBUTION_ID);
+    expect(out.contribution.content).toBe("The cited study was retracted.");
+    expect(out.existing_review).toMatchObject({ id: REVIEW_ID, decision: "accept" });
+  });
+
+  it("reports an unknown review_id, and a call with neither key", async () => {
+    const missing = JSON.parse(
+      await executeGovernanceTool("get_contribution_details", {
+        review_id: REVIEW_ID,
+      })
+    );
+    expect(missing.error).toBe(`Review not found: ${REVIEW_ID}`);
+
+    const neither = JSON.parse(
+      await executeGovernanceTool("get_contribution_details", {})
+    );
+    expect(neither.error).toBe("Pass contribution_id or review_id");
+  });
+});
