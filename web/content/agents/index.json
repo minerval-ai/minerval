@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19480,
-    "fullChars": 70395,
+    "roleChars": 19575,
+    "fullChars": 70490,
     "skills": [
       {
         "name": "mathematics",
