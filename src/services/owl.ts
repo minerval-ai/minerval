@@ -35,7 +35,8 @@ export type PricedOp =
   | "extension_analysis"
   | "extension_chat"
   | "text_analysis"
-  | "lookout_run";
+  | "lookout_run"
+  | "consistency_sweep";
 
 /** What one owl costs to BUY, in micro-USD ($4). Purchase display only. */
 export function owlPriceMicroUsd(): number {
@@ -81,6 +82,8 @@ export function capListOwls(): Record<PricedOp, number> {
     text_analysis: c.capTextAnalysisOwls,
     // One run of a mandate's lookout: cheap model, brief + graph + web.
     lookout_run: c.capLookoutRunOwls,
+    // One consistency sweep: cheap model, one partition's assessments.
+    consistency_sweep: c.capConsistencySweepOwls,
   };
 }
 

@@ -107,6 +107,12 @@ const configSchema = z.object({
   anthropicApiKey: z.string().default(""),
   // OpenRouter — the "vendor/model" provider (src/llm/providers/openrouter.ts).
   openrouterApiKey: z.string().default(""),
+  // How OpenRouter picks among a model's hosts. Unset (the default) keeps
+  // OpenRouter's own routing, which favors the cheapest host; "throughput"
+  // or "latency" prefers the fastest, which is what a long serial corpus
+  // run on a cheap-tier model wants (a slow host there turns an hour into a
+  // day). Any value still routes only to data_collection: deny hosts.
+  openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
@@ -138,6 +144,13 @@ const configSchema = z.object({
   // brief, the graph, and the open web, and raising candidates. Set near
   // the average cost of a run that finds nothing, which is most of them.
   capLookoutRunOwls: z.coerce.number().default(0.05),
+  // One consistency sweep (kind 'consistency_sweep', #330): a cheap-tier
+  // agent reading one partition's assessments against each other. The
+  // allocation reserves the whole cap against the General mandate's day
+  // until the run settles, so a cap far above the metered cost (about 0.02
+  // owl on the flash tier over a 30-claim partition) crowds out the passes
+  // the sweep asks for. The lookout's cap.
+  capConsistencySweepOwls: z.coerce.number().default(0.05),
   // Free tier: a one-time signup grant (the "see a claim you care about,
   // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
@@ -834,6 +847,22 @@ const configSchema = z.object({
   // the brief warrants it. Pinned identically in infra/lib/api-stack.ts; the
   // model guard covers it.
   lookoutModel: modelId(OPENROUTER_MODELS.flash),
+  // The Consistency Checker (#330; docs/allocation.md, "Consistency
+  // sweeps"): reads one partition's assessments against each other and
+  // flags where they do not cohere. It raises candidates, never conclusions
+  // (the flagged claim's Steward verifies and decides), so it runs on the
+  // cheap tier. Pinned identically in infra/lib/api-stack.ts.
+  consistencyModel: modelId(OPENROUTER_MODELS.flash),
+  // Consistency sweeps the General mandate funds per UTC day, across all
+  // partitions (each a 'consistency_sweep' ledger action, capped at
+  // capConsistencySweepOwls). 0, the default, is the off-switch: no sweep
+  // rows are opened or funded.
+  consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(0),
+  // Most flags one sweep may raise: flag materially, not exhaustively.
+  consistencyMaxFlagsPerSweep: z.coerce.number().int().min(0).default(5),
+  // A tag is a sweep partition only when it carries at least this many live
+  // claims; every claim no such tag covers falls in the residual bucket.
+  consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
   // How often the tagging drain ticks (seconds; 0 disables tagging entirely,
   // including the backfill — claims then stay untagged and the /tags surface
   // is empty). Each tick tags up to taggingBatchSize claims, most important
@@ -977,6 +1006,7 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
+    openrouterProviderSort: process.env.OPENROUTER_PROVIDER_SORT || undefined,
     awsRegion: process.env.AWS_REGION,
     owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
     capClaimProposalOwls: process.env.CAP_CLAIM_PROPOSAL_OWLS,
@@ -986,6 +1016,7 @@ export function loadConfig(): Config {
     capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
+    capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
@@ -1124,6 +1155,10 @@ export function loadConfig(): Config {
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,
+    consistencyModel: process.env.CONSISTENCY_MODEL,
+    consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
+    consistencyMaxFlagsPerSweep: process.env.CONSISTENCY_MAX_FLAGS_PER_SWEEP,
+    consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
     enableContributions: process.env.ENABLE_CONTRIBUTIONS,

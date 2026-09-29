@@ -15,6 +15,7 @@
 .player :global(.ag-dispute_arbitrator)    { --ag: var(--st-contradicted); }
 .player :global(.ag-audit)                 { --ag: var(--muted); }
 .player :global(.ag-lookout)               { --ag: var(--muted); }
+.player :global(.ag-consistency_checker)   { --ag: var(--muted); }
 .player :global(.ag-grantmaker)            { --ag: var(--muted); }
 .player :global(.ag-judge)                 { --ag: var(--ink); }
 .player :global(.ag-redteam)               { --ag: var(--stance-against); }

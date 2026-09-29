@@ -17,6 +17,7 @@ export const AGENTS: Record<string, { label: string; short: string; docs: string
   dispute_arbitrator: { label: "Dispute Arbitrator", short: "Arb", docs: "dispute-arbitrator" },
   audit: { label: "Audit", short: "Aud", docs: "audit-agent" },
   lookout: { label: "Lookout", short: "Look", docs: "lookout" },
+  consistency_checker: { label: "Consistency Checker", short: "Cons", docs: "consistency-checker" },
   grantmaker: { label: "Grantmaker", short: "Grant", docs: "grantmaker" },
   judge: { label: "Judge", short: "Judge", docs: null },
   redteam: { label: "Attacker", short: "Atk", docs: null },

@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-29T16:00:20.481Z",
-  "gitCommit": "1e7977e",
+  "syncedAt": "2026-09-29T16:15:51.465Z",
+  "gitCommit": "208bc09",
   "pins": [
     {
       "agent": "steward",
@@ -59,6 +59,12 @@
     {
       "agent": "lookout",
       "envVar": "LOOKOUT_MODEL",
+      "model": "z-ai/glm-5.3-flash",
+      "label": "GLM 5.3 Flash"
+    },
+    {
+      "agent": "consistency",
+      "envVar": "CONSISTENCY_MODEL",
       "model": "z-ai/glm-5.3-flash",
       "label": "GLM 5.3 Flash"
     }
