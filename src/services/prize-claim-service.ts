@@ -1218,6 +1218,8 @@ export async function acceptPrizeClaim(input: {
     auditType: "decision_audit",
     triggeredBy: "prize_acceptance",
     dedupeKey: `prize_claim:${input.prizeClaimId}:${decisionId}`,
+    bountyId: outcome.bounty!.id,
+    claimId: outcome.bounty!.claim_id,
     context:
       `The Claim Steward accepted prize claim ${input.prizeClaimId} on claim ${outcome.bounty!.claim_id} ` +
       `(bounty ${outcome.bounty!.id}, ${formatOwls(outcome.bounty!.amount_micro_usd)}; category ${input.resultCategory}). ` +
@@ -1313,6 +1315,8 @@ export async function rejectPrizeClaimBySteward(input: {
       auditType: "decision_audit",
       triggeredBy: "prize_acceptance",
       dedupeKey: `prize_claim:${input.prizeClaimId}:${decisionId}`,
+      bountyId: outcome.bounty!.id,
+      claimId: outcome.bounty!.claim_id,
       context:
         `The Claim Steward found a statement defect through prize claim ${input.prizeClaimId} on claim ` +
         `${outcome.bounty!.claim_id} and recorded a defect award of ${formatOwls(outcome.defect_award_micro_usd ?? 0)}. ` +

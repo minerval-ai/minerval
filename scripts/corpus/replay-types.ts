@@ -184,7 +184,7 @@ export interface ReplayEvent {
   /** The claim's text at the time, for the event title. */
   claimText?: string | null;
   sourceId: string | null;
-  /** StewardMessage.trigger, CuratorMessage.trigger, etc. */
+  /** StewardMessage.trigger, a curation request's source, etc. */
   trigger: string | null;
   /** Which event caused this one (enqueue_events.source_run_id → the event with that runId). */
   causedBy: number | null;

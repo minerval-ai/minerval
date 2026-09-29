@@ -33,7 +33,11 @@ import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
 import { reconcileActions } from "../services/action-service.js";
-import { refreshGeneralValuations } from "../services/mandate-valuer-service.js";
+import { scanReconcileCandidates } from "../services/curation-service.js";
+import {
+  refreshAuditValuations,
+  refreshGeneralValuations,
+} from "../services/mandate-valuer-service.js";
 import {
   fundGrantSelfActions,
   runDailyAllocators,
@@ -90,11 +94,27 @@ export async function allocationSchedulerTick(
     }
   }
 
+  // 1b. The reconcile-candidate scan (#363): curation requests for pairs
+  // of unlinked, unusually similar claims, bounded per sweep by the
+  // governing policy (0, the default, is off). Requests only; the
+  // valuations below decide whether any is worth a Curator's run.
+  await scanReconcileCandidates(await getEffectiveAllocationPolicy()).catch(
+    (err: unknown) =>
+      console.error(
+        `[allocation-scheduler] reconcile-candidate scan failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+  );
+
   // 2. The General mandate's formula valuations refresh (other mandates
   // judge for themselves in their own review passes, which the reconcile
   // above keeps opening on cadence).
   const valued = await refreshGeneralValuations().catch(() => 0);
-  result.valuationsRefreshed = valued;
+  // Audits (#363): the Governance formula over open audit rows, and
+  // General's over the audits of Governance itself.
+  const auditsValued = await refreshAuditValuations().catch(() => 0);
+  result.valuationsRefreshed = valued + auditsValued;
 
   // 3. Grants cover their own planning/review/ingest actions, then every
   // mandate with a daily rate places its next allocations on the fresh

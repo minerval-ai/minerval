@@ -72,8 +72,45 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
         "staleness_base_days",
         "staleness_max_per_sweep",
         ...MATH_KEYS,
+        ...MAINTENANCE_KEYS,
       ].sort()
     );
+  });
+});
+
+// Maintenance and audit (#363): curation and audit are bought through the
+// same policy, so their knobs are bounded like every other.
+const MAINTENANCE_KEYS = [
+  "maintenance_share",
+  "est_curate_cost_owls",
+  "est_audit_cost_owls",
+  "curate_candidate_weight",
+  "curate_matcher_quiet_days",
+  "reconcile_candidates_max_per_sweep",
+  "reconcile_candidate_min_similarity",
+  "audit_value_prize",
+  "audit_value_bad_faith",
+  "audit_value_overturn",
+  "audit_value_anomaly",
+  "audit_value_suspension",
+  "audit_value_sweep",
+];
+
+describe("POLICY_BOUNDS (maintenance and audit keys, #363)", () => {
+  it("bounds the maintenance share to the whole rate at most", () => {
+    expect(POLICY_BOUNDS.maintenance_share).toEqual({ min: 0, max: 1 });
+  });
+
+  it("a stored policy from before the maintenance keys reads back with their defaults", async () => {
+    state.stored = { contestation_floor: 0.5 };
+    const policy = await getMandateAllocationPolicy("g-1");
+    expect(policy.maintenance_share).toBe(0.1);
+    expect(policy.est_curate_cost_owls).toBe(0.25);
+    expect(policy.est_audit_cost_owls).toBe(0.5);
+    // The scan ships off: a similarity scan's pairs are requests, and the
+    // mandate turns it on deliberately.
+    expect(policy.reconcile_candidates_max_per_sweep).toBe(0);
+    expect(policy.audit_value_prize).toBeGreaterThan(policy.audit_value_sweep);
   });
 });
 

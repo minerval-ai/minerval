@@ -22,16 +22,12 @@ import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
-import { handleCuratorMessage } from "./workers/curator-pipeline.js";
-import { handleAuditMessage } from "./workers/audit-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
 import type {
   ClaimPipelineMessage,
   UrlExtractionMessage,
   ContributionMessage,
   ArbitrationMessage,
-  CuratorMessage,
-  AuditMessage,
 } from "./services/queue-service.js";
 
 async function main() {
@@ -92,31 +88,15 @@ async function main() {
     }));
   }
 
-  if (config.sqsCuratorQueue) {
-    pollers.push(startPoller<CuratorMessage>({
-      queueUrl: config.sqsCuratorQueue,
-      handler: handleCuratorMessage,
-      logger,
-    }));
-  }
-
-  if (config.sqsAuditQueue) {
-    pollers.push(startPoller<AuditMessage>({
-      queueUrl: config.sqsAuditQueue,
-      handler: handleAuditMessage,
-      logger,
-    }));
-  }
-
   // ALWAYS run the in-process drainer. It owns the DB-backed Steward queue
-  // (importance-prioritized, the same in dev and prod) and drains any in-memory
-  // queues that have no SQS poller configured — in prod that's the Curator and
-  // the rest, which were previously enqueued but never drained. Queues that DO
-  // have an SQS poller route through SQS, so their in-memory arrays stay empty
-  // and this is a no-op for them (no double processing).
+  // (importance-prioritized, the same in dev and prod), the engine executor
+  // over the action ledger (where Curator and Audit runs now live, #363), and
+  // drains any in-memory queues that have no SQS poller configured. Queues
+  // that DO have an SQS poller route through SQS, so their in-memory arrays
+  // stay empty and this is a no-op for them (no double processing).
   pollers.push(startLocalRunner({ logger }));
 
-  // The audit scheduler (#180) feeds the audit queue on a cadence: periodic
+  // The audit scheduler (#180) requests audits on a cadence: periodic
   // decision sweeps and stale-suspension re-reviews. Its dedupe keys live in
   // the DB, so running it in every task is safe — exactly one request wins.
   pollers.push(startAuditScheduler({ logger }));

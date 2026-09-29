@@ -185,3 +185,47 @@ export async function stewardTierCostEstimates(): Promise<{
     : standardMicroUsd;
   return { standardMicroUsd, strongMicroUsd };
 }
+
+/**
+ * Expected cost of one `curate` or `audit` run (#363), in micro-USD: the
+ * live percentile of the metered cost the ledger itself recorded on
+ * completed rows of the kind (`actions.metered_cost_micro_usd`), once
+ * enough exist, else the governing policy's prior (`est_curate_cost_owls`,
+ * `est_audit_cost_owls`).
+ *
+ * The ledger, not llm_usage, is the series here: one run of either kind is
+ * one action, a Curator run's usage rows carry no claim id to group on, and
+ * an audit has no claim at all.
+ */
+export async function estimateLedgerKindCostMicroUsd(
+  kind: "curate" | "audit"
+): Promise<number> {
+  const config = loadConfig();
+  const windowDays = config.costEstimateWindowDays ?? 14;
+  const minRuns = config.costEstimateMinRuns ?? 5;
+  const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
+  const key = `ledger:${kind}:${percentile}`;
+  const cached = cache.get(key);
+  let live: number | null = null;
+  if (cached && cached.expiresAt > Date.now()) {
+    live = cached.value || null;
+  } else if (windowDays > 0 && minRuns > 0) {
+    const [row] = await rawQuery<{ runs: number; est_cost: number | null }>(
+      `SELECT COUNT(*)::int AS runs,
+              percentile_cont($3) WITHIN GROUP (ORDER BY metered_cost_micro_usd)::bigint AS est_cost
+         FROM actions
+        WHERE kind = $1 AND status = 'done'
+          AND metered_cost_micro_usd IS NOT NULL
+          AND updated_at > now() - make_interval(days => $2)`,
+      [kind, windowDays, percentile]
+    ).catch(() => []);
+    const enough = (row?.runs ?? 0) >= minRuns && row?.est_cost != null;
+    live = enough ? Number(row!.est_cost) : null;
+    cache.set(key, { value: live ?? 0, expiresAt: Date.now() + CACHE_TTL_MS });
+  }
+  if (live != null && live > 0) return live;
+  const policy = await getEffectiveAllocationPolicy();
+  const priorOwls =
+    kind === "curate" ? policy.est_curate_cost_owls : policy.est_audit_cost_owls;
+  return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
+}

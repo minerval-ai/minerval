@@ -48,7 +48,6 @@ vi.mock("../../../../src/services/embedding-service.js", () => ({
 vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => {}),
   enqueueSteward: vi.fn(async () => {}),
-  enqueueCurator: vi.fn(async () => {}),
 }));
 
 import { executeStewardTool } from "../../../../src/llm/tools/steward-tools.js";

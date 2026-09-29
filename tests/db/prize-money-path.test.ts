@@ -591,6 +591,16 @@ describe("the end-to-end money path", () => {
     expect(att?.visibility).toBe("public");
     const [auditRun] = await rawQuery<{ id: string; triggered_by: string }>(`SELECT id, triggered_by FROM audit_runs WHERE dedupe_key = $1`, [`prize_claim:${pc.id}:${accepted.decision_id}`]);
     expect(auditRun?.triggered_by).toBe("prize_acceptance");
+    // The acceptance's audit is a ledger action funded from the same reserve
+    // as the review (#363): a platform allocation pinned to its audit row.
+    const [auditAllocation] = await rawQuery<{ amount_micro_usd: string; user_id: string }>(
+      `SELECT al.amount_micro_usd, al.user_id
+         FROM action_allocations al JOIN audit_runs ar ON ar.action_id = al.action_id
+        WHERE ar.id = $1`,
+      [auditRun!.id]
+    );
+    expect(auditAllocation?.user_id).toBe(reserve.user_id);
+    expect(Number(auditAllocation!.amount_micro_usd)).toBeGreaterThan(0);
     // The deferred accepted-contribution award (0 owls per point by default).
     const expectedAward = owlsToMicroUsd(owlsForImportance(0.5));
     expect(await owlBalance(claimant.id)).toBe(expectedAward);
@@ -630,8 +640,11 @@ describe("the end-to-end money path", () => {
     const term = await prizeCommitmentBreakdown(m.grantId);
     expect(term.held_micro_usd).toBe(0);
     expect(term.paid_micro_usd).toBe(500 * OWL);
-    expect(term.review_reserve_micro_usd).toBe(Number(allocation!.amount_micro_usd));
-    expect(term.total_micro_usd).toBe(500 * OWL + Number(allocation!.amount_micro_usd));
+    // Released with the bounty, the reserve counts what it placed: the
+    // review and the acceptance's audit (#363).
+    const placedOnReserve = Number(allocation!.amount_micro_usd) + Number(auditAllocation!.amount_micro_usd);
+    expect(term.review_reserve_micro_usd).toBe(placedOnReserve);
+    expect(term.total_micro_usd).toBe(500 * OWL + placedOnReserve);
     expect(await committedOwls(m.grantId, m.jobId)).toBe(term.total_micro_usd / OWL);
     expect((await mandatePrizeNumbers(m.grantId))!.headroom_micro_usd).toBe(2500 * OWL - term.total_micro_usd);
     const [contrib] = await rawQuery<{ prized: string; earned: string }>(`SELECT owls_prized_micro_usd AS prized, owls_earned_micro_usd AS earned FROM contributors WHERE id = $1`, [claimant.id]);

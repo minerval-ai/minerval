@@ -50,8 +50,6 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     sqsContributionQueue: "",
     sqsArbitrationQueue: "",
-    sqsCuratorQueue: "",
-    sqsAuditQueue: "",
     sqsClaimPipelineQueue: "",
     sqsUrlExtractionQueue: "",
   }),

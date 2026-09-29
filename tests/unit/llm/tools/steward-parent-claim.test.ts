@@ -48,7 +48,6 @@ vi.mock("../../../../src/services/relationship-service.js", () => ({
 vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => {}),
   enqueueSteward: vi.fn(async () => {}),
-  enqueueCurator: vi.fn(async () => {}),
 }));
 
 vi.mock("../../../../src/llm/prompts/skills.js", () => ({

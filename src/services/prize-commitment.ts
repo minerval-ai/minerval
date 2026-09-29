@@ -16,8 +16,9 @@
  * paid is the gross sum of `prize_payouts` on the bounty's prize claims,
  * every kind, status <> 'reversed'. Plus the prize-review reserve (§8.6):
  * each reserve job's budget while it is running, and once released the
- * amount actually placed on `prize_review` actions for that bounty (the
- * join releasePrizeReviewReserve uses).
+ * amount actually placed on the reserve's actions for that bounty — its
+ * prize reviews and prize audits (reserveActionPredicateSql, the predicate
+ * releasePrizeReviewReserve uses).
  *
  * One SQL fragment, exported here and used verbatim by every statement that
  * computes committed money (grantCommittedMicroUsd, refundUnspentBudget's
@@ -45,6 +46,23 @@ export const PRIZE_RESERVE_JOB_KIND = "prize_review_reserve";
 const HOLDING_LIST = HOLDING_BOUNTY_STATUSES.map((s) => `'${s}'`).join(", ");
 
 /**
+ * The actions a bounty's prize-review reserve pays for, as a predicate on
+ * an actions row `a` (§8.6): the reviews of its prize claims, and the
+ * prize audits (#363) requested with the bounty named on the audit run (the
+ * posting audit, a Steward's acceptance, a checker failure). Every reading
+ * of what the reserve placed goes through this one fragment, so the room,
+ * the release, and the mandate's committed money cannot drift.
+ */
+export function reserveActionPredicateSql(bountyIdExpr: string): string {
+  return `((a.kind = 'prize_review'
+            AND EXISTS (SELECT 1 FROM prize_claims rpc
+                         WHERE rpc.id::text = a.target_ref AND rpc.bounty_id = ${bountyIdExpr}))
+        OR (a.kind = 'audit'
+            AND EXISTS (SELECT 1 FROM audit_runs rar
+                         WHERE rar.id::text = a.target_ref AND rar.bounty_id = ${bountyIdExpr})))`;
+}
+
+/**
  * The FROM clause every reading shares: the grant's bounties, each joined
  * laterally to its gross payouts and to its review reserve. `grantIdExpr`
  * is a SQL expression for the grant id: a parameter placeholder (`$1`) or a
@@ -63,9 +81,7 @@ function bountyTermsFromSql(grantIdExpr: string): string {
                                   ELSE (SELECT COALESCE(SUM(al.amount_micro_usd), 0)
                                           FROM action_allocations al
                                           JOIN actions a ON a.id = al.action_id
-                                          JOIN prize_claims pc ON pc.id::text = a.target_ref
-                                         WHERE a.kind = 'prize_review'
-                                           AND pc.bounty_id = b.id
+                                         WHERE ${reserveActionPredicateSql("b.id")}
                                            AND al.user_id = j.user_id)
                              END), 0)::bigint AS total
            FROM budget_jobs j

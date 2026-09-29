@@ -1,5 +1,6 @@
 /**
- * Audit scheduler (#180): the time-based feeder of the audit queue.
+ * Audit scheduler (#180): the time-based source of audit requests (each one
+ * an `audit` ledger action since #363).
  *
  * Two jobs per tick, both idempotent through requestAudit's dedupe gate (a
  * DB unique index), so any number of processes can run this concurrently —

@@ -2,7 +2,7 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { refreshQueuePriority } from "./priority-service.js";
-import { ensureAssessActions } from "./action-service.js";
+import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
 let _sqsClient: SQSClient | null = null;
@@ -89,6 +89,12 @@ export interface StewardMessage {
   context: string;
 }
 
+/**
+ * An Audit Agent run's type and context. Audits are no longer queue
+ * messages (#363): requestAudit opens an `audit` ledger action for the
+ * audit_runs row, and the engine executor runs it once it is funded. The
+ * shape survives as the vocabulary every trigger speaks.
+ */
 export interface AuditMessage {
   auditType:
     | "decision_audit"
@@ -103,32 +109,6 @@ export interface AuditMessage {
   runId?: string;
 }
 
-export interface CuratorMessage {
-  trigger:
-    // A Steward flagged something structural (likely duplicate, needs split, …).
-    | "steward_escalation"
-    // Look across a claim's neighborhood for duplicates / missing edges.
-    // The unconditional post-extraction sweep that produced this was removed
-    // (it wrote nothing across 122 runs); it is now produced only by the
-    // one-shot scripts/sweep-fallback-matches.ts (#419, #438).
-    | "neighborhood_sweep";
-  // The claim whose neighborhood to reconcile (the escalating/anchor claim).
-  claimId: string;
-  context: string;
-  /**
-   * Who the curation is FOR, carried from the run that asked for it, so the
-   * Curator's spend lands on a row with an owner instead of a null user and a
-   * null job. A Steward escalation happens inside a funded assessment, and
-   * that funder is the honest answer to "who induced this".
-   *
-   * Attribution only — it makes the money visible, it does not decide whose
-   * escrow pays. Curation becoming a funded ledger action the General
-   * mandate's Grantmaker chooses to buy is tracked separately.
-   */
-  userId?: string | null;
-  jobId?: string | null;
-}
-
 // In-memory queue for local development.
 // NOTE: the Steward is intentionally absent — it is no longer a message queue at
 // all. A claim's `steward_state` column IS its queue (see enqueueSteward below),
@@ -139,8 +119,6 @@ const localQueues = {
   urlExtraction: [] as UrlExtractionMessage[],
   contribution: [] as ContributionMessage[],
   arbitration: [] as ArbitrationMessage[],
-  curator: [] as CuratorMessage[],
-  audit: [] as AuditMessage[],
 };
 
 export function getLocalQueue<T extends keyof typeof localQueues>(
@@ -354,53 +332,20 @@ export async function enqueueSteward(
   }
 }
 
-export async function enqueueCurator(
-  message: CuratorMessage
-): Promise<void> {
-  const config = loadConfig();
-  if (!config.sqsCuratorQueue) {
-    localQueues.curator.push(message);
-  } else {
-    const client = getSqsClient();
-    await client.send(
-      new SendMessageCommand({
-        QueueUrl: config.sqsCuratorQueue,
-        MessageBody: JSON.stringify(message),
-      })
-    );
-  }
-  recordEnqueueEvent({
-    queue: "curator",
-    trigger: message.trigger,
-    claimId: message.claimId,
-  });
-}
-
-export async function enqueueAudit(
-  message: AuditMessage
-): Promise<void> {
-  const config = loadConfig();
-  if (!config.sqsAuditQueue) {
-    localQueues.audit.push(message);
-  } else {
-    const client = getSqsClient();
-    await client.send(
-      new SendMessageCommand({
-        QueueUrl: config.sqsAuditQueue,
-        MessageBody: JSON.stringify(message),
-      })
-    );
-  }
-  recordEnqueueEvent({ queue: "audit", trigger: message.auditType });
-}
-
 /**
  * Request an Audit Agent run (#180): the single entry point every trigger
  * uses. Creates the audit_runs row FIRST — the run's identity, which findings
- * attach to — and only then enqueues. When dedupeKey is set, the row's
- * partial unique index makes the request at-most-once ('sweep:<date>',
+ * attach to — and then opens its `audit` ledger action (#363), which runs
+ * once it is funded. When dedupeKey is set, the row's partial unique index
+ * makes the request at-most-once ('sweep:<date>',
  * 'bad-faith:<contribution_id>'), safe across concurrent processes: the
- * loser's INSERT inserts nothing and no duplicate run is enqueued.
+ * loser's INSERT inserts nothing and no duplicate action is opened.
+ *
+ * Who pays: a prize audit (bountyId) is funded at once from the bounty's
+ * prize-review reserve, like the prize review itself; every other audit is
+ * valued and funded by the Governance mandate, which never funds an audit
+ * whose subject it is (subjectGrantId), and whose own audits the General
+ * mandate funds instead (mandate-valuer-service.refreshAuditValuations).
  *
  * Returns the run id, or null when an earlier request already claimed the
  * dedupe key.
@@ -426,21 +371,53 @@ export async function requestAudit(input: {
     | "prize_acceptance"
     | "prize_check_error";
   dedupeKey?: string;
+  /** The mandate the audit examines, if any: it may not fund its own audit. */
+  subjectGrantId?: string | null;
+  /** A prize audit: funded from this bounty's prize-review reserve. */
+  bountyId?: string | null;
+  /** The claim the audit is about, when there is one (shown on the row). */
+  claimId?: string | null;
 }): Promise<string | null> {
   const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO audit_runs (audit_type, context, triggered_by, dedupe_key)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO audit_runs
+       (audit_type, context, triggered_by, dedupe_key, subject_grant_id, bounty_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
      RETURNING id`,
-    [input.auditType, input.context, input.triggeredBy, input.dedupeKey ?? null]
+    [
+      input.auditType,
+      input.context,
+      input.triggeredBy,
+      input.dedupeKey ?? null,
+      input.subjectGrantId ?? null,
+      input.bountyId ?? null,
+    ]
   );
   const runId = rows[0]?.id;
   if (!runId) return null;
 
-  await enqueueAudit({
+  const actionId = await ensureAuditAction({
+    auditRunId: runId,
     auditType: input.auditType,
-    context: input.context,
-    runId,
+    triggeredBy: input.triggeredBy,
+    claimId: input.claimId ?? null,
   });
+  recordEnqueueEvent({ queue: "audit", trigger: input.auditType });
+  if (input.bountyId) {
+    // Imported lazily: bounty-service requests audits through this module.
+    const { fundPrizeAuditFromReserve } = await import("./bounty-service.js");
+    await fundPrizeAuditFromReserve(input.bountyId, actionId).catch((err) =>
+      console.error(
+        `[audit] reserve funding failed for audit ${runId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    );
+  } else {
+    // Priced and offered to the Governance mandate now, not at the next
+    // sweep (lazily: the allocator imports this module).
+    const { fundAuditNow } = await import("./maintenance-funding.js");
+    await fundAuditNow(actionId);
+  }
   return runId;
 }

@@ -55,8 +55,6 @@ vi.mock("../../../src/config.js", () => ({
     stewardMaxRuns: 0,
     sqsContributionQueue: "",
     sqsArbitrationQueue: "",
-    sqsCuratorQueue: "",
-    sqsAuditQueue: "",
     sqsClaimPipelineQueue: "",
     sqsUrlExtractionQueue: "",
   }),

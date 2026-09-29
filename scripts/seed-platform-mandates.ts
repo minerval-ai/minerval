@@ -9,7 +9,9 @@
  * highest value-per-dollar assessments up to its daily rate through the
  * same allocation engine every funder uses, and its ALLOCATION POLICY is
  * the platform's formulas, amendable by its Grantmaker in conversation.
- * Beside it: Mathematics and Mathematics prizes (docs/mathematics.md §10
+ * GOVERNANCE is its counterpart for audit (#363): a formula mandate that
+ * values and funds the Audit Agent's runs, never an audit of itself.
+ * Beside them: Mathematics and Mathematics prizes (docs/mathematics.md §10
  * and Appendix B: one mandate funds formalizations, attempts, and
  * stewardship; the other offers prizes from its own escrow and funds
  * nothing else in this epoch) and AI Economics, topical standing mandates.
@@ -58,7 +60,7 @@ interface PlatformMandate {
   scopeQuery: string | null;
   strategy: string;
   budgetOwls: number;
-  policy: "general" | "cover";
+  policy: "general" | "governance" | "cover";
   dailyBudgetOwls: number;
   /** The mandate's domain skills (grants.skills); none for the General mandate. */
   skills: string[];
@@ -319,6 +321,37 @@ function mandates(): PlatformMandate[] {
       skills: [],
       allocationPolicy: null,
     },
+    {
+      key: "governance",
+      title: "Governance",
+      objective:
+        "Pay for the audits that keep Minerval's governance honest: the " +
+        "Audit Agent's reviews of contribution decisions, arbitration " +
+        "overturns, bad-faith flags, suspensions, anomalies the monitors " +
+        "raise, and the periodic sweeps over recent decisions. This is " +
+        "Minerval's own standing mandate for audit, kept apart from the " +
+        "General assessment mandate so that audits never compete with " +
+        "assessments for the same day's budget, and so that the platform " +
+        "lane, whose allocation judgments are themselves audited, is never " +
+        "the party deciding whether an audit of it runs.",
+      scopeQuery: null,
+      strategy:
+        "Value every requested audit by what prompted it (prize and " +
+        "bad-faith audits highest, periodic sweeps lowest), let waiting " +
+        "raise an audit's value, and fund the best value per owl each day. " +
+        "Never value or fund an audit of this mandate itself: those are the " +
+        "General mandate's to fund. An audit this mandate declines stays " +
+        "open on the ledger, with its age, for anyone to see.",
+      // A first-run number, like General's: audits have never been metered
+      // (they ran unattributed before #363), so the first week of ledger
+      // runs is what sizes this. Five owls a day covers several times the
+      // audit volume the dedupe keys allow on an ordinary day.
+      budgetOwls: 50,
+      policy: "governance",
+      dailyBudgetOwls: 5,
+      skills: [],
+      allocationPolicy: null,
+    },
     mathematicsMandate(),
     mathematicsPrizesMandate(),
     {
@@ -472,8 +505,9 @@ async function createMandate(m: PlatformMandate, platformId: string): Promise<st
       [platformId, -budgetMicro, job!.id, `platform_mandate_hold:${m.key}`]
     );
 
-    // 'general' = the allocation engine's platform lane; 'cover' = the
-    // coverage selector over a topical scope. Both standing mandates.
+    // 'general' = the allocation engine's platform lane; 'governance' = the
+    // formula mandate that funds audits (#363); 'cover' = the coverage
+    // selector over a topical scope. All standing mandates.
     const [grant] = await tx.query<{ id: string }>(
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_query, policy, status,

@@ -120,6 +120,8 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
               "mandate_review",
               "lookout_run",
               "consistency_sweep",
+              "curate",
+              "audit",
               "formalize",
               "attempt_proof",
               "prize_review",

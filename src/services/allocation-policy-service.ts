@@ -59,6 +59,39 @@ export interface AllocationPolicy {
   /** Per-claim lifetime attempt spend, in owls; a plan item's
    *  lifetime_cap_owls may raise one claim's cap to at most twice this. */
   attempt_claim_lifetime_cap_owls: number;
+  // --- Maintenance and audit (#363): curation and audit are ledger actions
+  // a mandate chooses to buy, not work induced onto whoever is nearest.
+  /** The most of the daily rate the mandate's allocator places on
+   *  maintenance (`curate` rows) in a day. Maintenance increments are funded
+   *  first, best value per owl first, up to this share; whatever they leave
+   *  unused flows back to the rest of the day's work in the same pass. */
+  maintenance_share: number;
+  /** Cost prior for one `curate` run, in owls, until the ledger holds
+   *  enough completed runs for the live p80. */
+  est_curate_cost_owls: number;
+  /** Cost prior for one `audit` run, in owls, likewise. */
+  est_audit_cost_owls: number;
+  /** Formula weight of a reconcile-candidate request (a similarity scan's
+   *  pair, times its score) relative to a Steward's escalation (1.0): a
+   *  scan saw two texts; an agent read the claim. */
+  curate_candidate_weight: number;
+  /** A claim the Matcher admitted as novel this recently, with no agent
+   *  asking since, is worth nothing to curate: the check just ran. */
+  curate_matcher_quiet_days: number;
+  /** Reconcile candidates the scan may raise per sweep (0 = off). */
+  reconcile_candidates_max_per_sweep: number;
+  /** The scan's similarity floor: pairs of unlinked active claims whose
+   *  embeddings are at least this similar. */
+  reconcile_candidate_min_similarity: number;
+  /** Audit formula weights by trigger class (a formula mandate that funds
+   *  audits: the platform's Governance mandate). An audit's value is its
+   *  class weight, rising to twice that as it waits a week. */
+  audit_value_prize: number;
+  audit_value_bad_faith: number;
+  audit_value_overturn: number;
+  audit_value_anomaly: number;
+  audit_value_suspension: number;
+  audit_value_sweep: number;
 }
 
 /** The bounds of the framework: what the Grantmaker may set each knob to. */
@@ -80,6 +113,19 @@ export const POLICY_BOUNDS: Record<
   est_prize_review_cost_owls: { min: 0.1, max: 200 },
   attempt_cooldown_days: { min: 0, max: 365 },
   attempt_claim_lifetime_cap_owls: { min: 0, max: 10000 },
+  maintenance_share: { min: 0, max: 1 },
+  est_curate_cost_owls: { min: 0.01, max: 20 },
+  est_audit_cost_owls: { min: 0.01, max: 20 },
+  curate_candidate_weight: { min: 0, max: 1 },
+  curate_matcher_quiet_days: { min: 0, max: 365 },
+  reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
+  reconcile_candidate_min_similarity: { min: 0.5, max: 1 },
+  audit_value_prize: { min: 0, max: 10 },
+  audit_value_bad_faith: { min: 0, max: 10 },
+  audit_value_overturn: { min: 0, max: 10 },
+  audit_value_anomaly: { min: 0, max: 10 },
+  audit_value_suspension: { min: 0, max: 10 },
+  audit_value_sweep: { min: 0, max: 10 },
 };
 
 export interface GeneralMandate {
@@ -149,6 +195,25 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
   return value;
 }
 
+/**
+ * The platform's Governance mandates (#363): formula mandates (policy
+ * 'governance') whose valuations span the open `audit` rows. Every active
+ * one values audits by its own policy's weights; none values an audit of
+ * itself. Uncached: read by the valuer and the executor, never per row.
+ */
+export async function getGovernanceMandateIds(): Promise<string[]> {
+  try {
+    const rows = await rawQuery<{ id: string }>(
+      `SELECT id FROM grants
+        WHERE policy = 'governance' AND status = 'active'
+        ORDER BY created_at ASC`
+    );
+    return rows.map((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
 function defaultsFromConfig(): AllocationPolicy {
   const c = loadConfig();
   return {
@@ -170,6 +235,23 @@ function defaultsFromConfig(): AllocationPolicy {
     est_prize_review_cost_owls: 12,
     attempt_cooldown_days: 30,
     attempt_claim_lifetime_cap_owls: 500,
+    // Maintenance and audit (#363). The design's priors, amendable by each
+    // mandate's Grantmaker. The first live epoch's unconditional sweeps
+    // cost about 0.11 owl each and wrote nothing; a run with a real concern
+    // does more, so the curate prior sits about twice that.
+    maintenance_share: 0.1,
+    est_curate_cost_owls: 0.25,
+    est_audit_cost_owls: 0.5,
+    curate_candidate_weight: 0.5,
+    curate_matcher_quiet_days: 7,
+    reconcile_candidates_max_per_sweep: 0,
+    reconcile_candidate_min_similarity: 0.92,
+    audit_value_prize: 1,
+    audit_value_bad_faith: 0.9,
+    audit_value_overturn: 0.8,
+    audit_value_anomaly: 0.6,
+    audit_value_suspension: 0.5,
+    audit_value_sweep: 0.3,
   };
 }
 

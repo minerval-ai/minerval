@@ -9,7 +9,7 @@
  * The fallback reasoning was never stored on the claim, but it is in the agent
  * traces (#334): the Steward's or Curator's `match_claim` tool result carries
  * it verbatim. This finds those runs within the trace retention window (30
- * days by default) and enqueues one Curator neighborhood sweep per anchor
+ * days by default) and opens one `operator` curation request per anchor
  * claim (the run's claim, under which the fallback-minted subclaim sits).
  * Extra anchors known from reports can be passed with `--claim <id>`; the
  * child from #438 sits under c31c7ae2, for example.
@@ -19,32 +19,20 @@
  * trace to follow. Intake proposals materialize through the reviewer, whose
  * tool result records only the outcome, so they are likewise invisible here.
  *
- * Safe by default: prints what it WOULD sweep and exits. Pass `--confirm`
- * to actually sweep. Curation costs real model spend. Where a Curator SQS
- * queue is configured the sweeps are enqueued for the server to drain;
- * otherwise (prod included: the Curator queue is in-memory and drained
- * inside the API process, see infra/lib/api-stack.ts) this process would be
- * the queue's only holder and would exit with the work lost, so the script
- * runs the Curator itself, one anchor at a time, and returns when done.
- *
- * The in-process path is unattributed work, so the LLM circuit breaker
- * (budget-tracker.ts) applies, and a fresh process inherits the API's
- * limits: one Curator run on a dense mathematical claim exceeded the
- * production hourly token limit on its own (2026-09-16). For a one-off task
- * set LLM_HOURLY_TOKEN_LIMIT=0 and LLM_HOURLY_CALL_LIMIT=0 in the container
- * overrides, and keep the daily limits as the backstop for the whole sweep.
+ * Safe by default: prints what it WOULD request and exits. Pass `--confirm`
+ * to open the requests. Curation is funded ledger work (#363): each request
+ * opens (or joins) its anchor's `curate` row, which runs once a mandate
+ * values and funds it (the General formula weighs an operator's request like
+ * a Steward's escalation). This script spends nothing itself and returns at
+ * once; the server's engine executor does the runs, each metered to the
+ * mandate that funded it.
  *
  *   npx tsx scripts/sweep-fallback-matches.ts                       # dry run
  *   npx tsx scripts/sweep-fallback-matches.ts --claim <uuid> --confirm
  */
 import "dotenv/config";
 import { rawQuery, closeDb } from "../src/db/client.js";
-import { loadConfig } from "../src/config.js";
-import {
-  enqueueCurator,
-  type CuratorMessage,
-} from "../src/services/queue-service.js";
-import { handleCuratorMessage } from "../src/workers/curator-pipeline.js";
+import { requestCuration } from "../src/services/curation-service.js";
 
 /** The exact reasoning the pre-#442 fallback emitted. */
 const FALLBACK_PHRASE = "defaulting to a new claim";
@@ -136,53 +124,44 @@ async function main(): Promise<void> {
   }
 
   if (!confirm) {
-    console.log("\nDry run — re-run with --confirm to run a Curator sweep per anchor.");
+    console.log("\nDry run — re-run with --confirm to open a curation request per anchor.");
     await closeDb();
     return;
   }
 
-  const messages: CuratorMessage[] = hits.map((h) => ({
-    trigger: "neighborhood_sweep",
-    claimId: h.claim_id,
-    context:
-      `Sweep for duplicates minted on the Matcher's old timeout fallback ` +
-      `(#419, #438). A Steward or Curator working on this claim called ` +
-      `match_claim, the Matcher ran out of search budget, and the result ` +
-      `was read as "novel" without an identity verdict, so a subclaim ` +
-      `created under this claim at that time may duplicate an existing ` +
-      `claim (as itself, a rewording, or its negation). Examine the ` +
-      `subclaims created here and merge any that duplicate an existing ` +
-      `node. Doing nothing is fine if none do.`,
-  }));
-
-  if (loadConfig().sqsCuratorQueue) {
-    for (const m of messages) await enqueueCurator(m);
-    console.log(`Enqueued ${messages.length} Curator sweep(s).`);
-  } else {
-    // No durable queue to hand off to: run the Curator here, sequentially,
-    // so the process holds the work until it is done.
-    let done = 0;
-    const failed: string[] = [];
-    for (const [i, m] of messages.entries()) {
-      console.log(`\nCurator sweep ${i + 1}/${messages.length}: ${m.claimId}`);
-      try {
-        await handleCuratorMessage(m);
-        done++;
-        console.log(`  done`);
-      } catch (err) {
-        // One anchor's failure (a model error, the LLM breaker) should not
-        // strand the others; report it and move on.
-        failed.push(m.claimId);
-        console.error(`  failed:`, err instanceof Error ? err.message : err);
-      }
+  const concern =
+    `Sweep for duplicates minted on the Matcher's old timeout fallback ` +
+    `(#419, #438). A Steward or Curator working on this claim called ` +
+    `match_claim, the Matcher ran out of search budget, and the result ` +
+    `was read as "novel" without an identity verdict, so a subclaim ` +
+    `created under this claim at that time may duplicate an existing ` +
+    `claim (as itself, a rewording, or its negation). Examine the ` +
+    `subclaims created here and merge any that duplicate an existing ` +
+    `node. Doing nothing is fine if none do.`;
+  let opened = 0;
+  let repeats = 0;
+  const failed: string[] = [];
+  for (const h of hits) {
+    const r = await requestCuration({
+      anchorClaimId: h.claim_id,
+      source: "operator",
+      concern,
+    });
+    if (!r.ok) {
+      failed.push(h.claim_id);
+      console.error(`  ${h.claim_id}: ${r.problem}`);
+    } else if (r.repeat) {
+      repeats++;
+    } else {
+      opened++;
     }
-    console.log(`\nRan ${done} Curator sweep(s) in-process, ${failed.length} failed.`);
-    for (const id of failed) console.log(`  failed: ${id}`);
-    await closeDb();
-    if (failed.length > 0) process.exit(1);
-    return;
   }
+  console.log(
+    `\nOpened ${opened} curation request(s); ${repeats} already waiting; ${failed.length} refused. ` +
+      `They run as their curate rows are funded.`
+  );
   await closeDb();
+  if (failed.length > 0) process.exit(1);
 }
 
 main().catch((err) => {

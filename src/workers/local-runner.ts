@@ -3,8 +3,8 @@
  *
  * Drives the whole agent organization without external infrastructure. Two kinds
  * of work are interleaved here:
- *  - the in-memory queues (claim-pipeline, curator, contribution, arbitration,
- *    audit, url-extraction) — populated by enqueue* when no SQS queue is set; and
+ *  - the in-memory queues (claim-pipeline, contribution, arbitration,
+ *    url-extraction) — populated by enqueue* when no SQS queue is set; and
  *  - the DB-backed Steward queue (claims with steward_state='pending'), drained
  *    highest-importance-first by steward-pipeline.ts.
  *
@@ -12,16 +12,15 @@
  * the SAME mechanism in dev and prod (prod just also runs SQS pollers for the
  * ingestion queues). `drainLocalQueues()` runs everything to quiescence (used by
  * the corpus harness); `startLocalRunner()` polls continuously (dev server AND
- * prod, so the Steward/Curator actually run everywhere — previously they were
- * enqueued in prod but never drained).
+ * prod, so the Steward actually runs everywhere — previously it was enqueued
+ * in prod but never drained). Curator and Audit runs are ledger actions
+ * (#363), run by the engine executor in this same loop.
  */
 import { getLocalQueue } from "../services/queue-service.js";
 import { handleClaimPipeline } from "./claim-pipeline.js";
 import { handleUrlExtraction } from "./url-extraction.js";
-import { handleCuratorMessage } from "./curator-pipeline.js";
 import { handleContributionMessage } from "./contribution-pipeline.js";
 import { handleArbitrationMessage } from "./arbitration-pipeline.js";
-import { handleAuditMessage } from "./audit-pipeline.js";
 import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.js";
 import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
@@ -35,20 +34,16 @@ import { loadConfig } from "../config.js";
 
 export type LocalQueueName =
   | "claimPipeline"
-  | "curator"
   | "contribution"
   | "arbitration"
-  | "audit"
   | "urlExtraction";
 
 // Priority order for the in-memory queues. The Steward is handled separately
 // (DB-backed, importance-ordered) and drained between in-memory passes.
 const HANDLERS: Array<[LocalQueueName, (m: never) => Promise<void>]> = [
   ["claimPipeline", handleClaimPipeline as (m: never) => Promise<void>],
-  ["curator", handleCuratorMessage as (m: never) => Promise<void>],
   ["contribution", handleContributionMessage as (m: never) => Promise<void>],
   ["arbitration", handleArbitrationMessage as (m: never) => Promise<void>],
-  ["audit", handleAuditMessage as (m: never) => Promise<void>],
   ["urlExtraction", handleUrlExtraction as (m: never) => Promise<void>],
 ];
 
@@ -118,7 +113,7 @@ function dequeue(name: LocalQueueName): unknown {
  * skipped, mirroring the SQS poller.
  *
  * In-memory work is drained first each round; then one Steward task is processed
- * (it may enqueue Curator work in-memory and mint new pending subclaims), and the
+ * (it may request curation on the ledger and mint new pending subclaims), and the
  * loop repeats — so the two queues settle together.
  */
 export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainStats> {
@@ -240,8 +235,8 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       // 'empty' — fall through to the grant lane.
     }
 
-    // 4. The engine executor: covered planning / mandate-review / ingest
-    //    actions from the ledger, one unit per pass.
+    // 4. The engine executor: covered planning / mandate-review / ingest /
+    //    curate / audit actions from the ledger, one unit per pass.
     {
       const startedAt = now();
       const e = await processNextEngineAction({ model: opts.stewardModel });

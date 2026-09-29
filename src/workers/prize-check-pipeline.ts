@@ -636,6 +636,8 @@ async function handleCheckError(pc: PrizeClaimRow, message: string): Promise<boo
     auditType: "anomaly_investigation",
     triggeredBy: "prize_check_error",
     dedupeKey: `prize_check_error:${pc.id}`,
+    bountyId: pc.bounty_id,
+    claimId: pc.claim_id,
     context:
       `Prize claim ${pc.id} on claim ${pc.claim_id} hit ${current.check_attempts} checker errors (${message}). ` +
       `The statement's queue is held. Investigate whether the checker, the pin, or the submission is at fault; an operator resolves it from GET /operator/prizes.`,

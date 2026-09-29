@@ -60,9 +60,6 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     sqsContributionQueue: "",
     sqsArbitrationQueue: "",
-    sqsCuratorQueue: "",
-    curatorMaxRuns: 0,
-    curatorModel: "claude-opus-5-5",
   }),
 }));
 
@@ -72,13 +69,9 @@ vi.mock("../../../src/llm/agents/contribution-reviewer.js", () => ({
 vi.mock("../../../src/llm/agents/dispute-arbitrator.js", () => ({
   runArbitration: vi.fn(record("dispute_arbitrator")),
 }));
-vi.mock("../../../src/llm/agents/curator.js", () => ({
-  runCurator: vi.fn(record("curator")),
-}));
 
 import { handleContributionMessage } from "../../../src/workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "../../../src/workers/arbitration-pipeline.js";
-import { handleCuratorMessage } from "../../../src/workers/curator-pipeline.js";
 
 beforeEach(() => {
   state.contributorId = CONTRIBUTOR;
@@ -139,31 +132,6 @@ describe("arbitration attribution", () => {
   });
 });
 
-describe("curator attribution across the queue hop", () => {
-  it("restores the identity the escalating run put on the message", async () => {
-    await handleCuratorMessage({
-      trigger: "steward_escalation",
-      claimId: "cl000000-0000-4000-8000-000000000005",
-      context: "possible duplicate",
-      userId: null,
-      jobId: "job-7",
-    });
-    expect(state.seen).toEqual([
-      { agent: "curator", userId: null, jobId: "job-7" },
-    ]);
-  });
-
-  it("carries nothing when the message carried nothing", async () => {
-    // A message enqueued before this change, or from a path with no funder.
-    await handleCuratorMessage({
-      trigger: "steward_escalation",
-      claimId: "cl000000-0000-4000-8000-000000000005",
-      context: "possible duplicate",
-    });
-    expect(state.seen[0]).toEqual({
-      agent: "curator",
-      userId: null,
-      jobId: null,
-    });
-  });
-});
+// Curator and Audit runs are no longer queue messages (#363): each is a
+// funded ledger action, metered to the funder that covered it. That
+// attribution is pinned in tests/unit/workers/engine-executor-maintenance.test.ts.

@@ -46,6 +46,7 @@ import {
   PRIZE_RESERVE_JOB_KIND,
   isHoldingBountyStatus,
   prizeCommitmentBreakdown,
+  reserveActionPredicateSql,
 } from "./prize-commitment.js";
 import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
 
@@ -762,6 +763,11 @@ async function auditOpenedBounty(bountyId: string): Promise<void> {
       `solver attempt it without settling it, and is the amount within the mandate's policy? ` +
       `An adverse finding withdraws it before any claim can be filed.`,
     dedupeKey: `bounty_posted:${bounty.id}`,
+    // Paid from the bounty's own review reserve, minted just before this;
+    // and an audit OF the posting mandate, which may not value it (#363).
+    bountyId: bounty.id,
+    subjectGrantId: bounty.posted_by_grant_id,
+    claimId: bounty.claim_id,
   });
 }
 
@@ -1059,8 +1065,7 @@ export async function releasePrizeReviewReserve(
             (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
        FROM action_allocations al
        JOIN actions a ON a.id = al.action_id
-       JOIN prize_claims pc ON pc.id::text = a.target_ref
-      WHERE a.kind = 'prize_review' AND pc.bounty_id = $1 AND al.released_at IS NULL`,
+      WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.released_at IS NULL`,
     [bountyId]
   );
   for (const al of live) {
@@ -1074,18 +1079,18 @@ export async function releasePrizeReviewReserve(
       );
     }
   }
+  // A prize audit the reserve funded but that never ran (a bounty closed
+  // under it) closes with the reserve; its audit run stays on the record.
   await r.query(
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
-      WHERE a.kind = 'prize_review' AND a.status IN ('open', 'running')
-        AND EXISTS (SELECT 1 FROM prize_claims pc WHERE pc.id::text = a.target_ref AND pc.bounty_id = $1)`,
+      WHERE a.status IN ('open', 'running') AND ${reserveActionPredicateSql("$1::uuid")}`,
     [bountyId]
   );
   const [placed] = await r.query<{ total: string | number }>(
     `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS total
        FROM action_allocations al
        JOIN actions a ON a.id = al.action_id
-       JOIN prize_claims pc ON pc.id::text = a.target_ref
-      WHERE a.kind = 'prize_review' AND pc.bounty_id = $1 AND al.user_id = $2`,
+      WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.user_id = $2`,
     [bountyId, job.user_id]
   );
   const remainder = Math.max(0, job.budget_micro_usd - Number(placed?.total ?? 0));
@@ -1114,11 +1119,53 @@ export async function reserveRoomMicroUsd(bountyId: string, tx?: Runner): Promis
     `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS total
        FROM action_allocations al
        JOIN actions a ON a.id = al.action_id
-       JOIN prize_claims pc ON pc.id::text = a.target_ref
-      WHERE a.kind = 'prize_review' AND pc.bounty_id = $1 AND al.user_id = $2`,
+      WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.user_id = $2`,
     [bountyId, job.user_id]
   );
   return { job, room: Math.max(0, job.budget_micro_usd - Number(placed?.total ?? 0)) };
+}
+
+/**
+ * Fund a prize audit's `audit` action from the bounty's reserve (§8.6,
+ * #363), the way fundPrizeReviewAction funds the review: an allocation
+ * pinned to the action, placed by the platform account, for as much of the
+ * estimate as the reserve still holds. The docs always said the reserve
+ * pays for the audit; until the audit was a ledger action it ran unmetered
+ * against nothing. Idempotent: a second call tops up nothing already
+ * placed. Returns the amount placed.
+ */
+export async function fundPrizeAuditFromReserve(
+  bountyId: string,
+  actionId: string,
+  tx?: Runner
+): Promise<number> {
+  const r = asRunner(tx);
+  const [action] = await r.query<{
+    exclusion_group: string;
+    claim_id: string | null;
+    cost_est_micro_usd: string | number;
+    status: string;
+  }>(
+    `SELECT exclusion_group, claim_id, cost_est_micro_usd, status FROM actions WHERE id = $1`,
+    [actionId]
+  );
+  if (!action || action.status !== "open") return 0;
+  const { job, room } = await reserveRoomMicroUsd(bountyId, r);
+  if (!job || job.status !== "running") return 0;
+  const [existing] = await r.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM action_allocations
+      WHERE action_id = $1 AND user_id = $2 AND released_at IS NULL`,
+    [actionId, job.user_id]
+  );
+  if (Number(existing?.n ?? 0) > 0) return 0;
+  const amount = Math.min(room, Math.max(0, Math.round(Number(action.cost_est_micro_usd))));
+  if (amount <= 0) return 0;
+  await r.query(
+    `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, user_id, amount_micro_usd)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [action.exclusion_group, actionId, action.claim_id, job.user_id, amount]
+  );
+  return amount;
 }
 
 // ---------------------------------------------------------------------------

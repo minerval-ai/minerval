@@ -26,6 +26,9 @@ const KIND_LABEL: Record<string, string> = {
   mandate_review: "mandate reviews",
   lookout_run: "lookout runs",
   consistency_sweep: "consistency sweeps",
+  // maintenance and audit (#363): chosen, funded work like the rest
+  curate: "curation",
+  audit: "audits",
   // mathematics (docs/mathematics.md §8.3): compute, not prize money
   formalize: "formal statements",
   attempt_proof: "proof attempts",

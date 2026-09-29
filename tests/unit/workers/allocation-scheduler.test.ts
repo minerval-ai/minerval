@@ -13,6 +13,7 @@ const { state } = vi.hoisted(() => ({
     valuationRuns: 0,
     allocatorRuns: 0,
     enqueued: [] as Array<{ claimId: string; trigger: string }>,
+    scans: [] as number[],
     config: {
       allocationSweepIntervalHours: 6,
       stalenessBaseDays: 60,
@@ -42,6 +43,15 @@ vi.mock("../../../src/services/mandate-valuer-service.js", () => ({
   refreshGeneralValuations: vi.fn(async () => {
     state.valuationRuns++;
     return 3;
+  }),
+  // Audits (#363): none open in these tests.
+  refreshAuditValuations: vi.fn(async () => 0),
+}));
+
+vi.mock("../../../src/services/curation-service.js", () => ({
+  scanReconcileCandidates: vi.fn(async (policy: { reconcile_candidates_max_per_sweep: number }) => {
+    state.scans.push(policy.reconcile_candidates_max_per_sweep);
+    return 0;
   }),
 }));
 
@@ -77,6 +87,7 @@ beforeEach(() => {
   state.valuationRuns = 0;
   state.allocatorRuns = 0;
   state.enqueued = [];
+  state.scans = [];
   state.config = {
     allocationSweepIntervalHours: 6,
     stalenessBaseDays: 60,
@@ -99,6 +110,9 @@ describe("allocationSchedulerTick", () => {
     });
     expect(state.reconciles).toBe(1);
     expect(state.allocatorRuns).toBe(1);
+    // The reconcile-candidate scan runs each sweep, under the governing
+    // policy, which ships it off (#363).
+    expect(state.scans).toEqual([0]);
     expect(state.enqueued).toEqual([
       { claimId: "c-1", trigger: "staleness_check" },
       { claimId: "c-2", trigger: "staleness_check" },

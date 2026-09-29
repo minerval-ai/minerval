@@ -745,13 +745,16 @@ const configSchema = z.object({
   mathMandateEscrowOwls: z.coerce.number().min(0).default(2500),
   mathMandateDailyOwls: z.coerce.number().min(0).default(200),
   mathPrizesEscrowOwls: z.coerce.number().min(0).default(2500),
-  // Cap the total number of Curator invocations per process (0 = unlimited),
-  // mirroring stewardMaxRuns for predictable test/deploy spend.
+  // Curation is funded ledger work (kind 'curate', #363): a covered row runs
+  // and nothing else does. This caps only the UNFUNDED fallback lane (no
+  // active General mandate, BACKGROUND_FALLBACK_LANE_ENABLED=true — fresh
+  // dev databases and corpus runs): Curator runs per process, 0 = unlimited,
+  // mirroring stewardMaxRuns.
   curatorMaxRuns: z.coerce.number().default(0),
-  // Probability (0..1) that a newly *created* top-level claim triggers a proactive
-  // Curator neighborhood sweep. 0 disables the proactive path (escalation-only);
-  // 1 sweeps every new claim. Still bounded by curatorMaxRuns + the LLM budget.
-  curatorSweepRate: z.coerce.number().default(1),
+  // A Steward may hold at most this many LIVE curation requests from one
+  // claim (#363): a bounded producer, so one run cannot flood the ledger with
+  // structural concerns. A request stops counting once a run has read it.
+  curationEscalationsPerClaim: z.coerce.number().int().min(0).default(3),
 
   // Governance — model IDs. Any provider-resolvable ID works (see
   // src/llm/providers/routing.ts); the defaults below come from
@@ -973,8 +976,6 @@ const configSchema = z.object({
   sqsContributionQueue: z.string().default(""),
   sqsArbitrationQueue: z.string().default(""),
   sqsStewardQueue: z.string().default(""),
-  sqsCuratorQueue: z.string().default(""),
-  sqsAuditQueue: z.string().default(""),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -1141,7 +1142,7 @@ export function loadConfig(): Config {
     mathMandateDailyOwls: process.env.MATH_MANDATE_DAILY_OWLS,
     mathPrizesEscrowOwls: process.env.MATH_PRIZES_ESCROW_OWLS,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
-    curatorSweepRate: process.env.CURATOR_SWEEP_RATE,
+    curationEscalationsPerClaim: process.env.CURATION_ESCALATIONS_PER_CLAIM,
     matcherModel: process.env.MATCHER_MODEL,
     stewardModel: process.env.STEWARD_MODEL,
     curatorModel: process.env.CURATOR_MODEL,
@@ -1197,8 +1198,6 @@ export function loadConfig(): Config {
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
-    sqsCuratorQueue: process.env.SQS_CURATOR_QUEUE,
-    sqsAuditQueue: process.env.SQS_AUDIT_QUEUE,
   });
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL

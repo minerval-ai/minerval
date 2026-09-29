@@ -1,7 +1,7 @@
 /**
  * Recovery sweep (#218).
  *
- * The Curator/Contribution/Arbitration queues are in-memory: a process restart
+ * The Contribution/Arbitration queues are in-memory: a process restart
  * (deploy, crash, scale-in) loses whatever was queued, and a handler that
  * throws after dequeue loses that message. For the work that has a durable
  * row — contributions awaiting review, escalated contributions awaiting
@@ -13,7 +13,8 @@
  *
  * Rows that have exhausted MAX_REVIEW_ATTEMPTS are left alone (parked) and
  * surfaced in the sweep's log line — they need operator attention, not more
- * spend. Curator messages have no durable row and stay best-effort.
+ * spend. Curator and Audit runs need no sweep: they are ledger actions
+ * (#363), and the action row is their durable queue.
  */
 import { rawQuery } from "../db/client.js";
 import {

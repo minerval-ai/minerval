@@ -121,7 +121,6 @@ function configuredFingerprint(): RunFingerprint {
       stewardMaxRuns: cfg.stewardMaxRuns,
       stewardMaxIterations: cfg.stewardMaxIterations,
       curatorMaxRuns: cfg.curatorMaxRuns,
-      curatorSweepRate: cfg.curatorSweepRate,
       llmDailyTokenLimit: cfg.llmDailyTokenLimit,
       llmHourlyTokenLimit: cfg.llmHourlyTokenLimit,
     },

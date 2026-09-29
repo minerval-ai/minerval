@@ -30,6 +30,20 @@
  *    a second direct invocation in a fresh context with trigger
  *    `formalization_review` publishes or returns it to draft. Completed
  *    with the two passes' summed metered cost.
+ *  - curate (#363): one Curator run around the anchor claim, reading every
+ *    live curation request on it, under the largest funder. Metered and
+ *    consumed like the rest; the requests it read are marked consumed.
+ *  - audit (#363): one Audit Agent run for the audit_runs row named in
+ *    target_ref, under its funder (a Governance mandate, or the bounty's
+ *    prize-review reserve for a prize audit). The run row records its
+ *    completion and findings count.
+ *
+ * The unfunded fallback lane: with BACKGROUND_FALLBACK_LANE_ENABLED and no
+ * mandate that could fund the kind (no active General mandate for curate,
+ * no active Governance mandate for audit), an uncovered curate or audit row
+ * runs attributed to nobody, as the Steward's fallback lane does. It exists
+ * for fresh dev databases and corpus runs; a deployment with its mandates
+ * seeded never takes it.
  */
 import { rawQuery } from "../db/client.js";
 import { checkBudget } from "../llm/budget-tracker.js";
@@ -41,12 +55,26 @@ import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
 import { partitionFromRef } from "../services/consistency-service.js";
 import { runConsistencySweep } from "./consistency-sweep.js";
+import { runCurator } from "../llm/agents/curator.js";
+import { runAudit } from "../llm/agents/audit-agent.js";
+import {
+  consumeCurationRequests,
+  describeCurationRequests,
+  liveCurationRequests,
+} from "../services/curation-service.js";
+import {
+  getGeneralMandate,
+  getGovernanceMandateIds,
+} from "../services/allocation-policy-service.js";
+import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.js";
+import { loadConfig } from "../config.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import {
   claimAction,
   completeAction,
+  ensureCurateAction,
   largestActionFunder,
   nextRunnableAction,
   releaseAction,
@@ -92,21 +120,278 @@ export async function processNextEngineAction(
   }
   await fundGrantSelfActions().catch(() => 0);
 
-  const action = await nextRunnableAction([
-    "grant_planning",
-    "mandate_review",
-    "lookout_run",
-    "consistency_sweep",
-    "ingest",
-    "formalize",
-  ]);
+  const action =
+    (await nextRunnableAction([
+      "grant_planning",
+      "mandate_review",
+      "lookout_run",
+      "consistency_sweep",
+      "curate",
+      "audit",
+      "ingest",
+      "formalize",
+    ])) ?? (await nextFallbackAction());
   if (!action || !(await claimAction(action.id))) return { status: "empty" };
 
   if (action.kind === "ingest") return runIngestAction(action);
   if (action.kind === "formalize") return runFormalizeAction(action, opts);
   if (action.kind === "lookout_run") return runLookoutAction(action, opts);
   if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
+  if (action.kind === "curate") return runCurateAction(action);
+  if (action.kind === "audit") return runAuditAction(action);
   return runGrantAgentAction(action, opts);
+}
+
+/** Unfunded fallback-lane Curator runs this process (CURATOR_MAX_RUNS). */
+let fallbackCuratorRuns = 0;
+
+/** Test hook. */
+export function resetFallbackCuratorRuns(): void {
+  fallbackCuratorRuns = 0;
+}
+
+/**
+ * The oldest uncovered curate or audit row the fallback lane may run, or
+ * null. Only with BACKGROUND_FALLBACK_LANE_ENABLED, and only for a kind no
+ * mandate could fund: an active General mandate owns curation's funding,
+ * an active Governance mandate (or a bounty's reserve) owns audit's.
+ */
+async function nextFallbackAction(): Promise<RunnableAction | null> {
+  const config = loadConfig();
+  if (!config.backgroundFallbackLaneEnabled) return null;
+  const kinds: string[] = [];
+  const curatorCap = config.curatorMaxRuns ?? 0;
+  if (!(await getGeneralMandate()) && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
+    kinds.push("curate");
+  }
+  if ((await getGovernanceMandateIds()).length === 0) kinds.push("audit");
+  if (kinds.length === 0) return null;
+  const [row] = await rawQuery<RunnableAction>(
+    `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
+            a.target_ref, a.cost_est_micro_usd, a.updated_at,
+            0::bigint AS coverage_micro_usd
+       FROM actions a
+      WHERE a.status = 'open' AND a.kind = ANY($1)
+        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+                         WHERE al.exclusion_group = a.exclusion_group
+                           AND al.released_at IS NULL)
+        -- A prize audit is the bounty reserve's to fund, never the lane's.
+        AND NOT EXISTS (SELECT 1 FROM audit_runs ar
+                         WHERE ar.action_id = a.id AND ar.bounty_id IS NOT NULL)
+      ORDER BY a.updated_at ASC
+      LIMIT 1`,
+    [kinds]
+  );
+  if (row?.kind === "curate") fallbackCuratorRuns++;
+  return row ?? null;
+}
+
+/** Who a covered run is metered to: the largest funder, as a usage context. */
+async function funderContext(
+  action: RunnableAction
+): Promise<{ jobId: string | null; userId: string | null; grantId?: string }> {
+  const funder: { jobId?: string; userId?: string; grantId?: string } =
+    await largestActionFunder(action.id).catch(() => ({}));
+  if (funder.grantId) {
+    const [grant] = await rawQuery<{ funder_user_id: string }>(
+      `SELECT funder_user_id FROM grants WHERE id = $1`,
+      [funder.grantId]
+    );
+    return {
+      jobId: funder.jobId ?? null,
+      userId: grant?.funder_user_id ?? null,
+      grantId: funder.grantId,
+    };
+  }
+  return { jobId: funder.jobId ?? null, userId: funder.userId ?? null };
+}
+
+/**
+ * curate (#363): one Curator run around the anchor claim, reading every
+ * live curation request on it. The requests it read are consumed when the
+ * run ends, whatever the outcome short of a retryable failure (a genuine
+ * failure consumes them too: a poison concern must not keep reopening a
+ * funded row; its requester can raise it again). A request that arrived
+ * mid-run reopens the row for the next funding pass.
+ */
+async function runCurateAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const anchorClaimId = action.claim_id;
+  const [claim] = anchorClaimId
+    ? await rawQuery<{ state: string }>(`SELECT state FROM claims WHERE id = $1`, [anchorClaimId])
+    : [];
+  const requests = anchorClaimId && claim?.state === "active"
+    ? await liveCurationRequests(anchorClaimId)
+    : [];
+  if (!anchorClaimId || requests.length === 0) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const funder = await funderContext(action);
+  const settle = async (billedMicroUsd: number) => {
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: funder.jobId,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+    await consumeCurationRequests(requests.map((r) => r.id), action.id).catch(() => {});
+    // Concerns raised while this run held the row wait on the next funding.
+    const [more] = await rawQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM curation_requests
+        WHERE anchor_claim_id = $1 AND consumed_at IS NULL`,
+      [anchorClaimId]
+    ).catch(() => [{ n: 0 }]);
+    if (Number(more?.n ?? 0) > 0) await ensureCurateAction(anchorClaimId).catch(() => null);
+  };
+  let billedMicroUsd = 0;
+  try {
+    const metered = await runWithUsageContext(
+      { userId: funder.userId, jobId: funder.jobId, claimId: anchorClaimId },
+      () =>
+        withCostMeter(() =>
+          runCurator({
+            trigger: "curation_request",
+            claimId: anchorClaimId,
+            context:
+              `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
+              `about this claim are waiting, and this run was funded to answer them:\n` +
+              describeCurationRequests(requests),
+          })
+        )
+    );
+    billedMicroUsd = metered.billedMicroUsd;
+    await settle(billedMicroUsd);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "curate",
+      grantId: funder.grantId,
+      ok: true,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return {
+        status: "transient",
+        actionId: action.id,
+        kind: "curate",
+        grantId: funder.grantId,
+        error: msg,
+      };
+    }
+    await settle(billedMicroUsd);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "curate",
+      grantId: funder.grantId,
+      ok: false,
+      error: msg,
+    };
+  }
+}
+
+/**
+ * audit (#363): one Audit Agent run for the audit_runs row in target_ref.
+ * A prize audit runs under its bounty's reserve job and the platform
+ * account, the prize review's own context; every other audit under its
+ * largest funder. The run row is closed out (completion, findings count)
+ * whatever the outcome short of a retryable failure, so an audit that
+ * failed reads as finished-with-nothing rather than forever pending.
+ */
+async function runAuditAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const auditRunId = action.target_ref ?? "";
+  const [run] = auditRunId
+    ? await rawQuery<{
+        id: string;
+        audit_type: string;
+        context: string;
+        completed_at: Date | null;
+        bounty_id: string | null;
+      }>(
+        `SELECT id, audit_type, context, completed_at, bounty_id
+           FROM audit_runs WHERE id = $1`,
+        [auditRunId]
+      )
+    : [];
+  if (!run || run.completed_at) {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  let context = await funderContext(action);
+  if (run.bounty_id) {
+    const job = await getReserveJob(run.bounty_id).catch(() => null);
+    const platformId = await getPlatformAccountId().catch(() => null);
+    context = { jobId: job?.id ?? null, userId: platformId };
+  }
+  const close = async (billedMicroUsd: number) => {
+    await completeAction(action.id, billedMicroUsd, {
+      meteredJobId: context.jobId,
+    }).catch((err) =>
+      console.error(
+        `[engine] completeAction failed for ${action.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    );
+    await rawQuery(
+      `UPDATE audit_runs
+          SET completed_at = now(),
+              findings_count = (SELECT count(*) FROM audit_findings WHERE run_id = $1)
+        WHERE id = $1`,
+      [run.id]
+    ).catch(() => {});
+  };
+  try {
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: context.userId, jobId: context.jobId },
+      () =>
+        withCostMeter(() =>
+          runAudit({ auditType: run.audit_type, context: run.context, runId: run.id })
+        )
+    );
+    await close(billedMicroUsd);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "audit",
+      grantId: context.grantId,
+      ok: true,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return {
+        status: "transient",
+        actionId: action.id,
+        kind: "audit",
+        grantId: context.grantId,
+        error: msg,
+      };
+    }
+    await close(0);
+    return {
+      status: "processed",
+      actionId: action.id,
+      kind: "audit",
+      grantId: context.grantId,
+      ok: false,
+      error: msg,
+    };
+  }
 }
 
 /**

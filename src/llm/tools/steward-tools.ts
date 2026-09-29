@@ -48,9 +48,9 @@ import { knownDomains } from "../prompts/skills.js";
 import {
   enqueueSteward,
   enqueueClaimPipeline,
-  enqueueCurator,
 } from "../../services/queue-service.js";
 import { getUsageContext } from "../usage-context.js";
+import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 
 /** The assessment status enum the tool accepts and the graph stores (§10). */
@@ -935,13 +935,22 @@ export function getStewardToolDefinitions(): Tool[] {
         "looks like a duplicate/counterpart of another, conflates two distinct " +
         "claims (should be split), or should be linked to a related claim. " +
         "Individuation (merge/split) and cross-claim edges are the Curator's domain, " +
-        "not yours; raise it and let the Curator adjudicate.",
+        "not yours; raise it and let the Curator adjudicate. The concern goes on the " +
+        "ledger as a curation request: curation is funded work, so it runs when a " +
+        "mandate judges it worth buying, and one run reads every concern waiting on " +
+        "the claim. Name the other claim when you know it.",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_id: {
             type: "string",
             description: "The UUID of the claim with the structural concern",
+          },
+          other_claim_id: {
+            type: "string",
+            description:
+              "Optional: the UUID of the suspected duplicate, counterpart, or claim it " +
+              "should be linked to.",
           },
           concern: {
             type: "string",
@@ -2377,24 +2386,34 @@ export async function executeStewardTool(
       }
 
       case "escalate_to_curator": {
-        const claimId = input.claim_id as string;
-        const concern = input.concern as string;
+        const claimId = String(input.claim_id ?? "");
+        const concern = String(input.concern ?? "");
+        const otherClaimId =
+          typeof input.other_claim_id === "string" && input.other_claim_id.trim()
+            ? input.other_claim_id.trim()
+            : null;
 
-        // Carry this run's identity onto the message: the escalation happens
-        // inside a funded assessment, and the Curator run it spawns should not
-        // arrive at the meter anonymous.
+        // A curation request on the ledger, not a message billed to this
+        // run's funder (#363): whether the Curator runs is the mandates'
+        // valuation, and whoever values it pays for it.
         const escalatingCtx = getUsageContext();
-        await enqueueCurator({
-          trigger: "steward_escalation",
-          claimId,
-          context: concern,
-          userId: escalatingCtx.userId ?? null,
-          jobId: escalatingCtx.jobId ?? null,
+        const requested = await requestCuration({
+          anchorClaimId: claimId,
+          otherClaimId,
+          source: "steward_escalation",
+          concern,
+          requestedByClaimId: escalatingCtx.claimId ?? null,
+          requestedByRunId: escalatingCtx.runId ?? null,
         });
-
+        if (!requested.ok) {
+          return JSON.stringify({ success: false, message: requested.problem });
+        }
         return JSON.stringify({
           success: true,
-          message: `Escalated a structural concern about ${claimId} to the Curator.`,
+          message: requested.repeat
+            ? `That concern about ${claimId} is already waiting for the Curator.`
+            : `Recorded a structural concern about ${claimId} for the Curator; it runs ` +
+              `when curation of this claim is funded.`,
         });
       }
 

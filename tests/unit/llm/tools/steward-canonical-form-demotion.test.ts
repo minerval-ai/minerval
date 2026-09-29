@@ -39,7 +39,6 @@ vi.mock("../../../../src/services/embedding-service.js", () => ({
 vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => {}),
   enqueueSteward: vi.fn(async () => {}),
-  enqueueCurator: vi.fn(async () => {}),
 }));
 
 const mocks = vi.hoisted(() => ({

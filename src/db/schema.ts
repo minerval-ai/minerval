@@ -1192,7 +1192,7 @@ export const enqueueEvents = pgTable(
     // claim_pipeline | url_extraction.
     queue: text("queue").notNull(),
     // The message's situation taxonomy: StewardMessage.trigger,
-    // CuratorMessage.trigger, ArbitrationMessage.trigger, AuditMessage.
+    // curation request source, ArbitrationMessage.trigger, AuditMessage.
     // auditType. NULL for queues whose messages carry no trigger.
     trigger: text("trigger"),
     // Target-side attribution, when the message names one.
@@ -2494,6 +2494,74 @@ export const reputationEvents = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// curation_requests
+//
+// The inputs a `curate` ledger action reads (#363). Curation is chosen and
+// funded work, not a fire-and-forget message: a Steward's escalation, the
+// reconcile-candidate scan, or an operator records a structural concern
+// here and opens (or reopens) the anchor claim's `curate:<claim_id>` row;
+// the mandates value that row and the engine executor runs it once it is
+// covered. One funded run reads every live request on its anchor, the way
+// a lookout run reads its queued events, and marks them consumed. A repeat
+// of a live request (same anchor, same other claim, same source) is a
+// repeat, not a new request.
+// ---------------------------------------------------------------------------
+export const curationRequests = pgTable(
+  "curation_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    anchorClaimId: uuid("anchor_claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // The suspected duplicate / counterpart, when the requester knows it.
+    otherClaimId: uuid("other_claim_id").references(() => claims.id, {
+      onDelete: "cascade",
+    }),
+    // steward_escalation | reconcile_candidate | operator
+    source: text("source").notNull(),
+    concern: text("concern").notNull(),
+    // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
+    signal: real("signal"),
+    // The claim whose Steward escalated (bounds live escalations per claim).
+    requestedByClaimId: uuid("requested_by_claim_id").references(
+      () => claims.id,
+      { onDelete: "set null" }
+    ),
+    // The escalating agent_runs row, when tracing recorded one.
+    requestedByRunId: uuid("requested_by_run_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedByActionId: uuid("consumed_by_action_id").references(
+      () => actions.id,
+      { onDelete: "set null" }
+    ),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_curation_requests_live")
+      .on(
+        table.anchorClaimId,
+        sql`COALESCE(${table.otherClaimId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        table.source
+      )
+      .where(sql`consumed_at IS NULL`),
+    index("idx_curation_requests_anchor_live")
+      .on(table.anchorClaimId)
+      .where(sql`consumed_at IS NULL`),
+    index("idx_curation_requests_requester_live")
+      .on(table.requestedByClaimId)
+      .where(sql`consumed_at IS NULL`),
+    check(
+      "ck_curation_requests_source",
+      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator')`
+    ),
+  ]
+);
+
+export type CurationRequest = typeof curationRequests.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // reconciliation_events
 //
 // An append-only audit log of the Curator's re-individuation surgery (§18):
@@ -2578,8 +2646,26 @@ export const auditRuns = pgTable(
     // was enqueued but never completed.
     completedAt: timestamp("completed_at", { withTimezone: true }),
     findingsCount: integer("findings_count").notNull().default(0),
+    // The `audit` ledger action that runs this audit (#363): an audit is
+    // funded like any other work, and this row stays its record.
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    // The mandate this audit examines, when it examines one (a posted
+    // bounty names its posting mandate). Recusal (#363): no mandate values
+    // or funds an audit of itself, enforced by a trigger on
+    // action_allocations as well as by the valuers.
+    subjectGrantId: uuid("subject_grant_id").references(() => grants.id, {
+      onDelete: "set null",
+    }),
+    // A prize audit (docs/mathematics.md §8.6): funded from this bounty's
+    // prize-review reserve rather than valued by a mandate.
+    bountyId: uuid("bounty_id").references(() => bounties.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
+    index("idx_audit_runs_action").on(table.actionId),
     uniqueIndex("uq_audit_runs_dedupe_key")
       .on(table.dedupeKey)
       .where(sql`dedupe_key IS NOT NULL`),

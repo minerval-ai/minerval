@@ -37,7 +37,10 @@ import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
-import { getGeneralMandate } from "./allocation-policy-service.js";
+import {
+  getGeneralMandate,
+  getMandateAllocationPolicy,
+} from "./allocation-policy-service.js";
 import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 
@@ -218,6 +221,8 @@ interface Increment {
   neededMicroUsd: number;
   ratio: number;
   isUpgrade: boolean;
+  /** A `curate` increment: funded first, within the maintenance share. */
+  maintenance: boolean;
 }
 
 /**
@@ -291,9 +296,36 @@ export async function runMandateAllocator(
   let escrowRoom = Math.max(0, Number(grant.budget_micro_usd) - committed);
   if (escrowRoom <= 0) return result;
 
+  // Maintenance (#363): the most of the day's rate this mandate places on
+  // `curate` rows, less what it already placed there today. Funded first,
+  // so a day of high-ratio assessments never starves the graph's upkeep;
+  // capped, so upkeep never exceeds what the mandate chose to buy; and
+  // whatever it leaves unused stays in dayRoom for everything else. An
+  // unpaced mandate (rate 0) is bounded by escrow alone, maintenance
+  // included.
+  const policy = await getMandateAllocationPolicy(grantId);
+  let maintenanceRoom = Number.POSITIVE_INFINITY;
+  if (dailyRate > 0) {
+    const [maint] = await tx.query<{ placed: number }>(
+      `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS placed
+         FROM action_allocations
+        WHERE grant_id = $1 AND exclusion_group LIKE 'curate:%'
+          AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+      [grantId]
+    );
+    maintenanceRoom = Math.max(
+      0,
+      Math.floor(policy.maintenance_share * dailyRate) - Number(maint?.placed ?? 0)
+    );
+  }
+
   // The mandate's valued open actions, with the live backing per action.
+  // Recusal (#363): an audit whose subject is this mandate is never funded
+  // by it, whatever valuation row exists; this is the one place a mandate's
+  // money reaches an audit, so the line holds here, not only in the valuers.
   const valued = await tx.query<{
     action_id: string;
+    kind: string;
     exclusion_group: string;
     variant: string;
     claim_id: string | null;
@@ -302,7 +334,7 @@ export async function runMandateAllocator(
     pinned: number;
     unpinned: number;
   }>(
-    `SELECT a.id AS action_id, a.exclusion_group, a.variant, a.claim_id,
+    `SELECT a.id AS action_id, a.kind, a.exclusion_group, a.variant, a.claim_id,
             a.cost_est_micro_usd, mv.value_est,
             COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
                         FROM action_allocations al
@@ -317,6 +349,8 @@ export async function runMandateAllocator(
        FROM mandate_valuations mv
        JOIN actions a ON a.id = mv.action_id
       WHERE mv.grant_id = $1 AND a.status = 'open'
+        AND NOT EXISTS (SELECT 1 FROM audit_runs ar
+                         WHERE ar.action_id = a.id AND ar.subject_grant_id = $1)
       ORDER BY mv.value_est / GREATEST(1000, a.cost_est_micro_usd) DESC
       LIMIT 500`,
     [grantId]
@@ -347,6 +381,7 @@ export async function runMandateAllocator(
         neededMicroUsd: baseNeeded,
         ratio: Number(base.value_est) / Math.max(1000, baseCost),
         isUpgrade: false,
+        maintenance: base.kind === "curate",
       });
     } else {
       baseCovered.add(group);
@@ -367,13 +402,17 @@ export async function runMandateAllocator(
         neededMicroUsd: upNeeded,
         ratio: dValue / Math.max(1000, dCost),
         isUpgrade: true,
+        maintenance: up.kind === "curate",
       });
       break;
     }
   }
 
-  // Fund the increments best-first until the rate or escrow is committed.
-  increments.sort((x, y) => y.ratio - x.ratio);
+  // Fund the increments best-first until the rate or escrow is committed:
+  // maintenance first within its share, then everything else by ratio.
+  increments.sort(
+    (x, y) => Number(y.maintenance) - Number(x.maintenance) || y.ratio - x.ratio
+  );
   for (const inc of increments) {
     if (dayRoom <= 0 || escrowRoom <= 0) break;
     // An upgrade only makes sense on top of a covered base.
@@ -399,6 +438,7 @@ export async function runMandateAllocator(
     if (amount > dayRoom || inc.neededMicroUsd > escrowRoom) {
       continue;
     }
+    if (inc.maintenance && amount > maintenanceRoom) continue;
     if (own) {
       await tx.query(
         `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
@@ -418,6 +458,7 @@ export async function runMandateAllocator(
     );
     if (placed.length === 0) continue;
     dayRoom -= amount;
+    if (inc.maintenance) maintenanceRoom -= amount;
     escrowRoom -= inc.neededMicroUsd;
     result.allocated++;
     result.allocatedMicroUsd += inc.neededMicroUsd;

@@ -156,7 +156,13 @@ async function runMandateReviewImpl(input: {
         "Browse the open action ledger from your mandate's point of view: " +
         "every potential action, its cost, current backing, and your " +
         "current valuation if you hold one. Filter with query/kind, page " +
-        "with offset; valued_only=true reviews your existing judgments.",
+        "with offset; valued_only=true reviews your existing judgments. " +
+        "Maintenance is work you can buy too: a `curate` row asks the " +
+        "Curator to reconcile the graph around a claim (merges, splits, " +
+        "missing links) that a Steward, an operator, or the duplicate scan " +
+        "flagged; value one in your territory when the structure there " +
+        "matters to your mission. An `audit` row is an Audit Agent run; you " +
+        "may help fund one, but never one whose subject is your own mandate.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -171,6 +177,8 @@ async function runMandateReviewImpl(input: {
               "formalize",
               "attempt_proof",
               "prize_review",
+              "curate",
+              "audit",
             ],
           },
           valued_only: { type: "boolean" },
@@ -467,7 +475,7 @@ async function runMandateReviewImpl(input: {
   // formula mandate the two would fight: the bulk refresh upserts the same
   // (grant, action) rows, so a hand-written valuation would survive only
   // until the next refresh overwrote it. Its lever is the formula itself.
-  const isFormulaMandate = grant.policy === "general";
+  const isFormulaMandate = grant.policy === "general" || grant.policy === "governance";
   const valuationClause = isFormulaMandate
     ? `revise the FORMULA your valuations are computed from where what you ` +
       `have learned about allocation itself warrants it ` +

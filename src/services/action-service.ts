@@ -21,7 +21,10 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { stewardTierCostEstimates } from "./cost-estimate-service.js";
+import {
+  estimateLedgerKindCostMicroUsd,
+  stewardTierCostEstimates,
+} from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
 import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
@@ -69,7 +72,20 @@ export type ActionKind =
   // flags. Group `consistency:<tag_id|residual>`, target_ref the same.
   // The platform's own work: self-funded from the General mandate's escrow
   // like a review pass, bounded per day across all partitions.
-  | "consistency_sweep";
+  | "consistency_sweep"
+  // Reconcile the graph around one anchor claim (#363): the Curator's
+  // merges, splits, and cross-claim edges. Group `curate:<claim_id>`, one
+  // variant; opened (or reopened) only by a curation request
+  // (curation-service.requestCuration) and run once some mandate values and
+  // funds it. Maintenance is chosen, never induced: nothing bills a
+  // Curator run to whoever happened to be nearby.
+  | "curate"
+  // One Audit Agent run (#363): group `audit:<audit_runs.id>`, target_ref the
+  // run id. Opened by requestAudit behind its dedupe key; funded by a
+  // mandate that values it (the platform's Governance mandate) or, for a
+  // prize audit, from the bounty's prize-review reserve. A mandate never
+  // values or funds an audit whose subject it is (audit_runs.subject_grant_id).
+  | "audit";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
@@ -77,6 +93,8 @@ export const INGEST_GROUP = (url: string) => `ingest:${url}`;
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
+export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
+export const AUDIT_GROUP = (auditRunId: string) => `audit:${auditRunId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
 export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
@@ -158,6 +176,79 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
       [kind, group, variant, claimId, label, Math.round(cost)]
     );
   }
+}
+
+/**
+ * Ensure the anchor claim's `curate` row exists and is open (#363). Called
+ * by requestCuration after it records a live request, and by the executor
+ * when a run finishes with requests still waiting (ones that arrived
+ * mid-run). A done/superseded/cancelled row reopens: fresh concerns are
+ * fresh work, and fresh work needs fresh funding. A running row is left
+ * alone. Returns the row id, or null when the anchor is not an active
+ * claim.
+ */
+export async function ensureCurateAction(anchorClaimId: string): Promise<string | null> {
+  const [claim] = await rawQuery<{ text: string }>(
+    `SELECT text FROM claims WHERE id = $1 AND state = 'active'`,
+    [anchorClaimId]
+  );
+  if (!claim) return null;
+  const cost = await estimateLedgerKindCostMicroUsd("curate");
+  const [row] = await rawQuery<{ id: string }>(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd)
+     VALUES ('curate', $1, 'standard', $2, $3, $4)
+     ON CONFLICT (exclusion_group, variant) DO UPDATE
+       SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           status = CASE WHEN actions.status = 'running'
+                         THEN actions.status ELSE 'open' END,
+           updated_at = now()
+     RETURNING id`,
+    [
+      CURATE_GROUP(anchorClaimId),
+      anchorClaimId,
+      `Curate around: ${claim.text.slice(0, 280)}`,
+      Math.max(1, Math.round(cost)),
+    ]
+  );
+  return row?.id ?? null;
+}
+
+/**
+ * Open the `audit` row for one audit_runs row (#363) and link the run to
+ * it. Idempotent: a second call for the same run returns the same row.
+ *
+ * The label names the audit's type and cause, never its context: the
+ * ledger is public (every allocation number is inspectable), and an
+ * audit's context can name a contributor under a bad-faith flag or a
+ * suspension. The context stays on the audit_runs row the agent reads.
+ */
+export async function ensureAuditAction(input: {
+  auditRunId: string;
+  auditType: string;
+  triggeredBy: string;
+  claimId?: string | null;
+}): Promise<string> {
+  const cost = await estimateLedgerKindCostMicroUsd("audit");
+  const [row] = await rawQuery<{ id: string }>(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd)
+     VALUES ('audit', $1, 'standard', $2, $3, $4, $5)
+     ON CONFLICT (exclusion_group, variant) DO UPDATE SET updated_at = now()
+     RETURNING id`,
+    [
+      AUDIT_GROUP(input.auditRunId),
+      input.claimId ?? null,
+      input.auditRunId,
+      `Audit: ${input.auditType.replace(/_/g, " ")} (${input.triggeredBy.replace(/_/g, " ")})`,
+      Math.max(1, Math.round(cost)),
+    ]
+  );
+  await rawQuery(`UPDATE audit_runs SET action_id = $2 WHERE id = $1`, [
+    input.auditRunId,
+    row!.id,
+  ]);
+  return row!.id;
 }
 
 /**
@@ -319,6 +410,29 @@ export async function reconcileActions(): Promise<{
   // side covers is the most due. Off (and any open rows cancelled) when
   // the cap is 0. Funding (fundGrantSelfActions) bounds sweeps per day.
   await reconcileConsistencySweeps();
+
+  // Curation (#363): a curate row wants its anchor still active and at
+  // least one live request to read. A merge can retire the anchor out from
+  // under an open row; a run that read everything leaves nothing to do.
+  // Only mandates place on curate rows, so releasing a cancelled group's
+  // placements is just the mandates' exposure dropping; left live, they
+  // would hold that money against a row nothing will reopen.
+  await rawQuery(
+    `WITH gone AS (
+       UPDATE actions a SET status = 'cancelled', updated_at = now()
+        WHERE a.status = 'open' AND a.kind = 'curate'
+          AND (NOT EXISTS (SELECT 1 FROM claims c
+                            WHERE c.id = a.claim_id AND c.state = 'active')
+               OR NOT EXISTS (SELECT 1 FROM curation_requests r
+                               WHERE r.anchor_claim_id = a.claim_id
+                                 AND r.consumed_at IS NULL))
+        RETURNING a.exclusion_group
+     )
+     UPDATE action_allocations al SET released_at = now()
+      WHERE al.exclusion_group IN (SELECT exclusion_group FROM gone)
+        AND al.released_at IS NULL AND al.grant_id IS NOT NULL
+        AND al.spent_micro_usd = 0`
+  );
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
