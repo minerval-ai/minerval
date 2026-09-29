@@ -288,6 +288,111 @@ primary's assessment, and `GET /consistency` shows the partitions and
 their coverage, recent sweeps with their notes, every flag with whether
 its pass ran and whether it moved the verdict or credence.
 
+## Maintenance and audit: chosen, funded work
+
+Curation (the Curator's merges, splits and cross-claim links) and audit
+(the Audit Agent's runs) are real work the graph needs, and they are
+bought through the ledger like everything else (#363). They used to be
+fire-and-forget queue messages: a Curator run was billed to whichever
+mandate's Steward happened to escalate, uncapped and outside its day
+room, and audits ran attributed to nobody. Neither party pays
+automatically now. Maintenance is work a mandate chooses to buy, and
+General is simply the mandate whose scope is the whole graph and
+therefore the one that usually does.
+
+**Two action kinds.** `curate` (`curate:<claim_id>`) reconciles the graph
+around one anchor claim; `audit` (`audit:<audit_runs.id>`) is one Audit
+Agent run. Both carry one variant, both cost the live p80 of their kind's
+metered runs on the ledger (`actions.metered_cost_micro_usd`) once
+`COST_ESTIMATE_MIN_RUNS` exist, else the governing policy's prior
+(`est_curate_cost_owls`, `est_audit_cost_owls`), and both run through the
+engine executor under their largest funder, metered and settled like any
+other action. The action row is the queue, so neither is lost to a
+restart.
+
+**What opens a curate row.** A **curation request**
+(`curation_requests`, services/curation-service.ts) records a structural
+concern about an anchor claim, optionally naming the other claim, and
+opens or reopens the anchor's row; one funded run reads every live
+request on its anchor, as a lookout run reads its queued events, and
+consumes them when it ends. Three producers, each bounded:
+
+- a Steward's `escalate_to_curator`, at most
+  `CURATION_ESCALATIONS_PER_CLAIM` live requests from one claim;
+- the **reconcile-candidate scan**, a scan and not a judgment: SQL over
+  embeddings pairs recently created active claims with their nearest
+  unlinked neighbour above `reconcile_candidate_min_similarity`, at most
+  `reconcile_candidates_max_per_sweep` a sweep (0, the default, is off),
+  and never raises a pair that has ever been asked about;
+- an operator (scripts/sweep-fallback-matches.ts).
+
+A repeat of a live request (same anchor, other claim and source) is a
+repeat. Nothing else opens a curate row, and nothing runs the Curator but
+the executor (tests/unit/workers/curation-trigger-lockdown.test.ts).
+
+**How much curation, and which.** Policy sets the amount; valuations set
+the order. `maintenance_share` (default 0.1) is the most of a mandate's
+daily rate its allocator places on curate rows in a day: maintenance
+increments are funded first, best value per owl first, up to the share,
+and whatever they leave stays in the day for everything else, so the
+share is a ceiling with first claim, never a reservation that wastes. A
+formula mandate values curate rows as
+
+    value = anchor importance
+          × request weight   (a Steward's or operator's request 1.0; a
+                              scan's pair curate_candidate_weight × its
+                              similarity)
+          × freshness        (0 for an anchor the Matcher admitted within
+                              curate_matcher_quiet_days that no agent has
+                              asked about since; 1 otherwise)
+
+The freshness term is the first live epoch's lesson written as policy:
+122 unconditional sweeps of claims the Matcher had just declared novel
+cost about 13 owls and wrote nothing. A judgment mandate values curate
+rows in its territory like any other action, and one that values none
+contributes nothing.
+
+**Who funds audits.** The platform's **Governance** mandate (policy
+`governance`, seeded beside General) is a formula mandate over the open
+audit rows: an audit's value is its trigger class's weight
+(`audit_value_prize`, `_bad_faith`, `_overturn`, `_anomaly`,
+`_suspension`, `_sweep`), rising to twice that as it waits a week. It has
+its own escrow and rate, so audits never compete with assessments for
+General's day room, and its own page. Other mandates may co-fund an audit
+in their territory.
+
+**Recusal.** An audit whose subject is a mandate (`audit_runs.subject_grant_id`:
+a posted bounty names its posting mandate) is never valued or funded by
+that mandate. The valuer's pen refuses it (`set_valuations` reports it as
+recused), the formulas skip it, and the allocator, the one place a
+mandate's money reaches an audit, skips it whatever valuation row
+exists. Audits of Governance itself are valued and funded by General:
+each platform mandate pays for audits of the other. Declining an audit is
+visible, not prevented: an unfunded audit sits open on the ledger with
+its age, on the mandate's page and in `inspect_ledger`.
+
+**Prize audits** are paid from the bounty's prize-review reserve, which
+the docs always said pays for them: an audit requested with a bounty
+(the posting audit, a Steward's acceptance, a checker failure) is funded
+at once by a platform allocation pinned to its row, capped at the
+reserve's room (should the room run short, the Governance formula values
+the audit and co-funds the remainder), and the reserve's accounting (its room, its release, the
+mandate's committed money) counts it beside the reviews
+(prize-commitment.ts `reserveActionPredicateSql`).
+
+**Promptly.** A fresh request prices its own row with the same formulas
+and lets the mandates that fund its kind take an allocation pass at once
+(services/maintenance-funding.ts), rather than waiting for the scheduler's
+sweep. Nothing decides differently; it only decides sooner.
+
+**The fallback lane.** With `BACKGROUND_FALLBACK_LANE_ENABLED` and no
+mandate that could fund the kind (no active General mandate for curate,
+no active Governance mandate for audit), an uncovered row runs
+attributed to nobody, as the Steward's fallback lane does, so a fresh dev
+database and a corpus run still exercise both agents; `CURATOR_MAX_RUNS`
+caps the lane's Curator runs per process. A deployment with its mandates
+seeded never takes it.
+
 ## How money reaches actions
 
 1. **Full funding (paid orders).** A user buys an assessment outright; it
@@ -638,7 +743,8 @@ and legitimate — but the unit economics must stay visible
    inspectable by anyone.
 5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
    sizes, per-run caps, lookout runs per day and flags per run,
-   consistency sweeps per day and flags per sweep — no
+   consistency sweeps per day and flags per sweep, live curation
+   requests per claim and scan candidates per sweep — no
    mechanism may cascade the candidate set.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
 6a. A lookout raises candidates, never conclusions: it writes no
@@ -656,4 +762,10 @@ and legitimate — but the unit economics must stay visible
    owl was granted.
 10. The platform is never a claimant. A house solve closes the bounty
     unpaid and publishes the proof.
+11. Maintenance is chosen, never induced. No mandate's activity creates a
+    bill on another: curation runs only when someone values and funds
+    it, within the share of the day its funder chose.
+12. No mandate funds its own audit. An audit whose subject is a mandate
+    is never valued or funded by that mandate; declining any other audit
+    is a funding decision like any other, and it is on the record.
 

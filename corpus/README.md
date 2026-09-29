@@ -572,7 +572,7 @@ dump for deeper digging.
   | `EXTRACTION_MAX_CLAIMS` | most-central claims extracted per doc (multiplies everything downstream) | `2`–`8` |
   | `STEWARD_MAX_RUNS` | total Steward invocations for the whole run (the main spend guardrail) | `2`–`10` |
   | `STEWARD_MAX_ITERATIONS` | tool-use iterations *within* one Steward (a runaway backstop; **keep high in production** — a deep claim wants many calls) | `8`–`15` for tests; `200` default |
-  | `CURATOR_MAX_RUNS` / `CURATOR_SWEEP_RATE` | Curator structure sweeps (`RATE=0` disables the proactive path) | `0` to disable for a first smoke |
+  | `CURATOR_MAX_RUNS` | Curator runs on the unfunded fallback lane per process (curation is a funded `curate` ledger action, #363; a corpus run with no General mandate takes the fallback lane) | `1`–`3` for a first smoke |
   | `LLM_DAILY_TOKEN_LIMIT` / `LLM_HOURLY_TOKEN_LIMIT` | hard circuit breaker — the run stops cleanly when hit (counts uncached input+output) | a safety ceiling, e.g. `300000` for a smoke |
 - The agents are **told their iteration budget** and warned as it runs low, so a
   Steward records its assessment before being cut off rather than leaving a claim

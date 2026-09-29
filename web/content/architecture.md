@@ -585,8 +585,11 @@ These act through tools over the life of a claim and the graph:
 - **Curator** is the graph-level counterpart: it owns the connective tissue
   *between* claims, merging duplicates and counterparts the Matcher missed,
   splitting conflated claims (§5), and suggesting cross-claim edges for the
-  owning Stewards to adopt. It runs on Steward escalations and on sampled
-  sweeps of the neighborhood around newly created claims. Every structural
+  owning Stewards to adopt. It runs as a funded `curate` ledger action
+  (docs/allocation.md, "Maintenance and audit"): a Steward's escalation,
+  the bounded reconcile-candidate scan, or an operator records a curation
+  request on an anchor claim, a mandate values and funds the row, and one
+  run reads every concern waiting on the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
   reverse it, and the Curator never overrides a Steward's verdict.
 - **Contribution Reviewer** evaluates each incoming contribution against policy
@@ -607,7 +610,11 @@ These act through tools over the life of a claim and the graph:
   decision audit, at most once per contribution), and a scheduler that
   requests a periodic sweep over recent decisions plus a re-examination of
   any suspension that has stood unexamined too long — both idempotent through
-  a DB dedupe key, so concurrent processes never double-run an audit.
+  a DB dedupe key, so concurrent processes never double-run an audit. Each
+  request opens an `audit` ledger action, funded by the platform's
+  Governance mandate (or, for a prize audit, the bounty's review reserve)
+  and never by the mandate the audit examines (docs/allocation.md,
+  "Maintenance and audit").
   Findings are persisted rows (`audit_findings`, attached to their
   `audit_runs` row), and every consequence — a re-review, a reputation
   adjustment through the ledger, a suspension — requires the finding that
