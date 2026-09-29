@@ -2035,6 +2035,113 @@ export const lookoutFlags = pgTable(
 export type LookoutFlag = typeof lookoutFlags.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// consistency_sweeps
+//
+// One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
+// sweeps"): the agent's read of one partition of the graph (a tag, or the
+// residual bucket of claims no sweepable tag covers). The row is the
+// coverage record the scheduler reads ("tag X last swept at T"), and its
+// note is the checker's memory of the partition: the next sweep of the
+// same partition is briefed with it.
+// ---------------------------------------------------------------------------
+export const consistencySweeps = pgTable(
+  "consistency_sweeps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Null for the residual bucket (or a whole-graph sweep).
+    tagId: uuid("tag_id").references(() => tags.id, { onDelete: "set null" }),
+    // 'tag' | 'residual' | 'graph': what the sweep covered.
+    partition: text("partition").notNull(),
+    // running | done | error
+    status: text("status").notNull().default("running"),
+    // agent_runs.id of the checker's run (no FK: traces are pruned).
+    runId: uuid("run_id"),
+    // Assessed claims in the partition when the sweep started.
+    claimsInScope: integer("claims_in_scope").notNull().default(0),
+    flagsRaised: integer("flags_raised").notNull().default(0),
+    note: text("note"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_consistency_sweeps_tag").on(table.tagId, table.startedAt),
+    index("idx_consistency_sweeps_started").on(table.startedAt),
+    check(
+      "ck_consistency_sweeps_partition",
+      sql`${table.partition} IN ('tag', 'residual', 'graph')`
+    ),
+    check(
+      "ck_consistency_sweeps_status",
+      sql`${table.status} IN ('running', 'done', 'error')`
+    ),
+  ]
+);
+
+export type ConsistencySweep = typeof consistencySweeps.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// consistency_flags
+//
+// A place where assessments do not cohere, as judged by the Consistency
+// Checker: reasoning that conflicts with a neighbor's, evidence recorded
+// under one claim that another's assessment never weighed, a verdict that
+// is not a defensible function of what it rests on. One row per flag,
+// naming the PRIMARY claim (the one whose Steward reconciles) and every
+// claim in the tension.
+// Like lookout_flags, a flag is a candidate, never a conclusion: it
+// enqueues the primary's Steward, and while the claim's assess action stays
+// open its expected_gain enters the formula mandates' expected-quality-gain
+// term (mandate-valuer-service.ts), so a pass the checker judges likely to
+// change something is valued like one, by the same formula as any other.
+// Whether it runs is the allocator's call. The assessment at flag time is
+// snapshotted so precision ("did the pass move anything?") is a query.
+// ---------------------------------------------------------------------------
+export const consistencyFlags = pgTable(
+  "consistency_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sweepId: uuid("sweep_id").references(() => consistencySweeps.id, {
+      onDelete: "set null",
+    }),
+    // CONSISTENCY_FLAG_KINDS (consistency-service.ts).
+    kind: text("kind").notNull(),
+    primaryClaimId: uuid("primary_claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // Every claim in the tension, primary first.
+    claimIds: uuid("claim_ids").array().notNull(),
+    // The claim's standard assess/reassess row when the flag was raised.
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    rationale: text("rationale").notNull(),
+    // The checker's estimate (0–1) that a fresh pass changes the primary's
+    // verdict or reasoning materially: the formula's expected-gain input.
+    expectedGain: real("expected_gain").notNull(),
+    statusAtFlag: text("status_at_flag"),
+    credenceAtFlag: real("credence_at_flag"),
+    assessmentIdAtFlag: uuid("assessment_id_at_flag"),
+    repeats: integer("repeats").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_consistency_flags_primary").on(table.primaryClaimId, table.createdAt),
+    index("idx_consistency_flags_action").on(table.actionId),
+    index("idx_consistency_flags_sweep").on(table.sweepId),
+  ]
+);
+
+export type ConsistencyFlag = typeof consistencyFlags.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // grant_conversations
 //
 // Grantmaking is a conversation, not a form: a funder talks a mandate

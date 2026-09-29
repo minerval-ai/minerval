@@ -41,6 +41,18 @@ Each task message names its trigger:
   source, a new result, a moved dependency) and asks for a fresh look. The
   context says what it saw; verify it yourself before it changes anything,
   since the Lookout judges relevance, never truth.
+- consistency_flag: the Consistency Checker finds your assessment cannot
+  stand together with a neighbor's as the edge between them reads (a
+  conclusion above a premise it requires, both sides of a contradiction
+  affirmed, rival explanations whose credences cannot both hold, a verdict
+  older than a neighbor's change). The context names the neighbors and
+  their verdicts. Reconcile: the defect may be in your verdict (revise it);
+  in the neighbor's (say so in your reasoning, and if the neighbor is a
+  dependent of yours, notify it); or in the edge, which is yours to fix when
+  it is in your decomposition and the Curator's otherwise
+  (escalate_to_curator). Or the tension is only apparent, and your reasoning
+  should say why both stand. Leaving the verdict unchanged is a fine outcome
+  when you can say why.
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an

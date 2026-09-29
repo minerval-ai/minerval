@@ -25,6 +25,7 @@ const KIND_LABEL: Record<string, string> = {
   grant_planning: "mandate planning",
   mandate_review: "mandate reviews",
   lookout_run: "lookout runs",
+  consistency_sweep: "consistency sweeps",
   // mathematics (docs/mathematics.md §8.3): compute, not prize money
   formalize: "formal statements",
   attempt_proof: "proof attempts",

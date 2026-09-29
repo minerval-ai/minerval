@@ -66,6 +66,11 @@ export interface StewardMessage {
     // moved dependency — and asks for a fresh look. The context carries
     // what it saw; the ledger row it valued decides whether the pass runs.
     | "lookout_flag"
+    // The Consistency Checker (#330) finds this claim's assessment cannot
+    // stand with its neighbors' as the edges between them read. The context
+    // names the neighbors, their verdicts, and the checker's reading; the
+    // ledger row it valued decides whether the pass runs.
+    | "consistency_flag"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review
