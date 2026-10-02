@@ -23,6 +23,7 @@ import { Prize } from "./claim/Prize";
 import { AttemptLog } from "./claim/AttemptLog";
 import { ResearchLog } from "./claim/ResearchLog";
 import { SourceMapNote, InstanceReadingLine, ProvenanceRecord } from "./claim/SourceMap";
+import { ProvenanceMap } from "./claim/ProvenanceMap";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -276,6 +277,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           {/* What the support rests on (#286): the Steward's account, shown
               only when it judged the structure of the support material. */}
           <SourceMapNote map={detail.source_map} />
+          {/* Origins first (#507): the sources as the claim's story, above
+              the appearances themselves. Renders nothing without a story. */}
+          <ProvenanceMap story={detail.provenance_story} />
           {instances.map((inst) => (
             <div className="instance" key={inst.id}>
               <blockquote>{inst.verbatim_text}</blockquote>

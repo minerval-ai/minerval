@@ -1,0 +1,502 @@
+/* ==========================================================================
+   Provenance, origins first (#507). The claim map's card language (paper
+   cards, hairline rules, three tiers of detail falling off with distance)
+   laid out top to bottom as a claim's story. Connectors are plain CSS: each
+   row hangs from a bus, each card has its own drop coloured by fidelity, so
+   nothing needs measuring and any number of rows lays itself out.
+   ========================================================================== */
+
+.map {
+  /* edge colours, the claim map's palette: colour only where it means something */
+  --pm-plain: #c9c2b1;
+  --pm-faithful: #8a8378;
+  --pm-strengthened: #9a6d12;
+  --pm-weakened: #2a5078;
+  --pm-distorted: #8f3a2c;
+  --pm-misattributed: #8f3a2c;
+  --pm-unclear: #9b9484;
+  --pm-response: #756f60;
+  --pm-diverge-ink: #7a2f23;
+
+  --drop: 52px;
+  --stem: 14px;
+  --w0: 248px;
+  --w1: 224px;
+  --w2: 150px;
+  --gap1: 22px;
+  --gap2: 12px;
+
+  margin: 0.4rem 0 1.6rem;
+  font-family: var(--sans);
+  color: var(--ink-soft);
+  scroll-margin-top: 4.6rem;
+}
+
+/* ----- bar: tally, or the recentred trail ---------------------------------- */
+.bar {
+  display: flex;
+  align-items: baseline;
+  min-height: 1.4rem;
+  margin-bottom: 0.7rem;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tally { font-variant-numeric: tabular-nums; }
+.collapse {
+  margin-left: auto;
+  background: none; border: none; padding: 0 0 0 12px; cursor: pointer;
+  font: inherit; color: var(--link); white-space: nowrap;
+}
+.collapse:hover { text-decoration: underline; text-underline-offset: 2px; }
+.trail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.trailStep { display: inline-flex; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.trailSep { color: var(--rule); }
+.trailLink {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; color: var(--link);
+  max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trailLink:hover { text-decoration: underline; text-underline-offset: 2px; }
+.trailHere { color: var(--ink-soft); max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ----- the drawing ----------------------------------------------------------- */
+/* Wide layers scroll inside the map, never the page; inline-size
+   containment keeps the drawing's width from sizing the reading column
+   (on phones the column is fit to its content). */
+.viewport {
+  contain: inline-size;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px 2px 10px;
+}
+
+.lanes { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px 40px; }
+.lane { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.laneTrees { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px 36px; }
+.lane[data-lane="untraced"] .laneTrees,
+.lane[data-lane="unanchored"] .laneTrees { gap: 14px; }
+.laneHead {
+  margin: 0 0 10px;
+  padding: 0;
+  border: none;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.laneCount {
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+  margin-right: 3px;
+}
+/* Untraced sources get their own ground: never the origins' row. */
+.lane[data-lane="untraced"],
+.lane[data-lane="unanchored"] {
+  border: 1px dashed var(--faint);
+  border-radius: 3px;
+  background: var(--paper-sunk);
+  padding: 10px 12px 12px;
+}
+
+.tree { display: flex; flex-direction: column; align-items: center; flex: none; }
+
+.stem { width: 0; height: var(--stem); border-left: 1.5px solid var(--pm-plain); }
+
+.row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  --g: var(--gap1);
+}
+.row > .branch > .branchTree { width: var(--w1); }
+/* a first-layer overflow sits under the row rather than taking a slot */
+.rowRest { display: flex; justify-content: center; margin-top: 12px; }
+
+.branchTree { display: flex; flex-direction: column; align-items: stretch; }
+
+/* deeper layers: a column under the card, a spine down its left edge and a
+   tick into each card, the tick carrying the fidelity */
+.column { list-style: none; margin: 0 0 0 12px; padding: 0; }
+.colItem { position: relative; padding: 8px 0 0 16px; }
+.colItem > .branchTree { width: 100%; }
+.colItem::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 1.5px solid var(--pm-plain);
+}
+.colItem:last-child::before { bottom: auto; height: 27px; }
+.tick {
+  position: absolute;
+  left: 0;
+  top: 26px;
+  width: 11px;
+  border-top: 2px solid currentColor;
+  color: var(--pm-plain);
+}
+.tick::after {
+  content: "";
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor;
+}
+.tick[data-fid="misattributed"], .tick[data-fid="response"] { border-top-style: dashed; }
+.tick[data-fid="unclear"] { border-top-style: dotted; }
+
+.branch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--drop) calc(var(--g) / 2) 0;
+}
+/* the bus: each branch draws its half either side of its own centre */
+.branch::before,
+.branch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 50%;
+  border-top: 1.5px solid var(--pm-plain);
+}
+.branch::before { left: 0; }
+.branch::after { right: 0; }
+.branch:first-child::before,
+.branch:last-child::after { display: none; }
+
+.drop {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 1px);
+  height: calc(var(--drop) - 7px);
+  border-left: 2px solid currentColor;
+  color: var(--pm-plain);
+}
+.drop::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: -5px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid currentColor;
+}
+.dropLabel {
+  position: absolute;
+  top: calc(var(--drop) / 2 - 9px);
+  left: calc(50% + 8px);
+  font-size: 10.5px;
+  line-height: 16px;
+  white-space: nowrap;
+  padding: 0 3px;
+  background: var(--paper);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* fidelity: line colour, and dash so it never rests on colour alone */
+.map [data-fid="faithful"]      { color: var(--pm-faithful); }
+.map [data-fid="strengthened"]  { color: var(--pm-strengthened); }
+.map [data-fid="weakened"]      { color: var(--pm-weakened); }
+.map [data-fid="distorted"]     { color: var(--pm-distorted); }
+.map [data-fid="misattributed"] { color: var(--pm-misattributed); }
+.map [data-fid="unclear"]       { color: var(--pm-unclear); }
+.map [data-fid="response"]      { color: var(--pm-response); }
+.drop[data-fid="misattributed"], .drop[data-fid="response"] { border-left-style: dashed; }
+.drop[data-fid="unclear"] { border-left-style: dotted; }
+.legendEdge[data-fid="misattributed"], .legendEdge[data-fid="response"] { border-top-style: dashed; }
+.legendEdge[data-fid="unclear"] { border-top-style: dotted; }
+.dropLabel[data-fid="faithful"], .dropLabel[data-fid="unclear"], .dropLabel[data-fid="response"] { color: var(--muted); }
+.dropLabel[data-fid="distorted"], .dropLabel[data-fid="misattributed"] { color: var(--pm-diverge-ink); }
+
+/* ----- cards: three tiers, as on the claim map -------------------------------- */
+.card {
+  position: relative;
+  background: var(--paper-card);
+  border: 1px solid #c9c2b1;
+  border-radius: 3px;
+  text-align: left;
+  overflow: hidden;
+}
+.card:has(.hit:hover) { border-color: var(--faint); }
+.card:has(.hit:focus-visible) { outline: 2px solid var(--link); outline-offset: 2px; }
+/* the whole card recentres; the title stays a link to the source page */
+.hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.hit:focus-visible { outline: none; }
+.cardBody {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+.cardBody a { pointer-events: auto; position: relative; z-index: 2; }
+
+.t0 { width: var(--w0); min-height: 104px; padding: 10px 12px; }
+.t1 { width: var(--w1); min-height: 96px; padding: 9px 11px; }
+/* a top card with nothing beneath it needs no room for a fan */
+.tree:not(:has(> .stem)) > .t0 { width: var(--w1); min-height: 0; }
+.t2 { width: 100%; padding: 6px 8px 7px; border-color: var(--rule); }
+.focus {
+  width: min(100%, 520px);
+  min-width: min(300px, 100%);
+  padding: 12px 16px 12px;
+  border-color: var(--ink-soft);
+}
+
+.eyebrow {
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: #c9c2b1;
+  text-underline-offset: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.title:visited { color: var(--ink); }
+.title:hover { text-decoration-color: var(--ink-soft); }
+.t0 .title { font-size: 15px; }
+.t2 .title { font-size: 12px; -webkit-line-clamp: 2; text-decoration: none; }
+.focus .title { font-size: 18px; -webkit-line-clamp: 4; }
+
+.line { font-size: 11.5px; line-height: 16px; color: var(--muted); }
+.t2 .line { font-size: 10.5px; line-height: 14px; }
+.line[data-fid="strengthened"], .line[data-fid="weakened"] { font-weight: 600; }
+.line[data-fid="distorted"], .line[data-fid="misattributed"] { color: var(--pm-diverge-ink); font-weight: 600; }
+.line[data-fid="faithful"], .line[data-fid="unclear"], .line[data-fid="response"] { color: var(--muted); }
+.note {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.focus .note { -webkit-line-clamp: 4; }
+.standing {
+  font-size: 11.5px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.standing[data-kind="untraced"] { color: var(--muted); }
+.icon { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.diverges {
+  font-size: 11.5px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--pm-diverge-ink);
+  margin-top: 2px;
+}
+.focusLinks {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 12px;
+}
+
+/* standing: a heavy top rule for an origin, sunk paper when it does not state
+   the claim, a dashed edge for a source nobody has traced */
+.origin { border-top: 4px solid var(--ink-soft); }
+.underlying { background: var(--paper-sunk); }
+.untracedCard { border-style: dashed; border-color: var(--faint); }
+/* the one flag: a rust rule down the card's left edge, plus the words */
+.divergent { box-shadow: inset 3px 0 0 var(--pm-distorted); }
+/* several like siblings, one card: a second edge behind it */
+.stack {
+  overflow: visible;
+  box-shadow: 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 #c9c2b1;
+}
+.stack.divergent { box-shadow: inset 3px 0 0 var(--pm-distorted), 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 #c9c2b1; }
+
+/* ----- folds and overflow ------------------------------------------------------ */
+.fold {
+  width: 100%;
+  min-width: var(--w2);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 7px 8px 8px;
+  background: var(--paper-sunk);
+  border: 1px dashed var(--faint);
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.fold:hover { border-color: var(--muted); }
+.foldCaption { font-size: 11.5px; font-weight: 600; color: var(--link); line-height: 1.3; }
+.foldNote { font-size: 10.5px; color: var(--pm-diverge-ink); }
+.squares { display: flex; flex-wrap: wrap; gap: 2px; }
+.squares i { width: 7px; height: 7px; border-radius: 1px; background: #b3ac9c; }
+.squares i[data-div] { background: var(--pm-distorted); }
+
+.more {
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--paper-sunk);
+  border: 1px dashed var(--faint);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.more:hover { border-color: var(--muted); }
+.laneTrees > .more { margin-top: 28px; }
+.column .more { min-height: 36px; width: 100%; text-align: left; }
+
+/* ----- recentred: lineage above, downstream below ------------------------------ */
+.focusView { display: flex; flex-direction: column; align-items: center; min-width: min-content; }
+.sectionHead {
+  align-self: flex-start;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.focusView > .tree { align-self: stretch; }
+/* a label beside the line, not across it */
+.headRail { align-self: stretch; position: relative; height: 0; }
+.headRail .sectionHead { position: absolute; left: 0; top: 10px; }
+.upHead { align-self: stretch; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.upHead .sectionHead { margin: 0; }
+.upHead .more { min-height: 32px; }
+
+/* upstream branches hang their drop and bus below the card instead of above */
+.up { padding: 0 calc(var(--g) / 2) var(--drop); align-self: stretch; }
+/* bottom-aligned, so every parent's drop meets the bus at one height */
+.upSingle { padding-bottom: 0; }
+.upTree { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: var(--w1); }
+.upColumn { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.up::before, .up::after { top: auto; bottom: 0; }
+.up > .drop { top: auto; bottom: 0; height: var(--drop); }
+.up > .drop::after { display: none; }
+.further { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.stemIn {
+  position: relative;
+  width: 0;
+  height: 28px;
+  margin-bottom: 7px;
+  color: var(--pm-plain);
+  border-left: 2px solid currentColor;
+}
+.stemIn::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: -5px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid currentColor;
+}
+.stemFocus { height: 46px; }
+.stemFocus .dropLabel { top: 13px; left: 8px; }
+.stemFocus[data-fid="misattributed"], .stemFocus[data-fid="response"] { border-left-style: dashed; }
+.stemFocus[data-fid="unclear"] { border-left-style: dotted; }
+
+.plinth {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 18px;
+  margin-bottom: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper-sunk);
+}
+.plinth[data-kind="untraced"] { border-style: dashed; border-color: var(--faint); }
+.none {
+  margin: 12px 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+/* ----- legend ------------------------------------------------------------------- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 11px;
+  color: var(--muted);
+}
+.legendItem { display: inline-flex; align-items: center; gap: 5px; }
+.legendEdge { width: 20px; height: 0; border-top: 2px solid currentColor; display: inline-block; }
+.legendRule { width: 1px; height: 14px; background: var(--rule); }
+.legendBox {
+  width: 16px; height: 11px; display: inline-block;
+  border: 1px solid #c9c2b1; border-radius: 2px; background: var(--paper-card);
+}
+.legendBox.origin { border-top-width: 3px; }
+
+@media (max-width: 640px) {
+  .map {
+    --w0: 236px;
+    --w1: 164px;
+    --w2: 132px;
+    --gap1: 12px;
+    --drop: 46px;
+  }
+  .t1 { padding: 8px 9px; }
+  .t1 .title { font-size: 13px; }
+  .dropLabel { font-size: 10px; }
+  .focus { width: 100%; }
+}

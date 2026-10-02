@@ -2,6 +2,7 @@ import type {
   AttemptSummary, ClaimDetail, ClaimEventsPage, FormalizationSummary, PrizeListItem, PrizeMandateNumbers,
   SearchResultItem,
 } from "./types";
+import { INFLATION_PROVENANCE } from "./fixtures-provenance";
 
 // Fixture data for design iteration before the API is wired in. A worked
 // example built to the constitution's structural rules: "inflation was high"
@@ -310,6 +311,9 @@ const FLAGSHIP: ClaimDetail = {
     },
   ],
   source_relationships: [],
+  // The origins-first map (#507): a fuller invented story than the two
+  // instances above, so the preview shows every part of the map.
+  provenance_story: INFLATION_PROVENANCE,
   tree: {
     id: "inflation-2022",
     text: "US CPI inflation in 2022 exceeded the threshold for “high” inflation.",
