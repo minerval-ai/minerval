@@ -277,6 +277,30 @@ describe("toolset by model", () => {
     expect(task).toContain("serves a mandate rather than one claim");
   });
 
+  it("offers the examination tools, and the read tool off a claim, only on a run launched as an examination (#507)", async () => {
+    await runResearcher(input());
+    let names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("examination_"))).toEqual([]);
+
+    const review = input({ claim: false });
+    review.examination = {
+      id: "exam-1", source_id: "s1", source_title: "Registry study", source_url: "https://x.org/s",
+      facets: ["data", "method"], scope: "document",
+    };
+    await runResearcher(review);
+    names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("examination_"))).toEqual([
+      "examination_outline", "examination_record_coverage", "examination_record_finding",
+    ]);
+    // Reading the document, yes; recording on a claim, no.
+    expect(names.filter((n) => n.startsWith("provenance_"))).toEqual(["provenance_read_source"]);
+    expect(names).not.toContain("examination_note_finding");
+    const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain('an examination of one document: "Registry study" (https://x.org/s), checking data, method');
+    expect(task).toContain("as a review of the document for its own sake");
+    expect(task).toContain("Begin with examination_outline");
+  });
+
   it("names the launcher in the task message", async () => {
     const i = input();
     i.run.requested_by = "grantmaker";

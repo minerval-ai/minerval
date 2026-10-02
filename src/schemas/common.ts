@@ -424,6 +424,11 @@ export const SOURCE_SEGMENT_KINDS = ["section", "passage", "table", "note", "ref
 
 export type SourceSegmentKind = (typeof SOURCE_SEGMENT_KINDS)[number];
 
+/** What an examination is for (#507): a claim's assessment, or the document itself. */
+export const EXAMINATION_SCOPES = ["claim", "document"] as const;
+/** Who decided to spend on an examination. */
+export const EXAMINATION_TRIGGERS = ["claim", "mechanical", "mandate"] as const;
+
 /** Symmetric source relations, stored with the lexicographically smaller id as parent. */
 export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);
 

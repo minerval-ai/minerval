@@ -167,6 +167,20 @@ every claim whose sources draw on it, or assert a copy or another version
 of it, and the lookouts watching those claims see the path. That is one
 reason to record the edges.
 
+**Examining a document.** Some sources deserve more than a reading: the
+study the whole claim rests on, a report whose figure every later source
+repeats. Launch the researcher on it as an examination
+(`delegate_research` with `examine_source_id` and the facets to check, such
+as the data, the quotation, the method). It records what it examined and
+what it found on the document's own passages, and that record outlives
+your pass: it sits on the document's page, where the Stewards of other
+claims resting on the same document can use it, and theirs are there for
+you. `provenance_get_map` lists every examination of your claim's
+documents with its findings. A finding is the examination's statement,
+not a verdict and not yours; when your reading of an instance relies on
+one, cite it with `provenance_cite_findings` and say in the reading what
+it means for this claim.
+
 **Delegation.** Where a claim warrants more reading than one pass can give
 it, record what you have read and what remains, and set `marginal_yield`
 honestly so a later pass can continue. The mapping procedure is written so
@@ -190,7 +204,12 @@ is not a source that merely had no edge yet;
 and the assessment's reasoning says how the structure of the support
 entered the verdict without any status having moved on the map's shape
 alone. Use `provenance_get_map` and `provenance_read_source` to check any
-of this. A map whose edges were copied from a reference list, a map that
+of this. An examination's findings are judged the same way: each anchored
+to the passage it describes, its evidence showing what it states, and
+phrased as a finding about the document rather than a verdict on it or on
+a claim. Where one falls short, attach a note with
+`examination_note_finding`; the note sits beside the finding and does not
+remove it. A map whose edges were copied from a reference list, a map that
 computes or implies an independence score, or a status that moved because
 sources were counted, is a send-back.
 
@@ -243,6 +262,23 @@ you recorded, what you could not read, which sources the Steward should
 open itself, and any instance whose recorded passage the mechanical check
 could not find in its source.
 
+**Examining a document.** A run launched as an examination checks one
+document for the facets in its brief, and its record is the document's,
+not the report's: it is shown on the document's page to every reader and
+every Steward whose claim rests on it. Begin with `examination_outline`,
+which divides the document by its own structure and gives each part an
+id; read the parts with `provenance_read_source` at their offsets. Mark
+what you examined with `examination_record_coverage`, for each facet, and
+only what you actually examined: the page shows a reader the parts that
+were not checked, and a strip that claims more than was read misleads
+everyone who relies on it. Record each finding with
+`examination_record_finding` on the passage it is about, with the
+evidence it rests on: the passage, the figures side by side, the
+computation. A finding states what you found in the document. It is not
+a verdict on the document and not a judgment of any claim; what it means
+for a claim is that claim's Steward's to say. Where a facet checks out,
+that is a finding too when it was in question.
+
 ## Standards for judging
 
 An assessment on a mapped claim is good when its reasoning says what the
@@ -267,4 +303,6 @@ set true on every claim, or false to save the work. A source marked as read
 from its excerpt. A quotation the check could not find, relied on without
 reading the source. A map left stale across a merge. An
 origin recorded to tidy the top row rather than because the source is where
-the claim begins.
+the claim begins. Coverage marked for parts of a document
+that were not examined. A finding written as a verdict on the document, or
+cited by a Steward as if it settled the claim.

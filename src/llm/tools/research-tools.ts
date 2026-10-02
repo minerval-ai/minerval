@@ -34,6 +34,12 @@ import {
   type ResearchModelTier,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
+import {
+  ExaminationError,
+  linkResearchRun,
+  openExamination,
+  type ExaminationRow,
+} from "../../services/examination-service.js";
 
 export const DELEGATE_RESEARCH_TOOL_NAME = "delegate_research";
 export const GET_RESEARCH_RUN_TOOL_NAME = "get_research_run";
@@ -122,6 +128,24 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
             description:
               "Whether the instrument's prompt opens with the constitution in full. Defaults to true; " +
               "drop it only for a task where it would compete with the problem for attention.",
+          },
+          examine_source_id: {
+            type: "string",
+            description:
+              "Optional: launch the run as an examination of one document, by its source id. The " +
+              "researcher then records what it examined and what it found on the document's own " +
+              "passages, a record that outlives the report and that every Steward whose claim " +
+              "rests on the document can cite. " +
+              (input.claimScoped
+                ? "The document must be in your claim's map."
+                : "Without a claim_id it is a review of the document for its own sake."),
+          },
+          facets: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
+              "\"method\", \"attribution\"), at most eight.",
           },
           ...(input.claimScoped
             ? {}
@@ -234,6 +258,30 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       claim = { id: row.id, text: row.text, domains: row.domains ?? [] };
     }
 
+    // An examination of a document (#507): opened before the run so the
+    // researcher records onto it, and refused before any spend if malformed.
+    let examination: ExaminationRow | null = null;
+    const examineSourceId = str(input.examine_source_id);
+    if (examineSourceId) {
+      try {
+        examination = await openExamination({
+          scope: claim ? "claim" : "document",
+          trigger: options.requestedBy === "claim_steward" ? "claim" : "mandate",
+          claimId: claim?.id ?? null,
+          grantId: options.grantId ?? null,
+          sourceId: examineSourceId,
+          brief: task,
+          facets: input.facets,
+          requestedBy: options.requestedBy,
+        });
+      } catch (err) {
+        if (err instanceof ExaminationError) return refuse(err.message);
+        throw err;
+      }
+    } else if (input.facets !== undefined) {
+      return refuse("facets go with examine_source_id: name the document to examine.");
+    }
+
     const ctx = getUsageContext();
     const model = modelForTier(tier);
     const row = await openResearchRun({
@@ -250,6 +298,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       ceilingMicroUsd,
     });
     launched++;
+    if (examination) await linkResearchRun(examination.id, row.id);
 
     let result: ResearcherResult | null = null;
     let billed = 0;
@@ -278,6 +327,16 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
             notebook: row.notebook,
           },
           claim,
+          examination: examination
+            ? {
+                id: examination.id,
+                source_id: examination.source_id,
+                source_title: examination.source_title,
+                source_url: examination.source_url,
+                facets: examination.facets,
+                scope: examination.scope,
+              }
+            : null,
         })
       ));
       result = metered.value;
@@ -321,13 +380,17 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       turns: result.turns,
       tools_offered: result.toolNames,
       report: result.report,
+      ...(examination ? { examination_id: examination.id } : {}),
       notebook_sections: Object.keys(closed?.notebook ?? {}),
       ...(result.error ? { harness_note: result.error } : {}),
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
         "it against the sources it names before relying on it, and record what you conclude " +
         "in your own reasoning. Provenance rows it recorded are on the claim for you to review " +
-        "with provenance_get_map.",
+        "with provenance_get_map" +
+        (examination
+          ? ", and its findings on the document are listed there under examinations for you to cite or not."
+          : "."),
     });
   };
 

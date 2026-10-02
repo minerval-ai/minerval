@@ -16,6 +16,14 @@ const mocks = vi.hoisted(() => ({
 }));
 const story = vi.hoisted(() => ({ getProvenanceStory: vi.fn() }));
 const facts = vi.hoisted(() => ({ getSourceFacts: vi.fn() }));
+const exams = vi.hoisted(() => ({
+  listExaminations: vi.fn(),
+  getExaminationOutline: vi.fn(),
+  recordCoverage: vi.fn(),
+  recordFinding: vi.fn(),
+  citeFindings: vi.fn(),
+  noteFinding: vi.fn(),
+}));
 
 vi.mock("../../../../src/services/source-map-service.js", () => {
   class SourceMapError extends Error {}
@@ -23,11 +31,21 @@ vi.mock("../../../../src/services/source-map-service.js", () => {
 });
 vi.mock("../../../../src/services/provenance-story-service.js", () => story);
 vi.mock("../../../../src/services/source-facts-service.js", () => facts);
+vi.mock("../../../../src/services/examination-service.js", () => {
+  class ExaminationError extends Error {}
+  return { ExaminationError, ...exams };
+});
 vi.mock("../../../../src/db/client.js", () => ({ getDb: vi.fn(), rawQuery: vi.fn() }));
 
 import { SourceMapError } from "../../../../src/services/source-map-service.js";
+import { ExaminationError } from "../../../../src/services/examination-service.js";
 import {
   PROVENANCE_TOOL_NAMES,
+  executeCiteFindings,
+  executeExaminationOutline,
+  executeNoteFinding,
+  executeRecordCoverage,
+  executeRecordFinding,
   executeGetMap,
   executeReadSource,
   executeRecordEdge,
@@ -54,6 +72,8 @@ beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   story.getProvenanceStory.mockReset().mockResolvedValue(EMPTY_STORY);
   facts.getSourceFacts.mockReset().mockResolvedValue(null);
+  for (const fn of Object.values(exams)) fn.mockReset();
+  exams.listExaminations.mockResolvedValue([]);
 });
 
 describe("registration", () => {
@@ -297,5 +317,73 @@ describe("the write tools", () => {
       expect(out.success).toBe(false);
       expect(out.message).toMatch(/no claim is in scope/);
     }
+  });
+});
+
+describe("examinations (#507)", () => {
+  const researcher: SkillToolContext = { role: "researcher", claimId: CLAIM, examinationId: "exam-1" };
+
+  it("lists the examinations of the claim's documents in get_map, findings and notes included", async () => {
+    mocks.listInstancesForMapping.mockResolvedValue([]);
+    mocks.getClaimSourceMap.mockResolvedValue({ map: null, readings: {}, edges: [], source_relationships: [] });
+    story.getProvenanceStory.mockResolvedValue({ ...EMPTY_STORY, nodes: [{ source: { id: "s1" } }] });
+    exams.listExaminations.mockResolvedValue([
+      {
+        id: "exam-1", source_id: "s1", scope: "claim", claim: { id: "other", text: "Another claim" }, facets: ["data"],
+        coverage: [{ segment_id: "g1", facet: "data" }, { segment_id: "g1", facet: "method" }, { segment_id: "g2", facet: "data" }],
+        findings: [{ id: "f1", segment_label: "Table 3", facet: "data", statement: "s", evidence: "e", audit_notes: [{ note: "n" }] }],
+      },
+    ]);
+    const out = JSON.parse(await executeGetMap({}, steward));
+    expect(exams.listExaminations).toHaveBeenCalledWith(["s1"]);
+    expect(out.examinations).toEqual([
+      {
+        examination_id: "exam-1", source_id: "s1", scope: "claim", commissioned_for: "Another claim", facets: ["data"],
+        segments_covered: 2,
+        findings: [{ finding_id: "f1", segment_label: "Table 3", facet: "data", statement: "s", evidence: "e", audit_notes: ["n"] }],
+      },
+    ]);
+  });
+
+  it("records only on the examination the run carries out", async () => {
+    for (const fn of [executeExaminationOutline, executeRecordCoverage, executeRecordFinding]) {
+      const out = JSON.parse(await fn({}, { role: "researcher", claimId: CLAIM }));
+      expect(out.success).toBe(false);
+      expect(out.message).toMatch(/not launched to examine a document/);
+    }
+    exams.getExaminationOutline.mockResolvedValue({ examination_id: "exam-1", source_id: "s1", facets: ["data"], segments: [], covered: [], findings: 0 });
+    const outline = JSON.parse(await executeExaminationOutline({}, researcher));
+    expect(exams.getExaminationOutline).toHaveBeenCalledWith("exam-1");
+    expect(outline.note).toMatch(/no stored text yet/);
+
+    exams.recordCoverage.mockResolvedValue({ recorded: 2, facet: "data" });
+    expect(JSON.parse(await executeRecordCoverage({ segment_ids: ["g1", "g2"], facet: "data" }, researcher))).toEqual({
+      success: true, recorded: 2, facet: "data",
+    });
+    expect(exams.recordCoverage).toHaveBeenCalledWith({ examinationId: "exam-1", segmentIds: ["g1", "g2"], facet: "data" });
+
+    exams.recordFinding.mockResolvedValue({ id: "f1", covered: true });
+    const finding = JSON.parse(
+      await executeRecordFinding({ segment_id: "g1", facet: "data", statement: "s", evidence: "e" }, researcher)
+    );
+    expect(finding).toEqual({ success: true, finding_id: "f1" });
+    expect(exams.recordFinding).toHaveBeenCalledWith(expect.objectContaining({ examinationId: "exam-1", createdBy: "researcher" }));
+
+    exams.recordFinding.mockRejectedValue(new ExaminationError("facet must be one this examination checks"));
+    const refused = JSON.parse(await executeRecordFinding({ segment_id: "g1", facet: "x", statement: "s", evidence: "e" }, researcher));
+    expect(refused).toEqual({ success: false, message: "facet must be one this examination checks" });
+  });
+
+  it("lets the Steward cite findings from its claim's readings, and Audit annotate a finding", async () => {
+    exams.citeFindings.mockResolvedValue({ reading_id: "r1", cited: 1 });
+    const cited = JSON.parse(await executeCiteFindings({ instance_id: "i1", finding_ids: ["f1"] }, steward));
+    expect(cited).toEqual({ success: true, reading_id: "r1", cited: 1 });
+    expect(exams.citeFindings).toHaveBeenCalledWith({ claimId: CLAIM, instanceId: "i1", findingIds: ["f1"], createdBy: "claim_steward" });
+    expect(JSON.parse(await executeCiteFindings({ instance_id: "i1", finding_ids: ["f1"] }, { role: "audit-agent" })).success).toBe(false);
+
+    exams.noteFinding.mockResolvedValue({ id: "n1" });
+    const noted = JSON.parse(await executeNoteFinding({ finding_id: "f1", note: "The table shows the opposite." }, { role: "audit-agent" }));
+    expect(noted).toEqual({ success: true, note_id: "n1" });
+    expect(exams.noteFinding).toHaveBeenCalledWith({ findingId: "f1", note: "The table shows the opposite.", createdBy: "audit_agent" });
   });
 });

@@ -143,6 +143,7 @@ const PROVENANCE_TOOLS = [
   "provenance_record_source_relationship",
   "provenance_record_root",
   "provenance_write_map",
+  "provenance_cite_findings",
 ];
 
 describe("Steward toolset without a domain tag", () => {

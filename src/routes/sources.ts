@@ -8,6 +8,7 @@ import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { getSourceFacts } from "../services/source-facts-service.js";
 import { getSourceDocument } from "../services/source-segment-service.js";
+import { listExaminations } from "../services/examination-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -25,6 +26,26 @@ const errorEnvelopeSchema = {
 } as const;
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  // GET /sources/:source_id/examinations — the in-depth checks of a
+  // document (#507): each with its brief and who commissioned it (while
+  // assessing a claim, or as a review of the document), the facets it
+  // checked, what it covered segment by segment, and its findings anchored
+  // to passages, with the Audit agent's notes and the claims whose Stewards
+  // cite each one. No verdict on the source and no status on a finding.
+  app.get<{ Params: { source_id: string } }>("/:source_id/examinations", {
+    schema: {
+      tags: ["sources"],
+      summary: "Examinations of a source: scope, coverage, and findings anchored to passages",
+      params: {
+        type: "object",
+        properties: { source_id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      return reply.send({ examinations: await listExaminations([request.params.source_id]) });
+    },
+  });
+
   // GET /sources/:source_id/document — the document as annotated text
   // (#507): its segments in its own order (sections, passages, tables,
   // notes, references), each passage with the claims that assert it and

@@ -91,6 +91,7 @@ type Tool = Anthropic.Tool;
 type ToolUnion = Anthropic.Messages.ToolUnion;
 
 const PROVENANCE_PREFIX = "provenance_";
+const EXAMINATION_PREFIX = "examination_";
 
 /** Thrown from the ordinary loop's beforeTurn hook to end the run. */
 class HarnessStop extends Error {
@@ -218,6 +219,8 @@ export interface ResearcherInput {
     "id" | "claim_id" | "grant_id" | "requested_by" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
   >;
   claim: { id: string; text: string; domains: string[] } | null;
+  /** The document examination this run carries out, when launched as one (#507). */
+  examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
   /** Wall-clock cap for the run; defaults to RESEARCHER_MAX_WALL_MINUTES. */
   maxWallMs?: number;
   /** Turn cap for the ordinary loop; defaults to RESEARCHER_MAX_TURNS. */
@@ -271,9 +274,15 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const skillsWithText = skills.filter((s) => sectionsForRole(s, "researcher").length > 0);
   const checker = leanCheckerConfigured(config);
   // Mathlib tools only with a checker to run them; the provenance tools only
-  // on a claim, since every one of them reads or records on a claim.
+  // on a claim, since they read or record on a claim, except that an
+  // examination needs provenance_read_source to read its document; the
+  // examination tools only on a run launched as an examination.
+  const examination = input.examination ?? null;
   const skillTools = getActiveSkillToolDefinitions(skills, "researcher").filter(
-    (t) => (checker || !isLeanTool(t.name)) && (input.claim || !t.name.startsWith(PROVENANCE_PREFIX))
+    (t) =>
+      (checker || !isLeanTool(t.name)) &&
+      (!t.name.startsWith(PROVENANCE_PREFIX) || !!input.claim || (!!examination && t.name === "provenance_read_source")) &&
+      (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)
   );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
@@ -305,6 +314,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     task: run.task,
     requestedBy: run.requested_by,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
+    examination: examination
+      ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
+      : null,
     budgetUsd: ceiling / 1_000_000,
     model,
     estimate: null,
@@ -421,6 +433,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       return executeSkillTool(name, toolInput, {
         role: "researcher",
         ...(input.claim ? { claimId: input.claim.id } : {}),
+        ...(examination ? { examinationId: examination.id } : {}),
         run: { trigger: "research", context: run.task, model },
       });
     }

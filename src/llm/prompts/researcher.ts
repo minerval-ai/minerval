@@ -167,6 +167,8 @@ export interface ResearcherTaskInput {
   /** The launcher's agent key: claim_steward or grantmaker. */
   requestedBy: string;
   claim: { id: string; text: string } | null;
+  /** The document this run examines, when launched as an examination (#507). */
+  examination?: { sourceTitle: string; sourceUrl: string | null; facets: string[]; scope: string } | null;
   budgetUsd: number;
   /** The model the run is on, named in the budget guide. */
   model: string;
@@ -194,7 +196,16 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
   const launcher = LAUNCHER_NAMES[input.requestedBy] ?? "an administrator of the graph";
   const claimLine = input.claim
     ? `The claim this investigation serves, as the graph states it:\n"${input.claim.text}"\n(claim id ${input.claim.id}; read its record with get_claim and get_decomposition.)`
-    : "This investigation serves a mandate rather than one claim, so the provenance tools, which record on a claim, are not in your toolset.";
+    : input.examination
+      ? "This investigation serves a mandate rather than one claim, so the provenance tools that record on a claim are not in your toolset; provenance_read_source is, for reading the document."
+      : "This investigation serves a mandate rather than one claim, so the provenance tools, which record on a claim, are not in your toolset.";
+  const examinationLine = input.examination
+    ? `\n\nThis run is an examination of one document: "${input.examination.sourceTitle}"` +
+      (input.examination.sourceUrl ? ` (${input.examination.sourceUrl})` : "") +
+      `, checking ${input.examination.facets.join(", ")}` +
+      (input.examination.scope === "document" ? ", as a review of the document for its own sake rather than for one claim" : "") +
+      ". Its record outlives this report: what you mark as examined and what you find, anchored to passages, is shown on the document's page to every reader and to every Steward whose claim rests on it. Begin with examination_outline."
+    : "";
   const sandboxLine = input.sandbox
     ? "The code-execution sandbox is available: Python with the usual scientific libraries, and no network, so bring data into it by writing it into your code."
     : "There is no code-execution sandbox this run. Where a computation would have settled something, set it out in the report so the administrator can have it run.";
@@ -209,7 +220,7 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
 ${input.task.trim()}
 --- END BRIEF ---
 
-${claimLine}
+${claimLine}${examinationLine}
 
 ${budgetLine}
 

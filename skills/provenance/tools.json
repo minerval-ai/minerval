@@ -280,5 +280,129 @@
     "roles": [
       "claim-steward"
     ]
+  },
+  {
+    "name": "examination_outline",
+    "description": "The document you were launched to examine, divided by its own structure: each segment's id, kind (section, passage, table, note, reference), label, character span, and opening words, with the facets this examination checks and the coverage and findings recorded so far. Read the text of a segment with provenance_read_source at its char_start. Call it first; the recording tools take its segment ids.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "roles": [
+      "researcher"
+    ]
+  },
+  {
+    "name": "examination_record_coverage",
+    "description": "Record which segments you actually examined for one facet. The source page shows coverage as a strip along the document, so a reader can see what was checked and, as importantly, what was not. Record only segments you read for that facet, not segments you skimmed past. A segment you record a finding on is covered for its facet automatically. Calling again adds to what is recorded.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "segment_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The segments examined for this facet."
+        },
+        "facet": {
+          "type": "string",
+          "description": "One of the facets this examination checks."
+        }
+      },
+      "required": [
+        "segment_ids",
+        "facet"
+      ]
+    },
+    "roles": [
+      "researcher"
+    ]
+  },
+  {
+    "name": "examination_record_finding",
+    "description": "Record one thing you found in the document, on the passage it is about: a table that does not show what the text says, a quotation that appears nowhere in the cited source, a sample that changed between methods and results, a figure you reproduced exactly. A finding is a statement about the document, attributed to this examination, never a verdict on the document or on any claim; the Stewards of the claims the document bears on decide what it means for them. Say what you found and how sure you are in the statement, and put what it rests on in the evidence: the located passage, the numbers side by side, the computation. Findings of no problem are findings too when the facet was in question.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "segment_id": {
+          "type": "string",
+          "description": "A segment id from examination_outline. The passage, table, or note the finding is about."
+        },
+        "facet": {
+          "type": "string",
+          "description": "One of the facets this examination checks."
+        },
+        "statement": {
+          "type": "string",
+          "description": "The finding, in a sentence or two of plain prose a reader of the source page can follow. No em-dashes."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "What it rests on: the passage quoted, the figures compared, the computation run."
+        }
+      },
+      "required": [
+        "segment_id",
+        "facet",
+        "statement",
+        "evidence"
+      ]
+    },
+    "roles": [
+      "researcher"
+    ]
+  },
+  {
+    "name": "provenance_cite_findings",
+    "description": "Record that your reading of one instance relies on findings an examination recorded about that instance's source. provenance_get_map lists the findings on each source. Citing is how a finding enters your claim's record: it says you weighed it, not that it is right, and your reading's own words say what it means for this claim. The reading must already exist; record or update it first.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string",
+          "description": "The instance whose reading cites the findings."
+        },
+        "finding_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Findings about this instance's source."
+        }
+      },
+      "required": [
+        "instance_id",
+        "finding_ids"
+      ]
+    },
+    "roles": [
+      "claim-steward"
+    ]
+  },
+  {
+    "name": "examination_note_finding",
+    "description": "Attach an attributed note to a finding about a document, where the finding itself is the concern: its evidence does not show what it states, the passage it is anchored to is not the one it describes, or it reads as a verdict on the document rather than a finding about it. The note is shown beside the finding on the source page. It does not remove or rule on the finding.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "description": "The finding."
+        },
+        "note": {
+          "type": "string",
+          "description": "What is wrong or missing, in plain prose."
+        }
+      },
+      "required": [
+        "finding_id",
+        "note"
+      ]
+    },
+    "roles": [
+      "audit-agent"
+    ]
   }
 ]

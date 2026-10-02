@@ -28,12 +28,17 @@ describe("skill tool registry", () => {
   it("knows the declared skill tools and nothing else", () => {
     expect([...declaredSkillToolNames()].sort()).toEqual([
       "decide_prize_claim",
+      "examination_note_finding",
+      "examination_outline",
+      "examination_record_coverage",
+      "examination_record_finding",
       "get_prize_claim",
       "get_proof_attempt",
       "lean_check",
       "lean_elaborate",
       "lean_search",
       "mark_problem_solved_by_platform",
+      "provenance_cite_findings",
       "provenance_get_map",
       "provenance_read_source",
       "provenance_record_edge",

@@ -693,6 +693,138 @@ export const sourceSegments = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// examinations (#507, phase 5)
+//
+// An in-depth check of one document, as a record of its own: what was asked
+// (the brief and the facets to check: the data, the quotation, the method),
+// who asked and why (while assessing a claim, or as a review of the document
+// itself), what was actually examined (coverage, by segment and facet), and
+// what was found, each finding anchored to the passage it is about.
+//
+// There is no verdict on the source and no accept/reject on a finding.
+// Findings stay attributed to the run that produced them; each claim's
+// Steward decides what a finding means for its claim and cites it from its
+// reading (reading_citations), and the Audit agent may annotate a finding
+// about the document (audit_notes). That is how a fair picture of a source
+// builds up from many claims' work without any one viewpoint owning it.
+// ---------------------------------------------------------------------------
+export const examinations = pgTable(
+  "examinations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // EXAMINATION_SCOPES: 'claim' (commissioned while assessing a claim) or
+    // 'document' (a review of the document for its own sake).
+    scope: text("scope").notNull(),
+    // EXAMINATION_TRIGGERS: who decided to spend on it. 'claim' (a Steward),
+    // 'mandate' (a Grantmaker), or 'mechanical'.
+    trigger: text("trigger").notNull(),
+    // The commissioning claim, for a claim-scoped examination. SET NULL: the
+    // findings are about the document and outlive the claim.
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "set null" }),
+    grantId: uuid("grant_id"),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    brief: text("brief").notNull(),
+    // What to check, as short labels ("data", "quotation", "method").
+    facets: text("facets").array().notNull(),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_examinations_source").on(table.sourceId),
+    index("idx_examinations_claim").on(table.claimId),
+    check("ck_examinations_scope", sql`${table.scope} IN ('claim', 'document')`),
+    check("ck_examinations_trigger", sql`${table.trigger} IN ('claim', 'mechanical', 'mandate')`),
+  ]
+);
+
+/** Which parts of the document an examination actually looked at, for which facet. */
+export const examinationCoverage = pgTable(
+  "examination_coverage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    examinationId: uuid("examination_id")
+      .notNull()
+      .references(() => examinations.id, { onDelete: "cascade" }),
+    segmentId: uuid("segment_id")
+      .notNull()
+      .references(() => sourceSegments.id, { onDelete: "cascade" }),
+    facet: text("facet").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_examination_coverage_unique").on(table.examinationId, table.segmentId, table.facet),
+  ]
+);
+
+/** What an examination found, anchored to a passage. No status: findings are attributed, never ruled on. */
+export const examinationFindings = pgTable(
+  "examination_findings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    examinationId: uuid("examination_id")
+      .notNull()
+      .references(() => examinations.id, { onDelete: "cascade" }),
+    // The passage the finding is about. SET NULL if the document is
+    // re-segmented; the evidence still quotes it.
+    segmentId: uuid("segment_id").references(() => sourceSegments.id, { onDelete: "set null" }),
+    facet: text("facet").notNull(),
+    statement: text("statement").notNull(),
+    // The located passage, computation, or comparison the finding rests on.
+    evidence: text("evidence").notNull(),
+    createdBy: text("created_by").notNull().default("researcher"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_examination_findings_examination").on(table.examinationId)]
+);
+
+/** A claim Steward's reading citing a finding it relied on. Written by that claim's Steward. */
+export const readingCitations = pgTable(
+  "reading_citations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    readingId: uuid("reading_id")
+      .notNull()
+      .references(() => claimInstanceReadings.id, { onDelete: "cascade" }),
+    findingId: uuid("finding_id")
+      .notNull()
+      .references(() => examinationFindings.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").notNull().default("claim_steward"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId),
+    index("idx_reading_citations_finding").on(table.findingId),
+  ]
+);
+
+/** The Audit agent's attributed note on a finding about the document itself. */
+export const auditNotes = pgTable(
+  "audit_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    findingId: uuid("finding_id")
+      .notNull()
+      .references(() => examinationFindings.id, { onDelete: "cascade" }),
+    note: text("note").notNull(),
+    createdBy: text("created_by").notNull().default("audit_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_audit_notes_finding").on(table.findingId)]
+);
+
+// ---------------------------------------------------------------------------
 // claim_instances
 // ---------------------------------------------------------------------------
 export const claimInstances = pgTable(
@@ -3182,9 +3314,17 @@ export const researchRuns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
+    // The examination of a document this run carried out, when it was
+    // launched as one (#507). One direction only: an examination's runs
+    // are found from here, its spend is theirs, and a continuation run can
+    // serve the same examination.
+    examinationId: uuid("examination_id").references((): AnyPgColumn => examinations.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     index("idx_research_runs_claim").on(table.claimId),
+    index("idx_research_runs_examination").on(table.examinationId),
     index("idx_research_runs_grant").on(table.grantId),
     index("idx_research_runs_status").on(table.status),
     check("ck_research_runs_ceiling", sql`ceiling_micro_usd > 0`),

@@ -153,6 +153,20 @@ every claim whose sources draw on it, or assert a copy or another version
 of it, and the lookouts watching those claims see the path. That is one
 reason to record the edges.
 
+**Examining a document.** Some sources deserve more than a reading: the
+study the whole claim rests on, a report whose figure every later source
+repeats. Launch the researcher on it as an examination
+(`delegate_research` with `examine_source_id` and the facets to check, such
+as the data, the quotation, the method). It records what it examined and
+what it found on the document's own passages, and that record outlives
+your pass: it sits on the document's page, where the Stewards of other
+claims resting on the same document can use it, and theirs are there for
+you. `provenance_get_map` lists every examination of your claim's
+documents with its findings. A finding is the examination's statement,
+not a verdict and not yours; when your reading of an instance relies on
+one, cite it with `provenance_cite_findings` and say in the reading what
+it means for this claim.
+
 **Delegation.** Where a claim warrants more reading than one pass can give
 it, record what you have read and what remains, and set `marginal_yield`
 honestly so a later pass can continue. The mapping procedure is written so
@@ -176,7 +190,12 @@ is not a source that merely had no edge yet;
 and the assessment's reasoning says how the structure of the support
 entered the verdict without any status having moved on the map's shape
 alone. Use `provenance_get_map` and `provenance_read_source` to check any
-of this. A map whose edges were copied from a reference list, a map that
+of this. An examination's findings are judged the same way: each anchored
+to the passage it describes, its evidence showing what it states, and
+phrased as a finding about the document rather than a verdict on it or on
+a claim. Where one falls short, attach a note with
+`examination_note_finding`; the note sits beside the finding and does not
+remove it. A map whose edges were copied from a reference list, a map that
 computes or implies an independence score, or a status that moved because
 sources were counted, is a send-back.
 

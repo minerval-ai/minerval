@@ -51,6 +51,8 @@ export interface SkillToolContext {
   claimId?: string;
   /** Why the run happened, as the Steward's executor receives it. */
   run?: { trigger?: string; context?: string; model?: string };
+  /** The examination a researcher run was launched to carry out (#507). */
+  examinationId?: string;
 }
 
 export type SkillToolExecutor = (

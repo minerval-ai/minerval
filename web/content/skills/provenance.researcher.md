@@ -27,3 +27,20 @@ rather than recording a reading from its excerpt. Your report lists what
 you recorded, what you could not read, which sources the Steward should
 open itself, and any instance whose recorded passage the mechanical check
 could not find in its source.
+
+**Examining a document.** A run launched as an examination checks one
+document for the facets in its brief, and its record is the document's,
+not the report's: it is shown on the document's page to every reader and
+every Steward whose claim rests on it. Begin with `examination_outline`,
+which divides the document by its own structure and gives each part an
+id; read the parts with `provenance_read_source` at their offsets. Mark
+what you examined with `examination_record_coverage`, for each facet, and
+only what you actually examined: the page shows a reader the parts that
+were not checked, and a strip that claims more than was read misleads
+everyone who relies on it. Record each finding with
+`examination_record_finding` on the passage it is about, with the
+evidence it rests on: the passage, the figures side by side, the
+computation. A finding states what you found in the document. It is not
+a verdict on the document and not a judgment of any claim; what it means
+for a claim is that claim's Steward's to say. Where a facet checks out,
+that is a finding too when it was in question.

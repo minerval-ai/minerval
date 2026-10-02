@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   getResearchRun: vi.fn(),
   checkResearcherBudget: vi.fn(async () => undefined),
   readResearcherPaused: vi.fn(async () => false),
+  openExamination: vi.fn(),
+  linkResearchRun: vi.fn(async () => undefined),
   config: {
     researcherEnabled: true,
     researcherStrongModel: "claude-opus-5-5",
@@ -43,7 +45,13 @@ vi.mock("../../../../src/services/research-run-service.js", async (importOrigina
   };
 });
 
+vi.mock("../../../../src/services/examination-service.js", () => {
+  class ExaminationError extends Error {}
+  return { ExaminationError, openExamination: mocks.openExamination, linkResearchRun: mocks.linkResearchRun };
+});
+
 import { LlmBudgetExceededError } from "../../../../src/llm/errors.js";
+import { ExaminationError } from "../../../../src/services/examination-service.js";
 import {
   createResearchTools,
   getResearchToolDefinitions,
@@ -92,6 +100,8 @@ beforeEach(() => {
     ...input,
   }));
   mocks.config.researcherEnabled = true;
+  mocks.openExamination.mockReset();
+  mocks.linkResearchRun.mockClear();
 });
 
 describe("definitions", () => {
@@ -103,7 +113,9 @@ describe("definitions", () => {
     expect(delegate!.description).toContain("at most 3 per run");
     expect(delegate!.description).toContain("at most 2 runs");
     const props = (delegate!.input_schema as { properties: Record<string, unknown> }).properties;
-    expect(Object.keys(props)).toEqual(["task", "model_tier", "budget_usd", "effort", "include_constitution"]);
+    expect(Object.keys(props)).toEqual([
+      "task", "model_tier", "budget_usd", "effort", "include_constitution", "examine_source_id", "facets",
+    ]);
     const off = getResearchToolDefinitions({ claimScoped: false })[0]!;
     expect(Object.keys((off.input_schema as { properties: Record<string, unknown> }).properties)).toContain("claim_id");
   });
@@ -166,6 +178,59 @@ describe("delegate_research", () => {
       expect.objectContaining({ status: "completed", turns: 7, servedModels: ["claude-sonnet-5"] })
     );
     expect(tools.launchedCount).toBe(1);
+  });
+
+  it("launches an examination of a document: opened before the run, linked to it, and handed to the researcher (#507)", async () => {
+    const SOURCE = "dddddddd-0000-4000-8000-000000000001";
+    mocks.openExamination.mockImplementation(async (input: Record<string, unknown>) => ({
+      id: "exam-1", source_id: input.sourceId, source_title: "Registry study", source_url: "https://x.org/s",
+      facets: ["data", "method"], scope: input.scope,
+    }));
+    const runResearcher = vi.fn(async (_input: ResearcherInput) => okResult());
+    const steward = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+    const out = JSON.parse(
+      (await steward.execute("delegate_research", {
+        task: BRIEF, model_tier: "standard", budget_usd: 1, examine_source_id: SOURCE, facets: ["data", "method"],
+      }))!
+    );
+    expect(out.examination_id).toBe("exam-1");
+    expect(out.note).toMatch(/under examinations/);
+    expect(mocks.openExamination).toHaveBeenCalledWith({
+      scope: "claim", trigger: "claim", claimId: CLAIM, grantId: null, sourceId: SOURCE,
+      brief: BRIEF, facets: ["data", "method"], requestedBy: "claim_steward",
+    });
+    expect(mocks.linkResearchRun).toHaveBeenCalledWith("exam-1", "run-1");
+    expect(runResearcher.mock.calls[0]![0].examination).toEqual({
+      id: "exam-1", source_id: SOURCE, source_title: "Registry study", source_url: "https://x.org/s",
+      facets: ["data", "method"], scope: "claim",
+    });
+
+    // A Grantmaker naming no claim reviews the document for its own sake.
+    const grantmaker = createResearchTools({ requestedBy: "grantmaker", grantId: "g-1", runResearcher });
+    await grantmaker.execute("delegate_research", {
+      task: BRIEF, model_tier: "cheap", budget_usd: 1, examine_source_id: SOURCE, facets: ["quotation"],
+    });
+    expect(mocks.openExamination).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: "document", trigger: "mandate", claimId: null, grantId: "g-1" })
+    );
+  });
+
+  it("refuses a malformed examination before any spend, and facets without a document", async () => {
+    const runResearcher = vi.fn();
+    const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+    mocks.openExamination.mockRejectedValue(new ExaminationError("That source is not in this claim's map"));
+    const refused = JSON.parse(
+      (await tools.execute("delegate_research", {
+        task: BRIEF, model_tier: "standard", budget_usd: 1, examine_source_id: "x", facets: ["data"],
+      }))!
+    );
+    expect(refused).toEqual({ success: false, message: "That source is not in this claim's map" });
+    const stray = JSON.parse(
+      (await tools.execute("delegate_research", { task: BRIEF, model_tier: "standard", budget_usd: 1, facets: ["data"] }))!
+    );
+    expect(stray.message).toMatch(/facets go with examine_source_id/);
+    expect(mocks.openResearchRun).not.toHaveBeenCalled();
+    expect(runResearcher).not.toHaveBeenCalled();
   });
 
   it("keeps effort on the strong tier only", async () => {

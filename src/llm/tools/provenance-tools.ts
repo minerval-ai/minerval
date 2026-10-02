@@ -38,6 +38,15 @@ import {
 import { getProvenanceStory } from "../../services/provenance-story-service.js";
 import { getSourceFacts } from "../../services/source-facts-service.js";
 import {
+  ExaminationError,
+  citeFindings,
+  getExaminationOutline,
+  listExaminations,
+  noteFinding,
+  recordCoverage,
+  recordFinding,
+} from "../../services/examination-service.js";
+import {
   CLAIM_PROVENANCE_RELATION_GUIDANCE,
   INSTANCE_SUPPORT_GUIDANCE,
   PROVENANCE_FIDELITY_GUIDANCE,
@@ -53,6 +62,11 @@ export const PROVENANCE_TOOL_NAMES: readonly string[] = [
   "provenance_record_source_relationship",
   "provenance_record_root",
   "provenance_write_map",
+  "examination_outline",
+  "examination_record_coverage",
+  "examination_record_finding",
+  "provenance_cite_findings",
+  "examination_note_finding",
 ];
 
 function str(v: unknown): string {
@@ -76,7 +90,7 @@ async function guarded(fn: () => Promise<string>): Promise<string> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof SourceMapError) return refuse(err.message);
+    if (err instanceof SourceMapError || err instanceof ExaminationError) return refuse(err.message);
     throw err;
   }
 }
@@ -90,6 +104,7 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
       getClaimSourceMap(claimId),
       getProvenanceStory(claimId),
     ]);
+    const examinations = await listExaminations(story.nodes.map((n) => n.source.id));
     const readings = map.readings;
     return JSON.stringify({
       success: true,
@@ -126,6 +141,25 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
           underlying: n.underlying,
           downstream_total: n.downstream_total,
         })),
+      // In-depth checks of the claim's documents, by this claim's Steward or
+      // any other, with their findings. A finding is the examination's, not
+      // a verdict: cite the ones your reading relies on.
+      examinations: examinations.map((x) => ({
+        examination_id: x.id,
+        source_id: x.source_id,
+        scope: x.scope,
+        commissioned_for: x.claim ? (x.claim.id === claimId ? "this claim" : x.claim.text) : "a review of the document",
+        facets: x.facets,
+        segments_covered: new Set(x.coverage.map((c) => c.segment_id)).size,
+        findings: x.findings.map((f) => ({
+          finding_id: f.id,
+          segment_label: f.segment_label,
+          facet: f.facet,
+          statement: f.statement,
+          evidence: f.evidence,
+          audit_notes: f.audit_notes.map((n) => n.note),
+        })),
+      })),
       note:
         "Instance and source ids here are the ones the provenance_record_* tools take. " +
         "A reading says whether a source's own evidence bears what it asserts, not " +
@@ -270,6 +304,70 @@ export const executeRecordRoot: SkillToolExecutor = async (input, ctx) =>
     });
   });
 
+function examinationFor(ctx: SkillToolContext): string | null {
+  return ctx.examinationId ?? null;
+}
+
+const NO_EXAMINATION =
+  "This run was not launched to examine a document; the examination tools record only on the examination a run carries out.";
+
+export const executeExaminationOutline: SkillToolExecutor = async (_input, ctx) =>
+  guarded(async () => {
+    const id = examinationFor(ctx);
+    if (!id) return refuse(NO_EXAMINATION);
+    const outline = await getExaminationOutline(id);
+    return JSON.stringify({
+      success: true,
+      ...outline,
+      note:
+        outline.segments.length === 0
+          ? "The document has no stored text yet. Open it with provenance_read_source (source_id above), which fetches and divides it, then call this again."
+          : "Read a segment's text with provenance_read_source at its char_start. Record coverage only for segments you examined, and anchor each finding to its passage.",
+    });
+  });
+
+export const executeRecordCoverage: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const id = examinationFor(ctx);
+    if (!id) return refuse(NO_EXAMINATION);
+    const result = await recordCoverage({ examinationId: id, segmentIds: input.segment_ids, facet: input.facet });
+    return JSON.stringify({ success: true, ...result });
+  });
+
+export const executeRecordFinding: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const id = examinationFor(ctx);
+    if (!id) return refuse(NO_EXAMINATION);
+    const result = await recordFinding({
+      examinationId: id,
+      segmentId: input.segment_id,
+      facet: input.facet,
+      statement: input.statement,
+      evidence: input.evidence,
+      createdBy: writerFor(ctx),
+    });
+    return JSON.stringify({ success: true, finding_id: result.id });
+  });
+
+export const executeCiteFindings: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const claimId = claimFor(input, ctx);
+    if (!claimId) return refuse("This tool records on the claim you steward; no claim is in scope.");
+    const result = await citeFindings({
+      claimId,
+      instanceId: input.instance_id,
+      findingIds: input.finding_ids,
+      createdBy: writerFor(ctx),
+    });
+    return JSON.stringify({ success: true, ...result });
+  });
+
+export const executeNoteFinding: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const result = await noteFinding({ findingId: input.finding_id, note: input.note, createdBy: writerFor(ctx) });
+    return JSON.stringify({ success: true, note_id: result.id });
+  });
+
 export const executeWriteMap: SkillToolExecutor = async (input, ctx) =>
   guarded(async () => {
     const claimId = claimFor(input, ctx);
@@ -314,4 +412,9 @@ export function registerProvenanceTools(
   register("provenance_record_source_relationship", executeRecordSourceRelationship);
   register("provenance_record_root", executeRecordRoot);
   register("provenance_write_map", executeWriteMap);
+  register("examination_outline", executeExaminationOutline);
+  register("examination_record_coverage", executeRecordCoverage);
+  register("examination_record_finding", executeRecordFinding);
+  register("provenance_cite_findings", executeCiteFindings);
+  register("examination_note_finding", executeNoteFinding);
 }
