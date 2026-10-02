@@ -7,6 +7,7 @@ import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { getSourceFacts } from "../services/source-facts-service.js";
+import { getSourceDocument } from "../services/source-segment-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -24,6 +25,32 @@ const errorEnvelopeSchema = {
 } as const;
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  // GET /sources/:source_id/document — the document as annotated text
+  // (#507): its segments in its own order (sections, passages, tables,
+  // notes, references), each passage with the claims that assert it and
+  // each claim Steward's reading, in that claim's voice. The source page's
+  // body. Instances whose text is not in the stored document are listed
+  // apart rather than placed by guess.
+  app.get<{ Params: { source_id: string } }>("/:source_id/document", {
+    schema: {
+      tags: ["sources"],
+      summary: "A source as annotated text: its structure, and the claims anchored to each passage",
+      params: {
+        type: "object",
+        properties: { source_id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const doc = await getSourceDocument(request.params.source_id);
+      if (!doc) {
+        return reply.code(404).send({
+          error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
+        });
+      }
+      return reply.send(doc);
+    },
+  });
+
   // GET /sources/:source_id — the facts about a document that need no
   // judgment (#507): identity (authors, publisher, date, kind, DOI, an
   // archived copy), its other versions and republished copies, and what has

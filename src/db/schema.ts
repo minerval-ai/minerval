@@ -16,6 +16,7 @@ import {
   check,
   customType,
   primaryKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql, type SQL } from "drizzle-orm";
 
@@ -642,6 +643,56 @@ export const sourceEvents = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// source_segments (#507, phase 4)
+//
+// A document's own structure: its sections, and within them the passages,
+// tables, notes, and references, in order. The source page follows this
+// structure rather than any claim's, and every annotation on the page (an
+// instance, an examination's coverage, a finding) is anchored to a segment,
+// so that the many claims a document carries share one map of it.
+//
+// Offsets index the document's READABLE text (htmlToText of raw_content),
+// the same text provenance_read_source returns and the quote check reads,
+// so an offset an agent sees and an offset stored here agree. text_hash is
+// the sha256 of the segment's text, so a later copy of the document that
+// differs can be detected rather than silently mis-anchored.
+// ---------------------------------------------------------------------------
+export const sourceSegments = pgTable(
+  "source_segments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // The enclosing section; null at the top level.
+    parentId: uuid("parent_id").references((): AnyPgColumn => sourceSegments.id, {
+      onDelete: "cascade",
+    }),
+    // Position in document order, across the whole source.
+    ordinal: integer("ordinal").notNull(),
+    // A section's heading, a table's caption number; null for a passage.
+    label: text("label"),
+    // SOURCE_SEGMENT_KINDS in src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    charStart: integer("char_start").notNull(),
+    charEnd: integer("char_end").notNull(),
+    textHash: text("text_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
+    index("idx_source_segments_parent").on(table.parentId),
+    check(
+      "ck_source_segments_kind",
+      sql`${table.kind} IN ('section', 'passage', 'table', 'note', 'reference')`
+    ),
+    check("ck_source_segments_span", sql`${table.charStart} >= 0 AND ${table.charEnd} >= ${table.charStart}`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // claim_instances
 // ---------------------------------------------------------------------------
 export const claimInstances = pgTable(
@@ -697,12 +748,20 @@ export const claimInstances = pgTable(
     // the historical default) or "claim_steward" (encountered during
     // assessment web search, #278).
     createdBy: text("created_by").notNull().default("extractor"),
+    // The passage of the source this instance's verbatim text sits in
+    // (#507), found by locating the text in the segmented document. Null
+    // until the source is segmented, or when the text cannot be found in it
+    // (which the quote check reports separately).
+    segmentId: uuid("segment_id").references(() => sourceSegments.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
     index("idx_instances_claim").on(table.claimId),
+    index("idx_instances_segment").on(table.segmentId),
     index("idx_instances_source").on(table.sourceId),
   ]
 );

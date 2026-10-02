@@ -26,6 +26,7 @@ import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText } from "./document-text.js";
 import { getOrCreateSource } from "./source-service.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
+import { segmentSourceOnce } from "./source-segment-service.js";
 import {
   CLAIM_PROVENANCE_RELATION_TYPES,
   INSTANCE_SUPPORT_READINGS,
@@ -294,6 +295,7 @@ export async function readSourceContent(input: {
     // A document first opened here gets its facts looked up like one that
     // came in through extraction (#507). Never fails the read.
     await refreshSourceFactsOnce(source.id);
+    await segmentSourceOnce(source.id);
   }
   const text = htmlToText(raw);
   const offset = Math.max(0, Math.floor(input.offset ?? 0));

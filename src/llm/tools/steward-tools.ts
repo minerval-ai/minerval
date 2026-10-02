@@ -1315,6 +1315,9 @@ export async function executeStewardTool(
             });
           }
           patch.verbatimText = verbatimText;
+          // The passage it was anchored to may not hold the corrected text;
+          // the source page re-anchors it on its next read (#507).
+          patch.segmentId = null;
         }
         const speaker = optText(input.speaker);
         if (speaker !== undefined) patch.speaker = speaker;

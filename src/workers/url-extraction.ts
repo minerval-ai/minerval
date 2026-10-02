@@ -14,6 +14,7 @@ import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import { fetchPublicUrl } from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
+import { segmentSourceOnce } from "../services/source-segment-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -341,6 +342,10 @@ async function processUrlExtraction(
         confidence: claim.confidence,
       });
     }
+
+    // Divide the document by its own structure and anchor the instances
+    // just recorded to their passages (#507). Never fails the extraction.
+    await segmentSourceOnce(source.id);
 
     await updateJob(message.jobId, {
       status: "completed",

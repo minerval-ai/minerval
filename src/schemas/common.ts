@@ -416,6 +416,14 @@ export const SOURCE_EVENT_KINDS = [
 
 export type SourceEventKind = (typeof SOURCE_EVENT_KINDS)[number];
 
+/**
+ * The parts a document is divided into on its source page (#507): sections
+ * (by heading) holding passages, tables, notes, and references.
+ */
+export const SOURCE_SEGMENT_KINDS = ["section", "passage", "table", "note", "reference"] as const;
+
+export type SourceSegmentKind = (typeof SOURCE_SEGMENT_KINDS)[number];
+
 /** Symmetric source relations, stored with the lexicographically smaller id as parent. */
 export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);
 
