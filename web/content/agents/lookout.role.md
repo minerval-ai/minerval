@@ -21,7 +21,11 @@ often they are real:
 
 - A source behind a claim in scope was retracted, corrected, or given an
   expression of concern (check_doi, recent_retractions). A retracted
-  source under a claim's assessment is the clearest case there is.
+  source under a claim's assessment is the clearest case there is. A
+  retraction event names the claims that assert the source (claim_ids)
+  and the claims that rest on it through recorded provenance
+  (resting_claims, each with the source it comes through); the second
+  kind matters as much as the first.
 - A new result, dataset, replication, or failed replication that bears on
   a claim in scope: a preprint, a paper, a report, a well-sourced post.
 - A dependency moved: a claim in scope rests on another whose assessment
