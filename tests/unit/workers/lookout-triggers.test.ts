@@ -15,6 +15,7 @@ const { state, queries } = vi.hoisted(() => ({
     mark: null as null | { since: string; polled_at: string },
     notices: [] as Array<Record<string, unknown>>,
     matches: [] as Array<Record<string, unknown>>,
+    resting: [] as Array<Record<string, unknown>>,
     dupPending: 0,
     fanout: [] as Array<Record<string, unknown>>,
   },
@@ -36,6 +37,7 @@ vi.mock("../../../src/config.js", () => ({
 vi.mock("../../../src/services/source-watch-service.js", () => ({
   recentRetractions: vi.fn(async () => state.notices),
   sourcesForDois: vi.fn(async () => state.matches),
+  claimsRestingOnSources: vi.fn(async () => state.resting),
 }));
 vi.mock("../../../src/services/lookout-service.js", () => ({
   queueLookoutEventsByTrigger: vi.fn(async (input: Record<string, unknown>) => {
@@ -54,6 +56,7 @@ beforeEach(() => {
   state.mark = null;
   state.notices = [];
   state.matches = [];
+  state.resting = [];
   state.dupPending = 0;
   state.fanout = [];
 });
@@ -98,6 +101,34 @@ describe("retractionPollTick", () => {
     });
     const mark = queries.find((x) => x.q.includes("INSERT INTO platform_flags"))!;
     expect(JSON.parse(mark.params[1] as string).since).toBe(new Date(NOW).toISOString());
+  });
+
+  it("reaches the claims resting on a source through provenance, even when none asserts it (#507)", async () => {
+    state.notices = [{ notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "correction", title: null, updated: null, source: "publisher" }];
+    state.matches = [
+      { doi: "10.1/paper", source_id: "s-1", url: "u", title: "Paper", claim_ids: [] },
+      { doi: "10.1/paper", source_id: "s-2", url: "u2", title: "Orphan", claim_ids: [] },
+    ];
+    state.resting = [
+      { source_id: "s-1", claim_id: "c-9", via: "draws_on", through_source_id: "s-7", through_source_title: "News", relation_type: "repeats" },
+      { source_id: "s-1", claim_id: "c-8", via: "copy_or_version", through_source_id: "s-3", through_source_title: "Preprint", relation_type: null },
+    ];
+    const r = await retractionPollTick({ now: NOW });
+    // s-1 has resting claims and wakes its lookouts; s-2 has none and wakes nobody.
+    expect(state.fanout).toHaveLength(1);
+    expect(r.eventsQueued).toBe(2);
+    expect(state.fanout[0]).toMatchObject({
+      kind: "retraction",
+      payload: {
+        source_id: "s-1",
+        notice_type: "correction",
+        claim_ids: [],
+        resting_claims: [
+          { claim_id: "c-9", via: "draws_on", through_source_id: "s-7", through_source_title: "News", relation_type: "repeats" },
+          { claim_id: "c-8", via: "copy_or_version", through_source_id: "s-3", through_source_title: "Preprint", relation_type: null },
+        ],
+      },
+    });
   });
 
   it("does not hand a lookout a notice it already holds", async () => {

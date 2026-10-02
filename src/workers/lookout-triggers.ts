@@ -29,7 +29,7 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { recentRetractions } from "../services/source-watch-service.js";
-import { sourcesForDois } from "../services/source-watch-service.js";
+import { claimsRestingOnSources, sourcesForDois } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
@@ -105,9 +105,16 @@ export async function retractionPollTick(
   const dois = [...new Set(notices.flatMap((n) => n.retracted_dois))];
   const matches = dois.length > 0 ? await sourcesForDois(dois) : [];
   result.matchedSources = matches.length;
+  // Beyond the claims that assert a matched source, the claims whose
+  // recorded provenance runs through it (#507): a copy or another version
+  // of the work, or a source that draws on it by a provenance edge.
+  const resting = matches.length > 0
+    ? await claimsRestingOnSources(matches.map((m) => m.source_id))
+    : [];
 
   for (const m of matches) {
-    if (m.claim_ids.length === 0) continue;
+    const through = resting.filter((r) => r.source_id === m.source_id);
+    if (m.claim_ids.length === 0 && through.length === 0) continue;
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
     // A lookout already holding an event for this notice is not handed it
     // again (the overlap window and a re-run would otherwise duplicate).
@@ -130,9 +137,18 @@ export async function retractionPollTick(
         source_url: m.url,
         source_title: m.title,
         claim_ids: m.claim_ids.slice(0, 50),
+        resting_claims: through.slice(0, 50).map((r) => ({
+          claim_id: r.claim_id,
+          via: r.via,
+          through_source_id: r.through_source_id,
+          through_source_title: r.through_source_title,
+          relation_type: r.relation_type,
+        })),
         note:
           `Crossref records a ${notice?.type ?? "retraction"} notice against a source ` +
-          `in the graph. Check whether the claims resting on it should be looked at again.`,
+          `in the graph. claim_ids assert it directly; resting_claims rest on it through ` +
+          `recorded provenance (a copy or version of the work, or a source that draws on ` +
+          `it). Check whether any of them should be looked at again.`,
       },
     });
     result.eventsQueued += queued;
