@@ -877,6 +877,57 @@ export const claimSourceMaps = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// claim_provenance_roots (#507)
+//
+// Where a claim's story begins. The map reads top to bottom from its origins,
+// and a source with no recorded upstream edge is one of two quite different
+// things: a confirmed origin (the transcript of the meeting, the statistics
+// release) or simply untraced (nobody has yet followed it upstream). Shown
+// alike, the second passes for the first.
+//
+// Most of the distinction is derived, not stored: a source the claim's edges
+// lead upward from is not a top node at all, and a top node whose kind is a
+// primary one (PRIMARY_SOURCE_TYPES) reads as an origin on that basis. This
+// table holds only the Steward's judgment where it overrides or confirms the
+// derivation: an origin the kind does not reveal, or a mislabelled
+// "transcript" demoted to untraced. Claim-scoped, because the same document
+// can be where one claim begins and a late restatement of another.
+//
+// Keyed on the claim rather than an instance: an underlying source (a document
+// the claim draws on that does not state it) can be the origin and has no
+// instance to hang from. A merge therefore leaves these rows with the loser;
+// the survivor's Steward re-records them when it refreshes the stale map.
+// ---------------------------------------------------------------------------
+export const claimProvenanceRoots = pgTable(
+  "claim_provenance_roots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // PROVENANCE_ROOT_STATUSES in src/schemas/common.ts.
+    status: text("status").notNull(),
+    // Why: what was looked for upstream and not found, or what makes this the
+    // first record. The reader sees it on the origin's card.
+    basis: text("basis").notNull(),
+    createdBy: text("created_by").notNull().default("claim_steward"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId),
+    check("ck_cpr_status", sql`${table.status} IN ('origin', 'untraced')`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // jobs
 // ---------------------------------------------------------------------------
 export const jobs = pgTable(

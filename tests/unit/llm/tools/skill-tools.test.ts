@@ -38,6 +38,7 @@ describe("skill tool registry", () => {
       "provenance_read_source",
       "provenance_record_edge",
       "provenance_record_reading",
+      "provenance_record_root",
       "provenance_record_source_relationship",
       "provenance_write_map",
       "publish_formalization",

@@ -141,6 +141,7 @@ const PROVENANCE_TOOLS = [
   "provenance_record_reading",
   "provenance_record_edge",
   "provenance_record_source_relationship",
+  "provenance_record_root",
   "provenance_write_map",
 ];
 

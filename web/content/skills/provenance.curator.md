@@ -61,3 +61,5 @@ change you notify, and say in the notification that the map needs
 rewriting. A split leaves each claim's readings and edges with the
 instances that went to it, and the map with the original. Relations between
 two documents are claim-independent and survive every merge and split.
+Origins the loser's Steward recorded stay with the loser; the survivor's
+Steward records its own when it refreshes the map.

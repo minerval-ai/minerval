@@ -29,6 +29,7 @@ import {
   CLAIM_PROVENANCE_RELATION_TYPES,
   INSTANCE_SUPPORT_READINGS,
   PROVENANCE_FIDELITY,
+  PROVENANCE_ROOT_STATUSES,
   QUOTE_CHECK_RESULTS,
   SOURCE_RELATION_TYPES,
   SYMMETRIC_SOURCE_RELATIONS,
@@ -616,6 +617,65 @@ export async function recordSourceRelationship(input: RecordSourceRelationshipIn
   );
   const row = rows[0]!;
   return { id: row.id, parent_source_id: parent, child_source_id: child, replaced: !row.inserted };
+}
+
+export interface RecordProvenanceRootInput {
+  claimId: string;
+  sourceId: string;
+  status: string;
+  basis: string;
+  createdBy: string;
+}
+
+/**
+ * Record (or replace) the Steward's judgment that a source is where the
+ * claim's story begins, or that a source which looks like a beginning is
+ * untraced (#507). The source must already bear on the claim, as an
+ * instance's source or as a document an edge draws on: an origin is a place
+ * in this claim's map, so a document the map does not reach has to be
+ * connected by an edge first.
+ */
+export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Promise<{
+  id: string;
+  source_id: string;
+  status: string;
+  has_upstream: boolean;
+  replaced: boolean;
+}> {
+  const claimId = uuid(input.claimId, "claim_id");
+  const sourceId = uuid(input.sourceId, "source_id");
+  const status = oneOf(input.status, PROVENANCE_ROOT_STATUSES, "status");
+  const basis = requiredText(input.basis, "basis", 2000);
+  const [place] = await rawQuery<{ asserts: boolean; drawn_on: boolean; has_upstream: boolean }>(
+    `SELECT
+       EXISTS (SELECT 1 FROM claim_instances ci WHERE ci.claim_id = $1 AND ci.source_id = $2) AS asserts,
+       EXISTS (SELECT 1 FROM claim_provenance_edges e
+                 JOIN claim_instances ci ON ci.id = e.from_instance_id
+                WHERE ci.claim_id = $1 AND e.to_source_id = $2) AS drawn_on,
+       EXISTS (SELECT 1 FROM claim_provenance_edges e
+                 JOIN claim_instances ci ON ci.id = e.from_instance_id
+                WHERE ci.claim_id = $1 AND ci.source_id = $2) AS has_upstream`,
+    [claimId, sourceId]
+  );
+  if (!place?.asserts && !place?.drawn_on) {
+    throw new SourceMapError(
+      "That source is not in this claim's map: it neither states the claim nor is drawn on by a source that does. " +
+        "Record the edge that reaches it first (provenance_record_edge), then mark it."
+    );
+  }
+  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+    `INSERT INTO claim_provenance_roots (claim_id, source_id, status, basis, created_by)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (claim_id, source_id) DO UPDATE SET
+       status = EXCLUDED.status,
+       basis = EXCLUDED.basis,
+       created_by = EXCLUDED.created_by,
+       updated_at = now()
+     RETURNING id, (xmax = 0) AS inserted`,
+    [claimId, sourceId, status, basis, input.createdBy]
+  );
+  const row = rows[0]!;
+  return { id: row.id, source_id: sourceId, status, has_upstream: place.has_upstream, replaced: !row.inserted };
 }
 
 export interface WriteSourceMapInput {

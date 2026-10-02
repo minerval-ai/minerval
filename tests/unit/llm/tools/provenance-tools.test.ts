@@ -10,14 +10,17 @@ const mocks = vi.hoisted(() => ({
   readSourceContent: vi.fn(),
   recordInstanceReading: vi.fn(),
   recordProvenanceEdge: vi.fn(),
+  recordProvenanceRoot: vi.fn(),
   recordSourceRelationship: vi.fn(),
   writeSourceMap: vi.fn(),
 }));
+const story = vi.hoisted(() => ({ getProvenanceStory: vi.fn() }));
 
 vi.mock("../../../../src/services/source-map-service.js", () => {
   class SourceMapError extends Error {}
   return { SourceMapError, ...mocks };
 });
+vi.mock("../../../../src/services/provenance-story-service.js", () => story);
 vi.mock("../../../../src/db/client.js", () => ({ getDb: vi.fn(), rawQuery: vi.fn() }));
 
 import { SourceMapError } from "../../../../src/services/source-map-service.js";
@@ -27,6 +30,7 @@ import {
   executeReadSource,
   executeRecordEdge,
   executeRecordReading,
+  executeRecordRoot,
   executeRecordSourceRelationship,
   executeWriteMap,
   registerProvenanceTools,
@@ -42,8 +46,11 @@ const steward: SkillToolContext = {
   run: { trigger: "structure_and_assess", context: "", model: "model-x" },
 };
 
+const EMPTY_STORY = { claim_id: CLAIM, nodes: [], counts: { sources: 0, origins: 0, untraced: 0, derived: 0, underlying: 0 } };
+
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
+  story.getProvenanceStory.mockReset().mockResolvedValue(EMPTY_STORY);
 });
 
 describe("registration", () => {
@@ -90,6 +97,33 @@ describe("provenance_get_map", () => {
     expect(out.instances[1].reading).toBeNull();
     expect(out.instances[1].draws_on[0]).toMatchObject({ edge_id: "e1", relation_type: "derives_from" });
     expect(out.note).toMatch(/Nothing here is a score/);
+    expect(out.top_of_story).toEqual([]);
+  });
+
+  it("lists the top of the story: sources with nothing upstream, and underlying ones", async () => {
+    mocks.listInstancesForMapping.mockResolvedValue([]);
+    mocks.getClaimSourceMap.mockResolvedValue({ map: null, readings: {}, edges: [], source_relationships: [] });
+    const node = (id: string, standing: string, extra: Record<string, unknown> = {}) => ({
+      source: { id, title: id.toUpperCase(), url: null, source_type: "unknown" },
+      standing, basis: standing === "derived" ? "upstream" : "none", root: null, underlying: false,
+      downstream_total: 0, ...extra,
+    });
+    story.getProvenanceStory.mockResolvedValue({
+      ...EMPTY_STORY,
+      nodes: [
+        node("s1", "origin", { basis: "steward", root: { basis: "first record" }, downstream_total: 3 }),
+        node("s2", "untraced"),
+        node("s3", "derived"),
+        node("s4", "derived", { underlying: true }),
+      ],
+    });
+    const out = JSON.parse(await executeGetMap({}, steward));
+    expect(story.getProvenanceStory).toHaveBeenCalledWith(CLAIM);
+    expect(out.top_of_story.map((n: { source: { id: string } }) => n.source.id)).toEqual(["s1", "s2", "s4"]);
+    expect(out.top_of_story[0]).toEqual({
+      source: { id: "s1", title: "S1", source_type: "unknown" },
+      standing: "origin", basis: "steward", root_basis: "first record", underlying: false, downstream_total: 3,
+    });
   });
 
   it("needs a claim_id outside a claim-scoped run", async () => {
@@ -211,8 +245,28 @@ describe("the write tools", () => {
     expect(written.note).toMatch(/immaterial/);
   });
 
+  it("record_root stamps the claim and writer and says how the map will show it", async () => {
+    mocks.recordProvenanceRoot.mockResolvedValue({ id: "o1", source_id: "s1", status: "origin", has_upstream: false, replaced: false });
+    const out = JSON.parse(
+      await executeRecordRoot({ source_id: " s1 ", status: "origin", basis: "the video of the meeting" }, steward)
+    );
+    expect(mocks.recordProvenanceRoot).toHaveBeenCalledWith({
+      claimId: CLAIM, sourceId: "s1", status: "origin", basis: "the video of the meeting", createdBy: "claim_steward",
+    });
+    expect(out.success).toBe(true);
+    expect(out.note).toMatch(/origins row/);
+
+    mocks.recordProvenanceRoot.mockResolvedValue({ id: "o1", source_id: "s1", status: "untraced", has_upstream: true, replaced: true });
+    const shadowed = JSON.parse(await executeRecordRoot({ source_id: "s1", status: "untraced", basis: "b" }, steward));
+    expect(shadowed.note).toMatch(/has an upstream edge/);
+
+    mocks.recordProvenanceRoot.mockRejectedValue(new SourceMapError("That source is not in this claim's map"));
+    const refused = JSON.parse(await executeRecordRoot({ source_id: "s9", status: "origin", basis: "b" }, steward));
+    expect(refused).toEqual({ success: false, message: "That source is not in this claim's map" });
+  });
+
   it("refuses to write outside a claim-scoped run", async () => {
-    for (const fn of [executeRecordReading, executeRecordEdge, executeWriteMap]) {
+    for (const fn of [executeRecordReading, executeRecordEdge, executeRecordRoot, executeWriteMap]) {
       const out = JSON.parse(await fn({ material: true }, { role: "audit-agent" }));
       expect(out.success).toBe(false);
       expect(out.message).toMatch(/no claim is in scope/);

@@ -7,12 +7,14 @@ This skill says how the constitution and your role apply to one kind of work. It
 You may be launched to build the map for a Steward to weigh: to open the
 sources behind a claim's instances, read each against the claim, and record
 what you find. The procedure is the Steward's, above, and the tools are the
-same except the last: begin with `provenance_get_map`, read with
+same except the last two: begin with `provenance_get_map`, read with
 `provenance_read_source`, record readings with `provenance_record_reading`,
 edges with `provenance_record_edge`, and document relations with
-`provenance_record_source_relationship`. You do not write the map's summary;
-the reader-facing account is the Steward's judgment. Put your proposed
-summary in your report instead, in the graph's voice, with a plain
+`provenance_record_source_relationship`. You do not write the map's summary
+or record where the story begins; the reader-facing account and the origins
+are the Steward's judgment. Put in your report any source you found to be
+the first record of the claim, and what you looked for upstream of it, and
+your proposed summary, in the graph's voice, with a plain
 statement of whether you think the structure is material and why, and the
 Steward writes it or rewrites it.
 

@@ -428,6 +428,13 @@
       "when": 1790698817975,
       "tag": "0060_curation_and_audit_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790981501401,
+      "tag": "0061_provenance_roots",
+      "breakpoints": true
     }
   ]
 }

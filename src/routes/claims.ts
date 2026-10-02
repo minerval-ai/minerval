@@ -14,6 +14,7 @@ import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDepend
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getClaimSourceMap } from "../services/source-map-service.js";
+import { getProvenanceStory } from "../services/provenance-story-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
 import {
   addArgument,
@@ -643,6 +644,43 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             .send(JSON.stringify(result.citation.csl));
         }
         return reply.send(result);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/provenance — the claim's provenance as a story
+  // read from its origins down (#507): every source that states the claim
+  // or is drawn on by one that does, each with its standing (origin,
+  // untraced, derived) and what that rests on, its depth below the top row,
+  // and the structural counts the map orders by. The origins-first map on
+  // the claim page draws from this. No response schema: the node shape is
+  // the read model's, and the serializer would only drift from it.
+  app.get<{ Params: { claim_id: string } }>(
+    "/:claim_id/provenance",
+    {
+      schema: {
+        tags: ["claims"],
+        summary: "The claim's provenance, origins first",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const { claim_id } = request.params;
+        const claim = await getClaimById(claim_id);
+        if (!claim) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+        return reply.send(await getProvenanceStory(claim_id));
       },
     }
   );

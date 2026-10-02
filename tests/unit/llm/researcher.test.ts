@@ -195,6 +195,7 @@ describe("toolset by model", () => {
     expect(names).toContain("provenance_get_map");
     expect(names).toContain("provenance_record_edge");
     expect(names).not.toContain("provenance_write_map");
+    expect(names).not.toContain("provenance_record_root");
     expect(names).not.toContain("delegate_research");
     expect(names).not.toContain("record_claim_instance");
     expect(names).not.toContain("lean_search");

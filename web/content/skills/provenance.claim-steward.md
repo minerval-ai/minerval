@@ -105,6 +105,22 @@ as an instance with `record_claim_instance` if it makes one. Prefer to open
 the target; where you judged the edge from the asserting source's own
 description of what it relies on, say so with `target_read` false.
 
+**Where the story begins.** The claim page draws the map from its
+origins down, and every source with nothing recorded upstream of it sits
+at the top as one of two things. It is an origin when its kind is a
+primary one, a dataset, official statistics, a transcript, a treaty, a
+court record, legislation; otherwise it is untraced, shown apart, so that
+a source nobody has followed upstream does not pass for one with nothing
+upstream to find. Where that derivation is wrong, record your judgment
+with `provenance_record_root`: confirm as an origin the press release that
+first published the figure or the video of the remark, or mark as untraced
+a "transcript" that is a summary of an unseen original. The basis you give
+is shown on the source's card, so say what you looked for upstream and
+what you found. A document the claim rests on without stating it, the
+statistics release whose own figure differs, can be the origin; connect it
+with an edge first. `provenance_get_map` lists the top of the story as the
+recorded rows draw it.
+
 **Weighing the map in the assessment.** Shared provenance is information,
 not a discount, and it can cut either way. Ten sources that restate one
 reanalysis are one source's worth of evidence for the claim and ten
@@ -151,6 +167,8 @@ source is acknowledged in the reasoning rather than quoted as if verified;
 the summary is in the graph's voice, refers to sources by what they say,
 and contains no identifier, relation name, or score; `material` is a
 judgment about the reader, not a function of how many rows were written;
+an origin recorded by the Steward says what was looked for upstream, and
+is not a source that merely had no edge yet;
 and the assessment's reasoning says how the structure of the support
 entered the verdict without any status having moved on the map's shape
 alone. Use `provenance_get_map` and `provenance_read_source` to check any
@@ -169,6 +187,8 @@ change you notify, and say in the notification that the map needs
 rewriting. A split leaves each claim's readings and edges with the
 instances that went to it, and the map with the original. Relations between
 two documents are claim-independent and survive every merge and split.
+Origins the loser's Steward recorded stay with the loser; the survivor's
+Steward records its own when it refreshes the map.
 
 ## For the Extractor
 

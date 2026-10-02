@@ -367,6 +367,39 @@ export const SOURCE_RELATION_GUIDANCE =
   "'version_of': the same work at a different stage (preprint and published " +
   "article, draft and final). Record the LATER document as the parent.";
 
+/**
+ * A Steward's judgment about a source at the top of a claim's provenance
+ * (#507): where the claim's story begins, or a top node nobody has followed
+ * upstream yet. Overrides what the source's kind alone would suggest.
+ */
+export const PROVENANCE_ROOT_STATUSES = ["origin", "untraced"] as const;
+
+export const provenanceRootStatusEnum = z.enum(PROVENANCE_ROOT_STATUSES);
+
+export const PROVENANCE_ROOT_GUIDANCE =
+  "'origin': the claim's story begins here, as far as it can be followed: " +
+  "the first record of a remark, the release that published a figure, the " +
+  "treaty text. Say what you looked for upstream and why there is nothing " +
+  "further. 'untraced': this source looks like a beginning but is not known " +
+  "to be one, as when a document filed as a transcript is a summary of an " +
+  "unseen original.";
+
+/**
+ * Source kinds that are, by their nature, first records rather than reports
+ * of one (#507). A source of one of these kinds with no upstream edge reads
+ * as an origin without a Steward's say-so; any other source with none reads
+ * as untraced. A derivation, never a verdict: the Steward's root row
+ * overrides it either way.
+ */
+export const PRIMARY_SOURCE_TYPES: ReadonlySet<string> = new Set([
+  "dataset",
+  "official_statistics",
+  "transcript",
+  "treaty",
+  "court_record",
+  "legislation",
+]);
+
 /** Symmetric source relations, stored with the lexicographically smaller id as parent. */
 export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);
 

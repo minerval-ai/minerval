@@ -149,19 +149,21 @@ describe("the Provenance skill", () => {
     ]);
   });
 
-  it("declares its six tools: five for the researcher too, the two reads also for Audit, the map for the Steward alone", () => {
+  it("declares its seven tools: five for the researcher too, the two reads also for Audit, origins and the map for the Steward alone", () => {
     expect(p.tools.map((t) => t.name)).toEqual([
       "provenance_get_map",
       "provenance_read_source",
       "provenance_record_reading",
       "provenance_record_edge",
       "provenance_record_source_relationship",
+      "provenance_record_root",
       "provenance_write_map",
     ]);
     expect(p.tools[0]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
     expect(p.tools[1]!.roles).toEqual(["claim-steward", "audit-agent", "researcher"]);
     for (const t of p.tools.slice(2, 5)) expect(t.roles).toEqual(["claim-steward", "researcher"]);
     expect(p.tools[5]!.roles).toEqual(["claim-steward"]);
+    expect(p.tools[6]!.roles).toEqual(["claim-steward"]);
   });
 
   it("is headed as a method skill with its own sentence of standing", () => {

@@ -726,6 +726,39 @@
           }
         },
         {
+          "name": "provenance_record_root",
+          "description": "Record where this claim's story begins, or that a source which looks like a beginning is untraced. The map on the claim page reads from its origins down, and a source with nothing recorded upstream of it is shown either as an origin or as untraced: as an origin when its kind is a primary one (a dataset, official statistics, a transcript, a treaty, a court record, legislation), otherwise as untraced. Use this where that derivation is wrong: to confirm an origin whose kind does not reveal it (the press release that first published a figure, the video of the remark), or to demote a source filed as primary that is not the first record. The source must already be in the claim's map, as an instance's source or as a document an edge draws on. Recording the same source again replaces the earlier record.",
+          "roles": [
+            "claim-steward"
+          ],
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "description": "The source, from provenance_get_map: an instance's source or an edge's target."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "origin",
+                  "untraced"
+                ],
+                "description": "'origin': the claim's story begins here, as far as it can be followed: the first record of a remark, the release that published a figure, the treaty text. 'untraced': this source looks like a beginning but is not known to be one, as when a document filed as a transcript is a summary of an unseen original."
+              },
+              "basis": {
+                "type": "string",
+                "description": "What you looked for upstream and found or did not find: why this is the first record, or why it cannot be taken as one. Shown to readers on the source's card, so write it in the graph's voice."
+              }
+            },
+            "required": [
+              "source_id",
+              "status",
+              "basis"
+            ]
+          }
+        },
+        {
           "name": "provenance_write_map",
           "description": "Write the claim's source map: the reader-facing account of what the support rests on, and whether that structure is material enough to show. One map per claim, replaced in place; the readings and edges remain the durable record beneath it. The summary is in the graph's voice: plain third-person prose that refers to sources by what they say, with no identifiers, no relation names, no counts presented as scores, and no em-dashes. Set material true only when the structure bears on how a reader should weigh the evidence (much of the support traces to one reanalysis; the strongest-sounding source overstates its own evidence; several outlets are one syndicated story). Most claims' provenance is unremarkable, and for them write a short summary and set material false.",
           "roles": [
@@ -750,7 +783,7 @@
           }
         }
       ],
-      "bodyChars": 13432
+      "bodyChars": 14955
     }
   ]
 }

@@ -119,6 +119,22 @@ as an instance with `record_claim_instance` if it makes one. Prefer to open
 the target; where you judged the edge from the asserting source's own
 description of what it relies on, say so with `target_read` false.
 
+**Where the story begins.** The claim page draws the map from its
+origins down, and every source with nothing recorded upstream of it sits
+at the top as one of two things. It is an origin when its kind is a
+primary one, a dataset, official statistics, a transcript, a treaty, a
+court record, legislation; otherwise it is untraced, shown apart, so that
+a source nobody has followed upstream does not pass for one with nothing
+upstream to find. Where that derivation is wrong, record your judgment
+with `provenance_record_root`: confirm as an origin the press release that
+first published the figure or the video of the remark, or mark as untraced
+a "transcript" that is a summary of an unseen original. The basis you give
+is shown on the source's card, so say what you looked for upstream and
+what you found. A document the claim rests on without stating it, the
+statistics release whose own figure differs, can be the origin; connect it
+with an edge first. `provenance_get_map` lists the top of the story as the
+recorded rows draw it.
+
 **Weighing the map in the assessment.** Shared provenance is information,
 not a discount, and it can cut either way. Ten sources that restate one
 reanalysis are one source's worth of evidence for the claim and ten
@@ -165,6 +181,8 @@ source is acknowledged in the reasoning rather than quoted as if verified;
 the summary is in the graph's voice, refers to sources by what they say,
 and contains no identifier, relation name, or score; `material` is a
 judgment about the reader, not a function of how many rows were written;
+an origin recorded by the Steward says what was looked for upstream, and
+is not a source that merely had no edge yet;
 and the assessment's reasoning says how the structure of the support
 entered the verdict without any status having moved on the map's shape
 alone. Use `provenance_get_map` and `provenance_read_source` to check any
@@ -183,6 +201,8 @@ change you notify, and say in the notification that the map needs
 rewriting. A split leaves each claim's readings and edges with the
 instances that went to it, and the map with the original. Relations between
 two documents are claim-independent and survive every merge and split.
+Origins the loser's Steward recorded stay with the loser; the survivor's
+Steward records its own when it refreshes the map.
 
 ## For the Extractor
 
@@ -198,12 +218,14 @@ sentences, record both rather than a splice.
 You may be launched to build the map for a Steward to weigh: to open the
 sources behind a claim's instances, read each against the claim, and record
 what you find. The procedure is the Steward's, above, and the tools are the
-same except the last: begin with `provenance_get_map`, read with
+same except the last two: begin with `provenance_get_map`, read with
 `provenance_read_source`, record readings with `provenance_record_reading`,
 edges with `provenance_record_edge`, and document relations with
-`provenance_record_source_relationship`. You do not write the map's summary;
-the reader-facing account is the Steward's judgment. Put your proposed
-summary in your report instead, in the graph's voice, with a plain
+`provenance_record_source_relationship`. You do not write the map's summary
+or record where the story begins; the reader-facing account and the origins
+are the Steward's judgment. Put in your report any source you found to be
+the first record of the claim, and what you looked for upstream of it, and
+your proposed summary, in the graph's voice, with a plain
 statement of whether you think the structure is material and why, and the
 Steward writes it or rewrites it.
 
@@ -239,4 +261,6 @@ implied. A status moved because the map showed concentration. A summary
 with identifiers, relation names, or counts presented as scores. `material`
 set true on every claim, or false to save the work. A source marked as read
 from its excerpt. A quotation the check could not find, relied on without
-reading the source. A map left stale across a merge.
+reading the source. A map left stale across a merge. An
+origin recorded to tidy the top row rather than because the source is where
+the claim begins.

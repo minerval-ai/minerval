@@ -14,6 +14,9 @@
  *  - `provenance_record_reading`, `provenance_record_edge`, and
  *    `provenance_record_source_relationship` record judgments about one
  *    instance, one dependency, and one pair of documents.
+ *  - `provenance_record_root` records where the claim's story begins, or
+ *    that a source which looks like a beginning is untraced (#507), where
+ *    the derivation from the source's kind is wrong.
  *  - `provenance_write_map` records the reader-facing account and whether
  *    it is material enough to show.
  *
@@ -28,13 +31,16 @@ import {
   readSourceContent,
   recordInstanceReading,
   recordProvenanceEdge,
+  recordProvenanceRoot,
   recordSourceRelationship,
   writeSourceMap,
 } from "../../services/source-map-service.js";
+import { getProvenanceStory } from "../../services/provenance-story-service.js";
 import {
   CLAIM_PROVENANCE_RELATION_GUIDANCE,
   INSTANCE_SUPPORT_GUIDANCE,
   PROVENANCE_FIDELITY_GUIDANCE,
+  PROVENANCE_ROOT_GUIDANCE,
   SOURCE_RELATION_GUIDANCE,
 } from "../../schemas/common.js";
 
@@ -44,6 +50,7 @@ export const PROVENANCE_TOOL_NAMES: readonly string[] = [
   "provenance_record_reading",
   "provenance_record_edge",
   "provenance_record_source_relationship",
+  "provenance_record_root",
   "provenance_write_map",
 ];
 
@@ -77,9 +84,10 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
   guarded(async () => {
     const claimId = claimFor(input, ctx);
     if (!claimId) return refuse("claim_id is required outside a claim-scoped run.");
-    const [instances, map] = await Promise.all([
+    const [instances, map, story] = await Promise.all([
       listInstancesForMapping(claimId),
       getClaimSourceMap(claimId),
+      getProvenanceStory(claimId),
     ]);
     const readings = map.readings;
     return JSON.stringify({
@@ -104,10 +112,26 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
           })),
       })),
       source_relationships: map.source_relationships,
+      // The top of the claim's story as the claim page will draw it: every
+      // source with nothing recorded upstream, and each underlying source.
+      // Derived sources are left out; they are the instances above.
+      top_of_story: story.nodes
+        .filter((n) => n.standing !== "derived" || n.underlying)
+        .map((n) => ({
+          source: { id: n.source.id, title: n.source.title, source_type: n.source.source_type },
+          standing: n.standing,
+          basis: n.basis,
+          root_basis: n.root?.basis ?? null,
+          underlying: n.underlying,
+          downstream_total: n.downstream_total,
+        })),
       note:
         "Instance and source ids here are the ones the provenance_record_* tools take. " +
         "A reading says whether a source's own evidence bears what it asserts, not " +
-        "whether the claim is true; that judgment is yours. Nothing here is a score.",
+        "whether the claim is true; that judgment is yours. Nothing here is a score. " +
+        "In top_of_story, an origin's basis is 'steward' (recorded) or 'primary_source_kind' " +
+        "(derived from its kind); an untraced source has nothing recorded upstream and " +
+        "nothing saying it is where the claim begins.",
     });
   });
 
@@ -203,6 +227,31 @@ export const executeRecordSourceRelationship: SkillToolExecutor = async (input, 
     return JSON.stringify({ success: true, ...result });
   });
 
+export const executeRecordRoot: SkillToolExecutor = async (input, ctx) =>
+  guarded(async () => {
+    const claimId = claimFor(input, ctx);
+    if (!claimId) return refuse("This tool records on the claim you steward; no claim is in scope.");
+    const result = await recordProvenanceRoot({
+      claimId,
+      sourceId: str(input.source_id),
+      status: str(input.status),
+      basis: str(input.basis),
+      createdBy: writerFor(ctx),
+    });
+    return JSON.stringify({
+      success: true,
+      ...result,
+      note:
+        result.status === "untraced" && result.has_upstream
+          ? "Recorded, but this source has an upstream edge, so the map shows it below what it draws on rather than as untraced."
+          : result.status === "origin" && result.has_upstream
+            ? "Recorded. This source also has an upstream edge; the map shows it as an origin on your say-so, with its upstream still listed."
+            : result.status === "origin"
+              ? "The map shows this source in the origins row, with your basis on its card."
+              : "The map shows this source as untraced, apart from the origins.",
+    });
+  });
+
 export const executeWriteMap: SkillToolExecutor = async (input, ctx) =>
   guarded(async () => {
     const claimId = claimFor(input, ctx);
@@ -234,6 +283,7 @@ export const PROVENANCE_GUIDANCE = {
   fidelity: PROVENANCE_FIDELITY_GUIDANCE,
   support: INSTANCE_SUPPORT_GUIDANCE,
   sourceRelation: SOURCE_RELATION_GUIDANCE,
+  root: PROVENANCE_ROOT_GUIDANCE,
 };
 
 export function registerProvenanceTools(
@@ -244,5 +294,6 @@ export function registerProvenanceTools(
   register("provenance_record_reading", executeRecordReading);
   register("provenance_record_edge", executeRecordEdge);
   register("provenance_record_source_relationship", executeRecordSourceRelationship);
+  register("provenance_record_root", executeRecordRoot);
   register("provenance_write_map", executeWriteMap);
 }
