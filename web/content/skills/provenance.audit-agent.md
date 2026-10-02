@@ -145,9 +145,11 @@ a merge or a burst of new instances describes a claim that no longer exists.
 
 **Retractions and corrections.** When a source you read has been retracted,
 corrected, or superseded, say so in its reading and in the summary, and
-weigh it accordingly. A retraction reaches the assertions that draw on the
-retracted document through the edges you recorded, which is one reason to
-record them.
+weigh it accordingly. The retraction watch follows the edges you record:
+a notice against a document reaches not only the claims that assert it but
+every claim whose sources draw on it, or assert a copy or another version
+of it, and the lookouts watching those claims see the path. That is one
+reason to record the edges.
 
 **Delegation.** Where a claim warrants more reading than one pass can give
 it, record what you have read and what remains, and set `marginal_yield`

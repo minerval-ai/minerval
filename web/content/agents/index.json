@@ -240,8 +240,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 10836,
-    "fullChars": 61751,
+    "roleChars": 11077,
+    "fullChars": 61992,
     "skills": [
       {
         "name": "mathematics",

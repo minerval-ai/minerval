@@ -252,23 +252,104 @@ export async function scopeSources(input: {
 
 /**
  * Sources in the graph whose URL carries one of `dois`, with the active
- * claims that rest on them: the join the retraction poller makes between
- * a Crossref notice and the graph.
+ * claims that assert them directly (an instance on the source): the join
+ * the retraction poller makes between a Crossref notice and the graph.
+ * Claims that rest on the source through recorded provenance, rather than
+ * by asserting it, are `claimsRestingOnSources` below.
  */
 export async function sourcesForDois(dois: string[]): Promise<
   Array<{ doi: string; source_id: string; url: string; title: string; claim_ids: string[] }>
 > {
   const clean = [...new Set(dois.map((d) => d.toLowerCase()).filter((d) => /^10\.\d{4,9}\//.test(d)))];
   if (clean.length === 0) return [];
+  // The claim filter sits inside the aggregate: a LEFT JOIN on claims only
+  // nulls the claim's columns, so filtering there let instances of merged
+  // and retired claims through.
   return rawQuery(
     `SELECT d.doi, s.id AS source_id, s.url, s.title,
-            COALESCE(array_agg(DISTINCT ci.claim_id) FILTER (WHERE ci.claim_id IS NOT NULL), '{}') AS claim_ids
+            COALESCE(array_agg(DISTINCT ci.claim_id) FILTER (WHERE c.id IS NOT NULL), '{}') AS claim_ids
        FROM unnest($1::text[]) d(doi)
        JOIN sources s ON s.url IS NOT NULL AND lower(s.url) LIKE '%' || d.doi || '%'
        LEFT JOIN claim_instances ci ON ci.source_id = s.id
        LEFT JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
       GROUP BY d.doi, s.id`,
     [clean]
+  );
+}
+
+/** How a claim comes to rest on a watched source (#507). */
+export type RestingVia =
+  /** The claim asserts a republished copy or another version of the source's work. */
+  | "copy_or_version"
+  /** One of the claim's sources draws on the work, by a recorded provenance edge. */
+  | "draws_on";
+
+export interface RestingClaim {
+  /** The watched source the claim rests on. */
+  source_id: string;
+  claim_id: string;
+  via: RestingVia;
+  /** The document the claim's own instance is on (the copy, or the source that draws on the work). */
+  through_source_id: string;
+  through_source_title: string;
+  /** The provenance relation, for `draws_on`; null for a copy or version. */
+  relation_type: string | null;
+}
+
+/**
+ * The active claims whose recorded provenance runs through `sourceIds`,
+ * beyond the ones that assert those sources directly (#507, #286's
+ * retraction payoff). A watched source stands for its whole work: its
+ * republished copies (children of a `republishes` relation) and its other
+ * versions (`version_of`, either direction) share its fate. A claim rests
+ * on that work when one of its instances is on a copy or version, or when
+ * one of its instances draws on any document of the work by a
+ * `claim_provenance_edges` row. Edges are claim-scoped, so every chain of
+ * provenance inside a claim ends in an edge from one of the claim's own
+ * instances to the work: one join finds them all, without recursion.
+ *
+ * Claims that also assert the source directly are left out; the caller
+ * already has those. One row per (source, claim), preferring a copy or
+ * version over a drawing edge as the explanation.
+ */
+export async function claimsRestingOnSources(sourceIds: string[]): Promise<RestingClaim[]> {
+  const ids = [...new Set(sourceIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  if (ids.length === 0) return [];
+  return rawQuery<RestingClaim>(
+    `WITH work AS (
+       SELECT w AS root, w AS source_id FROM unnest($1::uuid[]) w
+       UNION
+       SELECT w, sr.child_source_id FROM unnest($1::uuid[]) w
+         JOIN source_relationships sr
+           ON sr.parent_source_id = w AND sr.relation_type IN ('republishes', 'version_of')
+       UNION
+       SELECT w, sr.parent_source_id FROM unnest($1::uuid[]) w
+         JOIN source_relationships sr
+           ON sr.child_source_id = w AND sr.relation_type = 'version_of'
+     ),
+     hits AS (
+       SELECT wk.root AS source_id, ci.claim_id, 'copy_or_version'::text AS via,
+              ci.source_id AS through_source_id, NULL::text AS relation_type, 0 AS rank
+         FROM work wk
+         JOIN claim_instances ci ON ci.source_id = wk.source_id
+        WHERE wk.source_id <> wk.root
+       UNION ALL
+       SELECT wk.root, ci.claim_id, 'draws_on', ci.source_id, e.relation_type, 1
+         FROM work wk
+         JOIN claim_provenance_edges e ON e.to_source_id = wk.source_id
+         JOIN claim_instances ci ON ci.id = e.from_instance_id
+     )
+     SELECT DISTINCT ON (h.source_id, h.claim_id)
+            h.source_id, h.claim_id, h.via, h.through_source_id,
+            s.title AS through_source_title, h.relation_type
+       FROM hits h
+       JOIN claims c ON c.id = h.claim_id AND c.state = 'active'
+       JOIN sources s ON s.id = h.through_source_id
+      WHERE NOT EXISTS (
+              SELECT 1 FROM claim_instances d
+               WHERE d.source_id = h.source_id AND d.claim_id = h.claim_id)
+      ORDER BY h.source_id, h.claim_id, h.rank, s.title`,
+    [ids]
   );
 }
 
