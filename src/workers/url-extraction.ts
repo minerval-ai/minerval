@@ -13,6 +13,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import { fetchPublicUrl } from "../services/url-guard.js";
+import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -185,6 +186,10 @@ async function processUrlExtraction(
         .set({ rawContent: content })
         .where(eq(sources.id, source.id));
     }
+    // The facts a source page shows without judgment (#507): authors,
+    // publisher, date, DOI, an archived copy. Once per source; a failure
+    // loses the facts, never the extraction.
+    await refreshSourceFactsOnce(source.id);
 
     // Extract claims
     // No claim cap: how many reusable propositions a document turns on is a

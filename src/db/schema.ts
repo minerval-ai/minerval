@@ -582,7 +582,64 @@ export const sources = pgTable("sources", {
   retrievedAt: timestamp("retrieved_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  // Facts about the document that need no judgment (#507, phase 3), written
+  // by the facts fetcher (services/source-facts-service.ts) from the page's
+  // own metadata and, where the document has a DOI, from Crossref. Each is
+  // filled once and never overwritten by a later guess; null means nobody
+  // could find it, which the source page says rather than hides.
+  authors: text("authors").array(),
+  publisher: text("publisher"),
+  // ISO-8601 to whatever precision is known ("2023", "2023-05",
+  // "2023-05-14"): the same convention as claim_instances.source_date, so
+  // the precision is the length of the string and needs no column of its own.
+  publishedDate: text("published_date"),
+  // Lower case, without the resolver prefix.
+  doi: text("doi"),
+  // A copy in a public web archive, so a page that changes or disappears
+  // can still be read as it was.
+  archivedUrl: text("archived_url"),
+  factsCheckedAt: timestamp("facts_checked_at", { withTimezone: true }),
+}, (table) => [index("idx_sources_doi").on(table.doi)]);
+
+// ---------------------------------------------------------------------------
+// source_events (#507, phase 3)
+//
+// What has happened to a document since it was published: a correction, a
+// retraction, an expression of concern, an update, a removal. Facts with a
+// date and, where there is one, the notice that announced them. Written by
+// the watchers (the Crossref poll, the facts fetcher's DOI check), never by
+// an agent's judgment, and claim-independent: what a retraction means for a
+// given claim is that claim's Steward's to say.
+// ---------------------------------------------------------------------------
+export const sourceEvents = pgTable(
+  "source_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // SOURCE_EVENT_KINDS in src/schemas/common.ts.
+    kind: text("kind").notNull(),
+    // When it happened, as the notice dates it; null when it does not.
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    detectedAt: timestamp("detected_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // The notice itself, where there is one. Part of the identity of an
+    // event: one paper can carry two corrections.
+    noticeUrl: text("notice_url").notNull().default(""),
+    note: text("note"),
+    // Which watcher recorded it ("crossref_poll", "facts_fetch").
+    detectedBy: text("detected_by").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_source_events_unique").on(table.sourceId, table.kind, table.noticeUrl),
+    check(
+      "ck_source_events_kind",
+      sql`${table.kind} IN ('correction', 'retraction', 'expression_of_concern', 'update', 'removal')`
+    ),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // claim_instances

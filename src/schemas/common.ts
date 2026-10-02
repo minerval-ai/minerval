@@ -400,6 +400,22 @@ export const PRIMARY_SOURCE_TYPES: ReadonlySet<string> = new Set([
   "legislation",
 ]);
 
+/**
+ * What can happen to a document after publication (#507). Recorded by the
+ * watchers as dated facts, never as a judgment; Crossref's
+ * expression-of-concern notices keep their own kind because a concern is
+ * neither a correction nor a retraction and a reader should see which.
+ */
+export const SOURCE_EVENT_KINDS = [
+  "correction",
+  "retraction",
+  "expression_of_concern",
+  "update",
+  "removal",
+] as const;
+
+export type SourceEventKind = (typeof SOURCE_EVENT_KINDS)[number];
+
 /** Symmetric source relations, stored with the lexicographically smaller id as parent. */
 export const SYMMETRIC_SOURCE_RELATIONS = new Set<string>(["shares_authorship"]);
 

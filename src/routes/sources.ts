@@ -6,6 +6,7 @@ import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
+import { getSourceFacts } from "../services/source-facts-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -23,6 +24,32 @@ const errorEnvelopeSchema = {
 } as const;
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  // GET /sources/:source_id — the facts about a document that need no
+  // judgment (#507): identity (authors, publisher, date, kind, DOI, an
+  // archived copy), its other versions and republished copies, and what has
+  // happened to it since publication. The first section of the source page.
+  // Public and read-only, like a claim page. No response schema: the shape
+  // is the read model's.
+  app.get<{ Params: { source_id: string } }>("/:source_id", {
+    schema: {
+      tags: ["sources"],
+      summary: "Facts about a source: identity, versions, copies, corrections and retractions",
+      params: {
+        type: "object",
+        properties: { source_id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const facts = await getSourceFacts(request.params.source_id);
+      if (!facts) {
+        return reply.code(404).send({
+          error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
+        });
+      }
+      return reply.send(facts);
+    },
+  });
+
   // POST /sources
   app.post("/", {
     schema: {

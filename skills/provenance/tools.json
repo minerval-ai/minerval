@@ -20,7 +20,7 @@
   },
   {
     "name": "provenance_read_source",
-    "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt.",
+    "description": "Read a source's text, in windows. Returns the stored copy reduced to readable text; when the graph holds no copy, fetches the document through the guarded path ingestion uses and stores it, so the quote check and later reads see the same text you read. A URL not yet in the graph is recorded as a source first. Page with offset; each call returns at most max_chars (default 12,000). This is how you open a source and read it whole (constitution section 9) rather than trusting an excerpt. The first window also carries what is known about the document without judgment: authors, publisher, date, DOI, an archived copy, other versions, and any correction, retraction, or expression of concern with its date and notice.",
     "input_schema": {
       "type": "object",
       "properties": {

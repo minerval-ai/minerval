@@ -51,6 +51,11 @@ export interface DoiCheck {
   type: string | null;
   published: string | null;
   cited_by: number | null;
+  /** Authors as Crossref lists them, "Given Family" or an organization's name. */
+  authors: string[];
+  publisher: string | null;
+  /** The journal, series, or other container the work appeared in. */
+  container: string | null;
   /** Notices that update THIS work: retractions, corrections, concerns. */
   updates: CrossrefUpdate[];
   /** Works this one updates (set when the DOI is itself a notice). */
@@ -63,6 +68,9 @@ type CrossrefWork = {
   type?: string;
   "update-to"?: Array<{ DOI?: string; type?: string; label?: string; updated?: { "date-time"?: string } }>;
   "is-referenced-by-count"?: number;
+  author?: Array<{ given?: string; family?: string; name?: string }>;
+  publisher?: string;
+  "container-title"?: string[];
   issued?: { "date-parts"?: number[][] };
   published?: { "date-parts"?: number[][] };
   source?: string;
@@ -110,6 +118,9 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
     type: null,
     published: null,
     cited_by: null,
+    authors: [],
+    publisher: null,
+    container: null,
     updates: [],
     updates_to: [],
   };
@@ -137,6 +148,11 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
     type: w.type ?? null,
     published: dateOf(w),
     cited_by: w["is-referenced-by-count"] ?? null,
+    authors: (w.author ?? [])
+      .map((a) => a.name?.trim() || [a.given, a.family].filter(Boolean).join(" ").trim())
+      .filter(Boolean),
+    publisher: w.publisher?.trim() || null,
+    container: w["container-title"]?.[0]?.trim() || null,
     updates,
     updates_to: updatesOf(w),
   };
@@ -269,7 +285,8 @@ export async function sourcesForDois(dois: string[]): Promise<
     `SELECT d.doi, s.id AS source_id, s.url, s.title,
             COALESCE(array_agg(DISTINCT ci.claim_id) FILTER (WHERE c.id IS NOT NULL), '{}') AS claim_ids
        FROM unnest($1::text[]) d(doi)
-       JOIN sources s ON s.url IS NOT NULL AND lower(s.url) LIKE '%' || d.doi || '%'
+       JOIN sources s ON s.doi = d.doi
+                      OR (s.url IS NOT NULL AND lower(s.url) LIKE '%' || d.doi || '%')
        LEFT JOIN claim_instances ci ON ci.source_id = s.id
        LEFT JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
       GROUP BY d.doi, s.id`,

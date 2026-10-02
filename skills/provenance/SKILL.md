@@ -157,9 +157,11 @@ is the right record: it is kept for the audit trail and not shown. Refresh
 the map when you reassess after the instances change; a map written before
 a merge or a burst of new instances describes a claim that no longer exists.
 
-**Retractions and corrections.** When a source you read has been retracted,
-corrected, or superseded, say so in its reading and in the summary, and
-weigh it accordingly. The retraction watch follows the edges you record:
+**Retractions and corrections.** The first window `provenance_read_source`
+returns lists what the watchers have recorded happening to the document, a
+correction or a retraction with its date and notice. When a source you read
+has been retracted, corrected, or superseded, say so in its reading and
+in the summary, and weigh it accordingly. The retraction watch follows the edges you record:
 a notice against a document reaches not only the claims that assert it but
 every claim whose sources draw on it, or assert a copy or another version
 of it, and the lookouts watching those claims see the path. That is one

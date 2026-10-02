@@ -15,6 +15,11 @@
  *   each source that has claims resting on it, queue a `retraction` event
  *   on every active lookout that watches for retractions.
  *
+ * It is also the correction watcher (#507): every notice that matches a
+ * source in the graph is recorded as a dated `source_events` row, whether
+ * or not any lookout is watching, because what happened to a document is a
+ * fact its source page shows to every reader.
+ *
  * The poll itself is a scan, not a judgment: it does not decide which
  * lookout cares about which retraction (that is the lookout's, in the
  * brief's words), and it opens no ledger row directly. Bounded producers
@@ -31,6 +36,7 @@ import { loadConfig } from "../config.js";
 import { recentRetractions } from "../services/source-watch-service.js";
 import { claimsRestingOnSources, sourcesForDois } from "../services/source-watch-service.js";
 import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
+import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
 /** First poll looks back this far; later polls resume from the mark. */
@@ -42,6 +48,8 @@ export interface RetractionPollResult {
   skipped: boolean;
   notices: number;
   matchedSources: number;
+  /** Source events this poll recorded for the first time. */
+  sourceEvents: number;
   eventsQueued: number;
 }
 
@@ -76,15 +84,10 @@ export async function retractionPollTick(
   opts: { now?: number; force?: boolean } = {}
 ): Promise<RetractionPollResult> {
   const config = loadConfig();
-  const result: RetractionPollResult = { skipped: true, notices: 0, matchedSources: 0, eventsQueued: 0 };
+  const result: RetractionPollResult = {
+    skipped: true, notices: 0, matchedSources: 0, sourceEvents: 0, eventsQueued: 0,
+  };
   if (config.lookoutRetractionPollHours <= 0 && !opts.force) return result;
-
-  // Nothing to wake: skip the network entirely.
-  const [subscribed] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM lookouts l JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active' AND l.triggers ? 'retraction'`
-  );
-  if (Number(subscribed?.n ?? 0) === 0) return result;
 
   const now = opts.now ?? Date.now();
   const { since, polledAt } = await readMark();
@@ -108,11 +111,31 @@ export async function retractionPollTick(
   // Beyond the claims that assert a matched source, the claims whose
   // recorded provenance runs through it (#507): a copy or another version
   // of the work, or a source that draws on it by a provenance edge.
-  const resting = matches.length > 0
+  for (const m of matches) {
+    const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
+    if (!notice) continue;
+    const { recorded } = await recordSourceEvent({
+      sourceId: m.source_id,
+      kind: eventKindForCrossref(notice.type),
+      occurredAt: notice.updated,
+      noticeUrl: notice.notice_doi ? `https://doi.org/${notice.notice_doi}` : null,
+      note: notice.title,
+      detectedBy: "crossref_poll",
+    });
+    if (recorded) result.sourceEvents++;
+  }
+
+  // Waking lookouts is only worth the joins when one is watching.
+  const [subscribed] = await rawQuery<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM lookouts l JOIN grants g ON g.id = l.grant_id
+      WHERE l.status = 'active' AND g.status = 'active' AND l.triggers ? 'retraction'`
+  );
+  const watched = Number(subscribed?.n ?? 0) > 0;
+  const resting = watched && matches.length > 0
     ? await claimsRestingOnSources(matches.map((m) => m.source_id))
     : [];
 
-  for (const m of matches) {
+  for (const m of watched ? matches : []) {
     const through = resting.filter((r) => r.source_id === m.source_id);
     if (m.claim_ids.length === 0 && through.length === 0) continue;
     const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
@@ -179,7 +202,7 @@ export function startLookoutTriggers(options: {
       if (!r.skipped) {
         options.logger.info(
           `Lookout retraction poll: ${r.notices} notices, ${r.matchedSources} matched ` +
-            `sources, ${r.eventsQueued} events queued`
+            `sources, ${r.sourceEvents} source events recorded, ${r.eventsQueued} events queued`
         );
       }
     } catch (err) {

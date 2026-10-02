@@ -15,12 +15,14 @@ const mocks = vi.hoisted(() => ({
   writeSourceMap: vi.fn(),
 }));
 const story = vi.hoisted(() => ({ getProvenanceStory: vi.fn() }));
+const facts = vi.hoisted(() => ({ getSourceFacts: vi.fn() }));
 
 vi.mock("../../../../src/services/source-map-service.js", () => {
   class SourceMapError extends Error {}
   return { SourceMapError, ...mocks };
 });
 vi.mock("../../../../src/services/provenance-story-service.js", () => story);
+vi.mock("../../../../src/services/source-facts-service.js", () => facts);
 vi.mock("../../../../src/db/client.js", () => ({ getDb: vi.fn(), rawQuery: vi.fn() }));
 
 import { SourceMapError } from "../../../../src/services/source-map-service.js";
@@ -51,6 +53,7 @@ const EMPTY_STORY = { claim_id: CLAIM, nodes: [], counts: { sources: 0, origins:
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   story.getProvenanceStory.mockReset().mockResolvedValue(EMPTY_STORY);
+  facts.getSourceFacts.mockReset().mockResolvedValue(null);
 });
 
 describe("registration", () => {
@@ -147,6 +150,29 @@ describe("provenance_read_source", () => {
     expect(out.note).toMatch(/offset 40/);
     const refused = JSON.parse(await executeReadSource({}, steward));
     expect(refused.success).toBe(false);
+  });
+
+  it("adds what is known about the document, corrections included, to the first window only", async () => {
+    mocks.readSourceContent.mockResolvedValue({
+      source: { id: "s1" }, origin: "stored", total_chars: 100, offset: 0, content: "x", truncated: true,
+    });
+    facts.getSourceFacts.mockResolvedValue({
+      source: { authors: ["J"], publisher: "P", published_date: "2022", doi: "10.1/x", archived_url: null },
+      events: [{ kind: "correction", occurred_at: "2026-08-12T00:00:00.000Z", notice_url: "https://doi.org/10.1/n", note: "Table 3", detected_at: "x", detected_by: "crossref_poll" }],
+      versions: [], copies: [], copy_of: [],
+    });
+    const out = JSON.parse(await executeReadSource({ source_id: "s1" }, steward));
+    expect(out.facts).toMatchObject({
+      authors: ["J"], doi: "10.1/x",
+      events: [{ kind: "correction", occurred_at: "2026-08-12T00:00:00.000Z", notice_url: "https://doi.org/10.1/n", note: "Table 3" }],
+    });
+    mocks.readSourceContent.mockResolvedValue({
+      source: { id: "s1" }, origin: "stored", total_chars: 100, offset: 50, content: "x", truncated: true,
+    });
+    facts.getSourceFacts.mockClear();
+    const later = JSON.parse(await executeReadSource({ source_id: "s1", offset: 50 }, steward));
+    expect(later.facts).toBeUndefined();
+    expect(facts.getSourceFacts).not.toHaveBeenCalled();
   });
 
   it("turns a service refusal into a structured result rather than throwing", async () => {

@@ -36,6 +36,7 @@ import {
   writeSourceMap,
 } from "../../services/source-map-service.js";
 import { getProvenanceStory } from "../../services/provenance-story-service.js";
+import { getSourceFacts } from "../../services/source-facts-service.js";
 import {
   CLAIM_PROVENANCE_RELATION_GUIDANCE,
   INSTANCE_SUPPORT_GUIDANCE,
@@ -148,9 +149,26 @@ export const executeReadSource: SkillToolExecutor = async (input) =>
       offset: Number.isFinite(offsetRaw) ? offsetRaw : undefined,
       maxChars: Number.isFinite(maxRaw) ? maxRaw : undefined,
     });
+    // On the first window, what is known about the document without
+    // judgment (#507): who, where, when, and any correction or retraction.
+    const facts = result.offset === 0 ? await getSourceFacts(result.source.id).catch(() => null) : null;
     return JSON.stringify({
       success: true,
       ...result,
+      ...(facts
+        ? {
+            facts: {
+              authors: facts.source.authors,
+              publisher: facts.source.publisher,
+              published_date: facts.source.published_date,
+              doi: facts.source.doi,
+              archived_url: facts.source.archived_url,
+              events: facts.events.map((e) => ({ kind: e.kind, occurred_at: e.occurred_at, notice_url: e.notice_url, note: e.note })),
+              versions: facts.versions,
+              copy_of: facts.copy_of,
+            },
+          }
+        : {}),
       note: result.truncated
         ? `More text follows; call again with offset ${result.offset + result.content.length} to continue.`
         : "This is the end of the stored text.",

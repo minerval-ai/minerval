@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 /**
- * The retraction poll (workers/lookout-triggers.ts): skips the network
- * when no lookout watches for retractions; honours its cadence through a
+ * The retraction poll (workers/lookout-triggers.ts): records a source
+ * event for every notice matching a source, and wakes lookouts only when
+ * one watches for retractions; honours its cadence through a
  * persisted high-water mark; joins Crossref notices to the graph's sources
  * and queues one event per matched source on every subscribed lookout;
  * never re-queues a notice a lookout already holds; advances the mark only
@@ -18,6 +19,7 @@ const { state, queries } = vi.hoisted(() => ({
     resting: [] as Array<Record<string, unknown>>,
     dupPending: 0,
     fanout: [] as Array<Record<string, unknown>>,
+    sourceEvents: [] as Array<Record<string, unknown>>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -39,6 +41,13 @@ vi.mock("../../../src/services/source-watch-service.js", () => ({
   sourcesForDois: vi.fn(async () => state.matches),
   claimsRestingOnSources: vi.fn(async () => state.resting),
 }));
+vi.mock("../../../src/services/source-facts-service.js", () => ({
+  eventKindForCrossref: (t: string) => (t === "expression_of_concern" ? "expression_of_concern" : t),
+  recordSourceEvent: vi.fn(async (input: Record<string, unknown>) => {
+    state.sourceEvents.push(input);
+    return { recorded: true };
+  }),
+}));
 vi.mock("../../../src/services/lookout-service.js", () => ({
   queueLookoutEventsByTrigger: vi.fn(async (input: Record<string, unknown>) => {
     state.fanout.push(input);
@@ -59,14 +68,26 @@ beforeEach(() => {
   state.resting = [];
   state.dupPending = 0;
   state.fanout = [];
+  state.sourceEvents = [];
 });
 
 describe("retractionPollTick", () => {
-  it("skips entirely when no lookout watches for retractions", async () => {
+  it("records what happened to a matched source even when no lookout watches, and wakes nobody", async () => {
     state.subscribed = 0;
+    state.notices = [
+      { notice_doi: "10.1/notice", retracted_dois: ["10.1/paper"], type: "correction", title: "Correction to X", updated: "2026-09-10T00:00:00Z", source: "publisher" },
+    ];
+    state.matches = [{ doi: "10.1/paper", source_id: "s-1", url: "u", title: "Paper", claim_ids: ["c-1"] }];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toMatchObject({ skipped: true, eventsQueued: 0 });
-    expect(queries.some((x) => x.q.includes("FROM platform_flags"))).toBe(false);
+    expect(r).toMatchObject({ skipped: false, sourceEvents: 1, eventsQueued: 0 });
+    expect(state.sourceEvents).toEqual([
+      {
+        sourceId: "s-1", kind: "correction", occurredAt: "2026-09-10T00:00:00Z",
+        noticeUrl: "https://doi.org/10.1/notice", note: "Correction to X", detectedBy: "crossref_poll",
+      },
+    ]);
+    expect(state.fanout).toHaveLength(0);
+    expect(queries.some((x) => x.q.includes("INSERT INTO platform_flags"))).toBe(true);
   });
 
   it("honours the cadence through the persisted mark, and force overrides it", async () => {
@@ -85,7 +106,7 @@ describe("retractionPollTick", () => {
       { doi: "10.1/paper", source_id: "s-2", url: "https://x.org/10.1/paper", title: "Mirror", claim_ids: [] },
     ];
     const r = await retractionPollTick({ now: NOW });
-    expect(r).toEqual({ skipped: false, notices: 2, matchedSources: 2, eventsQueued: 2 });
+    expect(r).toEqual({ skipped: false, notices: 2, matchedSources: 2, sourceEvents: 2, eventsQueued: 2 });
     // The orphan mirror (no claims resting on it) wakes nobody.
     expect(state.fanout).toHaveLength(1);
     expect(state.fanout[0]).toMatchObject({
