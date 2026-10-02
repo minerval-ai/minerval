@@ -414,6 +414,8 @@ export interface ClaimDetail {
   prize_claims: PrizeClaimSummary[];
   // Research runs (#298); absent or empty until the API serves them.
   research_runs?: ResearchRunSummary[];
+  /** The claim's provenance read from its origins down (#507); absent until the API serves it. */
+  provenance_story?: ProvenanceStory | null;
 }
 
 export interface SearchResultItem {
@@ -960,4 +962,138 @@ export interface OpenPrizeClaim extends PrizeClaimSummary {
   tax_form_status: "pending" | "received" | null;
   screening_status: "pending" | "cleared" | "blocked" | null;
   paid_at: string | null;
+}
+
+// --- provenance, origins first (#507) ----------------------------------------
+// GET /claims/:id/provenance: every source that states the claim or is drawn
+// on by one that does, with its standing in the claim's story. Structure only;
+// how much any of it matters is the Steward's to say in the source map.
+
+export type StoryStanding = "origin" | "untraced" | "derived";
+export type StoryBasis = "steward" | "primary_source_kind" | "upstream" | "none";
+
+export interface StoryNode {
+  source: { id: string; title: string; url: string | null; source_type: string };
+  instance_ids: string[];
+  /** Drawn on by the claim's sources without stating the claim itself. */
+  underlying: boolean;
+  standing: StoryStanding;
+  basis: StoryBasis;
+  root: { status: "origin" | "untraced"; basis: string; created_by: string; updated_at: string } | null;
+  /** Layers below the top row; null when nothing at the top reaches it. */
+  depth: number | null;
+  upstream: Array<{ source_id: string; relation_type: ProvenanceEdge["relation_type"]; fidelity: ProvenanceEdge["fidelity"] }>;
+  copy_of: string[];
+  downstream: number;
+  downstream_total: number;
+  copies: number;
+  diverges: boolean;
+}
+
+export interface ProvenanceStory {
+  claim_id: string;
+  nodes: StoryNode[];
+  counts: { sources: number; origins: number; untraced: number; derived: number; underlying: number };
+}
+
+// --- the source page (#507) --------------------------------------------------
+
+export type SourceEventKind = "correction" | "retraction" | "expression_of_concern" | "update" | "removal";
+
+/** GET /sources/:id: facts that need no judgment. */
+export interface SourceFacts {
+  source: {
+    id: string;
+    url: string | null;
+    title: string;
+    source_type: string;
+    authors: string[];
+    publisher: string | null;
+    /** ISO-8601 at the precision known: "2023", "2023-05", "2023-05-14". */
+    published_date: string | null;
+    doi: string | null;
+    archived_url: string | null;
+    retrieved_at: string;
+    facts_checked_at: string | null;
+  };
+  versions: Array<{ id: string; title: string; url: string | null; later: boolean }>;
+  copies: Array<{ id: string; title: string; url: string | null }>;
+  copy_of: Array<{ id: string; title: string; url: string | null }>;
+  events: Array<{
+    kind: SourceEventKind;
+    occurred_at: string | null;
+    detected_at: string;
+    notice_url: string | null;
+    note: string | null;
+    detected_by: string;
+  }>;
+}
+
+export type SourceSegmentKind = "section" | "passage" | "table" | "note" | "reference";
+
+export interface DocumentInstance {
+  instance_id: string;
+  claim: { id: string; text: string; status: AssessmentStatus | null };
+  stance: string;
+  verbatim_text: string;
+  /** The claim Steward's reading of this appearance, in that claim's voice. */
+  reading: { support: InstanceReading["support"]; note: string | null; source_read: boolean } | null;
+}
+
+export interface DocumentSegment {
+  id: string;
+  parent_id: string | null;
+  ordinal: number;
+  kind: SourceSegmentKind;
+  label: string | null;
+  char_start: number;
+  char_end: number;
+  /** Leaves carry their text; a section's text is its children's. */
+  text: string | null;
+  instances: DocumentInstance[];
+}
+
+/** GET /sources/:id/document: the document as annotated text. */
+export interface SourceDocument {
+  source_id: string;
+  segmented: boolean;
+  total_chars: number;
+  segments: DocumentSegment[];
+  unanchored: DocumentInstance[];
+}
+
+export interface ExaminationFinding {
+  id: string;
+  segment_id: string | null;
+  segment_label: string | null;
+  facet: string;
+  statement: string;
+  evidence: string;
+  created_by: string;
+  created_at: string;
+  audit_notes: Array<{ note: string; created_by: string; created_at: string }>;
+  cited_by_claims: string[];
+}
+
+/** One row of GET /sources/:id/examinations. No verdict, no status on a finding. */
+export interface Examination {
+  id: string;
+  scope: "claim" | "document";
+  trigger: "claim" | "mechanical" | "mandate";
+  claim: { id: string; text: string } | null;
+  grant_id: string | null;
+  source_id: string;
+  brief: string;
+  facets: string[];
+  requested_by: string;
+  created_at: string;
+  runs: Array<{ id: string; status: string; model: string; spent_usd: number; finished_at: string | null }>;
+  coverage: Array<{ segment_id: string; facet: string }>;
+  findings: ExaminationFinding[];
+}
+
+export interface SourcePage {
+  facts: SourceFacts;
+  document: SourceDocument | null;
+  examinations: Examination[];
 }

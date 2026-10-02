@@ -1,13 +1,14 @@
 import {
   apiConfigured, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
-  fetchList, fetchOpenPrizes, fetchSearch, fetchTag, fetchTags,
+  fetchList, fetchOpenPrizes, fetchSearch, fetchSourcePage, fetchTag, fetchTags,
 } from "./api";
+import { getSourcePageFixture } from "./fixtures-source";
 import {
   getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizeMandates, listOpenPrizes,
 } from "./fixtures";
 import type {
   AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
-  SearchResultItem, TagSummary,
+  SearchResultItem, SourcePage, TagSummary,
 } from "./types";
 import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
@@ -164,5 +165,22 @@ export async function loadTag(slug: string): Promise<TagSummary | null> {
   } catch (err) {
     console.error(`[minerval] tag "${slug}" fetch failed:`, err);
     return null;
+  }
+}
+
+// --- source pages (#507) -----------------------------------------------------
+
+// One source page: facts, the document as annotated text, and examinations.
+// Offline, the sample sources; live, a failed fetch degrades to the fixture
+// like the claim page does.
+export async function loadSourcePage(
+  id: string,
+): Promise<{ page: SourcePage | null; source: DataSource }> {
+  if (!apiConfigured()) return { page: getSourcePageFixture(id), source: "fixture" };
+  try {
+    return { page: await fetchSourcePage(id), source: "live" };
+  } catch (err) {
+    console.error("[minerval] live source fetch failed, using fixture:", err);
+    return { page: getSourcePageFixture(id), source: "fixture" };
   }
 }

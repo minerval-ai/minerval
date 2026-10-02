@@ -14,8 +14,13 @@ import type {
   Finding,
   FindingSighting,
   SearchResultItem,
+  SourcePage,
   TagSummary,
   TrajectoryPoint,
+  ProvenanceStory,
+  SourceFacts,
+  SourceDocument,
+  Examination,
 } from "./types";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
@@ -98,19 +103,42 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
   // Detail (deep), trajectory, and the contribution record (#171) are separate
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
-  const [detail, trajectory, record, findings] = await Promise.all([
+  const [detail, trajectory, record, findings, provenanceStory] = await Promise.all([
     apiGet<RawDetail>(`/claims/${id}?information_depth=deep`),
     apiGet<TrajectoryResponse>(`/claims/${id}/assessments/trajectory`).catch(() => null),
     apiGet<{ record: ContributionExchange[] }>(`/claims/${id}/record`).catch(() => null),
     // Findings noted on this claim (#394); absent rather than failing the page.
     fetchFindings({ claimId: id, limit: 10 }).catch(() => [] as Finding[]),
+    // The origins-first provenance map (#507); absent rather than failing the page.
+    apiGet<ProvenanceStory>(`/claims/${id}/provenance`).catch(() => null),
   ]);
   return {
     ...withMathDefaults(detail),
+    provenance_story: provenanceStory,
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
     findings,
   };
+}
+
+// A source page (#507): the facts, the document as annotated text, and the
+// examinations. Facts are the page; the other two degrade to absent rather
+// than failing it. Null when the source does not exist.
+export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
+  let facts: SourceFacts;
+  try {
+    facts = await apiGet<SourceFacts>(`/sources/${id}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+  const [document, examinations] = await Promise.all([
+    apiGet<SourceDocument>(`/sources/${id}/document`).catch(() => null),
+    apiGet<{ examinations: Examination[] }>(`/sources/${id}/examinations`)
+      .then((r) => r.examinations)
+      .catch(() => [] as Examination[]),
+  ]);
+  return { facts, document, examinations };
 }
 
 // The unified per-claim history (#175): assessments, contributions, decisions,
