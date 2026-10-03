@@ -317,7 +317,7 @@ const configSchema = z.object({
   // per the constitution's "Judgment over Mechanism". 0 disables.
   // Output budget for one extraction call. A document's claims fit in far
   // less, but a reasoning model that writes its thinking into the same
-  // budget (GLM 5.3 Flash does, see OPENROUTER_MODELS) can exhaust 16k on a
+  // budget (GLM 5.3 Flash did, see OPENROUTER_MODELS) can exhaust 16k on a
   // long post before the structured list is emitted, and the whole source
   // then fails to extract. Raise it for such a model; the tokens are billed.
   extractionMaxTokens: z.coerce.number().int().min(1024).default(16384),
@@ -762,8 +762,8 @@ const configSchema = z.object({
   // to its production cheap-tier pin (OPENROUTER_MODELS.flash).
   // The Matcher is an agentic search loop; a small model suffices since the
   // judgment is "same proposition?" over candidates it retrieves itself. The
-  // tier moved off Haiku 4.5 on quality and price (#257) and is now GLM 5.3
-  // Flash; which model fills it is decided in OPENROUTER_MODELS, not here.
+  // tier moved off Haiku 4.5 on quality and price (#257) and is now GPT-6
+  // Luna; which model fills it is decided in OPENROUTER_MODELS, not here.
   //
   // This default IS the production pin (MATCHER_MODEL in
   // infra/lib/api-stack.ts), deliberately: the default used to be Haiku while

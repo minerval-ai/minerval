@@ -18,7 +18,7 @@ import { LlmRefusalError } from "../errors.js";
 import {
   MODELS,
   modelAcceptsTemperature,
-  modelNeedsRefusalFallback,
+  modelRefusalFallbackForm,
 } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
@@ -52,6 +52,9 @@ type BetaStreamParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 
 /** Beta id for the server-side refusal fallback, array form. */
 const SERVER_SIDE_FALLBACK_BETA = "server-side-fallback-2026-06-01";
+
+/** Beta id for the server-side refusal fallback, `"default"` form (Sonnet 5.5). */
+const SERVER_SIDE_FALLBACK_DEFAULT_BETA = "server-side-fallback-2026-07-01";
 
 /**
  * Beta id for task budgets. The installed SDK types `output_config.task_budget`
@@ -249,12 +252,14 @@ function toolMessages(req: ToolCompleteRequest): LlmMessage[] {
 }
 
 /**
- * Create one message, routing classifier-gated models (Opus 5.5 and the
- * Fable/Mythos family — see modelNeedsRefusalFallback) through the beta
- * endpoint with the server-side Opus fallback: their safety classifiers can decline a
- * benign-adjacent request (HTTP 200, stop_reason "refusal"), and the fallback
- * re-serves it on Opus 4.8 inside the same call instead of failing the agent
- * run. Other models use the plain Messages endpoint unchanged.
+ * Create one message, routing classifier-gated models (Opus 5.5, Sonnet 5.5
+ * and the Fable/Mythos family — see modelRefusalFallbackForm) through the
+ * beta endpoint with a server-side fallback: their safety classifiers can
+ * decline a benign-adjacent request (HTTP 200, stop_reason "refusal"), and the
+ * fallback re-serves it inside the same call instead of failing the agent run
+ * — on Opus 4.8 for the array form, on Anthropic's routed choice (Sonnet 5)
+ * for Sonnet 5.5's "default" form. Other models use the plain Messages
+ * endpoint unchanged.
  *
  * The beta response/params are structural supersets of the non-beta types for
  * everything this client reads (content, usage, stop_reason, container), so
@@ -264,11 +269,18 @@ async function createMessage(
   params: Anthropic.MessageCreateParamsNonStreaming
 ): Promise<Anthropic.Message> {
   const client = getClient();
-  if (modelNeedsRefusalFallback(params.model)) {
+  const form = modelRefusalFallbackForm(params.model);
+  if (form) {
     const response = await client.beta.messages.create({
       ...(params as unknown as Anthropic.Beta.Messages.MessageCreateParamsNonStreaming),
-      betas: [SERVER_SIDE_FALLBACK_BETA],
-      fallbacks: [{ model: MODELS.opus }],
+      ...(form === "array"
+        ? { betas: [SERVER_SIDE_FALLBACK_BETA], fallbacks: [{ model: MODELS.opus }] }
+        : // The installed SDK types only the array form; the scalar is the
+          // documented wire shape for the -2026-07-01 header.
+          ({ betas: [SERVER_SIDE_FALLBACK_DEFAULT_BETA], fallbacks: "default" } as unknown as Pick<
+            Anthropic.Beta.Messages.MessageCreateParamsNonStreaming,
+            "betas"
+          >)),
     });
     return response as unknown as Anthropic.Message;
   }

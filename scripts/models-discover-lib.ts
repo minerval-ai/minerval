@@ -127,7 +127,7 @@ export function isCandidateId(provider: ProviderName, id: string): boolean {
   }
   // OpenRouter: only the vendors we already route through it, or the family
   // the cheap tier currently holds; the rest of the zoo is noise here.
-  return /^(z-ai|deepseek|qwen|moonshotai|google|meta-llama|mistralai|x-ai)\//.test(id) && !/:free$/.test(id);
+  return /^(openai|z-ai|deepseek|qwen|moonshotai|google|meta-llama|mistralai|x-ai)\//.test(id) && !/:free$/.test(id);
 }
 
 /**

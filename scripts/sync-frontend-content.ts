@@ -130,7 +130,7 @@ const AGENTS: AgentMeta[] = [
   { key: "extractor", name: "Extractor", stage: 1, group: "processing",
     tagline: "Pulls atomic claims out of a source document, in canonical form.",
     invokedWhen: "A URL or document is submitted for ingestion.",
-    model: "Claude Sonnet 5", fn: getExtractorSystemPrompt },
+    model: modelLabel(MODELS.sonnet), fn: getExtractorSystemPrompt },
   { key: "matcher", name: "Matcher", stage: 2, group: "processing",
     tagline: "The single decider of claim identity: does this proposition already exist (as itself, a rewording, or its negation)? Searches the graph itself.",
     invokedWhen: "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
@@ -138,7 +138,7 @@ const AGENTS: AgentMeta[] = [
   { key: "contribution-reviewer", name: "Contribution Reviewer", stage: 3, group: "governance",
     tagline: "Evaluates incoming contributions against policy — accept, reject, or escalate.",
     invokedWhen: "A contributor submits a challenge, support, merge, edit, instance, or argument.",
-    model: "Claude Sonnet 5", fn: getContributionReviewerSystemPrompt },
+    model: modelLabel(MODELS.sonnet), fn: getContributionReviewerSystemPrompt },
   { key: "claim-steward", name: "Claim Steward", stage: 4, group: "governance",
     tagline: "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     invokedWhen: "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
@@ -183,7 +183,7 @@ const AGENTS: AgentMeta[] = [
   { key: "researcher", name: "Researcher", stage: 10, group: "instruments",
     tagline: "An instrument an administrator launches for one bounded investigation: replicate a finding, trace a statistic to its origin, read and map a literature, check an inference. It answers only to its launcher, carries the constitution unless told otherwise, writes nothing to the graph but provenance rows, and returns a report the launcher weighs.",
     invokedWhen: "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
-    model: "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5 (standard), GLM 5.3 Flash (cheap)", fn: getResearcherSystemPrompt },
+    model: `Chosen per launch: ${modelLabel(MODELS.strong)} (strong), ${modelLabel(MODELS.sonnet)} (standard), ${modelLabel(OPENROUTER_MODELS.flash)} (cheap)`, fn: getResearcherSystemPrompt },
 ];
 
 export interface AgentIndexEntry {

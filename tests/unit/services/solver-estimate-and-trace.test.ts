@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
     costEstimateWindowDays: 14,
     costEstimateMinRuns: 5,
     costEstimatePercentile: 0.8,
-    stewardModel: "claude-sonnet-5",
+    stewardModel: "claude-sonnet-5-5",
     stewardStrongModel: "claude-opus-5-5",
   },
 }));

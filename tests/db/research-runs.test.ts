@@ -32,7 +32,7 @@ describe("research_runs", () => {
       requesterRunId: null,
       jobId: null,
       task: "Trace the figure to its origin.",
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
       modelTier: "standard",
       effort: null,
       includeConstitution: true,
@@ -46,7 +46,7 @@ describe("research_runs", () => {
     await writeResearchNotebookSection(run.id, "thread 1", "started");
     await writeResearchNotebookSection(run.id, "thread 1", "finished");
     await writeResearchNotebookSection(run.id, "dead end", "the table is not there");
-    await updateResearchProgress(run.id, { turns: 4, spentMicroUsd: 400_000, servedModels: ["claude-sonnet-5"] });
+    await updateResearchProgress(run.id, { turns: 4, spentMicroUsd: 400_000, servedModels: ["claude-sonnet-5-5"] });
 
     const mid = await getResearchRun(run.id);
     expect(mid?.tools).toEqual(["search_claims", "report"]);
@@ -59,7 +59,7 @@ describe("research_runs", () => {
       report: { answer: "one study" },
       spentMicroUsd: 912_345,
       turns: 6,
-      servedModels: ["claude-sonnet-5"],
+      servedModels: ["claude-sonnet-5-5"],
       error: null,
     });
     expect(closed?.status).toBe("completed");

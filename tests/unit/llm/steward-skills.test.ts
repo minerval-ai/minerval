@@ -384,7 +384,7 @@ describe("Steward toolset on a non-Anthropic model", () => {
   };
 
   it("carries the client-side web_search in the server tool's place, with nothing said in the task", async () => {
-    const opts = await onModel("z-ai/glm-5.3-flash");
+    const opts = await onModel("openai/gpt-6-luna");
     const last = opts.tools.at(-1)!;
     expect(last.name).toBe("web_search");
     expect("input_schema" in last).toBe(true);
@@ -392,7 +392,7 @@ describe("Steward toolset on a non-Anthropic model", () => {
   });
 
   it("keeps the server web_search on a Claude model", async () => {
-    const opts = await onModel("claude-sonnet-5");
+    const opts = await onModel("claude-sonnet-5-5");
     const last = opts.tools.at(-1)!;
     expect(last.name).toBe("web_search");
     expect("input_schema" in last).toBe(false);

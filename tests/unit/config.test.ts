@@ -8,7 +8,7 @@ describe("model IDs", () => {
   });
 
   it("accepts Anthropic API IDs", () => {
-    expect(isAnthropicModelId("claude-sonnet-5")).toBe(true);
+    expect(isAnthropicModelId("claude-sonnet-5-5")).toBe(true);
     expect(isAnthropicModelId("claude-opus-5-5")).toBe(true);
     expect(isAnthropicModelId("claude-haiku-4-5-20251001")).toBe(true);
   });

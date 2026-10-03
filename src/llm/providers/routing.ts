@@ -4,7 +4,7 @@
  *
  * Routing is by ID SHAPE, so adding a model never means editing a list:
  *
- *   ^claude-        → anthropic   (Anthropic direct, e.g. "claude-sonnet-5")
+ *   ^claude-        → anthropic   (Anthropic direct, e.g. "claude-sonnet-5-5")
  *   ^gpt- | ^o\d    → openai      (OpenAI direct, e.g. "gpt-5-nano", "o3")
  *   contains "/"    → openrouter  (their vendor/model convention,
  *                                  e.g. "qwen/qwen3-235b-a22b")

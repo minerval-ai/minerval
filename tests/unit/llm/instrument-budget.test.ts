@@ -23,7 +23,7 @@ describe("estimateBudget", () => {
   });
 
   it("says nothing up front for a model priced by its provider per call", () => {
-    expect(estimateBudget({ model: "z-ai/glm-5.3-flash", ceilingMicroUsd: 2_000_000, promptChars: 60_000, longRun: false })).toBeNull();
+    expect(estimateBudget({ model: "openai/gpt-6-luna", ceilingMicroUsd: 2_000_000, promptChars: 60_000, longRun: false })).toBeNull();
   });
 });
 

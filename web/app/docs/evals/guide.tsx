@@ -597,7 +597,7 @@ npm run corpus:compare -- db:<idA> db:<idB>         # single runs: deltas, no ve
           body: <p>How the Matcher does on cases we did not write. Thirty pairs, mostly from one cluster&rsquo;s subject, passed in full on the first run. It catches a regression on those thirty.</p>,
         },
         { title: "Run it", body: <Cmd>{`npm run corpus:golden -- --profile=production
-npm run corpus:golden -- --category=negation --model=claude-sonnet-5
+npm run corpus:golden -- --category=negation --model=claude-sonnet-5-5
 npm run corpus:golden -- --min-pass=0.95              # the CI gate`}</Cmd> },
       ];
     },
@@ -722,7 +722,7 @@ npm run corpus:property -- fixpoint eggs --baseline=<snapshot>`}</Cmd> },
         title: "What it cannot show",
         body: <p>That the strong model is right. Fidelity is relative: where both are wrong together, it reads as agreement.</p>,
       },
-      { title: "Run it", body: <Cmd>{`npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5 --profile=production --baseline=<snapshot>
+      { title: "Run it", body: <Cmd>{`npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5-5 --profile=production --baseline=<snapshot>
 npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production`}</Cmd> },
     ],
   },
@@ -1115,7 +1115,7 @@ npm run corpus:run -- blackholes --profile=production --limit=1   # read the met
 npm run corpus:run -- blackholes --profile=production --score     # a baseline; three times
 npm run corpus:calibrate -- review                               # then read the judge
 npm run corpus:property -- idempotency blackholes --profile=production
-npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5 --profile=production
+npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5-5 --profile=production
 npm run corpus:contributions -- blackholes
 npm run predictions -- seed --corpus --drain`}</Cmd>
         ),

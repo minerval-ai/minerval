@@ -18,8 +18,8 @@ const mocks = vi.hoisted(() => ({
   config: {
     researcherEnabled: true,
     researcherStrongModel: "claude-opus-5-5",
-    researcherStandardModel: "claude-sonnet-5",
-    researcherCheapModel: "z-ai/glm-5.3-flash",
+    researcherStandardModel: "claude-sonnet-5-5",
+    researcherCheapModel: "openai/gpt-6-luna",
     researcherMaxCeilingOwls: 3,
     researcherMaxRunsPerLauncherRun: 2,
     researcherMaxWallMinutes: 20,
@@ -69,7 +69,7 @@ const okResult = (over: Partial<ResearcherResult> = {}): ResearcherResult => ({
   report: { answer: "It traces to one study.", findings: [], sources_consulted: [], provenance_recorded: "none", caveats: "", what_would_change: "", suggested_next_steps: "" },
   turns: 7,
   stopReason: "final_tool",
-  servedModels: ["claude-sonnet-5"],
+  servedModels: ["claude-sonnet-5-5"],
   toolNames: ["search_claims", "provenance_get_map", "report"],
   error: null,
   ...over,
@@ -152,7 +152,7 @@ describe("delegate_research", () => {
     expect(out.success).toBe(true);
     expect(out.research_run_id).toBe("run-1");
     expect(out.status).toBe("completed");
-    expect(out.model).toBe("claude-sonnet-5");
+    expect(out.model).toBe("claude-sonnet-5-5");
     expect(out.report.answer).toBe("It traces to one study.");
     expect(out.tools_offered).toContain("provenance_get_map");
     expect(out.notebook_sections).toEqual(["thread 1"]);
@@ -162,7 +162,7 @@ describe("delegate_research", () => {
       expect.objectContaining({
         claimId: CLAIM,
         requestedBy: "claim_steward",
-        model: "claude-sonnet-5",
+        model: "claude-sonnet-5-5",
         modelTier: "standard",
         effort: null,
         includeConstitution: false,
@@ -175,7 +175,7 @@ describe("delegate_research", () => {
     expect(passed.run.include_constitution).toBe(false);
     expect(mocks.closeResearchRun).toHaveBeenCalledWith(
       "run-1",
-      expect.objectContaining({ status: "completed", turns: 7, servedModels: ["claude-sonnet-5"] })
+      expect.objectContaining({ status: "completed", turns: 7, servedModels: ["claude-sonnet-5-5"] })
     );
     expect(tools.launchedCount).toBe(1);
   });

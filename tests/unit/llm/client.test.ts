@@ -38,6 +38,9 @@ const okResponse = {
 
 const messages = [{ role: "user" as const, content: "hi" }];
 
+/** A model on the plain Messages endpoint (no classifier fallback): Sonnet 5, not the Sonnet 5.5 default. */
+const PLAIN = "claude-sonnet-5";
+
 beforeEach(() => {
   createMock.mockReset().mockResolvedValue(okResponse);
   betaCreateMock.mockReset().mockResolvedValue(okResponse);
@@ -58,12 +61,27 @@ describe("complete() model routing", () => {
     expect(params).not.toHaveProperty("thinking");
   });
 
-  it("omits temperature for Sonnet 5 (non-default values 400)", async () => {
+  it("routes Sonnet 5.5 through the beta endpoint with the default-form fallback", async () => {
     await complete({ messages, model: MODELS.sonnet, temperature: 0 });
+
+    expect(createMock).not.toHaveBeenCalled();
+    const params = betaCreateMock.mock.calls[0]![0];
+    expect(params.model).toBe("claude-sonnet-5-5");
+    // The scalar form takes its own header; pairing it with -06-01 is a 400.
+    expect(params.betas).toEqual(["server-side-fallback-2026-07-01"]);
+    expect(params.fallbacks).toBe("default");
+    // Sonnet 5.5 400s on non-default sampling params and on disabled thinking.
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("thinking");
+    expect(params).not.toHaveProperty("tool_choice");
+  });
+
+  it("omits temperature for Sonnet 5 (non-default values 400)", async () => {
+    await complete({ messages, model: PLAIN, temperature: 0 });
 
     expect(betaCreateMock).not.toHaveBeenCalled();
     const params = createMock.mock.calls[0]![0];
-    expect(params.model).toBe(MODELS.sonnet);
+    expect(params.model).toBe(PLAIN);
     expect(params).not.toHaveProperty("temperature");
     expect(params).not.toHaveProperty("fallbacks");
   });
@@ -98,7 +116,7 @@ describe("completeStructured() native structured outputs", () => {
       messages,
       schema,
       schemaName: "Person",
-      model: MODELS.sonnet,
+      model: PLAIN,
     });
 
     expect(result).toEqual({ name: "Ada" });
@@ -120,7 +138,7 @@ describe("completeStructured() native structured outputs", () => {
     });
 
     await expect(
-      completeStructured({ messages, schema, schemaName: "Person", model: MODELS.sonnet })
+      completeStructured({ messages, schema, schemaName: "Person", model: PLAIN })
     ).rejects.toThrow(LlmRefusalError);
   });
 
@@ -136,7 +154,7 @@ describe("completeStructured() native structured outputs", () => {
         messages,
         schema,
         schemaName: "Person",
-        model: MODELS.sonnet,
+        model: PLAIN,
         maxTokens: 128,
       })
     ).rejects.toThrow(/truncated at max_tokens \(128\)/);
@@ -149,7 +167,7 @@ describe("completeStructured() native structured outputs", () => {
     });
 
     await expect(
-      completeStructured({ messages, schema, schemaName: "Person", model: MODELS.sonnet })
+      completeStructured({ messages, schema, schemaName: "Person", model: PLAIN })
     ).rejects.toThrow(/Structured response "Person" was not valid JSON/);
   });
 });
@@ -172,7 +190,7 @@ describe("completeStructuredList() items wrapper", () => {
       messages,
       itemSchema,
       schemaName: "Num",
-      model: MODELS.sonnet,
+      model: PLAIN,
     });
 
     expect(items).toEqual([{ n: 1 }, { n: 2 }]);
@@ -195,7 +213,7 @@ describe("completeStructuredList() items wrapper", () => {
     });
 
     await expect(
-      completeStructuredList({ messages, itemSchema, schemaName: "Num", model: MODELS.sonnet })
+      completeStructuredList({ messages, itemSchema, schemaName: "Num", model: PLAIN })
     ).rejects.toThrow(/returned no items array/);
   });
 });
@@ -209,7 +227,7 @@ describe("complete() refusal handling", () => {
       stop_details: { type: "refusal", category: "cyber" },
     });
 
-    await expect(complete({ messages, model: MODELS.sonnet })).rejects.toThrow(
+    await expect(complete({ messages, model: PLAIN })).rejects.toThrow(
       LlmRefusalError
     );
   });

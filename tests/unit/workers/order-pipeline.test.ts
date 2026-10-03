@@ -98,7 +98,7 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardModel: "claude-sonnet-5", owlCostMicroUsd: 1_000_000 }),
+  loadConfig: () => ({ stewardModel: "claude-sonnet-5-5", owlCostMicroUsd: 1_000_000 }),
 }));
 
 import { processNextOrderTask } from "../../../src/workers/order-pipeline.js";

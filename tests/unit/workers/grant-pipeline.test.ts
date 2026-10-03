@@ -137,9 +137,9 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
-    stewardModel: "claude-sonnet-5",
+    stewardModel: "claude-sonnet-5-5",
     stewardStrongModel: "",
-    governanceModel: "claude-sonnet-5",
+    governanceModel: "claude-sonnet-5-5",
     owlPriceMicroUsd: 4_000_000,
     grantMaintainCadenceDays: 30,
   }),

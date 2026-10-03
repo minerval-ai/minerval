@@ -57,7 +57,7 @@ search and full-text search alongside the relational data. Anthropic Claude
 models sit behind every agent by default; model ids are centralized in
 `src/llm/models.ts`, and in production the load-bearing agents run on Claude
 Opus 5.5. Any agent can be pointed at OpenAI or OpenRouter instead with a
-single env var — the Matcher runs on GLM 5.3 Flash this way — see
+single env var — the Matcher runs on GPT-6 Luna this way — see
 [Providers](#providers).
 
 ---
@@ -163,7 +163,7 @@ source's topics or a mandate's scope are the same relation, so a second
 kind needs no second table.
 
 Assignment is the work of the **tagger**, the first agent on the nano
-tier: a small, cheap loop (GLM 5.3 Flash by default, the Matcher's
+tier: a small, cheap loop (GPT-6 Luna by default, the Matcher's
 tier) with a semantic search over
 the existing vocabulary and one submit tool, prompted to reuse before
 minting, to attach one broad field tag and one to three specific ones, and
@@ -1059,11 +1059,11 @@ Model choice follows the value of the judgment, not a single default:
 
 | Agent | Production model |
 |-------|------------------|
-| Tagger · Matcher · Lookout | GLM 5.3 Flash (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
-| Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5 |
+| Tagger · Matcher · Lookout | GPT-6 Luna (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
+| Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5.5 |
 | Claim Steward · Curator · Dispute Arbitrator · Audit Agent · Grantmaker | Claude Opus 5.5 |
 | Solver (`math_solver`) | Claude Opus 5.5 at effort `max` (`SOLVER_MODEL`), fallbacks off |
-| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Opus 5.5 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5 (`RESEARCHER_STANDARD_MODEL`), or GLM 5.3 Flash (`RESEARCHER_CHEAP_MODEL`) |
+| Researcher (`researcher`) | Chosen per launch by the administrator: Claude Opus 5.5 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
 retrieves itself, so a small model suffices; it is the first agent routed to a

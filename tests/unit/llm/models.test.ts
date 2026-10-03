@@ -4,6 +4,7 @@ import {
   isAnthropicModelId,
   modelAcceptsTemperature,
   modelNeedsRefusalFallback,
+  modelRefusalFallbackForm,
   modelSupportsLongRun,
 } from "../../../src/llm/models.js";
 
@@ -33,14 +34,22 @@ describe("model helpers", () => {
     expect(modelAcceptsTemperature("claude-haiku-5-20270101")).toBe(false);
   });
 
-  it("opts only Opus 5.5 and the Fable/Mythos family into the refusal fallback", () => {
+  it("opts only Opus 5.5, Sonnet 5.5 and the Fable/Mythos family into the refusal fallback", () => {
     expect(modelNeedsRefusalFallback(MODELS.strong)).toBe(true);
     expect(modelNeedsRefusalFallback("claude-fable-5-1")).toBe(true);
     expect(modelNeedsRefusalFallback("claude-mythos-5")).toBe(true);
+    expect(modelNeedsRefusalFallback(MODELS.sonnet)).toBe(true);
     expect(modelNeedsRefusalFallback("claude-opus-5")).toBe(false);
+    expect(modelNeedsRefusalFallback("claude-sonnet-5")).toBe(false);
     expect(modelNeedsRefusalFallback(MODELS.opus)).toBe(false);
-    expect(modelNeedsRefusalFallback(MODELS.sonnet)).toBe(false);
     expect(modelNeedsRefusalFallback(MODELS.haiku)).toBe(false);
+  });
+
+  it("gives Sonnet 5.5 the default form and the rest the array form", () => {
+    expect(modelRefusalFallbackForm(MODELS.strong)).toBe("array");
+    expect(modelRefusalFallbackForm("claude-fable-5-1")).toBe("array");
+    expect(modelRefusalFallbackForm("claude-sonnet-5-5")).toBe("default");
+    expect(modelRefusalFallbackForm("claude-sonnet-5")).toBeNull();
   });
 });
 

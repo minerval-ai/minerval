@@ -31,7 +31,7 @@ const { state } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ consistencyModel: "z-ai/glm-5.3-flash", consistencyMaxFlagsPerSweep: 2 }),
+  loadConfig: () => ({ consistencyModel: "openai/gpt-6-luna", consistencyMaxFlagsPerSweep: 2 }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
   withAgent: (_a: string, fn: () => unknown) => fn(),
@@ -125,7 +125,7 @@ describe("runConsistencyChecker", () => {
     await runConsistencyChecker(base);
     expect(state.loop!.briefing).toContain("covid-origins");
     expect(state.loop!.briefing).toContain("Read the market cluster; all sound.");
-    expect(state.loop!.model).toBe("z-ai/glm-5.3-flash");
+    expect(state.loop!.model).toBe("openai/gpt-6-luna");
     const names = state.loop!.tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
       "raise_issue", "search_claims", "get_claim", "list_partition_claims",

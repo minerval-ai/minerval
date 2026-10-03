@@ -46,9 +46,12 @@ import {
 
 const EPHEMERAL = { type: "ephemeral" };
 
+/** A model on the plain Messages endpoint (no classifier fallback): Sonnet 5, not the Sonnet 5.5 default. */
+const PLAIN = "claude-sonnet-5";
+
 function response(overrides: Record<string, unknown> = {}) {
   return {
-    model: MODELS.sonnet,
+    model: PLAIN,
     content: [{ type: "text", text: "hello" }],
     usage: {
       input_tokens: 10,
@@ -124,14 +127,14 @@ describe("system blocks", () => {
   it("meters server-side web searches at $10 per 1,000, and nothing when there were none", async () => {
     mocks.meterExternal.mockClear();
     mocks.create.mockResolvedValueOnce(response());
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64 });
     expect(mocks.meterExternal).not.toHaveBeenCalled();
     mocks.create.mockResolvedValueOnce(
       response({
         usage: { input_tokens: 10, output_tokens: 5, server_tool_use: { web_search_requests: 3 } },
       })
     );
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64 });
     expect(mocks.meterExternal).toHaveBeenCalledWith({
       provider: "anthropic_web_search",
       model: "anthropic/web_search",
@@ -142,7 +145,7 @@ describe("system blocks", () => {
   });
 
   it("keeps a plain string as one cached text block", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64, system: "be terse" });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64, system: "be terse" });
     expect(sentParams().system).toEqual([
       { type: "text", text: "be terse", cache_control: EPHEMERAL },
     ]);
@@ -151,7 +154,7 @@ describe("system blocks", () => {
   it("maps each string of an array to its own cached text block, in order", async () => {
     await anthropicAdapter.complete({
       messages,
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["constitution and role", "domain skill"],
     });
@@ -165,7 +168,7 @@ describe("system blocks", () => {
     await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["a", "b", "c", "d", "e"],
     });
@@ -179,11 +182,11 @@ describe("system blocks", () => {
   });
 
   it("omits the system field for an empty array and drops empty strings", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64, system: [] });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64, system: [] });
     expect(sentParams()).not.toHaveProperty("system");
 
     mocks.create.mockClear();
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64, system: ["", "role"] });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64, system: ["", "role"] });
     expect(sentParams().system).toEqual([{ type: "text", text: "role", cache_control: EPHEMERAL }]);
   });
 
@@ -193,7 +196,7 @@ describe("system blocks", () => {
       messages,
       schema: { type: "object", properties: {}, required: [], additionalProperties: false },
       schemaName: "Thing",
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["role", "skill"],
     });
@@ -204,13 +207,13 @@ describe("system blocks", () => {
 
 describe("effort", () => {
   it("lands in output_config on complete and completeWithTools", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64, effort: "xhigh" });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64, effort: "xhigh" });
     expect(sentParams().output_config).toEqual({ effort: "xhigh" });
 
     await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       effort: "low",
     });
@@ -224,7 +227,7 @@ describe("effort", () => {
       messages,
       schema,
       schemaName: "Thing",
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       effort: "max",
     });
@@ -235,7 +238,7 @@ describe("effort", () => {
   });
 
   it("sends no output_config when unset (structured keeps format only)", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64 });
     expect(sentParams()).not.toHaveProperty("output_config");
   });
 
@@ -250,7 +253,7 @@ describe("effort", () => {
 
 describe("usage and served model", () => {
   it("exposes cache read and creation tokens on the result", async () => {
-    const result = await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    const result = await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64 });
     expect(result.usage).toEqual({
       inputTokens: 10,
       outputTokens: 5,
@@ -286,7 +289,7 @@ describe("usage and served model", () => {
     const dated = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
     });
     expect(dated.fallbackRan).toBe(false);
@@ -297,7 +300,7 @@ describe("usage and served model", () => {
     const result = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
     });
     expect(result).not.toHaveProperty("servedModel");
@@ -313,7 +316,7 @@ describe("moving history breakpoint on the tool path", () => {
     await anthropicAdapter.completeWithTools({
       messages: history,
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: "role",
     });
@@ -334,7 +337,7 @@ describe("moving history breakpoint on the tool path", () => {
     await anthropicAdapter.completeWithTools({
       messages: [{ role: "user", content: "go" }],
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
     });
     expect(sentParams().messages).toEqual([
@@ -346,7 +349,7 @@ describe("moving history breakpoint on the tool path", () => {
     await anthropicAdapter.completeWithTools({
       messages: loopHistory(),
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["role", "skill"],
     });
@@ -359,7 +362,7 @@ describe("moving history breakpoint on the tool path", () => {
     await anthropicAdapter.completeWithTools({
       messages: loopHistory(),
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["role", "skill one", "skill two"],
     });
@@ -373,7 +376,7 @@ describe("moving history breakpoint on the tool path", () => {
     await anthropicAdapter.completeWithTools({
       messages: loopHistory(),
       tools: [TOOL],
-      model: MODELS.sonnet,
+      model: PLAIN,
       maxTokens: 64,
       system: ["a", "b", "c", "d", "e", "f"],
     });
@@ -382,7 +385,7 @@ describe("moving history breakpoint on the tool path", () => {
   });
 
   it("does not touch the single-shot paths", async () => {
-    await anthropicAdapter.complete({ messages: loopHistory(), model: MODELS.sonnet, maxTokens: 64 });
+    await anthropicAdapter.complete({ messages: loopHistory(), model: PLAIN, maxTokens: 64 });
     expect(lastUserContent(sentParams())[0]).not.toHaveProperty("cache_control");
   });
 });
@@ -419,7 +422,7 @@ describe("completeWithToolsStreaming", () => {
   });
 
   it("keeps the long-run client separate from the standard one", async () => {
-    await anthropicAdapter.complete({ messages, model: MODELS.sonnet, maxTokens: 64 });
+    await anthropicAdapter.complete({ messages, model: PLAIN, maxTokens: 64 });
     await anthropicAdapter.completeWithToolsStreaming(longRun);
     expect(mocks.constructed.map((c) => c.timeout)).toEqual([180_000, 3_600_000]);
   });

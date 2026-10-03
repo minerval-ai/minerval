@@ -139,7 +139,7 @@ vi.mock("../../../src/config.js", () => ({
   // fallback lane the flag now gates. Tests are one of the two places it is
   // meant to be on.
   loadConfig: () => ({
-    stewardModel: "claude-sonnet-5",
+    stewardModel: "claude-sonnet-5-5",
     stewardMaxRuns: 0,
     backgroundFallbackLaneEnabled: state.fallbackLaneEnabled,
   }),

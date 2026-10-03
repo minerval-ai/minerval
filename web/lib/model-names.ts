@@ -12,6 +12,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-4-8": "Claude Opus 4.8",
+  "claude-sonnet-5-5": "Claude Sonnet 5.5",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
   // The cheap tier's current and former occupants both stay mapped, for the
@@ -19,6 +20,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // assessment names the model that actually judged it, and the generic
   // prettifier below only handles Anthropic-shaped ids, so a dropped entry
   // renders a bare "vendor/model" slug on every row written under it.
+  "openai/gpt-6-luna": "GPT-6 Luna",
   "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash",
 };

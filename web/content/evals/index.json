@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-29T16:15:51.465Z",
-  "gitCommit": "208bc09",
+  "syncedAt": "2026-10-03T03:29:31.913Z",
+  "gitCommit": "78d749a",
   "pins": [
     {
       "agent": "steward",
@@ -47,31 +47,31 @@
     {
       "agent": "matcher",
       "envVar": "MATCHER_MODEL",
-      "model": "z-ai/glm-5.3-flash",
-      "label": "GLM 5.3 Flash"
+      "model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna"
     },
     {
       "agent": "tagger",
       "envVar": "TAGGER_MODEL",
-      "model": "z-ai/glm-5.3-flash",
-      "label": "GLM 5.3 Flash"
+      "model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna"
     },
     {
       "agent": "lookout",
       "envVar": "LOOKOUT_MODEL",
-      "model": "z-ai/glm-5.3-flash",
-      "label": "GLM 5.3 Flash"
+      "model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna"
     },
     {
       "agent": "consistency",
       "envVar": "CONSISTENCY_MODEL",
-      "model": "z-ai/glm-5.3-flash",
-      "label": "GLM 5.3 Flash"
+      "model": "openai/gpt-6-luna",
+      "label": "GPT-6 Luna"
     }
   ],
   "judge": {
-    "model": "claude-sonnet-5",
-    "label": "Claude Sonnet 5"
+    "model": "claude-sonnet-5-5",
+    "label": "Claude Sonnet 5.5"
   },
   "rates": {
     "claude-opus-5-5": {
@@ -79,10 +79,10 @@
       "outputPerMtok": 20,
       "cacheReadMultiplier": 0.05
     },
-    "z-ai/glm-5.3-flash": null,
-    "claude-sonnet-5": {
-      "inputPerMtok": 3,
-      "outputPerMtok": 15
+    "openai/gpt-6-luna": null,
+    "claude-sonnet-5-5": {
+      "inputPerMtok": 2,
+      "outputPerMtok": 10
     }
   },
   "clusters": [

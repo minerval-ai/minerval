@@ -33,7 +33,7 @@ describe("web_search on every provider", () => {
   });
 
   it("is a client-side tool of the same name elsewhere, executed through OpenRouter", async () => {
-    for (const model of ["z-ai/glm-5.3-flash", "gpt-5-mini", "o3", "claude-haiku-4-5-20251001"]) {
+    for (const model of ["openai/gpt-6-luna", "gpt-5-mini", "o3", "claude-haiku-4-5-20251001"]) {
       expect(anthropicServerWebSearch(model)).toBe(false);
       const ws = createWebSearch(model, 3);
       expect(ws.tool.name).toBe(WEB_SEARCH_TOOL_NAME);
@@ -41,7 +41,7 @@ describe("web_search on every provider", () => {
       expect(ws.execute).not.toBeNull();
     }
     search.mockResolvedValue([{ url: "https://x.org/a", title: "A", excerpt: "…" }]);
-    const ws = createWebSearch("z-ai/glm-5.3-flash", 2);
+    const ws = createWebSearch("openai/gpt-6-luna", 2);
     const out = JSON.parse(await ws.execute!({ query: "LK-99 replication" }));
     expect(search).toHaveBeenCalledWith("LK-99 replication", expect.any(Number));
     expect(out).toEqual({ query: "LK-99 replication", hits: [{ url: "https://x.org/a", title: "A", excerpt: "…" }] });
@@ -49,7 +49,7 @@ describe("web_search on every provider", () => {
 
   it("caps searches per run in the server tool's vocabulary, and reports a failed search instead of throwing", async () => {
     search.mockResolvedValue([]);
-    const ws = createWebSearch("z-ai/glm-5.3-flash", 1);
+    const ws = createWebSearch("openai/gpt-6-luna", 1);
     await ws.execute!({ query: "one" });
     expect(JSON.parse(await ws.execute!({ query: "two" }))).toEqual({ error_code: "max_uses_exceeded", max_uses: 1 });
     expect(search).toHaveBeenCalledTimes(1);

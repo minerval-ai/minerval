@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ matcherModel: "z-ai/glm-5.3-flash", matchingTopK: 20 }),
+  loadConfig: () => ({ matcherModel: "openai/gpt-6-luna", matchingTopK: 20 }),
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: Record<string, any>) => {

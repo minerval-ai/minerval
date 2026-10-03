@@ -77,7 +77,7 @@ vi.mock("../../../src/services/budget-job-service.js", () => ({
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ stewardModel: "claude-sonnet-5" }),
+  loadConfig: () => ({ stewardModel: "claude-sonnet-5-5" }),
 }));
 
 import { processNextBudgetJobTask } from "../../../src/workers/budget-job-pipeline.js";

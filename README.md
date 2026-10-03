@@ -129,7 +129,7 @@ each bound by the constitution, each with a bounded domain:
   by subject. Tags are navigation, never judgment.
 
 Model choice follows the value of the judgment: tagging and matching are
-saturating tasks and run on GLM 5.3 Flash via OpenRouter, as does the
+saturating tasks and run on GPT-6 Luna via OpenRouter, as does the
 Lookout's relevance call; the load-bearing epistemic work
 — stewardship, structural adjudication, arbitration, audit, grantmaking — runs
 on the strongest available Claude models, and background assessments choose

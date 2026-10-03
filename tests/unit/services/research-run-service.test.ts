@@ -21,8 +21,8 @@ vi.mock("../../../src/config.js", async (importOriginal) => {
     loadConfig: () => ({
       ...original.loadConfig(),
       researcherStrongModel: "claude-fable-5-1",
-      researcherStandardModel: "claude-sonnet-5",
-      researcherCheapModel: "z-ai/glm-5.3-flash",
+      researcherStandardModel: "claude-sonnet-5-5",
+      researcherCheapModel: "openai/gpt-6-luna",
       researcherDailyCapOwls: 2,
       owlCostMicroUsd: 1_000_000,
     }),
@@ -43,8 +43,8 @@ beforeEach(() => mocks.rawQuery.mockReset().mockResolvedValue([]));
 describe("modelForTier", () => {
   it("resolves each tier from config", () => {
     expect(modelForTier("strong")).toBe("claude-fable-5-1");
-    expect(modelForTier("standard")).toBe("claude-sonnet-5");
-    expect(modelForTier("cheap")).toBe("z-ai/glm-5.3-flash");
+    expect(modelForTier("standard")).toBe("claude-sonnet-5-5");
+    expect(modelForTier("cheap")).toBe("openai/gpt-6-luna");
   });
 });
 

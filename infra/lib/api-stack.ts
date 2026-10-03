@@ -200,28 +200,28 @@ export class ApiStack extends cdk.Stack {
         EXTRACTOR_MODEL: "claude-opus-5-5",
         // The Matcher's judgment is narrow (same proposition?) over candidates
         // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on
-        // quality and price (#257), now GLM 5.3 Flash (see OPENROUTER_MODELS
+        // quality and price (#257), now GPT-6 Luna (see OPENROUTER_MODELS
         // for why that id and not the rolling alias). First agent routed off
         // Anthropic; the rest keep their defaults until the eval apparatus
         // (#273/#297) can rank candidates. Pinned here AND as the config
         // default (OPENROUTER_MODELS.flash) so corpus and dev runs match on
         // the model production matches on; the model guard asserts the two
         // agree.
-        MATCHER_MODEL: "z-ai/glm-5.3-flash",
+        MATCHER_MODEL: "openai/gpt-6-luna",
         // The tagger (#272): topic tags over every claim, no epistemic
         // judgment — the Matcher's tier for the Matcher's reasons (#257).
         // Pinned to the config default so the model guard covers it.
-        TAGGER_MODEL: "z-ai/glm-5.3-flash",
+        TAGGER_MODEL: "openai/gpt-6-luna",
         // The Lookout (docs/allocation.md, "Lookouts"): a mandate's cheap
         // standing watch. Its judgment is relevance, not truth, so it runs
         // on the cheap tier. Pinned to the config default so the model
         // guard covers it; a lookout can carry its own model override.
-        LOOKOUT_MODEL: "z-ai/glm-5.3-flash",
+        LOOKOUT_MODEL: "openai/gpt-6-luna",
         // The Consistency Checker (#330): judges which pre-filter tensions
         // are real and raises them as ledger candidates; the flagged claim's
         // Steward decides. Cheap tier, pinned to the config default. Sweeps
         // stay off until CONSISTENCY_SWEEP_INTERVAL_HOURS is set.
-        CONSISTENCY_MODEL: "z-ai/glm-5.3-flash",
+        CONSISTENCY_MODEL: "openai/gpt-6-luna",
         // Spend guardrails. Call limits cap request rate; the TOKEN limits are
         // the real $ governor (they reset hourly/daily, so this is a rate limit:
         // the drain works the highest-importance claims each window and pauses

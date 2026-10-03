@@ -36,7 +36,7 @@ vi.mock("../../../src/db/client.js", () => ({
   }),
 }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ grantmakerModel: "claude-sonnet-5" }),
+  loadConfig: () => ({ grantmakerModel: "claude-sonnet-5-5" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
   withAgent: (_a: string, fn: () => unknown) => fn(),
@@ -193,7 +193,7 @@ describe("runGrantor", () => {
       "survey_scope", "read_page", "estimate_costs", "update_workspace",
       "submit_plan",
     ]);
-    expect(state.loop!.model).toBe("claude-sonnet-5");
+    expect(state.loop!.model).toBe("claude-sonnet-5-5");
     expect(state.mandateCalls[0]).toContain(`"grantId":"${GRANT}"`);
   });
 

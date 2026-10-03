@@ -79,7 +79,7 @@ production seed set, and all three are built.
 
 - Postgres running (`docker compose up -d`).
 - `.env` with `ANTHROPIC_API_KEY` (claims), `OPENAI_API_KEY` (embeddings) and
-  `OPENROUTER_API_KEY` (the Matcher, which defaults to GLM 5.3 Flash — set
+  `OPENROUTER_API_KEY` (the Matcher, which defaults to GPT-6 Luna — set
   `MATCHER_MODEL` to an Anthropic model id to run a cluster Anthropic-only,
   but then the scorecard is not measuring the production Matcher).
 - Optionally set budget limits in `.env` (`LLM_DAILY_TOKEN_LIMIT`, etc.) — the
@@ -203,7 +203,7 @@ ONE agent's model changed, and the two graphs compared:
 
 ```bash
 npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production
-npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5 --baseline=<snapshot>   # reuse arm A
+npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5-5 --baseline=<snapshot>   # reuse arm A
 ```
 
 Arm A is the reference (with `--profile=production`, what production runs);
@@ -615,6 +615,6 @@ dump for deeper digging.
   `MATCHING_TOP_K` candidates (default 20) above a deliberately low 0.4 cosine
   floor, and the Matcher LLM makes the final match-vs-new call after searching
   multiple framings (including the negation). The disambiguation knobs are
-  `MATCHING_TOP_K` and `MATCHER_MODEL` (default GLM 5.3 Flash, the model
+  `MATCHING_TOP_K` and `MATCHER_MODEL` (default GPT-6 Luna, the model
   production runs — it routes to OpenRouter); the 0.4 retrieval floor
   is hardcoded in `matcher.ts`, so changing it means editing that file.

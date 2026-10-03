@@ -143,7 +143,7 @@ function input(over: Partial<{ model: string; model_tier: string; include_consti
       grant_id: null,
       requested_by: "claim_steward",
       task: "Trace the figure to its origin.",
-      model: over.model ?? "claude-sonnet-5",
+      model: over.model ?? "claude-sonnet-5-5",
       model_tier: over.model_tier ?? "standard",
       effort: "high",
       include_constitution: over.include_constitution ?? true,
@@ -186,7 +186,7 @@ describe("toolset by model", () => {
   it("runs a standard Claude model on the ordinary loop with web search and the sandbox", async () => {
     const result = await runResearcher(input());
     expect(result.status).toBe("completed");
-    expect(result.report).toMatchObject({ answer: "done", harness: { model: "claude-sonnet-5" } });
+    expect(result.report).toMatchObject({ answer: "done", harness: { model: "claude-sonnet-5-5" } });
     expect(mocks.longRunCalls).toHaveLength(0);
     expect(mocks.toolLoopCalls).toHaveLength(1);
     const names = (mocks.toolLoopCalls[0]!.tools as Array<{ name: string }>).map((t) => t.name);
@@ -206,7 +206,7 @@ describe("toolset by model", () => {
     expect(task).toContain("Trace the figure to its origin.");
     // The budget in units the model can act on: turns on this model, what a
     // page costs over the run, and what the tools cost beyond tokens.
-    expect(task).toMatch(/Budget: \$2\.00 of metered work\. On claude-sonnet-5 that is roughly \d+ turns/);
+    expect(task).toMatch(/Budget: \$2\.00 of metered work\. On claude-sonnet-5-5 that is roughly \d+ turns/);
     expect(task).toMatch(/a page read in full early on costs about \$0\.\d\d by the end of the run/);
     expect(task).toContain("web_search carries a fee");
     expect(task).toContain("read_page has no fee");
@@ -230,7 +230,7 @@ describe("toolset by model", () => {
   });
 
   it("runs the cheap tier with client-side web search and no sandbox, and says so in the task", async () => {
-    await runResearcher(input({ model: "z-ai/glm-5.3-flash", model_tier: "cheap" }));
+    await runResearcher(input({ model: "openai/gpt-6-luna", model_tier: "cheap" }));
     expect(mocks.longRunCalls).toHaveLength(0);
     const opts = mocks.toolLoopCalls[0]!;
     const names = (opts.tools as Array<{ name: string }>).map((t) => t.name);
@@ -447,7 +447,7 @@ describe("the budget guide", () => {
   it("states Elicit's per-call price and cap when Elicit is in the toolset", async () => {
     const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
     const guide = budgetGuide({
-      task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5",
+      task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
       estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
       toolNames: ["elicit_search_papers", "report"], sandbox: false, notebook: {},
     });

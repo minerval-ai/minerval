@@ -25,7 +25,7 @@ const { state } = vi.hoisted(() => ({
     // Per-call behaviour: return claims, or throw the given error.
     throwOn: null as null | ((model: string | undefined) => Error | null),
     extractorModel: "claude-opus-5-5",
-    extractorFallbackModel: "claude-sonnet-5",
+    extractorFallbackModel: "claude-sonnet-5-5",
   },
 }));
 
@@ -69,7 +69,7 @@ beforeEach(() => {
   state.calls = [];
   state.throwOn = null;
   state.extractorModel = "claude-opus-5-5";
-  state.extractorFallbackModel = "claude-sonnet-5";
+  state.extractorFallbackModel = "claude-sonnet-5-5";
 });
 
 describe("extractor tier selection", () => {
@@ -91,9 +91,9 @@ describe("extractor refusal fallback", () => {
   it("retries on the fallback model when the chosen tier refuses", async () => {
     state.throwOn = refuse;
     const claims = await extractClaims({ content: "a pathogen paper" });
-    expect(state.calls).toEqual(["claude-opus-5-5", "claude-sonnet-5"]);
+    expect(state.calls).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
     // The document is not lost: the fallback's claims come back.
-    expect(claims[0]!.verbatim_text).toBe("from claude-sonnet-5");
+    expect(claims[0]!.verbatim_text).toBe("from claude-sonnet-5-5");
   });
 
   it("still honours maxClaims on the fallback path", async () => {
@@ -134,7 +134,7 @@ describe("extractor refusal fallback", () => {
       LlmRefusalError
     );
     // Both were tried, and the caller learns the document is genuinely refused.
-    expect(state.calls).toEqual(["claude-opus-5-5", "claude-sonnet-5"]);
+    expect(state.calls).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
   });
 });
 

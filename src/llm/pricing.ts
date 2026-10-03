@@ -60,8 +60,12 @@ const MODEL_RATES: Record<string, ModelRates> = {
   "claude-opus-4-8": { inputPerMtok: 5, outputPerMtok: 25 },
   "claude-opus-4-7": { inputPerMtok: 5, outputPerMtok: 25 },
   "claude-opus-4-6": { inputPerMtok: 5, outputPerMtok: 25 },
-  // Sonnet 5 list price; there is an intro rate ($2/$10) through 2026-08-31 —
-  // we meter at list so derived costs never understate what credits will owe.
+  // Sonnet 5.5 — the standard tier. Cache reads $0.20 and 5-minute writes
+  // $2.50 are the default 0.1×/1.25× multipliers. "claude-sonnet-5" is a
+  // PREFIX of its id, so without this entry it would meter at Sonnet 5's list.
+  "claude-sonnet-5-5": { inputPerMtok: 2, outputPerMtok: 10 },
+  // Sonnet 5 list price — still metered: it is Sonnet 5.5's refusal-fallback
+  // target and sits in historical usage rows.
   "claude-sonnet-5": { inputPerMtok: 3, outputPerMtok: 15 },
   "claude-sonnet-4-6": { inputPerMtok: 3, outputPerMtok: 15 },
   "claude-haiku-4-5": { inputPerMtok: 1, outputPerMtok: 5 },

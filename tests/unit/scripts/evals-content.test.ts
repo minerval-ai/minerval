@@ -135,6 +135,7 @@ describe("evals content index", () => {
     expect(modelLabel("claude-fable-5-1")).toBe("Claude Fable 5.1");
     expect(modelLabel("claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+    expect(modelLabel("openai/gpt-6-luna")).toBe("GPT-6 Luna");
     expect(modelLabel("z-ai/glm-5.3-flash")).toBe("GLM 5.3 Flash");
     // The former cheap-tier id stays labelled: committed scorecards recorded it.
     expect(modelLabel("deepseek/deepseek-v4-flash")).toBe("DeepSeek V4 Flash");

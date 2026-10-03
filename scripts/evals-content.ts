@@ -163,9 +163,11 @@ const MODEL_LABELS: Array<[prefix: string, label: string]> = [
   ["claude-mythos-5", "Claude Mythos 5"],
   ["claude-opus-5", "Claude Opus 5"],
   ["claude-opus-4-8", "Claude Opus 4.8"],
+  ["claude-sonnet-5-5", "Claude Sonnet 5.5"],
   ["claude-sonnet-5", "Claude Sonnet 5"],
   ["claude-sonnet-4-6", "Claude Sonnet 4.6"],
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
+  ["openai/gpt-6-luna", "GPT-6 Luna"],
   ["z-ai/glm-5.3-flash", "GLM 5.3 Flash"],
   // Former cheap-tier occupant; the committed scorecards recorded it.
   ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash"],

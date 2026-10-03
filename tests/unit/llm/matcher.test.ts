@@ -33,7 +33,7 @@ vi.mock("../../../src/services/search-service.js", () => ({
 }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
-    matcherModel: "z-ai/glm-5.3-flash",
+    matcherModel: "openai/gpt-6-luna",
     matchingTopK: 20,
     agentReportsPerRun: 3,
   }),

@@ -61,7 +61,7 @@ export async function complete(options: {
 }): Promise<CompletionResult> {
   checkBudget();
   const model = options.model ?? DEFAULT_MODEL;
-  // Sonnet 5 runs adaptive thinking by default and thinking spend counts
+  // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
   // against max_tokens, so the old 4096 default left too little room for the
   // actual answer — 8192 keeps headroom without changing agent call sites.
   const result = await getAdapter(model).complete({
