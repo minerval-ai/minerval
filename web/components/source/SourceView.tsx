@@ -8,6 +8,8 @@ import { Examinations } from "./Examinations";
 import { AnnotatedText } from "./AnnotatedText";
 import { SourceRecord } from "./SourceRecord";
 import { OutlineRail } from "./OutlineRail";
+import { Lineage } from "./Lineage";
+import { History } from "./History";
 import { claimNames, examViews, findingsBySegment, groupsOf } from "./model";
 import s from "./source.module.css";
 
@@ -49,7 +51,9 @@ export function SourceView({ page, source }: { page: SourcePage; source: DataSou
             shown={shown}
             setShown={setShown}
           />
+          <Lineage context={page.context} title={page.facts.source.title} />
           <SourceRecord page={page} groups={groups} />
+          <History context={page.context} />
         </div>
       </div>
     </div>

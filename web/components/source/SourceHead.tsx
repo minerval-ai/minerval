@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SourcePage } from "@/lib/types";
 import { EVENT_WORD, kindLabel, partialDate, when, type ExamView, type Group } from "./model";
+import { Prominence } from "./Prominence";
 import s from "./source.module.css";
 
 // Identity, then what has happened to the document since: facts that need no
@@ -92,6 +93,7 @@ export function SourceHead({
           {source.facts_checked_at ? `Facts checked ${when(source.facts_checked_at)}` : "Facts not yet checked"}
         </span>
       </div>
+      <Prominence context={page.context} />
     </header>
   );
 }

@@ -75,7 +75,9 @@ export function OutlineRail({ groups, exams }: { groups: Group[]; exams: ExamVie
         <ul className={s.jl}>
           <li><a href="#examinations">Examinations</a></li>
           <li><a href="#text">Text</a></li>
+          <li><a href="#lineage">Lineage</a></li>
           <li><a href="#record">Record</a></li>
+          <li><a href="#history">History</a></li>
         </ul>
       </nav>
     </aside>

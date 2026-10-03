@@ -189,6 +189,8 @@ const AGENT_NAMES: Record<string, string> = {
   audit_agent: "Audit agent",
   correction_watcher: "Correction watcher",
   metadata_fetcher: "Metadata fetcher",
+  facts_fetcher: "Facts fetcher",
+  segmenter: "Segmenter",
 };
 
 export function agentName(id: string): string {
@@ -227,4 +229,79 @@ export function when(iso: string | null | undefined): string {
   if (!iso) return "–";
   if (/^\d{4}(-\d{2}){0,2}$/.test(iso)) return partialDate(iso)!;
   return fmtDate(iso);
+}
+
+// --- context words (lineage, prominence, history) ------------------------------------
+
+type Relation = "repeats" | "derives_from" | "reanalyzes" | "republishes" | "cites_as_evidence" | "responds_to";
+type Fidelity = "faithful" | "strengthened" | "weakened" | "distorted" | "misattributed" | "unclear";
+
+/** Fidelities the claim map flags as divergent. */
+export const DIVERGENT_FIDELITY = new Set<string>(["strengthened", "weakened", "distorted", "misattributed"]);
+
+// Upstream, this source is the subject ("Draws its statement from it");
+// downstream, the other document is ("Restates it"), so "it" is this source.
+const RELATION_VERB: Record<Relation, string> = {
+  repeats: "restates it",
+  derives_from: "draws its statement from it",
+  reanalyzes: "reanalyzes its data",
+  republishes: "republishes it",
+  cites_as_evidence: "cites it",
+  responds_to: "responds to it",
+};
+const FIDELITY_UP: Record<Fidelity, string> = {
+  faithful: " faithfully",
+  strengthened: " more strongly than that document supports",
+  weakened: " more cautiously than that document warrants",
+  distorted: " in a way that document does not support",
+  misattributed: ", crediting it with something it does not say",
+  unclear: "",
+};
+const FIDELITY_DOWN: Record<Fidelity, string> = {
+  faithful: " faithfully",
+  strengthened: " more strongly than this source supports",
+  weakened: " more cautiously than this source warrants",
+  distorted: " in a way this source does not support",
+  misattributed: ", crediting it with something it does not say",
+  unclear: "",
+};
+
+export function relationWords(
+  relations: Array<{ relation_type: string; fidelity: string; claims: number }>,
+  side: "up" | "down",
+): string {
+  const fid = side === "up" ? FIDELITY_UP : FIDELITY_DOWN;
+  const parts = relations.map((r) => {
+    const verb = RELATION_VERB[r.relation_type as Relation] ?? r.relation_type.replace(/_/g, " ");
+    const how = fid[r.fidelity as Fidelity] ?? "";
+    return `${verb}${how}, on ${r.claims} ${r.claims === 1 ? "claim" : "claims"}`;
+  });
+  const text = parts.join("; ");
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}.` : "";
+}
+
+export const FIDELITY_WORD: Record<string, string> = {
+  faithful: "faithful",
+  strengthened: "stronger",
+  weakened: "weaker",
+  distorted: "distorted",
+  misattributed: "misattributed",
+  unclear: "unclear",
+};
+
+export const HISTORY_WORD: Record<string, string> = {
+  retrieved: "Entered the graph",
+  facts: "Facts",
+  segmented: "Divided",
+  event: "Notice",
+  reading: "Reading",
+  examination: "Examination",
+  finding: "Findings",
+  audit_note: "Audit note",
+  citation: "Citation",
+  watch: "Correction watch",
+};
+
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
 }

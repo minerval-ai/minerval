@@ -5,6 +5,7 @@ import type {
   Examination,
   InstanceSupport,
   SourceDocument,
+  SourceContext,
   SourcePage,
   SourceSegmentKind,
 } from "./types";
@@ -401,12 +402,159 @@ function councilTranscript(): SourcePage {
   };
 }
 
+// --- context: lineage, prominence, history ------------------------------------------
+
+const src = (id: string, title: string, source_type: string, published_date: string | null) =>
+  ({ id, title, url: null, source_type, published_date });
+
+function registryContext(): SourceContext {
+  return {
+    lineage: {
+      draws_on: {
+        total: 3,
+        entries: [
+          { source: src("cohort-2016", "Rotating night shifts and type 2 diabetes in a cohort of nurses", "journal_article", "2016"),
+            relations: [{ relation_type: "cites_as_evidence", fidelity: "faithful", claims: 2 }], claims: 2, diverges: false },
+          { source: src("cohort-2019-reanalysis", "Night shifts and diabetes: a reanalysis of the nurses' cohort", "journal_article", "2019"),
+            relations: [{ relation_type: "cites_as_evidence", fidelity: "faithful", claims: 1 }], claims: 1, diverges: false },
+        ],
+        rest: [{ source_type: "dataset", sources: 1, fidelity: { faithful: 1 } }],
+      },
+      drawn_on_by: {
+        total: 7,
+        entries: [
+          { source: src("shift-meta-analysis-2023", "Shift work and type 2 diabetes: a meta-analysis of 14 studies", "journal_article", "2023-05"),
+            relations: [{ relation_type: "cites_as_evidence", fidelity: "faithful", claims: 2 }], claims: 2, diverges: false },
+          { source: src("news-night-shifts-double", "Night shifts double your diabetes risk, study finds", "news_article", "2023-03-14"),
+            relations: [
+              { relation_type: "repeats", fidelity: "distorted", claims: 1 },
+              { relation_type: "cites_as_evidence", fidelity: "faithful", claims: 1 },
+            ], claims: 2, diverges: true },
+          { source: src("commentary-2024", "Shift work and diabetes: what the registry studies can and cannot show", "commentary", "2024-01"),
+            relations: [{ relation_type: "responds_to", fidelity: "faithful", claims: 1 }], claims: 1, diverges: false },
+        ],
+        rest: [
+          { source_type: "news_article", sources: 3, fidelity: { faithful: 1, strengthened: 2 } },
+          { source_type: "blog_post", sources: 1, fidelity: { unclear: 1 } },
+        ],
+      },
+    },
+    prominence: {
+      reach: { copies: 0, direct_copies: 0 },
+      structure: { claims: 6, origin_on: 3, origin_by_steward: 1, underlying_on: 1, downstream: 11, claims_read: 6 },
+      evidence: {
+        readings_by_support: { supports: 4, overstates: 1, unclear: 2 },
+        read_whole: 7,
+        claims_citing_findings: 3,
+        notes: [
+          { claim: { id: BMI.id, text: BMI.text }, support: "unclear", note: "Reopened after the correction of Table 3; reassessment queued. The sentence is unchanged; the table it rests on changed.", read_at: "2026-08-14T09:00:00Z" },
+          { claim: { id: NIGHT.id, text: NIGHT.text }, support: "overstates", note: "Its own registry data bear an association, drawn independently of the 2016 cohort. The abstract's \"raises\" is causal; the design is observational.", read_at: "2025-12-04T10:00:00Z" },
+          { claim: { id: DOUBLES.id, text: DOUBLES.text }, support: "supports", note: "The paper's own estimate, 1.31, is well short of a doubling, and it says so directly.", read_at: "2025-03-18T10:00:00Z" },
+        ],
+      },
+    },
+    history: [
+      { at: "2026-09-30T04:00:00Z", kind: "watch", by: "correction_watcher", text: "Watched by DOI; 1 notice on record", claim: null },
+      { at: "2026-08-22T14:05:00Z", kind: "audit_note", by: "audit_agent", text: "Note on a finding: In the corrected Table 3, the hazard ratio for night workers with a BMI of 30 or over moves…", claim: null },
+      { at: "2026-08-20T09:46:00Z", kind: "finding", by: "researcher", text: "3 findings recorded", claim: null },
+      { at: "2026-08-20T09:00:00Z", kind: "examination", by: "grantmaker", text: "Document review · assertions, tables · $1.10", claim: null },
+      { at: "2026-08-14T09:00:00Z", kind: "reading", by: "claim_steward", text: "unclear, read whole", claim: { id: BMI.id, text: BMI.text } },
+      { at: "2026-08-13T06:00:00Z", kind: "event", by: "correction_watcher", text: "correction: Table 3 replaced: the row for a body mass index of 30 or over was recomputed.", claim: null },
+      { at: "2026-08-13T06:00:00Z", kind: "facts", by: "facts_fetcher", text: "Facts looked up", claim: null },
+      { at: "2025-12-04T10:00:00Z", kind: "citation", by: "claim_steward", text: "Reading cites 3 findings", claim: { id: NIGHT.id, text: NIGHT.text } },
+      { at: "2025-11-04T11:31:00Z", kind: "finding", by: "researcher", text: "5 findings recorded", claim: null },
+      { at: "2025-11-04T10:12:00Z", kind: "examination", by: "claim_steward", text: "Examination commissioned · basis, assertions, citations, recomputation, limits · $2.80", claim: { id: NIGHT.id, text: NIGHT.text } },
+      { at: "2025-03-18T10:00:00Z", kind: "reading", by: "claim_steward", text: "supports, read whole", claim: { id: DOUBLES.id, text: DOUBLES.text } },
+      { at: "2025-03-18T09:40:00Z", kind: "reading", by: "claim_steward", text: "supports, read whole", claim: { id: COHORT.id, text: COHORT.text } },
+      { at: "2023-01-03T08:05:00Z", kind: "segmented", by: "segmenter", text: "Divided into 38 parts by its own structure", claim: null },
+      { at: "2023-01-03T08:00:00Z", kind: "retrieved", by: "graph", text: "Entered the graph; copy stored", claim: null },
+    ],
+  };
+}
+
+function thinkTankContext(): SourceContext {
+  return {
+    lineage: {
+      draws_on: {
+        total: 1,
+        entries: [
+          { source: src("four-day-week-firm-list", "Four-day week trial: participating firms", "dataset", "2023-02"),
+            relations: [{ relation_type: "derives_from", fidelity: "faithful", claims: 1 }], claims: 1, diverges: false },
+        ],
+        rest: [],
+      },
+      drawn_on_by: {
+        total: 26,
+        entries: [
+          { source: src("daily-ledger-four-day-week", "Four-day week \"a resounding success\", report finds", "news_article", "2024-06-12"),
+            relations: [
+              { relation_type: "republishes", fidelity: "faithful", claims: 2 },
+              { relation_type: "repeats", fidelity: "strengthened", claims: 1 },
+            ], claims: 3, diverges: true },
+          { source: src("parliament-briefing-hours", "Working hours: a briefing for members", "report", "2024-11"),
+            relations: [{ relation_type: "cites_as_evidence", fidelity: "faithful", claims: 2 }], claims: 2, diverges: false },
+          { source: src("factcheck-four-day-productivity", "Did productivity really rise in the four-day week trial?", "fact_check", "2024-07"),
+            relations: [{ relation_type: "responds_to", fidelity: "faithful", claims: 1 }], claims: 1, diverges: false },
+        ],
+        rest: [
+          { source_type: "news_article", sources: 14, fidelity: { faithful: 9, strengthened: 5 } },
+          { source_type: "social_post", sources: 6, fidelity: { strengthened: 3, unclear: 3 } },
+          { source_type: "fact_check", sources: 3, fidelity: { faithful: 3 } },
+        ],
+      },
+    },
+    prominence: {
+      reach: { copies: 5, direct_copies: 2 },
+      structure: { claims: 4, origin_on: 3, origin_by_steward: 0, underlying_on: 0, downstream: 41, claims_read: 4 },
+      evidence: {
+        readings_by_support: { supports: 3, understates: 1, asserts_without_evidence: 1, overstates: 1 },
+        read_whole: 6,
+        claims_citing_findings: 0,
+        notes: [
+          { claim: { id: PRODUCTIVITY.id, text: PRODUCTIVITY.text }, support: "asserts_without_evidence", note: "The report measures no productivity; it reports managers' answers to a survey question about it.", read_at: "2025-02-10T10:00:00Z" },
+          { claim: { id: ECONOMY.id, text: ECONOMY.text }, support: "overstates", note: "Argued from 61 volunteer firms; nothing in the report addresses an economy-wide change.", read_at: "2025-01-22T10:00:00Z" },
+        ],
+      },
+    },
+    history: [
+      { at: "2026-09-30T06:00:00Z", kind: "facts", by: "facts_fetcher", text: "Facts looked up", claim: null },
+      { at: "2025-02-10T10:00:00Z", kind: "reading", by: "claim_steward", text: "asserts without evidence, read whole", claim: { id: PRODUCTIVITY.id, text: PRODUCTIVITY.text } },
+      { at: "2025-01-22T10:00:00Z", kind: "reading", by: "claim_steward", text: "overstates, read whole", claim: { id: ECONOMY.id, text: ECONOMY.text } },
+      { at: "2024-09-02T10:00:00Z", kind: "reading", by: "claim_steward", text: "supports, read whole", claim: { id: RETENTION.id, text: RETENTION.text } },
+      { at: "2024-08-30T10:00:00Z", kind: "reading", by: "claim_steward", text: "supports, read whole", claim: { id: SIXTY_ONE.id, text: SIXTY_ONE.text } },
+      { at: "2024-06-14T12:05:00Z", kind: "segmented", by: "segmenter", text: "Divided into 17 parts by its own structure", claim: null },
+      { at: "2024-06-14T12:00:00Z", kind: "retrieved", by: "graph", text: "Entered the graph; copy stored", claim: null },
+    ],
+  };
+}
+
+function councilContext(): SourceContext {
+  const empty = { total: 0, entries: [], rest: [] };
+  return {
+    lineage: { draws_on: empty, drawn_on_by: empty },
+    prominence: {
+      reach: { copies: 0, direct_copies: 0 },
+      structure: { claims: 1, origin_on: 0, origin_by_steward: 0, underlying_on: 0, downstream: 0, claims_read: 1 },
+      evidence: {
+        readings_by_support: { unclear: 1 },
+        read_whole: 0,
+        claims_citing_findings: 0,
+        notes: [{ claim: { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time." }, support: "unclear", note: "Judged from the extracted passage alone; the transcript was not stored.", read_at: "2025-01-12T10:00:00Z" }],
+      },
+    },
+    history: [
+      { at: "2025-01-12T10:00:00Z", kind: "reading", by: "claim_steward", text: "unclear, from the excerpt", claim: { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time." } },
+      { at: "2024-05-24T09:00:00Z", kind: "retrieved", by: "graph", text: "Entered the graph; no copy stored", claim: null },
+    ],
+  };
+}
+
 export function getSourcePageFixture(id: string): SourcePage | null {
   instanceSeq = 0;
   switch (id) {
-    case "registry-study": return registryStudy();
-    case "think-tank-report": return thinkTankReport();
-    case "council-transcript": return councilTranscript();
+    case "registry-study": return { ...registryStudy(), context: registryContext() };
+    case "think-tank-report": return { ...thinkTankReport(), context: thinkTankContext() };
+    case "council-transcript": return { ...councilTranscript(), context: councilContext() };
     default: return null;
   }
 }
