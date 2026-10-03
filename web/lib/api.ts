@@ -21,6 +21,7 @@ import type {
   SourceFacts,
   SourceDocument,
   Examination,
+  SourceContext,
 } from "./types";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
@@ -132,13 +133,14 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
-  const [document, examinations] = await Promise.all([
+  const [document, examinations, context] = await Promise.all([
     apiGet<SourceDocument>(`/sources/${id}/document`).catch(() => null),
     apiGet<{ examinations: Examination[] }>(`/sources/${id}/examinations`)
       .then((r) => r.examinations)
       .catch(() => [] as Examination[]),
+    apiGet<SourceContext>(`/sources/${id}/context`).catch(() => null),
   ]);
-  return { facts, document, examinations };
+  return { facts, document, examinations, context };
 }
 
 // The unified per-claim history (#175): assessments, contributions, decisions,
