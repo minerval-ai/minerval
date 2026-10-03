@@ -174,6 +174,13 @@ export class ApiStack extends cdk.Stack {
         // turns on model tiering: every assess/reassess group carries a
         // 'strong' variant the allocators buy by marginal return.
         STEWARD_STRONG_MODEL: "claude-opus-5-5",
+        // The researcher (#298): the instrument a Steward or a Grantmaker
+        // launches for one bounded investigation, and the runner of document
+        // examinations (#507). Its tiers ride the config defaults (Opus 5.5,
+        // Sonnet 5, GLM 5.3 Flash through OpenRouter); the daily cap, the
+        // per-run ceiling, and the per-pass count are its backstops, and a
+        // researcher_paused platform flag halts it without a deploy.
+        RESEARCHER_ENABLED: "true",
         // The other load-bearing governance agents also run on Opus 5.5: the
         // Curator adjudicates merges/splits, the Audit Agent polices the
         // governance system, and the Dispute Arbitrator resolves escalations
