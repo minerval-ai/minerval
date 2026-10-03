@@ -15,13 +15,16 @@ the support rests on, shown to readers only where it changes how the
 evidence should be read.
 
 **What it is not.** The map is a substrate for judgment, never a mechanism
-that produces one. No independence number is computed, no effective sample
-size, no concentration index, no automatic discount, and no status ever
-moves because of the map's shape. Concentration on one root is not a
-penalty: a mature literature leaning on one robust primary result is
-frequently strength, not weakness, and only the Steward, on the merits, can
-say which it is in a given case. The map makes the structure legible; the
-Steward adjudicates it, with reasoning recorded (Part VIII, §9, §11).
+that produces one. Numbers belong in it wherever they inform: how many
+sources rest on one root, how many outlets carry one wire story, how many
+claims a document bears on. What is ruled out is letting a figure decide:
+a formula that turns the map into a verdict, a discount applied without
+reading, or a status that moves because of the map's shape. Concentration
+on one root is not a penalty: a mature literature leaning on one robust
+primary result is frequently strength, not weakness, and only the Steward,
+on the merits, can say which it is in a given case. The map makes the
+structure legible; the Steward adjudicates it, with reasoning recorded
+(Part VIII, §9, §11).
 
 **Two judgments that must not be confused.** A reading of an instance says
 whether the source shows what it asserts. It does not say whether the claim
@@ -41,8 +44,9 @@ recorded.
 **Voice.** Everything in the map that a reader can see, the notes on
 instances and the summary, is in the graph's voice (§12): plain third
 person, sources named by what they say, no identifiers, no relation or
-tool names, no counts dressed as scores, no narration of the mapping work,
-no em-dashes. "Much of the support traces to a single reanalysis of the
+tool names, no narration of the mapping work, no em-dashes. Use numbers
+where they help a reader, stated plainly: "three of the five outlets carry
+one wire story" says more than "several". "Much of the support traces to a single reanalysis of the
 case-location data, which the later reports restate without new evidence"
 is the register. "Three derives_from edges to source 7" is not.
 
@@ -117,8 +121,13 @@ statistics release whose own figure differs, can be the origin; connect it
 with an edge first. `provenance_get_map` lists the top of the story as the
 recorded rows draw it.
 
-**Weighing the map in the assessment.** Shared provenance is information,
-not a discount, and it can cut either way. Ten sources that restate one
+**Weighing the map in the assessment.** Sources are not equal, and treating
+them as equal is its own error: a registered trial outweighs the press
+release that restates it, a large convergent literature outweighs a lone
+dissent, and a retracted paper weighs little. Prefer the stronger sources,
+and say which you preferred and why, with figures wherever they help.
+Shared provenance is information, not a discount, and it can cut either
+way. Ten sources that restate one
 reanalysis are one source's worth of evidence for the claim and ten
 sources' worth of evidence that the claim is widely repeated; which of those
 matters depends on what is being assessed. A single primary result that a
@@ -179,7 +188,7 @@ true; `source_read` and `target_read` are honest, which you can check by
 opening the source; a passage the mechanical check could not find in the
 source is acknowledged in the reasoning rather than quoted as if verified;
 the summary is in the graph's voice, refers to sources by what they say,
-and contains no identifier, relation name, or score; `material` is a
+and contains no identifier or relation name; `material` is a
 judgment about the reader, not a function of how many rows were written;
 an origin recorded by the Steward says what was looked for upstream, and
 is not a source that merely had no edge yet;
@@ -191,9 +200,9 @@ to the passage it describes, its evidence showing what it states, and
 phrased as a finding about the document rather than a verdict on it or on
 a claim. Where one falls short, attach a note with
 `examination_note_finding`; the note sits beside the finding and does not
-remove it. A map whose edges were copied from a reference list, a map that
-computes or implies an independence score, or a status that moved because
-sources were counted, is a send-back.
+remove it. A map whose edges were copied from a reference list, reasoning that lets a
+computed figure stand in for an argument about what it shows, or a status
+that moved because sources were counted, is a send-back.
 
 ## For the Curator
 
@@ -277,10 +286,11 @@ read.
 ## Failure modes
 
 Edges copied from a bibliography. A reading that records whether the claim
-is true instead of whether the source bears its assertion. An independence
-score, an effective sample size, or a concentration index, computed or
-implied. A status moved because the map showed concentration. A summary
-with identifiers, relation names, or counts presented as scores. `material`
+is true instead of whether the source bears its assertion. A figure, a
+count of supporting sources or an index of their independence, used in
+place of reasoning about what it shows. Every source weighted alike, as if
+a restatement were worth the study it restates. A status moved because the
+map showed concentration. A summary with identifiers or relation names. `material`
 set true on every claim, or false to save the work. A source marked as read
 from its excerpt. A quotation the check could not find, relied on without
 reading the source. A map left stale across a merge. An

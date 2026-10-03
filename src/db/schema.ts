@@ -1087,6 +1087,33 @@ export const claimInstanceReadings = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// claim_instance_reading_log (#507)
+//
+// Every reading as it was recorded, append-only. claim_instance_readings keeps
+// the current reading per instance and is overwritten on a re-read; this keeps
+// the earlier ones, so a source's history can say that a Steward first found
+// it overstating and later, after a correction, found it sound.
+// ---------------------------------------------------------------------------
+export const claimInstanceReadingLog = pgTable(
+  "claim_instance_reading_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    instanceId: uuid("instance_id")
+      .notNull()
+      .references(() => claimInstances.id, { onDelete: "cascade" }),
+    support: text("support").notNull(),
+    note: text("note"),
+    sourceRead: boolean("source_read").notNull().default(false),
+    worthReading: boolean("worth_reading").notNull().default(false),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_cirl_instance").on(table.instanceId)]
+);
+
+// ---------------------------------------------------------------------------
 // claim_source_maps (#286)
 //
 // The per-claim READING: what the support rests on, in the graph's voice
@@ -1106,8 +1133,8 @@ export const claimSourceMaps = pgTable(
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     // Reader-facing account of what the support rests on. Plain prose, no
-    // edge-type names, no counts presented as scores (§12, and #286's
-    // no-scoring constraint).
+    // edge-type names (§12). Figures are fine where they inform; what #286
+    // rules out is a figure deciding in place of the Steward's reasoning.
     summary: text("summary").notNull(),
     // Whether the structure is worth surfacing on the claim page at all.
     material: boolean("material").notNull().default(false),

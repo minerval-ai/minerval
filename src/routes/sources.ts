@@ -9,6 +9,7 @@ import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { getSourceFacts } from "../services/source-facts-service.js";
 import { getSourceDocument } from "../services/source-segment-service.js";
 import { listExaminations } from "../services/examination-service.js";
+import { getSourceContext } from "../services/source-context-service.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -26,6 +27,31 @@ const errorEnvelopeSchema = {
 } as const;
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  // GET /sources/:source_id/context — the document across the whole graph
+  // (#507): its lineage (what it draws on and what draws on it, by relation
+  // and fidelity, on how many claims), its prominence (reach, where it stands
+  // in claims' stories, what Stewards found reading it), and a dated history
+  // of what has been done to and about it.
+  app.get<{ Params: { source_id: string } }>("/:source_id/context", {
+    schema: {
+      tags: ["sources"],
+      summary: "A source across the graph: lineage, prominence, and history",
+      params: {
+        type: "object",
+        properties: { source_id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const context = await getSourceContext(request.params.source_id);
+      if (!context) {
+        return reply.code(404).send({
+          error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
+        });
+      }
+      return reply.send(context);
+    },
+  });
+
   // GET /sources/:source_id/examinations — the in-depth checks of a
   // document (#507): each with its brief and who commissioned it (while
   // assessing a claim, or as a review of the document), the facets it

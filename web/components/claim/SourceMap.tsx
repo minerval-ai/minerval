@@ -11,9 +11,9 @@ import type {
 // serves it. The summary is the Steward's prose and appears only when the
 // Steward judged the structure material; the per-instance line says what
 // the Steward found on opening that source; the record behind a disclosure
-// is for the audit-minded and is never the default presentation. No scores
-// anywhere: the constitution forbids a mechanism that weighs evidence, and
-// the page shows judgments, in words.
+// is for the audit-minded and is never the default presentation. The
+// constitution forbids a mechanism that decides in place of judgment, so the
+// page shows the Steward's judgments, with whatever figures inform them.
 
 const SUPPORT_LINE: Record<InstanceReading["support"], string | null> = {
   supports: "The source's own evidence bears what it asserts.",

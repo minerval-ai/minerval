@@ -458,6 +458,14 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       input.createdBy,
     ]
   );
+  // The current reading is replaced in place; the log keeps every one, so a
+  // source's history shows a reading that changed (#507).
+  await rawQuery(
+    `INSERT INTO claim_instance_reading_log
+       (instance_id, support, note, source_read, worth_reading, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [instanceId, support, note, input.sourceRead === true, worthReading, input.createdBy]
+  );
   const row = rows[0]!;
   return { id: row.id, quote_check: check, replaced: !row.inserted };
 }

@@ -259,7 +259,7 @@
   },
   {
     "name": "provenance_write_map",
-    "description": "Write the claim's source map: the reader-facing account of what the support rests on, and whether that structure is material enough to show. One map per claim, replaced in place; the readings and edges remain the durable record beneath it. The summary is in the graph's voice: plain third-person prose that refers to sources by what they say, with no identifiers, no relation names, no counts presented as scores, and no em-dashes. Set material true only when the structure bears on how a reader should weigh the evidence (much of the support traces to one reanalysis; the strongest-sounding source overstates its own evidence; several outlets are one syndicated story). Most claims' provenance is unremarkable, and for them write a short summary and set material false.",
+    "description": "Write the claim's source map: the reader-facing account of what the support rests on, and whether that structure is material enough to show. One map per claim, replaced in place; the readings and edges remain the durable record beneath it. The summary is in the graph's voice: plain third-person prose that refers to sources by what they say, with no identifiers, no relation names, and no em-dashes; figures are welcome where they help a reader (three of the five outlets carry one wire story). Set material true only when the structure bears on how a reader should weigh the evidence (much of the support traces to one reanalysis; the strongest-sounding source overstates its own evidence; several outlets are one syndicated story). Most claims' provenance is unremarkable, and for them write a short summary and set material false.",
     "input_schema": {
       "type": "object",
       "properties": {
