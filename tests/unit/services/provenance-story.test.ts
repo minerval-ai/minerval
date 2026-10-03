@@ -110,6 +110,26 @@ describe("buildProvenanceStory", () => {
     expect(s.nodes.map((n) => n.downstream_total)).toEqual([1, 1]);
   });
 
+  it("dates each source by its earliest stated date, else its publication date, and lists its instances' stances", () => {
+    const s = story({
+      sources: [
+        { ...src("speech"), published_date: "2024-06" },
+        { ...src("paper"), published_date: "2024-03-02" },
+        { ...src("release", "dataset"), published_date: null },
+      ],
+      instances: [
+        { id: "i1", source_id: "speech", stance: "affirms", source_date: "2024-05-14" },
+        { id: "i2", source_id: "speech", stance: "affirms", source_date: "2024-05" },
+        { id: "i3", source_id: "paper", stance: "denies" },
+      ],
+      edges: [edge("paper", "release", "responds_to")],
+    });
+    const n = byId(s);
+    expect(n.get("speech")).toMatchObject({ date: "2024-05", stances: ["affirms"] });
+    expect(n.get("paper")).toMatchObject({ date: "2024-03-02", stances: ["denies"] });
+    expect(n.get("release")).toMatchObject({ date: null, stances: [], underlying: true });
+  });
+
   it("is empty for a claim with nothing recorded", () => {
     expect(story({}).nodes).toEqual([]);
   });

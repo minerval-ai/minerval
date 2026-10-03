@@ -101,6 +101,8 @@ describe("getProvenanceStory", () => {
       "Statistics release", "A post", "Think-tank report", "Wire story", "Syndicated copy",
     ]);
     const n = new Map(s.nodes.map((x) => [x.source.title, x]));
+    expect(n.get("Think-tank report")).toMatchObject({ stances: ["affirms"], date: null });
+    expect(n.get("Statistics release")).toMatchObject({ stances: [] });
     expect(n.get("Statistics release")).toMatchObject({
       standing: "origin", basis: "primary_source_kind", underlying: true, depth: 0, downstream_total: 3,
     });

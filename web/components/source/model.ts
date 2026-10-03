@@ -8,7 +8,7 @@ import type {
   SourceEventKind,
   SourcePage,
 } from "@/lib/types";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, partialDate } from "@/lib/format";
 
 // The source page's view model (#507): the document's own outline, which
 // leaves each examination covered, and where findings sit. Derived here so the
@@ -201,19 +201,7 @@ export function kindLabel(sourceType: string): string {
   return sourceType.replace(/_/g, " ");
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** A date at the precision it was recorded: "2022", "Mar 2022", "Mar 12, 2022". */
-export function partialDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso);
-  if (!m) return iso;
-  const [, y, mo, d] = m;
-  if (!mo) return y!;
-  const month = MONTHS[Number(mo) - 1] ?? mo;
-  if (!d) return `${month} ${y}`;
-  return `${month} ${Number(d)}, ${y}`;
-}
+export { partialDate };
 
 /** Table text as rows of cells when it splits cleanly, else null. */
 export function tableRows(text: string): string[][] | null {

@@ -975,6 +975,10 @@ export type StoryBasis = "steward" | "primary_source_kind" | "upstream" | "none"
 export interface StoryNode {
   source: { id: string; title: string; url: string | null; source_type: string };
   instance_ids: string[];
+  /** When the source said it, partial ISO-8601; absent from an API that predates it. */
+  date?: string | null;
+  /** Which side its instances take (affirms, denies, poses); empty for an underlying source. */
+  stances?: string[];
   /** Drawn on by the claim's sources without stating the claim itself. */
   underlying: boolean;
   standing: StoryStanding;

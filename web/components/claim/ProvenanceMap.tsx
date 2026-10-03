@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProvenanceStory, StoryNode } from "@/lib/types";
+import { partialDate } from "@/lib/format";
 import {
   DIVERGENT, edgeLabel, layoutFocus, layoutStory, storyCounts, upstreamOf,
   type CardItem, type Item, type ItemEdge,
@@ -61,6 +62,12 @@ interface Handlers {
   toggle: (key: string) => void;
 }
 
+const STANCE_WORD: Record<string, string> = {
+  affirms: "affirms",
+  denies: "denies the claim",
+  poses: "poses it as a question",
+};
+
 function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; h: Handlers; focus?: boolean; edgeInside?: boolean }) {
   const n = item.members[0];
   const stack = item.members.length > 1;
@@ -75,6 +82,18 @@ function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; 
     ? `${item.members.length} sources`
     : n.underlying ? "Underlying" : div ? "Diverges" : "";
   const eyebrow = [focus ? "Centre" : "", head, type].filter(Boolean).join(" · ");
+
+  // When it was said, and which side it takes where that is not simply
+  // asserting the claim: a denial or an open question changes how the card
+  // reads, and "affirms" on every card would be noise.
+  const dates = item.members.map((m) => m.date).filter((d): d is string => !!d).sort();
+  const when = dates.length === 0 ? null
+    : dates[0] === dates[dates.length - 1] || !stack ? partialDate(dates[0])
+    : `${partialDate(dates[0])} – ${partialDate(dates[dates.length - 1])}`;
+  const sides = [...new Set(item.members.flatMap((m) => m.stances ?? []))];
+  const side = sides.length === 0 || (sides.length === 1 && sides[0] === "affirms") ? null
+    : sides.length === 1 ? STANCE_WORD[sides[0]!] ?? sides[0]!
+    : sides.map((x) => STANCE_WORD[x] ?? x).join(" and ");
 
   const facts: string[] = [];
   if (!stack && n.underlying) facts.push("does not state the claim");
@@ -109,6 +128,13 @@ function Card({ item, h, focus = false, edgeInside = false }: { item: CardItem; 
         </Link>
         {stack && (
           <span className={styles.line}>and {item.members.length - 1} more like it</span>
+        )}
+        {(when || side) && (
+          <span className={styles.line}>
+            {when && <span className={styles.date}>{when}</span>}
+            {when && side && " · "}
+            {side && <span className={styles.stance} data-stance={sides.length === 1 ? sides[0] : "mixed"}>{side}</span>}
+          </span>
         )}
         {showEdgeInside && (
           <span className={styles.line} data-fid={fidOf(item.edge)}>

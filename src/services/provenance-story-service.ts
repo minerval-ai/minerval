@@ -43,6 +43,8 @@ export interface StorySource {
   title: string;
   url: string | null;
   source_type: string;
+  /** Partial ISO-8601, as the facts fetcher recorded it (#507 phase 3). */
+  published_date?: string | null;
 }
 
 export interface StoryEdgeInput {
@@ -64,7 +66,7 @@ export interface StoryRootInput {
 export interface StoryInput {
   sources: StorySource[];
   /** Instances of the claim: which sources state it. */
-  instances: Array<{ id: string; source_id: string }>;
+  instances: Array<{ id: string; source_id: string; stance?: string; source_date?: string | null }>;
   edges: StoryEdgeInput[];
   /** republishes pairs among, or out of, the story's sources: parent is the original. */
   republishes: Array<{ parent_source_id: string; child_source_id: string }>;
@@ -74,6 +76,14 @@ export interface StoryInput {
 export interface StoryNode {
   source: StorySource;
   instance_ids: string[];
+  /**
+   * When the source said it: the earliest date its instances give for the
+   * statement (a speech, a post), else the document's publication date.
+   * Partial ISO-8601 at whatever precision is known; null when neither is.
+   */
+  date: string | null;
+  /** Which side its instances take on the claim (affirms, denies, poses); empty for an underlying source. */
+  stances: string[];
   /** Drawn on by the claim's sources without stating the claim itself. */
   underlying: boolean;
   standing: StoryStanding;
@@ -115,6 +125,21 @@ export function buildProvenanceStory(claimId: string, input: StoryInput): Proven
     list.push(i.id);
     instancesBySource.set(i.source_id, list);
   }
+
+  // Partial ISO dates sort as text, so the earliest is the smallest.
+  const statedDate = new Map<string, string>();
+  const stancesBySource = new Map<string, Set<string>>();
+  for (const i of input.instances) {
+    if (!byId.has(i.source_id)) continue;
+    if (i.stance) {
+      const set = stancesBySource.get(i.source_id) ?? new Set<string>();
+      set.add(i.stance);
+      stancesBySource.set(i.source_id, set);
+    }
+    const d = i.source_date?.trim();
+    if (d && (!statedDate.has(i.source_id) || d < statedDate.get(i.source_id)!)) statedDate.set(i.source_id, d);
+  }
+  const dateOf = (src: StorySource) => statedDate.get(src.id) ?? src.published_date ?? null;
 
   // Downstream adjacency within the story: upstream source -> sources resting on it.
   const down = new Map<string, Set<string>>();
@@ -203,6 +228,8 @@ export function buildProvenanceStory(claimId: string, input: StoryInput): Proven
     return {
       source: s,
       instance_ids: instancesBySource.get(s.id) ?? [],
+      date: dateOf(s),
+      stances: [...(stancesBySource.get(s.id) ?? [])],
       underlying: !instancesBySource.has(s.id),
       standing: st.standing,
       basis: st.basis,
@@ -246,8 +273,8 @@ export function buildProvenanceStory(claimId: string, input: StoryInput): Proven
 /** Load a claim's provenance rows and build its origins-first story. */
 export async function getProvenanceStory(claimId: string): Promise<ProvenanceStory> {
   const [instances, edges, roots] = await Promise.all([
-    rawQuery<{ id: string; source_id: string }>(
-      `SELECT id, source_id FROM claim_instances WHERE claim_id = $1`,
+    rawQuery<{ id: string; source_id: string; stance: string; source_date: string | null }>(
+      `SELECT id, source_id, stance, source_date FROM claim_instances WHERE claim_id = $1`,
       [claimId]
     ),
     rawQuery<StoryEdgeInput>(
@@ -270,7 +297,7 @@ export async function getProvenanceStory(claimId: string): Promise<ProvenanceSto
   }
   const [sources, republishes] = await Promise.all([
     rawQuery<StorySource>(
-      `SELECT id, title, url, source_type FROM sources WHERE id = ANY($1::uuid[])`,
+      `SELECT id, title, url, source_type, published_date FROM sources WHERE id = ANY($1::uuid[])`,
       [ids]
     ),
     rawQuery<{ parent_source_id: string; child_source_id: string }>(

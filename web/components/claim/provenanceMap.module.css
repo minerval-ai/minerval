@@ -500,3 +500,18 @@
   .dropLabel { font-size: 10px; }
   .focus { width: 100%; }
 }
+
+/* When the source said it, and its side where that is not simply affirming (#507). */
+.date {
+  font-variant-numeric: tabular-nums;
+}
+
+.stance {
+  font-weight: 600;
+}
+
+/* A stance is a side, not a verdict: no status colour. */
+.stance[data-stance="denies"],
+.stance[data-stance="mixed"] {
+  color: var(--ink);
+}

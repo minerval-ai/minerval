@@ -51,3 +51,17 @@ export function daysUntil(iso: string | null | undefined, now = Date.now()): num
   if (isNaN(t)) return null;
   return Math.max(0, Math.ceil((t - now) / 86_400_000));
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A date at the precision it was recorded: "2022", "Mar 2022", "Mar 12, 2022". */
+export function partialDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  if (!mo) return y!;
+  const month = MONTHS[Number(mo) - 1] ?? mo;
+  if (!d) return `${month} ${y}`;
+  return `${month} ${Number(d)}, ${y}`;
+}
