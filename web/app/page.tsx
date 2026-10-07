@@ -79,7 +79,7 @@ export default async function Home() {
       <section className={styles.section}>
         <h2>How Minerval works</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".92rem", maxWidth: "40rem", marginTop: ".4rem" }}>
-          The graph is maintained by nine LLM administrators. Every decision carries a
+          The graph is maintained by ten LLM administrators. Every decision carries a
           reasoning trace, and every trace is open to challenge.
         </p>
         <div className={styles.triptych} data-tour="docs">
@@ -103,10 +103,11 @@ export default async function Home() {
           </Link>
           <Link className={styles.panelLink} href="/docs/agents">
             <span className="sc">The agents</span>
-            <h3>Eight administrators, in the open</h3>
+            <h3>Ten administrators, in the open</h3>
             <p>
               Extractor, matcher, steward, curator, reviewer, arbitrator, auditor,
-              grantmaker, each with its complete system prompt.
+              grantmaker, lookout, consistency checker, each with its complete system
+              prompt.
             </p>
             <span className={styles.go}>Meet the agents →</span>
           </Link>
