@@ -113,37 +113,16 @@ documents. Minerval takes the claim as its atomic unit and does the expensive
 work once. A claim is extracted, canonicalized, decomposed, and assessed a
 single time, then reused everywhere it appears.
 
-Four design choices follow from that. The rest of the system's commitments
-are argued in full in the [constitution](admin_constitution.md).
-
-- **Decomposition stops at what is uncontested.** Claims decompose into
-  subclaims until they reach bedrock, and bedrock is where no informed person
-  in the live discourse would actually dispute the claim, not where it
-  becomes logically primitive. "Special relativity is empirically valid" is
-  load-bearing for a physics claim, but it is settled, so it is a leaf.
-  Effort belongs on live disagreements.
-
-- **Identity by decomposition.** Two formulations are the same claim if and
-  only if they decompose identically; that is the basis for deduplication. A
-  claim and its denial are one node, because they pose the same question. The
-  disagreement is represented *on* the claim, with each recorded appearance
-  carrying a stance.
-
-- **Arguments as structure.** A claim can have several independent lines of
-  reasoning for and against it ("God exists" has the cosmological argument,
-  the teleological argument, the argument from evil). Each is a named grouping
-  of subclaims with a short written form stating the inference. Arguments are
-  structural, never epistemic: whether an argument is *sound* is itself a
-  claim in the graph.
-
-- **Verdicts where the evidence settles it, maps where it doesn't.** A
-  claim's assessment is one of six statuses (`verified`, `supported`,
-  `contested`, `unsupported`, `contradicted`, `unknown`), never a binary, and
-  every assessment carries a reasoning trace explaining how it was reached.
-  Where a disagreement can't be settled, the job is to make its structure
-  visible: what it rests on, where consensus exists, and which parts are
-  empirical and which come down to values or definitions. A well-mapped
-  unresolvable disagreement is a success, not a failure.
+The [constitution](admin_constitution.md) sets out how that works. Claims
+decompose until they reach what no informed person actually disputes
+([§6](admin_constitution.md#6-decomposition)). Two formulations are the same claim when
+they turn on the same considerations, and a claim and its denial are one
+node ([§2](admin_constitution.md#2-what-a-claim-is), [§3](admin_constitution.md#3-canonical-forms)).
+Independent lines of reasoning are recorded as arguments, whose soundness
+is itself a claim ([§7](admin_constitution.md#7-arguments)). Every assessment is one of six
+graded statuses with its reasoning attached, so a disagreement that can't
+be settled is mapped rather than forced to a verdict
+([§10](admin_constitution.md#10-explicit-uncertainty)).
 
 ## How it works
 
