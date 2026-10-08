@@ -43,17 +43,6 @@ read our [constitution](admin_constitution.md).
 
 ## Where it's going
 
-There are shorter-term goals and long-term goals, which are somewhat distinct.
-
-In the short term, I aim to systematically expand the frontiers of
-mathematics: 1) map out existing mathematical knowledge
-([example](https://minerval.ai/claims/5f9a607f-3072-4e9d-95d8-37a3aedb0d2b/map)),
-2) produce Lean statements of each open problem, 3) pick all the low-hanging
-fruit that can be solved using less than $200/problem through generic
-prompting and a simple harness, and 4) assign Erdős-style proof/counterexample
-bounties based on the importance of each theorem. The design is in
-[docs/mathematics.md](docs/mathematics.md).
-
 In the long term, I aim to turn Minerval into a central institution that
 organizes the funding of research and knowledge production across domains. To
 efficiently allocate attention in a scientific domain, we must first have a
