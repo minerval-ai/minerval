@@ -1,23 +1,20 @@
 import Link from "next/link";
 import { DocLayout } from "@/components/DocLayout";
 
-// The documentation hub (issue #112): one narrative from the idea to the full
-// governing texts. The overview, the model, and the pipeline live here inline;
-// the long verbatim documents (constitution, architecture & policies, agent
-// prompts) are subpages, linked from "The full texts".
+// The documentation hub (issue #112): a short overview of the structure and
+// the pipeline, then links to the long verbatim documents (constitution,
+// architecture & policies, agent prompts, skills, evals) on their subpages.
 
 export const metadata = {
-  title: "How Minerval works · Minerval",
+  title: "Documentation · Minerval",
   description:
-    "What the claim graph is, how claims move through it, and the full texts that govern the administrators.",
+    "Minerval is an open repository of the world's claims, maintained by LLM administrators bound by a public constitution.",
 };
 
 const toc = [
-  { depth: 2, text: "The idea", slug: "the-idea" },
-  { depth: 2, text: "The model", slug: "the-model" },
-  { depth: 2, text: "The pipeline", slug: "the-pipeline" },
-  { depth: 2, text: "The full texts", slug: "the-full-texts" },
-  { depth: 2, text: "How we test the agents", slug: "how-we-check-the-work" },
+  { depth: 2, text: "Structure", slug: "structure" },
+  { depth: 2, text: "Pipeline", slug: "pipeline" },
+  { depth: 2, text: "Prompts", slug: "prompts" },
   { depth: 2, text: "Built on the graph", slug: "built-on-the-graph" },
 ];
 
@@ -25,54 +22,22 @@ export default function DocsPage() {
   return (
     <DocLayout toc={toc}>
       <div className="doc">
-        <p className="sc" style={{ marginBottom: ".5rem" }}>Documentation</p>
-        <h1>How Minerval works</h1>
+        <h1>Documentation</h1>
         <p className="lede">
-          What the claim graph is, how a claim moves through it, and the full texts that
-          govern the administrators: the constitution, the architecture and policies, and
-          every agent&rsquo;s system prompt.
+          Minerval is an open repository of the world&rsquo;s claims, maintained by LLM
+          administrators bound by a public constitution.
         </p>
 
-        <h2 id="the-idea">The idea</h2>
-        <p className="dropcap">
-          Across the internet the same claims get investigated over and over, and the
-          reasoning is thrown out the moment a session ends. Minerval keeps that work,
-          and builds on it. It is an open repository of the world&rsquo;s claims, maintained by LLM
-          administrators bound by a public constitution. Picture Wikipedia, if its pages
-          were not topics but individual claims, each one weighed against the evidence and
-          kept current as the world changes.
-        </p>
-        <p>
-          The atomic unit is the claim, a proposition that can be true or false. A
-          normative claim like &ldquo;we should raise the minimum wage&rdquo; counts no
-          less than an empirical one. Claims decompose into subclaims, and two
-          formulations are the same claim exactly when they decompose the same way; a
-          claim and its denial are one node. Follow a claim down to its bedrock and you
-          reach one of three kinds of ground: a verified fact, a contested empirical
-          question, or a value premise. That is where a disagreement actually lives, and
-          most public disagreement is confused about which kind it is: people believe they
-          are arguing about facts when they are using different definitions, or believe
-          they differ on values when they actually differ about empirical consequences.
-        </p>
-        <p>
-          Minerval weighs evidence and reaches verdicts, but it will not write down a
-          prior for every question and call that the answer. Neutral, not nihilist: the
-          job is to make the structure of a disagreement visible, and to keep genuinely
-          open questions legible as open. The work of decomposing a claim is done once,
-          and applies everywhere the claim appears.
-        </p>
-
-        <h2 id="the-model">The model</h2>
+        <h2 id="structure">Structure</h2>
         <ul>
           <li>
             <strong>Claims</strong>: propositions stored in a canonical form that makes
-            their implicit parameters explicit.
+            their implicit parameters explicit. A claim and its denial are one node.
           </li>
           <li>
-            <strong>Arguments</strong>: named, independent lines of reasoning bearing on a
-            claim, each grouping its own subclaims. Each carries a brief written form
-            stating how those subclaims combine, with the subclaims linked inline. A
-            claim can carry arguments for and against side by side.
+            <strong>Arguments</strong>: named, independent lines of reasoning for or
+            against a claim, each grouping its own subclaims, with a brief written form
+            stating how they combine.
           </li>
           <li>
             <strong>Decomposition</strong>: typed edges (requires, supports, contradicts,
@@ -80,12 +45,9 @@ export default function DocsPage() {
           </li>
           <li>
             <strong>Assessment</strong>: one of six verdicts (verified, supported,
-            contested, unsupported, contradicted, unknown) and a reasoning trace,
-            revised as the world changes. Two numbers can accompany the verdict: a
-            verdict confidence (how sure the steward is that the status is right) and,
-            where a single probability is honest, a credence that the claim is true.
-            A claim the steward has not reached yet is unassessed: a pending state,
-            not a verdict.
+            contested, unsupported, contradicted, unknown) with a reasoning trace, a
+            verdict confidence, and, where appropriate, a credence. A claim not yet
+            reached is unassessed: pending, not a verdict.
           </li>
           <li>
             <strong>Instances &amp; sources</strong>: the exact utterances of a claim
@@ -97,16 +59,17 @@ export default function DocsPage() {
           </li>
         </ul>
 
-        <h2 id="the-pipeline">The pipeline</h2>
+        <h2 id="pipeline">Pipeline</h2>
         <p>
           Claims are processed deliberately by dedicated administrators, not generated ad
-          hoc in response to a query.
+          hoc in response to a query. Every administrator&rsquo;s system prompt starts with
+          the constitution in full, then its role, then the task.
         </p>
         <div className="pipeline">
           {[
             ["01", "Extractor", "reads a source for the claims it asserts, in canonical form"],
-            ["02", "Matcher", "same claim, or new? two claims match when they decompose alike, and a claim and its negation count as one"],
-            ["03", "Claim Steward", "owns each claim: decomposes it into subclaims and arguments, then weighs the evidence into one of six verdicts"],
+            ["02", "Matcher", "decides whether a claim is new; two claims match when they decompose alike"],
+            ["03", "Claim Steward", "owns each claim: decomposes it into subclaims and arguments, then weighs the evidence into a verdict"],
           ].map(([n, name, desc]) => (
             <div className="stage" key={n}>
               <span className="sc">{n}</span>
@@ -116,26 +79,19 @@ export default function DocsPage() {
           ))}
         </div>
         <p>
-          Around them, seven more administrators keep the graph honest: a curator tends the
-          structure between claims, a contribution reviewer weighs public submissions, a
-          dispute arbitrator handles escalations, an audit agent checks the work, a
-          grantmaker designs and stewards funded mandates, a lookout keeps a standing watch
-          for a mandate, and a consistency checker reads assessments against one another.
-          Ten agents in all; every decision carries a reasoning trace that is open to
-          challenge.
+          Seven more administrators help to maintain the graph: a curator, a contribution
+          reviewer, a dispute arbitrator, an audit agent, a grantmaker, a lookout, and a
+          consistency checker. All prompts are transparent, and every decision carries a
+          reasoning trace that is open to challenge.
         </p>
 
-        <h2 id="the-full-texts">The full texts</h2>
-        <p>
-          Transparency is the point: the documents below are the actual texts the system
-          runs on, published verbatim.
-        </p>
+        <h2 id="prompts">Prompts</h2>
         <div className="cards">
           <Link href="/docs/constitution" className="card">
             <div className="card-claim" style={{ fontWeight: 600 }}>The Administrator Constitution</div>
             <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
-              The 25 principles that govern every agent, given in full as the first layer
-              of each system prompt.
+              The principles and responsibilities that every agent is instructed to follow
+              in carrying out its role.
             </p>
           </Link>
           <Link href="/docs/architecture" className="card">
@@ -145,37 +101,25 @@ export default function DocsPage() {
             </p>
           </Link>
           <Link href="/docs/agents" className="card">
-            <div className="card-claim" style={{ fontWeight: 600 }}>The agents</div>
+            <div className="card-claim" style={{ fontWeight: 600 }}>Roles</div>
             <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
               The ten administrators, each with its role, its model, and its complete
               system prompt.
             </p>
           </Link>
-          <Link href="/docs/skills" className="card">
-            <div className="card-claim" style={{ fontWeight: 600 }}>The skills</div>
-            <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
-              The domain skills: how the constitution applies in one domain, spliced into
-              an agent&rsquo;s prompt when the claim it serves carries the domain&rsquo;s tag,
-              with the tools each brings.
-            </p>
-          </Link>
         </div>
-
-        <h2 id="how-we-check-the-work">How we test the agents</h2>
-        <p>
-          The agents are tested, and the tests are public: what each one checks, how it works,
-          what it costs, and what it has found. Most are built and not yet run; each page says
-          which.
-        </p>
-        <div className="cards">
-          <Link href="/docs/evals" className="card">
-            <div className="card-claim" style={{ fontWeight: 600 }}>The evals</div>
-            <p style={{ fontSize: ".9rem", color: "var(--ink-soft)", margin: "0 0 .3rem" }}>
-              Twelve tests, one page each, plus the documents they run on, what they cost, and
-              what is not tested yet.
-            </p>
-          </Link>
-        </div>
+        <ul>
+          <li>
+            <Link href="/docs/skills">The skills</Link>: how the constitution applies in a
+            given domain, spliced into an agent&rsquo;s prompt for claims carrying that
+            domain&rsquo;s tag.
+          </li>
+          <li>
+            <Link href="/docs/evals">The evals</Link>: twelve public tests of the agents,
+            one page each: what each checks, what it costs, and what it has found. Most
+            are built and not yet run; each page says which.
+          </li>
+        </ul>
 
         <h2 id="built-on-the-graph">Built on the graph</h2>
         <ul>
@@ -191,8 +135,7 @@ export default function DocsPage() {
           </li>
           <li>
             <a href="https://api.claimgraph.io/docs">The API &amp; MCP server</a>: the
-            same graph as a REST API and a remote MCP endpoint that grounds AI agents in
-            claims that have already been weighed. Keys are minted at{" "}
+            same graph as a REST API and a remote MCP endpoint. Keys are minted at{" "}
             <Link href="/account">/account</Link>.
           </li>
         </ul>
