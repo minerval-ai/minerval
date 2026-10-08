@@ -187,6 +187,35 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   }
 }
 
+/* annotated sidenotes, after the browser extension's look: the passage gets a
+   faint tint and a hairline underline, the note is a small paper card in the
+   margin, and hovering either one lights up the pair */
+.annot {
+  background: rgba(62, 98, 138, 0.07);
+  border-bottom: 1px solid var(--link);
+  border-radius: 1px;
+  transition: background 0.15s;
+}
+.annot-num {
+  font-family: var(--sans); font-size: 0.62rem; font-weight: 600;
+  color: var(--link); margin-left: 0.1em;
+}
+.sidenote.annot-note {
+  display: block;
+  background: var(--paper-card); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 0.55rem 0.7rem;
+  font-family: var(--serif); font-size: 0.74rem; line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.annot-note .sc { color: var(--link); }
+.annot:hover, .annot:has(+ .annot-note:hover) { background: rgba(62, 98, 138, 0.15); }
+.annot:hover + .annot-note, .annot-note:hover {
+  border-color: var(--link); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+@media (max-width: 1000px) {
+  .sidenote.annot-note { border-left: 2px solid var(--link); padding-left: 0.8rem; }
+}
+
 /* ==========================================================================
    Assessment status — badge, swatch, confidence
    ========================================================================== */
