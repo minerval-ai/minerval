@@ -1,19 +1,124 @@
 # Minerval
 
-**LLMs as epistemic infrastructure.**
+What to link to to prove your point on the internet is an underappreciated
+unsolved problem, even when you are 'demonstrably' right. None of the existing
+solutions are really adequate. Some random paper on Arxiv whose jargony
+abstract plausibly says something adjacent to the thing you're saying? A blog
+post by some guy your interlocutor doesn't know and doesn't trust? A news
+article? The Wikipedia page for an adjacent topic? A link to your conversation
+with Claude where you controlled the framing of the question? None of these
+things is likely to satisfy the objector.
 
-Minerval turns documents into a shared, queryable graph of claims. An LLM
-pipeline reads a source, pulls out the atomic claims it asserts, decides
-whether each already exists in the graph, decomposes it into the subclaims and
-arguments it rests on, and assesses its validity — with every judgment traced
-and open to challenge. The graph is live at [minerval.ai](https://minerval.ai),
-served by a public API at `api.claimgraph.io`, and reachable from a browser
-extension and an MCP server.
+## What is Minerval?
+
+Minerval is an open source project to build a database of claims about the
+world, figure out what the important ones are, and ask LLMs to assess their
+epistemic statuses.[^claims] Its claim pages
+([example](https://minerval.ai/claims/0d59fb15-7dc1-49b1-b9d9-9462f17d2d21/map))
+are intended to be the place that one links to or consults for the canonical,
+neutral epistemic status of any claim, much as Wikipedia is the canonical (and
+at least aspirationally neutral) place one goes for a standard introduction to
+any given topic.
+
+Minerval decomposes every claim to its bedrock, weighs it against the
+evidence, and keeps the verdict current as the world changes. The graph is
+maintained by LLM administrators operating under a public
+[constitution](admin_constitution.md); every judgment carries a reasoning
+trace, and every decision is open to challenge. Like Wikipedia, the graph is a
+public good, and the payoff is what gets built on it: the site at
+[minerval.ai](https://minerval.ai), a
+[browser extension](https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci)
+that annotates the web by verdict, and an API and MCP server that ground AI
+agents in claims that have already been weighed.
+
+If done properly, with today's best LLMs,[^llms] this should allow for
+actually good mass fact-checking, in the same way that Pangram allows actually
+good mass slop-detection.[^integration]
+
+I am aware of the long history of failed attempts at similar projects, and why
+most ideas in the category are indeed doomed. I am also very aware of the
+challenges of doing actually good epistemic work across domains with even the
+best of today's LLMs. For more details on how I approach the problem, please
+read our [constitution](admin_constitution.md).
+
+## Where it's going
+
+There are shorter-term goals and long-term goals, which are somewhat distinct.
+
+In the short term, I aim to systematically expand the frontiers of
+mathematics: 1) map out existing mathematical knowledge
+([example](https://minerval.ai/claims/5f9a607f-3072-4e9d-95d8-37a3aedb0d2b/map)),
+2) produce Lean statements of each open problem, 3) pick all the low-hanging
+fruit that can be solved using less than $200/problem through generic
+prompting and a simple harness, and 4) assign Erdős-style proof/counterexample
+bounties based on the importance of each theorem. The design is in
+[docs/mathematics.md](docs/mathematics.md).
+
+In the long term, I aim to turn Minerval into a central institution that
+organizes the funding of research and knowledge production across domains. To
+efficiently allocate attention in a scientific domain, we must first have a
+map of the work to be done, and then a mechanism for pricing that
+work.[^pricing] Minerval does both. By delegating funding decisions to
+grantmaker agents ([docs/allocation.md](docs/allocation.md)), it aims to solve
+the information asymmetry problem in the market for science.
+
+## Status
+
+I have built an [eval suite](https://minerval.ai/docs/evals) measuring
+properties which, if robustly satisfied at the graph level by the multi-agent
+system that administers the graph, would ensure that it can scale efficiently
+without losing coherence or accuracy (stability, path independence,
+consistency, and adversarial robustness).[^adversarial] Our
+[current mapped subdomains](https://minerval.ai/claims) were built for the
+Future of Life Foundation's
+[Epistack competition](https://flf.org/epistack-competition/), where Minerval
+was [selected as a winner](https://www.lesswrong.com/posts/mxzvL3hYFCcutQqcR/flf-s-epistemic-case-study-competition-results).
+They look about right, but we need to run larger multi-agent tests to be
+confident that these properties hold.
+
+## Who's behind this
+
+Minerval is built by [Jackson Hurley](https://jacksonhurley.com/).[^corp] At
+this time, Minerval is just me and Claude Code. I am actively looking for
+cofounders. If you like the vision and want to work on it, please
+[reach out](https://minerval.ai/about#contact). If you know the perfect
+person, please put us in touch!
+
+[^claims]: Claims are canonical forms of public claims about the world. More
+    details in [part II of our constitution](admin_constitution.md#part-ii-the-claim-layer).
+[^llms]: Nobody will use this, and no one should use it, if the outputs are
+    noticeably worse than what they could get by opening a new tab and simply
+    asking their own frontier model.
+[^integration]: Including via our browser extension or, ideally, since no one
+    uses browser extensions, direct integration with platforms such as
+    LessWrong, Substack (similar to what they've done with Pangram), or X.
+[^pricing]: A complex problem. See
+    [Allocating Attention in Claimspace](https://jacksonhurley.com/allocating-attention-in-claimspace).
+[^adversarial]: If Minerval succeeds at becoming a canonical source, people
+    will try to influence it. Minerval invites contributions and new evidence,
+    but that comes with substantial attack surface area for bad-faith actors.
+    The plan here is to set up a test environment and give agents the task of
+    manipulating the graph's administration into supporting their position,
+    then keep adjusting until relentless frontier agents robustly fail at
+    red-teaming.
+[^corp]: I have incorporated Minerval, Inc. as a vanilla Delaware C-Corp, but
+    I have no immediate plans to either raise money from VCs or provide
+    excludable goods and services, with the very minor exception of the chat
+    feature in the browser extension/API.
+
+## This repository
 
 This repository contains the whole system: the API and agent pipeline, the web
 app, the extension, the evaluation harness, and the infrastructure.
 
-## The idea
+In outline: an LLM pipeline reads a source, pulls out the atomic claims it
+asserts, decides whether each already exists in the graph, decomposes it into
+the subclaims and arguments it rests on, and assesses its validity. The graph
+is live at [minerval.ai](https://minerval.ai) and served by a public API at
+`api.claimgraph.io`. The rest of this README covers the design, the agents,
+the serving surfaces, and how to run it locally.
+
+## Design commitments
 
 Most epistemic tools work at the level of documents — an article is
 fact-checked, a page is encyclopedic. But disputes live at the level of
