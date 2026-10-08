@@ -34,7 +34,9 @@ function Annot({ n, text, children }: { n: number; text: ReactNode; children: Re
 export default function About() {
   return (
     <div className="doc">
-      <h1>About</h1>
+      <h1 className="sc" style={{ fontSize: ".66rem", letterSpacing: ".09em", margin: "0 0 .9rem" }}>
+        About
+      </h1>
       <p className="dropcap">
         What to link to to prove your point on the internet is an underappreciated
         unsolved problem, even when you are &lsquo;demonstrably&rsquo; right. None of the
