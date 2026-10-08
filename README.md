@@ -113,14 +113,8 @@ documents. Minerval takes the claim as its atomic unit and does the expensive
 work once. A claim is extracted, canonicalized, decomposed, and assessed a
 single time, then reused everywhere it appears.
 
-A few commitments, argued in full in the [constitution](admin_constitution.md),
-shape everything downstream:
-
-- **Clarity over resolution.** The system's job is to make the structure of a
-  claim visible (what it rests on, where consensus exists, which
-  disagreements are empirical and which come down to values or definitions),
-  not to declare winners. A well-mapped unresolvable disagreement is a
-  success, not a failure.
+Four design choices follow from that. The rest of the system's commitments
+are argued in full in the [constitution](admin_constitution.md).
 
 - **Decomposition stops at what is uncontested.** Claims decompose into
   subclaims until they reach bedrock, and bedrock is where no informed person
@@ -142,22 +136,14 @@ shape everything downstream:
   structural, never epistemic: whether an argument is *sound* is itself a
   claim in the graph.
 
-- **Honest uncertainty.** A claim's assessment is one of six statuses
-  (`verified`, `supported`, `contested`, `unsupported`, `contradicted`,
-  `unknown`), never a binary, and every assessment carries a reasoning trace
-  explaining how the verdict was reached.
-
-- **Effort follows importance.** Not every claim deserves the full treatment.
-  Each claim carries an importance score, roughly consequence-if-wrong times
-  how actively it is disputed or consulted. Work on the graph is funded
-  through mandates (see [Allocation](#allocation) below), and importance
-  anchors what that work is worth, so the most consequential claims are
-  assessed first while minor ones stay searchable stubs until someone funds
-  them.
-
-- **Openness.** Anyone can contribute challenges, evidence, merge and split
-  proposals, and new arguments. Contributions flow through reviewed,
-  appealable governance, with the reasoning on the public record.
+- **Verdicts where the evidence settles it, maps where it doesn't.** A
+  claim's assessment is one of six statuses (`verified`, `supported`,
+  `contested`, `unsupported`, `contradicted`, `unknown`), never a binary, and
+  every assessment carries a reasoning trace explaining how it was reached.
+  Where a disagreement can't be settled, the job is to make its structure
+  visible: what it rests on, where consensus exists, and which parts are
+  empirical and which come down to values or definitions. A well-mapped
+  unresolvable disagreement is a success, not a failure.
 
 ## How it works
 
@@ -243,7 +229,11 @@ action (assess this claim, ingest that source, plan that mandate) is a row on
 a shared action ledger. Mandates and people place money on those rows, and an
 action runs exactly when its allocations cover its expected cost; nothing
 else decides what runs. Money is denominated in owls, one owl per dollar of
-metered model cost. Mandates are public, funded programs of work on the
+metered model cost. Each claim carries an importance score (roughly
+consequence-if-wrong times how actively it is disputed or consulted) that
+anchors what work on it is worth, so the most consequential claims are
+assessed first while minor ones stay searchable stubs until someone funds
+them. Mandates are public, funded programs of work on the
 graph, each stewarded by its own Grantmaker and watched by the Lookouts it
 posts. See [docs/allocation.md](docs/allocation.md).
 
