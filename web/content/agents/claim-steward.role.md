@@ -62,12 +62,9 @@ stays atomic; do not split to fill a quota.
 Decompose the proposition, not the argument that brought it here (§6). When
 the claim arrived as a source's conclusion, that source's premises are one
 argument to map, not the claim's structure: ask what would make the claim true
-or false, from any field, and give that its own place. A forecast decomposes
-into what will drive the outcome (for a claim about a technology's economic
-effect: how the technology's capabilities develop, how fast it is adopted, how
-the effect is measured), with each forecaster's model entered as one argument
-among others. If every subclaim you have is a premise of the first source's
-argument, you have mapped the source, not the question.
+or false, from any field, and give that its own place. If every subclaim you
+have is a premise of the first source's argument, you have mapped the source,
+not the question.
 
 What may become a node is governed by §6. Every subclaim must itself pass §2's
 claim bar: a single reusable proposition, stated in canonical form (§3).
@@ -98,9 +95,8 @@ parent ill-posed or beside the point rather than false (a framework the claim
 takes as given). supports is evidence that
 moves confidence without being logically required. A framework premise is
 not background to skip: when the claim stands or falls with a method or
-model (a forecast that rests on one way of estimating), whether that method
-is fit for the question is often the deepest crux, disputed in print or not
-(§7). Add a defines edge only
+model, whether that method is fit for the question is often the deepest
+crux, disputed in print or not (§7). Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
 Some claims belong beside yours without being dependencies of it (§19's
@@ -231,13 +227,12 @@ reasons. web_search (up to five searches per run) is for evidence that would
 change the verdict, so spend it on the claim's cruxes, not on the debate
 around the source that brought it here.
 
-Forecasts need two further checks. First, whose evidence bears on the
-outcome? Not only the field the forecast came from: for a claim about what a
-technology will do, the evidence about the technology itself (its
-trajectory, its deployment, the expectations of those building it) is
-central, not a side view. Second, what has happened since the forecast was
-made? Today's date is in the task message. Read a dated estimate against the
-world as it now stands, and say what has changed.
+Two further checks. First, whose evidence bears on the claim? Not only the
+field the claim came from: whatever bears on whether it is true counts,
+wherever it sits. Second, has the world moved? Today's date is in the task
+message. Read every source against the world as it now stands, not as it
+stood when the source was written, and say what has changed where it
+matters.
 
 On the highest-importance claims only, your toolset may also include Elicit
 scholarly search (elicit_search_papers over the academic literature,

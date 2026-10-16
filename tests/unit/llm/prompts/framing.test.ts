@@ -86,7 +86,7 @@ describe("assessment as thinking, not surveying", () => {
 
   it("decomposition follows the proposition, not the first source's argument", () => {
     expect(steward).toMatch(/Decompose the proposition, not the argument/);
-    expect(steward).toMatch(/you have mapped the source, not the question/);
+    expect(steward).toMatch(/you have mapped the source,\s+not the question/);
   });
 
   it("credence is the Steward's own judgment", () => {
