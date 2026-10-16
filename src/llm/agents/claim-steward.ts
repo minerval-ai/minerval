@@ -69,7 +69,7 @@ ${structureStep}
    consequential, contested claims warrant deeper search and a second, adversarial
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   Think first: before searching, work out your own view of what would make
+   Reason first: before searching, work out your own view of what would make
    the claim true or false and what you expect to find, then search to test
    it (see "Assessment"). Use web_search for external evidence where it would
    change the verdict.

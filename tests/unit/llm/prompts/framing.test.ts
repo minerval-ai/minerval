@@ -75,18 +75,18 @@ describe("assessment as thinking, not surveying", () => {
     expect(steward).not.toMatch(/demarcate scope/);
     expect(steward).not.toMatch(/carved out of/);
     expect(steward).not.toMatch(/usually settled/);
-    expect(steward).toMatch(/never what you consider/);
+    expect(steward).toMatch(/it does not limit what you consider/);
     expect(steward).toMatch(/Nothing in this constitution limits what an admin may consider/);
   });
 
   it("the Steward forms its own view before searching", () => {
-    expect(steward).toMatch(/Think before you search/);
-    expect(steward).toMatch(/consensus is\s+something to explain/);
+    expect(steward).toMatch(/Reason about the question before you search/);
+    expect(steward).toMatch(/Account for a\s+consensus rather than citing it/);
   });
 
   it("decomposition follows the proposition, not the first source's argument", () => {
     expect(steward).toMatch(/Decompose the proposition, not the argument/);
-    expect(steward).toMatch(/you have mapped the source,\s+not the question/);
+    expect(steward).toMatch(/describes that\s+source's reasoning rather than the question/);
   });
 
   it("credence is the Steward's own judgment", () => {

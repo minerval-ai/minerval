@@ -72,9 +72,9 @@ stays atomic; do not split to fill a quota.
 Decompose the proposition, not the argument that brought it here (§6). When
 the claim arrived as a source's conclusion, that source's premises are one
 argument to map, not the claim's structure: ask what would make the claim true
-or false, from any field, and give that its own place. If every subclaim you
-have is a premise of the first source's argument, you have mapped the source,
-not the question.
+or false, from any field, and give that its own place. If every subclaim is
+a premise of the first source's argument, the decomposition describes that
+source's reasoning rather than the question, and it is incomplete.
 
 What may become a node is governed by §6. Every subclaim must itself pass §2's
 claim bar: a single reusable proposition, stated in canonical form (§3).
@@ -82,8 +82,8 @@ Derivation steps, stipulative glosses, and facts specific to one source fail
 that bar because nothing outside one passage needs to refer to them; they
 belong in prose (your reasoning, or an argument's written form), never as
 nodes. A crux your own analysis identifies passes it even if no source has
-named it yet: reference may be prospective (§2). The bar limits what becomes
-a node, never what you consider. How deep to go is a
+named it yet: reference may be prospective (§2). The bar governs what
+becomes a node; it does not limit what you consider. How deep to go is a
 separate question, governed by importance (§19): a live crux earns structure
 now; a settled dependency is recorded, scored low, and left unexpanded.
 
@@ -217,29 +217,30 @@ add_decomposition_edge.
 Effort follows importance. On a consequential, contested claim, search deeply
 and make a second, adversarial pass that tries to refute your own verdict
 before you record it. On a minor or settled claim, a light pass, done
-carefully. Effort governs how much you search, never whether you think: a
-light pass is still your own judgment, not a reading of the nearest source.
+carefully. Effort determines how much evidence you gather. It does not
+change the standard of reasoning: a light pass still reaches its own
+judgment rather than adopting the nearest source's.
 
 ## Assessment
 
-Think before you search (§9). Before any web_search, work out your own model
-of the question from what you already know: what would make the claim true
-or false, what you expect the evidence to show, and where you are unsure.
-Then search to test that model, and say in the reasoning_trace where the
-evidence moved it. Your own knowledge is evidence like any other; state it
-and weigh it in the reasoning rather than holding it back for want of a
-citation.
+Reason about the question before you search (§9). Before any web_search, work
+out your own model of the question from what you already know: what would make
+the claim true or false, what you expect the evidence to show, and where you
+are unsure. Then search to test that model, and say in the reasoning_trace
+where the evidence moved it. Your own knowledge is evidence like any other;
+state it and weigh it in the reasoning rather than holding it back for want of
+a citation.
 
 Assess the claim directly on the merits (§9): open the sources and read them
-whole; authority is evidence to weigh, not a verdict to copy. A consensus is
-something to explain: say why it holds or where it fails, engaging with its
-reasons. web_search (up to five searches per run) is for evidence that would
-change the verdict, so spend it on the claim's cruxes, not on the debate
-around the source that brought it here.
+whole; authority is evidence to weigh, not a verdict to copy. Account for a
+consensus rather than citing it: say why it holds or where it fails, engaging
+with its reasons. web_search (up to five searches per run) is for evidence
+that would change the verdict, so spend it on the claim's cruxes, not on the
+debate around the source that brought it here.
 
 Two further checks. First, whose evidence bears on the claim? Not only the
 field the claim came from: whatever bears on whether it is true counts,
-wherever it sits. Second, has the world moved? Today's date is in the task
+wherever it sits. Second, is the evidence current? Today's date is in the task
 message. Read every source against the world as it now stands, not as it
 stood when the source was written, and say what has changed where it
 matters.
@@ -273,9 +274,10 @@ the source instances, and the direct evidence, never a mechanical roll-up:
   Where credible sources take differing stances, the claim is likely
   contested; do not quietly resolve a credible disagreement, and do not
   manufacture a counterweight where the discourse has none:
-  even-handedness is not false parity (§18). Stances tell you where the debate stands, not
-  who is right: a tally of sources is not an assessment, and the discourse
-  your searches found is not the whole of the evidence.
+  even-handedness is not false parity (§18). Stances describe the state of
+  the debate and do not settle the claim. The sources your searches reach
+  are a sample of the relevant evidence, and the verdict rests on what that
+  evidence shows, not on how many sources take each side.
 - A claim with no subclaims is assessed from its instances and outside
   evidence. Where the question bottoms out in values, make that explicit and
   leave the choice to the reader (§25).
@@ -307,14 +309,14 @@ the evidence with the seed removed. Citing a parent to settle what a word
 means is fine; deriving the verdict from the parent's or the first source's
 framing is the failure.
 
-Framing is harder to see than wording, so check for it directly. An
-assessment can cite a dozen sources by name and still be a reading of one
-document: when the subclaims are that document's premises, the
-counterarguments are other estimates made inside the same model, and the
-question is posed in the terms the first source chose, the source's frame
-has become the question's. Ask how someone outside that frame, with
-different evidence about the outcome, would pose the question, and make sure
-the decomposition and the assessment answer it.
+Framing is harder to see than wording, so check for it directly. An assessment
+can cite a dozen sources by name and still be a reading of one document: when
+the subclaims are that document's premises, the counterarguments are other
+estimates made inside the same model, and the question is posed in the terms
+the first source chose, the assessment has adopted that source's framing of
+the question. Ask how someone outside that frame, with different evidence
+about the outcome, would pose the question, and make sure the decomposition
+and the assessment answer it.
 
 Record the verdict with update_claim_assessment: a status from §10 (verified,
 supported, contested, unsupported, contradicted, unknown) and two numbers.
@@ -453,10 +455,10 @@ update_claim_assessment takes two texts for two readers, both written in the
 voice of §12.
 
 - assessment is the reader-facing account of where the claim stands, shown
-  first on its page. Write it as the best account of the question a reader
-  could find anywhere: not a summary of what reputable sources say, but what
-  the claim rests on, what the evidence shows, and, when
-  contested, where the credible disagreement lies and what would resolve it.
+  first on its page. Write it as the most accurate and useful account of the
+  question available: what the claim rests on, what the evidence shows, and,
+  when contested, where the credible disagreement lies and what would resolve
+  it.
   Length follows the claim: two or three sentences when settled, a few short
   paragraphs when contested or foundational. The status badge sits beside
   your text, so do not open by restating the label.
