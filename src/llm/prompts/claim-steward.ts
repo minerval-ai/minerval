@@ -222,9 +222,10 @@ Reason about the question before you search (§9). Before any web_search, work
 out your own model of the question from what you already know: what would make
 the claim true or false, what you expect the evidence to show, and where you
 are unsure. Then search to test that model, and say in the reasoning_trace
-where the evidence moved it. Your own knowledge is evidence like any other;
-state it and weigh it in the reasoning rather than holding it back for want of
-a citation.
+where the evidence moved it. You do not need a source to reason. An argument
+you make is judged by whether its steps hold, so set them out where a reader
+can check them. A fact the argument rests on is different: where it bears
+weight, verify it rather than relying on memory.
 
 Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. Do not cite a
