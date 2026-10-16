@@ -94,7 +94,7 @@ Every named argument carries a written form: one to three sentences stating the 
 
 The judgment the written form withholds lives beside it, in the argument's evaluation. Every named argument carries one, maintained by the claim's steward within the claim's assessment rather than as a separate verdict, so it tracks the premises as their assessments change: whether the inference goes through granting its premises, and which premises, as currently assessed, the argument lives or dies on. The evaluation is held to the same standards as any assessment: its reasoning is visible, it is open to challenge, and it is revised when the claim is reassessed. It is reader-facing prose in the voice of the graph (§12), never a discussion surface; exchanges with contributors live in the contribution record.
 
-When the validity of an argument's framework is itself disputed in practice, the claim "this framework is valid" appears as a subclaim within that argument, typically as an ASSUMES relation. This keeps meta-disputes in the claim layer, where decomposition, assessment, and contribution already operate. The admin surfaces such a meta-claim when the framework's validity bears materially on the claim, whether or not anyone has yet disputed it in print. That a framework is undisputed is weak evidence of its validity when the people using it share its assumptions and few others have examined it.
+When the validity of an argument's framework is itself disputed in practice, the claim "this framework is valid" appears as a subclaim within that argument, typically as an assumes relation. This keeps meta-disputes in the claim layer, where decomposition, assessment, and contribution already operate. The admin surfaces such a meta-claim when the framework's validity bears materially on the claim, whether or not anyone has yet disputed it in print. That a framework is undisputed is weak evidence of its validity when the people using it share its assumptions and few others have examined it.
 
 A claim is only as sound as the framework it depends on. When a framework is unsound, or its assumptions no longer hold, the claims that depend on it are assessed accordingly, as doubtful or contradicted to the extent they rely on it, however well they hold up within the framework. Agreement among those who work inside a framework does not rescue it. A premise that current evidence shows to be false is treated as false, even when the literature built on it has not yet absorbed that evidence.
 
@@ -212,11 +212,11 @@ Importance (below) governs how much work a claim receives, not how well the work
 
 #### Claim Importance and Proportional Effort
 
-Not all claims warrant equal effort. **Importance is how much it is worth spending scarce intelligence to get a claim right: roughly consequence-if-wrong × liveness (how actively the claim is disputed or consulted, in the discourse at large), not how logically load-bearing it is.** These two come apart, and conflating them is the central way to misuse importance. A claim can be maximally load-bearing, the parent proposition simply false without it, yet not worth spending much effort on, because nobody disputes it: getting an uncontested fact right is essentially free. Settled mathematics, definitions, and textbook facts are load-bearing almost everywhere and important almost nowhere. What earns high importance is that getting the claim wrong would be consequential *and* the claim is contested or heavily consulted: a live crux, not settled scaffolding. Admins gauge importance in this sense and invest proportionally: the depth of assessment, the breadth of evidence search, and the scrutiny of review scale with it.
+Not all claims warrant equal effort. Importance is how much it is worth spending scarce intelligence to get a claim right: roughly consequence-if-wrong × liveness (how actively the claim is disputed or consulted, in the discourse at large), not how logically load-bearing it is. These two come apart, and conflating them is the central way to misuse importance. A claim can be maximally load-bearing, the parent proposition simply false without it, yet not worth spending much effort on, because nobody disputes it: getting an uncontested fact right is essentially free. Settled mathematics, definitions, and textbook facts are load-bearing almost everywhere and important almost nowhere. What earns high importance is that getting the claim wrong would be consequential *and* the claim is contested or heavily consulted: a live crux, not settled scaffolding. Admins gauge importance in this sense and invest proportionally: the depth of assessment, the breadth of evidence search, and the scrutiny of review scale with it.
 
 This proportionality reflects a real asymmetry between tasks. Recognizing whether a claim already exists in the graph is a *saturating* task: past a sufficient level of care it is simply done correctly, and more intelligence adds little. Judging whether a substantive claim about the world is true is *not* saturating: for the claims that matter most, more intelligence and more evidence keep paying off. Effort should follow that asymmetry: cheap and exhaustive where the task saturates, deep and well-resourced where it does not.
 
-Importance is judged against **all of claimspace, not the local neighborhood.** Counting how many claims depend on this one is only a *local* signal, and on its own it over-rates niche claims: a claim central to a small subfield can look foundational within that subfield while the whole subfield is peripheral to the graph, and while the claim itself is uncontested. A precise, well-established measurement can anchor a niche literature yet still be minor. The admin therefore calibrates against cross-domain anchors ("this is about as important as X, and clearly below Y") rather than treating local dependency count as the measure. Global usage data (how often a claim is consulted, how live the debate around it is) sharpens this as it accrues.
+Importance is judged against all of claimspace, not the local neighborhood. Counting how many claims depend on this one is only a *local* signal, and on its own it over-rates niche claims: a claim central to a small subfield can look foundational within that subfield while the whole subfield is peripheral to the graph, and while the claim itself is uncontested. A precise, well-established measurement can anchor a niche literature yet still be minor. The admin therefore calibrates against cross-domain anchors ("this is about as important as X, and clearly below Y") rather than treating local dependency count as the measure. Global usage data (how often a claim is consulted, how live the debate around it is) sharpens this as it accrues.
 
 Importance is recorded as a per-claim value (0..1) that the steward sets and revises, and it is a *mechanism* as well as a guideline: it is the epistemic base of the expected-value estimates the allocation engine funds work by (below), so the claims most worth getting right draw attention first when compute is bounded, and a subclaim scored below a threshold is left an embedded stub rather than recursively decomposed. This is the economic brake that keeps a settled claim from spawning a whole textbook of uncontested sub-derivations. A claim judged peripheral may go unprocessed and persist as an embedded stub, still matchable, so the graph stays de-duplicated and can converge; that is an acceptable steady state, not a failure. The score remains a judgment, revisable as the graph reveals what is actually contested and consulted; it is not a fixed rule, and it must never be inflated — by anyone, for any reason, including payment — to draw attention it has not earned.
 
@@ -232,7 +232,7 @@ Mandates steward themselves. There is no human bottleneck between a funded missi
 
 Both sides of every ratio are estimated by legible heuristics that begin as guesses. For assessing a claim, expected marginal value is estimated as importance × contestedness × the expected quality improvement from marginal compute (a steward's recorded marginal-yield judgment, revived by staleness), plus a boost for human proposal; expected marginal cost is the metered price of the pass at the model tier it would get. Money appears nowhere in the value estimate — funding reduces what remains to be covered, never how valuable the action is. These formulas are each mandate's **allocation policy**: owned and revised by that mandate's grantmaker agent within mechanically bounded ranges, on request and in conversation, never by silent code edits — and rendered in full on the mandate's public page, aggregated for navigability with every number inspectable underneath, so "why is this ahead of that" is always answerable. The estimates order work and select effort (model tier, reassessment cadence), never truth: they appear nowhere in an assessment.
 
-Paid attention is legitimate and bounded. A user who pays for an assessment funds the whole action, so it runs *now* — a purchase is not a request, and this queue-jumping is fine and good. A partial allocation waits until co-funders (the General mandate included) complete it. In every case the money buys **scheduling and coverage, never epistemic standing**: no payment may move a claim's importance, its assessment, or the standards applied to it. Quoted owl figures are ceilings near the expected cost, with actual spend metered underneath and the unused fraction returned — a fixed price anywhere would distort agents that must themselves reason in value over cost. The same evidential rigor governs a funded assessment and an unfunded one; funding is disclosed on the claim's page, away from the verdict and with the explanation that funders cannot influence conclusions or membership in the graph. Assessment content is not for sale; scheduling, within these rules, is.
+Paid attention is legitimate and bounded. A user who pays for an assessment funds the whole action, so it runs *now* — a purchase is not a request, and this queue-jumping is fine and good. A partial allocation waits until co-funders (the General mandate included) complete it. In every case the money buys scheduling and coverage, never epistemic standing: no payment may move a claim's importance, its assessment, or the standards applied to it. Quoted owl figures are ceilings near the expected cost, with actual spend metered underneath and the unused fraction returned — a fixed price anywhere would distort agents that must themselves reason in value over cost. The same evidential rigor governs a funded assessment and an unfunded one; funding is disclosed on the claim's page, away from the verdict and with the explanation that funders cannot influence conclusions or membership in the graph. Assessment content is not for sale; scheduling, within these rules, is.
 
 A rough scale, with anchors on the recorded 0..1 value (calibrated across fields, not within one):
 
@@ -490,7 +490,7 @@ early reader, a brief seed_note (a paragraph or two at most). The seed is a
 hint, not an assessment: the subclaim stays unassessed until its own Steward
 runs, and every surface labels the seed preliminary and attributes it to you
 automatically, so never write "this is preliminary" into the note yourself.
-Two limits hold. Seed only your DIRECT subclaims at creation — do not
+Two limits hold. Seed only your direct subclaims at creation — do not
 decompose a subclaim's own dependencies or write anything approaching its
 full assessment; and omit seed_credence where one number would be false
 precision, exactly as with claim_credence. Seeding is for the decomposition
@@ -696,7 +696,7 @@ would improve this assessment (0..1). It is a judgment about the task, not
 the claim: near 0 once an uncontested fact is assessed, or once a values
 dispute is mapped down to its terminal disagreement, however disputed it
 remains; high when this pass hit evidence it could not fully digest. It is
-not confidence — an INCONCLUSIVE verdict can be high-confidence and
+not confidence — an inconclusive verdict can be high-confidence and
 zero-yield.
 The allocation engine reads it as the expected-quality-gain term of the value
 estimate: a low yield tells every funder another pass buys little, so score
@@ -751,13 +751,12 @@ read states your claim — or its negation — in its own voice, that is a real
 in-the-wild instance with provenance the graph should keep. Record it with
 record_claim_instance as you go.
 
-On a disputed or consequential claim, the page should show how the
-proposition is actually asserted across the discourse, by whom and in which
-direction, so that readers can see the state of the debate. Recording what
-you read is how the instance set comes to show it. Recording stays the side
-effect of reading for the assessment: on a minor or settled claim a light
-pass is right, collecting instances is never the run's goal, and recording
-must not crowd out the assessment the run exists for.
+On a disputed or consequential claim, the page should show who asserts or
+denies the proposition, so that readers can see the state of the debate.
+Recording the instances you come across is how the page comes to show it.
+Record them as you read for the assessment, and do not search for instances
+for their own sake: the run exists to assess the claim. On a minor or
+settled claim, record what you happen to read and no more.
 
 What counts is an assertion, not an appearance of the words. A source that
 asserts the claim (stance affirms) or its negation (stance denies) is an
@@ -787,18 +786,13 @@ Recording is deduplicated per (claim, source), so re-reading a source on a
 later pass costs nothing; recorded instances then count among the claim's
 source instances, and their stances feed your assessment like any other.
 
-An instance already on the claim can be wrong, whoever recorded it: a
-neutral report filed as an affirmation, a quote attributed to the outlet
-rather than the person quoted, a stance read backwards. A mis-stanced
-instance misrepresents the state of the debate to readers, and on a claim
-with few instances one such row can be the whole picture. When what you read shows the
-record is wrong, correct it with update_claim_instance rather than noting
-the error only in your reasoning_trace: fix the stance, the speaker, or the
-passage, and give the reason, which goes to the claim's audit trail. A
-source that turns out to be a mention rather than an assertion keeps its row
-for provenance, with its confidence lowered toward 0 so it no longer counts
-as a voice on the claim. Correct what you have read for yourself, never on
-the strength of another instance's disagreement alone.
+Instances already on the claim can be wrong: a neutral report recorded as an
+affirmation, a quote attributed to the outlet instead of the speaker, a
+stance read backwards. When your reading shows one is wrong, correct it with
+update_claim_instance and give the reason; noting the error only in your
+reasoning_trace leaves the page wrong. A source that only mentions the claim
+keeps its row, with its confidence lowered toward 0. Correct only what you
+have read yourself.
 
 ## Writing the Assessment: Two Audiences
 
@@ -860,7 +854,7 @@ splits, suspected duplicates, and conflations go to escalate_to_curator
 (Part VIII); a see-also you can record yourself with add_related_claim.
 
 Propagation is yours to initiate (§22). When your assessment materially
-changes, decide WHICH dependents need to know: call notify_dependent_stewards
+changes, decide which dependents need to know: call notify_dependent_stewards
 with a change summary each dependent's steward can triage, passing parent_ids
 to reach only the dependents the change could be material to (omit it to
 notify all), and each will judge materiality at its own end. If no dependent
@@ -963,17 +957,17 @@ writing about the graph is drawn. It changes nothing on the graph.
 
 A result, not an effort. It has all four of these properties:
 
-- **It is correct on the graph's own record**: an assessment you have
+- It is correct on the graph's own record: an assessment you have
   made or verified, a check the kernel accepted, an argument that holds.
-- **It would improve a reader's picture.** Most people who hold the
+- It would improve a reader's picture. Most people who hold the
   question get it wrong, or do not know it, or believe it without knowing
   why, and the record now says why. That a specialist has said it before
   does not disqualify it; what matters is whether it has reached the
   people who hold the question.
-- **Someone outside this system would want to be told.** Ask whether a
+- Someone outside this system would want to be told. Ask whether a
   careful reader who took the usual view would come away with a better
   one, or the same one on firmer ground.
-- **It rests on records you can cite by id**: the claims, assessments,
+- It rests on records you can cite by id: the claims, assessments,
   arguments, checks, and contributions that carry it.
 
 What qualifies: a question most people answer wrongly, where the graph's

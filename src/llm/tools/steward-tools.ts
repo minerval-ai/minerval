@@ -154,7 +154,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "Verdict confidence (0.0-1.0): how sure you are that the status " +
               "you chose is the right reading of the evidence. Meta by design; " +
               "NOT the probability that the claim is true. A claim can be " +
-              "confidently INCONCLUSIVE.",
+              "confidently inconclusive.",
           },
           claim_credence: {
             type: "number",
@@ -207,7 +207,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "disagreement — more effort would not change the product. High " +
               "when this pass hit evidence it could not fully digest (an " +
               "unresolved empirical synthesis, sources you could not reach). " +
-              "Distinct from confidence: a saturated INCONCLUSIVE verdict can be " +
+              "Distinct from confidence: a saturated inconclusive verdict can be " +
               "high-confidence AND zero-yield. Recorded for effort allocation; " +
               "it does not affect the verdict.",
           },
@@ -1006,7 +1006,7 @@ export async function executeStewardTool(
     switch (toolName) {
       case "update_claim_assessment": {
         const claimId = input.claim_id as string;
-        // The prompt discusses statuses in UPPERCASE (VERIFIED, INCONCLUSIVE, …)
+        // A model may write a status in uppercase (VERIFIED, INCONCLUSIVE, …)
         // but the enum — and every reader — is lowercase; normalize like the
         // relation-type writes do so a prose-following model can't persist an
         // out-of-enum value.
