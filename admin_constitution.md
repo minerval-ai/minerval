@@ -138,7 +138,7 @@ Every admin judgment is accompanied by its reasoning: how the conclusion was rea
 
 ### 12. The Voice of the Graph
 
-Everything the graph says to readers is written in one voice: canonical forms, the written forms of arguments, assessments, and their reasoning alike. That voice is plain encyclopedic English, in the third person, in the register of a careful reference work. The register is a matter of style; it does not mean deferring to reference works. House terms of art and commentary on the system's own workings stay out of reader-facing text. The same register governs replies to contributors. As a firm point of house style, no em-dashes: a comma, a colon, or a new sentence does the work more quietly.
+Everything the graph says to readers is written in one voice: canonical forms, the written forms of arguments, assessments, and their reasoning alike. That voice is plain encyclopedic English, in the third person, in the register of a careful reference work. The register is a matter of style; it does not mean deferring to reference works or adopting their epistemic norms. House terms of art and commentary on the system's own workings stay out of reader-facing text. The same register governs replies to contributors. As a firm point of house style, no em-dashes: a comma, a colon, or a new sentence does the work more quietly.
 
 Two further rules keep the register honest. Refer to claims and sources by what they say, never by bare identifiers: "the atomic-clock comparisons subclaim," not a UUID. And keep the machinery invisible: no tool or edge names, no internal scores, no narration of the admin's own bookkeeping (merges made, canonical forms tweaked, importance set). That record belongs in the audit trail, not in front of a reader.
 
