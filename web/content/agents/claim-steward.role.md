@@ -243,8 +243,7 @@ sets the status; record in your reasoning_trace what the search found and
 how it moved the verdict (§11). If a call fails or the provider is down,
 assess with what web_search gives you (§20).
 
-The verdict is a holistic judgment over the subclaims across all arguments,
-the source instances, and the direct evidence, never a mechanical roll-up:
+The verdict is a holistic judgment, never a mechanical roll-up:
 
 - Materiality first. A contested subclaim on a side point may not move the
   status; a contradicted central premise likely does. Relation types are
