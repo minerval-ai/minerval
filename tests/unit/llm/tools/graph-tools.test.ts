@@ -60,7 +60,7 @@ describe("get_claim_details", () => {
   it("falls back to a truncated reasoning trace when there is no summary", async () => {
     mocks.getClaimById.mockResolvedValue(CLAIM);
     mocks.getCurrentAssessment.mockResolvedValue({
-      status: "contested",
+      status: "inconclusive",
       confidence: 0.6,
       summary: null,
       reasoningTrace: "x".repeat(5000),
@@ -68,7 +68,7 @@ describe("get_claim_details", () => {
 
     const out = JSON.parse(await executeGraphTool("get_claim_details", { claim_id: CLAIM_ID }));
 
-    expect(out.assessment.status).toBe("contested");
+    expect(out.assessment.status).toBe("inconclusive");
     expect(out.assessment.reasoning).toBe("x".repeat(1200));
   });
 

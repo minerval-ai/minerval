@@ -101,7 +101,7 @@ const DOUBLES = {
 const FIFTH = {
   id: "quarter-of-workers-work-nights",
   text: "One in four workers in the region works night shifts.",
-  status: "contested" as const,
+  status: "inconclusive" as const,
 };
 
 function registryStudy(): SourcePage {
@@ -283,7 +283,7 @@ function registryStudy(): SourcePage {
 const PRODUCTIVITY = {
   id: "four-day-week-productivity-up",
   text: "Firms that moved to a four-day week kept or raised their productivity.",
-  status: "contested" as const,
+  status: "inconclusive" as const,
 };
 const RETENTION = {
   id: "four-day-week-staff-turnover",
@@ -298,7 +298,7 @@ const SIXTY_ONE = {
 const ECONOMY = {
   id: "four-day-week-national-gdp",
   text: "A national four-day week would raise GDP.",
-  status: "unsupported" as const,
+  status: "unknown" as const,
 };
 
 function thinkTankReport(): SourcePage {
@@ -393,7 +393,7 @@ function councilTranscript(): SourcePage {
       total_chars: 0,
       segments: [],
       unanchored: [inst(
-        { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time.", status: "contested" },
+        { id: "half-new-jobs-part-time", text: "Half of all new jobs created in the city since 2020 are part-time.", status: "inconclusive" },
         "half of the new jobs in this city since 2020 have been part-time",
         { support: "unclear", note: "Judged from the extracted passage alone; the transcript was not stored.", source_read: false },
       )],

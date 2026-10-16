@@ -290,7 +290,7 @@ export const assessmentTrajectoryResponse = z.object({
 // ---- Unified claim event log (issue #175) ----
 
 // The window is generous because the page renders the whole record at once;
-// heavily contested claims are exactly the ones whose history matters most.
+// heavily disputed claims are exactly the ones whose history matters most.
 export const claimEventsParams = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
   offset: z.coerce.number().int().min(0).default(0),

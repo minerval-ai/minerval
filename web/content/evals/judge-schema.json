@@ -51,7 +51,7 @@
         "overhedged",
         "overconfident"
       ],
-      "description": "Does the prose's certainty match the status and confidence? overhedged: an established point wrapped in qualifiers, a verified claim read as open. overconfident: a contested or supported claim asserted as settled."
+      "description": "Does the prose's certainty match the status and confidence? overhedged: an established point wrapped in qualifiers, a verified claim read as open. overconfident: an inconclusive, supported, or doubtful claim asserted as settled."
     },
     "canonical_form": {
       "type": "string",

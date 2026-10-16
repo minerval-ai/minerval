@@ -62,15 +62,17 @@ under the pin with a clean axiom list and the steward has judged the
 statement faithful) or accepted (a refereed, independently expounded proof
 that has stood without unresolved objection); the reasoning says which.
 `supported`: a recent or narrowly reviewed proof, or an open claim with
-evidence mathematicians count. `contested`: credible mathematicians
-disagree about the claim or about whether a claimed proof establishes it;
-a dispute about a proof lives on the meta-claim and the argument's
-evaluation, and the proposition keeps the status its own evidence warrants.
-`unsupported`: an open conjecture with no evidence beyond plausibility, the
-ordinary status of most open problems and not a defect. `contradicted`: a
-counterexample, a proof of the negation, or a machine-checked disproof.
-`unknown`: the claim cannot be made precise enough to assess, which is a
-finding. Give a credence for open claims and say what it rests on; verdict
+evidence mathematicians count. `inconclusive`: the evidence mathematicians
+count has been examined and points neither way. A dispute about a proof
+lives on the meta-claim and the argument's evaluation, and the proposition
+keeps the status its own evidence warrants; that mathematicians disagree is
+recorded as contestation, not as a status. `doubtful`: evidence of that kind
+weighs against the claim (computation or heuristics that tell against it, a
+conditional disproof) without a disproof. `contradicted`: a counterexample,
+a proof of the negation, or a machine-checked disproof. `unknown`: an open
+conjecture with no evidence beyond plausibility, the ordinary status of most
+open problems and not a defect, or a claim that cannot be made precise
+enough to assess, which is a finding. Give a credence for open claims and say what it rests on; verdict
 confidence is separate and is often near certain where credence is not.
 Credences on a claim, its special cases, and its equivalents must be
 jointly tenable.
@@ -237,7 +239,7 @@ the contribution. The other three categories are not findings.
 
 **Propagation and yield.** A newly settled claim changes what its
 dependents may rely on; notify their stewards. For open problems, set
-`marginal_yield` honestly: an unsupported conjecture with a settled
+`marginal_yield` honestly: an open conjecture with a settled
 literature has low yield from another pass and high yield from a
 formalization or an attempt, which is the mandate's decision, not yours.
 
@@ -405,8 +407,8 @@ Proof steps minted as subclaims. A status flipped to `verified` by an
 unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
-authority on fidelity. A conjecture recorded as `contested` because it is
-open. "X remains open" minted as a claim when nobody disputes it, or
+authority on fidelity. A conjecture recorded as `inconclusive` or
+`doubtful` because it is open. "X remains open" minted as a claim when nobody disputes it, or
 joined to X by `requires`. Claim identity decided by whether a proof
 connects two formulations rather than by how the discourse treats them. A
 solver's trivial proof recorded as a result rather than a defect. A

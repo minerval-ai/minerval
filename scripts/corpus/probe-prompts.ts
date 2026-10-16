@@ -59,7 +59,7 @@ export function renderGraphContext(claims: ContextClaim[]): string {
 export function buildWithGraphPrompt(question: string, claims: ContextClaim[]): string {
   return `You are answering a question using ONLY the record below: a set of claims from a claim graph, each with the status its steward assigned, the steward's confidence in that status, the steward's credence (probability the claim is true, where one was stated), and a short assessment. Do not use outside knowledge to decide the answer; if the record does not settle the question, say so and let your confidence reflect it.
 
-Then state your confidence, from 0 to 1, that your answer is correct. Your confidence should follow the record: an answer that rests on a claim the record marks verified with high credence deserves more confidence than one resting on a contested or unassessed claim, and an answer that has to go beyond the record deserves less. Finally, list the claims your answer rests on by their bracketed id, and for each say whether your answer takes it as true, as false, or as uncertain.
+Then state your confidence, from 0 to 1, that your answer is correct. Your confidence should follow the record: an answer that rests on a claim the record marks verified with high credence deserves more confidence than one resting on an inconclusive, doubtful, or unassessed claim, and an answer that has to go beyond the record deserves less. Finally, list the claims your answer rests on by their bracketed id, and for each say whether your answer takes it as true, as false, or as uncertain.
 
 ## Question
 ${question}

@@ -119,7 +119,7 @@ beforeAll(async () => {
 });
 
 describe("performed settling", () => {
-  it("catches settled verdicts with opposed instances, a recent accepted challenge, or a contested requires-child — and not their controls", async () => {
+  it("catches settled verdicts with opposed instances, a recent accepted challenge, or an inconclusive requires-child — and not their controls", async () => {
     const [srcA, srcB] = await Promise.all([source("a"), source("b")]);
 
     // 1. opposed instances from two sources under a verified verdict at 0.9
@@ -161,21 +161,21 @@ describe("performed settling", () => {
     await assess(stale, { status: "contradicted", confidence: 0.85, credence: 0.1 });
     await acceptedContribution(stale, contributorId, "challenge", 60 * 24 * 45);
 
-    // 3. contested child under a requires edge
+    // 3. inconclusive child under a requires edge
     const parent = await claim("parent");
     await assess(parent, { status: "verified", confidence: 0.9, credence: 0.9 });
-    const child = await claim("contested-child");
-    await assess(child, { status: "contested", confidence: 0.7, credence: 0.5 });
+    const child = await claim("inconclusive-child");
+    await assess(child, { status: "inconclusive", confidence: 0.7, credence: 0.5 });
     await rawQuery(
       `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning) VALUES ($1, $2, 'requires', 'test')`,
       [parent, child]
     );
 
-    // control: the contested child hangs under a `supports` edge, not `requires`
+    // control: the inconclusive child hangs under a `supports` edge, not `requires`
     const parent2 = await claim("parent-supports");
     await assess(parent2, { status: "verified", confidence: 0.9, credence: 0.9 });
-    const child2 = await claim("contested-child-2");
-    await assess(child2, { status: "contested", confidence: 0.7, credence: 0.5 });
+    const child2 = await claim("inconclusive-child-2");
+    await assess(child2, { status: "inconclusive", confidence: 0.7, credence: 0.5 });
     await rawQuery(
       `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning) VALUES ($1, $2, 'supports', 'test')`,
       [parent2, child2]
@@ -185,8 +185,8 @@ describe("performed settling", () => {
     const byId = new Map(report.candidates.map((c) => [c.claimId, c]));
     expect(byId.get(opposed)?.reasons).toEqual(["opposed_instances"]);
     expect(byId.get(challenged)?.reasons).toEqual(["recent_accepted_challenge"]);
-    expect(byId.get(parent)?.reasons).toEqual(["contested_requires_child"]);
-    expect(byId.get(parent)?.contestedRequiresChildren).toBe(1);
+    expect(byId.get(parent)?.reasons).toEqual(["inconclusive_requires_child"]);
+    expect(byId.get(parent)?.inconclusiveRequiresChildren).toBe(1);
     for (const control of [lowConf, oneSource, agreed, rejected, stale, parent2, child]) {
       expect(byId.has(control)).toBe(false);
     }
@@ -194,21 +194,21 @@ describe("performed settling", () => {
 });
 
 describe("empty chairs", () => {
-  it("catches contested claims whose instances or arguments are all one stance — and not the mixed or settled ones", async () => {
+  it("catches inconclusive claims whose instances or arguments are all one stance — and not the mixed or settled ones", async () => {
     const [srcA, srcB] = await Promise.all([source("c"), source("d")]);
 
     const oneSided = await claim("one-sided");
-    await assess(oneSided, { status: "contested", confidence: 0.6, credence: 0.5 });
+    await assess(oneSided, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
     await instance(oneSided, srcA, "affirms");
     await instance(oneSided, srcB, "affirms");
 
     const oneSidedArgs = await claim("one-sided-args");
-    await assess(oneSidedArgs, { status: "contested", confidence: 0.6, credence: 0.5 });
+    await assess(oneSidedArgs, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
     await argument(oneSidedArgs, "against");
 
-    // control: contested, both stances on record
+    // control: inconclusive, both stances on record
     const mixed = await claim("mixed");
-    await assess(mixed, { status: "contested", confidence: 0.6, credence: 0.5 });
+    await assess(mixed, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
     await instance(mixed, srcA, "affirms");
     await instance(mixed, srcB, "denies");
     await argument(mixed, "for");
@@ -216,7 +216,7 @@ describe("empty chairs", () => {
 
     // control: only one instance (below the minimum)
     const single = await claim("single-instance");
-    await assess(single, { status: "contested", confidence: 0.6, credence: 0.5 });
+    await assess(single, { status: "inconclusive", confidence: 0.6, credence: 0.5 });
     await instance(single, srcA, "affirms");
 
     // control: verified with one-sided instances is normal, not an empty chair
@@ -243,7 +243,7 @@ describe("evidence monotonicity", () => {
     await assess(supportLowered, { status: "supported", credence: 0.5, agoMinutes: 100 });
 
     const challengeRaised = await claim("challenge-raised");
-    await assess(challengeRaised, { status: "contested", credence: 0.5, current: false, agoMinutes: 300 });
+    await assess(challengeRaised, { status: "inconclusive", credence: 0.5, current: false, agoMinutes: 300 });
     const c2 = await acceptedContribution(challengeRaised, contributorId, "challenge", 200);
     await assess(challengeRaised, { status: "supported", credence: 0.7, agoMinutes: 100 });
 
@@ -317,7 +317,7 @@ describe("cascade health", () => {
     );
     // B's run changed materially; C's run recorded nothing new
     await stewardRun(b, 50);
-    await assess(b, { status: "contested", credence: 0.5, agoMinutes: 48 });
+    await assess(b, { status: "inconclusive", credence: 0.5, agoMinutes: 48 });
     await stewardRun(c, 50);
 
     const after = await cascadeHealth(T);

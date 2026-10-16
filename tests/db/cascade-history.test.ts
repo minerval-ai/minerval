@@ -55,7 +55,7 @@ describe("cascade + history loaders (S3)", () => {
     R = await seedClaim("cascade-R");
     // Prior verdicts.
     await seedAssessment({ claimId: Q, status: "supported", credence: 0.7, t: -50, trigger: "structure_and_assess", current: false });
-    await seedAssessment({ claimId: R, status: "contested", credence: 0.5, t: -50, trigger: "structure_and_assess", current: false });
+    await seedAssessment({ claimId: R, status: "inconclusive", credence: 0.5, t: -50, trigger: "structure_and_assess", current: false });
     // run1: P onboarded (root), first assessment, notifies Q twice (the second coalesces).
     await seedEvent({ claimId: P, trigger: "structure_and_assess", sourceRunId: null, coalesced: false, t: 5 });
     const run1 = await seedRun(P, 10, 12);
@@ -64,11 +64,11 @@ describe("cascade + history loaders (S3)", () => {
     await seedEvent({ claimId: Q, trigger: "subclaim_change", sourceRunId: run1, coalesced: true, t: 11.5 });
     // run2: Q reassessed, material change, notifies R.
     const run2 = await seedRun(Q, 20, 22);
-    await seedAssessment({ claimId: Q, status: "contested", credence: 0.45, t: 21, trigger: "subclaim_change", current: true });
+    await seedAssessment({ claimId: Q, status: "inconclusive", credence: 0.45, t: 21, trigger: "subclaim_change", current: true });
     await seedEvent({ claimId: R, trigger: "subclaim_change", sourceRunId: run2, coalesced: false, t: 21 });
     // run3: R reassessed, minor.
     await seedRun(R, 30, 32);
-    await seedAssessment({ claimId: R, status: "contested", credence: 0.52, t: 31, trigger: "subclaim_change", current: false });
+    await seedAssessment({ claimId: R, status: "inconclusive", credence: 0.52, t: 31, trigger: "subclaim_change", current: false });
     // A challenge on R accepted, then R's credence RISES (a monotonicity violation).
     const user = await seedUser("cascade");
     const k = await rawQuery<{ id: string }>(

@@ -32,8 +32,8 @@ export interface GraphCanvasProps {
 const REL_STROKE: Record<string, string> = {
   supports: "var(--st-supported)",
   contradicts: "var(--st-contradicted)",
-  assumes: "var(--st-contested)",
-  presupposes: "var(--st-contested)",
+  assumes: "var(--st-inconclusive)",
+  presupposes: "var(--st-inconclusive)",
   defines: "var(--link)",
   requires: "var(--faint)",
   specifies: "var(--faint)",
@@ -108,7 +108,9 @@ export function GraphCanvas(p: GraphCanvasProps) {
         const merged = c.merged != null;
         const cls = [
           s.node,
-          `st-${c.status ?? "unassessed"}`,
+          // meta.cls, not the raw status: a recording made before #524 carries
+          // retired statuses, which read through their provisional mapping.
+          meta.cls,
           p.pulse.has(n.id) ? s.pulse : "",
           p.highlight.has(n.id) ? s.lit : "",
           p.selected === n.id ? s.sel : "",

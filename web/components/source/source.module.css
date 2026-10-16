@@ -89,8 +89,8 @@
 .ident b { font-weight: 600; color: var(--ink); }
 .ident .none { color: var(--muted); font-style: italic; }
 .notice {
-  font-family: var(--sans); font-size: 0.76rem; color: var(--st-contested);
-  background: var(--st-contested-tint); border-radius: 2px;
+  font-family: var(--sans); font-size: 0.76rem; color: var(--st-inconclusive);
+  background: var(--st-inconclusive-tint); border-radius: 2px;
   padding: 0.45rem 0.7rem; margin: 0.9rem 0 0;
   display: flex; gap: 0.3rem 0.6rem; align-items: baseline; flex-wrap: wrap;
 }

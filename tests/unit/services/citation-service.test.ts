@@ -22,7 +22,7 @@ const assessed: CitationInput = {
   claimId: CLAIM_ID,
   assessmentId: ASSESSMENT_ID,
   assessmentVersion: 3,
-  status: "contested",
+  status: "inconclusive",
   assessedAt: new Date("2026-07-30T12:00:00.000Z"),
   retrievedAt: new Date("2026-08-03T09:30:00.000Z"),
   url: `https://minerval.ai/claims/${CLAIM_ID}`,
@@ -41,7 +41,7 @@ describe("formatTextCitation", () => {
     const text = formatTextCitation(assessed);
     expect(text).toBe(
       `Minerval. “${assessed.title}” Claim ${CLAIM_ID}, ` +
-        `assessment v3 (contested), assessed 2026-07-30. ` +
+        `assessment v3 (inconclusive), assessed 2026-07-30. ` +
         `Retrieved 2026-08-03, from https://minerval.ai/claims/${CLAIM_ID}.`
     );
   });
@@ -62,7 +62,7 @@ describe("formatBibtex", () => {
     expect(bib).toContain(`url          = {https://minerval.ai/claims/${CLAIM_ID}},`);
     expect(bib).toContain("urldate      = {2026-08-03},");
     expect(bib).toContain(
-      `note         = {Claim ${CLAIM_ID}; assessment v3 (contested), assessed 2026-07-30}`
+      `note         = {Claim ${CLAIM_ID}; assessment v3 (inconclusive), assessed 2026-07-30}`
     );
   });
 
@@ -99,7 +99,7 @@ describe("formatCslJson", () => {
       issued: { "date-parts": [[2026, 7, 30]] },
       version: "3",
       accessed: { "date-parts": [[2026, 8, 3]] },
-      note: `Claim ${CLAIM_ID}; assessment v3 (contested), assessed 2026-07-30`,
+      note: `Claim ${CLAIM_ID}; assessment v3 (inconclusive), assessed 2026-07-30`,
     });
   });
 

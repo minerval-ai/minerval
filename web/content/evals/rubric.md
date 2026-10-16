@@ -169,14 +169,19 @@ the cross-post relationship summary.
 
 Secondary for a disambiguation-focused run, but it runs, so sanity-check it.
 
-**Standard.** Use the six statuses honestly (Verified, Supported, Contested, Unsupported, Contradicted,
-Unknown); never round a genuinely contested claim up to verified or down to contradicted; every assessment
+**Standard.** Use the six statuses honestly (Verified, Supported, Inconclusive, Doubtful, Contradicted,
+Unknown); a status describes the evidence, not the debate, so a disputed claim gets the status its evidence
+supports and Inconclusive is reserved for evidence that, examined, comes down on neither side; never round an
+inconclusive claim up to verified or down to contradicted; every assessment
 carries a substantive reasoning trace; assessment is holistic judgment, not mechanical aggregation.
 (Constitution §1, §9, §10, §11, §22; Policy 1, 7, 8; architecture doc, "Judgment-based propagation".)
 
 **Failure modes.**
-- **Status collapse** — nearly everything lands on one status (all `contested`, or all `unknown`).
-- **False resolution** — a genuinely contested AI-risk claim marked `verified` / `contradicted` (§1).
+- **Status collapse** — nearly everything lands on one status (all `inconclusive`, or all `unknown`).
+- **Dispute as verdict** — a claim marked `inconclusive` because people disagree, where the examined
+  evidence leans one way (§10, §18). Dispute belongs in contestation, beside the status.
+- **False resolution** — an AI-risk claim whose evidence is genuinely inconclusive marked `verified` /
+  `contradicted` (§1).
 - **Empty reasoning traces** — boilerplate or missing traces (violates §11); note that the pipeline swallows
   assessment errors silently, so a missing assessment is itself worth flagging.
 - **Confidence miscalibration** — high confidence on claims the trace doesn't actually support.
@@ -199,8 +204,8 @@ anything it triggers) to quiescence; this dimension judges whether that settling
 - **Non-termination / runaway propagation** — stewardship keeps enqueuing more stewardship work and the
   run hits the safety cap instead of reaching quiescence (the run log prints `CAPPED`). A sign propagation
   isn't self-limiting.
-- **Infectious contestation** — a single contested subclaim deep in the graph propagates upward and flips
-  many ancestors to `contested`, exactly the failure the architecture doc's "Judgment-based propagation"
+- **Infectious inconclusiveness** — a single inconclusive subclaim deep in the graph propagates upward and
+  flips many ancestors to `inconclusive`, exactly the failure the architecture doc's "Judgment-based propagation"
   section warns about. Watch the assessment distribution before vs. after the steward pass.
 - **Inert steward** — the steward runs but never changes anything (no reassessments, no canonical-form
   edits, no merge proposals) across the whole corpus, suggesting it's a no-op rather than exercising

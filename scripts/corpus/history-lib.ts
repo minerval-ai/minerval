@@ -132,7 +132,9 @@ const round = (x: number | null): number | null => (x === null ? null : Math.rou
 const ratio = (num: number, den: number): number | null => (den > 0 ? num / den : null);
 
 const POSITIVE = new Set(["verified", "supported"]);
-const NEGATIVE = new Set(["unsupported", "contradicted"]);
+// "unsupported" is the pre-#524 token, kept so a run recorded before the
+// status ladder changed still reads with the polarity it had then.
+const NEGATIVE = new Set(["doubtful", "contradicted", "unsupported"]);
 
 function polarity(status: string): 1 | -1 | 0 {
   if (POSITIVE.has(status)) return 1;

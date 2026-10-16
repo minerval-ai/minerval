@@ -88,7 +88,7 @@ async function main(): Promise<void> {
       );
     }
 
-    console.log(`\n--- empty chairs: ${o.emptyChairs.candidates.length} candidate(s) (contested, ≥ ${t.emptyChairMinInstances} instances all one stance, or arguments all one stance)`);
+    console.log(`\n--- empty chairs: ${o.emptyChairs.candidates.length} candidate(s) (inconclusive, ≥ ${t.emptyChairMinInstances} instances all one stance, or arguments all one stance)`);
     if (o.emptyChairs.candidates.length) {
       console.log(
         table(

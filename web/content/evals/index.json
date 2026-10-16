@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-10-16T18:35:52.222Z",
-  "gitCommit": "4deffb1",
+  "syncedAt": "2026-10-16T19:13:37.098Z",
+  "gitCommit": "ebca580",
   "pins": [
     {
       "agent": "steward",
@@ -500,7 +500,7 @@
       "letter": "F",
       "title": "F. Assessment — status and reasoning",
       "slug": "f-assessment-status-and-reasoning",
-      "standard": "Use the six statuses honestly (Verified, Supported, Contested, Unsupported, Contradicted, Unknown); never round a genuinely contested claim up to verified or down to contradicted; every assessment carries a substantive reasoning trace; assessment is holistic judgment, not mechanical aggregation. (Constitution §1, §9, §10, §11, §22; Policy 1, 7, 8; architecture doc, \"Judgment-based propagation\".)"
+      "standard": "Use the six statuses honestly (Verified, Supported, Inconclusive, Doubtful, Contradicted, Unknown); a status describes the evidence, not the debate, so a disputed claim gets the status its evidence supports and Inconclusive is reserved for evidence that, examined, comes down on neither side; never round an inconclusive claim up to verified or down to contradicted; every assessment carries a substantive reasoning trace; assessment is holistic judgment, not mechanical aggregation. (Constitution §1, §9, §10, §11, §22; Policy 1, 7, 8; architecture doc, \"Judgment-based propagation\".)"
     },
     {
       "letter": "G",

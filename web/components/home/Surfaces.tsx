@@ -92,7 +92,7 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
   },
 ];
 
-const VERDICTS = ["verified", "supported", "contested", "unsupported", "contradicted", "unknown"];
+const VERDICTS = ["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"];
 
 export function Surfaces({
   detail, source,

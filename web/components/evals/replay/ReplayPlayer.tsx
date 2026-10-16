@@ -344,7 +344,7 @@ export function ReplayPlayer({ replay, name }: ReplayPlayerProps) {
             {agentsPresent.map((a) => <span key={a} className={s.legendItem}><span className={`${s.agentDot} ${agentClass(a)}`} aria-hidden /> {agentMeta(a).label}{AGENTS[a]?.docs ? <a href={`/docs/agents/${AGENTS[a]!.docs}`}> ↗</a> : null}</span>)}
           </p>
           <p>
-            {["verified", "supported", "contested", "unsupported", "contradicted", "unknown"].map((st) => <span key={st} className={s.legendItem}><span className={`swatch st-${st}`} /> {st}</span>)}
+            {["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"].map((st) => <span key={st} className={s.legendItem}><span className={`swatch st-${st}`} /> {st}</span>)}
             <span className={s.legendItem}><span className="swatch st-unassessed" /> unassessed (hatched: pending, not a verdict)</span>
             <span className={s.legendItem}><span className={s.legendMerged} /> merged away</span>
             <span className={s.legendItem}><span className={s.legendPulse} /> touched by the current event</span>

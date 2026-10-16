@@ -34,7 +34,7 @@ Input: `$ARGUMENTS`
   input **affirms** or **denies** the canonical claim, and what the assessment
   therefore means for the input as written.
 - **Decomposition**: render the subclaim tree compactly, marking each node's
-  assessment status so contested-vs-settled structure is visible at a glance.
+  assessment status so unsettled-vs-settled structure is visible at a glance.
   Point out where the live disagreement sits, if anywhere.
 - **Arguments and dependents**, briefly, when they exist: the named arguments
   bearing on the claim and the claims that rest on this one.

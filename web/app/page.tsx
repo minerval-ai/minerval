@@ -20,7 +20,7 @@ import styles from "@/components/home/home.module.css";
 // The claim the homepage map opens on. FLAGSHIP_ID names the fixture claim,
 // which exists only offline: in production the fetch for it 404'd and the page
 // silently fell back to fixture data under a "live" badge. In live mode the
-// map now opens on a real claim: contested, with a stated credence, named
+// map now opens on a real claim: disputed, with a stated credence, named
 // arguments, and real structure — the product's differentiator on display.
 // FLAGSHIP_CLAIM_ID repoints it without a code change (if the claim's state
 // degrades, or a better flagship emerges); loadClaim still degrades to the

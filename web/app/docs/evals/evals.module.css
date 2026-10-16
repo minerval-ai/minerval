@@ -47,7 +47,7 @@
 .body a { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--rule); }
 .small { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); }
 .dim { color: var(--faint); }
-.flag { color: var(--st-contested); }
+.flag { color: var(--st-inconclusive); }
 
 /* tables */
 .wrap { overflow-x: auto; margin: 0.2rem 0 0.8rem; }

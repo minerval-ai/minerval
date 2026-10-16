@@ -105,7 +105,7 @@
   font-family: var(--sans);
   font-size: 0.82rem;
   color: var(--muted);
-  border-left: 2px solid var(--st-contested);
+  border-left: 2px solid var(--st-inconclusive);
   padding-left: 0.85rem;
   margin: 0.9rem 0;
 }

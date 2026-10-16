@@ -32,7 +32,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
     assessment: {
       id: "cccccccc-1111-2222-3333-444444444444",
       version: 3,
-      status: "contested",
+      status: "inconclusive",
       confidence: 0.85,
       claim_credence: null,
       summary: `The dispute turns on [[claim:${SUB_ID}]].`,
@@ -92,7 +92,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       },
     ],
     disagreement: {
-      contested: true,
+      contestation: 0.7,
       affirming_instances: 1,
       denying_instances: 1,
       contested_arguments: [],
@@ -240,7 +240,7 @@ describe("evidenceRecordToJsonLd", () => {
     const assertion = jsonld["@graph"][1]!["@graph"];
     const claimNode = assertion.find((n) => n["@id"] === CLAIM_URI)!;
     expect(claimNode["@type"]).toBe("mv:Claim");
-    expect(claimNode["mv:status"]).toBe("contested");
+    expect(claimNode["mv:status"]).toBe("inconclusive");
     expect(claimNode["mv:confidence"]).toEqual({
       "@value": "0.85",
       "@type": "xsd:decimal",

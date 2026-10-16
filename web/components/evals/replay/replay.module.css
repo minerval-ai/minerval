@@ -9,7 +9,7 @@
 .player :global(.ag-matcher)               { --ag: var(--link-visited); }
 .player :global(.ag-steward)               { --ag: var(--st-verified); }
 .player :global(.ag-claim_steward)         { --ag: var(--st-verified); }
-.player :global(.ag-curator)               { --ag: var(--st-contested); }
+.player :global(.ag-curator)               { --ag: var(--st-inconclusive); }
 .player :global(.ag-tagger)                { --ag: var(--stance-neutral); }
 .player :global(.ag-contribution_reviewer) { --ag: var(--ink-soft); }
 .player :global(.ag-dispute_arbitrator)    { --ag: var(--st-contradicted); }
@@ -24,7 +24,7 @@
 
 .dim { color: var(--faint); }
 .small { font-size: 0.78rem; }
-.flag { color: var(--st-contested); }
+.flag { color: var(--st-inconclusive); }
 .badFaith { color: var(--st-contradicted); font-weight: 600; }
 .k { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
 .linklike { background: none; border: none; padding: 0; margin: 0; font: inherit; color: var(--link); cursor: pointer; text-align: left; }
@@ -32,7 +32,7 @@
 .player code { font-family: var(--mono); font-size: 0.86em; }
 
 /* refusal / degraded */
-.refuse { border: 1px dashed var(--st-contested); background: var(--st-contested-tint); border-radius: 3px; padding: 0.8rem 1rem; max-width: 40rem; font-family: var(--sans); font-size: 0.9rem; }
+.refuse { border: 1px dashed var(--st-inconclusive); background: var(--st-inconclusive-tint); border-radius: 3px; padding: 0.8rem 1rem; max-width: 40rem; font-family: var(--sans); font-size: 0.9rem; }
 .refuse p { margin: 0.2rem 0; }
 
 /* ---- top bar and transport ---- */
@@ -93,15 +93,15 @@
 .nodeTint { fill: transparent; }
 .node:global(.st-verified) .nodeBg     { stroke: var(--st-verified); }
 .node:global(.st-supported) .nodeBg    { stroke: var(--st-supported); }
-.node:global(.st-contested) .nodeBg    { stroke: var(--st-contested); }
-.node:global(.st-unsupported) .nodeBg  { stroke: var(--st-unsupported); }
+.node:global(.st-inconclusive) .nodeBg    { stroke: var(--st-inconclusive); }
+.node:global(.st-doubtful) .nodeBg  { stroke: var(--st-doubtful); }
 .node:global(.st-contradicted) .nodeBg { stroke: var(--st-contradicted); }
 .node:global(.st-unknown) .nodeBg      { stroke: var(--st-unknown); }
 .node:global(.st-unassessed) .nodeBg   { stroke: var(--st-unassessed); stroke-dasharray: 3 2; }
 .node:global(.st-verified) .nodeTint     { fill: var(--st-verified-tint); }
 .node:global(.st-supported) .nodeTint    { fill: var(--st-supported-tint); }
-.node:global(.st-contested) .nodeTint    { fill: var(--st-contested-tint); }
-.node:global(.st-unsupported) .nodeTint  { fill: var(--st-unsupported-tint); }
+.node:global(.st-inconclusive) .nodeTint    { fill: var(--st-inconclusive-tint); }
+.node:global(.st-doubtful) .nodeTint  { fill: var(--st-doubtful-tint); }
 .node:global(.st-contradicted) .nodeTint { fill: var(--st-contradicted-tint); }
 .node:global(.st-unknown) .nodeTint      { fill: var(--st-unknown-tint); }
 .nodeTint { opacity: 0.6; }
@@ -121,7 +121,7 @@
 .glyph { font-weight: 600; font-size: 8px; }
 .chipStatus { font-weight: 600; }
 .chipNum { font-family: var(--mono); font-size: 7px; color: var(--faint); margin-left: auto; letter-spacing: 0; text-transform: none; }
-.chipFlag { color: var(--st-contested); font-weight: 600; letter-spacing: 0.04em; margin-left: 4px; }
+.chipFlag { color: var(--st-inconclusive); font-weight: 600; letter-spacing: 0.04em; margin-left: 4px; }
 .chipText { font-size: 8.4px; line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chipInst { position: absolute; right: 5px; bottom: 3px; font-family: var(--mono); font-size: 7px; color: var(--faint); }
 

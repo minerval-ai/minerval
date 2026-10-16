@@ -45,18 +45,18 @@ const settling = (id: string, importance: number) => ({
   confidence: 0.9,
   credence: 0.85,
   assessedAt: "2026-09-01T00:00:00Z",
-  reasons: ["opposed_instances", "contested_requires_child"],
+  reasons: ["opposed_instances", "inconclusive_requires_child"],
   affirms: 3,
   denies: 2,
   sources: 4,
   lastAcceptedChallengeAt: null,
-  contestedRequiresChildren: 1,
+  inconclusiveRequiresChildren: 1,
 });
 const chair = (id: string, importance: number) => ({
   claimId: id,
-  text: `contested claim ${id}`,
+  text: `inconclusive claim ${id}`,
   importance,
-  status: "contested",
+  status: "inconclusive",
   confidence: 0.6,
   credence: 0.5,
   assessedAt: "2026-09-01T00:00:00Z",
@@ -155,12 +155,12 @@ describe("monitorSchedulerTick", () => {
 
 describe("contexts", () => {
   it("name the signal, the claim, every reason, and the candidate posture", () => {
-    const s = performedSettlingContext({ ...settling("abc", 0.5), reasons: ["opposed_instances", "recent_accepted_challenge", "contested_requires_child"], lastAcceptedChallengeAt: "2026-09-10T00:00:00Z" } as never);
+    const s = performedSettlingContext({ ...settling("abc", 0.5), reasons: ["opposed_instances", "recent_accepted_challenge", "inconclusive_requires_child"], lastAcceptedChallengeAt: "2026-09-10T00:00:00Z" } as never);
     expect(s).toContain("performed_settling");
     expect(s).toContain("abc");
     expect(s).toContain("deny it 2 time(s)");
     expect(s).toContain("2026-09-10");
-    expect(s).toContain("1 claim(s) it requires are currently contested");
+    expect(s).toContain("1 claim(s) it requires are currently assessed inconclusive");
     expect(s).toContain("do not change the claim yourself");
     const e = emptyChairsContext(chair("xyz", 0.5) as never);
     expect(e).toContain("empty_chairs");

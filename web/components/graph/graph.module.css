@@ -269,7 +269,7 @@
 .side {
   background: var(--paper-card);
   border: 1px solid var(--rule);
-  border-left: 2px solid var(--st-contested);
+  border-left: 2px solid var(--st-inconclusive);
   border-radius: 3px;
   padding: 5px 8px;
   z-index: 6;

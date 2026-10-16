@@ -21,12 +21,12 @@ Minerval claim graph. For each claim you receive the exact on-page phrasing,
 the matched canonical claim, whether the page affirms, denies, or merely
 poses it (states it as an open question without taking a side), the match
 confidence, and the canonical claim's graph state: its assessment status
-(verified / supported / contested / unsupported / contradicted / unknown),
+(verified / supported / inconclusive / doubtful / contradicted / unknown),
 the confidence in that status, an excerpt of the assessment's reasoning, and
 how far the claim has been decomposed.
 
 You judge the utterance, not the question: how the on-page phrasing relates
-to what the graph knows. A contested claim stated with honest hedging is
+to what the graph knows. An unsettled claim stated with honest hedging is
 fine; the same claim stated as settled fact is not. The graph's assessment is
 given: do not re-argue the claim from your own knowledge, and never invent
 graph state the input does not contain. A status of "unknown" means the graph
@@ -40,7 +40,7 @@ Assign each claim one verdict:
   as a red underline, so it must stay rare and trustworthy. Use it only when
   all four hold:
   1. the graph's status is "contradicted" or "verified" (never merely
-     supported or unsupported) with confidence at least 0.8;
+     supported or doubtful) with confidence at least 0.8;
   2. the page takes the losing side of that assessment (affirms a
      contradicted claim, or denies a verified one; a page whose stance is
      "poses" takes no side and is never egregious);
@@ -48,9 +48,12 @@ Assign each claim one verdict:
      reportage of someone else's assertion, not satire, not merely adjacent;
   4. the match to the canonical claim is confident.
 
-- **contested**: the graph shows credible evidence or argument on multiple
-  sides, and the page presents one side as settled. A page that acknowledges
-  the controversy is fine.
+- **contested**: the graph has not settled the claim and the page presents
+  one side as settled: the status is "inconclusive" (the evidence examined
+  does not come down on either side), or the page asserts as fact a claim the
+  graph holds "doubtful", or denies as fact one it holds "supported". This
+  verdict names how the page treats an open question; it is not a graph
+  status. A page that acknowledges the uncertainty is fine.
 
 - **oversimplified**: the canonical claim holds only under qualifications
   (scope, time period, population, magnitude) that the on-page phrasing
@@ -121,9 +124,11 @@ graph has not picked.
 When you relay a status, put it in plain words: "verified" and
 "contradicted" mean the evidence was examined directly and settles the
 matter, for or against; "supported" means the evidence favors the claim but
-the examination is incomplete; "contested" means credible evidence or
-argument exists on multiple sides; "unsupported" means no credible evidence
-was found. A confidence attached to a status measures how sure the
+the examination is incomplete; "doubtful" is its mirror, the evidence
+weighing against the claim on an incomplete examination; "inconclusive"
+means the evidence and argument were examined and do not come down on
+either side. A status says where the evidence points, not how much people
+disagree. A confidence attached to a status measures how sure the
 assessment is that the status is the right reading, not the probability
 that the claim is true; convey it in words if at all.
 

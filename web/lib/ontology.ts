@@ -12,6 +12,8 @@ import { orderByMention } from "./claim-links";
 export const DEFINED_IN = {
   claim: "/docs/constitution#2-what-a-claim-is",
   status: "/docs/constitution#10-explicit-uncertainty",
+  // Dispute is defined beside the statuses (§10), as what they are not.
+  dispute: "/docs/constitution#10-explicit-uncertainty",
   confidence: "/docs/constitution#10-explicit-uncertainty",
   claimType: "/docs/constitution#8-uniformity-across-claim-types",
   relation: "/docs/agents/claim-steward#decomposition",
@@ -31,31 +33,33 @@ export const RULES_SOURCE = "prize rules";
 // terms show this label next to the link so the reader knows where they land.
 export const STEWARD_SOURCE = "steward instructions";
 
-// Status metadata. Definitions are verbatim from the Admin Constitution §7 so
-// the UI teaches the same vocabulary the agents reason in.
+// Status metadata. Definitions follow the Admin Constitution §10 so the UI
+// teaches the same vocabulary the agents reason in. The statuses form an
+// evidential ladder (#524): verified and supported for the claim, inconclusive
+// between, doubtful and contradicted against, unknown for "couldn't assess".
 export const STATUS: Record<
   AssessmentStatus,
   { label: string; glyph: string; cls: string; def: string }
 > = {
   verified: {
     label: "Verified", glyph: "✓", cls: "st-verified",
-    def: "The claim traces to reliable primary sources through a clear chain of evidence.",
+    def: "The evidence, examined directly, establishes the claim.",
   },
   supported: {
     label: "Supported", glyph: "↑", cls: "st-supported",
-    def: "Evidence favors the claim, but the chain is incomplete or the sources are secondary.",
+    def: "The evidence favors the claim, but the examination is incomplete or the evidence is indirect.",
   },
-  contested: {
-    label: "Contested", glyph: "⇄", cls: "st-contested",
-    def: "Credible evidence or argument exists on multiple sides.",
+  inconclusive: {
+    label: "Inconclusive", glyph: "⇄", cls: "st-inconclusive",
+    def: "The evidence and argument have been examined and do not come down on either side.",
   },
-  unsupported: {
-    label: "Unsupported", glyph: "○", cls: "st-unsupported",
-    def: "No credible evidence found, though the claim is not contradicted.",
+  doubtful: {
+    label: "Doubtful", glyph: "↓", cls: "st-doubtful",
+    def: "The evidence weighs against the claim, but the examination is incomplete or the evidence is indirect.",
   },
   contradicted: {
     label: "Contradicted", glyph: "✕", cls: "st-contradicted",
-    def: "Available evidence weighs against the claim.",
+    def: "The evidence, examined directly, weighs against the claim.",
   },
   unknown: {
     label: "Unknown", glyph: "?", cls: "st-unknown",
@@ -64,16 +68,74 @@ export const STATUS: Record<
 };
 
 export const STATUS_ORDER: AssessmentStatus[] = [
-  "verified", "supported", "contested", "unsupported", "contradicted", "unknown",
+  "verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown",
 ];
+
+// Statuses retired by #524. Recorded eval replays and other archived
+// artifacts still carry them; they read through the same provisional mapping
+// migration 0066 applied to the live graph (contested to inconclusive,
+// unsupported to unknown), so an old recording renders in today's vocabulary
+// rather than falling through to Unknown.
+export const RETIRED_STATUS: Readonly<Record<string, AssessmentStatus>> = {
+  contested: "inconclusive",
+  unsupported: "unknown",
+};
 
 // Live data can be mid-pipeline: an assessment may exist with a null/unknown
 // status. Treat anything off-enum as "unknown" so rendering never throws.
 export function isStatus(s: unknown): s is AssessmentStatus {
-  return typeof s === "string" && s in STATUS;
+  return typeof s === "string" && Object.prototype.hasOwnProperty.call(STATUS, s);
+}
+/** The current status a value reads as: itself, its retired mapping, or unknown. */
+export function normalizeStatus(s: unknown): AssessmentStatus {
+  if (isStatus(s)) return s;
+  if (typeof s === "string" && Object.prototype.hasOwnProperty.call(RETIRED_STATUS, s)) return RETIRED_STATUS[s]!;
+  return "unknown";
 }
 export function statusMeta(s: unknown) {
-  return isStatus(s) ? STATUS[s] : STATUS.unknown;
+  return STATUS[normalizeStatus(s)];
+}
+
+// ---------------------------------------------------------------------------
+// Dispute, shown beside the verdict (#524). A status says where the evidence
+// points; how actively the claim is disputed is the claim's `contestation`
+// (0..1, set by the Steward with importance: how live the claim is in the
+// discourse, disputed or actively consulted). The claim page reads both,
+// e.g. "Doubtful · actively disputed", so neither stands in for the other.
+//
+// Thresholds: 0.6 and above reads as "actively disputed", the Steward's upper
+// band (an actively argued crux sits near 1, a live point inside a larger
+// debate around 0.35 to 0.6). From 0.3 it reads as "disputed". Below 0.3, or
+// with no recorded value, nothing is shown: a settled or quiet claim needs no
+// dispute label, and an unjudged value is not evidence of calm.
+// ---------------------------------------------------------------------------
+
+export const DISPUTE_ACTIVE_AT = 0.6;
+export const DISPUTE_SHOWN_AT = 0.3;
+
+export type DisputeLevel = "active" | "some";
+
+export const DISPUTE: Record<DisputeLevel, { label: string; gloss: string }> = {
+  active: {
+    label: "actively disputed",
+    gloss: "How actively this claim is disputed, recorded separately from its status. The status says where the evidence points; this says the question is a live crux in the discourse.",
+  },
+  some: {
+    label: "disputed",
+    gloss: "How actively this claim is disputed, recorded separately from its status. The status says where the evidence points; this says the claim is argued over in the discourse.",
+  },
+};
+
+export function disputeLevel(contestation: number | null | undefined): DisputeLevel | null {
+  if (contestation == null || !Number.isFinite(contestation)) return null;
+  if (contestation >= DISPUTE_ACTIVE_AT) return "active";
+  if (contestation >= DISPUTE_SHOWN_AT) return "some";
+  return null;
+}
+
+export function disputeMeta(contestation: number | null | undefined) {
+  const level = disputeLevel(contestation);
+  return level ? { level, ...DISPUTE[level] } : null;
 }
 
 // A claim with no current assessment is a pending state, NOT a verdict — and
@@ -193,7 +255,7 @@ export const ARGUMENT_VERDICT: Record<
     gloss: "Granting its premises, the conclusion follows.",
   },
   holds_with_caveats: {
-    label: "holds with caveats", cls: "st-contested",
+    label: "holds with caveats", cls: "st-inconclusive",
     gloss: "The inference goes through only under the qualifications the evaluation states.",
   },
   fails: {
@@ -201,7 +263,7 @@ export const ARGUMENT_VERDICT: Record<
     gloss: "The conclusion does not follow even granting the premises.",
   },
   contested: {
-    label: "validity contested", cls: "st-contested",
+    label: "validity contested", cls: "st-inconclusive",
     gloss: "Whether this argument's framework is valid is itself disputed.",
   },
 };
@@ -242,7 +304,7 @@ export function confidenceLabel(c: number): string {
 // The two numbers an assessment can carry answer different questions
 // (constitution §7); every surface that shows either must say which one it is.
 export const VERDICT_CONFIDENCE_GLOSS =
-  "Verdict confidence, from 0 to 1: how sure the Steward is that this status is the right reading of the evidence. Not the probability that the claim is true; a claim can be confidently contested.";
+  "Verdict confidence, from 0 to 1: how sure the Steward is that this status is the right reading of the evidence. Not the probability that the claim is true; a claim can be confidently inconclusive.";
 export const CREDENCE_GLOSS =
   "Credence, from 0 to 1: the Steward's probability that the claim, as stated, is true. Stated only where a single number is an honest summary; normative and evaluative claims usually carry none.";
 
@@ -286,7 +348,7 @@ export function decompositionNote(opts: {
   }
   if (isProcessed(opts)) {
     return isAtomic(opts.decompositionStatus)
-      ? "This claim is atomic: it bottoms out in a bedrock fact, a contested empirical question, or a value premise, and does not decompose further."
+      ? "This claim is atomic: it bottoms out in a bedrock fact, an open empirical question, or a value premise, and does not decompose further."
       : "This claim has been assessed but its decomposition is not yet recorded.";
   }
   return "This claim has not been assessed yet. Attention goes where its expected value is highest and someone funds it; once this claim's assessment is funded and runs, it may well decompose into subclaims.";
@@ -371,12 +433,12 @@ export type Effect = "supports" | "against" | "uncertain" | "weak" | "unassessed
 export const EFFECT: Record<Effect, { label: string; cls: string; gloss: string }> = {
   supports:   { label: "in favour",  cls: "st-supported",    gloss: "established evidence that bears in favour of this claim" },
   against:    { label: "against",    cls: "st-contradicted", gloss: "established evidence that weighs against this claim" },
-  uncertain:  { label: "contested",  cls: "st-contested",    gloss: "credible argument exists on more than one side" },
-  weak:       { label: "unsettled",  cls: "st-unknown",      gloss: "assessed, but too unsupported or unknown to move the needle either way" },
+  uncertain:  { label: "inconclusive", cls: "st-inconclusive", gloss: "examined, and the evidence does not come down on either side" },
+  weak:       { label: "unsettled",  cls: "st-unknown",      gloss: "assessed, but too little is known to move the needle either way" },
   unassessed: { label: "unassessed", cls: "st-unassessed",   gloss: "no assessment yet, so nothing here bears on this claim either way" },
 };
 
-// Reading order for the bar/legend: favour, contested, against, unsettled,
+// Reading order for the bar/legend: favour, inconclusive, against, unsettled,
 // then the still-queued remainder. We deliberately do NOT lead with "verified"
 // — the point is to stop the eye reading green-first when the green doesn't
 // actually support the claim.
@@ -446,10 +508,11 @@ function flipsPolarity(relation: string | null): boolean {
 // UNASSESSED_META for statuses).
 function nodeEffect(status: string | null, sign: number): Effect {
   if (status == null) return "unassessed";
-  if (status === "contested") return "uncertain";
-  let truth = 0; // +1 established, -1 refuted, 0 unknown
-  if (status === "verified" || status === "supported") truth = 1;
-  else if (status === "contradicted") truth = -1;
+  const st = normalizeStatus(status);
+  if (st === "inconclusive") return "uncertain";
+  let truth = 0; // +1 established, -1 weighs against, 0 unknown
+  if (st === "verified" || st === "supported") truth = 1;
+  else if (st === "contradicted" || st === "doubtful") truth = -1;
   const contribution = sign * truth;
   if (contribution > 0) return "supports";
   if (contribution < 0) return "against";
@@ -548,7 +611,7 @@ export function effectCounts(scored: ScoredNode[]): Record<Effect, number> {
 
 // Collapse a set of effects into a single net effect for an argument: which way,
 // on balance, does this line of reasoning push the main claim? A genuine split
-// reads as contested; an argument with nothing established reads as unsettled;
+// reads as inconclusive; an argument with nothing established reads as unsettled;
 // an argument nothing of which has been assessed reads as unassessed, so a
 // still-queued line of reasoning never masquerades as an evaluated one (#189).
 export function netEffect(counts: Record<Effect, number>): Effect {

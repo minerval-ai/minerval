@@ -57,11 +57,28 @@ import { demotePublishedFormalization } from "../../services/formalization-servi
 const ASSESSMENT_STATUSES = [
   "verified",
   "supported",
-  "contested",
-  "unsupported",
+  "inconclusive",
+  "doubtful",
   "contradicted",
   "unknown",
 ] as const satisfies readonly string[];
+
+/**
+ * Statuses retired by #524, with what to choose instead. A model still
+ * reasoning in the old vocabulary gets told why its write bounced, not just
+ * the list of valid values.
+ */
+const RETIRED_STATUSES: Record<string, string> = {
+  contested:
+    "'contested' was retired: it described the debate, not the evidence. " +
+    "Choose the status the evidence supports; use 'inconclusive' only if you " +
+    "examined the evidence and it does not come down on either side. Record " +
+    "how actively the claim is disputed as contestation (set_claim_importance).",
+  unsupported:
+    "'unsupported' was retired. If evidence would exist were the claim true " +
+    "and none was found, the absence is a reason for doubt: 'doubtful'. If " +
+    "such evidence would not be expected, the claim is 'unknown'.",
+};
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -118,7 +135,18 @@ export function getStewardToolDefinitions(): Tool[] {
           status: {
             type: "string",
             enum: [...ASSESSMENT_STATUSES],
-            description: "New assessment status",
+            description:
+              "New assessment status (§10), an evidential ladder: verified " +
+              "(the evidence, examined directly, establishes the claim), " +
+              "supported (the evidence favors it, but the examination is " +
+              "incomplete or the evidence indirect), inconclusive (the evidence " +
+              "and argument were examined and do not come down on either side), " +
+              "doubtful (the evidence weighs against it, but the examination is " +
+              "incomplete or the evidence indirect), contradicted (the evidence, " +
+              "examined directly, weighs against it), unknown (not enough " +
+              "information to assess). The status describes the evidence, not " +
+              "the debate: how actively the claim is disputed is its " +
+              "contestation, recorded separately.",
           },
           confidence: {
             type: "number",
@@ -126,7 +154,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "Verdict confidence (0.0-1.0): how sure you are that the status " +
               "you chose is the right reading of the evidence. Meta by design; " +
               "NOT the probability that the claim is true. A claim can be " +
-              "confidently CONTESTED.",
+              "confidently INCONCLUSIVE.",
           },
           claim_credence: {
             type: "number",
@@ -144,10 +172,10 @@ export function getStewardToolDefinitions(): Tool[] {
               "The reader-facing account of where the claim stands, shown first when " +
               "someone lands on its page. Self-contained prose in the third person, " +
               "like the opening of a good encyclopedia entry: what the claim rests " +
-              "on, what the evidence shows, and for a contested claim where the " +
+              "on, what the evidence shows, and for a disputed claim where the " +
               "credible disagreement lies and what would resolve it. Let the length " +
               "follow the claim: a settled one may be two or three sentences, a " +
-              "contested or foundational one a few short paragraphs. Keep " +
+              "disputed or foundational one a few short paragraphs. Keep " +
               "the machinery out of it: no tool or edge names (SUPPORTS/CONTRADICTS " +
               "edge), no importance numbers, no 'per the constitution', no first-" +
               "person 'I', and no narration of your own bookkeeping (merges, " +
@@ -179,7 +207,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "disagreement — more effort would not change the product. High " +
               "when this pass hit evidence it could not fully digest (an " +
               "unresolved empirical synthesis, sources you could not reach). " +
-              "Distinct from confidence: a saturated CONTESTED verdict can be " +
+              "Distinct from confidence: a saturated INCONCLUSIVE verdict can be " +
               "high-confidence AND zero-yield. Recorded for effort allocation; " +
               "it does not affect the verdict.",
           },
@@ -978,7 +1006,7 @@ export async function executeStewardTool(
     switch (toolName) {
       case "update_claim_assessment": {
         const claimId = input.claim_id as string;
-        // The prompt discusses statuses in UPPERCASE (VERIFIED, CONTESTED, …)
+        // The prompt discusses statuses in UPPERCASE (VERIFIED, INCONCLUSIVE, …)
         // but the enum — and every reader — is lowercase; normalize like the
         // relation-type writes do so a prose-following model can't persist an
         // out-of-enum value.
@@ -988,11 +1016,14 @@ export async function executeStewardTool(
         // Flash omitted the field on half its assessments in a corpus run; the
         // reasoning argued "supported" while the row said nothing).
         if (!(ASSESSMENT_STATUSES as readonly string[]).includes(status)) {
+          const retired = RETIRED_STATUSES[status];
           return JSON.stringify({
             success: false,
             message:
               `Assessment NOT recorded: status ${input.status === undefined ? "is missing" : `"${String(input.status)}" is not one of`} ` +
-              `${ASSESSMENT_STATUSES.join(" | ")}. Call update_claim_assessment again with a valid status.`,
+              `${ASSESSMENT_STATUSES.join(" | ")}. ` +
+              (retired ? `${retired} ` : "") +
+              `Call update_claim_assessment again with a valid status.`,
           });
         }
         const confidence = input.confidence as number;

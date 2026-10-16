@@ -1,7 +1,7 @@
 import type { AssessmentStatus } from "@/lib/types";
 import {
   statusMeta, importanceLevel, IMPORTANCE, UNASSESSED_META, DEFINED_IN,
-  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS,
+  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS, disputeMeta,
 } from "@/lib/ontology";
 import { Term } from "./Term";
 
@@ -13,6 +13,23 @@ export function StatusBadge({
     <Term gloss={s.def} href={DEFINED_IN.status} linkTo={linkTo} className={`badge ${s.cls}${size === "lg" ? " lg" : ""}`}>
       <span className="badge-glyph" aria-hidden>{s.glyph}</span>
       {s.label}
+    </Term>
+  );
+}
+
+// How actively the claim is disputed, shown beside the verdict and never in
+// its place (#524): "Doubtful · actively disputed". Driven by the claim's
+// contestation, not its status; renders nothing below the display threshold
+// or when no contestation is recorded (thresholds in lib/ontology.ts).
+export function Dispute({
+  value, linkTo,
+}: { value: number | null | undefined; linkTo?: string }) {
+  const d = disputeMeta(value);
+  if (!d || typeof value !== "number") return null;
+  const gloss = `Contestation ${value.toFixed(2)}, from 0 to 1. ${d.gloss}`;
+  return (
+    <Term gloss={gloss} href={DEFINED_IN.dispute} linkTo={linkTo} className={`dispute-label dispute-${d.level}`} ariaLabel={d.label}>
+      <span className="dispute-sep" aria-hidden>·</span>{d.label}
     </Term>
   );
 }

@@ -77,7 +77,7 @@ function listingRow(overrides: Record<string, unknown> = {}) {
     text: "Every even integer greater than two is the sum of two primes.",
     claim_type: "mathematical",
     importance: 0.8,
-    assessment_status: "contested",
+    assessment_status: "inconclusive",
     checked: null,
     ...overrides,
   };
@@ -103,7 +103,7 @@ describe("listOpenBounties", () => {
       claim_id: "claim-1",
       text: "Every even integer greater than two is the sum of two primes.",
       claim_type: "mathematical",
-      assessment_status: "contested",
+      assessment_status: "inconclusive",
       importance: 0.8,
       checked: null,
     });

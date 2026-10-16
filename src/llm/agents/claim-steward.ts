@@ -66,7 +66,7 @@ ${structureStep}
    (consequence-if-wrong × liveness), NOT mere dependency count.
    get_claim_dependents is only a local signal; an uncontested or niche claim is
    low importance even with many local dependents. Scale effort accordingly:
-   consequential, contested claims warrant deeper search and a second, adversarial
+   consequential, disputed claims warrant deeper search and a second, adversarial
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
    Reason first: before searching, work out your own view of what would make

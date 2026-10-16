@@ -23,8 +23,8 @@ export const claimTypeEnum = z.enum([
 // The states the system actually writes (see claims.state in src/db/schema.ts):
 // 'active' (live), 'merged' (merge loser, aliased via merged_into), 'deprecated'
 // (reversed curator-created claim, soft-deleted), 'archived' (retired
-// pipeline-epoch cohort). Contestation is an assessment status, not a lifecycle
-// state.
+// pipeline-epoch cohort). How disputed a claim is lives in its `contestation`
+// value, not in its lifecycle state or its assessment status.
 export const claimStateEnum = z.enum([
   "active",
   "merged",
@@ -32,11 +32,16 @@ export const claimStateEnum = z.enum([
   "archived",
 ]);
 
+// The evidential ladder (constitution §10, #524): verified and supported on
+// the side of the claim, inconclusive in the middle, doubtful and
+// contradicted against it, and unknown for a claim that could not be
+// assessed. How actively a claim is disputed is not a status: it is the
+// per-claim `contestation` value, shown beside the verdict.
 export const assessmentStatusEnum = z.enum([
   "verified",
   "supported",
-  "contested",
-  "unsupported",
+  "inconclusive",
+  "doubtful",
   "contradicted",
   "unknown",
 ]);

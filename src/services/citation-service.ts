@@ -99,7 +99,12 @@ export interface EvidenceRecord {
     };
   }[];
   disagreement: {
-    contested: boolean;
+    /**
+     * How actively the claim is disputed or consulted (0..1), as the Steward
+     * recorded it; null until judged. Dispute is not a status (#524), so it is
+     * reported here beside the instance counts, not read off the verdict.
+     */
+    contestation: number | null;
     affirming_instances: number;
     denying_instances: number;
     /** Sources that state the proposition as an open question (#445). */
@@ -319,7 +324,7 @@ export async function assembleEvidenceRecord(
       },
     })),
     disagreement: {
-      contested: assessment?.status === "contested",
+      contestation: claim.contestation ?? null,
       affirming_instances: instanceRows.filter((i) => i.stance === "affirms").length,
       denying_instances: instanceRows.filter((i) => i.stance === "denies").length,
       // Sources that state the proposition as an open question (#445): they
