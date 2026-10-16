@@ -56,39 +56,23 @@ import { createResearchTools } from "../tools/research-tools.js";
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** The ordinary stewardship task: structure (or re-judge) and assess. */
-function defaultSteps(structureStep: string): string {
-  return `1. Use get_claim_with_context to understand the claim, its subclaims and their
-   assessments, its source instances (note each instance's affirm/deny stance),
-   and its current assessment if any.
-${structureStep}
-3. Gauge the claim's importance: how much it is worth getting right
-   (consequence-if-wrong × liveness), NOT mere dependency count.
-   get_claim_dependents is only a local signal; an uncontested or niche claim is
-   low importance even with many local dependents. Scale effort accordingly:
-   consequential, contested claims warrant deeper search and a second, adversarial
-   pass; minor or settled claims warrant a light touch.
-4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   Reason first: before searching, work out your own view of what would make
-   the claim true or false and what you expect to find, then search to test
-   it (see "Assessment"). Use web_search for external evidence where it would
-   change the verdict.
-   Instances show who affirms or denies the claim; they describe the debate,
-   not whether the claim is true. The document the claim was extracted from
-   is one instance among the rest, not the claim's home (see "Provenance Is
-   Evidence, Not an Anchor"). When a source you read itself asserts the claim
-   (or its negation) — not merely reports on the debate — record that
-   sighting with record_claim_instance as you go (see "Recording Instances");
-   when an instance already on the claim misrepresents what its source says,
-   correct it with update_claim_instance and give the reason.
-5. Record it with update_claim_assessment. Provide BOTH texts: a reader-facing
-   **assessment** (an encyclopedia-style account of where the claim stands, no
-   internal machinery or bookkeeping) and the **reasoning_trace** (the audit
-   detail behind the verdict). See "Writing the Assessment: Two Audiences".
-6. If the canonical form needs improving, use update_canonical_form.
-7. Log your decision with log_stewardship_decision.
-8. If you established or changed a material assessment, use
-   notify_dependent_stewards so claims that depend on this one are re-judged.`;
+/**
+ * The ordinary stewardship task: what this pass is and what must be on the
+ * record when it ends. How to go about it is the Steward's judgment, guided
+ * by its role prompt; a numbered procedure here read as a checklist to get
+ * through rather than a question to think about.
+ */
+function defaultTask(passNote: string): string {
+  return `You own this claim: its structure and its assessment. Your role describes
+what that involves. How you go about this pass is your judgment.
+
+${passNote}
+
+Before the run ends, the following must be recorded: the assessment
+(update_claim_assessment, with both texts and marginal_yield), an evaluation
+of each named argument, the claim's importance and contestation, and your
+decision (log_stewardship_decision). If the assessment changed materially,
+notify the dependents it could matter to (notify_dependent_stewards).`;
 }
 
 /**
@@ -287,26 +271,12 @@ async function runClaimStewardImpl(input: {
 
   const isInitial = input.trigger === "structure_and_assess";
 
-  const structureStep = isInitial
-    ? `2. DECOMPOSE the claim (this is its first pass). Identify what it turns on:
-   the dependencies that would undermine it if false, and the strongest
-   considerations for and against it, each a subclaim passing the claim bar. A
-   handful, not an exhaustive list (see the Decomposition guidance). For EACH
-   dependency, FIRST call match_claim to check whether it already exists in the
-   graph (as itself, a rewording, or its negation). If it matches, attach the
-   existing claim with add_relationship_edge; only when the Matcher says it is
-   novel, create it with add_decomposition_edge. Never mint a duplicate. If the
-   claim is simple, leave it atomic; do not invent dependencies. Look UP as
-   well as down: if this claim is an argument for, a meta-claim about, or a
-   special case of a proposition the discourse treats as a unit, match_claim
-   that proposition too; propose_parent_edge if it exists, add_parent_claim
-   if it does not (see the Decomposition guidance).`
-    : `2. RE-ASSESS in light of what changed. Adjust structure only if you discover a
-   missing dependency the claim turns on, or a proposition above it the graph
-   lacks, and then match_claim FIRST: link an existing claim with
-   add_relationship_edge or propose_parent_edge, create a new one with
-   add_decomposition_edge or add_parent_claim. Do not re-decompose from
-   scratch.`;
+  const passNote = isInitial
+    ? `This is the claim's first pass. It has no structure yet: decompose it as
+well as assess it.`
+    : `This is a later pass, prompted by the change described in the context. The
+claim already has structure; change it where what you find warrants, rather
+than starting again.`;
 
   const iterationBudget = config.stewardMaxIterations;
   let newClaimsThisRun = 0;
@@ -355,8 +325,6 @@ Skills active for this run: ${skills
     skillTools.some((t) => isLeanTool(t.name))
   );
 
-  const defaultTask = `You OWN this claim: its structure (decomposition) and its assessment. Proceed:`;
-
   // The run's date, so a dated claim is read against the world as it now
   // stands rather than as of the model's training (§9).
   const today = new Date().toISOString().slice(0, 10);
@@ -370,14 +338,13 @@ Context: ${input.context}
 
 Budget: you have up to ${iterationBudget} tool-use iterations for this stewardship.
 That is a generous backstop, not a target: use as few or as many as the claim's
-importance warrants. But it IS a hard limit: make sure you have recorded an
+importance warrants. But it is a hard limit: make sure you have recorded an
 assessment (update_claim_assessment) and logged your decision
 (log_stewardship_decision) before you approach it, so your work is never lost
 mid-task. If you are warned that few iterations remain, stop exploring and record
 your conclusion immediately.
 
-${formalTask ?? `${defaultTask}
-${defaultSteps(structureStep)}`}${elicitNote}${skillsNote}`;
+${formalTask ?? defaultTask(passNote)}${elicitNote}${skillsNote}`;
 
   // One cached block for the constitution and role, plus one per active skill,
   // so the shared block's cache entry is the same for skilled and unskilled runs.

@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 8852,
-    "fullChars": 63620,
+    "fullChars": 63608,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11876,
-    "fullChars": 66644,
+    "fullChars": 66632,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 20620,
-    "fullChars": 75388,
+    "roleChars": 20604,
+    "fullChars": 75360,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 41032,
-    "fullChars": 95800,
+    "roleChars": 41016,
+    "fullChars": 95772,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15713,
-    "fullChars": 70481,
+    "roleChars": 15697,
+    "fullChars": 70453,
     "skills": [
       {
         "name": "mathematics",
@@ -147,8 +147,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 18219,
-    "fullChars": 72987,
+    "roleChars": 18203,
+    "fullChars": 72959,
     "skills": [
       {
         "name": "mathematics",
@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19575,
-    "fullChars": 74343,
+    "roleChars": 19559,
+    "fullChars": 74315,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19683,
-    "fullChars": 74451,
+    "roleChars": 19667,
+    "fullChars": 74423,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11077,
-    "fullChars": 65845,
+    "fullChars": 65833,
     "skills": [
       {
         "name": "mathematics",
@@ -267,7 +267,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 10160,
-    "fullChars": 64928,
+    "fullChars": 64916,
     "skills": []
   },
   {
@@ -293,7 +293,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 6367,
-    "fullChars": 61135,
+    "fullChars": 61123,
     "skills": [
       {
         "name": "provenance",
