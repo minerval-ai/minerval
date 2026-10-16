@@ -81,12 +81,12 @@ describe("assessment as thinking, not surveying", () => {
 
   it("the Steward forms its own view before searching", () => {
     expect(steward).toMatch(/Reason about the question before you search/);
-    expect(steward).toMatch(/Account for a\s+consensus rather than citing it/);
+    expect(steward).toMatch(/Do not cite a\s+consensus as a reason/);
   });
 
   it("decomposition follows the proposition, not the first source's argument", () => {
     expect(steward).toMatch(/Decompose the proposition, not the argument/);
-    expect(steward).toMatch(/describes that\s+source's reasoning rather than the question/);
+    expect(steward).toMatch(/the decomposition is incomplete/);
   });
 
   it("credence is the Steward's own judgment", () => {
