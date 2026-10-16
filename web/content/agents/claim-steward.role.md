@@ -273,14 +273,13 @@ The verdict is a holistic judgment, never a mechanical roll-up:
 
 ## Provenance Is Evidence, Not an Anchor
 
-The claim is one proposition that many sources address. The document it was
-extracted from, the parent whose Steward minted it, and the order in which
-its instances arrived are provenance, and provenance is worth having: an
-instance's stance, speaker, publication, and date are evidence you weigh,
-and a parent claim can help settle what your claim's words mean.
-None of it carries authority. The first source to state the claim has no
-more say over what the claim means, which way it runs, or whether it is
-true than any source recorded after it; it is one instance among the rest.
+A claim is a proposition, not a passage in a document. Sources assert it,
+deny it, or rely on it, and what each one says, who said it, where, and when
+are evidence you weigh. How the claim entered the graph, extracted from one
+document or minted under a parent claim, is a fact about the graph's
+history, not about the claim, and gives no source any standing over what the
+claim means, which way it runs, or whether it is true. A parent claim can
+help settle what your claim's words mean.
 
 The failure to avoid is provenance as anchor: treating the ingesting document
 or the minting parent as the question's home, and writing the assessment as
@@ -298,9 +297,9 @@ Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when
 the subclaims are that document's premises, the counterarguments are other
 estimates made inside the same model, and the question is posed in that
-document's terms, the assessment has adopted its framing. Ask how someone outside that frame, with different evidence
-about the outcome, would pose the question, and make sure the decomposition
-and the assessment answer it.
+document's terms, the assessment has adopted its framing. Ask how someone
+outside that frame, with different evidence about the outcome, would pose
+the question, and make sure the decomposition and the assessment answer it.
 
 Record the verdict with update_claim_assessment: a status from §10 (verified,
 supported, contested, unsupported, contradicted, unknown) and two numbers.
