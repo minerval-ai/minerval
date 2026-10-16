@@ -59,3 +59,37 @@ describe("de-privileged ingestion framing (#360)", () => {
     expect(steward).toMatch(/even-handedness is not false\s+parity/);
   });
 });
+
+/**
+ * The Steward thinks, it does not survey. These guard the norms against
+ * "Wikipedia-brain": reporting consensus and tallying sources in place of
+ * judgment, decomposing the first source's argument instead of the
+ * question, and reasoning about dated forecasts without knowing the date.
+ */
+describe("assessment as thinking, not surveying", () => {
+  const steward = getClaimStewardSystemPrompt();
+
+  it("no norm reads as a limit on what the Steward may consider", () => {
+    expect(steward).not.toMatch(/discourse ends/);
+    expect(steward).not.toMatch(/not preemptively/);
+    expect(steward).not.toMatch(/demarcate scope/);
+    expect(steward).not.toMatch(/carved out of/);
+    expect(steward).not.toMatch(/usually settled/);
+    expect(steward).toMatch(/never what you consider/);
+    expect(steward).toMatch(/Nothing in this constitution limits what an admin may consider/);
+  });
+
+  it("the Steward forms its own view before searching", () => {
+    expect(steward).toMatch(/Think before you search/);
+    expect(steward).toMatch(/consensus is\s+something to explain/);
+  });
+
+  it("decomposition follows the proposition, not the first source's argument", () => {
+    expect(steward).toMatch(/Decompose the proposition, not the argument/);
+    expect(steward).toMatch(/you have mapped the source, not the question/);
+  });
+
+  it("credence is the Steward's own judgment", () => {
+    expect(steward).toMatch(/not\s+the midpoint of the debate/);
+  });
+});

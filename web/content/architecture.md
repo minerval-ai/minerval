@@ -248,8 +248,8 @@ Two design decisions follow:
   discussion surface: contributor exchanges stay in the contribution record.
 - **Arguments are optional and non-exhaustive.** A claim with one natural
   decomposition needs no explicitly named argument; its edges simply have no
-  membership row. Admins create arguments when a line of reasoning is live in
-  the discourse, not preemptively.
+  membership row. Admins create arguments when a distinct line of reasoning
+  bears on the claim, whether or not a source has yet made it.
 - **Arguments may share subclaims.** Membership is a relation between an
   argument and an edge (`argument_subclaims`), not a column on the edge, so
   the same premise can be grouped under several of a claim's arguments,
@@ -939,7 +939,8 @@ then stopped. A launcher may start at most
 `RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
 it; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
-the solver is, and while off no launcher is offered `delegate_research`),
+the solver is, and while off no launcher is offered `delegate_research`;
+production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.
 The spend is metered under the launcher's usage context, so it lands on the
 claim and the job that funded the launching run, appears in `llm_usage`

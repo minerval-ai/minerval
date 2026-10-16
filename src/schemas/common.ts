@@ -73,9 +73,10 @@ export const RELATION_GUIDANCE =
   "'contradicts': evidence or argument that weighs against the parent. " +
   "'assumes': background the parent's framing takes as given, so if it fails " +
   "the parent is ill-posed or beside the point rather than simply false — a " +
-  "framework or scope premise, usually settled. When such an assumption is " +
-  "itself disputed in the discourse it still enters here, and the argument's " +
-  "evaluation carries the 'contested' verdict (§7). " +
+  "framework premise. Whether the framework is fit for the question is often " +
+  "the deepest crux, disputed in print or not; when it is in doubt it still " +
+  "enters here, and the argument's evaluation carries the 'contested' " +
+  "verdict (§7). " +
   "'specifies': a narrower or more precise version of part of the parent. " +
   "'defines': fixes the meaning of a term in the parent, only when that " +
   "meaning is itself disputed and load-bearing.";

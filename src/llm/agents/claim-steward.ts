@@ -69,7 +69,10 @@ ${structureStep}
    consequential, contested claims warrant deeper search and a second, adversarial
    pass; minor or settled claims warrant a light touch.
 4. Reach a holistic assessment using your judgment (no mechanical aggregation).
-   Use web_search for external evidence where it would change the verdict.
+   Think first: before searching, work out your own view of what would make
+   the claim true or false and what you expect to find, then search to test
+   it (see "Assessment"). Use web_search for external evidence where it would
+   change the verdict.
    Credible instances with differing stances are a strong signal toward
    CONTESTED; an instance set that is lopsided is a signal too, and needs no
    counterweight invented for it. The document the claim was extracted from
@@ -355,8 +358,13 @@ Skills active for this run: ${skills
 
   const defaultTask = `You OWN this claim: its structure (decomposition) and its assessment. Proceed:`;
 
+  // The run's date, so a dated claim is read against the world as it now
+  // stands rather than as of the model's training (§9).
+  const today = new Date().toISOString().slice(0, 10);
+
   const userMessage = `You have been triggered to steward a claim.
 
+Today's date: ${today}
 Trigger: ${input.trigger}
 Claim ID: ${input.claimId}
 Context: ${input.context}

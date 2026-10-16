@@ -248,8 +248,8 @@ Two design decisions follow:
   discussion surface: contributor exchanges stay in the contribution record.
 - **Arguments are optional and non-exhaustive.** A claim with one natural
   decomposition needs no explicitly named argument; its edges simply have no
-  membership row. Admins create arguments when a line of reasoning is live in
-  the discourse, not preemptively.
+  membership row. Admins create arguments when a distinct line of reasoning
+  bears on the claim, whether or not a source has yet made it.
 - **Arguments may share subclaims.** Membership is a relation between an
   argument and an edge (`argument_subclaims`), not a column on the edge, so
   the same premise can be grouped under several of a claim's arguments,

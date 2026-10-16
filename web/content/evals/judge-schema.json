@@ -29,7 +29,7 @@
         "too_shallow",
         "n_a"
       ],
-      "description": "too_granular: settled material unfolded into derivation steps or non-claims. too_shallow: dependencies the discourse actually contains are missing, and the claim's importance warranted mapping them. n_a if atomic."
+      "description": "too_granular: settled material unfolded into derivation steps or non-claims. too_shallow: cruxes the question actually turns on are missing (including ones outside the first source's argument), and the claim's importance warranted mapping them. n_a if atomic."
     },
     "importance_judged": {
       "type": "number",
@@ -83,10 +83,11 @@
           "hallucination_risk",
           "boilerplate_trace",
           "opaque_ids",
+          "survey_not_assessment",
           "other"
         ]
       },
-      "description": "Any quality flags that apply."
+      "description": "Any quality flags that apply. survey_not_assessment: the assessment reports or tallies what sources say, or stays inside the first source's frame, without engaging with what would make the claim true or false."
     },
     "note": {
       "type": "string",
