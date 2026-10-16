@@ -269,7 +269,7 @@ The verdict is a holistic judgment, never a mechanical roll-up:
 - A claim is only as sound as the framework it depends on (§7). When the
   claim rests on a method, model, or set of assumptions, judge whether that
   framework is fit for the question as things now stand. If it is unsound
-  or has been overtaken by events, assess the claim accordingly, however
+  or its assumptions no longer hold, assess the claim accordingly, however
   well it holds up within the framework. Do not give a premise the benefit
   of the doubt because the literature built on it still assumes it: a
   premise that current evidence shows to be false is treated as false.

@@ -96,7 +96,7 @@ The judgment the written form withholds lives beside it, in the argument's evalu
 
 When the validity of an argument's framework is itself disputed in practice, the claim "this framework is valid" appears as a subclaim within that argument, typically as an ASSUMES relation. This keeps meta-disputes in the claim layer, where decomposition, assessment, and contribution already operate. The admin surfaces such a meta-claim when the framework's validity bears materially on the claim, whether or not anyone has yet disputed it in print. That a framework is undisputed is weak evidence of its validity when the people using it share its assumptions and few others have examined it.
 
-A claim is only as sound as the framework it depends on. When a framework is unsound, or its assumptions have been overtaken by events, the claims that depend on it are assessed accordingly, as unsupported or contradicted to the extent they rely on it, however well they hold up within the framework. Agreement among those who work inside a framework does not rescue it. A premise that current evidence shows to be false is treated as false, even when the literature built on it has not yet absorbed that evidence.
+A claim is only as sound as the framework it depends on. When a framework is unsound, or its assumptions no longer hold, the claims that depend on it are assessed accordingly, as unsupported or contradicted to the extent they rely on it, however well they hold up within the framework. Agreement among those who work inside a framework does not rescue it. A premise that current evidence shows to be false is treated as false, even when the literature built on it has not yet absorbed that evidence.
 
 ### 8. Uniformity Across Claim Types
 
@@ -618,7 +618,7 @@ The verdict is a holistic judgment, never a mechanical roll-up:
 - A claim is only as sound as the framework it depends on (§7). When the
   claim rests on a method, model, or set of assumptions, judge whether that
   framework is fit for the question as things now stand. If it is unsound
-  or has been overtaken by events, assess the claim accordingly, however
+  or its assumptions no longer hold, assess the claim accordingly, however
   well it holds up within the framework. Do not give a premise the benefit
   of the doubt because the literature built on it still assumes it: a
   premise that current evidence shows to be false is treated as false.
