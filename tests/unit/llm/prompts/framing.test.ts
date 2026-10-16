@@ -56,7 +56,9 @@ describe("de-privileged ingestion framing (#360)", () => {
     expect(inOwnVoice).toEqual([]);
     expect(steward).not.toMatch(/on both\s+sides/);
     expect(steward).not.toMatch(/between credible\s+sides/);
-    expect(steward).toMatch(/even-handedness is not false\s+parity/);
+    // Instances describe the debate; they are not votes on the verdict.
+    expect(steward).not.toMatch(/strong signal/);
+    expect(steward).toMatch(/They do not tell you whether the claim is true/);
   });
 });
 

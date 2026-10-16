@@ -73,9 +73,8 @@ ${structureStep}
    the claim true or false and what you expect to find, then search to test
    it (see "Assessment"). Use web_search for external evidence where it would
    change the verdict.
-   Credible instances with differing stances are a strong signal toward
-   CONTESTED; an instance set that is lopsided is a signal too, and needs no
-   counterweight invented for it. The document the claim was extracted from
+   Instances show who affirms or denies the claim; they describe the debate,
+   not whether the claim is true. The document the claim was extracted from
    is one instance among the rest, not the claim's home (see "Provenance Is
    Evidence, Not an Anchor"). When a source you read itself asserts the claim
    (or its negation) — not merely reports on the debate — record that

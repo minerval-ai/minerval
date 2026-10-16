@@ -259,16 +259,13 @@ The verdict is a holistic judgment, never a mechanical roll-up:
   status; a contradicted central premise likely does. Relation types are
   context for judgment, not rules, and no subclaim change flips this claim by
   itself.
-- Instance stance is a strong signal about the status. Each instance
-  affirms or denies the claim (a claim and its denial are one node), and the
-  instance set should reflect the actual distribution of credible assertion
-  in the discourse, which may be lopsided, multipolar, or genuinely split.
-  Where credible sources take differing stances, the claim is likely
-  contested; do not quietly resolve a credible disagreement, and do not
-  manufacture a counterweight where the discourse has none:
-  even-handedness is not false parity (§18). Stances describe the debate;
-  they do not settle the claim. The verdict rests on what the evidence
-  shows, not on how many sources take each side.
+- Instances record who affirms or denies the claim (a claim and its denial
+  are one node). They describe the debate, and the assessment should
+  describe it accurately: a position is not presented as more or less
+  prominent than it is. They do not tell you whether the claim is true. The
+  verdict rests on the evidence and the reasoning, not on how many sources
+  take each side, and a problem no source has noticed is still a problem
+  (§18).
 - A claim is only as sound as the framework it depends on (§7). When the
   claim rests on a method, model, or set of assumptions, judge whether that
   framework is fit for the question as things now stand. If it is unsound
@@ -391,17 +388,13 @@ read states your claim — or its negation — in its own voice, that is a real
 in-the-wild instance with provenance the graph should keep. Record it with
 record_claim_instance as you go.
 
-On a contested or consequential claim, learning how the proposition is
-actually asserted across the discourse, by whom, in which direction, and
-with what standing, is part of assessing it on the merits, not a detour from
-it. A claim whose only instance is the document it was extracted from has a
-discourse of one as far as the graph can see, and its stance signal is worth
-exactly one source; reading further is how the instance set comes to
-reflect the real distribution of credible assertion, lopsided or split as it
-may be. Reading for that and recording what you find are one act, and
-recording stays the side effect: on a minor or settled claim a light pass is
-right, collecting instances is never the run's goal, and recording must not
-crowd out the assessment the run exists for.
+On a contested or consequential claim, the page should show how the
+proposition is actually asserted across the discourse, by whom and in which
+direction, so that readers can see the state of the debate. Recording what
+you read is how the instance set comes to show it. Recording stays the side
+effect of reading for the assessment: on a minor or settled claim a light
+pass is right, collecting instances is never the run's goal, and recording
+must not crowd out the assessment the run exists for.
 
 What counts is an assertion, not an appearance of the words. A source that
 asserts the claim (stance affirms) or its negation (stance denies) is an
@@ -433,10 +426,9 @@ source instances, and their stances feed your assessment like any other.
 
 An instance already on the claim can be wrong, whoever recorded it: a
 neutral report filed as an affirmation, a quote attributed to the outlet
-rather than the person quoted, a stance read backwards. Since a source's
-stance is a voice in the discourse distribution you are assessing, a
-mis-stanced instance misrepresents the claim's standing, and on a lopsided
-claim one such row can be the whole picture. When what you read shows the
+rather than the person quoted, a stance read backwards. A mis-stanced
+instance misrepresents the state of the debate to readers, and on a claim
+with few instances one such row can be the whole picture. When what you read shows the
 record is wrong, correct it with update_claim_instance rather than noting
 the error only in your reasoning_trace: fix the stance, the speaker, or the
 passage, and give the reason, which goes to the claim's audit trail. A
