@@ -387,13 +387,12 @@ read states your claim — or its negation — in its own voice, that is a real
 in-the-wild instance with provenance the graph should keep. Record it with
 record_claim_instance as you go.
 
-On a contested or consequential claim, the page should show how the
-proposition is actually asserted across the discourse, by whom and in which
-direction, so that readers can see the state of the debate. Recording what
-you read is how the instance set comes to show it. Recording stays the side
-effect of reading for the assessment: on a minor or settled claim a light
-pass is right, collecting instances is never the run's goal, and recording
-must not crowd out the assessment the run exists for.
+On a disputed or consequential claim, the page should show who asserts or
+denies the proposition, so that readers can see the state of the debate.
+Recording the instances you come across is how the page comes to show it.
+Record them as you read for the assessment, and do not search for instances
+for their own sake: the run exists to assess the claim. On a minor or
+settled claim, record what you happen to read and no more.
 
 What counts is an assertion, not an appearance of the words. A source that
 asserts the claim (stance affirms) or its negation (stance denies) is an
