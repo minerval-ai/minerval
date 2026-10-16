@@ -63,7 +63,7 @@ describe("de-privileged ingestion framing (#360)", () => {
 /**
  * The Steward thinks, it does not survey. These guard the norms against
  * "Wikipedia-brain": reporting consensus and tallying sources in place of
- * judgment, decomposing the first source's argument instead of the
+ * judgment, decomposing one source's argument instead of the
  * question, and reasoning about dated forecasts without knowing the date.
  */
 describe("assessment as thinking, not surveying", () => {
@@ -84,9 +84,10 @@ describe("assessment as thinking, not surveying", () => {
     expect(steward).toMatch(/Do not cite a\s+consensus as a reason/);
   });
 
-  it("decomposition follows the proposition, not the first source's argument", () => {
-    expect(steward).toMatch(/Decompose the proposition, not the argument/);
-    expect(steward).toMatch(/the decomposition is incomplete/);
+  it("decomposition follows the proposition, not one source's argument", () => {
+    expect(steward).toMatch(/Decompose the proposition, not any one source's argument/);
+    expect(steward).toMatch(/only as sound as the framework it depends on/);
+    expect(steward).toMatch(/the\s+decomposition is incomplete/);
   });
 
   it("credence is the Steward's own judgment", () => {

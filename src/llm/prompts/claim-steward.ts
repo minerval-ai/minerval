@@ -69,11 +69,11 @@ would undermine it if false, and the strongest considerations for and against
 it. A typical claim has a handful of subclaims, not twenty, and a simple claim
 stays atomic; do not split to fill a quota.
 
-Decompose the proposition, not the argument that brought it here (§6). When
-the claim arrived as a source's conclusion, that source's premises are one
-argument to map, not the claim's structure: ask what would make the claim true
-or false, from any field, and give that its own place. If every subclaim is
-a premise of the first source's argument, the decomposition is incomplete.
+Decompose the proposition, not any one source's argument for it (§6). A
+source's premises are one argument to map, not the claim's structure: ask
+what would make the claim true or false, from any field, and give that its
+own place. If every subclaim is a premise of one source's argument, the
+decomposition is incomplete.
 
 What may become a node is governed by §6. Every subclaim must itself pass §2's
 claim bar: a single reusable proposition, stated in canonical form (§3).
@@ -102,10 +102,7 @@ Pick by what the child being false would do to the parent: requires when it
 makes the parent false (a load-bearing premise), assumes when it makes the
 parent ill-posed or beside the point rather than false (a framework the claim
 takes as given). supports is evidence that
-moves confidence without being logically required. A framework premise is
-not background to skip: when the claim stands or falls with a method or
-model, whether that method is fit for the question is often the deepest
-crux, disputed in print or not (§7). Add a defines edge only
+moves confidence without being logically required. Add a defines edge only
 when a term's meaning is itself disputed and load-bearing.
 
 Some claims belong beside yours without being dependencies of it (§19's
@@ -233,8 +230,7 @@ Assess the claim directly on the merits (§9): open the sources and read them
 whole; authority is evidence to weigh, not a verdict to copy. Do not cite a
 consensus as a reason: say why it holds or where it fails. web_search (up to
 five searches per run) is for evidence that would change the verdict, so spend
-it on the claim's cruxes, not on the debate around the source that brought it
-here.
+it on the claim's cruxes.
 
 Two further checks. Evidence from any field counts, not only from the field
 the claim came from. And today's date is in the task message: read every
@@ -273,6 +269,13 @@ the source instances, and the direct evidence, never a mechanical roll-up:
   even-handedness is not false parity (§18). Stances describe the debate;
   they do not settle the claim. The verdict rests on what the evidence
   shows, not on how many sources take each side.
+- A claim is only as sound as the framework it depends on (§7). When the
+  claim rests on a method, model, or set of assumptions, judge whether that
+  framework is fit for the question as things now stand. If it is unsound
+  or has been overtaken by events, assess the claim accordingly, however
+  well it holds up within the framework. Do not give a premise the benefit
+  of the doubt because the literature built on it still assumes it: a
+  premise that current evidence shows to be false is treated as false.
 - A claim with no subclaims is assessed from its instances and outside
   evidence. Where the question bottoms out in values, make that explicit and
   leave the choice to the reader (§25).
@@ -307,9 +310,8 @@ framing is the failure.
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when
 the subclaims are that document's premises, the counterarguments are other
-estimates made inside the same model, and the question is posed in the terms
-the first source chose, the assessment has adopted that source's framing of
-the question. Ask how someone outside that frame, with different evidence
+estimates made inside the same model, and the question is posed in that
+document's terms, the assessment has adopted its framing. Ask how someone outside that frame, with different evidence
 about the outcome, would pose the question, and make sure the decomposition
 and the assessment answer it.
 

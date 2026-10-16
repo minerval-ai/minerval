@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 8852,
-    "fullChars": 63110,
+    "fullChars": 63467,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11876,
-    "fullChars": 66134,
+    "fullChars": 66491,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 20620,
-    "fullChars": 74878,
+    "fullChars": 75235,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 42021,
-    "fullChars": 96279,
+    "roleChars": 42175,
+    "fullChars": 96790,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 15713,
-    "fullChars": 69971,
+    "fullChars": 70328,
     "skills": [
       {
         "name": "mathematics",
@@ -148,7 +148,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 18219,
-    "fullChars": 72477,
+    "fullChars": 72834,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19575,
-    "fullChars": 73833,
+    "fullChars": 74190,
     "skills": [
       {
         "name": "mathematics",
@@ -214,7 +214,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19683,
-    "fullChars": 73941,
+    "fullChars": 74298,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11077,
-    "fullChars": 65335,
+    "fullChars": 65692,
     "skills": [
       {
         "name": "mathematics",
@@ -267,7 +267,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 10160,
-    "fullChars": 64418,
+    "fullChars": 64775,
     "skills": []
   },
   {
@@ -293,7 +293,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 6367,
-    "fullChars": 60625,
+    "fullChars": 60982,
     "skills": [
       {
         "name": "provenance",
