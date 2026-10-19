@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 42986,
-    "fullChars": 98896,
+    "roleChars": 43011,
+    "fullChars": 98921,
     "skills": [
       {
         "name": "mathematics",

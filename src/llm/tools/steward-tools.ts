@@ -316,11 +316,13 @@ export function getStewardToolDefinitions(): Tool[] {
         "Correct an already-recorded instance of the claim you steward " +
         "(#420): its stance, confidence, speaker, or the passage it rests " +
         "on. Recording is deduplicated per (claim, source), so this is the " +
-        "only way to fix an instance that misrepresents its source — a " +
-        "neutral report recorded as an affirmation, a quote attributed to " +
-        "the outlet instead of the person quoted, a stance read backwards. " +
-        "A source that only mentions the claim, questions it, or reports " +
-        "the debate without taking a side is not an instance at all: detach " +
+        "only way to fix an instance that misrepresents its source: a " +
+        "quote attributed to the outlet instead of the person quoted, a " +
+        "stance read backwards, a passage that is not the one carrying the " +
+        "stance. " +
+        "A source that only mentions the claim, or reports others' views " +
+        "on it without asserting, denying or posing it, is not an instance " +
+        "at all: detach " +
         "it with detach_claim_instance instead of correcting it. Every " +
         "correction requires a reasoning note, which is written to the " +
         "claim's audit trail.",

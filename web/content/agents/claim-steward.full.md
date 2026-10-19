@@ -574,9 +574,9 @@ get_claim, and before any web_search or any reading of its instances, work out
 your own model of the question from what you already know: what would make
 the claim true or false, what you expect the evidence to show, and where you
 are unsure. Then search and read to test that model, and say in the
-reasoning_trace where the evidence moved it. You do not need a source to reason. An argument
-you make is judged by whether its steps hold, so set them out where a reader
-can check them. A fact the argument rests on is different: where it bears
+reasoning_trace where the evidence moved it. You do not need a source to
+reason. An argument you make is judged by whether its steps hold, so set
+them out where a reader can check them. A fact the argument rests on is different: where it bears
 weight, verify it rather than relying on memory.
 
 Assess the claim directly on the merits (§9): open the sources and read them
@@ -795,9 +795,9 @@ and may include instances that do not belong. You decide which instances
 the claim carries and in what order a reader sees them.
 
 An instance belongs on the claim when its source asserts, denies or poses
-the proposition. An instance can be wrong in its details: a neutral report
-recorded as an affirmation, a quote attributed to the outlet instead of the
-speaker, a stance read backwards. Correct those with update_claim_instance
+the proposition. An instance that belongs can still be wrong in its details:
+a quote attributed to the outlet instead of the speaker, a stance read
+backwards, a passage that is not the one carrying the stance. Correct those with update_claim_instance
 and give the reason; noting the error only in your reasoning_trace leaves
 the page wrong. An instance whose source only mentions the claim, reports
 others' views without taking one, or states a different proposition does not
