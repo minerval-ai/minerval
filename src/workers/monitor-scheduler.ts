@@ -57,8 +57,8 @@ export function performedSettlingContext(c: PerformedSettlingCandidate): string 
   if (c.reasons.includes("recent_accepted_challenge")) {
     why.push(`a challenge against it was accepted on ${c.lastAcceptedChallengeAt}`);
   }
-  if (c.reasons.includes("contested_requires_child")) {
-    why.push(`${c.contestedRequiresChildren} claim(s) it requires are currently contested`);
+  if (c.reasons.includes("inconclusive_requires_child")) {
+    why.push(`${c.inconclusiveRequiresChildren} claim(s) it requires are currently assessed inconclusive`);
   }
   return (
     `Monitor signal performed_settling (a candidate, not a verdict): claim ${c.claimId} ` +
@@ -68,7 +68,7 @@ export function performedSettlingContext(c: PerformedSettlingCandidate): string 
     `Read the claim and its assessment (get_claim_with_context) and judge whether the ` +
     `confidence is earned by the record — the dissent may be weak and the assessment may ` +
     `already answer it, in which case there is nothing to flag. If the verdict outruns its ` +
-    `contested dependencies or ignores an accepted challenge, record a finding and ` +
+    `inconclusive dependencies or ignores an accepted challenge, record a finding and ` +
     `recommend a re-review; do not change the claim yourself.`
   );
 }
@@ -83,7 +83,7 @@ export function emptyChairsContext(c: EmptyChairCandidate): string {
   }
   return (
     `Monitor signal empty_chairs (a coverage candidate, not a verdict): claim ${c.claimId} ` +
-    `("${c.text.slice(0, 200)}") is assessed contested, but only one side is on record: ${why.join("; ")}. ` +
+    `("${c.text.slice(0, 200)}") is assessed inconclusive, but only one side is on record: ${why.join("; ")}. ` +
     `Read the claim (get_claim_with_context) and judge whether the other side of the ` +
     `disagreement is represented anywhere in its record — the assessment's reasoning, its ` +
     `subclaims, or its instances. If the missing side is real and absent, record a finding ` +

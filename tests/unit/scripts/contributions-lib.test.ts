@@ -67,7 +67,7 @@ describe("summarizeOutcomes and renderReport", () => {
   const outcomes = [
     outcome({ id: "a" }),
     outcome({ id: "b", type: "support", review: { decision: "reject", confidence: 0.9, reasoning: "spam", policyCitations: [], suspectedBadFaith: true, badFaithCategory: "spam" }, appeal: { id: "ap", status: "resolved" }, arbitration: { outcome: "uphold_original", decision: "reject", reasoning: "still spam", suspectedBadFaith: false, humanReviewRecommended: false } }),
-    outcome({ id: "c", reviewStatus: "escalated", review: { decision: "escalate", confidence: 0.5, reasoning: "hard", policyCitations: [], suspectedBadFaith: false, badFaithCategory: null }, escalationReason: "crux", arbitration: { outcome: "overturn", decision: "accept", reasoning: "substantive", suspectedBadFaith: false, humanReviewRecommended: true }, claimChange: { textBefore: "t", textAfter: "t2", statusBefore: "verified", statusAfter: "contested" } }),
+    outcome({ id: "c", reviewStatus: "escalated", review: { decision: "escalate", confidence: 0.5, reasoning: "hard", policyCitations: [], suspectedBadFaith: false, badFaithCategory: null }, escalationReason: "crux", arbitration: { outcome: "overturn", decision: "accept", reasoning: "substantive", suspectedBadFaith: false, humanReviewRecommended: true }, claimChange: { textBefore: "t", textAfter: "t2", statusBefore: "verified", statusAfter: "inconclusive" } }),
     outcome({ id: "d", contributionId: "y", review: null, reviewStatus: "pending" }),
     outcome({ id: "e", contributionId: null, targetClaimId: null, targetText: null, review: null, claimChange: null }),
   ];
@@ -101,7 +101,7 @@ describe("summarizeOutcomes and renderReport", () => {
     expect(md).toMatch(/metered cost \$1.2340/);
     expect(md).toMatch(/bad faith: spam/);
     expect(md).toMatch(/\*\*Arbitration:\*\* overturn/);
-    expect(md).toMatch(/status: verified → contested/);
+    expect(md).toMatch(/status: verified → inconclusive/);
     expect(md).toMatch(/50 → 35/);
     expect(md).toMatch(/_not submitted_/);
   });

@@ -55,7 +55,7 @@ export const OUTCOME_LABELS: Record<string, string> = {
   uphold_original: "original decision upheld",
   overturn: "decision overturned",
   modify: "decision modified",
-  mark_contested: "claim marked contested",
+  mark_contested: "matter marked contested",
   human_review: "referred for human review",
 };
 export const TRIGGER_PHRASES: Record<string, string> = {

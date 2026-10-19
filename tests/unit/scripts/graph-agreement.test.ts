@@ -17,9 +17,9 @@ const e = (...xs: number[]) => xs;
 const A: AgreementGraph = {
   label: "A",
   claims: [
-    { id: "a1", text: "Advanced AI poses a non-negligible risk of human extinction.", createdBy: "extractor", status: "contested", credence: 0.4, embedding: e(1, 0, 0) },
+    { id: "a1", text: "Advanced AI poses a non-negligible risk of human extinction.", createdBy: "extractor", status: "inconclusive", credence: 0.4, embedding: e(1, 0, 0) },
     { id: "a2", text: "Current alignment techniques do not scale to superhuman systems.", createdBy: "claim_steward", status: "supported", credence: 0.7, embedding: e(0, 1, 0) },
-    { id: "a3", text: "Interpretability tools can detect deceptive cognition.", createdBy: "claim_steward", status: "unsupported", credence: 0.3, embedding: e(0, 0, 1) },
+    { id: "a3", text: "Interpretability tools can detect deceptive cognition.", createdBy: "claim_steward", status: "doubtful", credence: 0.3, embedding: e(0, 0, 1) },
     { id: "a4", text: "A claim only A has.", createdBy: "claim_steward", status: "supported", credence: 0.6, embedding: e(0.7, 0.7, 0) },
   ],
   edges: [
@@ -32,9 +32,9 @@ const A: AgreementGraph = {
 const B: AgreementGraph = {
   label: "B",
   claims: [
-    { id: "b1", text: "Advanced AI poses a non-negligible risk of human extinction", createdBy: "extractor", status: "contested", credence: 0.45, embedding: e(1, 0, 0) },
-    { id: "b2", text: "Today's alignment methods fail to scale to superhuman AI.", createdBy: "claim_steward", status: "contested", credence: 0.55, embedding: e(0.05, 0.99, 0) },
-    { id: "b3", text: "Interpretability can catch deception.", createdBy: "claim_steward", status: "unsupported", credence: null, embedding: e(0, 0.1, 0.99) },
+    { id: "b1", text: "Advanced AI poses a non-negligible risk of human extinction", createdBy: "extractor", status: "inconclusive", credence: 0.45, embedding: e(1, 0, 0) },
+    { id: "b2", text: "Today's alignment methods fail to scale to superhuman AI.", createdBy: "claim_steward", status: "inconclusive", credence: 0.55, embedding: e(0.05, 0.99, 0) },
+    { id: "b3", text: "Interpretability can catch deception.", createdBy: "claim_steward", status: "doubtful", credence: null, embedding: e(0, 0.1, 0.99) },
     { id: "b5", text: "A claim only B has.", createdBy: "curator", status: null, credence: null, embedding: e(0, 0.7, 0.7) },
   ],
   edges: [
@@ -105,7 +105,7 @@ describe("the three axes", () => {
     expect(cr.oneSided).toBe(1);
     expect(cr.statusN).toBe(3);
     expect(cr.statusAgreement).toBeCloseTo(2 / 3, 3);
-    expect(cr.statusConfusion).toEqual({ supported: { contested: 1 } });
+    expect(cr.statusConfusion).toEqual({ supported: { inconclusive: 1 } });
   });
 
   it("structural agreement maps A's edges into B's ids and compares edge sets", () => {

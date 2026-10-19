@@ -6,7 +6,7 @@ import {
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { modelDisplayName } from "@/lib/model-names";
-import { StatusBadge, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
+import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
 import { TopicChips } from "./Topics";
 import { AssessmentText } from "./AssessmentText";
@@ -146,7 +146,13 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {/* assessment band */}
       {assessment && (
         <div className="claim-assess">
-          <StatusBadge status={assessment.status} size="lg" />
+          {/* The verdict and how actively the claim is disputed, side by
+              side and kept apart (#524): the status says where the evidence
+              points, the dispute label comes from contestation. */}
+          <span className="verdict-pair">
+            <StatusBadge status={assessment.status} size="lg" />
+            <Dispute value={claim.contestation} />
+          </span>
           {/* The derived machine-checked badge (§2.3), beside the status
               rather than in place of it: the checker confirms the proof;
               the verdict is still the steward's judgment of the claim as

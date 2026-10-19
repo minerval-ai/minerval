@@ -27,7 +27,7 @@ const PROBES = join(here, "../../../corpus/probes");
 const context: ContextClaim[] = [
   { id: "aaaaaaaa-1111-4000-8000-000000000001", text: "LHC black holes could endanger the Earth.", status: "contradicted", confidence: 0.9, credence: 0.02, summary: "Astrophysical bounds exclude it.", similarity: 0.8 },
   { id: "bbbbbbbb-2222-4000-8000-000000000002", text: "Black holes emit Hawking radiation.", status: "verified", confidence: 0.85, credence: 0.9, summary: "Broad consensus.", similarity: 0.7 },
-  { id: "cccccccc-3333-4000-8000-000000000003", text: "Hawking radiation has been observed directly.", status: "contested", confidence: 0.6, credence: null, summary: null, similarity: 0.6 },
+  { id: "cccccccc-3333-4000-8000-000000000003", text: "Hawking radiation has been observed directly.", status: "inconclusive", confidence: 0.6, credence: null, summary: null, similarity: 0.6 },
 ];
 const q: ProbeQuestion = { id: "q1", kind: "factual", question: "Could an LHC black hole endanger the Earth?" };
 
@@ -144,7 +144,7 @@ describe("summarizeRetraction", () => {
   const before = { assessmentId: "a1", status: "verified", confidence: 0.9, credence: 0.9, assessedAt: "2026-01-01T00:00:00.000Z" };
   it("reads revisits, status changes and credence movement, and names the cap", () => {
     const claims: RetractionClaim[] = [
-      { claimId: "c1", text: "one", role: "instance", before, after: { ...before, assessmentId: "a2", status: "unsupported", credence: 0.3 } },
+      { claimId: "c1", text: "one", role: "instance", before, after: { ...before, assessmentId: "a2", status: "doubtful", credence: 0.3 } },
       { claimId: "c2", text: "two", role: "instance", before, after: before },
       { claimId: "c3", text: "three", role: "dependent", before, after: { ...before, assessmentId: "a3", credence: 0.8 } },
     ];

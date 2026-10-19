@@ -605,11 +605,12 @@ their work. Minerval's people oversee the system and may review individual
 decisions; they do not review each judgment before it is published.
 
 10.2 **Assessments.** Each assessed claim carries one of six statuses:
-verified, supported, contested, unsupported, contradicted, or unknown, with a
-confidence in that status and, where a single number is honest, a credence
-that the claim is true. Every assessment carries a reasoning trace, and its
-full history is kept. Contested and unknown are honest outcomes, not
-failures. An unassessed claim is a pending state, not a verdict.
+verified, supported, inconclusive, doubtful, contradicted, or unknown, with
+a confidence in that status and, where a single number is honest, a credence
+that the claim is true. A status describes the evidence; how actively a
+claim is disputed is shown separately. Every assessment carries a reasoning
+trace, and its full history is kept. Inconclusive and unknown are honest
+outcomes, not failures. An unassessed claim is a pending state, not a verdict.
 
 10.3 **Assessments can be wrong.** Assessments are provisional judgments
 made from the evidence the agents found, at the effort the claim's

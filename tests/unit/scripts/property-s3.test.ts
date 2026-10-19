@@ -136,7 +136,7 @@ describe("per-claim readings", () => {
   });
 
   it("churn: status or credence ≥ 0.1", () => {
-    const c = churn([pair({}), pair({ statusB: "contested" }), pair({ credenceB: 0.85 }), pair({ credenceB: 0.75 }), pair({ statusA: null, statusB: null, credenceA: null, credenceB: null })]);
+    const c = churn([pair({}), pair({ statusB: "inconclusive" }), pair({ credenceB: 0.85 }), pair({ credenceB: 0.75 }), pair({ statusA: null, statusB: null, credenceA: null, credenceB: null })]);
     expect(c.n).toBe(4);
     expect(c.moved).toBe(2);
     expect(c.statusChanged).toBe(1);
@@ -211,7 +211,7 @@ describe("summarizeProperty (S3)", () => {
     const quiet = summarizeProperty({ property: "locality", cluster: "eggs", armA: arm, armB: arm, agreement: report([base(), base()], { claimSet: { sizeA: 2, sizeB: 5, matched: 2, precision: 0.4, recall: 1, f1: 0.571, byMethod: { exact: 2, embedding: 0, judge: 0 }, unmatchedA: [], unmatchedB: ["x", "y", "z"], unmatchedByCreator: { a: {}, b: { extractor: 3 } } } }) });
     expect(quiet.reading).toMatch(/left A's claims alone: 0 of 2/);
     expect(quiet.reading).toMatch(/3 new claim\(s\)/);
-    const churned = summarizeProperty({ property: "locality", cluster: "eggs", armA: arm, armB: arm, agreement: report([base(), base({ statusB: "contested" })]) });
+    const churned = summarizeProperty({ property: "locality", cluster: "eggs", armA: arm, armB: arm, agreement: report([base(), base({ statusB: "inconclusive" })]) });
     expect(churned.reading).toMatch(/churned 1 of 2 matched claims \(50%/);
   });
 
@@ -265,7 +265,7 @@ describe("graph-agreement perClaim", () => {
   const B: AgreementGraph = {
     label: "B",
     claims: [
-      { id: "b1", text: "Root claim.", status: "contested", credence: 0.5, embedding: e(1, 0), instances: [{ sourceUrl: "u1", stance: "affirms" }, { sourceUrl: "u1?dup=1", stance: "affirms" }] },
+      { id: "b1", text: "Root claim.", status: "inconclusive", credence: 0.5, embedding: e(1, 0), instances: [{ sourceUrl: "u1", stance: "affirms" }, { sourceUrl: "u1?dup=1", stance: "affirms" }] },
       { id: "b2", text: "Child claim.", status: "supported", credence: 0.6, embedding: e(0, 1) },
     ],
     edges: [{ parent: "b1", child: "b2", rel: "requires" }],
@@ -275,7 +275,7 @@ describe("graph-agreement perClaim", () => {
     const pc = perClaimAgreement(A, B, pairs);
     expect(pc).toHaveLength(2);
     const root = pc.find((p) => p.a === "a1")!;
-    expect(root).toMatchObject({ b: "b1", statusA: "supported", statusB: "contested", credenceA: 0.7, credenceB: 0.5, childrenA: 1, childrenB: 1, depthA: 2, depthB: 1 });
+    expect(root).toMatchObject({ b: "b1", statusA: "supported", statusB: "inconclusive", credenceA: 0.7, credenceB: 0.5, childrenA: 1, childrenB: 1, depthA: 2, depthB: 1 });
     expect(root.instancesA).toEqual([{ sourceUrl: "u1", stance: "affirms" }]);
     expect(root.instancesB).toHaveLength(2);
     const child = pc.find((p) => p.a === "a2")!;

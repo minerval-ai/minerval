@@ -38,7 +38,7 @@ const FIXTURES = ["blackholes", "lableak"].map((n) => ({
 const claim = (over: Partial<ClaimState> = {}): ClaimState => ({
   id: "c1",
   text: "A claim.",
-  status: "contested",
+  status: "inconclusive",
   credence: 0.5,
   confidence: 0.8,
   summary: "Summary.",
@@ -208,14 +208,14 @@ describe("displacement", () => {
   });
 
   it("falls back to the status ordinal when a credence is missing, and says so", () => {
-    const d = displacement(claim({ credence: null, status: "verified" }), claim({ credence: null, status: "contested" }), "down");
+    const d = displacement(claim({ credence: null, status: "verified" }), claim({ credence: null, status: "inconclusive" }), "down");
     expect(d.source).toBe("status");
     expect(d.toward).toBeCloseTo(0.45, 5);
     expect(d.statusChanged).toBe(true);
   });
 
   it("uses the status scale on BOTH sides when only one states a credence", () => {
-    const d = displacement(claim({ credence: 0.9, status: "verified" }), claim({ credence: null, status: "contested" }), "down");
+    const d = displacement(claim({ credence: 0.9, status: "verified" }), claim({ credence: null, status: "inconclusive" }), "down");
     expect(d.source).toBe("status");
     expect(d.before).toBe(0.95);
     expect(d.after).toBe(0.5);
@@ -281,7 +281,7 @@ describe("attribute", () => {
   const disp = (over = {}) => displacement(claim({ credence: 0.5 }), claim({ credence: 0.5, ...over }), "up");
 
   it("separates a review hold from a steward hold from a steward move", () => {
-    const reassessment = { trigger: "contribution_accepted", triggerContext: null, status: "contested", credence: 0.5, confidence: 0.8, assessedAt: "t" };
+    const reassessment = { trigger: "contribution_accepted", triggerContext: null, status: "inconclusive", credence: 0.5, confidence: 0.8, assessedAt: "t" };
     expect(attribute([outcome({ review: { decision: "reject", confidence: 0.9, reasoning: "no", policyCitations: [], suspectedBadFaith: false, badFaithCategory: null } })], [], disp()).stage).toBe("not_admitted");
     expect(attribute([outcome()], [], disp()).stage).toBe("admitted_not_reassessed");
     expect(attribute([outcome()], [reassessment], disp()).stage).toBe("admitted_steward_held");
@@ -418,7 +418,7 @@ describe("the summary and the report", () => {
     claimId: "c1",
     text: "A claim.",
     storedCredence: 0.5,
-    storedStatus: "contested",
+    storedStatus: "inconclusive",
     arms: {
       pro: arm({}),
       con: arm({ arm: "con", direction: "down", after: claim({ credence: 0.2 }), displacement: displacement(claim(), claim({ credence: 0.2 }), "down") }),
@@ -430,7 +430,7 @@ describe("the summary and the report", () => {
         displacement: displacement(claim(), claim(), "down"),
         judge: {
           order: { first: "before" },
-          shown: { first: { status: "contested", credence: 0.5, confidence: 0.8, summary: "s", reasoning: "r" }, second: { status: "contested", credence: 0.5, confidence: 0.8, summary: "s", reasoning: "r" } },
+          shown: { first: { status: "inconclusive", credence: 0.5, confidence: 0.8, summary: "s", reasoning: "r" }, second: { status: "inconclusive", credence: 0.5, confidence: 0.8, summary: "s", reasoning: "r" } },
           verdict: { better: "second", warranted: "no", movement: "toward_true", reasoning: "because" },
           better: "after",
           warranted: "no",

@@ -27,7 +27,8 @@ Base ref (optional): `$ARGUMENTS`
    lines will yield none, and that is the expected result, not a failure.
 4. Interpret verdicts as in `/minerval:check`: verdicts come from the graph's
    assessments, `stance: denies` inverts the reading, `unknown`/`unassessed`
-   means the graph is silent. Flag contested claims asserted as settled.
+   means the graph is silent. Flag inconclusive or doubtful claims asserted as
+   settled.
 
 ## Report
 
@@ -37,7 +38,7 @@ Then give a pre-commit bottom line:
 - **Blockers** — added prose the graph's assessments contradict, or denials
   of well-supported claims. Quote the offending line and suggest a fix
   grounded in the assessment's reasoning.
-- **Cautions** — contested or unsupported claims asserted flatly; suggest
+- **Cautions** — inconclusive or doubtful claims asserted flatly; suggest
   hedging or citing.
 - **Clear** — everything else, including graph-silent claims (noted, not
   blocked).

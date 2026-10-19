@@ -19,7 +19,7 @@ function fixture(): HistoryInput {
       { claimId: "A", status: "supported", credence: 0.7, assessedAt: t(0), trigger: "structure_and_assess" },
       { claimId: "A", status: "supported", credence: 0.8, assessedAt: t(20), trigger: "contribution_accepted" },
       // B: a challenge RAISES credence (violation).
-      { claimId: "B", status: "contested", credence: 0.5, assessedAt: t(0), trigger: "structure_and_assess" },
+      { claimId: "B", status: "inconclusive", credence: 0.5, assessedAt: t(0), trigger: "structure_and_assess" },
       { claimId: "B", status: "supported", credence: 0.65, assessedAt: t(20), trigger: "contribution_accepted" },
       // C: a support leaves credence unmoved (zero).
       { claimId: "C", status: "verified", credence: 0.9, assessedAt: t(0), trigger: "structure_and_assess" },
@@ -30,10 +30,10 @@ function fixture(): HistoryInput {
       { claimId: "E", status: "verified", credence: 0.9, assessedAt: t(0), trigger: "structure_and_assess" },
       { claimId: "E", status: "contradicted", credence: 0.2, assessedAt: t(30), trigger: "staleness_check" },
       // F: middling, reassessed, unchanged.
-      { claimId: "F", status: "contested", credence: 0.5, assessedAt: t(0), trigger: "structure_and_assess" },
-      { claimId: "F", status: "contested", credence: 0.52, assessedAt: t(30), trigger: "staleness_check" },
+      { claimId: "F", status: "inconclusive", credence: 0.5, assessedAt: t(0), trigger: "structure_and_assess" },
+      { claimId: "F", status: "inconclusive", credence: 0.52, assessedAt: t(30), trigger: "staleness_check" },
       // G: no credence.
-      { claimId: "G", status: "contested", credence: null, assessedAt: t(0), trigger: "structure_and_assess" },
+      { claimId: "G", status: "inconclusive", credence: null, assessedAt: t(0), trigger: "structure_and_assess" },
     ],
     contributions: [
       { id: "k1", claimId: "A", type: "support", reviewStatus: "accepted", submittedAt: t(5), reviewedAt: t(10), decision: "accept" },
@@ -136,8 +136,8 @@ describe("analyzeOverturn", () => {
     for (let i = 0; i < 6; i++) {
       input.assessments.push({ claimId: `c${i}`, status: "verified", credence: 0.9, assessedAt: t(0), trigger: null });
       input.assessments.push({ claimId: `c${i}`, status: i === 0 ? "contradicted" : "verified", credence: i === 0 ? 0.2 : 0.9, assessedAt: t(10), trigger: null });
-      input.assessments.push({ claimId: `n${i}`, status: "contested", credence: 0.55, assessedAt: t(0), trigger: null });
-      input.assessments.push({ claimId: `n${i}`, status: "contested", credence: i < 4 ? 0.4 : 0.55, assessedAt: t(10), trigger: null });
+      input.assessments.push({ claimId: `n${i}`, status: "inconclusive", credence: 0.55, assessedAt: t(0), trigger: null });
+      input.assessments.push({ claimId: `n${i}`, status: "inconclusive", credence: i < 4 ? 0.4 : 0.55, assessedAt: t(10), trigger: null });
     }
     const o = analyzeOverturn(input);
     expect(o.reading).toMatch(/Reversal falls with confidence/);

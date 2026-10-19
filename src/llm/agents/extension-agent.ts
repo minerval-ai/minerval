@@ -22,6 +22,10 @@ import type { InstanceStance } from "../../schemas/common.js";
  * grounded in the graph via read-only tools.
  */
 
+// "contested" here is a page verdict (the page states an unsettled claim as
+// settled), not a claim status; the graph's statuses are the evidential
+// ladder in assessmentStatusEnum (#524). The token is kept for wire
+// compatibility with installed extensions.
 export type ExtensionVerdict =
   | "egregious"
   | "contested"

@@ -432,7 +432,7 @@ async function getClaimWithContext(claimId: string) {
       verbatim_text: inst.verbatimText,
       context: inst.context,
       // Whether this source affirms or denies the canonical claim — credible
-      // sources with differing stances are a strong CONTESTED signal
+      // sources with differing stances are a strong signal of live dispute
       // (#28/#30); the ingesting document is one instance among these, with
       // no precedence (#360).
       stance: inst.stance,

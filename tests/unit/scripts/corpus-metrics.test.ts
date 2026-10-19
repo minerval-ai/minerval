@@ -25,7 +25,7 @@ function fixture(): GraphSnapshot {
       { parent: "root2", child: "shared", rel: "requires" },
     ],
     assessments: [
-      { claimId: "root", status: "contested", confidence: 0.7, reasoningTrace: "x".repeat(200) },
+      { claimId: "root", status: "inconclusive", confidence: 0.7, reasoningTrace: "x".repeat(200) },
       { claimId: "root2", status: "verified", confidence: 0.9, reasoningTrace: "y".repeat(100) },
       { claimId: "a", status: "supported", confidence: 0.6, reasoningTrace: "" },
     ],
@@ -68,7 +68,7 @@ describe("computeStructuralMetrics", () => {
   });
 
   it("summarizes assessments and traces", () => {
-    expect(m.assessment.statusDistribution).toEqual({ contested: 1, verified: 1, supported: 1 });
+    expect(m.assessment.statusDistribution).toEqual({ inconclusive: 1, verified: 1, supported: 1 });
     // only root & root2 have a substantive (>40 char) trace; a has empty trace
     expect(m.assessment.pctWithTrace).toBeCloseTo(2 / 3, 5);
   });

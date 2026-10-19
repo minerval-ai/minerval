@@ -412,10 +412,13 @@ export const assessments = pgTable(
     claimId: uuid("claim_id")
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
+    // One of assessmentStatusEnum (src/schemas/common.ts): verified |
+    // supported | inconclusive | doubtful | contradicted | unknown. Plain
+    // text, no CHECK; migration 0066 retired contested and unsupported (#524).
     status: text("status").notNull(),
     // Verdict confidence: how sure the Steward is that `status` is the right
     // reading of the evidence. Meta by design; NOT the probability that the
-    // claim is true (a claim can be confidently contested).
+    // claim is true (a claim can be confidently inconclusive).
     confidence: real("confidence").notNull(),
     // Credence: the Steward's probability that the claim, as stated, is true.
     // Nullable by design (constitution §7): where a single number would be

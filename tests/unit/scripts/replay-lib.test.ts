@@ -97,7 +97,7 @@ function fixture(): ReplayArmInput {
     assessments: [
       { id: "as1", claim_id: CLAIM, status: "supported", confidence: 0.8, claim_credence: 0.75, summary: "Eggs do raise LDL modestly.", trigger: "structure_and_assess", is_current: true, assessed_at: at(31) },
       // Nobody's: a row stamped outside every run window.
-      { id: "as-orphan", claim_id: OTHER, status: "contested", confidence: 0.5, claim_credence: null, trigger: null, is_current: true, assessed_at: at(200) },
+      { id: "as-orphan", claim_id: OTHER, status: "inconclusive", confidence: 0.5, claim_credence: null, trigger: null, is_current: true, assessed_at: at(200) },
     ],
     sourceKeys: { "https://example.org/post": "post-1" },
   };
@@ -171,7 +171,7 @@ describe("buildReplayArm", () => {
     expect(trailing.agent).toBe("system");
     expect(trailing.attribution).toBe("harness");
     expect(trailing.deltas).toEqual([
-      { op: "assessment_recorded", claimId: OTHER, status: "contested", credence: null, confidence: 0.5, trigger: null, summary: null },
+      { op: "assessment_recorded", claimId: OTHER, status: "inconclusive", credence: null, confidence: 0.5, trigger: null, summary: null },
     ]);
   });
 
@@ -216,7 +216,7 @@ describe("buildReplayArm", () => {
     expect(arm.final.claims.map((c) => [c.id, c.topLevel, c.status])).toEqual([
       [CLAIM, true, "supported"],
       [SUB, false, null],
-      [OTHER, false, "contested"],
+      [OTHER, false, "inconclusive"],
     ]);
     expect(arm.final.edges).toEqual([{ id: "edge1", parentId: CLAIM, childId: SUB, relation: "requires", argumentId: null, createdAt: at(26.5) }]);
   });

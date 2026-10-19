@@ -6,8 +6,8 @@ import { INFLATION_PROVENANCE } from "./fixtures-provenance";
 
 // Fixture data for design iteration before the API is wired in. A worked
 // example built to the constitution's structural rules: "inflation was high"
-// canonicalised (§3), decomposing into a verified bedrock fact and a contested
-// definitional threshold (§6), which is exactly why the parent lands on
+// canonicalised (§3), decomposing into a verified bedrock fact and an
+// inconclusive definitional threshold (§6), which is exactly why the parent lands on
 // SUPPORTED rather than VERIFIED (§10). The fixtures double as the sample
 // claim linked from empty states, so every field models current spec: the
 // arithmetic step lives in the argument's prose rather than as a node (§6),
@@ -32,7 +32,7 @@ const ARG_DIRECT_EVALUATION =
   "Granting its premises, the inference is simple arithmetic and goes " +
   "through. The argument lives or dies on [[claim:threshold-def|where the " +
   "threshold for “high” inflation is set]]: the measured figure is verified, " +
-  "so the contested definitional premise carries all of the remaining weight.";
+  "so the unsettled definitional premise carries all of the remaining weight.";
 
 const FLAGSHIP: ClaimDetail = {
   claim: {
@@ -44,6 +44,9 @@ const FLAGSHIP: ClaimDetail = {
     // §19: real consequence within a domain and actively argued, but the only
     // live question is definitional — a major claim, not a central one.
     importance: 0.6,
+    // Dispute, shown beside the verdict (#524): the definitional question is
+    // argued over, so the sample page reads "Supported · disputed".
+    contestation: 0.45,
     steward_state: "done",
     created_by: "extractor",
     created_at: "2024-11-02T14:20:00Z",
@@ -73,7 +76,7 @@ const FLAGSHIP: ClaimDetail = {
     summary:
       "US consumer prices [[claim:bls-cpi|rose 6.5% over 2022]], so whether inflation was “high” comes down to [[claim:threshold-def|where the threshold is set]]. Against the Federal Reserve's [[claim:fed-target|2% target]], or the looser 5% often used in policy debate, 6.5% is unambiguously high, and that is the mainstream reading. The one genuine question is definitional, not factual: [[claim:hyperinflation-view|a minority usage reserves “high” for double-digit or hyperinflationary episodes]], under which 2022 would not qualify. The underlying figure itself is not in dispute.",
     reasoning_trace:
-      "The measured-magnitude leg of this claim is settled: [[claim:bls-cpi|the Bureau of Labor Statistics reported year-over-year CPI growth of 6.5% for 2022]], a verified bedrock fact traceable to the primary release (https://www.bls.gov/news.release/archives/cpi_01122023.htm). The claim's overall status turns instead on a definitional subclaim: [[claim:threshold-def|what annual rate constitutes “high” inflation]]. Under the most common reference points, the Federal Reserve's 2% target and the looser 5% figure used in policy commentary, 6.5% clearly qualifies; but the threshold is a contested definitional choice rather than an empirical fact, and a minority of credible sources reserve “high” for double-digit or hyperinflationary regimes. Because the conclusion rests on that contested definition, the claim is Supported rather than Verified, and no single probability of truth is stated: the remaining uncertainty is about usage, not about the world. It is not Contested overall, since no credible source disputes the 6.5% figure and the conclusion holds under any mainstream threshold. A shift in the settled usage of “high inflation”, or a revision to the CPI series, would change this conclusion.",
+      "The measured-magnitude leg of this claim is settled: [[claim:bls-cpi|the Bureau of Labor Statistics reported year-over-year CPI growth of 6.5% for 2022]], a verified bedrock fact traceable to the primary release (https://www.bls.gov/news.release/archives/cpi_01122023.htm). The claim's overall status turns instead on a definitional subclaim: [[claim:threshold-def|what annual rate constitutes “high” inflation]]. Under the most common reference points, the Federal Reserve's 2% target and the looser 5% figure used in policy commentary, 6.5% clearly qualifies; but the threshold is a disputed definitional choice rather than an empirical fact, and a minority of credible sources reserve “high” for double-digit or hyperinflationary regimes. Because the conclusion rests on that disputed definition, the claim is Supported rather than Verified, and no single probability of truth is stated: the remaining uncertainty is about usage, not about the world. It is not Contested overall, since no credible source disputes the 6.5% figure and the conclusion holds under any mainstream threshold. A shift in the settled usage of “high inflation”, or a revision to the CPI series, would change this conclusion.",
     // Deprecated (#160): the pipeline never computes this; the column defaults
     // to {} and the API carries the empty value forward.
     subclaim_summary: {},
@@ -143,7 +146,7 @@ const FLAGSHIP: ClaimDetail = {
       relation_type: "supports",
       reasoning:
         "A forty-year-high inflation print is the strongest single piece of evidence for calling 2022 the worst squeeze in four decades, though the squeeze claim also weighs wages and transfers.",
-      assessment_status: "contested",
+      assessment_status: "inconclusive",
       assessment_confidence: 0.58,
     },
     {
@@ -153,8 +156,8 @@ const FLAGSHIP: ClaimDetail = {
       relation_type: "contradicts",
       reasoning:
         "The overreaction thesis frames 2022 inflation as transitory and mild in hindsight, which sits in tension with characterising the year's inflation as historically high.",
-      assessment_status: "contested",
-      assessment_confidence: 0.47,
+      assessment_status: "doubtful",
+      assessment_confidence: 0.6,
     },
     // A genuine `assumes` edge (#205): the dependent's question takes this
     // claim as given, so if it failed the dependent would be ill-posed rather
@@ -166,7 +169,7 @@ const FLAGSHIP: ClaimDetail = {
       relation_type: "assumes",
       reasoning:
         "The causal dispute takes the unusually high 2022 inflation as the thing to be explained; if inflation had been within the normal range, the question of what drove it would be beside the point rather than settled either way.",
-      assessment_status: "contested",
+      assessment_status: "inconclusive",
       assessment_confidence: 0.55,
     },
   ],
@@ -193,7 +196,7 @@ const FLAGSHIP: ClaimDetail = {
         id: "rv-2",
         decision: "accept",
         reasoning:
-          "The challenge engages the decomposition directly: the threshold subclaim is already assessed as contested, and a status of Verified says the evidence, examined directly, establishes the claim. Where the conclusion turns on a contested definitional choice, Supported states the position honestly. Accepted; the claim's steward will revisit the assessment with the definitional dependence weighed explicitly.",
+          "The challenge engages the decomposition directly: the threshold subclaim is already assessed as inconclusive, and a status of Verified says the evidence, examined directly, establishes the claim. Where the conclusion turns on an unsettled definitional choice, Supported states the position honestly. Accepted; the claim's steward will revisit the assessment with the definitional dependence weighed explicitly.",
         confidence: 0.86,
         policy_citations: ["EU", "§10 (explicit uncertainty)"],
         reviewed_at: "2026-03-17T09:05:00Z",
@@ -347,9 +350,10 @@ const FLAGSHIP: ClaimDetail = {
         // Edge confidence is confidence in the relationship, not in the
         // subclaim: the definitional dependence itself is clear-cut.
         confidence: 0.9,
-        // Confidently contested (§10): the steward is near-certain the
-        // definitional disagreement is real. No credence on a definition.
-        assessment_status: "contested", assessment_confidence: 0.8,
+        // Confidently inconclusive (§10): the steward is near-certain the
+        // evidence on usage does not settle the definition. No credence on a
+        // definition.
+        assessment_status: "inconclusive", assessment_confidence: 0.8,
         argument_id: "arg-direct", argument_name: "Direct measurement", argument_stance: "for",
         argument_content: ARG_DIRECT_WRITTEN,
         argument_verdict: "holds", argument_evaluation: ARG_DIRECT_EVALUATION,
@@ -375,10 +379,10 @@ const FLAGSHIP: ClaimDetail = {
             relation_type: "contradicts",
             reasoning: "A minority usage reserves “high” for much larger figures; if that usage is the right one, a 5% threshold is wrong and 6.5% would not qualify.",
             confidence: 0.85,
-            // Contested, not unsupported: credible sources sit on both sides
-            // of the usage question, which is what keeps the parent threshold
-            // claim contested (§21).
-            assessment_status: "contested", assessment_confidence: 0.6,
+            // Inconclusive, not doubtful: credible usage sits on both sides of
+            // the question, which is what keeps the parent threshold claim
+            // inconclusive (§21).
+            assessment_status: "inconclusive", assessment_confidence: 0.6,
             argument_id: null, argument_name: null, argument_stance: null,
             argument_content: null, argument_verdict: null, argument_evaluation: null,
             children: [],
@@ -408,10 +412,10 @@ const FLAGSHIP_EVENTS: ClaimEventsPage = {
       confidence: 0.78,
       claim_credence: null,
       summary:
-        "The 6.5% figure is beyond dispute, but the accepted challenge is right that “high” rests on [[claim:threshold-def|a contested definitional threshold]]. Supported, not Verified: the conclusion holds under any mainstream threshold, while the threshold itself remains a definitional choice.",
+        "The 6.5% figure is beyond dispute, but the accepted challenge is right that “high” rests on [[claim:threshold-def|an unsettled definitional threshold]]. Supported, not Verified: the conclusion holds under any mainstream threshold, while the threshold itself remains a definitional choice.",
       trigger: "contribution_accepted",
       trigger_context:
-        "Accepted challenge: the “high” threshold is definitional and contested; Verified overstated the settled part.",
+        "Accepted challenge: the “high” threshold is definitional and unsettled; Verified overstated the settled part.",
       is_current: true,
       prev_status: "verified",
       prev_confidence: 0.71,
@@ -426,7 +430,7 @@ const FLAGSHIP_EVENTS: ClaimEventsPage = {
       contribution_type: "challenge",
       decision: "accept",
       reasoning:
-        "The challenge engages the decomposition directly: the threshold subclaim is already assessed as contested, and a status of Verified says the evidence, examined directly, establishes the claim. Where the conclusion turns on a contested definitional choice, Supported states the position honestly. Accepted; the claim's steward will revisit the assessment with the definitional dependence weighed explicitly.",
+        "The challenge engages the decomposition directly: the threshold subclaim is already assessed as inconclusive, and a status of Verified says the evidence, examined directly, establishes the claim. Where the conclusion turns on an unsettled definitional choice, Supported states the position honestly. Accepted; the claim's steward will revisit the assessment with the definitional dependence weighed explicitly.",
       confidence: 0.86,
       policy_citations: ["EU", "§10 (explicit uncertainty)"],
       suspected_bad_faith: false,
@@ -564,9 +568,9 @@ const FLAGSHIP_EVENTS: ClaimEventsPage = {
 // depends on it.
 const INDEX: SearchResultItem[] = [
   { id: "inflation-2022", text: FLAGSHIP.claim.text, claim_type: "empirical_derived", state: "active", similarity_score: 0.91, importance: 0.6, assessment_status: "supported", assessment_confidence: 0.78, prize_micro_usd: null, checked: null },
-  { id: "min-wage", text: "The federal minimum wage should be raised to $15 per hour.", claim_type: "normative", state: "active", similarity_score: 0.74, importance: 0.65, assessment_status: "contested", assessment_confidence: 0.62, prize_micro_usd: null, checked: null },
+  { id: "min-wage", text: "The federal minimum wage should be raised to $15 per hour.", claim_type: "normative", state: "active", similarity_score: 0.74, importance: 0.65, assessment_status: "inconclusive", assessment_confidence: 0.62, prize_micro_usd: null, checked: null },
   { id: "universe-age", text: "The universe is approximately 13.8 billion years old.", claim_type: "empirical_derived", state: "active", similarity_score: 0.69, importance: 0.2, assessment_status: "verified", assessment_confidence: 0.94, prize_micro_usd: null, checked: null },
-  { id: "mw-employment", text: "Raising the minimum wage to $15 reduces teen employment.", claim_type: "causal", state: "active", similarity_score: 0.66, importance: 0.6, assessment_status: "contested", assessment_confidence: 0.5, prize_micro_usd: null, checked: null },
+  { id: "mw-employment", text: "Raising the minimum wage to $15 reduces teen employment.", claim_type: "causal", state: "active", similarity_score: 0.66, importance: 0.6, assessment_status: "inconclusive", assessment_confidence: 0.5, prize_micro_usd: null, checked: null },
   // An unassessed, low-importance leaf — left queued under the Steward's budget.
   { id: "cpi-basket-weights", text: "The CPI shelter component was reweighted in the 2023 basket revision.", claim_type: "empirical_verifiable", state: "active", similarity_score: 0.61, importance: 0.18, assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null },
   { id: "deflation-2009", text: "The United States experienced sustained deflation throughout 2009.", claim_type: "empirical_verifiable", state: "active", similarity_score: 0.58, importance: 0.2, assessment_status: "contradicted", assessment_confidence: 0.88, prize_micro_usd: null, checked: null },
@@ -897,7 +901,7 @@ const LEGENDRE: ClaimDetail = {
     current: { status: "supported", confidence: 0.9, assessed_at: "2026-03-02T23:30:00Z", is_current: true, trigger: "steward_reassessment" },
     history: [
       { status: "supported", confidence: 0.9, assessed_at: "2026-03-02T23:30:00Z", is_current: true, trigger: "steward_reassessment" },
-      { status: "unsupported", confidence: 0.55, assessed_at: "2026-01-14T10:40:00Z", is_current: false, trigger: "structure_and_assess" },
+      { status: "unknown", confidence: 0.55, assessed_at: "2026-01-14T10:40:00Z", is_current: false, trigger: "structure_and_assess" },
     ],
     total_assessments: 2,
     status_transitions: 1,
@@ -926,7 +930,7 @@ const LEGENDRE: ClaimDetail = {
       relation_type: "requires",
       reasoning:
         "If a prime lies in every interval between consecutive squares, the prime after p lies before the second square past p, which bounds the gap by 4√p + 4.",
-      assessment_status: "unsupported",
+      assessment_status: "unknown",
       assessment_confidence: 0.8,
       assessment_credence: 0.96,
       bounty_micro_usd: null,
@@ -1163,11 +1167,11 @@ const LEGENDRE_EVENTS: ClaimEventsPage = {
       confidence: 0.9,
       claim_credence: 0.97,
       summary:
-        "Reassessed after the formal statement was published and the house solver's attempts closed: the computation and the proven weaker statements are evidence of the kind mathematicians count, so Supported rather than Unsupported. Still open; the prize changes nothing here.",
+        "Reassessed after the formal statement was published and the house solver's attempts closed: the computation and the proven weaker statements are evidence of the kind mathematicians count, so Supported rather than Unknown. Still open; the prize changes nothing here.",
       trigger: "steward_reassessment",
       trigger_context: "Formal statement published; two house attempts closed without settling it.",
       is_current: true,
-      prev_status: "unsupported",
+      prev_status: "unknown",
       prev_confidence: 0.55,
     },
     {
@@ -1176,7 +1180,7 @@ const LEGENDRE_EVENTS: ClaimEventsPage = {
       at: "2026-01-14T10:40:00Z",
       actor: "claim_steward",
       assessment_id: "a-m1",
-      status: "unsupported",
+      status: "unknown",
       confidence: 0.55,
       claim_credence: 0.95,
       summary:

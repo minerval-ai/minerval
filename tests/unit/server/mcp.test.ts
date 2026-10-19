@@ -844,7 +844,7 @@ describe("MCP tools", () => {
           state: "active",
           similarity_score: 0.9,
           importance: 0.5,
-          assessment_status: "unsupported",
+          assessment_status: "doubtful",
           assessment_confidence: 0.9,
           prize_micro_usd: 2_500_000_000,
           checked: null,

@@ -136,7 +136,7 @@ npm run corpus:run -- blackholes                         # prints the cascade li
             <li>A graph straight out of one ingest has nothing to reverse; run it after a contribution scenario, a staleness sweep or the fixpoint property.</li>
             <li>The contribution-to-reassessment link is by time, so a reassessment with another cause in the same window can be attributed to the contribution.</li>
             <li>An added instance is treated as affirming; the contribution row carries no stance.</li>
-            <li>Contested and unknown never count as a polarity flip.</li>
+            <li>Inconclusive and unknown never count as a polarity flip.</li>
           </ul>
         ),
       },
@@ -665,7 +665,7 @@ npm run corpus:personas -- eggs                            # PERSONA_MODEL, the 
         open: true,
         body: (
           <>
-            <p>Seven signals over the production database, each a read that changes nothing. Two are candidate detectors whose hits can be handed to the Audit Agent as input: <strong>performed settling</strong> (a verdict that reads as settled while the record shows live disagreement) and <strong>empty chairs</strong> (a contested claim whose record carries only one side). Two are the coherence checks that need no referent: <strong>overturn-rate discrimination</strong> and <strong>evidence monotonicity</strong>, as on the <Link href="/docs/evals/history">assessment history</Link> page but over the live graph. Then <strong>cascade health</strong> (per-day R from the enqueue events), <strong>queue health</strong> and per-agent <strong>cost and error rollups</strong>.</p>
+            <p>Seven signals over the production database, each a read that changes nothing. Two are candidate detectors whose hits can be handed to the Audit Agent as input: <strong>performed settling</strong> (a verdict that reads as settled while the record shows live disagreement) and <strong>empty chairs</strong> (an inconclusive claim whose record carries only one side). Two are the coherence checks that need no referent: <strong>overturn-rate discrimination</strong> and <strong>evidence monotonicity</strong>, as on the <Link href="/docs/evals/history">assessment history</Link> page but over the live graph. Then <strong>cascade health</strong> (per-day R from the enqueue events), <strong>queue health</strong> and per-agent <strong>cost and error rollups</strong>.</p>
             <p>A hit is a claim worth a second look, and most second looks should end with the verdict holding. A detector that produced mostly real problems would be evidence the Steward is broken, not that the detector is good.</p>
           </>
         ),

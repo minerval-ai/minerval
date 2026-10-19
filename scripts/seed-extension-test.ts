@@ -23,7 +23,7 @@ const SEEDS = [
   {
     text: "Moderate red wine consumption improves cardiovascular health.",
     claimType: "causal",
-    status: "contested",
+    status: "inconclusive",
     confidence: 0.55,
     reasoning:
       "Observational studies show a J-shaped association, but Mendelian " +

@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 8852,
-    "fullChars": 63608,
+    "fullChars": 64762,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11876,
-    "fullChars": 66632,
+    "fullChars": 67786,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 20604,
-    "fullChars": 75360,
+    "fullChars": 76514,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 41016,
-    "fullChars": 95772,
+    "roleChars": 41729,
+    "fullChars": 97639,
     "skills": [
       {
         "name": "mathematics",
@@ -119,7 +119,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 15697,
-    "fullChars": 70453,
+    "fullChars": 71607,
     "skills": [
       {
         "name": "mathematics",
@@ -144,11 +144,11 @@
     "stage": 6,
     "group": "governance",
     "tagline": "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
-    "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
+    "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 18203,
-    "fullChars": 72959,
+    "fullChars": 74113,
     "skills": [
       {
         "name": "mathematics",
@@ -175,7 +175,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19559,
-    "fullChars": 74315,
+    "fullChars": 75469,
     "skills": [
       {
         "name": "mathematics",
@@ -214,7 +214,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 19667,
-    "fullChars": 74423,
+    "fullChars": 75577,
     "skills": [
       {
         "name": "mathematics",
@@ -241,7 +241,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11077,
-    "fullChars": 65833,
+    "fullChars": 66987,
     "skills": [
       {
         "name": "mathematics",
@@ -267,7 +267,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 10160,
-    "fullChars": 64916,
+    "fullChars": 66070,
     "skills": []
   },
   {
@@ -293,7 +293,7 @@
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
     "roleChars": 6367,
-    "fullChars": 61123,
+    "fullChars": 62277,
     "skills": [
       {
         "name": "provenance",

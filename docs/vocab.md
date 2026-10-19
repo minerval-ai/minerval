@@ -31,7 +31,7 @@ out under.
 | Term | Range | Meaning |
 | --- | --- | --- |
 | `mv:claimType` | string | The claim-type ontology label (e.g. `empirical_derived`). |
-| `mv:status` | string | The current assessment status (e.g. `supported`, `contested`). |
+| `mv:status` | string | The current assessment status (e.g. `supported`, `inconclusive`). |
 | `mv:confidence` | `xsd:decimal` | Verdict confidence — how sure the Steward is of the status, not P(true). |
 | `mv:credence` | `xsd:decimal` | The Steward's probability the claim is true. **Omitted exactly where the graph declines to state one (§10)** — an absent triple is information, never a gap to fill with 0. |
 

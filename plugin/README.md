@@ -41,7 +41,7 @@ API serves `http://localhost:3000/mcp`).
 ### Slash commands
 
 - `/minerval:check <text or file>` — extract, match, and assess a passage;
-  reports which claims are supported / contested / contradicted /
+  reports which claims are supported / inconclusive / doubtful / contradicted /
   misleading-as-written, each linking to its claim page.
 - `/minerval:claim <id or assertion>` — look up one claim: canonical form,
   assessment (status, confidence, credence), and the decomposition showing

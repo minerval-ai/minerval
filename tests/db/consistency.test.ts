@@ -176,7 +176,7 @@ describe("consistency flags (#330)", () => {
     const flagged = await valueOf();
     // The pass lands: a new assessment, the row done. Later the claim is
     // wanted again and the same row reopens.
-    await assess(a, { status: "contested", marginalYield: 0.1 });
+    await assess(a, { status: "inconclusive", marginalYield: 0.1 });
     await rawQuery(`UPDATE actions SET status = 'done' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
     await rawQuery(`UPDATE actions SET status = 'open' WHERE exclusion_group = $1`, [ASSESS_GROUP(a)]);
     const reopened = await valueOf();
@@ -269,7 +269,7 @@ describe("partitions and sweeps (#330)", () => {
     expect(await isDue()).toBe(false);
     await finishSweep({ sweepId, status: "done", claimsInScope: 3, flagsRaised: 0, note: "read all three" });
     expect(await isDue()).toBe(false);
-    await assess(claimsA[2]!, { status: "contested", when: new Date(Date.now() + 1_000) });
+    await assess(claimsA[2]!, { status: "inconclusive", when: new Date(Date.now() + 1_000) });
     // Changed, but swept moments ago: not yet.
     expect(await isDue()).toBe(false);
     await rawQuery(`UPDATE consistency_sweeps SET started_at = now() - interval '25 hours' WHERE id = $1`, [sweepId]);
@@ -329,7 +329,7 @@ describe("precision (#330)", () => {
       rationale: "The primary rests on the neighbor's old verdict, which has since changed.",
       expectedGain: 0.8,
     });
-    await assess(a, { status: "contested", credence: 0.5 });
+    await assess(a, { status: "inconclusive", credence: 0.5 });
     const after = await consistencyPrecision();
     expect(after.flagged - before.flagged).toBe(1);
     expect(after.ran - before.ran).toBe(1);

@@ -283,10 +283,14 @@ export interface ClaimState {
 export const STATUS_ORDINAL: Record<string, number> = {
   verified: 0.95,
   supported: 0.75,
-  contested: 0.5,
+  inconclusive: 0.5,
   unknown: 0.5,
-  unsupported: 0.3,
+  doubtful: 0.25,
   contradicted: 0.1,
+  // Pre-#524 tokens, kept so fixtures and runs recorded before the status
+  // ladder changed still order the way they did.
+  contested: 0.5,
+  unsupported: 0.3,
 };
 
 export type CredenceSource = "credence" | "status" | "none";

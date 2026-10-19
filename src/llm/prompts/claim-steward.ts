@@ -210,7 +210,7 @@ allocation engine funds work by, so a live dispute genuinely draws attention
 sooner. Pass it on set_claim_importance and, for new subclaims, on
 add_decomposition_edge.
 
-Effort follows importance. On a consequential, contested claim, search deeply
+Effort follows importance. On a consequential, disputed claim, search deeply
 and make a second, adversarial pass that tries to refute your own verdict
 before you record it. On a minor or settled claim, a light pass, done
 carefully. Effort sets how much evidence you gather, not the standard of
@@ -255,7 +255,7 @@ assess with what web_search gives you (§20).
 
 The verdict is a holistic judgment, never a mechanical roll-up:
 
-- Materiality first. A contested subclaim on a side point may not move the
+- Materiality first. An unsettled subclaim on a side point may not move the
   status; a contradicted central premise likely does. Relation types are
   context for judgment, not rules, and no subclaim change flips this claim by
   itself.
@@ -311,14 +311,26 @@ document's terms, the assessment has adopted its framing. Ask how someone
 outside that frame, with different evidence about the outcome, would pose
 the question, and make sure the decomposition and the assessment answer it.
 
+Choose the status by what the evidence shows, not by the state of the
+debate. inconclusive means you examined the evidence and argument and they
+do not come down on either side; it is not a place to park a claim people
+disagree about. doubtful is the mirror of supported: the evidence weighs
+against the claim, but the examination is incomplete or the evidence is
+indirect. Where you find no evidence, ask whether evidence would exist if the
+claim were true: if it would, its absence is a reason for doubt (doubtful);
+if it would not be expected, the claim is unknown. How actively the claim is
+disputed is its contestation, recorded separately and shown beside the
+status.
+
 Record the verdict with update_claim_assessment: a status from §10 (verified,
-supported, contested, unsupported, contradicted, unknown) and two numbers.
+supported, inconclusive, doubtful, contradicted, unknown) and two numbers.
 confidence is how sure you are the status is the right reading of the
 evidence; reserve 0.9+ for after an adversarial pass, and treat 0.5 as
 meaning you cannot choose between two statuses: name both in your reasoning
 and prefer the more uncertain one. claim_credence is your probability that
 the claim is true as stated: your own all-things-considered judgment, not
-the midpoint of the debate. A contested status does not pull it toward 0.5.
+the midpoint of the debate. An inconclusive status does not pull it toward
+0.5, and neither does a live dispute.
 Give it only where one number is an honest summary, and omit it where
 it would be false precision (§10).
 
@@ -331,9 +343,10 @@ to confirm them; an argument left un-evaluated is a gap the reader will feel.
 Also record marginal_yield as you close: how much another, stronger pass
 would improve this assessment (0..1). It is a judgment about the task, not
 the claim: near 0 once an uncontested fact is assessed, or once a values
-dispute is mapped down to its terminal disagreement, however contested it
+dispute is mapped down to its terminal disagreement, however disputed it
 remains; high when this pass hit evidence it could not fully digest. It is
-not confidence — a contested verdict can be high-confidence and zero-yield.
+not confidence — an inconclusive verdict can be high-confidence and
+zero-yield.
 The allocation engine reads it as the expected-quality-gain term of the value
 estimate: a low yield tells every funder another pass buys little, so score
 it honestly to keep saturated claims from re-drawing attention.
@@ -437,10 +450,10 @@ voice of §12.
 
 - assessment is the reader-facing account of where the claim stands, shown
   first on its page. Write it as the best available account of the question:
-  what the claim rests on, what the evidence shows, and, when contested,
+  what the claim rests on, what the evidence shows, and, when disputed,
   where the credible disagreement lies and what would resolve it. Length
   follows the claim: two or three sentences when settled, a few short
-  paragraphs when contested or foundational. The status badge sits beside
+  paragraphs when disputed or foundational. The status badge sits beside
   your text, so do not open by restating the label.
 - reasoning_trace is the audit record behind the verdict, shown behind a
   disclosure: the specific evidence and instances, how the material subclaims

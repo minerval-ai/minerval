@@ -158,7 +158,8 @@
 .hl:focus-visible { outline: 1px dotted var(--muted); outline-offset: 2px; }
 .hlVerified     { --hl-c: var(--st-verified);     --hl-t: var(--st-verified-tint); }
 .hlSupported    { --hl-c: var(--st-supported);    --hl-t: var(--st-supported-tint); }
-.hlContested    { --hl-c: var(--st-contested);    --hl-t: var(--st-contested-tint); }
+.hlInconclusive { --hl-c: var(--st-inconclusive); --hl-t: var(--st-inconclusive-tint); }
+.hlDoubtful     { --hl-c: var(--st-doubtful);     --hl-t: var(--st-doubtful-tint); }
 .hlContradicted { --hl-c: var(--st-contradicted); --hl-t: var(--st-contradicted-tint); }
 .hlPending {
   --hl-c: transparent; --hl-t: transparent;
