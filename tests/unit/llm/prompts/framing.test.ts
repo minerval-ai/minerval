@@ -92,7 +92,7 @@ describe("the Steward and the claim's instances", () => {
     expect(steward).toContain("detach_claim_instance");
     expect(steward).toContain("reattach_claim_instance");
     expect(steward).toContain("set_instance_order");
-    expect(steward).toMatch(/asserts, denies or poses\s+the proposition/);
+    expect(steward).toMatch(/asserts, denies or poses\s+the\s+proposition/);
     expect(steward).not.toMatch(/confidence lowered toward 0/);
     expect(steward).not.toMatch(/toward 0\b/);
   });
