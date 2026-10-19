@@ -14,9 +14,11 @@ import {
   type ContentRequest,
   type PageAnalysis,
   type PageAnnotation,
+  type Entitlement,
   type PageState,
   type Result,
   type Settings,
+  type Submission,
   type Verdict,
 } from "~lib/types";
 
@@ -35,10 +37,13 @@ const MAX_CONTENT_CHARS = 200_000;
 const MIN_CONTENT_CHARS = 80;
 
 // Public site for contribution deep links (#174). Claim pages come back from
-// the API with their full URL; only the propose-a-claim path (no claim to
-// link to) needs a base of its own.
+// the API with their full URL; contribution pages (tracking a submission)
+// need a base of their own.
 const WEB_BASE = "https://minerval.ai";
 const MAX_QUOTE_CHARS = 300;
+// POST /claims/propose limits.
+const MAX_PROPOSED_CLAIM_CHARS = 2_000;
+const MAX_ARGUMENT_CHARS = 5_000;
 
 /** Claim-page contribute link, quoting the highlighted passage. */
 function contributeUrl(claimUrl: string, quote: string): string {
@@ -46,10 +51,30 @@ function contributeUrl(claimUrl: string, quote: string): string {
   return `${claimUrl}?contribute=challenge&quote=${encodeURIComponent(q)}`;
 }
 
-/** Propose-a-claim link for statements the graph does not hold. */
-function proposeUrl(text: string): string {
-  const t = text.length > MAX_QUOTE_CHARS ? text.slice(0, MAX_QUOTE_CHARS) : text;
-  return `${WEB_BASE}/claims?propose=${encodeURIComponent(t)}`;
+function contributionUrl(sub: Submission): string | null {
+  return sub.contribution_id ? `${WEB_BASE}/contributions/${sub.contribution_id}` : null;
+}
+
+/** The claim as it would be proposed: the pipeline's neutral form if it has one. */
+function proposedClaimText(a: PageAnnotation): string {
+  return (a.proposed_canonical_form?.trim() || a.verbatim_text).slice(
+    0,
+    MAX_PROPOSED_CLAIM_CHARS
+  );
+}
+
+/**
+ * The supporting argument when the reader adds no note of their own. It
+ * deliberately carries nothing from the page (no address, title or passage):
+ * a proposal keeps only the claim, which is public and canonical, never the
+ * page it was read on.
+ */
+const DEFAULT_ARGUMENT =
+  "Proposed by a reader who came across this claim while reading. It is " +
+  "stated as fact in published writing and is worth mapping and assessing.";
+
+function owls(n: number): string {
+  return `${n} owl${n === 1 ? "" : "s"}`;
 }
 
 interface Anchored {
@@ -64,6 +89,8 @@ const state: {
   running: boolean;
   error: string | null;
   lastUrl: string;
+  /** Proposals made from this page, reset on navigation. */
+  claimSubmissions: Record<string, Submission>;
 } = {
   settings: null,
   analysis: null,
@@ -71,6 +98,7 @@ const state: {
   running: false,
   error: null,
   lastUrl: location.href,
+  claimSubmissions: {},
 };
 
 function sendToBackground<T>(message: BackgroundRequest): Promise<Result<T>> {
@@ -85,6 +113,10 @@ const STYLE = `
 .ep-box.ep-contested { background: rgba(158, 124, 32, 0.09); border-bottom: 2px dotted #9e7c20; }
 .ep-box.ep-oversimplified { background: rgba(110, 110, 110, 0.09); border-bottom: 2px dashed #767676; }
 .ep-box.ep-noteworthy { background: rgba(62, 98, 138, 0.07); border-bottom: 1px solid #3e628a; }
+/* Not in the graph yet: present but quiet, so a page full of new claims
+   reads as "found, not yet checked" rather than as a wall of warnings. */
+.ep-box.ep-unknown { border-bottom: 1px dashed rgba(110, 110, 110, 0.6); }
+.ep-box.ep-unknown:hover { background: rgba(110, 110, 110, 0.07); }
 .ep-card {
   /* Explicit width: the card lives in a zero-width overlay container, so
      shrink-to-fit (max-width alone) would collapse it to min-content. */
@@ -124,6 +156,15 @@ const STYLE = `
 .ep-badge.ep-s-unsupported { background: #eee; color: #555; }
 .ep-badge.ep-s-contradicted { background: #f6e0de; color: #b3261e; }
 .ep-badge.ep-s-unknown { background: #eee; color: #777; }
+.ep-panel .ep-add { margin-top: 18px; padding: 12px; background: #f6f3ea; border: 1px solid #e2ddcd; border-radius: 3px; }
+.ep-panel .ep-add p { margin: 0 0 8px; }
+.ep-panel textarea { width: 100%; box-sizing: border-box; min-height: 84px; margin: 4px 0 8px;
+  font: 13px/1.45 -apple-system, system-ui, sans-serif; padding: 6px; border: 1px solid #c9c4b4; border-radius: 3px; }
+.ep-panel button.ep-btn { font: 600 13px/1 -apple-system, system-ui, sans-serif; padding: 8px 12px;
+  border-radius: 3px; border: 1px solid #274870; background: #274870; color: #fff; cursor: pointer; }
+.ep-panel button.ep-btn:disabled { opacity: 0.6; cursor: default; }
+.ep-panel .ep-error { color: #b3261e; font-size: 12px; margin-top: 6px; }
+.ep-panel .ep-done { color: #2d6a2d; }
 `;
 
 let container: HTMLDivElement | null = null;
@@ -164,6 +205,8 @@ function verdictLabel(v: Verdict): string {
       return "Oversimplified";
     case "noteworthy":
       return "In the claim graph";
+    case "unknown":
+      return "Not in the claim graph yet";
     default:
       return "";
   }
@@ -185,15 +228,26 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
     card.addEventListener("mouseleave", scheduleHideCard);
     ensureContainer().appendChild(card);
   }
-  const status = a.claim?.status ?? "unknown";
-  card.innerHTML = `
-    <div class="ep-status"><b class="ep-s-${esc(a.verdict)}">${esc(verdictLabel(a.verdict))}</b>
-      · graph status: <b class="ep-s-${esc(status)}">${esc(status)}</b></div>
-    ${a.claim ? `<div class="ep-canonical">${esc(a.claim.canonical_form)}</div>` : ""}
-    <div class="ep-why">${esc(a.why)}</div>
-    <div class="ep-hint">Click for evidence & decomposition · confidence ${Math.round(
-      a.confidence * 100
-    )}%</div>`;
+  if (a.claim) {
+    const status = a.claim.status;
+    card.innerHTML = `
+      <div class="ep-status"><b class="ep-s-${esc(a.verdict)}">${esc(verdictLabel(a.verdict))}</b>
+        · graph status: <b class="ep-s-${esc(status)}">${esc(status)}</b></div>
+      <div class="ep-canonical">${esc(a.claim.canonical_form)}</div>
+      <div class="ep-why">${esc(a.why)}</div>
+      <div class="ep-hint">Click for evidence & decomposition · confidence ${Math.round(
+        a.confidence * 100
+      )}%</div>`;
+  } else {
+    const submitted = state.claimSubmissions[a.verbatim_text];
+    card.innerHTML = `
+      <div class="ep-status"><b>${esc(verdictLabel(a.verdict))}</b></div>
+      ${a.proposed_canonical_form ? `<div class="ep-canonical">${esc(a.proposed_canonical_form)}</div>` : ""}
+      <div class="ep-why">${esc(a.why)} Minerval hasn't checked it.</div>
+      <div class="ep-hint">${
+        submitted ? "Proposed for the graph · pending review" : "Click to add it to the graph"
+      }</div>`;
+  }
   const rect = box.getBoundingClientRect();
   card.style.left = `${Math.max(8, rect.left + window.scrollX)}px`;
   card.style.top = `${rect.bottom + window.scrollY + 6}px`;
@@ -226,12 +280,13 @@ async function openPanel(a: PageAnnotation): Promise<void> {
   panel.setAttribute("data-minerval-ui", "");
 
   const status = a.claim?.status ?? "unknown";
-  panel.innerHTML = `
+  panel.innerHTML = a.claim
+    ? `
     <button class="ep-close" title="Close">×</button>
     <div class="ep-status" style="margin-bottom:8px">
       <span class="ep-badge ep-s-${esc(status)}">${esc(status)}</span>
     </div>
-    <h1>${esc(a.claim?.canonical_form ?? a.verbatim_text)}</h1>
+    <h1>${esc(a.claim.canonical_form)}</h1>
     <div class="ep-muted">${esc(verdictLabel(a.verdict))}${
       a.stance === "denies" ? " · this page argues against the claim above" : ""
     }</div>
@@ -240,18 +295,23 @@ async function openPanel(a: PageAnnotation): Promise<void> {
     <h2>Assessment</h2>
     <div>${esc(a.why)}</div>
     <div class="ep-detail"><p class="ep-muted">Loading decomposition & evidence…</p></div>
-    ${
-      a.claim
-        ? `<p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on minerval.ai →</a><br>
-           <a href="${esc(contributeUrl(a.claim.url, a.verbatim_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
-        : `<p class="ep-muted">This claim isn't in the Minerval graph yet.
-           <a href="${esc(proposeUrl(a.verbatim_text))}" target="_blank" rel="noopener">Propose it →</a></p>`
-    }`;
+    <p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on minerval.ai →</a><br>
+       <a href="${esc(contributeUrl(a.claim.url, a.verbatim_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
+    : `
+    <button class="ep-close" title="Close">×</button>
+    <div class="ep-status" style="margin-bottom:8px">
+      <span class="ep-badge ep-s-unknown">not in the graph</span>
+    </div>
+    <h1>${esc(proposedClaimText(a))}</h1>
+    <div class="ep-muted">${esc(a.why)} Minerval hasn't checked it.</div>
+    <h2>On this page</h2>
+    <div class="ep-quote">${esc(a.verbatim_text)}</div>
+    <div class="ep-add"></div>`;
   panel.querySelector(".ep-close")!.addEventListener("click", closePanel);
   document.documentElement.appendChild(panel);
 
   if (!a.claim) {
-    panel.querySelector(".ep-detail")!.innerHTML = "";
+    renderAddSection(a);
     return;
   }
 
@@ -308,6 +368,61 @@ async function openPanel(a: PageAnnotation): Promise<void> {
   detail.innerHTML = parts.join("") || "";
 }
 
+/**
+ * The panel's "add to the graph" block for a claim the graph doesn't hold:
+ * propose it (reviewed, then matched and assessed). Only the claim's wording
+ * and the reader's optional note are sent.
+ */
+function renderAddSection(a: PageAnnotation, error?: string): void {
+  const box = panel?.querySelector<HTMLDivElement>(".ep-add");
+  if (!box) return;
+
+  const submitted = state.claimSubmissions[a.verbatim_text];
+  if (submitted) {
+    const link = contributionUrl(submitted);
+    box.innerHTML = `
+      <p class="ep-done"><b>Proposed for the graph.</b></p>
+      <p class="ep-muted">A reviewer checks it is a well-formed claim. If accepted it is
+        matched against the graph (landing on an existing claim if one turns out to
+        hold it) and assessed.${
+          link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">Track it →</a>` : ""
+        }</p>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <h2 style="margin-top:0">Add it to the graph</h2>
+    <p class="ep-muted">It would be proposed in the wording above.</p>
+    <label class="ep-muted" for="ep-argument">Why it's worth checking (optional)</label>
+    <textarea id="ep-argument" maxlength="${MAX_ARGUMENT_CHARS}"
+      placeholder="Your own words. Don't paste from the page."></textarea>
+    <button class="ep-btn" type="button">Propose this claim</button>
+    <p class="ep-muted ep-cost" style="margin-top:8px">Reviewed before it's added; the
+      charge is refunded if the review declines it.</p>
+    <p class="ep-muted">Only the claim above and your note are sent. Nothing else from
+      this page is kept: not its address, title or text.</p>
+    ${error ? `<div class="ep-error">${esc(error)}</div>` : ""}`;
+
+  const textarea = box.querySelector("textarea")!;
+  const button = box.querySelector<HTMLButtonElement>("button.ep-btn")!;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "Submitting…";
+    const result = await proposeFromPage(a.verbatim_text, textarea.value);
+    renderAddSection(a, result.ok ? undefined : result.error);
+  });
+
+  void sendToBackground<Entitlement>({ type: "entitlement" }).then((r) => {
+    const cap = r.ok ? r.data.caps_owls.claim_proposal : undefined;
+    const cost = box.querySelector(".ep-cost");
+    if (!r.ok || cap === undefined || !cost) return;
+    cost.textContent =
+      `Reviewed before it's added. Costs up to ${owls(cap)} (you have ` +
+      `${owls(Math.round(r.data.owl_balance * 100) / 100)}), which also buys its ` +
+      `first assessment; refunded if the review declines it.`;
+  });
+}
+
 function closePanel(): void {
   panel?.remove();
   panel = null;
@@ -323,7 +438,9 @@ function clearOverlays(): void {
 
 function visibleVerdicts(): Set<Verdict> {
   const level = state.settings?.markupLevel ?? "conservative";
-  return new Set(LEVEL_VERDICTS[level]);
+  const show = new Set<Verdict>(LEVEL_VERDICTS[level]);
+  if (level !== "off" && (state.settings?.showNewClaims ?? true)) show.add("unknown");
+  return show;
 }
 
 function renderAnchored(): void {
@@ -386,14 +503,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => window.setTimeout(r, ms));
 }
 
+/** The page's readable text as sent to the API, or null if too little. */
+function captureContent(): string | null {
+  const content = buildTextIndex(document.body).text.slice(0, MAX_CONTENT_CHARS);
+  if (content.replace(/\s+/g, " ").trim().length < MIN_CONTENT_CHARS) return null;
+  return content;
+}
+
 async function runAnalysis(): Promise<void> {
   if (state.running) return;
   const settings = state.settings ?? (await getSettings());
   if (resolveSitePolicy(settings, location.hostname) === "disabled") return;
 
-  const index = buildTextIndex(document.body);
-  const content = index.text.slice(0, MAX_CONTENT_CHARS);
-  if (content.replace(/\s+/g, " ").trim().length < MIN_CONTENT_CHARS) return;
+  const content = captureContent();
+  if (content === null) {
+    state.error = "There isn't enough readable text on this page to analyze.";
+    return;
+  }
 
   state.running = true;
   state.error = null;
@@ -440,6 +566,43 @@ async function runAnalysis(): Promise<void> {
   }
 }
 
+// --- Adding to the graph --------------------------------------------------------
+
+async function proposeFromPage(
+  verbatimText: string,
+  argument?: string
+): Promise<Result<Submission>> {
+  const a = state.analysis?.annotations.find(
+    (x) => x.verbatim_text === verbatimText && !x.claim
+  );
+  if (!a) return { ok: false, error: "That claim is no longer on this page's analysis." };
+  const existing = state.claimSubmissions[verbatimText];
+  if (existing) return { ok: true, data: existing };
+
+  const body = (argument?.trim() || DEFAULT_ARGUMENT).slice(0, MAX_ARGUMENT_CHARS);
+  const result = await sendToBackground<Submission>({
+    type: "propose-claim",
+    claim: proposedClaimText(a),
+    argument: body,
+  });
+  if (result.ok) state.claimSubmissions[verbatimText] = result.data;
+  return result;
+}
+
+/** Scroll a claim into view and open its panel (from the popup's list). */
+function revealClaim(verbatimText: string): boolean {
+  const hit = state.anchored.find((x) => x.annotation.verbatim_text === verbatimText);
+  const range = hit?.ranges[0];
+  if (!hit || !range) return false;
+  const rect = range.getBoundingClientRect();
+  window.scrollTo({
+    top: rect.top + window.scrollY - window.innerHeight / 3,
+    behavior: "smooth",
+  });
+  void openPanel(hit.annotation);
+  return true;
+}
+
 // --- Reactivity ----------------------------------------------------------------
 
 function debounce(fn: () => void, ms: number): () => void {
@@ -480,6 +643,8 @@ function watchPage(): void {
   // isolated world without page-script injection).
   const autoRerun = debounce(() => {
     state.analysis = null;
+    state.error = null;
+    state.claimSubmissions = {};
     clearOverlays();
     closePanel();
     const settings = state.settings;
@@ -510,8 +675,20 @@ chrome.runtime.onMessage.addListener(
         running: state.running,
         error: state.error,
         annotations: state.analysis?.annotations ?? [],
+        claimSubmissions: state.claimSubmissions,
       };
       sendResponse({ ok: true, data: pageState });
+      return;
+    }
+    if (message.type === "propose-claim") {
+      void proposeFromPage(message.verbatimText, message.argument).then((r) => {
+        if (r.ok) anchorAnnotations();
+        sendResponse(r);
+      });
+      return true;
+    }
+    if (message.type === "reveal-claim") {
+      sendResponse({ ok: true, data: revealClaim(message.verbatimText) });
       return;
     }
     if (message.type === "run-analysis") {

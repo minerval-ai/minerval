@@ -39,6 +39,32 @@ Conservative by default, progressively disclosing:
   one-line why.
 - **Click**: full panel with the decomposition into subclaims, evidence and
   arguments for/against, and a link to the claim's page on minerval.ai.
+- **Not in the graph yet**: claims the analysis found but the graph doesn't
+  hold get a faint grey dashed underline (turn it off in settings). Nothing
+  has checked them: the graph has nothing to judge them against.
+
+The popup's **Page** tab says where the page stands: not analyzed (and
+nothing sent), analyzing, or what was found, e.g. "14 claims found · 3 in the
+graph · 11 new". It lists both groups.
+
+## Adding claims to the graph
+
+Early on, most claims on most pages aren't in the graph, so the extension
+lets you add them. In the Page tab, tick the new claims worth checking and
+press **Propose**, or click a faint underline and use **Propose this claim**
+in its panel (where you can add a note on why it's worth checking).
+
+A proposal goes through the same governed intake as proposing a claim on
+minerval.ai (`POST /claims/propose`): the Contribution Reviewer checks it's a
+well-formed, public claim, then the Matcher lands it on an existing claim or
+creates a new one, and it is assessed. Each proposal is charged the
+claim-proposal price, which also buys its first assessment, and refunded if
+the review declines it. The popup shows the price and your owl balance.
+
+What's sent is only the claim, in the neutral wording the pipeline proposes
+for it, plus your note if you write one. Nothing else from the page is kept:
+not its address, title or text. Claims are meant to be canonical and public,
+not tied to the page they were read on.
 
 Markup is non-destructive: highlights are overlay elements anchored to the
 rendered text, re-anchored when the page mutates. The page's DOM text is
@@ -53,7 +79,9 @@ automatic analysis in settings. Any site can be disabled entirely.
 
 What is sent is transient. Page text and chat questions are analyzed and
 discarded: they are never written to Minerval's database or to its agent
-transcripts, and no claim enters the graph from them. Results are cached in
+transcripts, and no claim enters the graph from them unless you propose it
+(see [Adding claims to the graph](#adding-claims-to-the-graph); only the
+claim's wording is kept). Results are cached in
 server memory for about an hour so re-opening a page is instant; only a
 metering record (agent, model, token counts, cost) is kept. The site's
 [privacy policy](https://minerval.ai/privacy) states this in full.

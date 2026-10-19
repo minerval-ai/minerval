@@ -1,4 +1,11 @@
-import { analyzePage, chat, getAnalysisStatus, getClaimDetail } from "~lib/api";
+import {
+  analyzePage,
+  chat,
+  getAnalysisStatus,
+  getClaimDetail,
+  getEntitlement,
+  proposeClaim,
+} from "~lib/api";
 import type {
   AnalyzeProgress,
   BackgroundRequest,
@@ -84,6 +91,18 @@ chrome.runtime.onMessage.addListener(
             break;
           case "claim-detail":
             respond({ ok: true, data: await getClaimDetail(message.claimId) });
+            break;
+          case "propose-claim":
+            respond({
+              ok: true,
+              data: await proposeClaim({
+                claim: message.claim,
+                argument: message.argument,
+              }),
+            });
+            break;
+          case "entitlement":
+            respond({ ok: true, data: await getEntitlement() });
             break;
           case "badge":
             setBadge(sender.tab?.id, message.count);

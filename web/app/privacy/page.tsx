@@ -22,7 +22,7 @@ export default function Privacy() {
         contributor&rsquo;s track record on the graph, is described below.
       </p>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }}>
-        Effective September 2, 2026 · applies to minerval.ai, the Minerval API, and
+        Effective October 19, 2026 · applies to minerval.ai, the Minerval API, and
         the Minerval browser extension.
       </p>
 
@@ -98,7 +98,11 @@ export default function Privacy() {
         on the page and matching them against the graph so the extension can
         annotate what you are reading and answer your questions. Page text
         is transient: it is never written to our database or to agent
-        transcripts, and no claim is added to the graph from it. Analysis
+        transcripts, and no claim is added to the graph from it unless you
+        propose that claim. Proposing a claim from the extension sends only
+        the claim&rsquo;s wording and any note you write, never the
+        page&rsquo;s address, title, or text; it is handled like any claim
+        proposed on the site, reviewed and, if accepted, published. Analysis
         results are cached in server memory, keyed by the page URL and a
         hash of its content, so re-analyzing an unchanged page is instant
         and is not re-processed; the cache expires within about an hour and

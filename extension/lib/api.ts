@@ -2,7 +2,9 @@ import { getSettings } from "./settings";
 import type {
   BackgroundRequest,
   ChatResponse,
+  Entitlement,
   PageAnalysis,
+  Submission,
 } from "./types";
 
 /**
@@ -129,4 +131,34 @@ export async function getClaimDetail(claimId: string): Promise<unknown> {
   );
   if (!res.ok) throw new ApiError(`Failed to load claim (${res.status})`, res.status);
   return res.json();
+}
+
+/**
+ * Propose one claim for the graph (POST /claims/propose). Governed intake: it
+ * is queued for review, and only an accept matches it against the graph and
+ * admits it. Charged the claim_proposal price, refunded if declined. The
+ * caller sends the claim's wording and the reader's note, nothing from the
+ * page itself.
+ */
+export async function proposeClaim(input: {
+  claim: string;
+  argument: string;
+}): Promise<Submission> {
+  const { data } = await request<{
+    contribution?: { id: string; submitted_at: string };
+  }>("/claims/propose", input);
+  return submissionFrom(data.contribution?.id, data.contribution?.submitted_at);
+}
+
+function submissionFrom(id?: string, at?: string): Submission {
+  return {
+    contribution_id: id ?? null,
+    submitted_at: at ?? new Date().toISOString(),
+  };
+}
+
+/** Owl balance and prices, shown before a paid submission. */
+export async function getEntitlement(): Promise<Entitlement> {
+  const { data } = await request<{ entitlement: Entitlement }>("/usage?days=1");
+  return data.entitlement;
 }

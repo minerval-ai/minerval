@@ -19,9 +19,11 @@
  * in-memory cache and dies with the process, and every agent it invokes runs
  * untraced, whatever TRACE_LEVEL says. The same holds for the chat, whose
  * questions are the reader's own. What does persist is metering: one
- * llm_usage row per call with counts and cost, never content. Ingesting a
- * page-derived claim into the graph, if it ever happens, is a separate and
- * deliberate path with its own rules, not a relaxation of this one.
+ * llm_usage row per call with counts and cost, never content. Adding a
+ * page's claims to the graph is a separate, deliberate act the reader takes
+ * per page or per claim: the extension submits through the governed intake
+ * routes (POST /sources, POST /claims/propose), which review before anything
+ * is admitted. That path is not a relaxation of this one.
  */
 import crypto from "crypto";
 import { loadConfig } from "../config.js";
@@ -60,6 +62,13 @@ export interface PageAnnotation {
   confidence: number;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
   stance: InstanceStance;
+  /**
+   * The neutral statement of the claim as the pipeline would canonicalize it
+   * (the Matcher's proposed form, else the Extractor's). Present for claims
+   * the graph doesn't hold, so the reader can propose it as a well-formed
+   * claim rather than as the page's phrasing; null for matched claims.
+   */
+  proposed_canonical_form: string | null;
   /** Matched canonical claim, or null when the claim is new/unknown. */
   claim: {
     id: string;
@@ -189,6 +198,8 @@ export function buildAnnotations(input: {
     stance: InstanceStance;
     /** The Matcher ran out of budget without a verdict (#419). */
     undecided?: boolean;
+    /** How the pipeline would word the claim if it were new. */
+    proposedCanonicalForm?: string | null;
     matched: {
       claimId: string;
       canonicalForm: string;
@@ -204,9 +215,9 @@ export function buildAnnotations(input: {
   return input.claims.map((c, i) => {
     if (!c.matched) {
       // New/unknown to the graph: nothing to judge against. The extension
-      // renders no markup for these (graceful degradation). Minting them
-      // from here would persist page-derived text; see the module comment
-      // (#356) before adding such a path.
+      // marks these as new and offers to propose them through intake;
+      // minting them from here would persist page-derived text without the
+      // reader asking (see the module comment, #356).
       return {
         verbatim_text: c.verbatim_text,
         context: c.context,
@@ -217,6 +228,7 @@ export function buildAnnotations(input: {
           : "This claim isn't in the Minerval graph yet.",
         confidence: 0,
         stance: c.stance,
+        proposed_canonical_form: c.proposedCanonicalForm ?? null,
         claim: null,
       };
     }
@@ -230,6 +242,7 @@ export function buildAnnotations(input: {
       why: v?.why ?? "",
       confidence: v?.confidence ?? 0,
       stance: c.stance,
+      proposed_canonical_form: null,
       claim: {
         id: c.matched.claimId,
         canonical_form: c.matched.canonicalForm,
@@ -460,6 +473,8 @@ async function analyzePageUncached(
       // The Matcher reached no verdict (#419): distinct from "not in the
       // graph" so the annotation can say so.
       undecided: decision.outcome === "undecided",
+      proposedCanonicalForm:
+        decision.new_canonical_form?.trim() || c.proposed_canonical_form || null,
     };
 
     if (!decision.is_match || !decision.matched_claim_id) {

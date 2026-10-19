@@ -34,6 +34,12 @@ are effectively pinned to the account that creates them.
     public page, where you can challenge it or add evidence.
   — Ask questions in the popup chat and get answers grounded in the graph,
     with numbered citations to the claims they rest on — not vibes.
+  — See at a glance what the analysis found: how many claims are on the
+    page, how many the graph already holds, and which are new. Claims the
+    graph doesn't hold yet are faintly underlined and listed in the popup;
+    propose the ones worth checking and they are reviewed, added to the
+    graph and assessed. A proposal sends only the claim itself, never the
+    page.
 
   Markup is non-destructive: annotations are drawn as an overlay and the
   page's text is never rewritten.

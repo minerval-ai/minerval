@@ -118,6 +118,18 @@ describe("buildAnnotations", () => {
     expect(a!.verdict).toBe("unknown");
     expect(a!.claim).toBeNull();
   });
+
+  it("carries the proposed canonical form for unmatched claims only", () => {
+    const [unmatched, hit] = buildAnnotations({
+      claims: [
+        { ...base, proposedCanonicalForm: "GDP fell in 2020", matched: null },
+        { ...base, proposedCanonicalForm: "ignored", matched },
+      ],
+      verdicts: new Map(),
+    });
+    expect(unmatched!.proposed_canonical_form).toBe("GDP fell in 2020");
+    expect(hit!.proposed_canonical_form).toBeNull();
+  });
 });
 
 describe("extractCitedClaimIds", () => {

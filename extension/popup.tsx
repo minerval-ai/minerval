@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./popup.css";
 import { Mark } from "~lib/mark";
 import {
@@ -11,16 +11,23 @@ import type {
   ChatCitation,
   ChatResponse,
   ChatTurn,
+  Entitlement,
+  PageAnnotation,
   PageState,
   Result,
   Settings,
   SitePolicy,
+  Submission,
 } from "~lib/types";
 
 /**
- * Toolbar popup: the chat panel (talk to the extension agent about the page,
- * grounded in the claim graph) plus the markup/privacy settings.
+ * Toolbar popup: the page view (what the analysis found, which claims the
+ * graph holds, and proposing the ones it doesn't), the chat panel (talk to
+ * the extension agent about the page, grounded in the claim graph), and the
+ * markup/privacy settings.
  */
+
+const WEB_BASE = "https://minerval.ai";
 
 async function activeTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -67,39 +74,28 @@ function ReplyText({ text, citations }: { text: string; citations: ChatCitation[
   );
 }
 
-function Chat({ settings }: { settings: Settings }) {
+/** Page state from the content script, kept live while an analysis runs. */
+function usePage() {
   const [page, setPage] = useState<PageState | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const refresh = async () => {
+    setPage(await getPageState());
+    setLoaded(true);
+  };
 
   useEffect(() => {
-    void getPageState().then(setPage);
+    void refresh();
   }, []);
   // A page analysis can run for minutes (async flow, #93); keep the status
   // line live while one is in flight.
   useEffect(() => {
     if (!page?.running && !analyzing) return;
-    const timer = window.setInterval(
-      () => void getPageState().then(setPage),
-      3000
-    );
+    const timer = window.setInterval(() => void refresh(), 3000);
     return () => window.clearInterval(timer);
   }, [page?.running, analyzing]);
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy]);
-
-  const flagged = useMemo(
-    () =>
-      (page?.annotations ?? []).filter(
-        (a) => a.verdict !== "fine" && a.verdict !== "unknown"
-      ),
-    [page]
-  );
 
   const analyze = async () => {
     const tab = await activeTab();
@@ -115,9 +111,290 @@ function Chat({ settings }: { settings: Settings }) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setAnalyzing(false);
-      setPage(await getPageState());
+      await refresh();
     }
   };
+
+  return { page, loaded, analyzing, error: error ?? page?.error ?? null, analyze, refresh };
+}
+
+type PageHook = ReturnType<typeof usePage>;
+
+function isFlagged(a: PageAnnotation): boolean {
+  return a.verdict !== "fine" && a.verdict !== "unknown";
+}
+
+/**
+ * One line saying plainly where the page stands: not analyzed (and nothing
+ * sent), analyzing, failed, or what the analysis found and how much of it the
+ * graph holds.
+ */
+function PageStatus({ settings, hook }: { settings: Settings; hook: PageHook }) {
+  const { page, loaded, analyzing, error, analyze } = hook;
+  if (!loaded) return <div className="page-status" />;
+  if (!page) {
+    return (
+      <div className="page-status">
+        <span className="muted">Minerval can't run on this page.</span>
+      </div>
+    );
+  }
+  const host = new URL(page.url).hostname;
+  if (resolveSitePolicy(settings, host) === "disabled") {
+    return (
+      <div className="page-status">
+        <span className="muted">Minerval is turned off on {host}.</span>
+      </div>
+    );
+  }
+  if (page.running || analyzing) {
+    return (
+      <div className="page-status">
+        <span className="muted">
+          Finding the claims on this page and checking them against the
+          graph… large pages can take a few minutes.
+        </span>
+      </div>
+    );
+  }
+  if (!page.analyzed) {
+    return (
+      <div className="page-status">
+        <span className={error ? "error" : "muted"}>
+          {error ?? "Not analyzed yet. Nothing from this page has been sent."}
+        </span>
+        <button onClick={() => void analyze()}>
+          {error ? "Try again" : "Analyze page"}
+        </button>
+      </div>
+    );
+  }
+
+  const total = page.annotations.length;
+  const inGraph = page.annotations.filter((a) => a.claim).length;
+  const flagged = page.annotations.filter(isFlagged).length;
+  return (
+    <div className="page-status">
+      <span className="muted">
+        {total === 0
+          ? "Analyzed: no checkable claims found on this page."
+          : `${total} claim${total === 1 ? "" : "s"} found · ${inGraph} in the graph` +
+            ` · ${total - inGraph} new` +
+            (inGraph > 0 ? ` · ${flagged === 0 ? "nothing flagged" : `${flagged} flagged`}` : "")}
+      </span>
+    </div>
+  );
+}
+
+async function sendToTab<T>(message: unknown): Promise<Result<T>> {
+  const tab = await activeTab();
+  if (!tab?.id) return { ok: false, error: "No active tab" };
+  try {
+    return (await chrome.tabs.sendMessage(tab.id, message)) as Result<T>;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function contributionLink(sub: Submission) {
+  if (!sub.contribution_id) return null;
+  return (
+    <a href={`${WEB_BASE}/contributions/${sub.contribution_id}`}
+       target="_blank" rel="noopener noreferrer">
+      track
+    </a>
+  );
+}
+
+function owls(n: number): string {
+  const r = Math.round(n * 100) / 100;
+  return `${r} owl${r === 1 ? "" : "s"}`;
+}
+
+/**
+ * The page view: every claim the analysis found, split by whether the graph
+ * holds it. Claims it doesn't hold can be proposed, one or several at once;
+ * a proposal sends only the claim's neutral wording, nothing else from the
+ * page.
+ */
+function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
+  const { page, refresh } = hook;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [proposing, setProposing] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
+
+  const annotations = page?.analyzed ? page.annotations : [];
+  const known = annotations.filter((a) => a.claim);
+  const unknown = annotations.filter((a) => !a.claim);
+  const submissions = page?.claimSubmissions ?? {};
+  const open = unknown.filter((a) => !submissions[a.verbatim_text]);
+
+  useEffect(() => {
+    if (unknown.length === 0 || entitlement) return;
+    void chrome.runtime
+      .sendMessage({ type: "entitlement" })
+      .then((r: Result<Entitlement>) => r.ok && setEntitlement(r.data))
+      .catch(() => {});
+  }, [unknown.length]);
+
+  if (!page?.analyzed) {
+    return (
+      <div className="page-view">
+        <PageStatus settings={settings} hook={hook} />
+        <p className="hint pad">
+          Analyzing finds the claims on this page and checks each against the
+          Minerval claim graph. Claims the graph doesn't hold yet are listed
+          here, and you can propose them for the graph.
+        </p>
+      </div>
+    );
+  }
+
+  const toggle = (key: string) => {
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setSelected(next);
+  };
+
+  const propose = async () => {
+    setProposing(true);
+    const failed: Record<string, string> = {};
+    // One at a time: each is its own charge and review, and a quota denial
+    // part-way through should stop the rest rather than repeat N times.
+    for (const key of open.map((a) => a.verbatim_text).filter((k) => selected.has(k))) {
+      const r = await sendToTab<Submission>({ type: "propose-claim", verbatimText: key });
+      if (!r.ok) {
+        failed[key] = r.error;
+        if (/allowance|owl|quota|rate limit|402|429/i.test(r.error)) break;
+      }
+    }
+    setErrors(failed);
+    setSelected(new Set());
+    setProposing(false);
+    await refresh();
+  };
+
+  const cap = entitlement?.caps_owls.claim_proposal;
+  const count = open.filter((a) => selected.has(a.verbatim_text)).length;
+
+  return (
+    <div className="page-view">
+      <PageStatus settings={settings} hook={hook} />
+      <div className="claims">
+        {unknown.length > 0 && (
+          <section>
+            <h3>Not in the graph yet ({unknown.length})</h3>
+            <p className="muted">
+              Found on this page but unchecked: the graph has nothing on
+              them. Propose the ones worth checking. Each is reviewed, then
+              added and assessed. Only the claim's wording is sent, nothing
+              else from the page.
+            </p>
+            <ul>
+              {unknown.map((a) => {
+                const sub = submissions[a.verbatim_text];
+                return (
+                  <li key={a.verbatim_text} className="claim-row">
+                    {sub ? (
+                      <span className="done" title="Proposed">✓</span>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(a.verbatim_text)}
+                        onChange={() => toggle(a.verbatim_text)}
+                        disabled={proposing}
+                      />
+                    )}
+                    <div>
+                      <a href="#" onClick={(e) => {
+                        e.preventDefault();
+                        void sendToTab({ type: "reveal-claim", verbatimText: a.verbatim_text });
+                      }}>
+                        {a.proposed_canonical_form || a.verbatim_text}
+                      </a>
+                      {sub && (
+                        <div className="muted">
+                          Proposed · pending review {contributionLink(sub)}
+                        </div>
+                      )}
+                      {errors[a.verbatim_text] && (
+                        <div className="error">{errors[a.verbatim_text]}</div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {open.length > 0 && (
+              <div className="propose-bar">
+                <label className="row muted">
+                  <input
+                    type="checkbox"
+                    checked={count === open.length}
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked ? new Set(open.map((a) => a.verbatim_text)) : new Set()
+                      )
+                    }
+                    disabled={proposing}
+                  />
+                  Select all
+                </label>
+                <button onClick={() => void propose()} disabled={proposing || count === 0}>
+                  {proposing
+                    ? "Proposing…"
+                    : count === 0
+                      ? "Propose selected"
+                      : `Propose ${count} claim${count === 1 ? "" : "s"}`}
+                </button>
+              </div>
+            )}
+            {open.length > 0 && (
+              <p className="muted">
+                {cap !== undefined && entitlement
+                  ? `Up to ${owls(cap)} each, which also buys its first assessment` +
+                    `${count > 1 ? ` (up to ${owls(cap * count)} for ${count})` : ""}; ` +
+                    `you have ${owls(entitlement.owl_balance)}. `
+                  : ""}
+                Refunded for any the review declines.
+              </p>
+            )}
+          </section>
+        )}
+
+        {known.length > 0 && (
+          <section>
+            <h3>In the graph ({known.length})</h3>
+            <ul>
+              {known.map((a) => (
+                <li key={a.verbatim_text} className="claim-row">
+                  <span className={`badge s-${a.claim!.status}`}>{a.claim!.status}</span>
+                  <a href={a.claim!.url} target="_blank" rel="noopener noreferrer">
+                    {a.claim!.canonical_form}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
+  const { page } = hook;
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, busy]);
 
   const send = async () => {
     const question = input.trim();
@@ -160,38 +437,9 @@ function Chat({ settings }: { settings: Settings }) {
     }
   };
 
-  const host = page ? new URL(page.url).hostname : null;
-  const disabled = host
-    ? resolveSitePolicy(settings, host) === "disabled"
-    : false;
-
   return (
     <div className="chat">
-      <div className="page-status">
-        {!page && <span className="muted">Extension can't run on this page.</span>}
-        {page && disabled && (
-          <span className="muted">Minerval is disabled on {host}.</span>
-        )}
-        {page && !disabled && !page.analyzed && (page.running || analyzing) && (
-          <span className="muted">
-            Analyzing… large pages can take a few minutes.
-          </span>
-        )}
-        {page && !disabled && !page.analyzed && !page.running && !analyzing && (
-          <>
-            <span className="muted">Page not analyzed yet.</span>
-            <button onClick={() => void analyze()}>Analyze page</button>
-          </>
-        )}
-        {page && page.analyzed && (
-          <span className="muted">
-            {page.annotations.length} claims checked ·{" "}
-            {flagged.length === 0
-              ? "nothing flagged"
-              : `${flagged.length} flagged`}
-          </span>
-        )}
-      </div>
+      <PageStatus settings={settings} hook={hook} />
 
       <div className="messages">
         {messages.length === 0 && (
@@ -300,6 +548,15 @@ function SettingsPane({
       <label className="row">
         <input
           type="checkbox"
+          checked={settings.showNewClaims}
+          onChange={(e) => void update({ showNewClaims: e.target.checked })}
+        />
+        Faintly underline claims not in the graph yet
+      </label>
+
+      <label className="row">
+        <input
+          type="checkbox"
           checked={settings.autoAnalyze}
           onChange={(e) => void update({ autoAnalyze: e.target.checked })}
         />
@@ -355,8 +612,9 @@ function SettingsPane({
 }
 
 export default function Popup() {
-  const [tab, setTab] = useState<"chat" | "settings">("chat");
+  const [tab, setTab] = useState<"page" | "chat" | "settings">("page");
   const [settings, setSettings] = useState<Settings | null>(null);
+  const hook = usePage();
 
   useEffect(() => {
     void getSettings().then(setSettings);
@@ -372,6 +630,12 @@ export default function Popup() {
         </span>
         <nav>
           <button
+            className={tab === "page" ? "active" : ""}
+            onClick={() => setTab("page")}
+          >
+            Page
+          </button>
+          <button
             className={tab === "chat" ? "active" : ""}
             onClick={() => setTab("chat")}
           >
@@ -385,9 +649,9 @@ export default function Popup() {
           </button>
         </nav>
       </header>
-      {tab === "chat" ? (
-        <Chat settings={settings} />
-      ) : (
+      {tab === "page" && <PageView settings={settings} hook={hook} />}
+      {tab === "chat" && <Chat settings={settings} hook={hook} />}
+      {tab === "settings" && (
         <SettingsPane settings={settings} onChange={setSettings} />
       )}
     </div>
