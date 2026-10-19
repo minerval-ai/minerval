@@ -161,7 +161,10 @@ function PageStatus({ settings, hook }: { settings: Settings; hook: PageHook }) 
     return (
       <div className="page-status">
         <span className={error ? "error" : "muted"}>
-          {error ?? "Not analyzed yet. Nothing from this page has been sent."}
+          {error ??
+            (settings.sharedLookups && !page.isDraft
+              ? "Not analyzed yet, and no other reader has shared a check of this page."
+              : "Not analyzed yet. Nothing from this page has been sent.")}
         </span>
         <button onClick={() => void analyze()}>
           {error ? "Try again" : "Analyze page"}
@@ -176,13 +179,57 @@ function PageStatus({ settings, hook }: { settings: Settings; hook: PageHook }) 
   return (
     <div className="page-status">
       <span className="muted">
+        {page.shared && (
+          <>
+            Checked by another reader
+            {page.analyzedAt ? ` on ${new Date(page.analyzedAt).toLocaleDateString()}` : ""}
+            , statuses current.{" "}
+          </>
+        )}
         {total === 0
           ? "Analyzed: no checkable claims found on this page."
           : `${total} claim${total === 1 ? "" : "s"} found · ${inGraph} in the graph` +
             ` · ${total - inGraph} new` +
             (inGraph > 0 ? ` · ${flagged === 0 ? "nothing flagged" : `${flagged} flagged`}` : "")}
       </span>
+      {page.shared && (
+        <button onClick={() => void analyze()} title="Run a fresh analysis of the page as it is now">
+          Re-analyze
+        </button>
+      )}
     </div>
+  );
+}
+
+/**
+ * Whether analyzing this page offers the result to other readers: on by
+ * default for public pages, never for a draft, and the reader's to switch
+ * off for this page.
+ */
+function ShareChoice({ settings, hook }: { settings: Settings; hook: PageHook }) {
+  const { page, refresh } = hook;
+  if (!page || page.running || (page.analyzed && !page.shared)) return null;
+  if (page.isDraft) {
+    return (
+      <p className="muted pad-x">
+        This looks like a draft you're editing, so its analysis stays private:
+        it is never shared with other readers.
+      </p>
+    );
+  }
+  if (!settings.shareAnalyses) return null;
+  return (
+    <label className="row muted pad-x share-choice">
+      <input
+        type="checkbox"
+        checked={page.share}
+        onChange={async (e) => {
+          await sendToTab({ type: "set-share", share: e.target.checked });
+          await refresh();
+        }}
+      />
+      Share the results with other readers of this page, if it's public
+    </label>
   );
 }
 
@@ -242,10 +289,12 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
     return (
       <div className="page-view">
         <PageStatus settings={settings} hook={hook} />
+        <ShareChoice settings={settings} hook={hook} />
         <p className="hint pad">
           Analyzing finds the claims on this page and checks each against the
           Minerval claim graph. Claims the graph doesn't hold yet are listed
-          here, and you can propose them for the graph.
+          here, and you can propose them for the graph. If the page is public,
+          the next reader sees the results without re-running them.
         </p>
       </div>
     );
@@ -282,6 +331,7 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
   return (
     <div className="page-view">
       <PageStatus settings={settings} hook={hook} />
+      <ShareChoice settings={settings} hook={hook} />
       <div className="claims">
         {unknown.length > 0 && (
           <section>
@@ -291,6 +341,8 @@ function PageView({ settings, hook }: { settings: Settings; hook: PageHook }) {
               them. Propose the ones worth checking. Each is reviewed, then
               added and assessed. Only the claim's wording is sent, nothing
               else from the page.
+              {page.isDraft &&
+                " Proposing a claim makes it public, even before your piece is."}
             </p>
             <ul>
               {unknown.map((a) => {
@@ -553,6 +605,34 @@ function SettingsPane({
         />
         Faintly underline claims not in the graph yet
       </label>
+
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={settings.sharedLookups}
+          onChange={(e) => void update({ sharedLookups: e.target.checked })}
+        />
+        Show checks other readers already ran
+      </label>
+      <p className="muted">
+        On each page, sends only a short prefix of a hash of its address, shared
+        by thousands of addresses, and fetches results only if this page has some.
+      </p>
+
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={settings.shareAnalyses}
+          onChange={(e) => void update({ shareAnalyses: e.target.checked })}
+        />
+        Share my analyses of public pages
+      </label>
+      <p className="muted">
+        Minerval keeps an analysis for other readers only after fetching the page
+        itself, signed out, and finding the same text: so never inboxes,
+        logged-in pages, or drafts. It keeps the address and the claims, not the
+        page's text or who analyzed it.
+      </p>
 
       <label className="row">
         <input

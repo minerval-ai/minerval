@@ -37,6 +37,8 @@ export interface PageAnalysis {
   annotations: PageAnnotation[];
   stats: { extracted: number; matched: number };
   analyzed_at: string;
+  /** Served from the shared cache: another reader's analysis of this page. */
+  shared?: boolean;
 }
 
 export interface ChatCitation {
@@ -84,6 +86,16 @@ export interface Settings {
    * analysis found and that they can be added.
    */
   showNewClaims: boolean;
+  /**
+   * Check whether another reader already analyzed the page you're on. Sends
+   * only a short prefix of the page address's hash.
+   */
+  sharedLookups: boolean;
+  /**
+   * Offer your analyses to other readers. The server keeps one only if it
+   * can confirm the page is public; drafts you're editing are never offered.
+   */
+  shareAnalyses: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -97,6 +109,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoAnalyze: false,
   siteOverrides: {},
   showNewClaims: true,
+  sharedLookups: true,
+  shareAnalyses: true,
 };
 
 // --- Adding to the graph ------------------------------------------------------
@@ -133,7 +147,8 @@ export type AnalyzeProgress =
   | { done: false; content_hash: string };
 
 export type BackgroundRequest =
-  | { type: "analyze"; url: string; title: string; content: string }
+  | { type: "analyze"; url: string; title: string; content: string; share: boolean }
+  | { type: "shared-lookup"; urlHash: string }
   | { type: "check-analysis"; contentHash: string }
   | {
       type: "chat";
@@ -159,7 +174,8 @@ export type ContentRequest =
   | { type: "get-page-state" }
   | { type: "run-analysis" }
   | { type: "propose-claim"; verbatimText: string; argument?: string }
-  | { type: "reveal-claim"; verbatimText: string };
+  | { type: "reveal-claim"; verbatimText: string }
+  | { type: "set-share"; share: boolean };
 
 export interface PageState {
   url: string;
@@ -168,6 +184,13 @@ export interface PageState {
   running: boolean;
   error: string | null;
   annotations: PageAnnotation[];
+  /** When the shown analysis ran, and whether it was another reader's. */
+  analyzedAt: string | null;
+  shared: boolean;
+  /** The page looks like a draft being edited: never shared. */
+  isDraft: boolean;
+  /** Whether analyzing this page will offer the result for sharing. */
+  share: boolean;
   /** Unmatched claims proposed from this page, keyed by verbatim text. */
   claimSubmissions: Record<string, Submission>;
 }

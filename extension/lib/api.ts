@@ -1,3 +1,4 @@
+import { PAGE_HASH_PREFIX_CHARS } from "./page-url";
 import { getSettings } from "./settings";
 import type {
   BackgroundRequest,
@@ -92,6 +93,7 @@ export async function analyzePage(input: {
   url: string;
   title: string;
   content: string;
+  share: boolean;
 }): Promise<AnalyzeApiResult> {
   const { status, data } = await request<
     PageAnalysis & { content_hash: string }
@@ -161,4 +163,39 @@ function submissionFrom(id?: string, at?: string): Submission {
 export async function getEntitlement(): Promise<Entitlement> {
   const { data } = await request<{ entitlement: Entitlement }>("/usage?days=1");
   return data.entitlement;
+}
+
+// Prefix bucket → the full hashes in it, briefly, so browsing a site doesn't
+// re-ask for the same bucket on every page.
+const bucketCache = new Map<string, { hashes: Set<string>; expires: number }>();
+const BUCKET_TTL_MS = 10 * 60 * 1000;
+
+async function publicGet(path: string): Promise<Response> {
+  const settings = await getSettings();
+  // No API key: a lookup must not say who is asking.
+  return fetch(`${settings.apiBaseUrl.replace(/\/$/, "")}${path}`, {
+    credentials: "omit",
+  });
+}
+
+/**
+ * Another reader's analysis of this page, or null. Private by construction:
+ * only the hash's first few characters leave the browser unless the page is
+ * in the shared cache, which holds public pages only.
+ */
+export async function lookupSharedAnalysis(urlHash: string): Promise<PageAnalysis | null> {
+  const prefix = urlHash.slice(0, PAGE_HASH_PREFIX_CHARS);
+  let bucket = bucketCache.get(prefix);
+  if (!bucket || bucket.expires < Date.now()) {
+    const res = await publicGet(`/extension/shared?prefix=${prefix}`);
+    if (!res.ok) return null;
+    const { hashes } = (await res.json()) as { hashes: string[] };
+    bucket = { hashes: new Set(hashes), expires: Date.now() + BUCKET_TTL_MS };
+    bucketCache.set(prefix, bucket);
+  }
+  if (!bucket.hashes.has(urlHash)) return null;
+
+  const res = await publicGet(`/extension/shared/${urlHash}`);
+  if (!res.ok) return null;
+  return (await res.json()) as PageAnalysis;
 }

@@ -6,6 +6,7 @@ import {
   occurrenceToRange,
   type TextIndex,
 } from "~lib/anchor";
+import { normalizePageUrl, pageUrlHash } from "~lib/page-url";
 import { getSettings, onSettingsChanged, resolveSitePolicy } from "~lib/settings";
 import {
   LEVEL_VERDICTS,
@@ -91,6 +92,10 @@ const state: {
   lastUrl: string;
   /** Proposals made from this page, reset on navigation. */
   claimSubmissions: Record<string, Submission>;
+  /** The shown analysis is another reader's, from the shared cache. */
+  shared: boolean;
+  /** The reader opted this page out of sharing (from the popup). */
+  shareOptOut: boolean;
 } = {
   settings: null,
   analysis: null,
@@ -99,6 +104,8 @@ const state: {
   error: null,
   lastUrl: location.href,
   claimSubmissions: {},
+  shared: false,
+  shareOptOut: false,
 };
 
 function sendToBackground<T>(message: BackgroundRequest): Promise<Result<T>> {
@@ -399,8 +406,12 @@ function renderAddSection(a: PageAnnotation, error?: string): void {
     <button class="ep-btn" type="button">Propose this claim</button>
     <p class="ep-muted ep-cost" style="margin-top:8px">Reviewed before it's added; the
       charge is refunded if the review declines it.</p>
-    <p class="ep-muted">Only the claim above and your note are sent. Nothing else from
-      this page is kept: not its address, title or text.</p>
+    <p class="ep-muted">Only the claim's wording and your note are sent. Nothing else from
+      this page is kept: not its address, title or text.${
+        looksLikeDraft()
+          ? " Proposing it makes the claim public, even before your piece is."
+          : ""
+      }</p>
     ${error ? `<div class="ep-error">${esc(error)}</div>` : ""}`;
 
   const textarea = box.querySelector("textarea")!;
@@ -503,6 +514,66 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => window.setTimeout(r, ms));
 }
 
+/**
+ * A page whose text is mostly in an editable region (an editor, a text box)
+ * is someone's draft, not a published page: its analysis is never offered
+ * for sharing, whatever the settings say. The server's public-page check
+ * would usually refuse it anyway (an editor needs a login); this catches
+ * drafts reachable by link before anything is offered.
+ */
+const DRAFT_EDITABLE_SHARE = 0.25;
+
+function looksLikeDraft(): boolean {
+  if (document.designMode === "on") return true;
+  const total = (document.body?.innerText ?? "").length;
+  if (total === 0) return false;
+  let editable = 0;
+  const regions = document.querySelectorAll<HTMLElement>(
+    '[contenteditable]:not([contenteditable="false"]), textarea'
+  );
+  for (const el of regions) {
+    // Count each region once, not again for an editable inside an editable.
+    if (el.parentElement?.closest('[contenteditable]:not([contenteditable="false"])')) continue;
+    editable += el instanceof HTMLTextAreaElement ? el.value.length : el.innerText.length;
+  }
+  return editable / total >= DRAFT_EDITABLE_SHARE;
+}
+
+function willShare(): boolean {
+  return (state.settings?.shareAnalyses ?? true) && !state.shareOptOut && !looksLikeDraft();
+}
+
+/**
+ * Show another reader's analysis of this page, if the shared cache has one.
+ * Only a short prefix of the address's hash is sent unless it does.
+ */
+async function lookupShared(): Promise<boolean> {
+  const settings = state.settings ?? (await getSettings());
+  if (!settings.sharedLookups) return false;
+  if (resolveSitePolicy(settings, location.hostname) === "disabled") return false;
+  if (looksLikeDraft()) return false;
+  const url = normalizePageUrl(location.href);
+  if (!url) return false;
+  const lookedUpFor = location.href;
+
+  let result: Result<PageAnalysis | null>;
+  try {
+    result = await sendToBackground<PageAnalysis | null>({
+      type: "shared-lookup",
+      urlHash: await pageUrlHash(url),
+    });
+  } catch {
+    return false;
+  }
+  // The reader may have navigated, or analyzed the page themselves, meanwhile.
+  if (!result.ok || !result.data || location.href !== lookedUpFor) return false;
+  if (state.analysis || state.running) return false;
+  state.analysis = result.data;
+  state.shared = true;
+  anchorAnnotations();
+  return true;
+}
+
 /** The page's readable text as sent to the API, or null if too little. */
 function captureContent(): string | null {
   const content = buildTextIndex(document.body).text.slice(0, MAX_CONTENT_CHARS);
@@ -532,6 +603,7 @@ async function runAnalysis(): Promise<void> {
       url: location.href,
       title: document.title,
       content,
+      share: willShare(),
     });
     if (!started.ok) {
       state.error = started.error;
@@ -558,6 +630,7 @@ async function runAnalysis(): Promise<void> {
     }
 
     state.analysis = progress.analysis;
+    state.shared = false;
     anchorAnnotations();
   } catch (err) {
     state.error = err instanceof Error ? err.message : String(err);
@@ -645,15 +718,11 @@ function watchPage(): void {
     state.analysis = null;
     state.error = null;
     state.claimSubmissions = {};
+    state.shared = false;
+    state.shareOptOut = false;
     clearOverlays();
     closePanel();
-    const settings = state.settings;
-    if (
-      settings &&
-      resolveSitePolicy(settings, location.hostname) === "auto"
-    ) {
-      void runAnalysis();
-    }
+    void showPage();
   }, 2000);
   window.setInterval(() => {
     if (location.href !== state.lastUrl) {
@@ -675,6 +744,10 @@ chrome.runtime.onMessage.addListener(
         running: state.running,
         error: state.error,
         annotations: state.analysis?.annotations ?? [],
+        analyzedAt: state.analysis?.analyzed_at ?? null,
+        shared: state.shared,
+        isDraft: looksLikeDraft(),
+        share: willShare(),
         claimSubmissions: state.claimSubmissions,
       };
       sendResponse({ ok: true, data: pageState });
@@ -686,6 +759,11 @@ chrome.runtime.onMessage.addListener(
         sendResponse(r);
       });
       return true;
+    }
+    if (message.type === "set-share") {
+      state.shareOptOut = !message.share;
+      sendResponse({ ok: true, data: willShare() });
+      return;
     }
     if (message.type === "reveal-claim") {
       sendResponse({ ok: true, data: revealClaim(message.verbatimText) });
@@ -704,6 +782,18 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
+/**
+ * On arriving at a page: show another reader's analysis if there is one,
+ * otherwise analyze it here if the site is set to automatic.
+ */
+async function showPage(): Promise<void> {
+  if (await lookupShared()) return;
+  const settings = state.settings;
+  if (settings && resolveSitePolicy(settings, location.hostname) === "auto") {
+    await runAnalysis();
+  }
+}
+
 // --- Boot -------------------------------------------------------------------------
 
 void (async () => {
@@ -713,7 +803,5 @@ void (async () => {
     if (state.analysis) anchorAnnotations();
   });
   watchPage();
-  if (resolveSitePolicy(state.settings, location.hostname) === "auto") {
-    window.setTimeout(() => void runAnalysis(), 1500);
-  }
+  window.setTimeout(() => void showPage(), 1500);
 })();

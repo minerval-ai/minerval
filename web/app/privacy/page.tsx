@@ -89,9 +89,19 @@ export default function Privacy() {
         title to the Minerval API <strong>only when you ask it to</strong>:
         by pressing <em>Analyze page</em> in the popup, or by opting a site
         (or all sites) into automatic analysis in the extension&rsquo;s
-        settings. Nothing is sent by default, and any site can be disabled
-        entirely. Questions you type into the popup chat, along with the
-        page&rsquo;s claim context, are likewise sent only when you send them.
+        settings. Any site can be disabled entirely. Questions you type into
+        the popup chat, along with the page&rsquo;s claim context, are
+        likewise sent only when you send them.
+      </p>
+      <p>
+        To show you checks other readers already ran, the extension does send
+        something on each page you open (unless you turn this off in its
+        settings): the first four characters of a hash of the page&rsquo;s
+        address, a value shared by thousands of addresses, with no API key or
+        other identifier. Our server answers with the hashes of every shared
+        page in that group, and the extension asks for a page&rsquo;s results
+        only if its own hash is among them, which can happen only for a
+        public page someone has already analyzed.
       </p>
       <p>
         Sent page text is used for exactly one purpose: extracting the claims
@@ -102,7 +112,19 @@ export default function Privacy() {
         propose that claim. Proposing a claim from the extension sends only
         the claim&rsquo;s wording and any note you write, never the
         page&rsquo;s address, title, or text; it is handled like any claim
-        proposed on the site, reviewed and, if accepted, published. Analysis
+        proposed on the site, reviewed and, if accepted, published.
+      </p>
+      <p>
+        The one exception is sharing with other readers, which you can turn
+        off in the extension&rsquo;s settings or for any single page. When
+        you analyze a page with sharing on, our server fetches that page
+        itself, signed out, and keeps the analysis only if it finds the same
+        text there, so only pages anyone could read are kept: never inboxes,
+        logged-in pages, or paywalled articles. The extension never offers
+        drafts you are editing. What is kept is the page&rsquo;s address
+        and, for each claim found, the short phrase it was found in, the
+        claim it matched, and the verdict; not the page&rsquo;s text, its
+        title, or anything about who analyzed it. Analysis
         results are cached in server memory, keyed by the page URL and a
         hash of its content, so re-analyzing an unchanged page is instant
         and is not re-processed; the cache expires within about an hour and

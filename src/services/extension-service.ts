@@ -19,11 +19,18 @@
  * in-memory cache and dies with the process, and every agent it invokes runs
  * untraced, whatever TRACE_LEVEL says. The same holds for the chat, whose
  * questions are the reader's own. What does persist is metering: one
- * llm_usage row per call with counts and cost, never content. Adding a
- * page's claims to the graph is a separate, deliberate act the reader takes
- * per page or per claim: the extension submits through the governed intake
- * routes (POST /sources, POST /claims/propose), which review before anything
- * is admitted. That path is not a relaxation of this one.
+ * llm_usage row per call with counts and cost, never content.
+ *
+ * Two deliberate paths sit beside this one, each with its own narrower rule,
+ * and neither relaxes it:
+ *  - Sharing (services/shared-analysis-service.ts): when the reader agrees,
+ *    an analysis of a page the server confirms is PUBLIC (by fetching it
+ *    signed out) is kept for the page's next readers: the URL and, per
+ *    claim, the anchoring phrase, verdict and claim id. Never a private or
+ *    draft page, never the page's text, never who analyzed it.
+ *  - Proposing (POST /claims/propose): a reader can propose a claim the
+ *    graph lacks. Only the claim's wording and the reader's note are sent;
+ *    review decides whether it enters the graph.
  */
 import crypto from "crypto";
 import { loadConfig } from "../config.js";
@@ -321,6 +328,39 @@ export async function chatAboutPage(input: {
   return { reply: result.reply, citations };
 }
 
+export interface MatchedClaim {
+  claimId: string;
+  canonicalForm: string;
+  status: string;
+  statusConfidence: number;
+  reasoningExcerpt: string | null;
+  subclaimCount: number;
+  claimUrl: string;
+}
+
+/**
+ * A claim's current graph state as an annotation carries it, or null if the
+ * claim does not exist. Read live: the shared page cache serves stored
+ * analyses through this so their statuses are today's.
+ */
+export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | null> {
+  const [claim, assessment, subclaimCount] = await Promise.all([
+    getClaimById(claimId),
+    getCurrentAssessment(claimId),
+    getSubclaimCount(claimId),
+  ]);
+  if (!claim) return null;
+  return {
+    claimId,
+    canonicalForm: claim.text,
+    status: assessment?.status ?? "unknown",
+    statusConfidence: assessment?.confidence ?? 0,
+    reasoningExcerpt: assessment?.reasoningTrace?.slice(0, 600) ?? null,
+    subclaimCount,
+    claimUrl: claimPageUrl(claimId),
+  };
+}
+
 async function getSubclaimCount(claimId: string): Promise<number> {
   const rows = await rawQuery<{ count: string }>(
     `SELECT COUNT(*) AS count FROM claim_relationships WHERE parent_claim_id = $1`,
@@ -398,6 +438,19 @@ function launchRun(
   // this no-op handler it would also crash the process as unhandled.
   run.catch(() => {});
   return run;
+}
+
+/**
+ * The analysis for a content hash once its run settles: the cached result,
+ * the in-flight run's, or null if the run failed or is unknown. Lets a caller
+ * act on a finished analysis after its own request has been answered 202.
+ */
+export async function whenAnalysisSettles(key: string): Promise<PageAnalysis | null> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const run = inFlight.get(key);
+  if (!run) return null;
+  return run.catch(() => null);
 }
 
 export async function startAnalysis(
@@ -481,27 +534,8 @@ async function analyzePageUncached(
       return { ...base, matched: null };
     }
 
-    const claimId = decision.matched_claim_id;
-    const [claim, assessment, subclaimCount] = await Promise.all([
-      getClaimById(claimId),
-      getCurrentAssessment(claimId),
-      getSubclaimCount(claimId),
-    ]);
     // The matcher can hallucinate an id; treat a missing claim as no match.
-    if (!claim) return { ...base, matched: null };
-
-    return {
-      ...base,
-      matched: {
-        claimId,
-        canonicalForm: claim.text,
-        status: assessment?.status ?? "unknown",
-        statusConfidence: assessment?.confidence ?? 0,
-        reasoningExcerpt: assessment?.reasoningTrace?.slice(0, 600) ?? null,
-        subclaimCount,
-        claimUrl: claimPageUrl(claimId),
-      },
-    };
+    return { ...base, matched: await loadMatchedClaim(decision.matched_claim_id) };
   });
 
   // Only matched claims go to the assessor — for unknown claims there is no

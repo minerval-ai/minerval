@@ -250,3 +250,13 @@ button:disabled {
 .badge.s-supported { background: #e9f0e9; color: #3d6a3d; }
 .badge.s-contested { background: #f4ecd7; color: #7a5f14; }
 .badge.s-contradicted { background: #f6e0de; color: #b3261e; }
+
+.pad-x {
+  padding: 6px 14px 0;
+}
+
+.share-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

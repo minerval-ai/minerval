@@ -73,9 +73,9 @@ never rewritten.
 ## Privacy
 
 Analyzing a page sends its readable text to the Minerval API for claim
-extraction. Because of that, **nothing is sent automatically by default**:
-you trigger analysis from the popup, or opt a site (or everything) into
-automatic analysis in settings. Any site can be disabled entirely.
+extraction. Because of that, **page text is never sent automatically by
+default**: you trigger analysis from the popup, or opt a site (or everything)
+into automatic analysis in settings. Any site can be disabled entirely.
 
 What is sent is transient. Page text and chat questions are analyzed and
 discarded: they are never written to Minerval's database or to its agent
@@ -83,8 +83,32 @@ transcripts, and no claim enters the graph from them unless you propose it
 (see [Adding claims to the graph](#adding-claims-to-the-graph); only the
 claim's wording is kept). Results are cached in
 server memory for about an hour so re-opening a page is instant; only a
-metering record (agent, model, token counts, cost) is kept. The site's
+metering record (agent, model, token counts, cost) is kept. The one exception
+is [sharing](#shared-checks), for public pages only. The site's
 [privacy policy](https://minerval.ai/privacy) states this in full.
+
+## Shared checks
+
+When one reader analyzes a public page, the next reader of that page sees the
+results straight away, with no click and no charge. The popup says "Checked by
+another reader on <date>", and **Re-analyze** runs a fresh check.
+
+- **Which pages are shared.** After an analysis, the server fetches the page
+  itself, signed out, and keeps the result only if most of the claims'
+  phrases are on that copy. News, Substack and LessWrong posts and comments,
+  and blogs qualify. Inboxes, logged-in views and paywalled pages can't, so
+  they never are. The extension also never offers a draft: a page whose text
+  is mostly in an editor or text box. You can switch sharing off for a page
+  in the Page tab, or entirely in settings.
+- **What is kept.** The normalized address, and per claim the short phrase it
+  was found in, the verdict and the matched claim's id. Not the page's text,
+  its title, or who analyzed it. Claim statuses aren't stored: they are read
+  from the graph when the check is served, so they are always current.
+- **Lookups.** On each page the extension sends only the first four
+  characters of a hash of the address, shared by thousands of addresses, with
+  no API key. It fetches results only if the page's full hash is in the
+  answer, which happens only for public pages someone already analyzed. Turn
+  this off with **Show checks other readers already ran**.
 
 ## Metering
 

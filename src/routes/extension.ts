@@ -14,19 +14,34 @@
  * token is attributed to the calling user/key — including work that
  * continues after a 202 is returned. A cache hit refunds the charge (no
  * model work happened). The poll endpoint authenticates but is free.
+ *
+ * The shared page cache: an analyze request with share=true, once its run
+ * finishes, stores the result for other readers of the page if the server
+ * confirms the page is public (services/shared-analysis-service.ts). The two
+ * GET /extension/shared endpoints read it. They are free and need no key: a
+ * lookup sends only a short hash prefix, and identifying the reader would
+ * undo the point of sending so little.
  */
 import type { FastifyInstance } from "fastify";
 import {
   extensionAnalyzeBody,
   extensionAnalysisParams,
   extensionChatBody,
+  sharedHashParams,
+  sharedPrefixQuery,
 } from "../schemas/extension.js";
 import {
   startAnalysis,
   getAnalysisByHash,
   chatAboutPage,
+  whenAnalysisSettles,
   type AnalysisState,
 } from "../services/extension-service.js";
+import {
+  getSharedAnalysis,
+  listSharedHashes,
+  shareIfPublic,
+} from "../services/shared-analysis-service.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
 import {
   refundAgenticOp,
@@ -76,6 +91,12 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
           content: {
             type: "string",
             description: "Readable page text (not raw HTML)",
+          },
+          share: {
+            type: "boolean",
+            description:
+              "Share the result with other readers of this page, if the " +
+              "server confirms the page is public (default false)",
           },
         },
       },
@@ -128,6 +149,21 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
         await refundAgenticOp(request.auth, "extension_analysis");
       }
 
+      if (body.share) {
+        // Detached: verifying the page is public outlives this response,
+        // like the run itself after a 202. A failure only means no sharing.
+        const state = run.value;
+        const settled =
+          state.state === "ready"
+            ? Promise.resolve(state.analysis)
+            : state.state === "running"
+              ? whenAnalysisSettles(state.content_hash)
+              : Promise.resolve(null);
+        void settled
+          .then((analysis) => (analysis ? shareIfPublic(body.url, analysis) : null))
+          .catch((err) => request.log.warn({ err }, "sharing a page analysis failed"));
+      }
+
       return sendAnalysisState(reply, run.value);
     },
   });
@@ -149,6 +185,58 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const params = extensionAnalysisParams.parse(request.params);
       return sendAnalysisState(reply, getAnalysisByHash(params.content_hash));
+    },
+  });
+
+  // GET /extension/shared?prefix=abcd — every shared page's URL hash in a
+  // prefix bucket. The client checks for its own page's full hash locally.
+  app.get("/shared", {
+    schema: {
+      tags: ["extension"],
+      summary:
+        "List the URL hashes of shared page analyses that start with a " +
+        "4-hex-character prefix (private lookup: send the prefix of your " +
+        "page's hash, match locally)",
+      querystring: {
+        type: "object",
+        required: ["prefix"],
+        properties: { prefix: { type: "string", pattern: "^[0-9a-f]{4}$" } },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: { hashes: { type: "array", items: { type: "string" } } },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const { prefix } = sharedPrefixQuery.parse(request.query);
+      return reply.send({ hashes: await listSharedHashes(prefix) });
+    },
+  });
+
+  // GET /extension/shared/:url_hash — one shared analysis, claim statuses live.
+  app.get<{ Params: { url_hash: string } }>("/shared/:url_hash", {
+    schema: {
+      tags: ["extension"],
+      summary:
+        "A shared analysis of a public page, by the SHA-256 of its " +
+        "normalized URL, with each claim's current graph status",
+      params: {
+        type: "object",
+        properties: { url_hash: { type: "string", pattern: "^[0-9a-f]{64}$" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const { url_hash } = sharedHashParams.parse(request.params);
+      const analysis = await getSharedAnalysis(url_hash);
+      if (!analysis) {
+        return reply.code(404).send({
+          error: "No shared analysis for this page",
+          code: "NOT_SHARED",
+        });
+      }
+      return reply.send(analysis);
     },
   });
 

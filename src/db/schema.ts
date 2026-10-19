@@ -3889,6 +3889,37 @@ export const agentFindingSightings = pgTable(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// shared_page_analyses
+//
+// The browser extension's shared cache: what an analysis of a PUBLIC page
+// found, so the next reader of that page sees it without re-running the
+// pipeline. A page enters only after the server fetched its URL without
+// credentials and found the analysis's on-page phrases in that copy
+// (services/shared-analysis-service.ts), so nothing here is anything a
+// stranger couldn't read. It holds no page text beyond those short phrases,
+// and no trace of who analyzed it. Claim status is not stored: it is re-read
+// from the graph whenever an entry is served. Keyed by the hash of the
+// normalized URL (services/page-url.ts), which is what lookups send.
+// ---------------------------------------------------------------------------
+export const sharedPageAnalyses = pgTable(
+  "shared_page_analyses",
+  {
+    urlHash: text("url_hash").primaryKey(),
+    url: text("url").notNull(),
+    // [{ verbatim_text, stance, verdict, why, confidence, claim_id,
+    //    proposed_canonical_form }] — see StoredAnnotation.
+    annotations: jsonb("annotations").notNull(),
+    extracted: integer("extracted").notNull(),
+    analyzedAt: timestamp("analyzed_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }
+  // Lookups ask for every hash sharing a short prefix: a range scan on the
+  // primary key (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
+);
+
 // Type exports
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
@@ -3966,6 +3997,7 @@ export type NewAgentReport = typeof agentReports.$inferInsert;
 export type AgentFinding = typeof agentFindings.$inferSelect;
 export type NewAgentFinding = typeof agentFindings.$inferInsert;
 export type AgentFindingSighting = typeof agentFindingSightings.$inferSelect;
+export type SharedPageAnalysis = typeof sharedPageAnalyses.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type Tagging = typeof taggings.$inferSelect;
