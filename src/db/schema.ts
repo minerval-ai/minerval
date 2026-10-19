@@ -890,6 +890,19 @@ export const claimInstances = pgTable(
     segmentId: uuid("segment_id").references(() => sourceSegments.id, {
       onDelete: "set null",
     }),
+    // Detached by the claim's Steward: the source does not assert, deny or
+    // pose this proposition, so the instance no longer belongs to the claim.
+    // The row is kept, never deleted, because provenance edges, readings and
+    // the reading log reference it; every read that shows or weighs a
+    // claim's instances filters on detached_at IS NULL. Reattaching clears
+    // all three columns.
+    detachedAt: timestamp("detached_at", { withTimezone: true }),
+    detachedReason: text("detached_reason"),
+    detachedBy: text("detached_by"),
+    // The Steward's chosen position for this instance on the claim page,
+    // 1 first; null follows the default order (the provenance story's
+    // order, then the date of the statement). Set only by set_instance_order.
+    displayRank: integer("display_rank"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

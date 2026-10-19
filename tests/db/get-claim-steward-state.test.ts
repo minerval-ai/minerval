@@ -1,5 +1,5 @@
 /**
- * get_claim_with_context tells "never worked" from "worked and judged
+ * get_claim tells "never worked" from "worked and judged
  * childless" (#415). decomposition_status becomes "complete" at onboarding,
  * before any Steward run, so the payload must also carry the Steward queue
  * state for a reader to know whether the empty structure is a judgment.
@@ -11,11 +11,11 @@ import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 
 async function context(claimId: string) {
   return JSON.parse(
-    await executeGovernanceTool("get_claim_with_context", { claim_id: claimId })
+    await executeGovernanceTool("get_claim", { claim_id: claimId })
   );
 }
 
-describe("get_claim_with_context steward state (#415)", () => {
+describe("get_claim steward state (#415)", () => {
   it("shows an onboarded but never-stewarded claim as pending with no stewarded_at", async () => {
     const id = await seedClaim("onboarded");
     await rawQuery(

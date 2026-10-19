@@ -532,7 +532,7 @@
             "properties": {
               "source_id": {
                 "type": "string",
-                "description": "A source id from provenance_get_map or get_claim_with_context."
+                "description": "A source id from provenance_get_map or get_claim_instances."
               },
               "url": {
                 "type": "string",

@@ -116,10 +116,12 @@ export async function openExamination(input: {
   if (input.scope === "claim") {
     if (!input.claimId) throw new ExaminationError("A claim-scoped examination needs the claim it serves.");
     const [inMap] = await rawQuery<{ ok: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM claim_instances WHERE claim_id = $1 AND source_id = $2)
+      `SELECT EXISTS (SELECT 1 FROM claim_instances
+                       WHERE claim_id = $1 AND source_id = $2 AND detached_at IS NULL)
            OR EXISTS (SELECT 1 FROM claim_provenance_edges e
                         JOIN claim_instances ci ON ci.id = e.from_instance_id
-                       WHERE ci.claim_id = $1 AND e.to_source_id = $2) AS ok`,
+                       WHERE ci.claim_id = $1 AND e.to_source_id = $2
+                         AND ci.detached_at IS NULL) AS ok`,
       [input.claimId, sourceId]
     );
     if (!inMap?.ok) {
@@ -322,8 +324,13 @@ export async function citeFindings(input: {
   const instanceId = uuid(input.instanceId, "instance_id");
   const ids = [...new Set((Array.isArray(input.findingIds) ? input.findingIds : []).map((v) => uuid(v, "finding_ids[]")))];
   if (ids.length === 0) throw new ExaminationError("finding_ids is required.");
-  const [inst] = await rawQuery<{ claim_id: string; source_id: string; reading_id: string | null }>(
-    `SELECT ci.claim_id, ci.source_id, r.id AS reading_id
+  const [inst] = await rawQuery<{
+    claim_id: string;
+    source_id: string;
+    reading_id: string | null;
+    detached_at: Date | null;
+  }>(
+    `SELECT ci.claim_id, ci.source_id, r.id AS reading_id, ci.detached_at
        FROM claim_instances ci LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
       WHERE ci.id = $1`,
     [instanceId]
@@ -331,6 +338,11 @@ export async function citeFindings(input: {
   if (!inst) throw new ExaminationError(`No instance ${instanceId} exists.`);
   if (inst.claim_id !== input.claimId) {
     throw new ExaminationError("That instance belongs to another claim; you cite findings from your own claim's readings.");
+  }
+  if (inst.detached_at) {
+    throw new ExaminationError(
+      "That instance is detached from the claim; reattach it first if its reading should cite findings."
+    );
   }
   if (!inst.reading_id) {
     throw new ExaminationError("Record a reading of this instance first (provenance_record_reading); citations hang from it.");
@@ -460,7 +472,7 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
       `SELECT DISTINCT rc.finding_id, ci.claim_id FROM reading_citations rc
          JOIN examination_findings f ON f.id = rc.finding_id
          JOIN claim_instance_readings r ON r.id = rc.reading_id
-         JOIN claim_instances ci ON ci.id = r.instance_id
+         JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
         WHERE f.examination_id = ANY($1::uuid[])`,
       [examIds]
     ),

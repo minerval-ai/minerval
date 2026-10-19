@@ -103,7 +103,7 @@ const MANDATE_SCHEMA = {
     scope_query: {
       type: "string",
       description:
-        "Optional keyword search hint for graph tooling. NOT the scope: " +
+        "Optional keyword search hint for graph tooling. Not the scope: " +
         "the mandate's scope is its words, judged by you.",
     },
     plan: {
@@ -296,7 +296,7 @@ async function runGrantmakerTurnImpl(input: {
     description:
       "Amend the platform General mandate's allocation policy: the " +
       "formula knobs its bulk valuer runs on (value heuristic, cost " +
-      "priors, strong-pass gain multiplier, reassessment cadence). ONLY " +
+      "priors, strong-pass gain multiplier, reassessment cadence). Only " +
       "the General mandate's spending is formula-driven — an ordinary " +
       "mandate's spending follows its Grantmaker's own valuations " +
       "(set_valuations), so this tool refuses on other mandates rather " +
@@ -340,7 +340,7 @@ async function runGrantmakerTurnImpl(input: {
   const spawnTool: Tool = {
     name: "spawn_mandate",
     description:
-      "Carve part of the mission into a NEW mandate with its own budget " +
+      "Carve part of the mission into a new mandate with its own budget " +
       "and its own Grantmaker (a peer, separately fundable — not a " +
       "sub-unit). It starts in planning: its agent surveys and drafts its " +
       "own plan. Use when a slice of the work deserves dedicated " +
@@ -393,7 +393,7 @@ async function runGrantmakerTurnImpl(input: {
   const adjustTool: Tool = {
     name: "adjust_plan",
     description:
-      "Replace the NOT-YET-EXECUTED remainder of the grant's plan with new " +
+      "Replace the not-yet-executed remainder of the grant's plan with new " +
       "items (already-executed items are immutable history). Use this when " +
       "the funder and you agree the mandate's remaining budget should be " +
       "spent differently. Same item rules as propose_mandate; the same " +
@@ -593,8 +593,8 @@ export function getBountyToolDefinitions(): Tool[] {
         "attempted it without settling it; between the minimum and the " +
         "maximum owls per claim; the per-pass and per-day fractions of the " +
         "escrow; the mandate's headroom (budget less committed money) " +
-        "covers it; one live bounty per claim. Every posting is TWO-PASS: " +
-        "the first call records the request; only a call from a LATER pass " +
+        "covers it; one live bounty per claim. Every posting is two-pass: " +
+        "the first call records the request; only a call from a later pass " +
         "(a fresh context re-judging the mission) opens it. At or above the " +
         "autonomy threshold the posting waits for a person's confirmation. " +
         "State the reasoning publicly in the rationale: the discourse's " +
@@ -699,7 +699,7 @@ async function executePostBounty(
       bounty_id: res.bounty_id,
       status: res.status,
       note:
-        "Bounty REQUESTED and recorded on the mandate. Nothing is offered yet; if a later pass " +
+        "Bounty requested and recorded on the mandate. Nothing is offered yet; if a later pass " +
         "still judges the posting right, calling post_bounty again for this claim opens it " +
         "(or waits for a person's confirmation at or above the autonomy threshold). Note the " +
         "pending request in your workspace.",
@@ -730,7 +730,7 @@ async function executePostBounty(
     bounty_id: opened.bounty_id,
     status: "open",
     amount: formatOwls(live!.amount_micro_usd),
-    note: "Bounty OPEN: the offer is public on the claim page and the prize listing under the rules in force, and its amount is held against this mandate's escrow until it resolves.",
+    note: "Bounty open: the offer is public on the claim page and the prize listing under the rules in force, and its amount is held against this mandate's escrow until it resolves.",
   });
 }
 
@@ -839,7 +839,7 @@ export async function executeManagementTool(
               a.status AS assessment_status
          FROM claim_instances ci
          JOIN grant_sources gs
-           ON gs.source_id = ci.source_id AND gs.grant_id = $1
+           ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
          JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
          LEFT JOIN assessments a
            ON a.claim_id = ci.claim_id AND a.is_current = true
@@ -858,7 +858,7 @@ export async function executeManagementTool(
            FROM grants g
            LEFT JOIN assessments fa ON fa.funded_by_job_id = g.budget_job_id
            LEFT JOIN grant_sources gs ON gs.grant_id = g.id
-           LEFT JOIN claim_instances ci ON ci.source_id = gs.source_id
+           LEFT JOIN claim_instances ci ON ci.source_id = gs.source_id AND ci.detached_at IS NULL
            JOIN claims cl
              ON cl.id = COALESCE(fa.claim_id, ci.claim_id)
             AND cl.state = 'active'

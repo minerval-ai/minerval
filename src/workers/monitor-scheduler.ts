@@ -6,7 +6,7 @@
  * from monitor-service.ts and hands the top few to requestAudit as
  * anomaly_investigation runs. The context names the signal and the claim
  * and says plainly that the hit is a candidate; the Audit Agent reads the
- * claim (get_claim_with_context) and judges on the merits — the monitor
+ * claim (get_claim) and judges on the merits — the monitor
  * picks WHAT to look at, and every conclusion belongs to the audit run.
  *
  * Rate limit without a migration: requestAudit's dedupe key carries the
@@ -65,8 +65,9 @@ export function performedSettlingContext(c: PerformedSettlingCandidate): string 
     `("${c.text.slice(0, 200)}") is assessed ${c.status} at confidence ${c.confidence.toFixed(2)}` +
     (c.credence != null ? ` (credence ${c.credence.toFixed(2)})` : "") +
     `, while its record shows live disagreement: ${why.join("; ")}. ` +
-    `Read the claim and its assessment (get_claim_with_context) and judge whether the ` +
-    `confidence is earned by the record — the dissent may be weak and the assessment may ` +
+    `Read the claim and its assessment (get_claim) and the instances that carry the ` +
+    `disagreement (get_claim_instances), and judge whether the confidence is earned by the ` +
+    `record: the dissent may be weak and the assessment may ` +
     `already answer it, in which case there is nothing to flag. If the verdict outruns its ` +
     `inconclusive dependencies or ignores an accepted challenge, record a finding and ` +
     `recommend a re-review; do not change the claim yourself.`
@@ -84,8 +85,9 @@ export function emptyChairsContext(c: EmptyChairCandidate): string {
   return (
     `Monitor signal empty_chairs (a coverage candidate, not a verdict): claim ${c.claimId} ` +
     `("${c.text.slice(0, 200)}") is assessed inconclusive, but only one side is on record: ${why.join("; ")}. ` +
-    `Read the claim (get_claim_with_context) and judge whether the other side of the ` +
-    `disagreement is represented anywhere in its record — the assessment's reasoning, its ` +
+    `Read the claim (get_claim) and its instances (get_claim_instances), and judge whether ` +
+    `the other side of the disagreement is represented anywhere in its record: the ` +
+    `assessment's reasoning, its ` +
     `subclaims, or its instances. If the missing side is real and absent, record a finding ` +
     `naming what is missing so the Steward can seek it; if the record already carries it, ` +
     `there is nothing to flag.`

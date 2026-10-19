@@ -52,6 +52,12 @@ import {
 import { getUsageContext } from "../usage-context.js";
 import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
+import {
+  ClaimInstanceError,
+  detachClaimInstance,
+  reattachClaimInstance,
+  setInstanceOrder,
+} from "../../services/claim-instance-service.js";
 
 /** The assessment status enum the tool accepts and the graph stores (§10). */
 const ASSESSMENT_STATUSES = [
@@ -314,10 +320,10 @@ export function getStewardToolDefinitions(): Tool[] {
         "neutral report recorded as an affirmation, a quote attributed to " +
         "the outlet instead of the person quoted, a stance read backwards. " +
         "A source that only mentions the claim, questions it, or reports " +
-        "the debate without taking a side is not an assertion: keep its row " +
-        "for provenance but lower its confidence toward 0 so it no longer " +
-        "counts as a voice on the claim. Every correction requires a " +
-        "reasoning note, which is written to the claim's audit trail.",
+        "the debate without taking a side is not an instance at all: detach " +
+        "it with detach_claim_instance instead of correcting it. Every " +
+        "correction requires a reasoning note, which is written to the " +
+        "claim's audit trail.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -328,9 +334,8 @@ export function getStewardToolDefinitions(): Tool[] {
           instance_id: {
             type: "string",
             description:
-              "The UUID of the instance to correct, as listed among the " +
-              "claim's source instances (or returned by a deduplicated " +
-              "record_claim_instance call).",
+              "The UUID of the instance to correct, from get_claim_instances " +
+              "(or returned by a deduplicated record_claim_instance call).",
           },
           stance: {
             type: "string",
@@ -345,8 +350,7 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "number",
             description:
               "Corrected 0.0-1.0 confidence that this is a genuine assertion " +
-              "of THIS claim. Use a value near 0 for a passing mention or a " +
-              "neutral report. Omit to leave as is.",
+              "of this claim. Omit to leave as is.",
           },
           speaker: {
             type: "string",
@@ -383,6 +387,95 @@ export function getStewardToolDefinitions(): Tool[] {
           },
         },
         required: ["claim_id", "instance_id", "reasoning"],
+      },
+    },
+    {
+      name: "detach_claim_instance",
+      description:
+        "Detach an instance from the claim you steward: the source does not " +
+        "assert, deny or pose the proposition (a passing mention, a neutral " +
+        "report of others' views, a near-miss proposition, or a match to the " +
+        "wrong claim). The instance no longer belongs to the claim: it leaves " +
+        "the claim page, the instance count and every read of the claim's " +
+        "instances. The row is kept for the provenance record, never deleted, " +
+        "and reattach_claim_instance restores it. The reason is written to " +
+        "the claim's audit trail.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim the instance belongs to",
+          },
+          instance_id: {
+            type: "string",
+            description: "The UUID of the instance, from get_claim_instances.",
+          },
+          reason: {
+            type: "string",
+            description:
+              "What you read that shows the source does not assert, deny or " +
+              "pose this claim: the note the audit trail keeps.",
+          },
+        },
+        required: ["claim_id", "instance_id", "reason"],
+      },
+    },
+    {
+      name: "reattach_claim_instance",
+      description:
+        "Reattach an instance that was detached from the claim you steward, " +
+        "when reading the source shows it does assert, deny or pose the " +
+        "proposition after all. It returns at the default position. " +
+        "get_claim_instances with include_detached lists detached instances " +
+        "and why each was detached. The reason is written to the claim's " +
+        "audit trail.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim",
+          },
+          instance_id: {
+            type: "string",
+            description: "The UUID of the detached instance.",
+          },
+          reason: {
+            type: "string",
+            description: "Why the instance belongs to the claim.",
+          },
+        },
+        required: ["claim_id", "instance_id", "reason"],
+      },
+    },
+    {
+      name: "set_instance_order",
+      description:
+        "Set the order in which a reader sees the claim's instances. The ids " +
+        "you list are shown first, in the order given; every other instance " +
+        "follows in the default order (origins before what derives from " +
+        "them, then by date). Each call replaces the previous order, and an " +
+        "empty list clears it. Order by what a reader should see first, not " +
+        "by when an instance was recorded. Detached instances cannot be listed.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim",
+          },
+          instance_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Instance ids from get_claim_instances, first to be shown first.",
+          },
+          reasoning: {
+            type: "string",
+            description: "Optional: why this order, for the audit trail.",
+          },
+        },
+        required: ["claim_id", "instance_ids"],
       },
     },
     {
@@ -1225,12 +1318,34 @@ export async function executeStewardTool(
 
         // Dedup on (claim, source) so re-assessments that reread the same
         // source don't pile up duplicate instances (#278).
-        const [existing] = await rawQuery<{ id: string; stance: string }>(
-          `SELECT id, stance FROM claim_instances
+        const [existing] = await rawQuery<{
+          id: string;
+          stance: string;
+          detached_at: Date | null;
+          detached_reason: string | null;
+        }>(
+          `SELECT id, stance, detached_at, detached_reason FROM claim_instances
            WHERE claim_id = $1 AND source_id = $2
+           ORDER BY (detached_at IS NULL) DESC, created_at
            LIMIT 1`,
           [claimId, source.id]
         );
+        // A detached instance from this source records a judgment that it
+        // does not state the claim; a new row would silently overturn it.
+        if (existing?.detached_at) {
+          return JSON.stringify({
+            success: false,
+            deduplicated: true,
+            instance_id: existing.id,
+            message:
+              `This source has an instance on this claim that was detached` +
+              (existing.detached_reason ? ` ("${existing.detached_reason}")` : "") +
+              `; nothing new was written. If your reading shows the source ` +
+              `does assert, deny or pose the claim, reattach it with ` +
+              `reattach_claim_instance (instance_id ${existing.id}) and correct ` +
+              `it with update_claim_instance if needed.`,
+          });
+        }
         if (existing) {
           return JSON.stringify({
             success: true,
@@ -1293,7 +1408,7 @@ export async function executeStewardTool(
             success: false,
             message:
               "instance_id is required: the UUID of the recorded instance " +
-              "to correct, as listed among the claim's source instances.",
+              "to correct, from get_claim_instances.",
           });
         }
         // A correction without its reason is an unexplained edit to another
@@ -1318,8 +1433,8 @@ export async function executeStewardTool(
                 `asserts the canonical claim), "denies" (it asserts the ` +
                 `negation), or "poses" (it states the proposition as an open ` +
                 `question without taking a side). A source that only ` +
-                `mentions the claim in passing keeps its stance and gets a ` +
-                `confidence near 0 instead.`,
+                `mentions the claim in passing is not an instance: detach it ` +
+                `with detach_claim_instance.`,
             });
           }
           patch.stance = stance;
@@ -1426,6 +1541,81 @@ export async function executeStewardTool(
             `claim's audit trail. Its stance and confidence now feed your ` +
             `assessment as corrected.`,
         });
+      }
+
+      case "detach_claim_instance":
+      case "reattach_claim_instance": {
+        const claimId = String(input.claim_id ?? "").trim();
+        const instanceId = String(input.instance_id ?? "").trim();
+        const reason = typeof input.reason === "string" ? input.reason : "";
+        try {
+          if (toolName === "detach_claim_instance") {
+            const r = await detachClaimInstance({
+              claimId,
+              instanceId,
+              reason,
+              detachedBy: "claim_steward",
+            });
+            return JSON.stringify({
+              success: true,
+              instance_id: r.instance_id,
+              already_detached: r.already_detached,
+              instance_count: r.remaining,
+              message: r.already_detached
+                ? `Instance ${r.instance_id} was already detached; nothing changed.`
+                : `Detached instance ${r.instance_id} from claim ${claimId}; the reason is in ` +
+                  `the claim's audit trail. The claim now carries ${r.remaining} instance(s). ` +
+                  `If the source map's account relied on this source, refresh it.`,
+            });
+          }
+          const r = await reattachClaimInstance({
+            claimId,
+            instanceId,
+            reason,
+            reattachedBy: "claim_steward",
+          });
+          return JSON.stringify({
+            success: true,
+            instance_id: r.instance_id,
+            was_detached: r.was_detached,
+            instance_count: r.total,
+            message: r.was_detached
+              ? `Reattached instance ${r.instance_id}; it belongs to claim ${claimId} again, ` +
+                `at the default position.`
+              : `Instance ${r.instance_id} was not detached; nothing changed.`,
+          });
+        } catch (err) {
+          if (err instanceof ClaimInstanceError) {
+            return JSON.stringify({ success: false, message: err.message });
+          }
+          throw err;
+        }
+      }
+
+      case "set_instance_order": {
+        const claimId = String(input.claim_id ?? "").trim();
+        try {
+          const r = await setInstanceOrder({
+            claimId,
+            instanceIds: input.instance_ids,
+            setBy: "claim_steward",
+            reasoning: typeof input.reasoning === "string" ? input.reasoning : null,
+          });
+          return JSON.stringify({
+            success: true,
+            ranked: r.ranked,
+            message:
+              r.ranked.length > 0
+                ? `The claim page now shows these ${r.ranked.length} instance(s) first, in ` +
+                  `the order given; the rest follow in the default order.`
+                : `Cleared the instance order; every instance follows the default order.`,
+          });
+        } catch (err) {
+          if (err instanceof ClaimInstanceError) {
+            return JSON.stringify({ success: false, message: err.message });
+          }
+          throw err;
+        }
       }
 
       case "update_canonical_form": {

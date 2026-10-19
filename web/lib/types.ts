@@ -266,6 +266,10 @@ export interface Instance {
   // The Steward's reading of this source (#286); null or absent until one
   // has been recorded.
   reading?: InstanceReading | null;
+  // The Steward's chosen position (1 first); null follows the default order.
+  // The API already serves instances in reading order, so the page renders
+  // them as they come and never re-sorts by when they were recorded.
+  display_rank?: number | null;
 }
 
 export interface TrajectoryPoint {

@@ -470,6 +470,13 @@
       "when": 1791000000000,
       "tag": "0066_evidential_status_ladder",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792419331467,
+      "tag": "0067_claim_instance_detach_and_rank",
+      "breakpoints": true
     }
   ]
 }

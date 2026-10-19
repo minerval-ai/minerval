@@ -368,11 +368,12 @@ interface InstanceRow {
   source_id: string;
   verbatim_text: string;
   raw_content: string | null;
+  detached_at: Date | null;
 }
 
 async function instanceOfClaim(instanceId: string, claimId: string): Promise<InstanceRow> {
   const [row] = await rawQuery<InstanceRow>(
-    `SELECT ci.id, ci.claim_id, ci.source_id, ci.verbatim_text, s.raw_content
+    `SELECT ci.id, ci.claim_id, ci.source_id, ci.verbatim_text, s.raw_content, ci.detached_at
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
       WHERE ci.id = $1`,
@@ -386,6 +387,12 @@ async function instanceOfClaim(instanceId: string, claimId: string): Promise<Ins
   if (row.claim_id !== claimId) {
     throw new SourceMapError(
       `Instance ${instanceId} belongs to another claim; you may only record provenance on the claim you steward.`
+    );
+  }
+  if (row.detached_at) {
+    throw new SourceMapError(
+      `Instance ${instanceId} is detached from this claim, so it is not part of the claim's provenance. ` +
+        `Its earlier record is kept. Reattach it (reattach_claim_instance) first if it belongs to the claim.`
     );
   }
   return row;
@@ -538,7 +545,9 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
   // Where the upstream document also asserts this claim, link the instance
   // so the propagation chain is a join away.
   const [toInstance] = await rawQuery<{ id: string }>(
-    `SELECT id FROM claim_instances WHERE claim_id = $1 AND source_id = $2 ORDER BY created_at LIMIT 1`,
+    `SELECT id FROM claim_instances
+      WHERE claim_id = $1 AND source_id = $2 AND detached_at IS NULL
+      ORDER BY created_at LIMIT 1`,
     [input.claimId, toSourceId]
   );
 
@@ -662,13 +671,14 @@ export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Pr
   const basis = requiredText(input.basis, "basis", 2000);
   const [place] = await rawQuery<{ asserts: boolean; drawn_on: boolean; has_upstream: boolean }>(
     `SELECT
-       EXISTS (SELECT 1 FROM claim_instances ci WHERE ci.claim_id = $1 AND ci.source_id = $2) AS asserts,
+       EXISTS (SELECT 1 FROM claim_instances ci
+                WHERE ci.claim_id = $1 AND ci.source_id = $2 AND ci.detached_at IS NULL) AS asserts,
        EXISTS (SELECT 1 FROM claim_provenance_edges e
                  JOIN claim_instances ci ON ci.id = e.from_instance_id
-                WHERE ci.claim_id = $1 AND e.to_source_id = $2) AS drawn_on,
+                WHERE ci.claim_id = $1 AND e.to_source_id = $2 AND ci.detached_at IS NULL) AS drawn_on,
        EXISTS (SELECT 1 FROM claim_provenance_edges e
                  JOIN claim_instances ci ON ci.id = e.from_instance_id
-                WHERE ci.claim_id = $1 AND ci.source_id = $2) AS has_upstream`,
+                WHERE ci.claim_id = $1 AND ci.source_id = $2 AND ci.detached_at IS NULL) AS has_upstream`,
     [claimId, sourceId]
   );
   if (!place?.asserts && !place?.drawn_on) {
@@ -730,13 +740,14 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
     edges_recorded: number | string;
   }>(
     `SELECT
-       (SELECT COUNT(DISTINCT ci.source_id) FROM claim_instances ci WHERE ci.claim_id = $1) AS sources_considered,
+       (SELECT COUNT(DISTINCT ci.source_id) FROM claim_instances ci
+         WHERE ci.claim_id = $1 AND ci.detached_at IS NULL) AS sources_considered,
        (SELECT COUNT(*) FROM claim_instance_readings r
           JOIN claim_instances ci ON ci.id = r.instance_id
-         WHERE ci.claim_id = $1 AND r.source_read) AS sources_read,
+         WHERE ci.claim_id = $1 AND ci.detached_at IS NULL AND r.source_read) AS sources_read,
        (SELECT COUNT(*) FROM claim_provenance_edges e
           JOIN claim_instances ci ON ci.id = e.from_instance_id
-         WHERE ci.claim_id = $1) AS edges_recorded`,
+         WHERE ci.claim_id = $1 AND ci.detached_at IS NULL) AS edges_recorded`,
     [claimId]
   );
   const sourcesConsidered = Number(counts?.sources_considered ?? 0);
@@ -856,7 +867,9 @@ export async function getSourceMapSummary(claimId: string): Promise<SourceMapSum
  * summary, the readings keyed by instance id, the edges with their targets
  * named, and the relations among the documents involved. Shared by the
  * Steward's read tool, the claim API, and the MCP server, so they cannot
- * drift apart.
+ * drift apart. Only instances that belong to the claim count: the readings
+ * and edges of a detached instance stay in the tables but are not part of
+ * the claim's map (listDetachedInstances reaches them).
  */
 export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap> {
   const map = await getSourceMapSummary(claimId);
@@ -876,7 +889,7 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
             r.worth_reading, r.worth_reading_reason, r.source_read, r.updated_at
        FROM claim_instance_readings r
        JOIN claim_instances ci ON ci.id = r.instance_id
-      WHERE ci.claim_id = $1`,
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
     [claimId]
   );
   const readings: Record<string, InstanceReadingView> = {};
@@ -914,7 +927,7 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
        FROM claim_provenance_edges e
        JOIN claim_instances ci ON ci.id = e.from_instance_id
        JOIN sources s ON s.id = e.to_source_id
-      WHERE ci.claim_id = $1
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL
       ORDER BY e.created_at`,
     [claimId]
   );
@@ -945,11 +958,12 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
     confidence: number;
   }>(
     `WITH involved AS (
-       SELECT ci.source_id AS id FROM claim_instances ci WHERE ci.claim_id = $1
+       SELECT ci.source_id AS id FROM claim_instances ci
+        WHERE ci.claim_id = $1 AND ci.detached_at IS NULL
        UNION
        SELECT e.to_source_id FROM claim_provenance_edges e
          JOIN claim_instances ci ON ci.id = e.from_instance_id
-        WHERE ci.claim_id = $1
+        WHERE ci.claim_id = $1 AND ci.detached_at IS NULL
      )
      SELECT sr.id, p.id AS parent_id, p.title AS parent_title, p.url AS parent_url,
             c.id AS child_id, c.title AS child_title, c.url AS child_url,
@@ -977,7 +991,8 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
 /**
  * The instances of a claim as the provenance tools present them: with ids,
  * the source's id and whether it has stored text, and any reading already
- * recorded. Built for the Steward's read tool.
+ * recorded. Built for the Steward's read tool. Only instances that belong
+ * to the claim; the caller orders them (orderClaimInstances).
  */
 export async function listInstancesForMapping(claimId: string): Promise<
   Array<{
@@ -991,6 +1006,7 @@ export async function listInstancesForMapping(claimId: string): Promise<
     source_date: string | null;
     link: string | null;
     recorded_by: string;
+    display_rank: number | null;
   }>
 > {
   const rows = await rawQuery<{
@@ -1008,15 +1024,15 @@ export async function listInstancesForMapping(claimId: string): Promise<
     source_date: string | null;
     link: string | null;
     created_by: string;
+    display_rank: number | null;
   }>(
     `SELECT ci.id, ci.source_id, s.title, s.url, s.source_type,
             (s.raw_content IS NOT NULL AND s.raw_content <> '') AS has_stored_text,
             ci.verbatim_text, ci.context, ci.stance, ci.speaker, ci.publication,
-            ci.source_date, ci.link, ci.created_by
+            ci.source_date, ci.link, ci.created_by, ci.display_rank
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
-      WHERE ci.claim_id = $1
-      ORDER BY ci.created_at`,
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
     [claimId]
   );
   return rows.map((r) => ({
@@ -1036,5 +1052,48 @@ export async function listInstancesForMapping(claimId: string): Promise<
     source_date: r.source_date,
     link: r.link,
     recorded_by: r.created_by,
+    display_rank: r.display_rank,
+  }));
+}
+
+/**
+ * Instances the claim's Steward detached: kept for the provenance record,
+ * with why and by whom, but no longer the claim's.
+ */
+export async function listDetachedInstances(claimId: string): Promise<
+  Array<{
+    instance_id: string;
+    source: { id: string; title: string; url: string | null };
+    stance: string;
+    detached_at: string;
+    detached_reason: string | null;
+    detached_by: string | null;
+  }>
+> {
+  const rows = await rawQuery<{
+    id: string;
+    source_id: string;
+    title: string;
+    url: string | null;
+    stance: string;
+    detached_at: Date;
+    detached_reason: string | null;
+    detached_by: string | null;
+  }>(
+    `SELECT ci.id, ci.source_id, s.title, s.url, ci.stance,
+            ci.detached_at, ci.detached_reason, ci.detached_by
+       FROM claim_instances ci
+       JOIN sources s ON s.id = ci.source_id
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NOT NULL
+      ORDER BY ci.detached_at DESC`,
+    [claimId]
+  );
+  return rows.map((r) => ({
+    instance_id: r.id,
+    source: { id: r.source_id, title: r.title, url: r.url },
+    stance: r.stance,
+    detached_at: new Date(r.detached_at).toISOString(),
+    detached_reason: r.detached_reason,
+    detached_by: r.detached_by,
   }));
 }

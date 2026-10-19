@@ -176,7 +176,7 @@ export async function mergeClaims(input: {
 
   // 1. Instances onto the survivor (flip if opposed).
   const movedInstances = await rawQuery<{ id: string }>(
-    `UPDATE claim_instances SET claim_id = $1, stance = ${FLIP_INSTANCE_STANCE}
+    `UPDATE claim_instances SET claim_id = $1, stance = ${FLIP_INSTANCE_STANCE}, display_rank = NULL
       WHERE claim_id = $2 RETURNING id`,
     [survivorId, loserId, opposed]
   );
@@ -446,7 +446,8 @@ export async function reassignInstance(input: {
   );
   if (!before || before.claim_id === input.toClaimId) return { reassigned: false };
 
-  await rawQuery(`UPDATE claim_instances SET claim_id = $1 WHERE id = $2`, [
+  // A rank orders instances within one claim, so it does not travel.
+  await rawQuery(`UPDATE claim_instances SET claim_id = $1, display_rank = NULL WHERE id = $2`, [
     input.toClaimId,
     input.instanceId,
   ]);

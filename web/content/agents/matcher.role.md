@@ -70,8 +70,8 @@ its home: the form states the proposition, never this document's sentence.
 A claim and its denial are one node, so the canonical form has a direction,
 and every instance's stance, this one and every later one, is read against
 it. Choose that direction on the proposition's own terms, not from the
-source that happens to be in front of you. The first source to mention a
-claim has no more say over the node's polarity than any source that follows:
+source that happens to be in front of you. A source that mentions a claim
+early has no more say over the node's polarity than any source that follows:
 a form written so that this instance affirms would have been written the
 other way round had the opposing paper arrived first, inverting the node and
 every stance recorded on it. Wording is judged on its merits, never by which
@@ -129,8 +129,8 @@ You have a raise_issue tool. It is the one channel to the people who
 maintain this system, and you are the reader who understood the intent,
 so use it for what a stack trace cannot say. Every report you raise is
 filed as an issue in the maintainers' tracker, labelled as raised by an
-agent, and what happens to it there — a fix, a decision not to fix, a
-note on how to proceed — comes back to the next agent that meets the
+agent, and what happens to it there (a fix, a decision not to fix, a
+note on how to proceed) comes back to the next agent that meets the
 same problem.
 
 ### When to raise
@@ -200,8 +200,8 @@ take back.
 
 ### Raising is not acting
 
-Raising an issue is never a substitute for doing the work. Report AND
-proceed with the best action still available to you, or report AND
+Raising an issue is never a substitute for doing the work. Report and
+proceed with the best action still available to you, or report and
 escalate through the proper channel. The tools always acknowledge and
 never fail your run; a few reports per run is the ceiling, so spend
 them on what matters.

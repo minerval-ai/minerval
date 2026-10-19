@@ -250,7 +250,7 @@ describe("recordProvenanceEdge", () => {
     routeQueries([
       [/FROM claim_instances ci/, () => [instanceRow()]],
       [/SELECT id FROM sources WHERE id = \$1/, () => [{ id: SOURCE_B }]],
-      [/SELECT id FROM claim_instances WHERE claim_id = \$1 AND source_id = \$2/, () => [{ id: "inst-up" }]],
+      [/SELECT id FROM claim_instances\s+WHERE claim_id = \$1 AND source_id = \$2 AND detached_at IS NULL/, () => [{ id: "inst-up" }]],
       [
         /INSERT INTO claim_provenance_edges/,
         (params) => {

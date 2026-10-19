@@ -56,7 +56,7 @@ interleaved) and calls `requestAudit` for each hit with
 `auditType: "anomaly_investigation"`, `triggeredBy: "monitor_signal"`, and a
 context that names the signal, the claim, the record that fired, and says
 in words that the hit is a candidate: *read the claim
-(`get_claim_with_context`) and judge whether the confidence is earned; if
+(`get_claim`) and judge whether the confidence is earned; if
 the record already answers the dissent there is nothing to flag; do not
 change the claim yourself.* The Audit Agent's normal tools apply — a
 finding, a re-review recommendation — and its normal posture: the monitor
@@ -119,6 +119,7 @@ stances AS (
          COUNT(DISTINCT ci.source_id) FILTER (WHERE ci.stance IN ('affirms', 'denies'))::int AS sources
     FROM claim_instances ci
     JOIN settled s ON s.id = ci.claim_id
+   WHERE ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 challenges AS (
@@ -184,7 +185,7 @@ inst AS (
   SELECT ci.claim_id, COUNT(*)::int AS n, COUNT(DISTINCT ci.stance)::int AS stances, MIN(ci.stance) AS stance
     FROM claim_instances ci
     JOIN inconclusive c ON c.id = ci.claim_id
-   WHERE ci.stance IN ('affirms', 'denies')
+   WHERE ci.stance IN ('affirms', 'denies') AND ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 args AS (

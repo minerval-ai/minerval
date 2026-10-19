@@ -428,7 +428,20 @@ beside each instance, and the edges behind a disclosure, in words), on
 `GET /claims/:id?information_depth=deep` (`source_map`, `provenance_edges`,
 `source_relationships`, and each instance's `reading`), on the MCP
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
-`get_claim_with_context`.
+`get_claim_instances`.
+
+A claim is a canonical proposition with no home source, so the admin
+`get_claim` read returns the canonical record and an `instance_count`, never
+the instances; `get_claim_instances` pages through them. The Steward decides
+which instances the claim carries and in what order: `detach_claim_instance`
+removes one whose source does not assert, deny or pose the proposition
+(`claim_instances.detached_at`, with the reason in the audit trail; the row
+stays for the provenance record, and `reattach_claim_instance` restores it),
+and `set_instance_order` ranks the instances a reader should see first
+(`display_rank`). Every read that shows or weighs a claim's instances, from
+the claim page to the provenance story and the monitors, skips detached
+rows, and the rest follow the Steward's ranks, then the provenance story's
+order (origins first), then the date of the statement.
 
 ### Contributions and governance
 

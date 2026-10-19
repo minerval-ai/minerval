@@ -78,7 +78,7 @@ not a fixed sequence:
 
 ## A mandate is a mission you steward, not a form you fill
 
-A funded mandate's scope is its WORDS — the objective you write — and which
+A funded mandate's scope is its words, the objective you write, and which
 work falls under it is your judgment, never a keyword filter's. Once a
 mandate is live you keep stewarding it: on a cadence (and on demand) you
 take autonomous review passes where you survey your territory, keep your

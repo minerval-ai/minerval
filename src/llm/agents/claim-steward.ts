@@ -68,6 +68,11 @@ what that involves. How you go about this pass is your judgment.
 
 ${passNote}
 
+Read the claim with get_claim. Form your own view of the question before you
+read its instances. When you need them, get_claim_instances returns the
+instances recorded so far; which of them belong on the claim, and in what
+order a reader sees them, is yours to decide.
+
 Before the run ends, the following must be recorded: the assessment
 (update_claim_assessment, with both texts and marginal_yield), an evaluation
 of each named argument, the claim's importance and contestation, and your
@@ -116,9 +121,9 @@ log_stewardship_decision that the formalization could not proceed, and stop.`;
     return `You have been triggered to write this claim's formal statement.
 ${history}
 Proceed:
-1. Use get_claim_with_context to read the claim, its canonical form, and its
-   instances; the statement must render the proposition as the discourse
-   states it.
+1. Use get_claim to read the claim and its canonical form, and
+   get_claim_instances to see how its sources state it; the statement must
+   render the proposition as the discourse states it.
 2. Draft the statement in the checker's convention (a \`def Statement : Prop\`
    taking every definition from Mathlib), using lean_search for names and
    lean_elaborate until it type-checks. Where hypotheses could be vacuous,
@@ -154,7 +159,8 @@ the failure no checker catches).
 ${record}
 
 Proceed:
-1. Use get_claim_with_context to read the claim as the discourse states it.
+1. Use get_claim to read the claim, and get_claim_instances to read it as
+   the discourse states it.
 2. Judge fidelity against the vacuity checklist: does the statement say
    neither more nor less than the canonical form, are its hypotheses
    satisfiable, are the trivial witnesses the informal problem excludes
@@ -296,7 +302,7 @@ elicit_* tools are in your toolset (up to ${
             ? config.stewardElicitMaxCallsPerRun
             : "unlimited"
         } calls this run). They are
-likely overkill even here — reach for them only if ordinary web_search proves
+likely overkill even here: reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
       : "";
 
@@ -522,18 +528,24 @@ ${formalTask ?? defaultTask(passNote)}${elicitNote}${skillsNote}`;
       // Same runaway-guard shape for instance recording (#278): capturing
       // sightings is a cheap side effect of evidence reading, and this cap
       // only stops a loop from farming instances instead of assessing.
-      // Corrections (#420) share the counter: one budget for touching the
-      // instance set, however it is touched.
-      if (name === "record_claim_instance" || name === "update_claim_instance") {
+      // Corrections (#420), detaching and reattaching share the counter: one
+      // budget for touching the instance set, however it is touched. Setting
+      // the order is one call over the whole set and is not counted.
+      if (
+        name === "record_claim_instance" ||
+        name === "update_claim_instance" ||
+        name === "detach_claim_instance" ||
+        name === "reattach_claim_instance"
+      ) {
         const cap = config.stewardMaxInstancesPerRun;
         if (cap > 0 && instancesRecordedThisRun >= cap) {
           return JSON.stringify({
             success: false,
             message:
-              `This run has already recorded or corrected ${instancesRecordedThisRun} ` +
-              `instances, the per-run backstop (${cap}). Do not record or ` +
-              `correct more in this pass: note any remaining sightings in ` +
-              `your reasoning_trace and proceed to your assessment.`,
+              `This run has already recorded, corrected or detached ` +
+              `${instancesRecordedThisRun} instances, the per-run backstop (${cap}). ` +
+              `Do not change more in this pass: note any remaining sightings or ` +
+              `corrections in your reasoning_trace and proceed to your assessment.`,
           });
         }
         instancesRecordedThisRun++;

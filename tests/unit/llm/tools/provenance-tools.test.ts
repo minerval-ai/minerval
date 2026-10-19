@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   getClaimSourceMap: vi.fn(),
   listInstancesForMapping: vi.fn(),
+  listDetachedInstances: vi.fn(),
   readSourceContent: vi.fn(),
   recordInstanceReading: vi.fn(),
   recordProvenanceEdge: vi.fn(),
@@ -70,6 +71,7 @@ const EMPTY_STORY = { claim_id: CLAIM, nodes: [], counts: { sources: 0, origins:
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
+  mocks.listDetachedInstances.mockResolvedValue([]);
   story.getProvenanceStory.mockReset().mockResolvedValue(EMPTY_STORY);
   facts.getSourceFacts.mockReset().mockResolvedValue(null);
   for (const fn of Object.values(exams)) fn.mockReset();
@@ -96,6 +98,25 @@ describe("registration", () => {
 });
 
 describe("provenance_get_map", () => {
+  it("orders instances by the Steward's ranks and lists detached ones apart", async () => {
+    const inst = (id: string, rank: number | null) => ({
+      instance_id: id,
+      source: { id: `s-${id}`, title: id, url: null, source_type: "unknown", has_stored_text: false },
+      source_date: null,
+      display_rank: rank,
+    });
+    mocks.listInstancesForMapping.mockResolvedValue([inst("a", null), inst("b", 2), inst("c", 1)]);
+    mocks.listDetachedInstances.mockResolvedValue([
+      { instance_id: "d", source: { id: "s-d", title: "D", url: null }, stance: "affirms",
+        detached_at: "2026-01-01T00:00:00.000Z", detached_reason: "passing mention", detached_by: "claim_steward" },
+    ]);
+    mocks.getClaimSourceMap.mockResolvedValue({ map: null, readings: {}, edges: [], source_relationships: [] });
+    const out = JSON.parse(await executeGetMap({}, steward));
+    expect(out.instances.map((i: { instance_id: string }) => i.instance_id)).toEqual(["c", "b", "a"]);
+    expect(out.instances[0]).not.toHaveProperty("id");
+    expect(out.detached_instances).toEqual([expect.objectContaining({ instance_id: "d", detached_reason: "passing mention" })]);
+  });
+
   it("joins the instances with their readings and edges and takes the claim from the run", async () => {
     mocks.listInstancesForMapping.mockResolvedValue([
       { instance_id: "i1", source: { id: "s1", title: "A", url: null, source_type: "unknown", has_stored_text: true } },

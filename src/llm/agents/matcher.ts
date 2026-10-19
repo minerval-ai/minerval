@@ -126,7 +126,7 @@ async function matchClaimImpl(input: {
       "are retrieval for your judgment, not a decision. A true counterpart can " +
       "score low or miss the floor under one framing, so call this multiple " +
       "times with different framings of the claim (its wording, paraphrases, " +
-      "and especially its NEGATION) before concluding the claim is novel.",
+      "and especially its negation) before concluding the claim is novel.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -201,7 +201,7 @@ async function matchClaimImpl(input: {
     JSON.stringify({
       success: false,
       message:
-        `Decision NOT recorded: ${defect}. Call submit_match_decision again NOW, ` +
+        `Decision not recorded: ${defect}. Call submit_match_decision again now, ` +
         `in this turn, with every required field set explicitly: is_match, ` +
         `matched_claim_id (when is_match is true), instance_stance, confidence, ` +
         `reasoning. Every claim id must be copied exactly from a ` +

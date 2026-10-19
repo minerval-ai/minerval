@@ -174,7 +174,7 @@ export async function getSourceLineage(sourceId: string): Promise<SourceLineage>
       `SELECT t.id AS other_id, t.title, t.url, t.source_type, t.published_date,
               e.relation_type, e.fidelity, ci.claim_id
          FROM claim_provenance_edges e
-         JOIN claim_instances ci ON ci.id = e.from_instance_id
+         JOIN claim_instances ci ON ci.id = e.from_instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
          JOIN sources t ON t.id = e.to_source_id
         WHERE ci.source_id = $1`,
@@ -184,7 +184,7 @@ export async function getSourceLineage(sourceId: string): Promise<SourceLineage>
       `SELECT f.id AS other_id, f.title, f.url, f.source_type, f.published_date,
               e.relation_type, e.fidelity, ci.claim_id
          FROM claim_provenance_edges e
-         JOIN claim_instances ci ON ci.id = e.from_instance_id
+         JOIN claim_instances ci ON ci.id = e.from_instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
          JOIN sources f ON f.id = ci.source_id
         WHERE e.to_source_id = $1`,
@@ -212,11 +212,12 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
 
   const claimRows = await rawQuery<{ claim_id: string }>(
     `SELECT DISTINCT claim_id FROM (
-       SELECT ci.claim_id FROM claim_instances ci WHERE ci.source_id = $1
+       SELECT ci.claim_id FROM claim_instances ci
+        WHERE ci.source_id = $1 AND ci.detached_at IS NULL
        UNION
        SELECT ci.claim_id FROM claim_provenance_edges e
          JOIN claim_instances ci ON ci.id = e.from_instance_id
-        WHERE e.to_source_id = $1
+        WHERE e.to_source_id = $1 AND ci.detached_at IS NULL
      ) x JOIN claims c ON c.id = x.claim_id AND c.state = 'active'`,
     [sourceId]
   );
@@ -241,7 +242,7 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
     rawQuery<{ support: string; n: string; whole: string }>(
       `SELECT r.support, COUNT(*) AS n, COUNT(*) FILTER (WHERE r.source_read) AS whole
          FROM claim_instance_readings r
-         JOIN claim_instances ci ON ci.id = r.instance_id
+         JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
         WHERE ci.source_id = $1
         GROUP BY r.support`,
@@ -253,7 +254,7 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
          JOIN examination_findings f ON f.id = rc.finding_id
          JOIN examinations x ON x.id = f.examination_id
          JOIN claim_instance_readings r ON r.id = rc.reading_id
-         JOIN claim_instances ci ON ci.id = r.instance_id
+         JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
         WHERE x.source_id = $1`,
       [sourceId]
@@ -261,7 +262,7 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
     rawQuery<{ claim_id: string; claim_text: string; support: string; note: string; updated_at: Date }>(
       `SELECT ci.claim_id, c.text AS claim_text, r.support, r.note, r.updated_at
          FROM claim_instance_readings r
-         JOIN claim_instances ci ON ci.id = r.instance_id
+         JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
         WHERE ci.source_id = $1 AND r.note IS NOT NULL AND r.note <> ''
         ORDER BY r.updated_at DESC

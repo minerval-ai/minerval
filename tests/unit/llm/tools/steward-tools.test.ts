@@ -524,7 +524,9 @@ describe("steward update_claim_instance", () => {
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
-    expect(parsed.message).toMatch(/confidence near 0/);
+    // A passing mention is detached, not demoted toward confidence 0.
+    expect(parsed.message).toMatch(/detach_claim_instance/);
+    expect(parsed.message).not.toMatch(/confidence near 0/);
     expect(updatedValues).toHaveLength(0);
   });
 

@@ -4,12 +4,13 @@ import { getExtractorSystemPrompt } from "../../../../src/llm/prompts/extractor.
 import { getClaimStewardSystemPrompt } from "../../../../src/llm/prompts/claim-steward.js";
 
 /**
- * The first source to mention a claim does not own its framing (#360). These
- * guard the prompt norms that de-privilege it: the canonical direction is
- * chosen on the proposition's terms rather than inherited from the source in
- * front of the Matcher, the verbatim excerpt is not called "original", and
- * the Steward is told to weigh sources plural rather than "the source
- * document", without presuming a two-party debate.
+ * No source owns a claim's framing, whichever the graph recorded first
+ * (#360). These guard the prompt norms that de-privilege any one source: the
+ * canonical direction is chosen on the proposition's terms rather than
+ * inherited from the source in front of the Matcher, the verbatim excerpt is
+ * not called "original", the Extractor is told its document does not own the
+ * claim, and the Steward is told to weigh sources plural rather than "the
+ * source document", without presuming a two-party debate.
  */
 describe("de-privileged ingestion framing (#360)", () => {
   const matcher = getMatcherSystemPrompt();
@@ -40,8 +41,10 @@ describe("de-privileged ingestion framing (#360)", () => {
     expect(steward).toContain("verbatim_text");
   });
 
-  it("the Extractor is told the document is not the claim's home", () => {
-    expect(extractor).toMatch(/not the claim's home/);
+  it("the Extractor is told the document does not own the claim", () => {
+    expect(extractor).toMatch(/the document does not own the claim/);
+    // The norm is stated without naming the document as a "home" at all.
+    expect(extractor).not.toMatch(/claim's home/);
     expect(extractor).toMatch(/even when this\s+document argues against it/);
   });
 
@@ -59,6 +62,48 @@ describe("de-privileged ingestion framing (#360)", () => {
     // Instances describe the debate; they are not votes on the verdict.
     expect(steward).not.toMatch(/strong signal/);
     expect(steward).toMatch(/They do not tell you whether the claim is true/);
+  });
+
+  it("no prompt names a source as the claim's origin or home", () => {
+    for (const p of [matcher, extractor, steward]) {
+      expect(p).not.toMatch(/ingesting document/i);
+      expect(p).not.toMatch(/first source/i);
+      expect(p).not.toMatch(/claim's home/i);
+      expect(p).not.toMatch(/the document it was extracted from/i);
+    }
+  });
+});
+
+/**
+ * The Steward owns the claim's instance set: it reads the claim before its
+ * instances, decides which instances belong, and orders them by judgment.
+ * Detaching replaced the old workaround of lowering confidence toward 0.
+ */
+describe("the Steward and the claim's instances", () => {
+  const steward = getClaimStewardSystemPrompt();
+
+  it("reads the claim with get_claim and reasons before reading instances", () => {
+    expect(steward).toContain("get_claim");
+    expect(steward).not.toContain("get_claim_with_context");
+    expect(steward).toMatch(/before any web_search or any reading of its instances/);
+  });
+
+  it("decides membership and order, and detaches instead of lowering confidence", () => {
+    expect(steward).toContain("detach_claim_instance");
+    expect(steward).toContain("reattach_claim_instance");
+    expect(steward).toContain("set_instance_order");
+    expect(steward).toMatch(/asserts, denies or poses\s+the proposition/);
+    expect(steward).not.toMatch(/confidence lowered toward 0/);
+    expect(steward).not.toMatch(/toward 0\b/);
+  });
+
+  it("keeps the register: no em-dashes, all-caps or bold emphasis", () => {
+    const role = steward.slice(steward.indexOf("# Your Role: Claim Steward"));
+    expect(role).not.toContain("\u2014");
+    // Bold survives only as a list item's term label ("- **Steward**: ...").
+    const bold = role.split("\n").filter((l) => /\*\*/.test(l) && !/^\s*- \*\*[^*]+\*\*/.test(l));
+    expect(bold).toEqual([]);
+    expect(role).not.toMatch(/\b(NOT|NEVER|MUST|ONLY|ALWAYS|FIRST|THIS|DO|DON'T)\b/);
   });
 });
 

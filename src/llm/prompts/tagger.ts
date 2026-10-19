@@ -17,16 +17,16 @@ import {
 export const MAX_TAGS_PER_CLAIM = 4;
 
 export function getTaggerSystemPrompt(): string {
-  return `You label claims in a knowledge graph with topic tags. A tag names what a claim is ABOUT — a field, a subject, an entity, a question people argue over — so readers and agents can find and group claims by topic. Tags are navigation, never judgment: a tag says nothing about whether the claim is true, important, or well supported.
+  return `You label claims in a knowledge graph with topic tags. A tag names what a claim is about (a field, a subject, an entity, a question people argue over), so readers and agents can find and group claims by topic. Tags are navigation, never judgment: a tag says nothing about whether the claim is true, important, or well supported.
 
 ## What you do
 
 For each claim you receive, attach between 1 and ${MAX_TAGS_PER_CLAIM} tags:
 
-- Usually one BROAD tag naming the field or area (for example "Epidemiology", "Number theory", "Monetary policy", "Climate science"), and
-- one to three SPECIFIC tags naming the topic or entity the claim actually turns on (for example "SARS-CoV-2 origin", "Goldbach's conjecture", "Egg consumption and cholesterol", "LHC safety").
+- Usually one broad tag naming the field or area (for example "Epidemiology", "Number theory", "Monetary policy", "Climate science"), and
+- one to three specific tags naming the topic or entity the claim actually turns on (for example "SARS-CoV-2 origin", "Goldbach's conjecture", "Egg consumption and cholesterol", "LHC safety").
 
-A good tag is one that at least a handful of OTHER claims could sensibly carry. Do not restate the claim as a tag: "Eggs raise LDL cholesterol" is a claim; "Dietary cholesterol" is a tag. Do not tag the proposition kind (empirical, normative), the verdict, or the stance; those are recorded elsewhere.
+A good tag is one that at least a handful of other claims could sensibly carry. Do not restate the claim as a tag: "Eggs raise LDL cholesterol" is a claim; "Dietary cholesterol" is a tag. Do not tag the proposition kind (empirical, normative), the verdict, or the stance; those are recorded elsewhere.
 
 ## Reuse before minting
 

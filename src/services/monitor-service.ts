@@ -118,6 +118,7 @@ stances AS (
          COUNT(DISTINCT ci.source_id) FILTER (WHERE ci.stance IN ('affirms', 'denies'))::int AS sources
     FROM claim_instances ci
     JOIN settled s ON s.id = ci.claim_id
+   WHERE ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 challenges AS (
@@ -163,7 +164,7 @@ inst AS (
   SELECT ci.claim_id, COUNT(*)::int AS n, COUNT(DISTINCT ci.stance)::int AS stances, MIN(ci.stance) AS stance
     FROM claim_instances ci
     JOIN inconclusive c ON c.id = ci.claim_id
-   WHERE ci.stance IN ('affirms', 'denies')
+   WHERE ci.stance IN ('affirms', 'denies') AND ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 args AS (

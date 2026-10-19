@@ -85,9 +85,10 @@ Anchor claim ID: ${input.claimId}
 Context: ${input.context}
 
 Proceed:
-1. Use get_claim_with_context and search_similar_claims (and match_claim) to
-   examine the anchor claim and its neighborhood.
-2. Look for: duplicates / counterparts to MERGE; a conflated claim to SPLIT; and
+1. Use get_claim and search_similar_claims (and match_claim) to examine the
+   anchor claim and its neighborhood; get_claim_instances shows how its
+   sources state it when wording or identity turns on that.
+2. Look for: duplicates / counterparts to merge; a conflated claim to split; and
    related-but-disconnected claims that should be linked.
 3. For merges/splits, perform the surgery, then notify_steward the affected
    claims. For a routine edge into a claim you are not reconciling, use

@@ -347,7 +347,7 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
          FROM claim_instances ci
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
          LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
-        WHERE ci.source_id = $1
+        WHERE ci.source_id = $1 AND ci.detached_at IS NULL
         ORDER BY ci.created_at`,
       [sourceId]
     ),
