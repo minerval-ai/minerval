@@ -25,8 +25,9 @@
   /* — assessment status: muted, serious, never traffic-light — */
   --st-verified:      #1f6b46;  --st-verified-tint:    #e7f1ea;
   --st-supported:     #4f7d4a;  --st-supported-tint:   #ecf2e8;
-  --st-contested:     #9a6d12;  --st-contested-tint:   #f6efde;
-  --st-unsupported:   #6c6657;  --st-unsupported-tint: #eeebe2;
+  --st-inconclusive:  #9a6d12;  --st-inconclusive-tint:#f6efde;
+  /* doubtful mirrors supported: the lighter shade of the contradicted clay */
+  --st-doubtful:      #9a5f48;  --st-doubtful-tint:    #f4ebe5;
   --st-contradicted:  #8f3a2c;  --st-contradicted-tint:#f4e6e1;
   --st-unknown:       #8b8576;  --st-unknown-tint:     #eeece4;
   /* not a verdict: the pending state of a claim the Steward hasn't reached */
@@ -238,8 +239,8 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 
 .st-verified    { color: var(--st-verified); }
 .st-supported   { color: var(--st-supported); }
-.st-contested   { color: var(--st-contested); }
-.st-unsupported { color: var(--st-unsupported); }
+.st-inconclusive{ color: var(--st-inconclusive); }
+.st-doubtful    { color: var(--st-doubtful); }
 .st-contradicted{ color: var(--st-contradicted); }
 .st-unknown     { color: var(--st-unknown); }
 .st-unassessed  { color: var(--st-unassessed); }
@@ -283,8 +284,8 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 
 .badge.st-verified    { background: var(--st-verified-tint); }
 .badge.st-supported   { background: var(--st-supported-tint); }
-.badge.st-contested   { background: var(--st-contested-tint); }
-.badge.st-unsupported { background: var(--st-unsupported-tint); }
+.badge.st-inconclusive{ background: var(--st-inconclusive-tint); }
+.badge.st-doubtful    { background: var(--st-doubtful-tint); }
 .badge.st-contradicted{ background: var(--st-contradicted-tint); }
 .badge.st-unknown     { background: var(--st-unknown-tint); }
 
@@ -411,8 +412,8 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .finding-headline a.plain { color: inherit; text-decoration: none; }
 .finding-headline a.plain:hover { text-decoration: underline; }
 .finding-notice {
-  font-family: var(--sans); font-size: 0.78rem; color: var(--st-contested);
-  background: var(--st-contested-tint); border-radius: 2px; padding: 0.4rem 0.6rem; margin: 0 0 0.7rem;
+  font-family: var(--sans); font-size: 0.78rem; color: var(--st-inconclusive);
+  background: var(--st-inconclusive-tint); border-radius: 2px; padding: 0.4rem 0.6rem; margin: 0 0 0.7rem;
 }
 .finding-notice .sc { color: inherit; }
 .finding-account p { margin: 0 0 0.7rem; }
@@ -461,7 +462,7 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .rel-specifies   { color: var(--muted); }
 .rel-defines     { color: var(--link); }
 .rel-assumes,
-.rel-presupposes { color: var(--st-contested); } /* .rel-presupposes: legacy alias, #205 */
+.rel-presupposes { color: var(--st-inconclusive); } /* .rel-presupposes: legacy alias, #205 */
 
 /* ==========================================================================
    Claim view
@@ -480,6 +481,16 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
   padding: 0.9rem 0; border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule); margin-bottom: 1.6rem;
 }
+/* verdict and dispute, side by side (#524): "Doubtful · actively disputed".
+   The dispute label is plain text in the ink of the page, never a second
+   badge, so it cannot be read as a status of its own. */
+.verdict-pair { display: inline-flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.dispute-label {
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+  white-space: nowrap; cursor: help;
+}
+.dispute-label.dispute-active { font-weight: 600; }
+.dispute-sep { color: var(--faint); margin-right: 0.45rem; }
 /* the last-assessed date, at the band's far end (#196): the one fact most
    readers want from the assessment history */
 .assess-when {
@@ -1097,10 +1108,10 @@ html { scroll-behavior: smooth; }
 
 /* the one-time key reveal — deliberately loud relative to the quiet page */
 .key-reveal {
-  border: 1px solid var(--st-contested); background: var(--st-contested-tint);
+  border: 1px solid var(--st-inconclusive); background: var(--st-inconclusive-tint);
   border-radius: 4px; padding: 0.7rem 0.9rem; margin: 0.8rem 0;
 }
-.key-reveal .sc { display: block; color: var(--st-contested); margin-bottom: 0.35rem; }
+.key-reveal .sc { display: block; color: var(--st-inconclusive); margin-bottom: 0.35rem; }
 .key-plaintext {
   font-family: var(--mono); font-size: 0.82rem; word-break: break-all;
   background: none; border: none; padding: 0; user-select: all;

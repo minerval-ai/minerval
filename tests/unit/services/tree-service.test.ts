@@ -300,7 +300,7 @@ describe("tree-service", () => {
       relation_type: "requires",
       reasoning: `why ${id} leans on the child`,
       importance,
-      assessment_status: "contested",
+      assessment_status: "inconclusive",
       assessment_confidence: 0.5,
       total,
     });

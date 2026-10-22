@@ -1,9 +1,11 @@
 // Mirrors the Minerval API (src/schemas/*). Kept hand-written for now; will be
 // replaced by a client generated from the Fastify OpenAPI spec.
 
+// The evidential ladder (constitution §10, #524). How actively a claim is
+// disputed is not a status: it is ClaimCore.contestation, shown beside it.
 export type AssessmentStatus =
-  | "verified" | "supported" | "contested"
-  | "unsupported" | "contradicted" | "unknown";
+  | "verified" | "supported" | "inconclusive"
+  | "doubtful" | "contradicted" | "unknown";
 
 export type ClaimType =
   | "empirical_verifiable" | "empirical_derived" | "definitional"
@@ -93,7 +95,7 @@ export interface Assessment {
   status: AssessmentStatus;
   // Verdict confidence: how sure the Steward is that `status` is the right
   // reading of the evidence. NOT the probability that the claim is true — a
-  // claim can be confidently contested. Render it quietly and labelled.
+  // claim can be confidently inconclusive. Render it quietly and labelled.
   confidence: number;
   // Credence: the Steward's probability that the claim, as stated, is true.
   // Null where one number would be false precision (normative/evaluative
@@ -131,6 +133,11 @@ export interface ClaimCore {
   // How load-bearing the claim is (0..1), set by the Steward. Orders the work
   // queue: important claims are assessed and decomposed first under a budget.
   importance: number;
+  // How actively the claim is disputed or consulted (0..1), set by the Steward
+  // beside importance; null until judged. Not a status: the claim page shows
+  // it next to the verdict (disputeMeta in lib/ontology.ts). Optional while
+  // API deployments predating #524 omit it.
+  contestation?: number | null;
   // Steward work-queue lifecycle: pending → running → done | error. A claim that
   // has never reached "done" (and has no assessment) is an unprocessed stub, not
   // an irreducible atom.

@@ -203,7 +203,7 @@ describe("graph-read-tools", () => {
       } as never);
       mockSubclaimCount.mockResolvedValue(3 as never);
       mockAssessment.mockResolvedValue({
-        status: "contested",
+        status: "inconclusive",
         confidence: 0.5,
         claimCredence: null,
         summary: "Reader-facing body",
@@ -216,7 +216,7 @@ describe("graph-read-tools", () => {
         (await executeGraphReadTool("get_claim", { claim_id: "c1" }))!
       );
 
-      expect(out.assessment.status).toBe("contested");
+      expect(out.assessment.status).toBe("inconclusive");
       expect(out.assessment.reasoning_trace).toBe("The audit trail");
       expect(out.assessment.claim_credence).toBeNull();
       expect(out.subclaim_count).toBe(3);

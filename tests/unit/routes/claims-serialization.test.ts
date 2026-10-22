@@ -16,7 +16,7 @@ describe("claim detail response serialization", () => {
     confidence: 0.72,
     summary: "The evidence favours this claim; no credible challenge has surfaced.",
     reasoning_trace: "The claim is well supported by sources.",
-    subclaim_summary: { supported: 2, contested: 0 },
+    subclaim_summary: { supported: 2, inconclusive: 0 },
     assessed_at: "2026-06-21T04:18:43.337Z",
   };
 
@@ -38,7 +38,7 @@ describe("claim detail response serialization", () => {
     expect(out.reasoning_trace).toBe(sampleAssessment.reasoning_trace);
     expect(out.assessed_at).toBe(sampleAssessment.assessed_at);
     // subclaim_summary is an arbitrary object and must pass through intact.
-    expect(out.subclaim_summary).toEqual({ supported: 2, contested: 0 });
+    expect(out.subclaim_summary).toEqual({ supported: 2, inconclusive: 0 });
   });
 
   it("preserves importance and steward_state on the claim (same stripping class as #16)", () => {
@@ -64,6 +64,26 @@ describe("claim detail response serialization", () => {
     expect(out.steward_state).toBe("pending");
   });
 
+  // #524: dispute is shown beside the verdict, read from contestation, so the
+  // claim schema must carry it through the serializer, null included.
+  it("preserves contestation on the claim, null when unjudged", () => {
+    const stringify = fastJson(claimSchema as never);
+    const base = {
+      id: "ecd9425f-8cf0-4057-9b9d-39371ee2ce77",
+      text: "a claim",
+      claim_type: "empirical_derived",
+      state: "active",
+      decomposition_status: "complete",
+      importance: 0.6,
+      steward_state: "done",
+      created_by: "extractor",
+      created_at: "2026-06-21T04:18:43.337Z",
+      updated_at: "2026-06-21T04:18:43.337Z",
+    };
+    expect(JSON.parse(stringify({ ...base, contestation: 0.75 })).contestation).toBe(0.75);
+    expect(JSON.parse(stringify({ ...base, contestation: null })).contestation).toBeNull();
+  });
+
   it("serializes a null assessment as null", () => {
     const stringify = fastJson(assessmentSchema as never);
     expect(stringify(null)).toBe("null");
@@ -80,7 +100,7 @@ describe("claim detail response serialization", () => {
       text: "root claim",
       assessment_status: "supported",
       children: [
-        { id: "child", text: "subclaim", assessment_status: "contested", children: [] },
+        { id: "child", text: "subclaim", assessment_status: "inconclusive", children: [] },
       ],
     };
     const stringify = fastJson(treeSchema);
@@ -88,6 +108,6 @@ describe("claim detail response serialization", () => {
 
     expect(out.assessment_status).toBe("supported");
     expect(out.children).toHaveLength(1);
-    expect(out.children[0].assessment_status).toBe("contested");
+    expect(out.children[0].assessment_status).toBe("inconclusive");
   });
 });

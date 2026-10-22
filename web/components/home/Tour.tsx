@@ -35,7 +35,7 @@ const STEPS: { target: string; title: string; body: string }[] = [
     title: "The verdicts",
     body:
       "Every assessed claim carries a verdict from the evidence: verified, " +
-      "supported, contested, unsupported, contradicted, or unknown. Hover any " +
+      "supported, inconclusive, doubtful, contradicted, or unknown. Hover any " +
       "term in this legend for its definition.",
   },
   {

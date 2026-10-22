@@ -149,7 +149,7 @@ const AGENTS: AgentMeta[] = [
     model: "Claude Opus 5.5", fn: getCuratorSystemPrompt },
   { key: "dispute-arbitrator", name: "Dispute Arbitrator", stage: 6, group: "governance",
     tagline: "Resolves escalations and appeals through careful adjudication, the highest-stakes governance call.",
-    invokedWhen: "A review is escalated, an appeal is filed, or a claim is persistently contested.",
+    invokedWhen: "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     model: "Claude Opus 5.5", fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",

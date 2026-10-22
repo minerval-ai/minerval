@@ -290,7 +290,7 @@ function SettingsPane({
           <option value="conservative">
             Conservative — only egregiously wrong claims (red)
           </option>
-          <option value="moderate">Moderate — also contested claims</option>
+          <option value="moderate">Moderate — also unsettled claims</option>
           <option value="aggressive">
             Aggressive — also oversimplified & noteworthy
           </option>

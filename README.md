@@ -122,7 +122,9 @@ Independent lines of reasoning are recorded as arguments, whose soundness
 is itself a claim ([§7](admin_constitution.md#7-arguments)). Every assessment is one of six
 graded statuses with its reasoning attached, so a disagreement that can't
 be settled is mapped rather than forced to a verdict
-([§10](admin_constitution.md#10-explicit-uncertainty)).
+([§10](admin_constitution.md#10-explicit-uncertainty)). A status describes the
+evidence, not the debate: how actively a claim is disputed is recorded
+separately and shown beside it.
 
 ## How it works
 

@@ -125,7 +125,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   and the submission source once public) behind a machine-checked proof or
   disproof.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
-  per-node assessment status: contested-vs-settled structure at a glance.
+  per-node assessment status: unsettled-vs-settled structure at a glance.
 - **`match_claim`** `{assertion, context?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
   `stance`) plus its assessment, `matched: false` for new/unknown, or

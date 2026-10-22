@@ -122,6 +122,9 @@ export const claimSchema = {
     state: { type: "string" },
     decomposition_status: { type: "string" },
     importance: { type: "number" },
+    // How actively the claim is disputed or consulted (0..1); null until
+    // judged. Shown beside the verdict, never folded into it (#524).
+    contestation: { type: "number", nullable: true },
     steward_state: { type: "string" },
     created_by: { type: "string" },
     created_at: { type: "string", format: "date-time" },
@@ -1637,7 +1640,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-function formatClaim(claim: { id: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
+function formatClaim(claim: { id: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
   return {
     id: claim.id,
     text: claim.text,
@@ -1645,6 +1648,9 @@ function formatClaim(claim: { id: string; text: string; claimType: string; state
     state: claim.state,
     decomposition_status: claim.decompositionStatus,
     importance: claim.importance,
+    // Dispute is not a status (#524): the claim page shows it beside the
+    // verdict ("Doubtful · actively disputed"), so it travels on the claim.
+    contestation: claim.contestation ?? null,
     // The Steward work-queue lifecycle (pending → running → done | error). Lets the
     // UI distinguish a not-yet-stewarded stub from a claim found genuinely atomic.
     steward_state: claim.stewardState,

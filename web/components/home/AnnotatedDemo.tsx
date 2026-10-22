@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { StatusBadge, VerdictConfidence, Unassessed } from "@/components/Assessment";
+import { StatusBadge, Dispute, VerdictConfidence, Unassessed } from "@/components/Assessment";
 import styles from "./home.module.css";
 
 // The browser-extension demo (issue #80): a mock article whose sentences are
@@ -19,6 +19,8 @@ const CARDS: {
   id: CardId;
   status: string | null; // null = unassessed
   confidence: number | null;
+  // How actively the claim is disputed (0..1), shown beside the verdict.
+  contestation?: number;
   claim: string;
   match: string;
   reason: string;
@@ -29,10 +31,10 @@ const CARDS: {
     claim: "US CPI inflation in 2022 exceeded the threshold for ‘high’ inflation.",
     match: "canonical match 0.82 · empirical (derived)",
     reason:
-      "The 6.5% magnitude is verified; the claim turns on a contested definitional subclaim: what counts as “high.” Verified arithmetic on a contested definition: supported, not verified.",
+      "The 6.5% magnitude is verified; the claim turns on a definitional subclaim the evidence does not settle: what counts as “high.” Verified arithmetic on an inconclusive definition: supported, not verified.",
     subs: [
       { status: "verified", text: "BLS reported CPI-U growth of 6.5% for 2022", conf: "0.97" },
-      { status: "contested", text: "The threshold for ‘high’ inflation is 5%", conf: "0.55" },
+      { status: "inconclusive", text: "The threshold for ‘high’ inflation is 5%", conf: "0.55" },
       { status: "verified", text: "6.5% is greater than 5%", conf: "1.00" },
     ],
   },
@@ -51,18 +53,18 @@ const CARDS: {
       "Rests on the verified CPI figure by a requires edge, one of five claims in the graph that lean on it.",
   },
   {
-    id: "c-squeeze", status: "contested", confidence: 0.58,
+    id: "c-squeeze", status: "inconclusive", confidence: 0.58, contestation: 0.45,
     claim: "2022 was the worst US cost-of-living squeeze in four decades.",
     match: "evaluative · supports ← the CPI claim",
     reason:
-      "Evidence exists but interpretation is disputed: “worst” depends on which measure of living costs you pick. The disagreement is definitional, not factual.",
+      "“Worst” depends on which measure of living costs you pick, and the measures point different ways. Examined, the evidence comes down on neither side; the disagreement is definitional, not factual.",
   },
   {
-    id: "c-over", status: "contested", confidence: 0.47,
+    id: "c-over", status: "doubtful", confidence: 0.6, contestation: 0.75,
     claim: "The 2022 tightening was a policy overreaction to transitory inflation.",
     match: "causal · contradicts ← the CPI claim",
     reason:
-      "The supported “high inflation” claim weighs against this one by a contradicts edge; the rest hangs on the contested word “transitory.”",
+      "The evidence leans against it: the supported “high inflation” claim weighs against this one by a contradicts edge, and the rest hangs on the disputed word “transitory.” Doubtful on the evidence, and actively disputed: two facts, shown side by side.",
   },
   {
     id: "c-defl", status: "contradicted", confidence: 0.88,
@@ -83,7 +85,8 @@ const CARDS: {
 const HL_CLASS: Record<string, string> = {
   verified: styles.hlVerified,
   supported: styles.hlSupported,
-  contested: styles.hlContested,
+  inconclusive: styles.hlInconclusive,
+  doubtful: styles.hlDoubtful,
   contradicted: styles.hlContradicted,
 };
 
@@ -129,9 +132,9 @@ export function AnnotatedDemo() {
             {hl("c-wages", "verified", "real, inflation-adjusted wages had fallen for most US workers")}.
           </p>
           <p>
-            For many families, {hl("c-squeeze", "contested", "it was the worst cost-of-living squeeze in four decades")}.
+            For many families, {hl("c-squeeze", "inconclusive", "it was the worst cost-of-living squeeze in four decades")}.
             Some critics of the Federal Reserve counter that{" "}
-            {hl("c-over", "contested", "the 2022 tightening was a policy overreaction to transitory inflation")},
+            {hl("c-over", "doubtful", "the 2022 tightening was a policy overreaction to transitory inflation")},
             the mirror image, they argue, of 2009, when{" "}
             {hl("c-defl", "contradicted", "the United States experienced sustained deflation throughout the year")}.
           </p>
@@ -152,6 +155,7 @@ export function AnnotatedDemo() {
               >
                 <div className={styles.mMeta}>
                   {c.status ? <StatusBadge status={c.status} size="lg" /> : <Unassessed />}
+                  {c.status && <Dispute value={c.contestation} />}
                   {c.status && <VerdictConfidence value={c.confidence} />}
                 </div>
                 <p className={styles.mClaim}>{c.claim}</p>

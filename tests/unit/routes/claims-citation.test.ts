@@ -88,7 +88,7 @@ function assembled() {
       arguments: [],
       instances: [],
       disagreement: {
-        contested: false,
+        contestation: null,
         affirming_instances: 1,
         denying_instances: 0,
         contested_arguments: [],

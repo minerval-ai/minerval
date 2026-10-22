@@ -182,17 +182,17 @@ writing about the graph is drawn. It changes nothing on the graph.
 
 A result, not an effort. It has all four of these properties:
 
-- **It is correct on the graph's own record**: an assessment you have
+- It is correct on the graph's own record: an assessment you have
   made or verified, a check the kernel accepted, an argument that holds.
-- **It would improve a reader's picture.** Most people who hold the
+- It would improve a reader's picture. Most people who hold the
   question get it wrong, or do not know it, or believe it without knowing
   why, and the record now says why. That a specialist has said it before
   does not disqualify it; what matters is whether it has reached the
   people who hold the question.
-- **Someone outside this system would want to be told.** Ask whether a
+- Someone outside this system would want to be told. Ask whether a
   careful reader who took the usual view would come away with a better
   one, or the same one on firmer ground.
-- **It rests on records you can cite by id**: the claims, assessments,
+- It rests on records you can cite by id: the claims, assessments,
   arguments, checks, and contributions that carry it.
 
 What qualifies: a question most people answer wrongly, where the graph's

@@ -120,8 +120,8 @@ const STYLE = `
 .ep-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font: 600 11px/1.6 -apple-system, system-ui, sans-serif; }
 .ep-badge.ep-s-verified { background: #e2efe2; color: #2d6a2d; }
 .ep-badge.ep-s-supported { background: #e9f0e9; color: #3d6a3d; }
-.ep-badge.ep-s-contested { background: #f4ecd7; color: #7a5f14; }
-.ep-badge.ep-s-unsupported { background: #eee; color: #555; }
+.ep-badge.ep-s-inconclusive { background: #f4ecd7; color: #7a5f14; }
+.ep-badge.ep-s-doubtful { background: #f3e6e0; color: #8a4a3a; }
 .ep-badge.ep-s-contradicted { background: #f6e0de; color: #b3261e; }
 .ep-badge.ep-s-unknown { background: #eee; color: #777; }
 `;
@@ -158,8 +158,11 @@ function verdictLabel(v: Verdict): string {
   switch (v) {
     case "egregious":
       return "Disputed by the claim graph";
+    // The page verdict "contested" (the page states an unsettled claim as
+    // settled), not a graph status: the statuses are verified, supported,
+    // inconclusive, doubtful, contradicted, unknown (#524).
     case "contested":
-      return "Contested";
+      return "Unsettled, stated as settled";
     case "oversimplified":
       return "Oversimplified";
     case "noteworthy":

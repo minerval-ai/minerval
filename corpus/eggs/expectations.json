@@ -6,7 +6,7 @@
     "Expect overlap on a few claims across all three sources: dietary cholesterol is only weakly related to blood cholesterol; up to one egg/day is not associated with increased CVD risk in healthy people; eggs raise LDL in trials vs. a no-egg (but not a low-egg) comparison. Watch whether the matcher canonicalizes these across the Harvard, Wikipedia, and guidelines documents.",
     "The most important contested claim: 'egg consumption increases cardiovascular/all-cause mortality' vs. 'moderate egg consumption is not associated with increased CVD risk'. These are supported by DIFFERENT meta-analyses and must end up related/contested, NOT merged. Merging them erases the entire dispute.",
     "Watch for a key CONDITIONAL/subgroup claim staying distinct: 'eggs are fine for healthy people' vs. 'eggs increase CVD risk in people with diabetes' are both true and must not be collapsed into a single unconditional claim. Flattening the population condition is a failure mode specific to this cluster.",
-    "Watch that the assessment layer does not declare the headline question settled in either direction — the correct status for 'eggs increase heart disease risk' is contested, and the report should reflect the methodological reasons why."
+    "Watch that the assessment layer does not declare the headline question settled in either direction — the status for 'eggs increase heart disease risk' should follow the evidence (inconclusive if it comes down on neither side, supported or doubtful if it leans), with the live dispute recorded as contestation rather than as the status, and the report should reflect the methodological reasons why."
   ],
   "shouldMerge": [],
   "shouldStayDistinct": []

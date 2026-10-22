@@ -21,8 +21,8 @@ const LAB_ORIGIN = "ec268800-7ee7-42de-a29d-395c50e83148"; // "SARS-CoV-2 has a 
 const ZOONOSIS = "3795e3d8-6487-40e2-9930-00b55a0a0a74"; // Huanan-market spillover, sourced instances
 const FURIN = "ae9615d8-3701-4a41-8206-cd92e416ced8"; // furin cleavage site, 2 named arguments
 const BLACK_HOLE = "6aaac204-dc5b-441b-bf9c-979df4883c26"; // "TeV-scale black holes produced at the LHC pose no significant risk": supported over a live methodological critique
-const BH_METHOD = "a96f71a7-1372-44ca-add3-337cdb4f7334"; // "Published LHC black hole risk analyses do not establish that catastrophic risk is negligible": contested
-const EGGS = "585e0bd0-5830-4104-851e-7d4130a1be05"; // "Regular egg consumption increases cardiovascular disease risk in healthy people": contested, credence 0.33
+const BH_METHOD = "a96f71a7-1372-44ca-add3-337cdb4f7334"; // "Published LHC black hole risk analyses do not establish that catastrophic risk is negligible": disputed
+const EGGS = "585e0bd0-5830-4104-851e-7d4130a1be05"; // "Regular egg consumption increases cardiovascular disease risk in healthy people": disputed, credence 0.33
 const EGGS_DOSE = "4408df03-8146-491d-a544-4be788849dea"; // CVD associations at high but not moderate intake: a caveat kept as its own node
 
 function Quote({ children, cite }: { children: React.ReactNode; cite: string }) {
@@ -66,7 +66,7 @@ export default function FlfPage() {
             <span className={s.where}><Link href="/claims">/claims</Link></span>
           </div>
           <div className={s.linkRow}>
-            <span className={s.what}>A contested crux, worked end to end</span>
+            <span className={s.what}>A disputed crux, worked end to end</span>
             <span className={s.where}>
               <Link href={`/claims/${LAB_ORIGIN}`}>the claim</Link>
               {" · "}
@@ -385,18 +385,19 @@ export default function FlfPage() {
           <Q>Provide frameworks for calibrating confidence that account for out-of-model error, adversarial information environments, and the limits of any single analyst.</Q>
           <p>
             The status vocabulary is about the state of the evidence rather than a bare probability.
-            A claim is verified, supported, contested, unsupported, contradicted, or unknown, each
-            defined by how the evidence stands. Two numbers may sit beside a status, answering
+            A claim is verified, supported, inconclusive, doubtful, contradicted, or unknown, each
+            defined by how the evidence stands; how actively a claim is disputed is shown beside its
+            status, never in place of it. Two numbers may sit beside a status, answering
             different questions: a verdict confidence, always recorded, is how sure the steward is
             that the status is the right reading of the evidence; a credence, recorded only where a
             single number is an honest summary, is the probability that the claim itself is true. A
-            claim can be confidently contested, the disagreement near-certainly real while nobody
-            knows the answer, and where one number would be false precision the credence is omitted,
+            claim can be confidently inconclusive, the steward near-certain the evidence does not
+            settle it while nobody knows the answer, and where one number would be false precision the credence is omitted,
             which is itself information. Effort scales with importance, and before it records a
             verdict the steward runs a second pass that tries to refute its own conclusion. On the
             limits of any single analyst, our answer is the organization itself: separate agents with
             separate duties, coherence sweeps that check assessments against each other across the
-            graph, and heavier scrutiny reserved for the most important contested claims.
+            graph, and heavier scrutiny reserved for the most important disputed claims.
           </p>
           <Quote cite="§10">
             The admin does not round uncertain claims up to &ldquo;verified&rdquo; or down to
@@ -404,8 +405,8 @@ export default function FlfPage() {
             of knowledge.
           </Quote>
           <p className={s.see}>
-            See it: the egg-consumption claim is held confidently contested, with a verdict
-            confidence of 0.85 while its credence sits at 0.33, on{" "}
+            See it: the egg-consumption claim carries a verdict confidence of 0.85 while its
+            credence sits at 0.33, on{" "}
             <Link href={`/claims/${EGGS}`}>its page</Link>.
           </p>
           <p className={s.gap}>
@@ -418,12 +419,13 @@ export default function FlfPage() {
         <div className={s.qa}>
           <Q>Distinguish what the debate settled from what it merely performed settling.</Q>
           <p>
-            Refusing false resolution is the system&rsquo;s first commitment. A genuinely contested
-            question is held contested, with the strongest form of each side represented, rather than
-            rounded to a winner. At the same time, not every disagreement is genuine, so a fringe or
+            Refusing false resolution is the system&rsquo;s first commitment. A question the evidence
+            does not settle is assessed inconclusive, with the strongest form of each side
+            represented, rather than rounded to a winner; how actively it is disputed is shown beside
+            the verdict and never stands in for it. At the same time, not every disagreement is genuine, so a fringe or
             bad-faith objection is noted without being raised to false parity. The SARS-CoV-2 origin
             question is a fair test: the graph holds the laboratory-origin claim and the market-
-            spillover claim as two live contested claims, neither merged into the other and neither
+            spillover claim as two live, disputed claims, neither merged into the other and neither
             quietly resolved, with the weight of expert opinion recorded without erasing the minority
             case.
           </p>
