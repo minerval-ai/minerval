@@ -34,7 +34,9 @@ function Annot({ n, text, children }: { n: number; text: ReactNode; children: Re
 export default function About() {
   return (
     <div className="doc">
-      <h1>About</h1>
+      <h1 className="sc" style={{ fontSize: ".66rem", letterSpacing: ".09em", margin: "0 0 .9rem" }}>
+        About
+      </h1>
       <p className="dropcap">
         What to link to to prove your point on the internet is an underappreciated
         unsolved problem, even when you are &lsquo;demonstrably&rsquo; right. None of the
@@ -99,18 +101,6 @@ export default function About() {
       </p>
 
       <h2 id="where-its-going">Where it&rsquo;s going</h2>
-      <p>
-        There are shorter-term goals and long-term goals, which are somewhat distinct.
-      </p>
-      <p>
-        In the short term, I aim to systematically expand the frontiers of mathematics:
-        1) map out existing mathematical knowledge (
-        <Link href="/claims/5f9a607f-3072-4e9d-95d8-37a3aedb0d2b/map">example</Link>), 2)
-        produce Lean statements of each open problem, 3) pick all the low-hanging fruit
-        that can be solved using less than $200/problem through generic prompting and a
-        simple harness, and 4) assign Erdős-style proof/counterexample bounties based on
-        the importance of each theorem.
-      </p>
       <p>
         In the long term, I aim to turn Minerval into a central institution that
         organizes the funding of research and knowledge production across domains. To

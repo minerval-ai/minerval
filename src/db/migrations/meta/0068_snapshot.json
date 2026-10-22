@@ -1,5 +1,5 @@
 {
-  "id": "6a260e12-7e9a-4959-9ea0-e9370fbfc1f3",
+  "id": "a01c1fba-3c23-4052-8a8f-a7073de28a63",
   "prevId": "ad7c0d37-df56-44ac-a3da-469c13102f05",
   "version": "7",
   "dialect": "postgresql",
@@ -7395,12 +7395,6 @@
           "notNull": true,
           "default": "'{}'"
         },
-        "platform_approval": {
-          "name": "platform_approval",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -10810,6 +10804,56 @@
           "value": "spent_micro_usd >= 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.shared_page_analyses": {
+      "name": "shared_page_analyses",
+      "schema": "",
+      "columns": {
+        "url_hash": {
+          "name": "url_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "annotations": {
+          "name": "annotations",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extracted": {
+          "name": "extracted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "analyzed_at": {
+          "name": "analyzed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.source_events": {

@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   startAnalysis: vi.fn(),
   getAnalysisByHash: vi.fn(),
   chatAboutPage: vi.fn(),
+  whenAnalysisSettles: vi.fn(),
+  shareIfPublic: vi.fn(),
+  listSharedHashes: vi.fn(),
+  getSharedAnalysis: vi.fn(),
   usageContexts: [] as unknown[],
   charges: [] as string[],
   refunds: [] as string[],
@@ -15,6 +19,13 @@ vi.mock("../../../src/services/extension-service.js", () => ({
   startAnalysis: mocks.startAnalysis,
   getAnalysisByHash: mocks.getAnalysisByHash,
   chatAboutPage: mocks.chatAboutPage,
+  whenAnalysisSettles: mocks.whenAnalysisSettles,
+}));
+
+vi.mock("../../../src/services/shared-analysis-service.js", () => ({
+  shareIfPublic: mocks.shareIfPublic,
+  listSharedHashes: mocks.listSharedHashes,
+  getSharedAnalysis: mocks.getSharedAnalysis,
 }));
 
 // Capture the ambient usage context the route establishes for metering (#70).
@@ -84,6 +95,10 @@ describe("extension routes", () => {
     mocks.startAnalysis.mockReset();
     mocks.getAnalysisByHash.mockReset();
     mocks.chatAboutPage.mockReset();
+    mocks.whenAnalysisSettles.mockReset();
+    mocks.shareIfPublic.mockReset().mockResolvedValue({ shared: true });
+    mocks.listSharedHashes.mockReset();
+    mocks.getSharedAnalysis.mockReset();
     mocks.usageContexts.length = 0;
     mocks.charges.length = 0;
     mocks.refunds.length = 0;
@@ -153,6 +168,74 @@ describe("extension routes", () => {
 
     expect(res.statusCode).toBe(202);
     expect(res.json()).toEqual({ content_hash: HASH, status: "running" });
+  });
+
+  it("POST /extension/analyze shares nothing unless the reader asked", async () => {
+    mocks.startAnalysis.mockResolvedValue({ state: "ready", analysis: ANALYSIS, cached: false });
+    const { app } = await buildTestApp();
+
+    await app.inject({
+      method: "POST",
+      url: "/extension/analyze",
+      payload: { url: "https://example.com/a", content: "x".repeat(200) },
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(mocks.shareIfPublic).not.toHaveBeenCalled();
+  });
+
+  it("POST /extension/analyze with share=true offers the finished analysis for sharing", async () => {
+    mocks.startAnalysis.mockResolvedValue({ state: "ready", analysis: ANALYSIS, cached: false });
+    const { app } = await buildTestApp();
+
+    await app.inject({
+      method: "POST",
+      url: "/extension/analyze",
+      payload: { url: "https://example.com/a", content: "x".repeat(200), share: true },
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(mocks.shareIfPublic).toHaveBeenCalledWith("https://example.com/a", ANALYSIS);
+  });
+
+  it("POST /extension/analyze with share=true shares a 202 run once it settles", async () => {
+    mocks.startAnalysis.mockResolvedValue({ state: "running", content_hash: HASH });
+    mocks.whenAnalysisSettles.mockResolvedValue(ANALYSIS);
+    const { app } = await buildTestApp();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/extension/analyze",
+      payload: { url: "https://example.com/a", content: "x".repeat(200), share: true },
+    });
+    expect(res.statusCode).toBe(202);
+    await new Promise((r) => setImmediate(r));
+    expect(mocks.whenAnalysisSettles).toHaveBeenCalledWith(HASH);
+    expect(mocks.shareIfPublic).toHaveBeenCalledWith("https://example.com/a", ANALYSIS);
+  });
+
+  it("GET /extension/shared lists a prefix bucket without authenticating", async () => {
+    mocks.listSharedHashes.mockResolvedValue([HASH]);
+    const { app, gates } = await buildTestApp();
+
+    const res = await app.inject({ method: "GET", url: "/extension/shared?prefix=aaaa" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ hashes: [HASH] });
+    expect(gates.authenticate).toBe(0);
+
+    const bad = await app.inject({ method: "GET", url: "/extension/shared?prefix=aaaaaa" });
+    expect(bad.statusCode).toBeGreaterThanOrEqual(400);
+  });
+
+  it("GET /extension/shared/:hash serves a shared analysis, 404 when none", async () => {
+    mocks.getSharedAnalysis.mockResolvedValueOnce({ ...ANALYSIS, shared: true });
+    mocks.getSharedAnalysis.mockResolvedValueOnce(null);
+    const { app, gates } = await buildTestApp();
+
+    const hit = await app.inject({ method: "GET", url: `/extension/shared/${HASH}` });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json()).toMatchObject({ shared: true, url: ANALYSIS.url });
+    const miss = await app.inject({ method: "GET", url: `/extension/shared/${HASH}` });
+    expect(miss.statusCode).toBe(404);
+    expect(gates.authenticate).toBe(0);
   });
 
   it("GET /extension/analysis/:hash maps ready/running/failed/unknown to 200/202/502/404", async () => {

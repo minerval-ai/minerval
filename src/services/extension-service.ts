@@ -19,9 +19,18 @@
  * in-memory cache and dies with the process, and every agent it invokes runs
  * untraced, whatever TRACE_LEVEL says. The same holds for the chat, whose
  * questions are the reader's own. What does persist is metering: one
- * llm_usage row per call with counts and cost, never content. Ingesting a
- * page-derived claim into the graph, if it ever happens, is a separate and
- * deliberate path with its own rules, not a relaxation of this one.
+ * llm_usage row per call with counts and cost, never content.
+ *
+ * Two deliberate paths sit beside this one, each with its own narrower rule,
+ * and neither relaxes it:
+ *  - Sharing (services/shared-analysis-service.ts): when the reader agrees,
+ *    an analysis of a page the server confirms is PUBLIC (by fetching it
+ *    signed out) is kept for the page's next readers: the URL and, per
+ *    claim, the anchoring phrase, verdict and claim id. Never a private or
+ *    draft page, never the page's text, never who analyzed it.
+ *  - Proposing (POST /claims/propose): a reader can propose a claim the
+ *    graph lacks. Only the claim's wording and the reader's note are sent;
+ *    review decides whether it enters the graph.
  */
 import crypto from "crypto";
 import { loadConfig } from "../config.js";
@@ -60,6 +69,13 @@ export interface PageAnnotation {
   confidence: number;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
   stance: InstanceStance;
+  /**
+   * The neutral statement of the claim as the pipeline would canonicalize it
+   * (the Matcher's proposed form, else the Extractor's). Present for claims
+   * the graph doesn't hold, so the reader can propose it as a well-formed
+   * claim rather than as the page's phrasing; null for matched claims.
+   */
+  proposed_canonical_form: string | null;
   /** Matched canonical claim, or null when the claim is new/unknown. */
   claim: {
     id: string;
@@ -189,6 +205,8 @@ export function buildAnnotations(input: {
     stance: InstanceStance;
     /** The Matcher ran out of budget without a verdict (#419). */
     undecided?: boolean;
+    /** How the pipeline would word the claim if it were new. */
+    proposedCanonicalForm?: string | null;
     matched: {
       claimId: string;
       canonicalForm: string;
@@ -204,9 +222,9 @@ export function buildAnnotations(input: {
   return input.claims.map((c, i) => {
     if (!c.matched) {
       // New/unknown to the graph: nothing to judge against. The extension
-      // renders no markup for these (graceful degradation). Minting them
-      // from here would persist page-derived text; see the module comment
-      // (#356) before adding such a path.
+      // marks these as new and offers to propose them through intake;
+      // minting them from here would persist page-derived text without the
+      // reader asking (see the module comment, #356).
       return {
         verbatim_text: c.verbatim_text,
         context: c.context,
@@ -217,6 +235,7 @@ export function buildAnnotations(input: {
           : "This claim isn't in the Minerval graph yet.",
         confidence: 0,
         stance: c.stance,
+        proposed_canonical_form: c.proposedCanonicalForm ?? null,
         claim: null,
       };
     }
@@ -230,6 +249,7 @@ export function buildAnnotations(input: {
       why: v?.why ?? "",
       confidence: v?.confidence ?? 0,
       stance: c.stance,
+      proposed_canonical_form: null,
       claim: {
         id: c.matched.claimId,
         canonical_form: c.matched.canonicalForm,
@@ -306,6 +326,39 @@ export async function chatAboutPage(input: {
   }
 
   return { reply: result.reply, citations };
+}
+
+export interface MatchedClaim {
+  claimId: string;
+  canonicalForm: string;
+  status: string;
+  statusConfidence: number;
+  reasoningExcerpt: string | null;
+  subclaimCount: number;
+  claimUrl: string;
+}
+
+/**
+ * A claim's current graph state as an annotation carries it, or null if the
+ * claim does not exist. Read live: the shared page cache serves stored
+ * analyses through this so their statuses are today's.
+ */
+export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | null> {
+  const [claim, assessment, subclaimCount] = await Promise.all([
+    getClaimById(claimId),
+    getCurrentAssessment(claimId),
+    getSubclaimCount(claimId),
+  ]);
+  if (!claim) return null;
+  return {
+    claimId,
+    canonicalForm: claim.text,
+    status: assessment?.status ?? "unknown",
+    statusConfidence: assessment?.confidence ?? 0,
+    reasoningExcerpt: assessment?.reasoningTrace?.slice(0, 600) ?? null,
+    subclaimCount,
+    claimUrl: claimPageUrl(claimId),
+  };
 }
 
 async function getSubclaimCount(claimId: string): Promise<number> {
@@ -387,6 +440,19 @@ function launchRun(
   return run;
 }
 
+/**
+ * The analysis for a content hash once its run settles: the cached result,
+ * the in-flight run's, or null if the run failed or is unknown. Lets a caller
+ * act on a finished analysis after its own request has been answered 202.
+ */
+export async function whenAnalysisSettles(key: string): Promise<PageAnalysis | null> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const run = inFlight.get(key);
+  if (!run) return null;
+  return run.catch(() => null);
+}
+
 export async function startAnalysis(
   input: { url: string; title?: string; content: string },
   opts: { graceMs?: number } = {}
@@ -460,33 +526,16 @@ async function analyzePageUncached(
       // The Matcher reached no verdict (#419): distinct from "not in the
       // graph" so the annotation can say so.
       undecided: decision.outcome === "undecided",
+      proposedCanonicalForm:
+        decision.new_canonical_form?.trim() || c.proposed_canonical_form || null,
     };
 
     if (!decision.is_match || !decision.matched_claim_id) {
       return { ...base, matched: null };
     }
 
-    const claimId = decision.matched_claim_id;
-    const [claim, assessment, subclaimCount] = await Promise.all([
-      getClaimById(claimId),
-      getCurrentAssessment(claimId),
-      getSubclaimCount(claimId),
-    ]);
     // The matcher can hallucinate an id; treat a missing claim as no match.
-    if (!claim) return { ...base, matched: null };
-
-    return {
-      ...base,
-      matched: {
-        claimId,
-        canonicalForm: claim.text,
-        status: assessment?.status ?? "unknown",
-        statusConfidence: assessment?.confidence ?? 0,
-        reasoningExcerpt: assessment?.reasoningTrace?.slice(0, 600) ?? null,
-        subclaimCount,
-        claimUrl: claimPageUrl(claimId),
-      },
-    };
+    return { ...base, matched: await loadMatchedClaim(decision.matched_claim_id) };
   });
 
   // Only matched claims go to the assessor — for unknown claims there is no

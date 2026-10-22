@@ -34,16 +34,29 @@ are effectively pinned to the account that creates them.
     public page, where you can challenge it or add evidence.
   — Ask questions in the popup chat and get answers grounded in the graph,
     with numbered citations to the claims they rest on — not vibes.
+  — See at a glance what the analysis found: how many claims are on the
+    page, how many the graph already holds, and which are new. Claims the
+    graph doesn't hold yet are faintly underlined and listed in the popup;
+    propose the ones worth checking and they are reviewed, added to the
+    graph and assessed. A proposal sends only the claim itself, never the
+    page.
 
   Markup is non-destructive: annotations are drawn as an overlay and the
   page's text is never rewritten.
 
   PRIVACY, BY DESIGN
 
-  Nothing is sent anywhere until you ask. Analyzing a page sends its
-  readable text to the Minerval API, so analysis only runs when you press
-  "Analyze page" — or on sites you explicitly opt into automatic analysis.
-  Any site can be disabled entirely. No ads, no trackers, no analytics.
+  No page text is sent until you ask. Analyzing a page sends its readable
+  text to the Minerval API, so analysis only runs when you press "Analyze
+  page", or on sites you explicitly opt into automatic analysis. Any site
+  can be disabled entirely. No ads, no trackers, no analytics.
+
+  Checks are shared for public pages: when someone analyzes a news article
+  or a blog post, the next reader sees the results straight away. Minerval
+  keeps an analysis only after confirming, signed out, that the page is
+  public, never for inboxes, logged-in pages or drafts. To find shared
+  checks, the extension sends only a short prefix of a hash of the address,
+  shared by thousands of addresses.
 
   SETUP
 
@@ -88,7 +101,10 @@ are effectively pinned to the account that creates them.
   - ☑ **Authentication information** — the user's Minerval API key,
     sent with analysis/chat requests to authenticate them.
   - ☑ **Website content** — text, title, and URL of a page, sent to the
-    Minerval API only when the user requests analysis of that page.
+    Minerval API only when the user requests analysis of that page. For
+    public pages the user agrees to share, the URL and the claims found are
+    kept so other readers see them. Lookups for shared checks send only a
+    4-character hash prefix, no URL.
   - Leave everything else unchecked (no location, history, activity,
     personal communications, financial, or health data).
   - Certify all three attestations: data is not sold; not used or

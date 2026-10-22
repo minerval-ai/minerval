@@ -481,8 +481,15 @@
     {
       "idx": 68,
       "version": "7",
-      "when": 1792699421691,
-      "tag": "0068_platform_mandate_approval",
+      "when": 1792699735805,
+      "tag": "0068_shared_page_analyses",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792703556751,
+      "tag": "0069_platform_mandate_approval",
       "breakpoints": true
     }
   ]

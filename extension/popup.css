@@ -164,3 +164,99 @@ button:disabled {
   font-size: 12px;
   margin: 0;
 }
+
+.pad {
+  padding: 10px 14px;
+}
+
+.page-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.claims {
+  overflow-y: auto;
+  max-height: 420px;
+  padding: 4px 14px 12px;
+}
+
+.claims h3 {
+  font: 600 11px/1 -apple-system, system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #666;
+  margin: 12px 0 6px;
+}
+
+.claims ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.claim-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.claim-row input {
+  margin-top: 3px;
+}
+
+.claim-row a {
+  color: #274870;
+  text-decoration: none;
+}
+
+.claim-row a:hover {
+  text-decoration: underline;
+}
+
+.claim-row .done {
+  color: #2d6a2d;
+  width: 13px;
+  text-align: center;
+}
+
+.propose-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+
+.propose-bar label.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font: 600 10px/1.6 -apple-system, system-ui, sans-serif;
+  background: #eee;
+  color: #555;
+}
+
+.badge.s-verified { background: #e2efe2; color: #2d6a2d; }
+.badge.s-supported { background: #e9f0e9; color: #3d6a3d; }
+.badge.s-contested { background: #f4ecd7; color: #7a5f14; }
+.badge.s-contradicted { background: #f6e0de; color: #b3261e; }
+
+.pad-x {
+  padding: 6px 14px 0;
+}
+
+.share-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
