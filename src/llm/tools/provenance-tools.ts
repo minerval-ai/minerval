@@ -27,6 +27,7 @@ import type { SkillToolContext, SkillToolExecutor } from "./skill-tools.js";
 import {
   SourceMapError,
   getClaimSourceMap,
+  listDetachedInstances,
   listInstancesForMapping,
   readSourceContent,
   recordInstanceReading,
@@ -36,6 +37,7 @@ import {
   writeSourceMap,
 } from "../../services/source-map-service.js";
 import { getProvenanceStory } from "../../services/provenance-story-service.js";
+import { orderClaimInstances } from "../../services/claim-instance-service.js";
 import { getSourceFacts } from "../../services/source-facts-service.js";
 import {
   ExaminationError,
@@ -99,11 +101,17 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
   guarded(async () => {
     const claimId = claimFor(input, ctx);
     if (!claimId) return refuse("claim_id is required outside a claim-scoped run.");
-    const [instances, map, story] = await Promise.all([
+    const [listed, detached, map, story] = await Promise.all([
       listInstancesForMapping(claimId),
+      listDetachedInstances(claimId),
       getClaimSourceMap(claimId),
       getProvenanceStory(claimId),
     ]);
+    // The order a reader sees: the Steward's ranks, then the story's.
+    const instances = orderClaimInstances(
+      listed.map((i) => ({ ...i, id: i.instance_id, source_id: i.source.id })),
+      story
+    ).map(({ id: _id, source_id: _sourceId, ...i }) => i);
     const examinations = await listExaminations(story.nodes.map((n) => n.source.id));
     const readings = map.readings;
     return JSON.stringify({
@@ -128,6 +136,9 @@ export const executeGetMap: SkillToolExecutor = async (input, ctx) =>
           })),
       })),
       source_relationships: map.source_relationships,
+      // Instances the Steward detached from the claim: kept for the record,
+      // not part of the map above. Their readings and edges are unchanged.
+      ...(detached.length > 0 ? { detached_instances: detached } : {}),
       // The top of the claim's story as the claim page will draw it: every
       // source with nothing recorded upstream, and each underlying source.
       // Derived sources are left out; they are the instances above.

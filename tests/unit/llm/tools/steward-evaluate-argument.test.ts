@@ -98,7 +98,7 @@ describe("steward evaluate_argument", () => {
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
       verdict: "HOLDS",
-      evaluation: `The inference is valid; the argument stands or falls with [[claim:${SUB_ID}]], which remains contested.`,
+      evaluation: `The inference is valid; the argument stands or falls with [[claim:${SUB_ID}]], which remains inconclusive.`,
     });
 
     expect(JSON.parse(out).success).toBe(true);
@@ -220,7 +220,7 @@ describe("steward update_claim_assessment evaluation nudge", () => {
 
     const out = await executeStewardTool("update_claim_assessment", {
       claim_id: CLAIM_ID,
-      status: "contested",
+      status: "inconclusive",
       confidence: 0.7,
       assessment: "Genuinely disputed.",
       reasoning_trace: "Both sides credible.",
@@ -247,7 +247,7 @@ describe("steward update_claim_assessment evaluation nudge", () => {
 
     const out = await executeStewardTool("update_claim_assessment", {
       claim_id: CLAIM_ID,
-      status: "contested",
+      status: "inconclusive",
       confidence: 0.7,
       assessment: "Genuinely disputed.",
       reasoning_trace: "Both sides credible.",

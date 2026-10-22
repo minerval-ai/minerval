@@ -10,7 +10,7 @@ are effectively pinned to the account that creates them.
 - **Title**: `Minerval` (from the manifest)
 - **Summary** (from the manifest, 132 chars):
   > Reads the page against the Minerval claim graph: flags misleading claims,
-  > explains contested ones, answers questions with citations.
+  > explains unsettled ones, answers questions with citations.
 - **Category**: Productivity → Tools (alternative: Education)
 - **Language**: English
 - **Description**:
@@ -25,7 +25,7 @@ are effectively pinned to the account that creates them.
   WHAT IT DOES
 
   — Recognises the claims on a page and underlines each by what the graph
-    knows: egregiously misleading claims in red, contested ones dotted,
+    knows: egregiously misleading claims in red, unsettled ones dotted,
     oversimplified and noteworthy ones more quietly. You choose how much
     markup you want; the default is conservative (only the worst).
   — Hover for the canonical claim, its graph status, and a one-line why.

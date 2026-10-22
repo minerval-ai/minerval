@@ -5,7 +5,7 @@ description: >-
   recollection. Use when writing or reviewing prose that asserts checkable
   facts — docs, READMEs, reports, marketing copy, code comments stating facts
   about the world — or when the user questions whether a claim is true,
-  contested, or supported.
+  disputed, or supported.
 ---
 
 # Checking claims against the Minerval graph
@@ -23,7 +23,7 @@ tools give you maintained, pre-computed assessments instead of recollection.
   and returns a verdict per claim. Metered; cap `max_claims` sensibly.
 - **Just looking** → `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its
-  subclaim tree with contested-vs-settled structure.
+  subclaim tree with unsettled-vs-settled structure.
 - **A whole document or diff to clear before shipping** → prefer delegating
   to the `fact-checker` subagent, or point the user at `/minerval:check` and
   `/minerval:factcheck-diff`.
@@ -35,16 +35,19 @@ tools give you maintained, pre-computed assessments instead of recollection.
 
 ## Reading results
 
-- Verdicts (`verified`, `supported`, `contested`, `unsupported`,
-  `contradicted`) are the graph's assessments — report them as the graph's
-  judgment, with confidence, and link each claim's `page_url`.
+- Verdicts (`verified`, `supported`, `inconclusive`, `doubtful`,
+  `contradicted`, and `unknown` on a matched claim) are the graph's
+  assessments — report them as the graph's judgment, with confidence, and
+  link each claim's `page_url`. A status describes the evidence, not the
+  debate; how actively a claim is disputed is its `contestation` (0..1),
+  reported separately.
 - `stance: denies` means the checked text asserts the claim's negation, so
   invert the reading for the text as written.
-- `unknown` (no such claim) and `unassessed` (no assessment yet) mean the
-  graph is silent — that is not evidence for or against, and not a license to
+- `unknown` with `matched: false` (no such claim) and `unassessed` (no
+  assessment yet) mean the graph is silent — that is not evidence for or against, and not a license to
   answer from recollection.
-- Don't assert a `contested` claim as settled in text you write; hedge it or
-  cite the claim page.
+- Don't assert an `inconclusive` or `doubtful` claim as settled in text you
+  write; hedge it or cite the claim page.
 
 Only lean on these tools when an assertion genuinely matters and is
 disputable; most sentences contain no checkable claim, and the metered tools

@@ -3,6 +3,8 @@ import { getDb, rawQuery } from "../db/client.js";
 import { assessments } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { getClaimById } from "./claim-service.js";
+import { orderClaimInstances } from "./claim-instance-service.js";
+import { getProvenanceStory } from "./provenance-story-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import {
   getArgumentsForClaim,
@@ -99,7 +101,12 @@ export interface EvidenceRecord {
     };
   }[];
   disagreement: {
-    contested: boolean;
+    /**
+     * How actively the claim is disputed or consulted (0..1), as the Steward
+     * recorded it; null until judged. Dispute is not a status (#524), so it is
+     * reported here beside the instance counts, not read off the verdict.
+     */
+    contestation: number | null;
     affirming_instances: number;
     denying_instances: number;
     /** Sources that state the proposition as an open question (#445). */
@@ -250,23 +257,31 @@ export async function assembleEvidenceRecord(
     subclaimsByArgument.set(row.argument_id, list);
   }
 
-  const instanceRows = await rawQuery<{
-    id: string;
-    verbatim_text: string;
-    context: string | null;
-    stance: string;
-    source_id: string;
-    title: string;
-    url: string | null;
-    source_type: string;
-  }>(
-    `SELECT ci.id, ci.verbatim_text, ci.context, ci.stance,
-            s.id AS source_id, s.title, s.url, s.source_type
-       FROM claim_instances ci
-       JOIN sources s ON s.id = ci.source_id
-      WHERE ci.claim_id = $1
-      ORDER BY ci.created_at`,
-    [claimId]
+  // The instances the claim carries (detached ones are not its), in the
+  // order a reader sees them on the claim page, never insertion order.
+  const instanceRows = orderClaimInstances(
+    await rawQuery<{
+      id: string;
+      verbatim_text: string;
+      context: string | null;
+      stance: string;
+      source_id: string;
+      title: string;
+      url: string | null;
+      source_type: string;
+      display_rank: number | null;
+      source_date: string | null;
+      source_published_date: string | null;
+    }>(
+      `SELECT ci.id, ci.verbatim_text, ci.context, ci.stance,
+              s.id AS source_id, s.title, s.url, s.source_type,
+              ci.display_rank, ci.source_date, s.published_date AS source_published_date
+         FROM claim_instances ci
+         JOIN sources s ON s.id = ci.source_id
+        WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
+      [claimId]
+    ),
+    await getProvenanceStory(claimId).catch(() => null)
   );
 
   const contestedArguments = args
@@ -319,7 +334,7 @@ export async function assembleEvidenceRecord(
       },
     })),
     disagreement: {
-      contested: assessment?.status === "contested",
+      contestation: claim.contestation ?? null,
       affirming_instances: instanceRows.filter((i) => i.stance === "affirms").length,
       denying_instances: instanceRows.filter((i) => i.stance === "denies").length,
       // Sources that state the proposition as an open question (#445): they

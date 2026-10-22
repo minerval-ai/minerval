@@ -249,7 +249,7 @@ export async function scopeSources(input: {
             array_agg(DISTINCT ci.claim_id) AS claim_ids
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
-      WHERE ci.claim_id IN (SELECT id FROM wanted)
+      WHERE ci.claim_id IN (SELECT id FROM wanted) AND ci.detached_at IS NULL
       GROUP BY s.id
       ORDER BY COUNT(DISTINCT ci.claim_id) DESC, s.retrieved_at DESC
       LIMIT $3`,
@@ -287,7 +287,7 @@ export async function sourcesForDois(dois: string[]): Promise<
        FROM unnest($1::text[]) d(doi)
        JOIN sources s ON s.doi = d.doi
                       OR (s.url IS NOT NULL AND lower(s.url) LIKE '%' || d.doi || '%')
-       LEFT JOIN claim_instances ci ON ci.source_id = s.id
+       LEFT JOIN claim_instances ci ON ci.source_id = s.id AND ci.detached_at IS NULL
        LEFT JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
       GROUP BY d.doi, s.id`,
     [clean]
@@ -348,13 +348,13 @@ export async function claimsRestingOnSources(sourceIds: string[]): Promise<Resti
        SELECT wk.root AS source_id, ci.claim_id, 'copy_or_version'::text AS via,
               ci.source_id AS through_source_id, NULL::text AS relation_type, 0 AS rank
          FROM work wk
-         JOIN claim_instances ci ON ci.source_id = wk.source_id
+         JOIN claim_instances ci ON ci.source_id = wk.source_id AND ci.detached_at IS NULL
         WHERE wk.source_id <> wk.root
        UNION ALL
        SELECT wk.root, ci.claim_id, 'draws_on', ci.source_id, e.relation_type, 1
          FROM work wk
          JOIN claim_provenance_edges e ON e.to_source_id = wk.source_id
-         JOIN claim_instances ci ON ci.id = e.from_instance_id
+         JOIN claim_instances ci ON ci.id = e.from_instance_id AND ci.detached_at IS NULL
      )
      SELECT DISTINCT ON (h.source_id, h.claim_id)
             h.source_id, h.claim_id, h.via, h.through_source_id,
@@ -364,7 +364,8 @@ export async function claimsRestingOnSources(sourceIds: string[]): Promise<Resti
        JOIN sources s ON s.id = h.through_source_id
       WHERE NOT EXISTS (
               SELECT 1 FROM claim_instances d
-               WHERE d.source_id = h.source_id AND d.claim_id = h.claim_id)
+               WHERE d.source_id = h.source_id AND d.claim_id = h.claim_id
+                 AND d.detached_at IS NULL)
       ORDER BY h.source_id, h.claim_id, h.rank, s.title`,
     [ids]
   );

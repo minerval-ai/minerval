@@ -1,11 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../db/client.js";
-import {
-  assessments,
-  claimInstances,
-  sources,
-} from "../db/schema.js";
+import { assessments } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
 import { getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
@@ -15,6 +11,7 @@ import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getProvenanceStory } from "../services/provenance-story-service.js";
+import { listOrderedClaimInstances } from "../services/claim-instance-service.js";
 import { getContributionRecordForClaim } from "../services/contribution-service.js";
 import {
   addArgument,
@@ -122,6 +119,9 @@ export const claimSchema = {
     state: { type: "string" },
     decomposition_status: { type: "string" },
     importance: { type: "number" },
+    // How actively the claim is disputed or consulted (0..1); null until
+    // judged. Shown beside the verdict, never folded into it (#524).
+    contestation: { type: "number", nullable: true },
     steward_state: { type: "string" },
     created_by: { type: "string" },
     created_at: { type: "string", format: "date-time" },
@@ -538,25 +538,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             lean_check: checkByArgument.get(a.id) ?? null,
           }));
 
-          const instances = await db
-            .select({
-              id: claimInstances.id,
-              source_id: claimInstances.sourceId,
-              verbatim_text: claimInstances.verbatimText,
-              context: claimInstances.context,
-              stance: claimInstances.stance,
-              confidence: claimInstances.confidence,
-              speaker: claimInstances.speaker,
-              publication: claimInstances.publication,
-              source_date: claimInstances.sourceDate,
-              link: claimInstances.link,
-              source_title: sources.title,
-              source_url: sources.url,
-              source_type: sources.sourceType,
-            })
-            .from(claimInstances)
-            .innerJoin(sources, eq(claimInstances.sourceId, sources.id))
-            .where(eq(claimInstances.claimId, claim_id));
+          // The instances the claim carries, in the order a reader sees
+          // them: the Steward's ranks first, then the provenance story's
+          // order (origins first), then the date of the statement. Detached
+          // instances are not the claim's and never appear.
+          const instances = await listOrderedClaimInstances(claim_id);
 
           // What the support rests on (#286). A failure here loses the map,
           // never the page.
@@ -1637,7 +1623,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-function formatClaim(claim: { id: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
+function formatClaim(claim: { id: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
   return {
     id: claim.id,
     text: claim.text,
@@ -1645,6 +1631,9 @@ function formatClaim(claim: { id: string; text: string; claimType: string; state
     state: claim.state,
     decomposition_status: claim.decompositionStatus,
     importance: claim.importance,
+    // Dispute is not a status (#524): the claim page shows it beside the
+    // verdict ("Doubtful · actively disputed"), so it travels on the claim.
+    contestation: claim.contestation ?? null,
     // The Steward work-queue lifecycle (pending → running → done | error). Lets the
     // UI distinguish a not-yet-stewarded stub from a claim found genuinely atomic.
     steward_state: claim.stewardState,

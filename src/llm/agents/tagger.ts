@@ -63,11 +63,11 @@ const SUBMIT_SCHEMA = {
         properties: {
           slug: {
             type: "string",
-            description: "The slug of an EXISTING tag returned by search_tags. Use this whenever one fits.",
+            description: "The slug of an existing tag returned by search_tags. Use this whenever one fits.",
           },
           name: {
             type: "string",
-            description: `A NEW tag's name (Title Case noun phrase, at most ${TAG_NAME_MAX_CHARS} characters), only when no existing tag fits. Give slug OR name, not both.`,
+            description: `A new tag's name (Title Case noun phrase, at most ${TAG_NAME_MAX_CHARS} characters), only when no existing tag fits. Give slug OR name, not both.`,
           },
           description: {
             type: "string",

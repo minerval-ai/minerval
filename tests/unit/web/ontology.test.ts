@@ -51,9 +51,8 @@ describe("topLevelEffects", () => {
   it("keeps unsettled for assessed-but-inconclusive statuses", () => {
     const scored = topLevelEffects(root([
       node({ assessment_status: "unknown" }),
-      node({ assessment_status: "unsupported" }),
     ]));
-    expect(scored.map((s) => s.effect)).toEqual(["weak", "weak"]);
+    expect(scored.map((s) => s.effect)).toEqual(["weak"]);
   });
 
   it("composes edge polarity with the node's own status", () => {
@@ -61,7 +60,7 @@ describe("topLevelEffects", () => {
       node({ assessment_status: "verified" }),
       node({ assessment_status: "verified", relation_type: "contradicts" }),
       node({ assessment_status: "contradicted", relation_type: "contradicts" }),
-      node({ assessment_status: "contested" }),
+      node({ assessment_status: "inconclusive" }),
     ]));
     expect(scored.map((s) => s.effect)).toEqual([
       "supports", "against", "supports", "uncertain",
@@ -98,7 +97,7 @@ describe("netEffect", () => {
     expect(netEffect({ ...zero, against: 2, supports: 1, unassessed: 4 })).toBe("against");
   });
 
-  it("reads a genuine split as contested", () => {
+  it("reads a genuine split as inconclusive", () => {
     expect(netEffect({ ...zero, supports: 1, against: 1 })).toBe("uncertain");
     expect(netEffect({ ...zero, uncertain: 2 })).toBe("uncertain");
   });

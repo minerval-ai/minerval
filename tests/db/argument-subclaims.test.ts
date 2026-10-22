@@ -159,7 +159,7 @@ describe("argument_subclaims (#437)", () => {
     await attachEdgeToArgument(argB, id);
 
     const out = JSON.parse(
-      await executeGovernanceTool("get_claim_with_context", { claim_id: parent })
+      await executeGovernanceTool("get_claim", { claim_id: parent })
     );
     // Two edges, so two children — the shared one is not counted per argument.
     expect(out.claim.children_total).toBe(2);

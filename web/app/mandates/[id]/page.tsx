@@ -187,7 +187,7 @@ function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
             <th>assessed</th>
             <th>importance</th>
             <th>avg</th>
-            <th>contested</th>
+            <th title="claims with contestation at or above 0.5">disputed</th>
           </tr>
         </thead>
         <tbody>

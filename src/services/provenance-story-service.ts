@@ -270,11 +270,17 @@ export function buildProvenanceStory(claimId: string, input: StoryInput): Proven
   };
 }
 
-/** Load a claim's provenance rows and build its origins-first story. */
+/**
+ * Load a claim's provenance rows and build its origins-first story. Only
+ * instances that belong to the claim enter it: a detached instance (its
+ * Steward judged the source does not state the claim) and the edges from it
+ * stay in the record but are not part of the claim's story.
+ */
 export async function getProvenanceStory(claimId: string): Promise<ProvenanceStory> {
   const [instances, edges, roots] = await Promise.all([
     rawQuery<{ id: string; source_id: string; stance: string; source_date: string | null }>(
-      `SELECT id, source_id, stance, source_date FROM claim_instances WHERE claim_id = $1`,
+      `SELECT id, source_id, stance, source_date FROM claim_instances
+        WHERE claim_id = $1 AND detached_at IS NULL`,
       [claimId]
     ),
     rawQuery<StoryEdgeInput>(
@@ -282,7 +288,7 @@ export async function getProvenanceStory(claimId: string): Promise<ProvenanceSto
               e.relation_type, e.fidelity
          FROM claim_provenance_edges e
          JOIN claim_instances ci ON ci.id = e.from_instance_id
-        WHERE ci.claim_id = $1`,
+        WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
       [claimId]
     ),
     rawQuery<{ source_id: string; status: "origin" | "untraced"; basis: string; created_by: string; updated_at: Date }>(

@@ -322,22 +322,27 @@ two Stewards assess like cases alike (§21):
   evidence of the kind mathematicians count (large families of cases,
   conditional proofs, computation far beyond where a counterexample would be
   expected).
-- `contested`: credible mathematicians disagree about the claim or about
-  whether a claimed proof establishes it. A dispute about a proof lives on the
-  meta-claim and on the argument's evaluation; the proposition keeps the
-  status its own evidence warrants.
-- `unsupported`: an open conjecture with no evidence beyond plausibility. This
-  is the ordinary status of most open problems and is not a defect.
+- `inconclusive`: the evidence mathematicians count has been examined and
+  points neither way. A dispute about a proof lives on the meta-claim and on
+  the argument's evaluation; the proposition keeps the status its own
+  evidence warrants. That mathematicians disagree is recorded as
+  contestation, not as a status.
+- `doubtful`: evidence of the kind mathematicians count weighs against the
+  claim (computation or heuristics that tell against it, a conditional
+  disproof) without a disproof.
 - `contradicted`: a counterexample, a proof of the negation, or a
   machine-checked disproof.
-- `unknown`: the claim cannot be made precise enough to assess, which is a
-  finding recorded in the reasoning.
+- `unknown`: an open conjecture with no evidence beyond plausibility, the
+  ordinary status of most open problems and not a defect; or a claim that
+  cannot be made precise enough to assess, which is a finding recorded in the
+  reasoning.
 
 Credence is meaningful for open mathematical claims and should usually be
 given, with the reasoning saying what it rests on; the twin prime conjecture
 and the Riemann hypothesis carry credences well above 0.9 in the field's view.
 Verdict confidence is separate and often near certain where credence is not:
-an open conjecture is confidently `unsupported`. Credences on a claim, its
+an open conjecture with no evidence beyond plausibility is confidently
+`unknown`. Credences on a claim, its
 special cases, and its equivalents must be jointly tenable (§21). Whether a
 proposition has been proven and whether it is true are different questions:
 the status answers the first, the credence the second.
@@ -2964,13 +2969,15 @@ and matcher golden pairs:
    node, a formal statement that elaborates (the community formalization is
    the starting point).
 3. A live open problem (the twin prime conjecture, plus one Erdős problem
-   with a standing Erdős prize): `unsupported` with a credence above 0.9 and
-   reasons; bounded gaps as `supports`; Polignac's conjecture as parent
+   with a standing Erdős prize): assessed on the evidence mathematicians
+   count (`supported` for the twin prime conjecture), with a credence above
+   0.9 and reasons; bounded gaps as `supports`; Polignac's conjecture as parent
    with `specifies`; importance around 0.5 and 0.3; the Erdős prize cited
    as liveness evidence and nothing else.
-4. A contested proof (the abc conjecture and inter-universal Teichmüller
+4. A disputed proof (the abc conjecture and inter-universal Teichmüller
    theory): two nodes, the conjecture assessed on its evidence and the
-   proof claim `contested`, never merged, and the journal publication not
+   proof claim assessed on the state of the argument, its dispute recorded
+   as contestation rather than as a status, never merged, and the journal publication not
    flipping the conjecture to `verified`.
 
 Source licensing is checked before committing; the sub-cases that need the
@@ -3377,15 +3384,17 @@ under the pin with a clean axiom list and the steward has judged the
 statement faithful) or accepted (a refereed, independently expounded proof
 that has stood without unresolved objection); the reasoning says which.
 `supported`: a recent or narrowly reviewed proof, or an open claim with
-evidence mathematicians count. `contested`: credible mathematicians
-disagree about the claim or about whether a claimed proof establishes it;
-a dispute about a proof lives on the meta-claim and the argument's
-evaluation, and the proposition keeps the status its own evidence warrants.
-`unsupported`: an open conjecture with no evidence beyond plausibility, the
-ordinary status of most open problems and not a defect. `contradicted`: a
-counterexample, a proof of the negation, or a machine-checked disproof.
-`unknown`: the claim cannot be made precise enough to assess, which is a
-finding. Give a credence for open claims and say what it rests on; verdict
+evidence mathematicians count. `inconclusive`: the evidence mathematicians
+count has been examined and points neither way. A dispute about a proof
+lives on the meta-claim and the argument's evaluation, and the proposition
+keeps the status its own evidence warrants; that mathematicians disagree is
+recorded as contestation, not as a status. `doubtful`: evidence of that kind
+weighs against the claim (computation or heuristics that tell against it, a
+conditional disproof) without a disproof. `contradicted`: a counterexample,
+a proof of the negation, or a machine-checked disproof. `unknown`: an open
+conjecture with no evidence beyond plausibility, the ordinary status of most
+open problems and not a defect, or a claim that cannot be made precise
+enough to assess, which is a finding. Give a credence for open claims and say what it rests on; verdict
 confidence is separate and is often near certain where credence is not.
 Credences on a claim, its special cases, and its equivalents must be
 jointly tenable.
@@ -3537,7 +3546,7 @@ ledger pays without any further judgment from anyone.
 
 **Propagation and yield.** A newly settled claim changes what its
 dependents may rely on; notify their stewards. For open problems, set
-`marginal_yield` honestly: an unsupported conjecture with a settled
+`marginal_yield` honestly: an open conjecture with a settled
 literature has low yield from another pass and high yield from a
 formalization or an attempt, which is the mandate's decision, not yours.
 
@@ -3668,8 +3677,8 @@ Proof steps minted as subclaims. A status flipped to `verified` by an
 unchecked proof or by a solver's narrative. A formal statement that is
 vacuous, aliased, or strengthened. A bounty amount cited as evidence of
 importance. Money mentioned in an assessment. The checker treated as the
-authority on fidelity. A conjecture recorded as `contested` because it is
-open. Equivalent formulations merged on the strength of a theorem. A
+authority on fidelity. A conjecture recorded as `inconclusive` or
+`doubtful` because it is open. Equivalent formulations merged on the strength of a theorem. A
 solver's trivial proof recorded as a result rather than a defect.
 ```
 
@@ -3967,7 +3976,7 @@ register.
 >   statement and reports what it found. What either produces is evidence
 >   an admin weighs. Neither writes to the graph.
 
-**F.3 §8, after "all can be contested or supported."** Add:
+**F.3 §8, after "all can be supported, doubted, or disputed."** Add:
 
 > Propositions of mathematics are claims like any other, settled by proof
 > rather than by observation. A proof the discourse accepts, or a proof a

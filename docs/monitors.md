@@ -56,7 +56,7 @@ interleaved) and calls `requestAudit` for each hit with
 `auditType: "anomaly_investigation"`, `triggeredBy: "monitor_signal"`, and a
 context that names the signal, the claim, the record that fired, and says
 in words that the hit is a candidate: *read the claim
-(`get_claim_with_context`) and judge whether the confidence is earned; if
+(`get_claim`) and judge whether the confidence is earned; if
 the record already answers the dissent there is nothing to flag; do not
 change the claim yourself.* The Audit Agent's normal tools apply — a
 finding, a re-review recommendation — and its normal posture: the monitor
@@ -87,16 +87,16 @@ shows *live disagreement*, on any of three grounds:
    from at least 2 distinct sources;
 2. `recent_accepted_challenge` — a `challenge` contribution accepted by the
    reviewer within the last 30 days;
-3. `contested_requires_child` — a claim it `requires` whose current status
-   is `contested`.
+3. `inconclusive_requires_child` — a claim it `requires` whose current
+   status is `inconclusive`.
 
 This is #289's "performed settling": a verdict that declares a winner while
-the cruxes it depends on remain contested. The mechanical detector for what
+the cruxes it depends on remain unsettled. The mechanical detector for what
 constitution §1 warns against — an admin imposing false resolution.
 
 **Is not:** a finding. The assessment may already weigh and dismiss the
 dissent (a fringe denial, an accepted challenge that turned out minor, a
-contested subclaim that is not load-bearing). The Audit Agent decides.
+inconclusive subclaim that is not load-bearing). The Audit Agent decides.
 Nothing about the claim changes on a hit.
 
 Ordered by importance; parameters `$1` settled statuses, `$2` settled
@@ -119,6 +119,7 @@ stances AS (
          COUNT(DISTINCT ci.source_id) FILTER (WHERE ci.stance IN ('affirms', 'denies'))::int AS sources
     FROM claim_instances ci
     JOIN settled s ON s.id = ci.claim_id
+   WHERE ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 challenges AS (
@@ -131,23 +132,23 @@ challenges AS (
      AND r.reviewed_at >= now() - make_interval(days => $3::int)
    GROUP BY co.claim_id
 ),
-contested_children AS (
+inconclusive_children AS (
   SELECT cr.parent_claim_id AS claim_id, COUNT(*)::int AS n
     FROM claim_relationships cr
     JOIN settled s ON s.id = cr.parent_claim_id
     JOIN claims ch ON ch.id = cr.child_claim_id AND ch.state = 'active'
-    JOIN assessments ca ON ca.claim_id = ch.id AND ca.is_current AND ca.status = 'contested'
+    JOIN assessments ca ON ca.claim_id = ch.id AND ca.is_current AND ca.status = 'inconclusive'
    WHERE cr.relation_type = 'requires'
    GROUP BY cr.parent_claim_id
 )
 SELECT s.id, s.text, s.importance, s.status, s.confidence, s.claim_credence, s.assessed_at,
        COALESCE(st.affirms, 0) AS affirms, COALESCE(st.denies, 0) AS denies, COALESCE(st.sources, 0) AS sources,
        ch.last_accepted_challenge_at,
-       COALESCE(cc.n, 0) AS contested_requires_children
+       COALESCE(cc.n, 0) AS inconclusive_requires_children
   FROM settled s
   LEFT JOIN stances st ON st.claim_id = s.id
   LEFT JOIN challenges ch ON ch.claim_id = s.id
-  LEFT JOIN contested_children cc ON cc.claim_id = s.id
+  LEFT JOIN inconclusive_children cc ON cc.claim_id = s.id
  WHERE (st.affirms > 0 AND st.denies > 0 AND st.sources >= $4::int)
     OR ch.claim_id IS NOT NULL
     OR cc.claim_id IS NOT NULL
@@ -157,7 +158,7 @@ SELECT s.id, s.text, s.importance, s.status, s.confidence, s.claim_credence, s.a
 
 ## empty_chairs — candidate detector
 
-**Is:** a claim whose current status is `contested` but whose record
+**Is:** a claim whose current status is `inconclusive` but whose record
 carries only one side: every instance on one stance (at least 2 of them),
 or every named argument on one stance (`for` / `against`). The assessment
 says the question is open; nobody sitting in the other chair is on record.
@@ -167,37 +168,37 @@ fairly).
 **Is not:** proof that a side is missing from the world. The other side may
 not exist in the sources ingested so far, may live in the assessment's
 reasoning or in a subclaim rather than as an instance or argument, or the
-`contested` status may itself be the Steward's honest reading of thin
+`inconclusive` status may itself be the Steward's honest reading of thin
 evidence. The Audit Agent (or the Steward) decides whether to seek the
 missing side. Nothing changes on a hit.
 
 Parameters `$1` min. instances, `$2` limit.
 
 ```sql
-WITH contested AS (
+WITH inconclusive AS (
   SELECT c.id, c.text, c.importance, a.status, a.confidence, a.claim_credence, a.assessed_at
     FROM claims c
     JOIN assessments a ON a.claim_id = c.id AND a.is_current
-   WHERE c.state = 'active' AND a.status = 'contested'
+   WHERE c.state = 'active' AND a.status = 'inconclusive'
 ),
 inst AS (
   SELECT ci.claim_id, COUNT(*)::int AS n, COUNT(DISTINCT ci.stance)::int AS stances, MIN(ci.stance) AS stance
     FROM claim_instances ci
-    JOIN contested c ON c.id = ci.claim_id
-   WHERE ci.stance IN ('affirms', 'denies')
+    JOIN inconclusive c ON c.id = ci.claim_id
+   WHERE ci.stance IN ('affirms', 'denies') AND ci.detached_at IS NULL
    GROUP BY ci.claim_id
 ),
 args AS (
   SELECT ar.claim_id, COUNT(*)::int AS n, COUNT(DISTINCT ar.stance)::int AS stances, MIN(ar.stance) AS stance
     FROM arguments ar
-    JOIN contested c ON c.id = ar.claim_id
+    JOIN inconclusive c ON c.id = ar.claim_id
    WHERE ar.stance IN ('for', 'against')
    GROUP BY ar.claim_id
 )
 SELECT c.id, c.text, c.importance, c.status, c.confidence, c.claim_credence, c.assessed_at,
        COALESCE(i.n, 0) AS instances, CASE WHEN i.stances = 1 THEN i.stance END AS instance_stance,
        COALESCE(ar.n, 0) AS arguments, CASE WHEN ar.stances = 1 THEN ar.stance END AS argument_stance
-  FROM contested c
+  FROM inconclusive c
   LEFT JOIN inst i ON i.claim_id = c.id
   LEFT JOIN args ar ON ar.claim_id = c.id
  WHERE (i.n >= $1::int AND i.stances = 1)

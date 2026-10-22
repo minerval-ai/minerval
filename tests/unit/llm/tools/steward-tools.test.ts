@@ -71,7 +71,7 @@ vi.mock("../../../../src/services/source-service.js", () => ({
   })),
 }));
 
-import { executeStewardTool } from "../../../../src/llm/tools/steward-tools.js";
+import { executeStewardTool, getStewardToolDefinitions } from "../../../../src/llm/tools/steward-tools.js";
 import {
   enqueueClaimPipeline,
   enqueueSteward,
@@ -166,7 +166,7 @@ describe("steward add_decomposition_edge", () => {
       parent_id: "22222222-2222-2222-2222-222222222222",
       child_text: "SARS-CoV-2 most likely had a zoonotic origin",
       relation: "supports",
-      reasoning: "live contested crux",
+      reasoning: "live disputed crux",
       importance: 0.7,
     });
     expect(enqueueClaimPipeline).toHaveBeenCalledTimes(1);
@@ -183,7 +183,7 @@ describe("steward add_decomposition_edge", () => {
       parent_id: "22222222-2222-2222-2222-222222222222",
       child_text: "A hotly argued but peripheral aside",
       relation: "supports",
-      reasoning: "contested but peripheral",
+      reasoning: "disputed but peripheral",
       importance: 0.1,
       contestation: 0.9,
     });
@@ -524,7 +524,9 @@ describe("steward update_claim_instance", () => {
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
-    expect(parsed.message).toMatch(/confidence near 0/);
+    // A passing mention is detached, not demoted toward confidence 0.
+    expect(parsed.message).toMatch(/detach_claim_instance/);
+    expect(parsed.message).not.toMatch(/confidence near 0/);
     expect(updatedValues).toHaveLength(0);
   });
 
@@ -578,7 +580,7 @@ describe("steward log_stewardship_decision", () => {
     const out = await executeStewardTool("log_stewardship_decision", {
       claim_id: "22222222-2222-2222-2222-222222222222",
       action_taken: "reassessed",
-      reasoning: "Two new credible denying instances; moved SUPPORTED -> CONTESTED.",
+      reasoning: "Two new credible denying instances; moved SUPPORTED -> INCONCLUSIVE.",
     });
 
     expect(JSON.parse(out).success).toBe(true);
@@ -586,7 +588,7 @@ describe("steward log_stewardship_decision", () => {
     expect(row).toMatchObject({
       claimId: "22222222-2222-2222-2222-222222222222",
       action: "reassessed",
-      reasoning: "Two new credible denying instances; moved SUPPORTED -> CONTESTED.",
+      reasoning: "Two new credible denying instances; moved SUPPORTED -> INCONCLUSIVE.",
       createdBy: "claim_steward",
     });
   });
@@ -608,7 +610,7 @@ describe("steward notify_dependent_stewards", () => {
     ]);
     const out = await executeStewardTool("notify_dependent_stewards", {
       claim_id: CLAIM,
-      change_summary: "moved SUPPORTED -> CONTESTED",
+      change_summary: "moved SUPPORTED -> INCONCLUSIVE",
     });
     expect(enqueueSteward).toHaveBeenCalledTimes(2);
     expect(JSON.parse(out).parent_claim_ids).toEqual([PARENT_A, PARENT_B]);
@@ -621,7 +623,7 @@ describe("steward notify_dependent_stewards", () => {
     ]);
     const out = await executeStewardTool("notify_dependent_stewards", {
       claim_id: CLAIM,
-      change_summary: "confidence nudged within CONTESTED",
+      change_summary: "confidence nudged within INCONCLUSIVE",
       parent_ids: [PARENT_A],
     });
     expect(enqueueSteward).toHaveBeenCalledTimes(1);
@@ -656,7 +658,7 @@ describe("steward update_claim_assessment", () => {
   it("persists the reader-facing assessment distinctly from the reasoning trace", async () => {
     await executeStewardTool("update_claim_assessment", {
       claim_id: "22222222-2222-2222-2222-222222222222",
-      status: "contested",
+      status: "inconclusive",
       confidence: 0.6,
       assessment: "The origin of SARS-CoV-2 remains genuinely disputed among experts.",
       reasoning_trace: "Instances split 1 affirm / 2 deny; market-origin and lab-leak both credible.",
@@ -718,14 +720,56 @@ describe("steward update_claim_assessment", () => {
     expect(reply.message).toContain('"probably" is not one of');
   });
 
+  // #524: contested and unsupported left the ladder. A model still reasoning
+  // in the old vocabulary is told why the write bounced and what to choose.
+  it.each([
+    ["contested", "described the debate, not the evidence"],
+    ["CONTESTED", "described the debate, not the evidence"],
+    ["unsupported", "'doubtful'"],
+  ])("bounces the retired status %s with guidance", async (status, hint) => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        status,
+        confidence: 0.7,
+        assessment: "x",
+        reasoning_trace: "y",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain("is not one of");
+    expect(reply.message).toContain("inconclusive | doubtful");
+    expect(reply.message).toContain(hint);
+    expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
+  });
+
+  it.each(["inconclusive", "doubtful"])("persists the new ladder status %s", async (status) => {
+    await executeStewardTool("update_claim_assessment", {
+      claim_id: "22222222-2222-2222-2222-222222222222",
+      status,
+      confidence: 0.7,
+      assessment: "x",
+      reasoning_trace: "y",
+    });
+    const row = insertedValues.find((r) => "reasoningTrace" in r);
+    expect(row?.status).toBe(status);
+  });
+
+  it("advertises the evidential ladder in the tool schema, not the retired statuses", () => {
+    const tool = getStewardToolDefinitions().find((t) => t.name === "update_claim_assessment")!;
+    const status = (tool.input_schema.properties as Record<string, { enum?: string[]; description?: string }>).status!;
+    expect(status.enum).toEqual(["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"]);
+    expect(status.description).toContain("contestation");
+  });
+
   it("records the run's actual trigger and context on the assessment row (#182)", async () => {
     await executeStewardTool(
       "update_claim_assessment",
       {
         claim_id: "22222222-2222-2222-2222-222222222222",
-        status: "contested",
+        status: "inconclusive",
         confidence: 0.5,
-        assessment: "Now contested.",
+        assessment: "Now inconclusive.",
         reasoning_trace: "A depended-on subclaim flipped.",
       },
       {

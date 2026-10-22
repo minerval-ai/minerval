@@ -76,7 +76,7 @@ fifteen words, rarely more than twenty-five.
 - State the proposition, not this document's sentence. The canonical form
   is a statement of a proposition many sources address, of which this
   document is one voice, not a derivative of this document's wording, and
-  the document is not the claim's home. Write it in the direction the
+  the document does not own the claim. Write it in the direction the
   discourse poses the question (the affirmative form of what is argued, as
   a debate motion or a neutral headline would put it), even when this
   document argues against it; whether this document affirms or denies is

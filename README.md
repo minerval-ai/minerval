@@ -52,9 +52,11 @@ shape everything downstream:
   claim in the graph.
 
 - **Honest uncertainty.** A claim's assessment is one of six statuses —
-  `verified`, `supported`, `contested`, `unsupported`, `contradicted`,
+  `verified`, `supported`, `inconclusive`, `doubtful`, `contradicted`,
   `unknown` — never a binary, and every assessment carries a reasoning trace
-  explaining how the verdict was reached.
+  explaining how the verdict was reached. A status describes the evidence,
+  not the debate: how actively a claim is disputed is recorded separately and
+  shown beside it.
 
 - **Effort proportional to importance.** Not every claim deserves the full
   treatment. Each claim carries an importance score — roughly

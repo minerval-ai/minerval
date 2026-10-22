@@ -12,7 +12,6 @@ import { rawQuery } from "../../db/client.js";
 import {
   claims,
   assessments,
-  claimInstances,
   arguments_,
   sources,
   contributions,
@@ -24,7 +23,13 @@ import {
 import { trustLevelFor } from "../../services/reputation-service.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import { hasWrittenForm } from "../../services/argument-service.js";
-import { getClaimSourceMap } from "../../services/source-map-service.js";
+import { getSourceMapSummary } from "../../services/source-map-service.js";
+import {
+  DEFAULT_INSTANCE_PAGE,
+  MAX_INSTANCE_PAGE,
+  countClaimInstances,
+  getClaimInstancePage,
+} from "../../services/claim-instance-service.js";
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { listFindings } from "../../services/finding-service.js";
 import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
@@ -33,20 +38,63 @@ import { listRelatedClaims } from "../../services/claim-link-service.js";
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
     {
-      name: "get_claim_with_context",
+      name: "get_claim",
       description:
-        "Get comprehensive context about a claim: its text, type, current " +
-        "assessment, subclaims, instances, and arguments. Use this to " +
-        "understand the full state of a claim before making decisions. " +
-        "decomposition_status \"complete\" only means the claim was handed " +
-        "to its Steward; read steward_state and stewarded_at to tell whether " +
-        "a Steward has actually worked it (stewarded_at null = never run).",
+        "Read a claim as the graph records it: its canonical text, type, " +
+        "state, current assessment, subclaims grouped by argument, arguments " +
+        "with their evaluations, related claims, formalization record, " +
+        "preliminary seed, findings already noted, and Steward state. A claim " +
+        "is a proposition, not a passage in any document, so this returns no " +
+        "sources; instance_count says how many instances it carries, and " +
+        "get_claim_instances reads them. decomposition_status \"complete\" " +
+        "only means the claim was handed to its Steward; read steward_state " +
+        "and stewarded_at to tell whether a Steward has actually worked it " +
+        "(stewarded_at null = never run).",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_id: {
             type: "string",
             description: "The UUID of the claim",
+          },
+        },
+        required: ["claim_id"],
+      },
+    },
+    {
+      name: "get_claim_instances",
+      description:
+        "Read the instances the graph currently records for a claim: each " +
+        "source that asserts, denies or poses the proposition, with the " +
+        "passage, its attribution (speaker, publication, date, link), any " +
+        "reading recorded from opening the source, what it was recorded as " +
+        "drawing on, and where the source sits in the claim's provenance " +
+        "story. These are the instances recorded so far, not a sample of the " +
+        "discourse, and not necessarily the right set; the claim's Steward " +
+        "decides which instances the claim should carry. They come in the " +
+        "order a reader sees them: the Steward's chosen order first, then " +
+        "origins before what derives from them, then by date. Paged: pass " +
+        "offset to continue when has_more is true.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: {
+            type: "string",
+            description: "The UUID of the claim",
+          },
+          limit: {
+            type: "integer",
+            description: `How many instances to return (default ${DEFAULT_INSTANCE_PAGE}, at most ${MAX_INSTANCE_PAGE}).`,
+          },
+          offset: {
+            type: "integer",
+            description: "How many to skip, for the next page (default 0).",
+          },
+          include_detached: {
+            type: "boolean",
+            description:
+              "Also return instances the Steward detached from the claim, " +
+              "after the rest, each with why it was detached. Default false.",
           },
         },
         required: ["claim_id"],
@@ -147,7 +195,8 @@ export function getGovernanceToolDefinitions(): Tool[] {
 // context surface (#100). Those agents get just the claim readers; the
 // Reviewer, Arbitrator, and Audit Agent keep the full bundle.
 const CLAIM_CONTEXT_TOOL_NAMES = new Set([
-  "get_claim_with_context",
+  "get_claim",
+  "get_claim_instances",
   "get_claim_dependents",
 ]);
 
@@ -163,9 +212,16 @@ export async function executeGovernanceTool(
 ): Promise<string> {
   try {
     switch (toolName) {
-      case "get_claim_with_context":
+      case "get_claim":
+        return JSON.stringify(await getClaim(input.claim_id as string), null, 2);
+
+      case "get_claim_instances":
         return JSON.stringify(
-          await getClaimWithContext(input.claim_id as string),
+          await getClaimInstancePage(input.claim_id as string, {
+            limit: input.limit as number | undefined,
+            offset: input.offset as number | undefined,
+            includeDetached: input.include_detached === true,
+          }),
           null,
           2
         );
@@ -214,7 +270,12 @@ export async function executeGovernanceTool(
   }
 }
 
-async function getClaimWithContext(claimId: string) {
+/**
+ * The canonical record of a claim. A claim has no home source, so no
+ * instance is read here: the count says how many it carries, and
+ * get_claim_instances reads them in the order a reader sees them.
+ */
+async function getClaim(claimId: string) {
   const db = getDb();
 
   const [claim] = await db
@@ -264,28 +325,8 @@ async function getClaimWithContext(claimId: string) {
     [claimId]
   );
 
-  // Instances, with the ids the provenance tools take (#286).
-  const instances = await db
-    .select({
-      id: claimInstances.id,
-      sourceId: claimInstances.sourceId,
-      verbatimText: claimInstances.verbatimText,
-      context: claimInstances.context,
-      stance: claimInstances.stance,
-      confidence: claimInstances.confidence,
-      // Attribution metadata (#278/#281), null where unknown: lets a reader
-      // (and a re-running Steward) weigh who said it, where, and when.
-      speaker: claimInstances.speaker,
-      publication: claimInstances.publication,
-      sourceDate: claimInstances.sourceDate,
-      link: claimInstances.link,
-      sourceTitle: sources.title,
-      sourceType: sources.sourceType,
-      sourceUrl: sources.url,
-    })
-    .from(claimInstances)
-    .innerJoin(sources, eq(sources.id, claimInstances.sourceId))
-    .where(eq(claimInstances.claimId, claimId));
+  // How many instances the claim carries; detached ones never count.
+  const instanceCount = await countClaimInstances(claimId);
 
   // Arguments, each with its current evaluation (issue #173) so a re-running
   // steward sees its prior judgment of the inference and can revise or confirm.
@@ -313,11 +354,11 @@ async function getClaimWithContext(claimId: string) {
     evaluations.map((e) => [e.argument_id, e])
   );
 
-  // What the support rests on (#286): the readings recorded for each
-  // instance and the claim's source map, so a re-running Steward sees what
-  // an earlier pass found before deciding how much more to read. A failure
-  // here degrades to no provenance, never a failed read (§20).
-  const sourceMap = await getClaimSourceMap(claim.id).catch(() => null);
+  // The claim's source map (#286): the Steward's account of what the support
+  // rests on, a claim-level summary rather than any one source. Readings and
+  // edges per instance come with get_claim_instances. A failure here
+  // degrades to no map, never a failed read (§20).
+  const sourceMap = await getSourceMapSummary(claim.id).catch(() => null);
 
   // Steward-seeded prior (#285): the hint the parent claim's Steward left when
   // it minted this claim. Served only while the claim has no current
@@ -425,40 +466,10 @@ async function getClaimWithContext(claimId: string) {
     })),
     // The claim's source map (#286): null until a Steward has written one.
     // Refresh it with provenance_write_map when the instances have changed.
-    source_map: sourceMap?.map ?? null,
-    instances: instances.map((inst) => ({
-      id: inst.id,
-      source_id: inst.sourceId,
-      verbatim_text: inst.verbatimText,
-      context: inst.context,
-      // Whether this source affirms or denies the canonical claim — credible
-      // sources with differing stances are a strong CONTESTED signal
-      // (#28/#30); the ingesting document is one instance among these, with
-      // no precedence (#360).
-      stance: inst.stance,
-      confidence: inst.confidence,
-      // Null where unrecorded — most extraction-era instances carry none of
-      // these; steward-recorded sightings (#278) fill what the source showed.
-      speaker: inst.speaker,
-      publication: inst.publication,
-      source_date: inst.sourceDate,
-      link: inst.link,
-      source_title: inst.sourceTitle,
-      source_type: inst.sourceType,
-      source_url: inst.sourceUrl,
-      // The reading recorded from opening this source against the claim
-      // (#286), null until one has been; and the documents this assertion
-      // was recorded as drawing on. Details through provenance_get_map.
-      reading: sourceMap?.readings[inst.id] ?? null,
-      draws_on: (sourceMap?.edges ?? [])
-        .filter((e) => e.from_instance_id === inst.id)
-        .map((e) => ({
-          source_title: e.to_source.title,
-          source_url: e.to_source.url,
-          relation_type: e.relation_type,
-          fidelity: e.fidelity,
-        })),
-    })),
+    source_map: sourceMap,
+    // How many instances the claim carries. The instances themselves, with
+    // readings and attribution, come from get_claim_instances.
+    instance_count: instanceCount,
     arguments: args.map((a) => {
       const evaluation = evaluationByArgument.get(a.id) ?? null;
       return {

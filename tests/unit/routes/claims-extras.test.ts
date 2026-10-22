@@ -142,8 +142,12 @@ vi.mock("../../../src/services/grant-service.js", () => ({
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
 }));
-// The route reads the current assessment and the instances through the
-// query builder; both resolve empty here.
+// The instances come from the ordered read (detached ones excluded); none here.
+vi.mock("../../../src/services/claim-instance-service.js", () => ({
+  listOrderedClaimInstances: vi.fn(async () => []),
+}));
+// The route reads the current assessment through the query builder; it
+// resolves empty here.
 vi.mock("../../../src/db/client.js", () => ({
   getDb: () => ({
     select: () => ({

@@ -381,10 +381,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "arguments bearing on it, and the claims that depend on it. An " +
         "assessment is a verdict reached by direct examination of the " +
         "evidence, with the reasoning included: a status (verified, " +
-        "supported, contested, unsupported, contradicted, or unknown), a " +
+        "supported, inconclusive, doubtful, contradicted, or unknown), a " +
         "confidence that the status is the right reading of the evidence, " +
         "and a credence that the claim is true where a single number is an " +
-        "honest summary (null where it would be false precision). " +
+        "honest summary (null where it would be false precision). How " +
+        "actively the claim is disputed is not a status: it is the claim's " +
+        "`contestation` (0..1, null until judged). " +
         "Dependents come back as the most load-bearing page by importance " +
         "with `dependents_total` beside them, since a hub claim has " +
         "hundreds; page through the rest with `dependents_offset`. A " +
@@ -420,6 +422,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           state: claim.state,
           decomposition_status: claim.decompositionStatus,
           importance: claim.importance,
+          // How actively the claim is disputed or consulted (0..1), kept apart
+          // from the status (#524): a status says where the evidence points,
+          // this says how live the dispute is. null = not yet judged.
+          contestation: claim.contestation ?? null,
           domains: claim.domains,
           // Navigation, never the payload: a tag read failure is an empty
           // list, not a failed claim.
@@ -657,8 +663,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "claim, and report the graph's current assessment of each. Verdicts " +
         "come from assessments reached by direct examination of evidence, " +
         "with the reasoning included, never from a model's recollection. " +
-        "'unknown' means the graph holds no such claim; 'unassessed' means " +
-        "it exists but has no assessment yet. Runs a model: metered to your " +
+        "Statuses run verified, supported, inconclusive, doubtful, " +
+        "contradicted, unknown. 'unknown' with matched: false means the graph " +
+        "holds no such claim; on a matched claim it is the assessed status " +
+        "(not enough information to assess). 'unassessed' means the claim " +
+        "exists but has no assessment yet. Runs a model: metered to your " +
         "account and quota-gated.",
       inputSchema: {
         text: z.string().min(1).max(50_000).describe("The passage to assess"),
@@ -1051,7 +1060,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               "Use the `assess_text` tool on the document, chunking it if it is " +
               "long. For each judged claim, report the verdict the graph " +
               "returned, not your own recollection. A verdict of `unknown` " +
-              "means the graph holds no canonical claim for that assertion; " +
+              "with `matched: false` means the graph holds no canonical claim " +
+              "for that assertion; on a matched claim, `unknown` is the " +
+              "assessed status (not enough information to assess); " +
               "`undecided` means the Matcher reached no verdict (say so, do " +
               "not read it as unknown); " +
               "`unassessed` means the claim exists but has no assessment yet. " +

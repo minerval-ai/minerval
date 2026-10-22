@@ -167,7 +167,7 @@ export const SUPPORT_WORD: Record<InstanceSupport, string> = {
 
 export const SUPPORT_CLS: Record<InstanceSupport, string> = {
   supports: "st-supported",
-  overstates: "st-contested",
+  overstates: "st-inconclusive",
   understates: "st-unknown",
   asserts_without_evidence: "st-contradicted",
   contradicts_own_evidence: "st-contradicted",

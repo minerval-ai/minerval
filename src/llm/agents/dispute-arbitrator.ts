@@ -73,7 +73,7 @@ Contribution ID: ${input.contributionId}`;
 
 Please:
 1. Use get_contribution_details to understand the contribution, any existing review, the reviewer's escalation reason, the appeal (with the appellant's reasoning) when one exists, and any prior arbitration results.
-2. Use get_claim_with_context to understand the target claim in full.
+2. Use get_claim to understand the target claim in full, and get_claim_instances when the dispute concerns what its sources say.
 3. Use get_contributor_profile for the contributor's history.
 4. Use get_recent_decisions to check for precedent in similar cases.
 5. Apply your decision framework: gather context, analyze policies, assess evidence, decide.

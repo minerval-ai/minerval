@@ -24,7 +24,7 @@ const GLOSS: Record<string, { gloss: string; href?: string }> = {
   "noise band": { gloss: "How much a number varies between runs when nothing changed. A difference smaller than that is not a result.", href: "/docs/evals/noise-band" },
   "canonical form": { gloss: "The one neutral wording of a claim that every source's version maps to. About fifteen words.", href: "/docs/constitution" },
   credence: { gloss: "The Steward's probability that a claim is true.", href: "/docs/constitution" },
-  verdict: { gloss: "One of six statuses: verified, supported, contested, unsupported, contradicted, unknown.", href: "/docs/constitution" },
+  verdict: { gloss: "One of six statuses: verified, supported, inconclusive, doubtful, contradicted, unknown.", href: "/docs/constitution" },
   constitution: { gloss: "The public rules every agent is given as the first part of its instructions.", href: "/docs/constitution" },
   production: { gloss: "The live site's configuration, in particular which model each agent runs on.", href: "/docs/evals/models-and-cost" },
   snapshot: { gloss: "A saved copy of a run's database, kept so two runs can be compared later." },

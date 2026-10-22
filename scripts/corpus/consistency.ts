@@ -207,7 +207,7 @@ async function plant(n: number, outDir: string): Promise<void> {
        JOIN assessments ca ON ca.claim_id = c.id AND ca.is_current
       WHERE r.relation_type IN ('requires', 'supports')
         AND ca.status IN ('supported', 'verified')
-        AND pa.status IN ('supported', 'verified', 'contested')
+        AND pa.status IN ('supported', 'verified', 'inconclusive')
       ORDER BY p.importance DESC, r.relation_type = 'requires' DESC, c.importance DESC`
   );
   // ignored_counterevidence: a parent with a recorded, credible 'contradicts'
@@ -222,8 +222,8 @@ async function plant(n: number, outDir: string): Promise<void> {
        JOIN assessments pa ON pa.claim_id = p.id AND pa.is_current
        JOIN assessments ca ON ca.claim_id = c.id AND ca.is_current
       WHERE r.relation_type = 'contradicts'
-        AND ca.status IN ('supported', 'verified', 'contested')
-        AND pa.status IN ('supported', 'contested', 'unsupported')
+        AND ca.status IN ('supported', 'verified', 'inconclusive')
+        AND pa.status IN ('supported', 'inconclusive', 'doubtful')
       ORDER BY p.importance DESC, c.importance DESC`
   );
   const pools = { flipped_premise: flips, ignored_counterevidence: ignored };

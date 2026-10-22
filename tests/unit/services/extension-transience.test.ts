@@ -102,7 +102,7 @@ vi.mock("../../../src/llm/agents/extension-agent.js", async () => {
     extensionChat: () =>
       withAgent("extension", async () => {
         mocks.seen.push({ ...getUsageContext() });
-        return { reply: "The graph holds this claim as contested." };
+        return { reply: "The graph holds this claim as inconclusive." };
       }),
   };
 });
@@ -113,7 +113,7 @@ vi.mock("../../../src/services/claim-service.js", () => ({
 }));
 vi.mock("../../../src/services/assessment-service.js", () => ({
   getCurrentAssessment: async () => ({
-    status: "contested",
+    status: "inconclusive",
     confidence: 0.8,
     reasoningTrace: "Credible parties on both sides.",
   }),
@@ -180,7 +180,7 @@ describe("extension transience (#356)", () => {
         page: { url: PAGE.url, title: PAGE.title, claims: [] },
       })
     );
-    expect(reply).toContain("contested");
+    expect(reply).toContain("inconclusive");
     expect(mocks.insertValues).not.toHaveBeenCalled();
     expect(mocks.updateWhere).not.toHaveBeenCalled();
     expect(mocks.seen).toHaveLength(1);

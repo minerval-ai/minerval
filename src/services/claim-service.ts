@@ -5,8 +5,6 @@ import {
   assessments,
   arguments_,
   bounties,
-  claimInstances,
-  sources,
   type NewClaim,
 } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -14,6 +12,7 @@ import { createJob } from "./job-service.js";
 import { enqueueClaimPipeline } from "./queue-service.js";
 import { loadConfig } from "../config.js";
 import { LIVE_BOUNTY_STATUSES, checkedKindSql } from "./formalization-service.js";
+import { listOrderedClaimInstances } from "./claim-instance-service.js";
 
 /**
  * Create a new claim with an initial argument, generate embedding, and enqueue for processing.
@@ -196,25 +195,23 @@ export async function getClaimById(claimId: string) {
 }
 
 /**
- * Source instances of a claim — where in the corpus it was asserted, and with
- * what stance. The claim page's provenance panel and the MCP `get_claim` tool
- * (#73) share this shape.
+ * Source instances of a claim: where in the corpus it was asserted. The MCP
+ * `get_claim` tool (#73) and the agents' graph read share this shape. Only
+ * the instances the claim carries (detached ones are not its), in the order
+ * a reader sees them: the Steward's ranks, then the provenance story's
+ * order, then the date of the statement.
  */
 export async function getClaimInstances(claimId: string) {
-  const db = getDb();
-  return db
-    .select({
-      id: claimInstances.id,
-      source_id: claimInstances.sourceId,
-      verbatim_text: claimInstances.verbatimText,
-      context: claimInstances.context,
-      confidence: claimInstances.confidence,
-      source_title: sources.title,
-      source_url: sources.url,
-    })
-    .from(claimInstances)
-    .innerJoin(sources, eq(claimInstances.sourceId, sources.id))
-    .where(eq(claimInstances.claimId, claimId));
+  const rows = await listOrderedClaimInstances(claimId);
+  return rows.map((r) => ({
+    id: r.id,
+    source_id: r.source_id,
+    verbatim_text: r.verbatim_text,
+    context: r.context,
+    confidence: r.confidence,
+    source_title: r.source_title,
+    source_url: r.source_url,
+  }));
 }
 
 /**

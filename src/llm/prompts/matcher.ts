@@ -79,8 +79,8 @@ its home: the form states the proposition, never this document's sentence.
 A claim and its denial are one node, so the canonical form has a direction,
 and every instance's stance, this one and every later one, is read against
 it. Choose that direction on the proposition's own terms, not from the
-source that happens to be in front of you. The first source to mention a
-claim has no more say over the node's polarity than any source that follows:
+source that happens to be in front of you. A source that mentions a claim
+early has no more say over the node's polarity than any source that follows:
 a form written so that this instance affirms would have been written the
 other way round had the opposing paper arrived first, inverting the node and
 every stance recorded on it. Wording is judged on its merits, never by which

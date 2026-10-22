@@ -33,7 +33,7 @@ Conservative by default, progressively disclosing:
 
 - **Conservative (default)**: only claims the agent judges *egregiously
   misleading or wrong as written* get a red underline.
-- **Moderate**: also marks contested claims (calmer, dotted).
+- **Moderate**: also marks unsettled claims stated as settled (calmer, dotted).
 - **Aggressive**: also oversimplified and noteworthy claims.
 - **Hover**: compact card with the canonical claim, graph status, and a
   one-line why.

@@ -39,7 +39,7 @@ export function bedrockOf(
   if (claimType === "empirical_verifiable" && (status === "verified" || status === "contradicted")) {
     return "fact";
   }
-  if (status === "contested") return "open";
+  if (status === "inconclusive") return "open";
   return null;
 }
 
@@ -50,7 +50,7 @@ export const BEDROCK: Record<BedrockKind, { tag: string; note: string }> = {
   },
   open: {
     tag: "bedrock · open question",
-    note: "Bedrock: a genuinely open empirical question. The graph records the disagreement rather than resolving it.",
+    note: "Bedrock: a genuinely open empirical question. The evidence, examined, does not come down on either side, and the graph records that rather than forcing a resolution.",
   },
   value: {
     tag: "bedrock · value premise",

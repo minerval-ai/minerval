@@ -42,11 +42,11 @@ function fixture(): CascadeInput {
       // Prior verdicts on Q, S, R (before the window's runs).
       { claimId: "Q", status: "supported", credence: 0.7, assessedAt: t(1), trigger: "structure_and_assess" },
       { claimId: "S", status: "supported", credence: 0.6, assessedAt: t(1), trigger: "structure_and_assess" },
-      { claimId: "R", status: "contested", credence: 0.5, assessedAt: t(1), trigger: "structure_and_assess" },
+      { claimId: "R", status: "inconclusive", credence: 0.5, assessedAt: t(1), trigger: "structure_and_assess" },
       { claimId: "P", status: "supported", credence: 0.8, assessedAt: t(11), trigger: "structure_and_assess" },
-      { claimId: "Q", status: "contested", credence: 0.45, assessedAt: t(21), trigger: "subclaim_change" },
+      { claimId: "Q", status: "inconclusive", credence: 0.45, assessedAt: t(21), trigger: "subclaim_change" },
       { claimId: "S", status: "supported", credence: 0.63, assessedAt: t(25), trigger: "subclaim_change" },
-      { claimId: "R", status: "unsupported", credence: 0.3, assessedAt: t(31), trigger: "subclaim_change" },
+      { claimId: "R", status: "doubtful", credence: 0.3, assessedAt: t(31), trigger: "subclaim_change" },
       { claimId: "X", status: "verified", credence: 0.95, assessedAt: t(41), trigger: "structure_and_assess" },
     ],
   };
@@ -117,10 +117,10 @@ describe("analyzeCascade", () => {
     const input = fixture();
     input.assessments.push(
       { claimId: "Q", status: "supported", credence: 0.7, assessedAt: t(50), trigger: "staleness_check" },
-      { claimId: "Q", status: "contested", credence: 0.45, assessedAt: t(60), trigger: "staleness_check" }
+      { claimId: "Q", status: "inconclusive", credence: 0.45, assessedAt: t(60), trigger: "staleness_check" }
     );
     const r = analyzeCascade(input);
-    // supported → contested → supported → contested: two A→B→A windows.
+    // supported → inconclusive → supported → inconclusive: two A→B→A windows.
     expect(r.oscillations.status).toBe(2);
     expect(r.oscillations.credence).toBe(2);
     expect(r.oscillations.claims).toEqual(["Q"]);

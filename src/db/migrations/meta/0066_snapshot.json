@@ -1,5 +1,5 @@
 {
-  "id": "6028881a-4efe-476e-8e07-40bcc4a64a28",
+  "id": "41b86029-03ca-4035-801b-ff1f1dd815ca",
   "prevId": "7c41a4b5-7ab0-483d-8a24-f3292972ac74",
   "version": "7",
   "dialect": "postgresql",
@@ -10780,56 +10780,6 @@
           "value": "spent_micro_usd >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.shared_page_analyses": {
-      "name": "shared_page_analyses",
-      "schema": "",
-      "columns": {
-        "url_hash": {
-          "name": "url_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "annotations": {
-          "name": "annotations",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "extracted": {
-          "name": "extracted",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "analyzed_at": {
-          "name": "analyzed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.source_events": {

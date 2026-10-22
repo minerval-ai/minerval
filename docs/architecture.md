@@ -248,8 +248,8 @@ Two design decisions follow:
   discussion surface: contributor exchanges stay in the contribution record.
 - **Arguments are optional and non-exhaustive.** A claim with one natural
   decomposition needs no explicitly named argument; its edges simply have no
-  membership row. Admins create arguments when a line of reasoning is live in
-  the discourse, not preemptively.
+  membership row. Admins create arguments when a distinct line of reasoning
+  bears on the claim, whether or not a source has yet made it.
 - **Arguments may share subclaims.** Membership is a relation between an
   argument and an edge (`argument_subclaims`), not a column on the edge, so
   the same premise can be grouped under several of a claim's arguments,
@@ -428,7 +428,20 @@ beside each instance, and the edges behind a disclosure, in words), on
 `GET /claims/:id?information_depth=deep` (`source_map`, `provenance_edges`,
 `source_relationships`, and each instance's `reading`), on the MCP
 `get_claim` tool with `include: ["provenance"]`, and in the Steward's own
-`get_claim_with_context`.
+`get_claim_instances`.
+
+A claim is a canonical proposition with no home source, so the admin
+`get_claim` read returns the canonical record and an `instance_count`, never
+the instances; `get_claim_instances` pages through them. The Steward decides
+which instances the claim carries and in what order: `detach_claim_instance`
+removes one whose source does not assert, deny or pose the proposition
+(`claim_instances.detached_at`, with the reason in the audit trail; the row
+stays for the provenance record, and `reattach_claim_instance` restores it),
+and `set_instance_order` ranks the instances a reader should see first
+(`display_rank`). Every read that shows or weighs a claim's instances, from
+the claim page to the provenance story and the monitors, skips detached
+rows, and the rest follow the Steward's ranks, then the provenance story's
+order (origins first), then the date of the statement.
 
 ### Contributions and governance
 
@@ -480,25 +493,40 @@ six statuses the constitution defines:
 
 | Status | Meaning |
 |--------|---------|
-| `verified` | Traces to reliable primary sources through a clear evidence chain. |
-| `supported` | Evidence favors the claim, but the chain is incomplete or sources are secondary. |
-| `contested` | Credible evidence or argument exists on multiple sides. |
-| `unsupported` | No credible evidence found, though the claim is not contradicted. |
-| `contradicted` | Available evidence actively weighs against the claim. |
+| `verified` | The evidence, examined directly, establishes the claim. |
+| `supported` | The evidence favors the claim, but the examination is incomplete or the evidence is indirect. |
+| `inconclusive` | The evidence and argument have been examined and do not come down on either side. |
+| `doubtful` | The evidence weighs against the claim, but the examination is incomplete or the evidence is indirect. The mirror of `supported`. |
+| `contradicted` | The evidence, examined directly, weighs against the claim. |
 | `unknown` | Insufficient information to assess. |
 
+The statuses form an evidential ladder: they describe the evidence, not the
+debate. Until #524 the set held `contested` (credible evidence on multiple
+sides) and `unsupported` (no credible evidence found). `contested` described
+the disagreement rather than the evidence and let a verdict be avoided;
+`unsupported` merged two cases the ladder now separates (`doubtful` where
+evidence would exist if the claim were true, `unknown` where it would not be
+expected). Migration 0066 relabeled existing rows provisionally
+(`contested` to `inconclusive`, `unsupported` to `unknown`) and queued the
+affected claims for a fresh Steward pass.
+
+How actively a claim is disputed is not a status. It is the claim's
+`contestation` (0..1, set by the Steward with importance), served on the
+claim and shown beside the verdict on the claim page, e.g. "Doubtful ·
+actively disputed" at contestation 0.6 or above, "disputed" from 0.3.
+
 The colour treatment in the UI is deliberately muted and never a traffic light:
-`supported` and `verified` are distinct shades of green, `contested` is amber,
-`contradicted` is a clay red, and the rest are warm neutrals. Meaning never
-depends on colour alone.
+`supported` and `verified` are distinct shades of green, `inconclusive` is
+amber, `doubtful` a muted clay and `contradicted` a clay red, and the rest
+are warm neutrals. Meaning never depends on colour alone.
 
 ### Judgment-based propagation
 
 Assessment is a holistic judgment by the claim's Steward, **not** a mechanical
 roll-up of child statuses. An earlier design used hard aggregation rules ("if
-any required subclaim is `contested`, the parent is `contested`"). At scale
-that makes contestation infectious: almost every claim eventually inherits a
-contested subclaim somewhere deep in its tree, and the status field becomes
+any required subclaim is unsettled, the parent is unsettled"). At scale that
+makes uncertainty infectious: almost every claim eventually inherits an
+unsettled subclaim somewhere deep in its tree, and the status field becomes
 useless.
 
 Instead, the Steward weighs the status of subclaims across all arguments, the
@@ -577,7 +605,7 @@ These act through tools over the life of a claim and the graph:
   a staleness check, and, on mathematical claims, a formal statement to
   publish or review, a completed solver attempt, or a prize claim to judge
   for fidelity. Effort scales with importance; consequential or
-  contested claims get deeper search (including bounded web search) and an
+  disputed claims get deeper search (including bounded web search) and an
   adversarial second pass, minor settled ones a light touch. Decomposition
   terminates without a depth cap because shared ancestors get linked, not
   re-created; recursion is bounded economically by the importance brake, and a

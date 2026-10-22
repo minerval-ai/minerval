@@ -7,7 +7,7 @@
  * Steward's audit-log entries, and, for mathematics (docs/mathematics.md
  * §11.1), the formal statement's lifecycle, the checker's verdicts, the
  * bounty and its prize claims, and the house solver's attempts. Most claims
- * have only a creation and a single assessment; a contested claim can
+ * have only a creation and a single assessment; a disputed claim can
  * accumulate dozens of entries from several parties — the event list is
  * flat and typed so both extremes render the same way.
  *
