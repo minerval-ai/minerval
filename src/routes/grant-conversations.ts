@@ -6,7 +6,10 @@
  *   GET  /grant-conversations/:id          — one conversation with mandate.
  *   POST /grant-conversations/:id/messages — continue the conversation.
  *   POST /grant-conversations/:id/fund     — escrow the budget and turn the
- *     drafted mandate into a live grant.
+ *     drafted mandate into a live grant. Refused for the platform account,
+ *     whose mandates are funded under a public approval (#529).
+ *   GET  /grant-conversations/platform/:id — one of the platform's
+ *     conversations, public (#529).
  *
  * There is no form: the Grantmaker agent (best model, constitution loaded)
  * designs the mandate in the conversation, quotes costs in owls, and can
@@ -23,6 +26,7 @@ import {
   listConversations,
   serializeConversation,
 } from "../services/grant-conversation-service.js";
+import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 
 const MESSAGE_BODY = {
   type: "object",
@@ -72,6 +76,32 @@ export async function grantConversationRoutes(
       return reply.send({
         conversations: rows.map(serializeConversation),
       });
+    },
+  });
+
+  // A platform granting conversation, readable by anyone (#529): the
+  // reasoning behind every platform mandate is on the public record, and
+  // the CI check on a funding request reads the draft and its hash here.
+  // A person's conversations are never served by this route.
+  app.get<{ Params: { id: string } }>("/platform/:id", {
+    schema: {
+      tags: ["grants"],
+      summary:
+        "Read one of the platform's granting conversations: transcript, standing draft, and the draft's hash (public)",
+      params: {
+        type: "object",
+        properties: { id: { type: "string", format: "uuid" } },
+      },
+    },
+    handler: async (request, reply) => {
+      const convo = await getPublicPlatformConversation(request.params.id);
+      if (!convo) {
+        return reply.code(404).send({
+          error: "No platform granting conversation has that id",
+          code: "NOT_FOUND",
+        });
+      }
+      return reply.send({ conversation: convo });
     },
   });
 
@@ -172,7 +202,9 @@ export async function grantConversationRoutes(
               ? 404
               : result.code === "INSUFFICIENT_OWLS"
                 ? 402
-                : 409;
+                : result.code === "PLATFORM_FUNDS_BY_APPROVAL"
+                  ? 403
+                  : 409;
           return reply
             .code(status)
             .send({ error: result.message, code: result.code });

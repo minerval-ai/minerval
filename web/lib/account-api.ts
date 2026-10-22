@@ -816,6 +816,16 @@ export interface MandateDetailView extends MandateSummaryView {
   scope_claim_id: string | null;
   scope_query: string | null;
   budget_status: string;
+  // The public approval behind a platform-funded mandate (#529): the merged
+  // pull request, who merged it, and the platform's granting conversation.
+  platform_approval?: {
+    approval_url: string;
+    approved_by: string;
+    mandate_sha256: string;
+    budget_owls: number;
+    conversation_id: string;
+    funded_at: string;
+  } | null;
   funded_by_mandates: MandateRegrantEdge[];
   regrants_out: MandateRegrantEdge[];
   last_review: { at: string; note: string } | null;

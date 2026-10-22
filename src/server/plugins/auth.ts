@@ -6,7 +6,10 @@
  *  1. DB-backed API key (x-api-key) — minted from the dashboard, stored
  *     hashed. Resolves to the owning user. scope='service' keys are trusted
  *     first-party keys (the web BFF) and may act ON BEHALF OF another user
- *     via the x-acting-user header (the dashboard session path).
+ *     via the x-acting-user header (the dashboard session path), never on
+ *     behalf of the platform account. scope='platform_grantmaking' keys
+ *     resolve to the platform account and are accepted only on the
+ *     granting-conversation routes, never /fund (#529).
  *
  *  2. Env-configured key (API_KEYS) — operator-provisioned bootstrap keys
  *     ("key" or "key:contributor_external_id" entries). Treated as service-
@@ -39,6 +42,10 @@ import {
   getContributorByExternalId,
   getOrCreateContributor,
 } from "../../services/contributor-service.js";
+import {
+  PLATFORM_EXTERNAL_ID,
+  PLATFORM_GRANTMAKING_SCOPE,
+} from "../../services/platform-account.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
 
@@ -61,6 +68,23 @@ export interface RequestAuth {
 }
 
 export const DEV_EXTERNAL_ID = "dev:local";
+
+/**
+ * The routes a platform-grantmaking key may call (#529): open, continue,
+ * list, and read the platform's granting conversations. Never `/fund`:
+ * the platform's money moves only through the operator route.
+ */
+export function platformGrantmakingRouteAllowed(
+  method: string,
+  routePath: string
+): boolean {
+  const path = routePath.split("?")[0]!;
+  if (path !== "/grant-conversations" && !path.startsWith("/grant-conversations/")) {
+    return false;
+  }
+  if (method === "POST" && /\/fund\/?$/.test(path)) return false;
+  return true;
+}
 
 /**
  * Constant-time comparison of a presented operator key against the
@@ -162,6 +186,24 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
               code: "ACCOUNT_SUSPENDED",
             });
           }
+          // A platform-grantmaking key holds the platform's granting
+          // conversations and nothing else (#529): it is refused on every
+          // other route, and on /fund, because the platform's money moves
+          // only through the operator route that a public approval pins.
+          if (
+            resolved.key.scope === PLATFORM_GRANTMAKING_SCOPE &&
+            !platformGrantmakingRouteAllowed(
+              request.method,
+              request.routeOptions.url ?? request.url
+            )
+          ) {
+            return reply.code(403).send({
+              error:
+                "This key holds the platform's granting conversations and " +
+                "is accepted only on /grant-conversations (never /fund)",
+              code: "KEY_SCOPE_PLATFORM_GRANTMAKING",
+            });
+          }
           auth = {
             method: "api_key",
             userId: resolved.user.id,
@@ -217,6 +259,16 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           return reply.code(403).send({
             error: "This API key cannot act on behalf of a user",
             code: "ACTING_USER_FORBIDDEN",
+          });
+        }
+        // Nobody acts as the platform through this header (#529): it is how
+        // the web tier reaches the API for a signed-in person, and the
+        // platform signs in nowhere. Its agency runs through the
+        // platform-grantmaking key and the operator key alone.
+        if (actingExternalId === PLATFORM_EXTERNAL_ID) {
+          return reply.code(403).send({
+            error: "The platform account cannot be acted for",
+            code: "PLATFORM_NOT_ACTABLE",
           });
         }
         const actingUser = await getContributorByExternalId(actingExternalId);

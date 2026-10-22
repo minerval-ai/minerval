@@ -1440,6 +1440,15 @@ the credential kind and the acting person; the deposit, which has no
 claim, is appended to the `prize_fund_deposits` platform flag instead. The
 service key alone moves no money.
 
+The same operator key funds platform mandates (#529), which are designed in
+a granting conversation like anyone's. The platform account holds that
+conversation through a key scoped to `/grant-conversations` alone, and
+nobody can act as the platform through `x-acting-user`. Its money moves
+through one route, `POST /operator/platform-mandates/fund`, called by the
+Platform mandates workflow after a merged pull request pins the
+Grantmaker's draft by hash. The route records that approval on the grant.
+See docs/allocation.md, "Platform mandates".
+
 ---
 
 ## Deployment

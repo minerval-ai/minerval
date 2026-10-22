@@ -34,7 +34,7 @@
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { getOrCreateContributor } from "./contributor-service.js";
+import { PLATFORM_EXTERNAL_ID, getPlatformAccountId } from "./platform-account.js";
 import { requestAudit } from "./queue-service.js";
 import { emitClaimEvent } from "./claim-events-service.js";
 import { checkedKindSql } from "./formalization-service.js";
@@ -102,16 +102,9 @@ export function formatOwls(micro: number): string {
   return rounded === 1 ? `${body} owl` : `${body} owls`;
 }
 
-export const PLATFORM_EXTERNAL_ID = "platform:minerval";
-
-/** The platform account (the seed's `platform:minerval`), created on first use. */
-export async function getPlatformAccountId(): Promise<string> {
-  const row = await getOrCreateContributor({
-    externalId: PLATFORM_EXTERNAL_ID,
-    displayName: "Minerval",
-  });
-  return row.id;
-}
+// The platform account lives in platform-account.ts; re-exported here for
+// the prize paths that have always imported it from this module.
+export { PLATFORM_EXTERNAL_ID, getPlatformAccountId };
 
 // ---------------------------------------------------------------------------
 // Rows and reads

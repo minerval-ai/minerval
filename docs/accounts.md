@@ -52,7 +52,13 @@ Order of resolution in `src/server/plugins/auth.ts`:
 1. **DB-backed key** (`x-api-key: epk_…`) — minted from the dashboard, stored
    as a SHA-256 hash, resolved to its owning user. `scope='service'` keys are
    first-party (the web BFF) and may additionally send
-   `x-acting-user: <externalId>` to act on behalf of a signed-in user.
+   `x-acting-user: <externalId>` to act on behalf of a signed-in user, never
+   on behalf of the platform account (`PLATFORM_NOT_ACTABLE`).
+   `scope='platform_grantmaking'` keys resolve to the platform account
+   (`platform:minerval`) and are accepted only on `/grant-conversations`,
+   never on `/fund`. They're minted with the operator key and hold the
+   platform's granting conversations (docs/allocation.md, "Platform
+   mandates", #529).
 2. **Env key** (`API_KEYS` entries) — operator bootstrap keys, service-trusted.
    This is how the web frontend authenticates today.
 3. **OAuth access token** (`Authorization: Bearer eoat_…`) — issued by the
@@ -70,7 +76,7 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the seven operator routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below) |
+| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`) |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
@@ -96,9 +102,12 @@ key alone can neither redirect a prize nor abandon a winning claim. Every
 call to a writing route among these is written to `audit_log` on the claim
 with the credential kind and the acting person (`prize_route:*`). There is
 no deposit route: a prize is owls held against the escrow of the mandate
-that posted it, and a platform mandate's escrow is funded by the seed
-(`scripts/seed-platform-mandates.ts`). The service key alone moves no
-money.
+that posted it. A platform mandate's escrow is funded either by the seed
+(`scripts/seed-platform-mandates.ts`, for the standing mandates) or by
+`POST /operator/platform-mandates/fund`, which the Platform mandates
+workflow calls with the operator key (held in GitHub secrets) once a
+merged pull request pins the Grantmaker's draft (#529). The service key
+alone moves no money.
 
 ## The per-token meter
 
@@ -434,7 +443,10 @@ owls earned. `/signin` lists whichever providers are configured.
   independent.
 - `MINERVAL_OPERATOR_KEY` is never set on the Vercel project or on the API
   task's environment for the web tier's benefit; it is held by the operator
-  and presented only on the eight operator routes above. The Lean checker's
+  and presented only on the operator routes above. A copy lives in the
+  repository's GitHub secrets for one purpose: the Platform mandates
+  workflow, which presents it only to fund a draft a merged pull request
+  pinned (#529). The Lean checker's
   bearer token is a Secrets Manager entry created by the checker stack and
   read by the API task alone (docs/infrastructure.md).
 

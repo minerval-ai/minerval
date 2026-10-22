@@ -2102,6 +2102,11 @@ export const grants = pgTable(
     // Grantmaker's view and nothing else; the agents that write to the graph
     // take their skills from the claim, never from the funder.
     skills: text("skills").array().notNull().default([]),
+    // The public approval behind a platform-funded mandate (#529): the
+    // reviewed pull request that put Minerval's money behind the
+    // Grantmaker's draft, who merged it, and the draft's hash. Null for
+    // every mandate a person funds and for the seeded standing mandates.
+    platformApproval: jsonb("platform_approval"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

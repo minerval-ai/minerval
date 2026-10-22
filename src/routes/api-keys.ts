@@ -14,7 +14,7 @@ import {
   revokeApiKey,
 } from "../services/api-key-service.js";
 
-function serializeKey(key: ApiKey) {
+export function serializeKey(key: ApiKey) {
   return {
     id: key.id,
     name: key.name,

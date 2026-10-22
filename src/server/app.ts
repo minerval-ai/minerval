@@ -32,6 +32,7 @@ import { consistencyRoutes } from "../routes/consistency.js";
 import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
 import { mandateRoutes } from "../routes/mandates.js";
+import { platformMandateRoutes } from "../routes/platform-mandates.js";
 import { reportRoutes } from "../routes/reports.js";
 import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
@@ -86,6 +87,9 @@ export async function buildApp() {
     prefix: "/grant-conversations",
   });
   await app.register(mandateRoutes, { prefix: "/mandates" });
+  // Operator-key routes for platform mandates (#529): fund a pinned draft,
+  // and mint the key that holds the platform's granting conversations.
+  await app.register(platformMandateRoutes, { prefix: "/operator" });
   await app.register(reportRoutes, { prefix: "/reports" });
   await app.register(findingRoutes, { prefix: "/findings" });
   await app.register(tagRoutes, { prefix: "/tags" });

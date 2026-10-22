@@ -235,7 +235,10 @@ storage past about 5 GB, or a second region.
   operator page. It is held outside the web deployment, in the operator's
   own password manager or a Secrets Manager entry the web task cannot
   read, and used only from the operator's own session. It is never set on
-  the Vercel project.
+  the Vercel project. One copy is held in the repository's GitHub secrets
+  (`MINERVAL_OPERATOR_KEY`) for the Platform mandates workflow, which
+  presents it only to `POST /operator/platform-mandates/fund`, to fund a
+  draft that a merged pull request pinned (#529).
 - Nothing else is baked into the checker image or its environment, because
   the cold lane runs a claimant's code.
 - A payout provider's key arrives only with cash payouts, in its own entry,

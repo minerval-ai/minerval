@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { apiKeys, contributors, type ApiKey, type Contributor } from "../db/schema.js";
+import type { PLATFORM_GRANTMAKING_SCOPE } from "./platform-account.js";
 
 export const API_KEY_PREFIX = "epk_";
 const DISPLAY_PREFIX_LENGTH = 12; // "epk_" + 8 chars, enough to identify a key
@@ -32,7 +33,12 @@ export interface CreatedApiKey {
 export async function createApiKey(input: {
   userId: string;
   name: string;
-  scope?: "user" | "service";
+  /**
+   * "user" (the default), "service" (first-party, may act for a user), or
+   * "platform_grantmaking": the platform account's conversation-only key,
+   * minted with the operator key (services/platform-account.ts).
+   */
+  scope?: "user" | "service" | typeof PLATFORM_GRANTMAKING_SCOPE;
 }): Promise<CreatedApiKey> {
   const plaintext = generateApiKeyPlaintext();
   const db = getDb();

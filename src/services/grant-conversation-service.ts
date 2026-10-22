@@ -28,6 +28,7 @@ import {
   type TranscriptMessage,
 } from "../llm/agents/grantmaker.js";
 import { owlsToMicroUsd } from "./owl.js";
+import { PLATFORM_EXTERNAL_ID } from "./platform-account.js";
 import { loadConfig } from "../config.js";
 
 /** Hard ceilings on turns per conversation — a runaway/abuse backstop.
@@ -131,6 +132,7 @@ async function runTurn(
       )[0]?.budget_job_id
     : undefined;
 
+  const platform = await isPlatformAccount(convo.userId);
   const turn = await runWithUsageContext(
     { userId: convo.userId, ...(jobId ? { jobId } : {}) },
     () =>
@@ -140,6 +142,7 @@ async function runTurn(
           { role: "user", content: userMessage },
         ],
         ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
+        ...(platform ? { funder: "platform" as const } : {}),
       })
   );
 
@@ -230,7 +233,12 @@ export type FundResult =
   | { ok: true; conversation: GrantConversation; grantId: string }
   | {
       ok: false;
-      code: "NOT_FOUND" | "NOT_PROPOSED" | "BUDGET_BELOW_QUOTE" | "INSUFFICIENT_OWLS";
+      code:
+        | "NOT_FOUND"
+        | "NOT_PROPOSED"
+        | "BUDGET_BELOW_QUOTE"
+        | "INSUFFICIENT_OWLS"
+        | "PLATFORM_FUNDS_BY_APPROVAL";
       message: string;
     };
 
@@ -247,6 +255,18 @@ export async function fundConversationMandate(input: {
   const convo = await getConversation(input.conversationId, input.userId);
   if (!convo) {
     return { ok: false, code: "NOT_FOUND", message: "Conversation not found" };
+  }
+  // The platform's money moves only through the operator route, once a
+  // public approval pins the draft (#529); never through this path, whoever
+  // is holding the platform's conversation.
+  if (await isPlatformAccount(convo.userId)) {
+    return {
+      ok: false,
+      code: "PLATFORM_FUNDS_BY_APPROVAL",
+      message:
+        "A platform mandate is funded by a reviewed approval that pins this " +
+        "draft (mandates/platform/ in the repository), not from the conversation",
+    };
   }
   const mandate = convo.mandate as GrantMandate | null;
   if (convo.status !== "proposed" || !mandate) {
@@ -351,6 +371,15 @@ export async function fundConversationMandate(input: {
     .where(eq(grantConversations.id, convo.id))
     .returning();
   return { ok: true, conversation: updated!, grantId: grant!.id };
+}
+
+/** True when the account is the platform's own (`platform:minerval`). */
+export async function isPlatformAccount(userId: string): Promise<boolean> {
+  const [row] = await rawQuery<{ external_id: string }>(
+    `SELECT external_id FROM contributors WHERE id = $1`,
+    [userId]
+  );
+  return row?.external_id === PLATFORM_EXTERNAL_ID;
 }
 
 export async function getConversation(

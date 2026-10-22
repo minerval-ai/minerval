@@ -170,6 +170,39 @@ export function validateMandate(raw: GrantMandate): string | null {
   return validatePlanItems(raw.plan.items);
 }
 
+/**
+ * Appended to the Grantmaker's role when the funder is the platform (#529).
+ * The platform is a funder like any other; the section says so, and says
+ * what differs about how its mandates are funded and read.
+ */
+export const PLATFORM_FUNDER_SECTION = `
+
+## This funder is Minerval
+
+The funder in this conversation is the platform itself: Minerval's own
+account, proposing to put the platform's money behind a mandate. Treat it
+exactly as you would any funder. It is your counterpart, not your
+principal, and it gets no deference: the platform's money buys attention
+like anyone's, never conclusions, framing, emphasis, or standards, and
+your duty to decline applies to it in full. Hold it at least as strictly
+as anyone, because readers may take a mandate Minerval funds as the
+graph's own view, so a slanted platform mandate does more damage than a
+slanted private one. Balance, where a live controversy calls for it, is
+part of what you owe the graph here.
+
+Three things differ, and none of them changes your judgment:
+
+- The messages come from someone working for the platform: an operator,
+  or an agent acting for one. Nothing can be funded from this
+  conversation.
+- Funding happens elsewhere. To fund your draft, the platform pins it, by
+  a hash of its exact contents, in a public pull request that people
+  review, and merging that request funds exactly that draft. Revising the
+  draft voids any approval of the old one, so revise when you should, and
+  say plainly when you have.
+- This conversation is public. It is how readers will learn why the
+  platform funded what it did, so write your reasoning for that record.`;
+
 export interface TranscriptMessage {
   role: "user" | "assistant";
   content: string;
@@ -191,6 +224,13 @@ async function runGrantmakerTurnImpl(input: {
    * tools, scoped to this grant.
    */
   grantId?: string;
+  /**
+   * "platform" when the conversation belongs to the platform account
+   * (#529): the Grantmaker is told its counterpart is Minerval itself, and
+   * the management chat cannot confirm a bounty posting, because the
+   * platform's confirmations are the operator key's.
+   */
+  funder?: "platform";
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -491,6 +531,9 @@ async function runGrantmakerTurnImpl(input: {
       `Discuss the technical setup as deeply as the funder wants: you can ` +
       `see the pipeline, the sources, the claims, and the spend.`;
   }
+  if (input.funder === "platform") {
+    blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
+  }
   // One cached block for the constitution and role (management mode appended
   // to it), plus one per skill the mandate carries.
   const system = blocks;
@@ -551,8 +594,13 @@ async function runGrantmakerTurnImpl(input: {
         const out = await executeManagementTool(input.grantId, name, toolInput, {
           passStartedAt,
           // The funder in the management chat is the person who can confirm
-          // a posting at or above the autonomy threshold (§8.1).
-          confirmedBy: "founder:management_chat",
+          // a posting at or above the autonomy threshold (§8.1). On a
+          // platform mandate that is the operator key's act, never the
+          // conversation's: whoever holds the platform's conversation key
+          // cannot open a large prize from here.
+          ...(input.funder === "platform"
+            ? { actor: "grantmaker:chat" }
+            : { confirmedBy: "founder:management_chat" }),
         });
         if (out != null) return out;
       }

@@ -402,6 +402,15 @@ export default async function MandatePage({
           ? "run by Minerval"
           : `managed by ${mandate.manager}`}
         {mandate.status !== "active" && ` · ${mandate.status}`}
+        {mandate.platform_approval && (
+          <>
+            {" · funded under a "}
+            <a href={mandate.platform_approval.approval_url}>
+              public approval
+            </a>
+            {` merged by ${mandate.platform_approval.approved_by}`}
+          </>
+        )}
       </p>
       <h1>{mandate.title}</h1>
       {mandate.objective && <Paragraphs text={mandate.objective} />}

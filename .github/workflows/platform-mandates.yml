@@ -1,0 +1,83 @@
+name: Platform mandates
+
+# Platform mandates go through the Grantmaker; their money is approved in a
+# public pull request (#529, docs/allocation.md "Platform mandates").
+#
+#  - verify: on a pull request that touches mandates/platform/, check every
+#    request file: well-formed, the draft snapshot hashes to its pin, the
+#    budget covers the Grantmaker's quote, and the live public conversation
+#    still holds exactly that draft. Needs no secrets.
+#  - fund: after Deploy succeeds on main, fund each request whose
+#    conversation is not yet funded, under the merged pull request that last
+#    changed its file, with the operator key. Idempotent: an already-funded
+#    conversation is skipped, and the route never buys owls twice.
+
+on:
+  pull_request:
+    paths:
+      - "mandates/platform/**"
+      - "scripts/platform-mandates.ts"
+      - "scripts/platform-mandates/**"
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify funding requests against the live conversations
+        env:
+          MINERVAL_API_URL: ${{ vars.MINERVAL_API_URL || 'https://api.claimgraph.io' }}
+        run: npx tsx scripts/platform-mandates.ts verify
+
+  fund:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # One funding pass at a time; a pass already running is never cancelled.
+    concurrency:
+      group: platform-mandate-funding
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Full history: the approval for a request is the merged pull
+          # request that last changed its file.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fund approved requests
+        env:
+          MINERVAL_API_URL: ${{ vars.MINERVAL_API_URL || 'https://api.claimgraph.io' }}
+          MINERVAL_SITE_URL: ${{ vars.MINERVAL_SITE_URL || 'https://minerval.ai' }}
+          MINERVAL_OPERATOR_KEY: ${{ secrets.MINERVAL_OPERATOR_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npx tsx scripts/platform-mandates.ts fund

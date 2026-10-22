@@ -29,6 +29,7 @@ import type { PlanItem } from "./grant-service.js";
 import type { PlanItemLedger } from "./action-service.js";
 import { describePlanItems, type PlanItemState } from "./plan-state.js";
 import { summarizeLookouts, type LookoutSummary } from "./lookout-service.js";
+import type { PlatformApproval } from "./platform-mandate-service.js";
 
 export interface MandateSummary {
   id: string;
@@ -60,13 +61,14 @@ interface GrantRow {
   funder_user_id: string;
   manager_name: string;
   skills: string[] | null;
+  platform_approval: PlatformApproval | null;
   created_at: Date | null;
 }
 
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
-         g.funder_user_id, g.skills, g.created_at,
+         g.funder_user_id, g.skills, g.platform_approval, g.created_at,
          j.budget_micro_usd, j.status AS job_status,
          COALESCE(c.display_name, 'a Minerval user') AS manager_name
     FROM grants g
@@ -228,6 +230,8 @@ export interface MandateDetail extends MandateSummary {
   scope_claim_id: string | null;
   scope_query: string | null;
   budget_status: string;
+  /** The public approval behind a platform-funded mandate (#529); null otherwise. */
+  platform_approval: PlatformApproval | null;
   /** Peer mandates whose regrants fund this one, and the ones it funds. */
   funded_by_mandates: Array<{
     grant_id: string;
@@ -337,6 +341,10 @@ export async function getPublicMandate(
     scope_claim_id: row.scope_claim_id,
     scope_query: row.scope_query,
     budget_status: row.job_status,
+    // The public approval a platform-funded mandate was funded under
+    // (#529): the reviewed pull request, who merged it, and the granting
+    // conversation, which is public for the platform's mandates.
+    platform_approval: row.platform_approval ?? null,
     funded_by_mandates: edges.fundedBy,
     regrants_out: edges.fundsOut,
     last_review: lastReview ?? null,

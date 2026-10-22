@@ -555,6 +555,53 @@ Design principles, in force in the implementation:
 
 Direct `POST /grants` creation remains for service/operator tooling only.
 
+## Platform mandates: the same Grantmaker, a public approval (#529)
+
+Minerval funds mandates as a funder like any other. The graph's own work
+runs through the same machinery, not a privileged lane, so a platform
+mandate is designed in a granting conversation in which the Grantmaker
+surveys, drafts, quotes, and can decline. That refusal authority matters
+most for this funder: readers may take a mandate Minerval funds as the
+graph's own view, and the Grantmaker is told so (it holds the platform at
+least as strictly as anyone, and owes it no deference).
+
+Only the money differs, and the two halves carry separate credentials:
+
+- **The conversation.** The platform account (`platform:minerval`) holds
+  its conversations through a **platform-grantmaking key**: an API key of
+  scope `platform_grantmaking`, minted with the operator key
+  (`POST /operator/platform-grantmaking-keys`). It is accepted only on
+  `/grant-conversations`, never on `/fund`, and it can't act for anyone,
+  so it can sit in a working environment (an operator's laptop, an agent
+  session) without that environment being able to move money. The
+  platform's conversations are public (`GET
+  /grant-conversations/platform/:id`): the reasoning behind every platform
+  mandate is on the record. A person's conversations stay private.
+- **The money.** A request file in `mandates/platform/` (see its README)
+  pins the Grantmaker's draft by the SHA-256 of its canonical JSON, with
+  the budget and the platform's rationale for paying. CI checks the file
+  against the live conversation. Merging the pull request is the approval.
+  After Deploy succeeds on main, the Platform mandates workflow presents
+  the operator key (held in GitHub secrets) to
+  `POST /operator/platform-mandates/fund`, which, in one transaction,
+  buys the budget at cost, escrows it, creates the grant (`is_platform`),
+  and records the approval (`grants.platform_approval`: the PR, who merged
+  it, the hash). It refuses a draft that no longer matches the pin, and it
+  is idempotent per conversation.
+
+Two refusals hold the boundary: the platform account can't fund through
+the person's `/fund` path (`PLATFORM_FUNDS_BY_APPROVAL`), and nobody acts
+as the platform through `x-acting-user` (`PLATFORM_NOT_ACTABLE`). On a
+funded platform mandate, the management chat cannot confirm a bounty
+posting at or above the autonomy threshold; that confirmation stays the
+operator key's. Once it's funded, a platform mandate is stewarded like
+every other.
+
+The standing mandates (General, Governance, Mathematics, Mathematics
+prizes, AI Economics) were seeded before this path existed
+(`scripts/seed-platform-mandates.ts`), with their text written in code.
+Re-founding them through a conversation is a follow-up.
+
 ## Mandates are public
 
 A mandate is managed by one person but is a public thing (`/mandates`,

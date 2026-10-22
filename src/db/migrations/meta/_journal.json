@@ -477,6 +477,13 @@
       "when": 1792419331467,
       "tag": "0067_claim_instance_detach_and_rank",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792699421691,
+      "tag": "0068_platform_mandate_approval",
+      "breakpoints": true
     }
   ]
 }
