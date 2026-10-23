@@ -60,6 +60,7 @@ new ApiStack(app, "EpistemeApi", {
   stripeWebhookSecretSecret: secrets.stripeWebhookSecretSecret,
   githubTokenSecret: secrets.githubTokenSecret,
   githubAppPrivateKeySecret: secrets.githubAppPrivateKeySecret,
+  operatorKeySecret: secrets.operatorKeySecret,
   leanChecker: {
     url: leanChecker.serviceUrl,
     tokenSecret: leanChecker.tokenSecret,

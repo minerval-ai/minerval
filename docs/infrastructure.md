@@ -232,10 +232,12 @@ storage past about 5 GB, or a second region.
   operator key") for the eight operator routes: the fund deposit, the
   bounty confirmation, the prize-claim sign-off, the void, the sanctions
   screening, the owl grant, the release of a `check_error` hold, and the
-  operator page. It is held outside the web deployment, in the operator's
-  own password manager or a Secrets Manager entry the web task cannot
-  read, and used only from the operator's own session. It is never set on
-  the Vercel project. One copy is held in the repository's GitHub secrets
+  operator page, plus the platform-mandate routes (#529). The API task
+  reads it from the Secrets Manager entry `episteme/operator-key`, which
+  the operator creates by hand before deploying (the secrets stack imports
+  it by name, so its value never passes through CloudFormation). The web
+  task cannot read it, it is never set on the Vercel project, and the
+  operator keeps their own copy in a password manager. One copy is held in the repository's GitHub secrets
   (`MINERVAL_OPERATOR_KEY`) for the Platform mandates workflow, which
   presents it only to `POST /operator/platform-mandates/fund`, to fund a
   draft that a merged pull request pinned (#529).

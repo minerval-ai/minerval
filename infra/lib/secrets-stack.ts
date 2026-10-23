@@ -12,6 +12,7 @@ export class SecretsStack extends cdk.Stack {
   public readonly stripeWebhookSecretSecret: secretsmanager.Secret;
   public readonly githubTokenSecret: secretsmanager.Secret;
   public readonly githubAppPrivateKeySecret: secretsmanager.ISecret;
+  public readonly operatorKeySecret: secretsmanager.ISecret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -125,6 +126,20 @@ export class SecretsStack extends cdk.Stack {
       this,
       "GithubAppPrivateKeySecret",
       "episteme/github-app-private-key"
+    );
+
+    // The operator key (MINERVAL_OPERATOR_KEY, docs/accounts.md "The
+    // operator key"): the credential the operator routes require, for
+    // prizes and for platform mandates (#529). Imported, not created, like
+    // the GitHub App key above: the operator creates it by hand
+    // (`aws secretsmanager create-secret --name episteme/operator-key`), so
+    // its value never passes through CloudFormation, and it must exist
+    // before the stack that reads it deploys. Only the API task reads it;
+    // the web tier never does.
+    this.operatorKeySecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "OperatorKeySecret",
+      "episteme/operator-key"
     );
 
     this.apiKeysSecret = new secretsmanager.Secret(this, "ApiKeysSecret", {

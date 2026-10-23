@@ -41,6 +41,7 @@ export interface ApiStackProps extends cdk.StackProps {
   stripeWebhookSecretSecret: secretsmanager.Secret;
   githubTokenSecret: secretsmanager.Secret;
   githubAppPrivateKeySecret: secretsmanager.ISecret;
+  operatorKeySecret: secretsmanager.ISecret;
   leanChecker?: LeanCheckerWiring;
 }
 
@@ -75,6 +76,7 @@ export class ApiStack extends cdk.Stack {
     props.stripeSecretKeySecret.grantRead(taskDef.taskRole);
     props.githubTokenSecret.grantRead(taskDef.taskRole);
     props.githubAppPrivateKeySecret.grantRead(taskDef.taskRole);
+    props.operatorKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
 
     // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
@@ -289,6 +291,12 @@ export class ApiStack extends cdk.Stack {
         // without them. The web frontend's EPISTEME_API_KEY must be one of
         // these entries.
         API_KEYS: ecs.Secret.fromSecretsManager(props.apiKeysSecret),
+        // The operator key (#529): without it every operator route is
+        // closed. Its own secret, never part of API_KEYS, because the
+        // service key acts for any user and so cannot move money.
+        MINERVAL_OPERATOR_KEY: ecs.Secret.fromSecretsManager(
+          props.operatorKeySecret
+        ),
         ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(
           props.anthropicApiKeySecret
         ),
