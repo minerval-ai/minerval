@@ -42,6 +42,9 @@ export const LOOKOUT_TRIGGER_KINDS = [
   "retraction",
   // A person or a Grantmaker poked the lookout with a note.
   "manual",
+  // A feed the lookout follows met its wake rule: new items are waiting in
+  // its inbox (services/feed-service.ts).
+  "feed",
 ] as const;
 export type LookoutTriggerKind = (typeof LOOKOUT_TRIGGER_KINDS)[number];
 
@@ -795,8 +798,55 @@ export interface LookoutSummary {
   last_note: string | null;
   pending_events: number;
   precision: LookoutPrecision;
+  feeds: LookoutFeedSummary[];
   created_by: string | null;
   created_at: string;
+}
+
+export interface LookoutFeedSummary {
+  feed_id: string;
+  title: string | null;
+  url: string;
+  status: string;
+  wake: string;
+  /** Items waiting for triage (new), and deferred by the lookout. */
+  waiting: number;
+  deferred: number;
+  oldest_waiting: string | null;
+  last_polled_at: string | null;
+  last_error: string | null;
+}
+
+/** The feeds a lookout follows, with what is waiting in its inbox from each. */
+export async function lookoutFeedSummaries(lookoutId: string): Promise<LookoutFeedSummary[]> {
+  const rows = await rawQuery<{
+    id: string; title: string | null; url: string; status: string; wake: string;
+    waiting: number; deferred: number; oldest: Date | null; last_polled_at: Date | null; last_error: string | null;
+  }>(
+    `SELECT f.id, f.title, f.url, f.status, f.wake,
+            COUNT(i.id) FILTER (WHERE i.status = 'new')::int AS waiting,
+            COUNT(i.id) FILTER (WHERE i.status = 'deferred')::int AS deferred,
+            MIN(i.first_seen_at) FILTER (WHERE i.status = 'new') AS oldest,
+            f.last_polled_at, f.last_error
+       FROM lookout_feeds f
+       LEFT JOIN lookout_feed_items i ON i.feed_id = f.id AND i.status IN ('new', 'deferred')
+      WHERE f.lookout_id = $1 AND f.status <> 'removed'
+      GROUP BY f.id
+      ORDER BY f.created_at ASC`,
+    [lookoutId]
+  );
+  return rows.map((r) => ({
+    feed_id: r.id,
+    title: r.title,
+    url: r.url,
+    status: r.status,
+    wake: r.wake,
+    waiting: Number(r.waiting ?? 0),
+    deferred: Number(r.deferred ?? 0),
+    oldest_waiting: r.oldest ? new Date(r.oldest).toISOString() : null,
+    last_polled_at: r.last_polled_at ? new Date(r.last_polled_at).toISOString() : null,
+    last_error: r.last_error,
+  }));
 }
 
 /** The mandate page's lookouts section, and the Grantmaker's list tool. */
@@ -828,6 +878,7 @@ export async function summarizeLookouts(grantId: string): Promise<LookoutSummary
       last_note: l.last_note,
       pending_events: Number(pending?.n ?? 0),
       precision: await lookoutPrecision(l.id),
+      feeds: await lookoutFeedSummaries(l.id),
       created_by: l.created_by,
       created_at: new Date(l.created_at).toISOString(),
     });

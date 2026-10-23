@@ -25,6 +25,16 @@ import {
   LOOKOUT_BOUNDS,
   LOOKOUT_TRIGGER_KINDS,
 } from "../../services/lookout-service.js";
+import {
+  addFeed,
+  feedReport,
+  getFeed,
+  updateFeed,
+  FEED_BOUNDS,
+  FEED_WAKE_RULES,
+  type FeedRuleInput,
+} from "../../services/feed-service.js";
+import { executeReadListing, getReadListingToolDefinition } from "./feed-tools.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,7 +44,34 @@ export const LOOKOUT_MANAGEMENT_TOOL_NAMES = [
   "lookout_report",
   "update_lookout",
   "poke_lookout",
+  "add_feed",
+  "update_feed",
+  "feed_report",
+  "read_listing",
 ] as const;
+
+const B = FEED_BOUNDS;
+const FEED_RULE_PROPERTIES = {
+  wake: { type: "string", enum: [...FEED_WAKE_RULES] },
+  batch_size: { type: "number", description: `batch: wake after this many new items (${B.batchSize.min}–${B.batchSize.max}, default ${B.batchSize.dflt}).` },
+  max_wait_hours: { type: "number", description: `batch: or once the oldest new item has waited this long (default ${B.maxWaitHours.dflt}).` },
+  min_wake_hours: { type: "number", description: `Never wake more often than this (default ${B.minWakeHours.dflt}).` },
+  poll_hours: { type: "number", description: `How often the feed is checked (${B.pollHours.min}–${B.pollHours.max}, default ${B.pollHours.dflt}).` },
+  retain_days: { type: "number", description: `Untriaged items expire after this many days (default ${B.retainDays.dflt}).` },
+  daily_ingest_cap: { type: "number", description: `auto_ingest: ingests per day (${B.dailyIngestCap.min}–${B.dailyIngestCap.max}, default ${B.dailyIngestCap.dflt}).` },
+} as const;
+
+function feedRuleFrom(input: Record<string, unknown>): FeedRuleInput {
+  return {
+    wake: input.wake,
+    batchSize: input.batch_size,
+    maxWaitHours: input.max_wait_hours,
+    minWakeHours: input.min_wake_hours,
+    pollHours: input.poll_hours,
+    retainDays: input.retain_days,
+    dailyIngestCap: input.daily_ingest_cap,
+  };
+}
 
 export function getLookoutManagementToolDefinitions(): Tool[] {
   return [
@@ -79,7 +116,8 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
             description:
               "Inputs it also wakes on: 'retraction' (the daily Crossref " +
               "poll matched a retraction or correction to a source in the " +
-              "graph), 'manual' (you or the funder poke it with a note).",
+              "graph), 'manual' (you or the funder poke it with a note), " +
+              "'feed' (a feed it follows has new items; added for you with feeds).",
           },
           max_value: {
             type: "number",
@@ -99,10 +137,79 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
               "Optional model id for a stronger watch; default is the cheap " +
               "tier. Every model has web search.",
           },
+          feeds: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "URLs to follow: a feed, or any page that leads to one (a " +
+              "Substack, a LessWrong user or tag page, a blog, an arXiv " +
+              "listing). Each is added with the default wake rule (batch); " +
+              "tune or set auto_ingest with update_feed.",
+          },
         },
         required: ["title", "brief"],
       },
     },
+    {
+      name: "add_feed",
+      description:
+        "Have a lookout follow an RSS or Atom feed: an author, a " +
+        "publication, a tag, a category. Give the feed URL or any page that " +
+        "leads to one; it is discovered. Polling is free; new items land in " +
+        "the lookout's inbox, and the WAKE RULE decides when they are worth " +
+        "a funded run: batch (default: batch_size new items, or the oldest " +
+        "has waited max_wait_hours), each (any new item), heartbeat (items " +
+        "wait for the lookout's heartbeat), paused (keeps polling, never " +
+        "wakes), or auto_ingest (no run at all: each new item goes onto " +
+        "your plan as an ingest, up to daily_ingest_cap a day — for a " +
+        "source you already trust wholesale). min_wake_hours spaces wakes " +
+        "out. The first poll records what the feed already carries without " +
+        "queueing it; for the back-catalogue, read it with read_listing and " +
+        "plan what matters. The brief, not the feed, decides relevance: a " +
+        "topic is a broad feed plus a brief saying what is in scope.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          lookout_id: { type: "string" },
+          url: { type: "string" },
+          ...FEED_RULE_PROPERTIES,
+        },
+        required: ["lookout_id", "url"],
+      },
+    },
+    {
+      name: "update_feed",
+      description:
+        "Change a feed's wake rule, cadence, retention, or auto-ingest cap, " +
+        "or remove it (status=removed) or bring it back (status=active). " +
+        "Only the fields you give change.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          lookout_id: { type: "string" },
+          feed_id: { type: "string" },
+          status: { type: "string", enum: ["active", "removed"] },
+          ...FEED_RULE_PROPERTIES,
+        },
+        required: ["lookout_id", "feed_id"],
+      },
+    },
+    {
+      name: "feed_report",
+      description:
+        "A lookout's feeds, one row each: the rule, poll health, and how its " +
+        "items fared (seen at subscribe, waiting, deferred, ingested, " +
+        "auto-ingested, skipped, expired unread), and what its ingests " +
+        "produced in the graph (sources, claims). The evidence for keeping, " +
+        "retuning, or cutting a feed: many expired items mean the lookout " +
+        "cannot keep up; ingests that yield no claims mean the feed is noise.",
+      input_schema: {
+        type: "object" as const,
+        properties: { lookout_id: { type: "string" } },
+        required: ["lookout_id"],
+      },
+    },
+    getReadListingToolDefinition(),
     {
       name: "list_lookouts",
       description:
@@ -182,13 +289,20 @@ export async function executeLookoutManagementTool(
   opts: { createdBy: string }
 ): Promise<string | null> {
   if (name === "spawn_lookout") {
+    const feedUrls = Array.isArray(toolInput.feeds)
+      ? toolInput.feeds.map(String).filter(Boolean).slice(0, FEED_BOUNDS.feedsPerLookout)
+      : [];
+    const triggers =
+      feedUrls.length > 0
+        ? [...new Set([...(Array.isArray(toolInput.triggers) ? toolInput.triggers.map(String) : []), "feed"])]
+        : toolInput.triggers;
     const res = await createLookout({
       grantId,
       title: String(toolInput.title ?? ""),
       brief: String(toolInput.brief ?? ""),
       heartbeatHours:
         toolInput.heartbeat_hours === undefined ? undefined : Number(toolInput.heartbeat_hours),
-      triggers: toolInput.triggers,
+      triggers,
       model: typeof toolInput.model === "string" ? toolInput.model : null,
       maxValue: toolInput.max_value === undefined ? undefined : Number(toolInput.max_value),
       maxIngestsPerRun:
@@ -197,18 +311,28 @@ export async function executeLookoutManagementTool(
           : Number(toolInput.max_ingests_per_run),
       createdBy: opts.createdBy,
     });
-    return JSON.stringify(
-      res.ok
-        ? {
-            success: true,
-            lookout_id: res.lookoutId,
-            note:
-              "Posted. Its first run is due now (the ledger funds it from your " +
-              "escrow on the next sweep); it will leave a note on the mandate " +
-              "page each run and its flags reach you in your review briefing.",
-          }
-        : { success: false, code: res.code, problem: res.message }
-    );
+    if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
+    const feeds = [];
+    for (const url of feedUrls) {
+      const f = await addFeed({ grantId, lookoutId: res.lookoutId, url, createdBy: opts.createdBy });
+      feeds.push(
+        f.ok
+          ? { url, success: true, feed_id: f.feed_id, feed_url: f.feed_url, title: f.title, items_now: f.items_now }
+          : { url, success: false, code: f.code, problem: f.problem }
+      );
+    }
+    return JSON.stringify({
+      success: true,
+      lookout_id: res.lookoutId,
+      ...(feeds.length > 0 ? { feeds } : {}),
+      note:
+        "Posted. Its first run is due now (the ledger funds it from your " +
+        "escrow on the next sweep); it will leave a note on the mandate " +
+        "page each run and its flags reach you in your review briefing." +
+        (feeds.length > 0
+          ? " Each feed's current items are recorded as already seen; new ones wake it by the feed's rule."
+          : ""),
+    });
   }
   if (name === "list_lookouts") {
     const lookouts = await summarizeLookouts(grantId);
@@ -250,6 +374,41 @@ export async function executeLookoutManagementTool(
       res.ok ? { success: true, lookout_id: res.lookoutId } : { success: false, code: res.code, problem: res.message }
     );
   }
+  if (name === "add_feed") {
+    const res = await addFeed({
+      grantId,
+      lookoutId: String(toolInput.lookout_id ?? ""),
+      url: String(toolInput.url ?? ""),
+      rule: feedRuleFrom(toolInput),
+      createdBy: opts.createdBy,
+    });
+    return JSON.stringify(res.ok ? { success: true, ...res } : { success: false, code: res.code, problem: res.problem });
+  }
+  if (name === "update_feed" || name === "feed_report") {
+    const lookoutId = String(toolInput.lookout_id ?? "");
+    const lookout = UUID_RE.test(lookoutId) ? await getLookout(lookoutId) : null;
+    if (!lookout || lookout.grant_id !== grantId) {
+      return JSON.stringify({ success: false, problem: "no such lookout on this mandate" });
+    }
+    if (name === "feed_report") {
+      const rows = await feedReport(lookoutId);
+      return JSON.stringify({ lookout: { id: lookout.id, title: lookout.title }, feeds: rows.length, rows });
+    }
+    const feed = await getFeed(String(toolInput.feed_id ?? ""));
+    if (!feed || feed.lookout_id !== lookoutId) {
+      return JSON.stringify({ success: false, problem: "no such feed on this lookout" });
+    }
+    const res = await updateFeed({
+      lookoutId,
+      feedId: feed.id,
+      by: "grantmaker",
+      rule: feedRuleFrom(toolInput),
+      ...(toolInput.status !== undefined ? { status: String(toolInput.status) } : {}),
+    });
+    return JSON.stringify(res.ok ? { success: true, feed_id: res.feed_id } : { success: false, code: res.code, problem: res.problem });
+  }
+  const listing = await executeReadListing(name, toolInput);
+  if (listing !== null) return listing;
   if (name === "poke_lookout") {
     const lookoutId = String(toolInput.lookout_id ?? "");
     const lookout = UUID_RE.test(lookoutId) ? await getLookout(lookoutId) : null;

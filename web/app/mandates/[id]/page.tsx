@@ -126,6 +126,15 @@ function MandateTextSection({ text }: { text: MandateTextView }) {
 const TRIGGER_LABEL: Record<string, string> = {
   retraction: "retraction poll",
   manual: "pokes",
+  feed: "feeds",
+};
+
+const FEED_WAKE_LABEL: Record<string, string> = {
+  batch: "batched",
+  each: "every post",
+  heartbeat: "on heartbeat",
+  paused: "paused",
+  auto_ingest: "auto-ingest",
 };
 
 function LookoutsSection({ lookouts }: { lookouts: MandateLookoutView[] }) {
@@ -155,6 +164,19 @@ function LookoutsSection({ lookouts }: { lookouts: MandateLookoutView[] }) {
               {` · ${l.precision.moved}/${l.precision.ran} passes moved a verdict (${l.precision.flagged} asked)`}
             </span>
             <p className="mandate-rationale" style={{ margin: ".35rem 0 0" }}>{l.brief}</p>
+            {l.feeds && l.feeds.length > 0 && (
+              <p className="mandate-state sc" style={{ margin: ".35rem 0 0" }}>
+                Follows:{" "}
+                {l.feeds.map((f, i) => (
+                  <span key={f.feed_id}>
+                    {i > 0 ? " · " : ""}
+                    <a href={f.url} rel="nofollow noopener">{f.title ?? f.url}</a>
+                    {` (${FEED_WAKE_LABEL[f.wake] ?? f.wake}${f.status !== "active" ? `, ${f.status}` : ""}` +
+                      `${f.waiting > 0 ? `, ${f.waiting} waiting` : ""})`}
+                  </span>
+                ))}
+              </p>
+            )}
             {l.last_note && (
               <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
                 {l.last_note}

@@ -805,6 +805,16 @@ export interface MandateLookoutView {
   last_note: string | null;
   pending_events: number;
   precision: { flagged: number; ran: number; moved: number; ingests: number; notes: number };
+  /** The feeds it follows (#305); absent from an older API. */
+  feeds?: Array<{
+    feed_id: string;
+    title: string | null;
+    url: string;
+    status: string;
+    wake: string;
+    waiting: number;
+    deferred: number;
+  }>;
   created_by: string | null;
   created_at: string;
 }

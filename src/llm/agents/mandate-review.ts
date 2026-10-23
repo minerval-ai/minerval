@@ -448,7 +448,7 @@ async function runMandateReviewImpl(input: {
     lookouts.length === 0
       ? `(none — spawn_lookout posts a cheap standing watch over part of the ` +
         `mission: a retraction watch over your sources, a new-results watch ` +
-        `on a live crux.)`
+        `on a live crux, feeds to follow — an author, a publication, a topic.)`
       : lookouts
           .map(
             (l) =>
@@ -456,7 +456,18 @@ async function runMandateReviewImpl(input: {
               `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; ceiling ${l.max_value}/10] ` +
               `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
               `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
-              `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}`
+              `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}` +
+              (l.feeds.length
+                ? `\n  feeds: ` +
+                  l.feeds
+                    .map(
+                      (f) =>
+                        `"${f.title ?? f.url}" [${f.wake}${f.status !== "active" ? `, ${f.status}` : ""}] ` +
+                        `${f.waiting} waiting${f.deferred ? `, ${f.deferred} deferred` : ""}`
+                    )
+                    .join("; ") +
+                  ` (feed_report for how each has fared)`
+                : "")
           )
           .join("\n") +
         (lookoutFlags.length === 0

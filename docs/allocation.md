@@ -153,8 +153,9 @@ and expression of concern since the last poll, joins the DOIs against the
 graph's sources, and queues an event on every lookout that watches for
 retractions), or a **poke** from the Grantmaker or the funder. The set
 is open: any poller that can say "this happened to this source" is a
-trigger source. The pollers are scans, not judgments: they open no
-ledger row and decide nothing about relevance.
+trigger source; the **feed poll** is the second (below, "Feeds"). The
+pollers are scans, not judgments: they open no ledger row and decide
+nothing about relevance.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
 waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
@@ -198,6 +199,67 @@ says whether the verdict or the credence moved (`lookout_flags`,
 verdict" and tightens the brief or retires the watch (`update_lookout`,
 `lookout_report`); the mandate page shows the same numbers. A lookout
 earns its runs or loses them; nothing else polices its noise.
+
+### Feeds: following authors and topics
+
+A recurring ingestion pipeline is **a lookout with feeds** (#305). A feed
+is any RSS or Atom feed — an author's blog, a publication, a LessWrong
+user or tag, an arXiv category — added from whatever URL is to hand
+(`add_feed`, or `feeds` on `spawn_lookout`): the URL itself if it is a
+feed, else the feed the page advertises, else `/feed` or `/rss` on the
+site (services/feed-service.ts). There is no per-platform code and no
+relevance filter. An author is their feed with a near-empty brief; a
+topic is a broad feed with a brief that says what is in scope.
+
+**Arrival and waking are separate.** The feed poller
+(workers/lookout-triggers.ts) is code, a scan like the retraction poll: it
+fetches each due feed through the URL guard and records its new items in
+the lookout's inbox (`lookout_feed_items`, unique per feed, so a re-poll
+never duplicates). The first poll records what the feed already carries
+and queues nothing; a back-catalogue is planned deliberately, with
+`read_listing`. Each feed's **wake rule** says when waiting items are
+worth a funded run:
+
+- `batch` (default): `batch_size` new items since the last wake, or the
+  oldest has waited `max_wait_hours`;
+- `each`: any new item;
+- `heartbeat`: never; items wait for the lookout's heartbeat;
+- `paused`: never; the feed keeps polling and its items keep;
+- `auto_ingest`: no run at all — each new item goes onto the plan as an
+  ingest, priced against the escrow, at most `daily_ingest_cap` a day.
+
+`batch` and `each` never wake more often than `min_wake_hours`. A met rule
+queues one `feed` event on the lookout, never one per item, and not again
+while that one waits; items the lookout was already woken for and left
+untriaged wait for its next run without waking it again. `auto_ingest` is
+the Grantmaker's alone to set: it is a decision to trust a source
+wholesale. The lookout may retune its other feeds in either direction
+(`set_feed_rule`), and says why in a note.
+
+**The lookout reads as it judges right.** `feed_inbox` lists what is
+waiting; `read_item` reads an item as a lead (opening text, headings,
+outbound links), an outline, one section, or the whole of it in pages,
+from the feed's own copy when that is the whole post, else from the page,
+which is cached on the item so an ingest of the same URL extracts from
+what was read. Nothing narrows the reading; each result reports how much
+the run has read, and the run's metered cost and the mandate's escrow
+bound what it spends. `triage_items` records many decisions at once:
+ingest (through `propose_ingest`'s path and its per-run limit), skip, or
+defer, and skips the rest of a feed in one call. Untriaged items expire
+after the feed's `retain_days`, and expired items are counted, never
+hidden.
+
+**Feeds are on the record.** `feed_report` gives the Grantmaker, per feed,
+the rule, poll health, how items fared (seen at subscribe, waiting,
+deferred, ingested, auto-ingested, skipped, expired unread), and what the
+ingests yielded in the graph; many expired items mean the lookout cannot
+keep up, ingests that yield no claims mean the feed is noise. A feed that
+fails to poll backs off exponentially and is marked broken after a run of
+failures.
+
+Known next: ordering the inbox by closeness to the brief (embeddings), for
+firehose feeds; X/Twitter, which has no feed; and bulk backfill as a ledger
+primitive (#332).
 
 Known next: more trigger sources (arXiv version bumps, a re-fetch hash
 on non-DOI sources, dependency-changed events routed through the

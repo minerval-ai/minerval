@@ -453,6 +453,10 @@ const configSchema = z.object({
   // match them against the graph's sources (0 disables). Each match queues
   // an event on every active lookout that watches for retractions.
   lookoutRetractionPollHours: z.coerce.number().min(0).default(24),
+  // The feed poller (#305; workers/lookout-triggers.ts): how many due feeds
+  // one tick polls. Each feed keeps its own cadence (lookout_feeds.poll_hours);
+  // polling is code and costs no model call. 0 turns feed polling off.
+  lookoutFeedPollMaxFeeds: z.coerce.number().int().min(0).default(100),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables), and the reassessment-inflow cap per sweep — a bounded
@@ -1069,6 +1073,7 @@ export function loadConfig(): Config {
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
     lookoutMaxRunsPerDay: process.env.LOOKOUT_MAX_RUNS_PER_DAY,
     lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
+    lookoutFeedPollMaxFeeds: process.env.LOOKOUT_FEED_POLL_MAX_FEEDS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
     stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,

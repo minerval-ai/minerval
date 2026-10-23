@@ -789,7 +789,8 @@ export async function executeManagementTool(
   opts: ManagementToolOptions = {}
 ): Promise<string | null> {
   // The lookout tools (spawn_lookout, list_lookouts, lookout_report,
-  // update_lookout, poke_lookout); null means "not one of them".
+  // update_lookout, poke_lookout, and the feed tools add_feed, update_feed,
+  // feed_report, read_listing); null means "not one of them".
   const lookout = await executeLookoutManagementTool(grantId, name, toolInput, {
     createdBy: opts.actor ?? (opts.confirmedBy ? "grantmaker:chat" : "grantmaker:review"),
   });

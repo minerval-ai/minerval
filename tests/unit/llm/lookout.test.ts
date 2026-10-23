@@ -7,7 +7,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * retraction record, page reads, the three ways to raise a candidate) with
  * web search on every model; propose_ingest stops at the
  * per-run limit; the queued inputs are consumed after the run; the note is
- * the model's closing text. The tool loop and the services are mocked.
+ * the model's closing text. A lookout that follows feeds also gets its
+ * inbox tools, a feeds section in its briefing, and more turns, and its
+ * inbox ingests share the per-run limit. The tool loop and the services
+ * are mocked.
  */
 
 const LOOKOUT = "22222222-2222-4222-8222-222222222222";
@@ -31,6 +34,9 @@ const { state } = vi.hoisted(() => ({
     ingests: [] as Array<Record<string, unknown>>,
     notes: [] as Array<Record<string, unknown>>,
     workspace: null as null | string,
+    feeds: [] as Array<Record<string, unknown>>,
+    triage: [] as Array<Record<string, unknown>>,
+    maxIterations: 0,
   },
 }));
 
@@ -96,6 +102,21 @@ vi.mock("../../../src/services/lookout-service.js", () => ({
     state.workspace = content;
     return content.length;
   }),
+  lookoutFeedSummaries: vi.fn(async () => state.feeds),
+}));
+vi.mock("../../../src/services/feed-service.js", () => ({
+  LOOKOUT_SETTABLE_WAKE_RULES: ["batch", "each", "heartbeat", "paused"],
+  READ_VIEWS: ["lead", "outline", "section", "full"],
+  TRIAGE_DECISIONS: ["ingest", "skip", "defer"],
+  feedInbox: vi.fn(async () => ({ total: 0, offset: 0, next_offset: null, rows: [] })),
+  readItem: vi.fn(async () => ({ ok: true, chars_returned: 4000, text: "x" })),
+  readListing: vi.fn(async () => ({ ok: true, rows: [] })),
+  updateFeed: vi.fn(async () => ({ ok: true, feed_id: "f-1" })),
+  triageItems: vi.fn(async (input: Record<string, unknown>) => {
+    state.triage.push(input);
+    const allowance = Number(input.ingestAllowance);
+    return { outcomes: [], ingested: Math.min(2, allowance), skipped_in_bulk: 0 };
+  }),
 }));
 vi.mock("../../../src/services/source-watch-service.js", () => ({
   checkDoi: vi.fn(async (doi: string) => ({ doi, found: true, updates: [] })),
@@ -108,9 +129,11 @@ vi.mock("../../../src/llm/client.js", () => ({
     tools: Array<{ name: string }>;
     system: unknown;
     model?: string;
+    maxIterations: number;
     initialMessages: Array<{ content: string }>;
     executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
   }) => {
+    state.maxIterations = opts.maxIterations;
     state.loop = {
       tools: opts.tools,
       system: opts.system,
@@ -155,6 +178,9 @@ beforeEach(() => {
   state.ingests = [];
   state.notes = [];
   state.workspace = null;
+  state.feeds = [];
+  state.triage = [];
+  state.maxIterations = 0;
 });
 
 describe("runLookout", () => {
@@ -186,6 +212,7 @@ describe("runLookout", () => {
       "raise_issue",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
       "survey_scope", "scope_sources", "check_doi", "recent_retractions", "read_page",
+      "read_listing",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
@@ -219,6 +246,30 @@ describe("runLookout", () => {
     const second = await state.loop!.executeTool("propose_ingest", { url: "https://example.org/c", rationale: "x" });
     expect(JSON.parse(second)).toMatchObject({ ok: false, code: "RUN_LIMIT" });
     expect(JSON.parse(await state.loop!.executeTool("nope", {}))).toEqual({ error: "unknown tool nope" });
+  });
+
+  it("gives a lookout that follows feeds its inbox, a feeds briefing, more turns, and a shared ingest limit", async () => {
+    state.lookout = lookout({ max_ingests_per_run: 3 });
+    state.feeds = [
+      { feed_id: "f-1", title: "Some Substack", url: "https://x.substack.com/feed", status: "active", wake: "batch", waiting: 7, deferred: 2, oldest_waiting: "2026-09-09T10:00:00.000Z", last_polled_at: null, last_error: null },
+    ];
+    state.script = [
+      { name: "triage_items", input: { decisions: [{ item_id: "i-1", decision: "ingest" }, { item_id: "i-2", decision: "ingest" }] } },
+      { name: "propose_ingest", input: { url: "https://example.org/a", rationale: "the paper the post reports" } },
+      { name: "propose_ingest", input: { url: "https://example.org/b", rationale: "one too many" } },
+    ];
+    const res = await runLookout({ lookoutId: LOOKOUT });
+    const names = state.loop!.tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["feed_inbox", "read_item", "triage_items", "set_feed_rule", "read_listing"]));
+    expect(state.maxIterations).toBe(32);
+    expect(state.loop!.briefing).toContain('f-1 "Some Substack"');
+    expect(state.loop!.briefing).toContain("7 waiting, 2 deferred");
+    expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, ingestAllowance: 3 });
+    // Two inbox ingests and one proposal fill the limit of three; the fourth is refused.
+    expect(state.ingests).toHaveLength(1);
+    expect(res).toMatchObject({ ingestsProposed: 3 });
+    const read = JSON.parse(await state.loop!.executeTool("read_item", { item_id: "i-3", view: "full" }));
+    expect(read.read_this_run).toEqual({ chars: 4000, approx_tokens: 1000 });
   });
 
   it("refuses to run a lookout that is paused or whose mandate is not active", async () => {

@@ -2382,6 +2382,142 @@ export const lookoutFlags = pgTable(
 export type LookoutFlag = typeof lookoutFlags.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// lookout_feeds
+//
+// An RSS or Atom feed a lookout follows (#305): an author's blog, a
+// publication, a tag or a category. Polling is code and costs nothing; new
+// items land in the lookout's inbox (lookout_feed_items), and the feed's
+// WAKE RULE says when the waiting items are worth a funded run:
+//   batch       — N new items since the last wake, or the oldest has
+//                 waited H hours; never more often than every M hours
+//   each        — any new item, at most every M hours
+//   heartbeat   — never; items wait for the lookout's own heartbeat
+//   paused      — never; the feed keeps polling and items keep
+//   auto_ingest — no run: each new item goes onto the mandate's plan as an
+//                 ingest, up to a daily cap (the Grantmaker's choice only)
+// The feed is data, never instructions, as every ingested document is.
+// ---------------------------------------------------------------------------
+export const lookoutFeeds = pgTable(
+  "lookout_feeds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    // The feed document itself (resolved from whatever URL was given).
+    url: text("url").notNull(),
+    siteUrl: text("site_url"),
+    title: text("title"),
+    // active | broken (too many failed polls) | removed
+    status: text("status").notNull().default("active"),
+    wake: text("wake").notNull().default("batch"),
+    batchSize: integer("batch_size").notNull().default(10),
+    maxWaitHours: integer("max_wait_hours").notNull().default(24),
+    minWakeHours: integer("min_wake_hours").notNull().default(4),
+    pollHours: integer("poll_hours").notNull().default(6),
+    // Untriaged items expire after this many days (counted, never hidden).
+    retainDays: integer("retain_days").notNull().default(14),
+    // auto_ingest only: ingests this feed may append per day.
+    dailyIngestCap: integer("daily_ingest_cap").notNull().default(5),
+    // Null until the first poll, which records what is already there
+    // without queueing it: subscribing does not flood the inbox.
+    seededAt: timestamp("seeded_at", { withTimezone: true }),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+    nextPollAt: timestamp("next_poll_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastWokeAt: timestamp("last_woke_at", { withTimezone: true }),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastError: text("last_error"),
+    // Who added it: 'grantmaker:chat' | 'grantmaker:review' | 'lookout' | …
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_lookout_feeds_url").on(table.lookoutId, table.url),
+    index("idx_lookout_feeds_due")
+      .on(table.nextPollAt)
+      .where(sql`status = 'active'`),
+    check(
+      "ck_lookout_feeds_status",
+      sql`${table.status} IN ('active', 'broken', 'removed')`
+    ),
+    check(
+      "ck_lookout_feeds_wake",
+      sql`${table.wake} IN ('batch', 'each', 'heartbeat', 'paused', 'auto_ingest')`
+    ),
+  ]
+);
+
+export type LookoutFeed = typeof lookoutFeeds.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// lookout_feed_items
+//
+// The lookout's inbox: one row per item a feed has carried, unique on the
+// feed's own id for it, so a re-poll never duplicates. Status:
+//   seen     — present at the first poll; recorded, never queued
+//   new      — waiting for triage
+//   deferred — the lookout chose to come back to it
+//   ingested — put on the mandate's plan (by the lookout, or auto_ingest)
+//   skipped  — the lookout judged it not worth ingesting (or it already
+//              was in the graph or on the plan)
+//   expired  — nobody triaged it within the feed's retention
+// `body` caches the page the lookout fetched to read it, so an ingest of
+// the same URL does not download it again.
+// ---------------------------------------------------------------------------
+export const lookoutFeedItems = pgTable(
+  "lookout_feed_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    feedId: uuid("feed_id")
+      .notNull()
+      .references(() => lookoutFeeds.id, { onDelete: "cascade" }),
+    lookoutId: uuid("lookout_id")
+      .notNull()
+      .references(() => lookouts.id, { onDelete: "cascade" }),
+    // The feed's guid/id for the item, else its link.
+    itemKey: text("item_key").notNull(),
+    url: text("url"),
+    title: text("title"),
+    author: text("author"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    summary: text("summary"),
+    // The item's content as the feed carried it (often the whole post).
+    content: text("content"),
+    body: text("body"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    status: text("status").notNull().default("new"),
+    reason: text("reason"),
+    // lookout | auto | expiry
+    triagedBy: text("triaged_by"),
+    triagedAt: timestamp("triaged_at", { withTimezone: true }),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey),
+    index("idx_lookout_feed_items_inbox")
+      .on(table.lookoutId, table.firstSeenAt)
+      .where(sql`status IN ('new', 'deferred')`),
+    index("idx_lookout_feed_items_url").on(table.url),
+    check(
+      "ck_lookout_feed_items_status",
+      sql`${table.status} IN ('seen', 'new', 'deferred', 'ingested', 'skipped', 'expired')`
+    ),
+  ]
+);
+
+export type LookoutFeedItem = typeof lookoutFeedItems.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // consistency_sweeps
 //
 // One Consistency Checker sweep (#330; docs/allocation.md, "Consistency
