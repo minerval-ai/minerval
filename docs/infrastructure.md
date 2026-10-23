@@ -6,7 +6,7 @@ How the production deployment is wired across Vercel, AWS, and Cloudflare.
 
 | Domain | Role | Hosting |
 | --- | --- | --- |
-| `minerval.ai` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Minerval`) |
+| `minerval.ai` (+ `www`) | Public Next.js app | Vercel project `minerval` (team `Minerval`) |
 | `api.claimgraph.io` | Backend API | AWS ALB → ECS Fargate (`infra/`) |
 | `claimgraph.io` (+ `www`) | 301 redirect → `https://minerval.ai` | Cloudflare Redirect Rule (no origin) |
 | `episteme.wiki` (+ `www`) | 301 redirect → `https://minerval.ai` | Cloudflare Redirect Rule (no origin) |
@@ -63,7 +63,6 @@ visible gain.
 | Secrets Manager entries `episteme/*` | `infra/lib/secrets-stack.ts`, `infra/lib/lean-checker-stack.ts`, docs | Renaming means a new secret, a copied value, and a coordinated deploy; `episteme/operator-key` is imported by name. Their descriptions say "Episteme" too; they are left alone so the secrets are not touched by a deploy. |
 | Log stream prefixes `episteme-api`, `episteme-solver` | `infra/lib/api-stack.ts`, `infra/lib/solver-stack.ts` | Changing them splits the log history across two prefixes. |
 | RDS snapshot prefix `episteme-epoch-` | `docs/graph-epochs.md` | Matches the existing snapshot `episteme-epoch-legacy-20260713`, so epoch snapshots list together. |
-| Vercel project `episteme` | Vercel | Renaming changes its `*.vercel.app` preview hostnames; the production domain is `minerval.ai` either way. |
 | `EPISTEME_API_URL` / `EPISTEME_API_KEY` fallback | `web/lib/api.ts`, `web/lib/account-api.ts` | Temporary: remove once Vercel holds only the `MINERVAL_*` names (above). |
 | Extension storage key `episteme-settings` | `extension/lib/settings.ts` | Read only as a fallback so existing installs keep their settings; the first save moves them to `minerval-settings`. |
 
