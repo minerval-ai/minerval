@@ -21,14 +21,9 @@ Cloudflare. Both redirect rules keep the path, so an old claim link such as
 The site, the API's links, and the redirects are all on `minerval.ai` (#306, #307, #311).
 Confirmed 2026-10-23: `episteme.wiki`, `claimgraph.io`, and their `www` hosts 301 to the
 same path on `minerval.ai`; the deployed API task has no `PUBLIC_WEB_BASE_URL` pin and
-rides its `https://minerval.ai` code default; the live pages carry no "Episteme".
-
-One step remains, and it is not a code change: the Vercel project still holds
-`EPISTEME_API_URL` / `EPISTEME_API_KEY`. Add `MINERVAL_API_URL` and `MINERVAL_API_KEY`
-with the same values (Production + Preview for the URL, Production for the key),
-redeploy, then delete the old two. The app prefers the `MINERVAL_*` names and falls back
-to `EPISTEME_*` (`web/lib/api.ts`, `web/lib/account-api.ts`), so nothing breaks in
-between. Once the old names are gone the fallback can be removed from the code.
+rides its `https://minerval.ai` code default; the live pages carry no "Episteme". The
+Vercel project is renamed `minerval`, and it holds only the `MINERVAL_API_URL` /
+`MINERVAL_API_KEY` names; the app no longer reads the old `EPISTEME_*` ones.
 
 ### The API hostname stays `api.claimgraph.io`
 
@@ -63,7 +58,6 @@ visible gain.
 | Secrets Manager entries `episteme/*` | `infra/lib/secrets-stack.ts`, `infra/lib/lean-checker-stack.ts`, docs | Renaming means a new secret, a copied value, and a coordinated deploy; `episteme/operator-key` is imported by name. Their descriptions say "Episteme" too; they are left alone so the secrets are not touched by a deploy. |
 | Log stream prefixes `episteme-api`, `episteme-solver` | `infra/lib/api-stack.ts`, `infra/lib/solver-stack.ts` | Changing them splits the log history across two prefixes. |
 | RDS snapshot prefix `episteme-epoch-` | `docs/graph-epochs.md` | Matches the existing snapshot `episteme-epoch-legacy-20260713`, so epoch snapshots list together. |
-| `EPISTEME_API_URL` / `EPISTEME_API_KEY` fallback | `web/lib/api.ts`, `web/lib/account-api.ts` | Temporary: remove once Vercel holds only the `MINERVAL_*` names (above). |
 | Extension storage key `episteme-settings` | `extension/lib/settings.ts` | Read only as a fallback so existing installs keep their settings; the first save moves them to `minerval-settings`. |
 
 ### Persistent citation URLs (w3id.org)
@@ -138,8 +132,7 @@ server-to-server there is no CORS configuration to maintain.
 
 - **Vercel → API binding**: project env var `MINERVAL_API_URL = https://api.claimgraph.io`
   (Production + Preview). This is the *only* place the API base URL lives — it is not
-  hardcoded anywhere in the codebase (`web/lib/api.ts` reads `process.env.MINERVAL_API_URL`,
-  falling back to the pre-rebrand `EPISTEME_API_URL` while both exist).
+  hardcoded anywhere in the codebase (`web/lib/api.ts` reads `process.env.MINERVAL_API_URL`).
   Changing the backend endpoint is purely a Vercel env change + redeploy.
 - **minerval.ai DNS** (Cloudflare, both records **DNS-only / grey cloud** so Vercel can
   issue TLS): `A @ 76.76.21.21`, `A www 76.76.21.21`.

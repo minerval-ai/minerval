@@ -436,8 +436,7 @@ owls earned. `/signin` lists whichever providers are configured.
   closed in production without it.
 - The web frontend needs: `MINERVAL_API_KEY` (the same value as an
   `episteme/api-keys` entry — the secret name is still the pre-rebrand one),
-  `AUTH_SECRET`, and OAuth provider secrets in Vercel. The old
-  `EPISTEME_API_KEY` name is still read as a fallback.
+  `AUTH_SECRET`, and OAuth provider secrets in Vercel.
 - Metering never fails a call: `meterLlmUsage` catches and logs. The
   in-memory budget tracker (process circuit breaker) is unchanged and
   independent.

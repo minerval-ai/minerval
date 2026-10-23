@@ -10,9 +10,8 @@ import type {
 // Account data must never be cached across users — every call is no-store
 // (unlike the public claim reads in api.ts, which revalidate on a window).
 
-// EPISTEME_* is the pre-rebrand spelling, kept as a fallback (see lib/api.ts).
-const BASE = (process.env.MINERVAL_API_URL ?? process.env.EPISTEME_API_URL)?.replace(/\/$/, "");
-const KEY = process.env.MINERVAL_API_KEY ?? process.env.EPISTEME_API_KEY;
+const BASE = process.env.MINERVAL_API_URL?.replace(/\/$/, "");
+const KEY = process.env.MINERVAL_API_KEY;
 
 export function accountApiConfigured(): boolean {
   return Boolean(BASE);

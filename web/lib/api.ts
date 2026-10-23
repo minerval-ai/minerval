@@ -29,11 +29,8 @@ import type {
 // browser. This module is the "BFF": React Server Components and route handlers
 // call it; the browser never talks to the backend directly.
 
-// The EPISTEME_* names are the pre-rebrand spelling, still read as a fallback so
-// a deploy that has not had its env renamed yet keeps working. Drop them once
-// MINERVAL_API_URL / MINERVAL_API_KEY are set everywhere.
-const BASE = (process.env.MINERVAL_API_URL ?? process.env.EPISTEME_API_URL)?.replace(/\/$/, "");
-const KEY = process.env.MINERVAL_API_KEY ?? process.env.EPISTEME_API_KEY;
+const BASE = process.env.MINERVAL_API_URL?.replace(/\/$/, "");
+const KEY = process.env.MINERVAL_API_KEY;
 
 export function apiConfigured(): boolean {
   return Boolean(BASE);
