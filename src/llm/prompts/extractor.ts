@@ -164,7 +164,8 @@ export function getExtractorSystemPromptBlocks(
 export function getExtractionPrompt(
   sourceType = "document",
   additionalContext?: string,
-  maxClaims = 0
+  maxClaims = 0,
+  focus?: string | null
 ): string {
   let prompt = `Identify the claims in the following ${sourceType}: the few reusable \
 propositions it actually turns on, each with its exact source text, canonical form, \
@@ -185,6 +186,20 @@ role description. When unsure whether something clears it, leave it out.
 
   if (additionalContext) {
     prompt += `\nAdditional context: ${additionalContext}\n`;
+  }
+
+  if (focus) {
+    prompt += `
+This is a scoped reading. The mandate that asked for it wants this ${sourceType}'s \
+claims on one subject: "${focus}". Read the whole ${sourceType}, since the context \
+matters, but propose only the claims that bear on that subject: what the ${sourceType} \
+asserts about it, and the claims it advances as directly about it. Leave out \
+claims about other subjects, even ones its argument on this subject leans on: when \
+a claim you propose is assessed, its Steward decomposes it, and the premises the \
+argument actually turns on enter the graph then. Whether a claim bears on the \
+subject is your judgment, not a keyword match. If nothing in the ${sourceType} bears \
+on it, propose nothing.
+`;
   }
 
   prompt += "\n---\n\nDocument to analyze:\n\n";

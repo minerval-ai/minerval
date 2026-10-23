@@ -1075,6 +1075,16 @@ export interface SourceDocument {
   total_chars: number;
   segments: DocumentSegment[];
   unanchored: DocumentInstance[];
+  /** What the graph read the document for: whole (focus null), or a mandate's focus. */
+  extractions?: Array<{
+    focus: string | null;
+    grant_id: string | null;
+    grant_name: string | null;
+    claims_extracted: number;
+    claims_created: number;
+    claims_matched: number;
+    created_at: string;
+  }>;
 }
 
 export interface ExaminationFinding {

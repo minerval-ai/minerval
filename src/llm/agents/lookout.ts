@@ -243,12 +243,19 @@ async function runLookoutImpl(input: {
         "against the mandate's escrow. Refused for a URL already in the " +
         "graph or already planned. You have a per-run limit (shared with " +
         "ingests from your inbox); spend it on sources that would seed or " +
-        "move live cruxes in scope.",
+        "move live cruxes in scope. A focus scopes the ingest: the " +
+        "extractor reads the whole document but proposes only the claims " +
+        "bearing on that subject. Use one when your brief wants one subject " +
+        "from a document that ranges wider.",
       input_schema: {
         type: "object" as const,
         properties: {
           url: { type: "string" },
           rationale: { type: "string" },
+          focus: {
+            type: "string",
+            description: "Optional: the subject to read the document for, in your brief's words. Omit for the whole document.",
+          },
         },
         required: ["url", "rationale"],
       },
@@ -302,6 +309,7 @@ async function runLookoutImpl(input: {
     .map(
       (f) =>
         `- ${f.feed_id} "${f.title ?? f.url}" (${f.url}): wake ${f.wake}; ` +
+        (f.ingest_focus ? `ingests read for "${f.ingest_focus}"; ` : "") +
         `${f.waiting} waiting${f.deferred ? `, ${f.deferred} deferred` : ""}` +
         (f.oldest_waiting ? `, oldest since ${f.oldest_waiting.slice(0, 16)}` : "") +
         (f.status !== "active" ? `; feed ${f.status}${f.last_error ? ` (${f.last_error.slice(0, 120)})` : ""}` : "")
@@ -458,6 +466,7 @@ async function runLookoutImpl(input: {
               grantId: lookout.grant_id,
               url: String(toolInput.url ?? ""),
               rationale: String(toolInput.rationale ?? ""),
+              focus: typeof toolInput.focus === "string" ? toolInput.focus : null,
             });
             if (res.ok && !res.duplicate) {
               ingestsProposed++;

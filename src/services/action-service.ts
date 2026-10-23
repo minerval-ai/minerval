@@ -27,6 +27,7 @@ import {
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
+import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
 
 export type ActionKind =
@@ -89,7 +90,8 @@ export type ActionKind =
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
-export const INGEST_GROUP = (url: string) => `ingest:${url}`;
+/** An ingest's group: per URL, and per focus for a scoped ingest (ingest-focus-service.ts). */
+export const INGEST_GROUP = (url: string, focus?: string | null) => ingestGroup(url, focus);
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
@@ -691,6 +693,8 @@ export interface MaterializablePlanItem {
   claim_id?: string;
   variant?: string;
   rationale?: string;
+  /** ingest only: read the document for this subject (ingest-focus-service.ts). */
+  focus?: string;
   ledger?: PlanItemLedger;
   [key: string]: unknown;
 }
@@ -854,7 +858,7 @@ export async function materializeGrantPlan(
                            WHERE o.exclusion_group = $1
                              AND o.status IN ('open', 'running'))
         LIMIT 1`,
-      [INGEST_GROUP(item.url)]
+      [INGEST_GROUP(item.url, normalizeFocus(item.focus))]
     );
     if (!closed) break;
     cursor++;
@@ -978,6 +982,10 @@ async function materializePlanItem(
 
   if (kind === "ingest") {
     if (!item.url) return blocked("an ingest item needs a url");
+    // A scoped ingest (a focus) is its own group, so the same URL can be
+    // read for another subject, or whole, without colliding.
+    const focus = normalizeFocus(item.focus);
+    const group = INGEST_GROUP(item.url, focus);
     if (index < o.cursor) {
       // The cursor passed this item. Its row, when one exists, says whether
       // the ingest actually ran: the direct steward lane (grant-pipeline.ts)
@@ -986,19 +994,26 @@ async function materializePlanItem(
       // (fundGrantSelfActions), until it runs. Forcing "done" on position
       // hid exactly those (#427). Only an item with no row at all (executed
       // before the ledger recorded plan work) reads done on position alone.
-      const row = await groupLedger({ group: INGEST_GROUP(item.url) });
+      const row = await groupLedger({ group });
       return row ? fromRow(row) : { status: "done", checked_at: nowIso() };
     }
     // An unexecuted one gets (or keeps) its open row, funded by the grant's
-    // own escrow (fundGrantSelfActions).
+    // own escrow (fundGrantSelfActions). The focus is recorded first, so the
+    // executor never runs a scoped row without it.
+    if (focus) await recordIngestFocus(group, item.url, focus);
     await rawQuery(
       `INSERT INTO actions
          (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
        VALUES ('ingest', $1, 'standard', $2, $3, $4)
        ON CONFLICT (exclusion_group, variant) DO NOTHING`,
-      [INGEST_GROUP(item.url), item.url, `Ingest ${item.url}`, o.ctx.ingestCostMicroUsd]
+      [
+        group,
+        item.url,
+        focus ? `Ingest ${item.url} (focus: ${focus.slice(0, 120)})` : `Ingest ${item.url}`,
+        o.ctx.ingestCostMicroUsd,
+      ]
     );
-    const row = await groupLedger({ group: INGEST_GROUP(item.url) });
+    const row = await groupLedger({ group });
     return row ? fromRow(row) : blocked("no ingest row could be opened for this url");
   }
 

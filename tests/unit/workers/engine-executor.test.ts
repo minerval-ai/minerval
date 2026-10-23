@@ -19,6 +19,7 @@ const { state } = vi.hoisted(() => ({
       continueRequested: false,
     },
     submitted: [] as string[],
+    submittedScopes: [] as unknown[],
     completed: [] as Array<{ id: string; metered: number }>,
     released: [] as string[],
     reopened: [] as unknown[][],
@@ -50,6 +51,9 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("'cancelled'")) {
       state.cancelled.push(params);
       return [];
+    }
+    if (q.includes("FROM ingest_focuses")) {
+      return [{ focus: "the author's claims about housing policy" }];
     }
     if (q.includes("INSERT INTO grant_sources")) {
       state.grantSources.push(params);
@@ -111,8 +115,9 @@ vi.mock("../../../src/services/lookout-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/source-service.js", () => ({
-  submitSource: vi.fn(async (input: { url: string }) => {
+  submitSource: vi.fn(async (input: { url: string }, _attribution: unknown, scope: unknown) => {
     state.submitted.push(input.url);
+    state.submittedScopes.push(scope);
     return { sourceId: "s-1", jobId: "j-1" };
   }),
 }));
@@ -165,6 +170,7 @@ beforeEach(() => {
     continueRequested: false,
   };
   state.submitted = [];
+  state.submittedScopes = [];
   state.completed = [];
   state.released = [];
   state.reopened = [];
@@ -224,6 +230,18 @@ describe("processNextEngineAction", () => {
     expect(state.completed).toHaveLength(0);
     // The funding mandate records the source in its pipeline.
     expect(state.grantSources).toHaveLength(1);
+  });
+
+  it("hands a scoped ingest's focus and group to the extraction", async () => {
+    state.grant!.status = "active";
+    const group = "ingest:https://example.org/p#focus:0123456789abcdef";
+    state.action = action({ kind: "ingest", exclusion_group: group, target_ref: "https://example.org/p" });
+    const r = await processNextEngineAction();
+    expect(r).toMatchObject({ status: "processed", ok: true, kind: "ingest" });
+    expect(state.submittedScopes.at(-1)).toMatchObject({
+      focus: "the author's claims about housing policy",
+      ingestGroup: group,
+    });
   });
 
   it("runs a covered lookout, stamps the run on the lookout, and completes with metered cost", async () => {

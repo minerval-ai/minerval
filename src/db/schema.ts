@@ -2201,6 +2201,59 @@ export const grantSources = pgTable(
 export type GrantSource = typeof grantSources.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// source_extractions
+//
+// One row per extraction of a source: what it was read FOR. A whole-document
+// extraction has no focus; a scoped ingest names one in the words of the
+// mandate that asked ("this author's claims about monetary policy"), and the
+// extractor proposed only the claims bearing on it. The record is what lets
+// a source page say honestly how much of a document's argument the graph
+// holds, and what lets a later ingest of the same URL, with another focus or
+// none, extract what is missing instead of being refused as a duplicate.
+// Sources extracted before this table existed have no rows (whole-document,
+// by the rule of the time).
+// ---------------------------------------------------------------------------
+export const sourceExtractions = pgTable(
+  "source_extractions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    // Null = the whole document.
+    focus: text("focus"),
+    // The mandate whose ingest this was, when one was.
+    grantId: uuid("grant_id").references(() => grants.id, { onDelete: "set null" }),
+    jobId: uuid("job_id"),
+    claimsExtracted: integer("claims_extracted").notNull().default(0),
+    claimsCreated: integer("claims_created").notNull().default(0),
+    claimsMatched: integer("claims_matched").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_source_extractions_source").on(table.sourceId, table.createdAt)]
+);
+
+export type SourceExtraction = typeof sourceExtractions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// ingest_focuses
+//
+// The focus of a scoped ingest action, keyed by its exclusion group
+// (INGEST_GROUP(url, focus)): ledger rows carry only a target_ref, and the
+// focus is what the executor hands the extractor.
+// ---------------------------------------------------------------------------
+export const ingestFocuses = pgTable("ingest_focuses", {
+  exclusionGroup: text("exclusion_group").primaryKey(),
+  url: text("url").notNull(),
+  focus: text("focus").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // lookouts
 //
 // A standing watch a mandate funds: a cheap agent with a brief (scope in
@@ -2419,6 +2472,10 @@ export const lookoutFeeds = pgTable(
     retainDays: integer("retain_days").notNull().default(14),
     // auto_ingest only: ingests this feed may append per day.
     dailyIngestCap: integer("daily_ingest_cap").notNull().default(5),
+    // The focus an ingest from this feed carries by default (auto_ingest,
+    // and the lookout's triage unless it gives its own): "the author's
+    // claims about X". Null = the whole document.
+    ingestFocus: text("ingest_focus"),
     // Null until the first poll, which records what is already there
     // without queueing it: subscribing does not flood the inbox.
     seededAt: timestamp("seeded_at", { withTimezone: true }),

@@ -19,6 +19,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { htmlToText } from "./source-map-service.js";
+import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
 
 /** Segments beyond this are not recorded; a book is segmented up to here. */
@@ -302,6 +303,12 @@ export interface SourceDocumentView {
   segments: DocumentSegmentView[];
   /** Instances of claims on this source whose text was not found in it. */
   unanchored: DocumentInstanceView[];
+  /**
+   * What the graph has read this document for, oldest first: the whole of
+   * it, or a mandate's focus (a scoped ingest). Empty for a source read
+   * before extractions were recorded.
+   */
+  extractions: ExtractionRecord[];
 }
 
 /**
@@ -386,5 +393,6 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
       instances: bySegment.get(s.id) ?? [],
     })),
     unanchored,
+    extractions: await sourceExtractions(sourceId),
   };
 }

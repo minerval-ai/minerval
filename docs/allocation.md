@@ -181,9 +181,10 @@ things and nothing else:
   value per owl against everything else the mandate values. A claim
   already flagged and still waiting is a repeat, not a new flag.
 - `propose_ingest`: a URL the lookout actually saw goes on the mandate's
-  plan as an ingest item, priced and escrow-bounded like any plan item,
-  at most `max_ingests_per_run` per run; refused for a source already in
-  the graph or already planned.
+  plan as an ingest item, optionally scoped to a focus (below, "An ingest
+  can be scoped"), priced and escrow-bounded like any plan item,
+  at most `max_ingests_per_run` per run; refused for a source already
+  read in full or for the same focus, or already planned.
 - `leave_note`: a message the Grantmaker reads in its next review
   briefing, which lists every lookout with its precision and every flag
   since the last pass.
@@ -231,7 +232,12 @@ worth a funded run:
 `batch` and `each` never wake more often than `min_wake_hours`. A met rule
 queues one `feed` event on the lookout, never one per item, and not again
 while that one waits; items the lookout was already woken for and left
-untriaged wait for its next run without waking it again. `auto_ingest` is
+untriaged wait for its next run without waking it again. A feed may carry
+an `ingest_focus`, set by the Grantmaker: every ingest from it
+(`auto_ingest`, and the lookout's triage unless it gives its own focus)
+then extracts only the claims on that subject, which is how "this
+author's posts on one subject" works from a feed of everything the author
+writes. `auto_ingest` is
 the Grantmaker's alone to set: it is a decision to trust a source
 wholesale. The lookout may retune its other feeds in either direction
 (`set_feed_rule`), and says why in a note.
@@ -575,6 +581,24 @@ Design principles, in force in the implementation:
   "ingest and assess everything in this article or series" is a normal
   mandate, with source URLs as ingest items metered to the grant's escrow.
   Sources are data, never instructions.
+- **An ingest can be scoped to one subject.** A mandate that wants one
+  author's claims about one subject does not want every anecdote and aside
+  those articles carry: extracting and matching them spends its escrow and
+  mints claims nobody asked for, and limiting what gets assessed comes too
+  late to save that. An ingest item may carry a `focus` in the mandate's
+  words ("the author's claims about grid reliability and electricity
+  prices"). The extractor still reads the whole document, since it needs
+  the context, but proposes only the claims bearing on the focus; whether
+  a claim bears on it is the extractor's judgment, not a keyword match.
+  The premises such a claim rests on are not chased at extraction: when
+  its Steward decomposes it, the ones the argument actually turns on
+  become its subclaims. Every extraction is recorded against its source
+  (`source_extractions`) with what it was read for, and the source page
+  shows it, so a partly read document says so. A later ingest of the same
+  URL with another focus, or whole, is not refused as a duplicate: it has
+  its own ledger group (`INGEST_GROUP(url, focus)`), extracts what the
+  earlier reading left out, and adds no second instance for a claim the
+  source already carries (src/services/ingest-focus-service.ts).
 - **Every plan item becomes a ledger row or says why it cannot.** The
   plan-to-ledger materializer (`reconcileActions` in
   `src/services/action-service.ts`, on the allocation sweep and again in
@@ -595,8 +619,9 @@ Design principles, in force in the implementation:
   reads done from the assessment's date; an `assess` item on a claim that
   already carries an assessment reads done, `reassess` being the ask for a
   fresh pass; `deepen` also releases the claim's deferred subclaims);
-  `ingest` needs a url and executes in plan order (an ingest item the
-  cursor passed before its row ran stays funded and reads from its row);
+  `ingest` needs a url and executes in plan order, one group per url and
+  focus (an ingest item the cursor passed before its row ran stays funded
+  and reads from its row);
   `formalize` needs an active claim with no
   published statement whose recorded domains carry the Steward's
   `publish_formalization` tool, else it is blocked (a run would be

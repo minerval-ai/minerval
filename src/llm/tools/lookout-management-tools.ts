@@ -59,6 +59,14 @@ const FEED_RULE_PROPERTIES = {
   poll_hours: { type: "number", description: `How often the feed is checked (${B.pollHours.min}–${B.pollHours.max}, default ${B.pollHours.dflt}).` },
   retain_days: { type: "number", description: `Untriaged items expire after this many days (default ${B.retainDays.dflt}).` },
   daily_ingest_cap: { type: "number", description: `auto_ingest: ingests per day (${B.dailyIngestCap.min}–${B.dailyIngestCap.max}, default ${B.dailyIngestCap.dflt}).` },
+  ingest_focus: {
+    type: "string",
+    description:
+      "Optional: the subject this feed's items are ingested for, in your words " +
+      "(e.g. \"the author's claims about housing policy\"). Every ingest from " +
+      "the feed (auto_ingest, and the lookout's triage unless it gives its own) " +
+      "then extracts only the claims bearing on it. \"\" clears it.",
+  },
 } as const;
 
 function feedRuleFrom(input: Record<string, unknown>): FeedRuleInput {
@@ -166,7 +174,10 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "out. The first poll records what the feed already carries without " +
         "queueing it; for the back-catalogue, read it with read_listing and " +
         "plan what matters. The brief, not the feed, decides relevance: a " +
-        "topic is a broad feed plus a brief saying what is in scope.",
+        "topic is a broad feed plus a brief saying what is in scope. When " +
+        "you want one subject from a source that writes about many, set " +
+        "ingest_focus: its ingests then extract only the claims on that " +
+        "subject, not every aside the articles carry.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -380,6 +391,7 @@ export async function executeLookoutManagementTool(
       lookoutId: String(toolInput.lookout_id ?? ""),
       url: String(toolInput.url ?? ""),
       rule: feedRuleFrom(toolInput),
+      ...(typeof toolInput.ingest_focus === "string" ? { ingestFocus: toolInput.ingest_focus } : {}),
       createdBy: opts.createdBy,
     });
     return JSON.stringify(res.ok ? { success: true, ...res } : { success: false, code: res.code, problem: res.problem });
@@ -404,6 +416,7 @@ export async function executeLookoutManagementTool(
       by: "grantmaker",
       rule: feedRuleFrom(toolInput),
       ...(toolInput.status !== undefined ? { status: String(toolInput.status) } : {}),
+      ...(typeof toolInput.ingest_focus === "string" ? { ingestFocus: toolInput.ingest_focus } : {}),
     });
     return JSON.stringify(res.ok ? { success: true, feed_id: res.feed_id } : { success: false, code: res.code, problem: res.problem });
   }

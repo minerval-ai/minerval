@@ -29,6 +29,15 @@ export interface UrlExtractionMessage {
    * the grant's escrow rather than the submitter's balance.
    */
   meterJobId?: string;
+  /**
+   * A scoped ingest: extract only the claims bearing on this subject
+   * (ingest-focus-service.ts). Absent = the whole document.
+   */
+  focus?: string;
+  /** The ledger ingest group this extraction executes, when not the URL's own. */
+  ingestGroup?: string;
+  /** The mandate whose ingest this is, for the extraction record. */
+  grantId?: string;
 }
 
 export interface ContributionMessage {

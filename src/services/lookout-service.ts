@@ -34,6 +34,7 @@ import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { setMandateValuations } from "./mandate-valuer-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
+import { ingestCoverage, normalizeFocus } from "./ingest-focus-service.js";
 
 /** Input kinds a lookout can wake on, beyond its heartbeat. */
 export const LOOKOUT_TRIGGER_KINDS = [
@@ -567,15 +568,20 @@ export async function flagReassessment(input: {
 /**
  * An ingest flag: append the URL to the funding mandate's plan as an
  * ingest item, priced and escrow-bounded like any plan item (the reconcile
- * sweep opens its row; fundGrantSelfActions covers it). Refused for a URL
- * already in the graph, already planned, or not safely fetchable.
+ * sweep opens its row; fundGrantSelfActions covers it). A `focus` scopes
+ * it to one subject (ingest-focus-service.ts). Refused when the source's
+ * extraction record already covers it (read whole, or for the same
+ * focus), when the same ingest is already planned, or when the URL is not
+ * safely fetchable.
  */
 export async function flagIngest(input: {
   lookoutId: string;
   grantId: string;
   url: string;
   rationale: string;
+  focus?: string | null;
 }): Promise<FlagResult> {
+  const focus = normalizeFocus(input.focus);
   const rationale = String(input.rationale ?? "").trim().slice(0, LOOKOUT_BOUNDS.rationaleChars);
   if (rationale.length < 10) {
     return { ok: false, code: "RATIONALE", problem: "Say why, in a sentence or two" };
@@ -590,23 +596,24 @@ export async function flagIngest(input: {
       problem: err instanceof UnsafeUrlError ? err.message : "Not a fetchable public URL",
     };
   }
-  const [existing] = await rawQuery<{ id: string; title: string }>(
-    `SELECT id, title FROM sources WHERE url = $1`,
-    [url]
-  );
-  if (existing) {
+  const coverage = await ingestCoverage(url, focus);
+  if (coverage.covered) {
     return {
       ok: false,
       code: "ALREADY_IN_GRAPH",
-      problem: `That source is already in the graph ("${existing.title}", ${existing.id}). If it changed materially, flag the claims that rest on it for reassessment instead.`,
+      problem:
+        coverage.by === "same_focus"
+          ? `That source was already read for this focus ("${coverage.title}", ${coverage.sourceId}). A different focus, or the whole document, can still be proposed.`
+          : `That source is already in the graph, read in full ("${coverage.title}", ${coverage.sourceId}). If it changed materially, flag the claims that rest on it for reassessment instead.`,
     };
   }
   const [planned] = await rawQuery<{ id: string }>(
     `SELECT id FROM grants
       WHERE id = $1 AND status = 'active'
         AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(plan->'items', '[]'::jsonb)) t
-                     WHERE t->>'action' = 'ingest' AND t->>'url' = $2)`,
-    [input.grantId, url]
+                     WHERE t->>'action' = 'ingest' AND t->>'url' = $2
+                       AND COALESCE(t->>'focus', '') = $3)`,
+    [input.grantId, url, focus ?? ""]
   );
   if (planned) {
     const [flag] = await rawQuery<{ id: string; created_at: Date }>(
@@ -621,7 +628,7 @@ export async function flagIngest(input: {
     }
     return { ok: false, code: "ALREADY_PLANNED", problem: "That URL is already on the mandate's plan" };
   }
-  const item = { action: "ingest", url, rationale: `[lookout] ${rationale}` };
+  const item = { action: "ingest", url, rationale: `[lookout] ${rationale}`, ...(focus ? { focus } : {}) };
   await rawQuery(
     `UPDATE grants
         SET plan = jsonb_set(
@@ -642,7 +649,9 @@ export async function flagIngest(input: {
     duplicate: false,
     action_id: null,
     value_written: null,
-    note: "Appended to the mandate's plan as an ingest item; it is priced against the escrow and runs when covered.",
+    note:
+      `Appended to the mandate's plan as an ingest item${focus ? ` scoped to "${focus}"` : ""}; ` +
+      `it is priced against the escrow and runs when covered.`,
   };
 }
 
@@ -809,6 +818,8 @@ export interface LookoutFeedSummary {
   url: string;
   status: string;
   wake: string;
+  /** The focus this feed's ingests carry by default; null = the whole document. */
+  ingest_focus: string | null;
   /** Items waiting for triage (new), and deferred by the lookout. */
   waiting: number;
   deferred: number;
@@ -820,10 +831,10 @@ export interface LookoutFeedSummary {
 /** The feeds a lookout follows, with what is waiting in its inbox from each. */
 export async function lookoutFeedSummaries(lookoutId: string): Promise<LookoutFeedSummary[]> {
   const rows = await rawQuery<{
-    id: string; title: string | null; url: string; status: string; wake: string;
+    id: string; title: string | null; url: string; status: string; wake: string; ingest_focus: string | null;
     waiting: number; deferred: number; oldest: Date | null; last_polled_at: Date | null; last_error: string | null;
   }>(
-    `SELECT f.id, f.title, f.url, f.status, f.wake,
+    `SELECT f.id, f.title, f.url, f.status, f.wake, f.ingest_focus,
             COUNT(i.id) FILTER (WHERE i.status = 'new')::int AS waiting,
             COUNT(i.id) FILTER (WHERE i.status = 'deferred')::int AS deferred,
             MIN(i.first_seen_at) FILTER (WHERE i.status = 'new') AS oldest,
@@ -841,6 +852,7 @@ export async function lookoutFeedSummaries(lookoutId: string): Promise<LookoutFe
     url: r.url,
     status: r.status,
     wake: r.wake,
+    ingest_focus: r.ingest_focus,
     waiting: Number(r.waiting ?? 0),
     deferred: Number(r.deferred ?? 0),
     oldest_waiting: r.oldest ? new Date(r.oldest).toISOString() : null,

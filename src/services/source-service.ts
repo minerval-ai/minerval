@@ -59,7 +59,9 @@ export async function submitSource(
     title?: string;
     content?: string;
   },
-  attribution?: JobAttribution & { meterJobId?: string }
+  attribution?: JobAttribution & { meterJobId?: string },
+  /** A scoped ingest's focus and ledger group, and the mandate behind it. */
+  scope?: { focus?: string | null; ingestGroup?: string; grantId?: string }
 ) {
   const source = await getOrCreateSource(input);
 
@@ -68,6 +70,7 @@ export async function submitSource(
     {
       sourceId: source.id,
       url: input.url,
+      ...(scope?.focus ? { focus: scope.focus } : {}),
     },
     attribution
   );
@@ -77,6 +80,9 @@ export async function submitSource(
     jobId: job.id,
     url: input.url,
     ...(attribution?.meterJobId ? { meterJobId: attribution.meterJobId } : {}),
+    ...(scope?.focus ? { focus: scope.focus } : {}),
+    ...(scope?.ingestGroup ? { ingestGroup: scope.ingestGroup } : {}),
+    ...(scope?.grantId ? { grantId: scope.grantId } : {}),
   });
 
   return { sourceId: source.id, jobId: job.id };

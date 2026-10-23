@@ -207,7 +207,7 @@ export async function feedPollTick(
   const due = await rawQuery<FeedRow>(
     `SELECT f.id, f.lookout_id, f.url, f.site_url, f.title, f.status, f.wake, f.batch_size,
             f.max_wait_hours, f.min_wake_hours, f.poll_hours, f.retain_days,
-            f.daily_ingest_cap, f.seeded_at, f.last_polled_at, f.next_poll_at,
+            f.daily_ingest_cap, f.ingest_focus, f.seeded_at, f.last_polled_at, f.next_poll_at,
             f.last_woke_at, f.consecutive_failures, f.last_error, f.created_by, f.created_at
        FROM lookout_feeds f
        JOIN lookouts l ON l.id = f.lookout_id

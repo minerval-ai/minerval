@@ -39,6 +39,25 @@ export function SourceRecord({ page, groups }: { page: SourcePage; groups: Group
               ? none("None; quoted passages only")
               : `${doc.total_chars.toLocaleString("en-US")} characters, retrieved ${when(source.retrieved_at)}${doc.segmented ? ` · ${groups.length} sections, ${nLeaves} passages` : " · not yet divided"}`}
         </dd>
+        <dt>Claims extracted</dt>
+        <dd>
+          {!doc?.extractions || doc.extractions.length === 0 ? (
+            none()
+          ) : (
+            <ul>
+              {doc.extractions.map((e, i) => (
+                <li key={i}>
+                  {e.focus ? <>For <q>{e.focus}</q></> : "The whole document"}
+                  {` · ${e.claims_extracted} claim${e.claims_extracted === 1 ? "" : "s"} (${e.claims_created} new)`}
+                  <span className={s.quiet}>
+                    {" · "}{when(e.created_at)}
+                    {e.grant_id && <> for <Link href={`/mandates/${e.grant_id}`}>{e.grant_name ?? "a mandate"}</Link></>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
         <dt>Versions</dt>
         <dd>
           {versions.length === 0 ? (

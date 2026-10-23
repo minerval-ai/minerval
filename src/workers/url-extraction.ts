@@ -15,6 +15,7 @@ import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import { fetchPublicUrl } from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
+import { normalizeFocus, recordExtraction } from "../services/ingest-focus-service.js";
 
 /**
  * Handle a URL extraction message:
@@ -50,7 +51,7 @@ export async function handleUrlExtraction(
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
     // Cancelling retires the group; the plan cursor skips cancelled items.
-    await cancelIngestAction(message.url);
+    await cancelIngestAction(message.ingestGroup ?? `ingest:${message.url}`);
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -60,11 +61,16 @@ export async function handleUrlExtraction(
   // If this extraction executes a ledger ingest action (the engine
   // executor left it 'running'), close it now with the real metered cost:
   // funders' pro-rata shares follow actual spend, never the estimate.
-  await completeIngestAction(message.url, billedMicroUsd, message.meterJobId);
+  await completeIngestAction(
+    message.ingestGroup ?? `ingest:${message.url}`,
+    billedMicroUsd,
+    message.meterJobId
+  );
 }
 
+/** `group`: the ledger ingest group (per URL, and per focus for a scoped ingest). */
 async function completeIngestAction(
-  url: string,
+  group: string,
   billedMicroUsd: number,
   meterJobId?: string
 ): Promise<void> {
@@ -76,7 +82,7 @@ async function completeIngestAction(
       `SELECT id FROM actions
         WHERE exclusion_group = $1 AND status IN ('running', 'open')
         LIMIT 1`,
-      [`ingest:${url}`]
+      [group]
     );
     if (!live) return;
     const { completeAction } = await import(
@@ -93,12 +99,12 @@ async function completeIngestAction(
   }
 }
 
-async function cancelIngestAction(url: string): Promise<void> {
+async function cancelIngestAction(group: string): Promise<void> {
   try {
     await rawQuery(
       `UPDATE actions SET status = 'cancelled', updated_at = now()
         WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-      [`ingest:${url}`]
+      [group]
     );
   } catch (err) {
     console.error(
@@ -196,16 +202,21 @@ async function processUrlExtraction(
     // No claim cap: how many reusable propositions a document turns on is a
     // property of the document. The extractor's own claim bar decides what
     // qualifies, and the ledger decides how much of it anyone pays to assess.
+    // A scoped ingest reads the whole document for one subject and proposes
+    // only the claims bearing on it (ingest-focus-service.ts).
+    const focus = normalizeFocus(message.focus);
     const extracted = await extractClaims({
       content,
       sourceType: source.sourceType,
       additionalContext: source.title,
+      ...(focus ? { focus } : {}),
     });
 
     let claimsCreated = 0;
     let claimsMatched = 0;
     let claimsDroppedLowConfidence = 0;
     let claimsUndecided = 0;
+    let instancesAlreadyRecorded = 0;
 
     for (const claim of extracted) {
       // Validity floor (#157 phase 3): the Extractor scores each proposition
@@ -332,6 +343,19 @@ async function processUrlExtraction(
       // Matcher may have reworded it (claims.text is the Matcher's), on a
       // match it is the wording this source would have given the existing
       // claim — either way the authorship question becomes a query.
+      // A source read again (for another focus, or whole) can propose a
+      // claim an earlier reading already linked here: one instance per
+      // claim and source, so the second reading adds nothing for it.
+      const [already] = await rawQuery<{ id: string }>(
+        `SELECT id FROM claim_instances
+          WHERE claim_id = $1 AND source_id = $2 AND detached_at IS NULL
+          LIMIT 1`,
+        [claimId, source.id]
+      );
+      if (already) {
+        instancesAlreadyRecorded++;
+        continue;
+      }
       await db.insert(claimInstances).values({
         claimId,
         sourceId: source.id,
@@ -347,6 +371,23 @@ async function processUrlExtraction(
     // just recorded to their passages (#507). Never fails the extraction.
     await segmentSourceOnce(source.id);
 
+    // What this reading was for, on the source's record: the whole document,
+    // or a focus. Never fails the extraction.
+    await recordExtraction({
+      sourceId: source.id,
+      focus,
+      grantId: message.grantId ?? null,
+      jobId: message.jobId,
+      claimsExtracted: extracted.length,
+      claimsCreated,
+      claimsMatched,
+    }).catch((err) =>
+      console.error(
+        "[url-extraction] extraction record failed:",
+        err instanceof Error ? err.message : err
+      )
+    );
+
     await updateJob(message.jobId, {
       status: "completed",
       result: {
@@ -358,6 +399,9 @@ async function processUrlExtraction(
         claims_dropped_low_confidence: claimsDroppedLowConfidence,
         // Extractions the Matcher could not decide on and were skipped (#419).
         claims_undecided: claimsUndecided,
+        // Matched to a claim this source already carries an instance of.
+        instances_already_recorded: instancesAlreadyRecorded,
+        ...(focus ? { focus } : {}),
       },
     });
   } catch (err) {

@@ -56,6 +56,12 @@ export interface PlanItem {
   claim_id?: string;
   url?: string;
   rationale: string;
+  /**
+   * ingest only: read the document for this subject, in the mandate's
+   * words, and extract only the claims bearing on it (a scoped ingest;
+   * ingest-focus-service.ts). Absent = the whole document.
+   */
+  focus?: string;
   variant?: "standard" | "max";
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
@@ -84,7 +90,12 @@ export const PLAN_KIND_RULES =
   "item for another pass). assess on a claim that already carries an " +
   "assessment reads done: reassess is the ask for a fresh pass. " +
   "deepen also releases the claim's deferred subclaims into the queue. " +
-  "ingest: an http(s) url; executes in plan order from your escrow. " +
+  "ingest: an http(s) url; executes in plan order from your escrow. An " +
+  "optional focus scopes it: the extractor reads the whole document but " +
+  "proposes only the claims bearing on the focus (premises those claims " +
+  "rest on come in later, through their Stewards' decompositions). Use it " +
+  "when the mandate wants one subject from documents that range wider; the " +
+  "same URL can be ingested again later for another focus, or whole. " +
   "formalize: an active claim with NO published statement whose recorded " +
   "domains carry the Steward's publish_formalization tool (the " +
   "mathematics domain); otherwise blocked, and a formalize run would be " +
@@ -125,6 +136,13 @@ export const PLAN_ITEM_SCHEMA = {
     url: {
       type: "string",
       description: "Required for ingest; the source URL to extract and match.",
+    },
+    focus: {
+      type: "string",
+      description:
+        "ingest only, optional: the subject to read the document for, in " +
+        "your words (e.g. \"the author's claims about grid reliability and " +
+        "electricity prices\"). Omit to extract the whole document.",
     },
     rationale: { type: "string" },
     variant: {
@@ -178,6 +196,9 @@ export function validatePlanItems(items: readonly PlanItem[]): string | null {
     if (item.action === "ingest") {
       if (!item.url || !/^https?:\/\//.test(item.url)) {
         return `ingest item needs an http(s) url (got: ${item.url ?? "none"})`;
+      }
+      if (item.focus !== undefined && item.focus !== null && typeof item.focus !== "string") {
+        return "an ingest item's focus must be text";
       }
     } else if (!item.claim_id || !UUID_RE.test(item.claim_id)) {
       return `${item.action} item needs a claim_id from your survey results`;

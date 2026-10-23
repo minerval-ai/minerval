@@ -112,10 +112,13 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
         "Record your decision on inbox items, many per call. ingest: put the " +
         "item's URL on the mandate's plan (priced against the escrow; counts " +
         "toward your per-run ingest limit, shared with propose_ingest; " +
-        "refused for a URL already in the graph or on the plan). skip: not " +
-        "worth ingesting. defer: come back to it on a later run. A reason " +
-        "is optional, and for an ingest it becomes the plan item's " +
-        "rationale. skip_rest skips everything still waiting from one " +
+        "refused for a URL already read in full or for the same focus, or " +
+        "already on the plan). skip: not worth ingesting. defer: come back " +
+        "to it on a later run. A reason is optional, and for an ingest it " +
+        "becomes the plan item's rationale. An ingest carries the feed's " +
+        "default focus, if it has one, unless you give your own: a focus " +
+        "has the extractor propose only the claims bearing on that subject, " +
+        "and \"\" asks for the whole document. skip_rest skips everything still waiting from one " +
         "feed (optionally only items that arrived before a time). Untriaged " +
         "items stay in the inbox until the feed's retention expires them.",
       input_schema: {
@@ -129,6 +132,7 @@ export function getLookoutFeedToolDefinitions(): Tool[] {
                 item_id: { type: "string" },
                 decision: { type: "string", enum: [...TRIAGE_DECISIONS] },
                 reason: { type: "string" },
+                focus: { type: "string", description: "ingest only: the subject to read it for; \"\" for the whole document." },
               },
               required: ["item_id", "decision"],
             },

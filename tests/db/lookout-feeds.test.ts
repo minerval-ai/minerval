@@ -305,6 +305,44 @@ describe("the inbox", () => {
 });
 
 describe("rules", () => {
+  it("a feed's ingest focus rides on its ingests, and triage can give its own or ask for the whole", async () => {
+    const { grantId, lookoutId, site } = await seedLookout();
+    const focus = "the author's claims about housing policy";
+    net.pages.set(`${site}/feed`, rss(site, []));
+    const auto = await addFeed({
+      grantId, lookoutId, url: `${site}/feed`, createdBy: "x",
+      rule: { wake: "auto_ingest", dailyIngestCap: 5 }, ingestFocus: focus,
+    });
+    if (!auto.ok) throw new Error(auto.problem);
+    net.pages.set(`${site}/feed`, rss(site, [{ id: "a" }]));
+    await pollFeed((await getFeed(auto.feed_id))!);
+
+    // A rule change keeps the focus; the default focus is the Grantmaker's alone.
+    expect(await updateFeed({ lookoutId, feedId: auto.feed_id, by: "grantmaker", rule: { wake: "heartbeat" } }))
+      .toMatchObject({ ok: true });
+    expect(await getFeed(auto.feed_id)).toMatchObject({ ingest_focus: focus });
+    expect(await updateFeed({ lookoutId, feedId: auto.feed_id, by: "lookout", ingestFocus: "x" }))
+      .toMatchObject({ ok: false, code: "FOCUS" });
+
+    net.pages.set(`${site}/feed`, rss(site, [{ id: "a" }, { id: "b" }, { id: "c" }]));
+    await pollFeed((await getFeed(auto.feed_id))!);
+    const rows = (await feedInbox({ lookoutId, order: "oldest" })).rows;
+    await triageItems({
+      lookoutId, grantId, ingestAllowance: 5,
+      decisions: [
+        { item_id: rows[0]!.item_id, decision: "ingest" },
+        { item_id: rows[1]!.item_id, decision: "ingest", focus: "" },
+      ],
+    });
+    const [g] = await rawQuery<{ plan: { items: Array<{ url: string; focus?: string }> } }>(
+      `SELECT plan FROM grants WHERE id = $1`,
+      [grantId]
+    );
+    expect(g!.plan.items.map((i) => i.focus ?? null)).toEqual([focus, focus, null]);
+    const [report] = await feedReport(lookoutId);
+    expect(report!.ingest_focus).toBe(focus);
+  });
+
   it("auto_ingest puts new items on the plan up to the daily cap, with no run", async () => {
     const { grantId, lookoutId, site } = await seedLookout();
     net.pages.set(`${site}/feed`, rss(site, []));

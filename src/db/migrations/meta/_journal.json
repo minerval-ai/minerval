@@ -498,6 +498,13 @@
       "when": 1792769465776,
       "tag": "0070_lookout_feeds",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792779899949,
+      "tag": "0071_scoped_ingest",
+      "breakpoints": true
     }
   ]
 }

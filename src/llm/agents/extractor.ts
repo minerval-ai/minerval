@@ -86,10 +86,15 @@ async function extractClaimsImpl(input: {
   model?: string;
   /** Cap the number of claims extracted (0 = unlimited). Bounds graph fan-out. */
   maxClaims?: number;
+  /**
+   * A scoped reading: propose only the claims bearing on this subject
+   * (services/ingest-focus-service.ts). Absent = the whole document.
+   */
+  focus?: string | null;
 }): Promise<ExtractedClaim[]> {
   const config = loadConfig();
   const userPrompt =
-    getExtractionPrompt(input.sourceType, input.additionalContext, input.maxClaims) +
+    getExtractionPrompt(input.sourceType, input.additionalContext, input.maxClaims, input.focus) +
     input.content;
   // The Extractor always carries every skill's "For the Extractor" view and
   // the closed list of domain names (docs/mathematics.md §3.4): it cannot see

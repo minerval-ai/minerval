@@ -54,6 +54,7 @@ import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
 import { cachedItemBody } from "../services/feed-service.js";
+import { focusForGroup } from "../services/ingest-focus-service.js";
 import { partitionFromRef } from "../services/consistency-service.js";
 import { runConsistencySweep } from "./consistency-sweep.js";
 import { runCurator } from "../llm/agents/curator.js";
@@ -832,13 +833,20 @@ async function runIngestAction(
     // A page a lookout already fetched to read it (a feed item, #305) is
     // extracted from what was read, not downloaded again.
     const cached = await cachedItemBody(url).catch(() => null);
+    // A scoped ingest's group carries its focus (ingest-focus-service.ts).
+    const focus = await focusForGroup(action.exclusion_group);
     const { sourceId, jobId } = await submitSource(
       cached ? { url, content: cached.body, ...(cached.title ? { title: cached.title } : {}) } : { url },
       // meterJobId: a grant-funded ingest meters its extraction to the
       // grant's budget job, so the escrow's llm_usage accounting sees it.
       owner
         ? { userId: owner.funder_user_id, meterJobId: funder.jobId }
-        : {}
+        : {},
+      {
+        focus,
+        ingestGroup: action.exclusion_group,
+        ...(owner ? { grantId: owner.id } : {}),
+      }
     );
     if (owner) {
       await rawQuery(
