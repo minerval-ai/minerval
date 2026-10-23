@@ -288,7 +288,7 @@ export class ApiStack extends cdk.Stack {
           props.openrouterApiKeySecret
         ),
         // Operator/service keys (#70) — the API fails closed in production
-        // without them. The web frontend's EPISTEME_API_KEY must be one of
+        // without them. The web frontend's MINERVAL_API_KEY must be one of
         // these entries.
         API_KEYS: ecs.Secret.fromSecretsManager(props.apiKeysSecret),
         // The operator key (#529): without it every operator route is

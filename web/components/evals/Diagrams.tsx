@@ -48,7 +48,7 @@ export function RunDiagram() {
   return (
     <Svg h={230} title="A corpus run: documents go through the Extractor, the Matcher, a Steward per new claim, and the Curator, into a separate database.">
       <rect x={168} y={8} width={544} height={214} rx={4} fill="none" stroke="var(--rule)" strokeDasharray="4 3" />
-      <Note x={180} y={24}>the test database (episteme_corpus), never the live graph</Note>
+      <Note x={180} y={24}>a separate test database, never the live graph</Note>
       <Box x={8} y={60} w={130} h={50} label="a cluster" sub="4 documents, committed" />
       <Arrow d="M 138 85 L 190 85" />
       <Box x={192} y={68} w={100} label="Extractor" sub="lists claims" h={40} />

@@ -205,7 +205,7 @@ claim page's form (`/claims/:id/prize/claim`) is where one is filed.
 
 ## Minerval as MCP client: domain tools for the Steward (#299)
 
-The mirror image of this server: Episteme is an agentic *user*, not a
+The mirror image of this server: Minerval is an agentic *user*, not a
 builder, of external evidence infrastructure. The first connector is
 **Elicit** (scientific literature) — the Claim Steward consumes Elicit's
 remote MCP server as a client, via the adapter in

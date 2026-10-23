@@ -21,6 +21,8 @@ const nextConfig = {
       { source: "/about/agents/:key", destination: "/docs/agents/:key", permanent: true },
       // The public evals page (#368) lives under /docs; the short URL points at it.
       { source: "/evals", destination: "/docs/evals", permanent: true },
+      // The logo assets were renamed from their pre-rebrand directory (#311).
+      { source: "/episteme-logo/:file", destination: "/minerval-logo/:file", permanent: true },
     ];
   },
 };

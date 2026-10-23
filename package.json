@@ -1,5 +1,5 @@
 {
-  "name": "episteme",
+  "name": "minerval",
   "version": "0.1.0",
   "description": "Knowledge graph of claims with transparent provenance and validity assessment",
   "type": "module",

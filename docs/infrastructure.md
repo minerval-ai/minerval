@@ -6,31 +6,66 @@ How the production deployment is wired across Vercel, AWS, and Cloudflare.
 
 | Domain | Role | Hosting |
 | --- | --- | --- |
-| `minerval.ai` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Episteme`) |
+| `minerval.ai` (+ `www`) | Public Next.js app | Vercel project `episteme` (team `Minerval`) |
 | `api.claimgraph.io` | Backend API | AWS ALB → ECS Fargate (`infra/`) |
 | `claimgraph.io` (+ `www`) | 301 redirect → `https://minerval.ai` | Cloudflare Redirect Rule (no origin) |
+| `episteme.wiki` (+ `www`) | 301 redirect → `https://minerval.ai` | Cloudflare Redirect Rule (no origin) |
 
 DNS for all three zones is hosted on **Cloudflare**. `minerval.ai` is registered with
 Cloudflare Registrar; `claimgraph.io` is registered elsewhere with nameservers pointed at
-Cloudflare. The Vercel project and team are still named `episteme` — pre-rebrand
-identifiers that are not user-visible.
+Cloudflare. Both redirect rules keep the path, so an old claim link such as
+`episteme.wiki/claims/<id>` lands on `minerval.ai/claims/<id>`.
 
-### Pending: the `episteme.wiki` → `minerval.ai` cutover
+### The `episteme.wiki` → `minerval.ai` cutover (done)
 
-The codebase now points at `minerval.ai` everywhere. The hosting side has to follow, and
-none of it is a code change:
+The site, the API's links, and the redirects are all on `minerval.ai` (#306, #307, #311).
+Confirmed 2026-10-23: `episteme.wiki`, `claimgraph.io`, and their `www` hosts 301 to the
+same path on `minerval.ai`; the deployed API task has no `PUBLIC_WEB_BASE_URL` pin and
+rides its `https://minerval.ai` code default; the live pages carry no "Episteme".
 
-1. Add the `minerval.ai` zone in Cloudflare and the `A @ / A www 76.76.21.21` records below.
-2. Bind `minerval.ai` (+ `www`) as a domain on the Vercel project and let it issue TLS.
-3. Rename the Vercel env vars to `MINERVAL_API_URL` / `MINERVAL_API_KEY` (the app reads the
-   `EPISTEME_*` names as a fallback, so the order does not matter and nothing breaks
-   mid-flight). Remove the old names once the new ones are live.
-4. Keep `episteme.wiki` bound and add a Cloudflare Redirect Rule 301-ing it to
-   `minerval.ai`, alongside the existing `claimgraph.io` rule, so old links survive.
-5. ~~Drop the `PUBLIC_WEB_BASE_URL` pin in `infra/lib/api-stack.ts` and redeploy~~ — done
-   (the pin was still leaking `episteme.wiki` into citations, MCP links, and OAuth after
-   the domain went live; the API now rides its `https://minerval.ai` code default).
-   Takes effect on the next API deploy.
+One step remains, and it is not a code change: the Vercel project still holds
+`EPISTEME_API_URL` / `EPISTEME_API_KEY`. Add `MINERVAL_API_URL` and `MINERVAL_API_KEY`
+with the same values (Production + Preview for the URL, Production for the key),
+redeploy, then delete the old two. The app prefers the `MINERVAL_*` names and falls back
+to `EPISTEME_*` (`web/lib/api.ts`, `web/lib/account-api.ts`), so nothing breaks in
+between. Once the old names are gone the fallback can be removed from the code.
+
+### The API hostname stays `api.claimgraph.io`
+
+The API is not moving to `api.minerval.ai` for now (#311). The hostname is the OAuth
+issuer for the remote MCP server (`PUBLIC_API_BASE_URL`, baked into `/.well-known`
+metadata and every registered client), the extension's and the Claude plugin's default,
+and the address the Terms of Service name. Changing it would break existing MCP
+connections and installed extensions for a cosmetic gain. Readers never see it: the
+browser only talks to `minerval.ai`.
+
+If it does move, the order is: an ACM certificate for `api.minerval.ai` added to the ALB
+:443 listener alongside the current one; a proxied `CNAME api → <ALB DNS name>` in the
+`minerval.ai` zone; the API serving both hostnames; then the defaults (extension,
+plugin, docs, `MINERVAL_API_URL`) switched over, with `api.claimgraph.io` kept alive
+indefinitely for existing consumers. The OAuth issuer is the last thing to change, since
+clients registered against the old issuer would have to reconnect.
+
+### Pre-rebrand identifiers kept on purpose
+
+These still say "episteme" and are meant to. None is seen by readers, users, or agents,
+and renaming any of them means replacing a deployed resource or migrating state for no
+visible gain.
+
+| Identifier | Where | Why it stays |
+| --- | --- | --- |
+| CDK stack names `EpistemeNetwork`, `EpistemeDatabase`, `EpistemeQueues`, `EpistemeSecrets`, `EpistemeLeanChecker`, `EpistemeApi`, `EpistemeSolver` | `infra/bin/app.ts` | A new stack name is a new stack: CloudFormation would create everything again, the database included, and orphan the old one. |
+| Construct IDs `EpistemeVpc`, `EpistemeDb`, `EpistemeDbSecret`, `EpistemeCluster` | `infra/lib/*-stack.ts` | The ID is the CloudFormation logical ID; changing it replaces the VPC, the RDS instance, the DB secret, or the cluster. Generated physical names (the ALB `Episte-ApiAl-…`, log groups) follow from these. |
+| RDS database and user `episteme` | `infra/lib/database-stack.ts`, `DB_NAME` in the API and solver stacks, defaults in `src/config.ts` | Renaming a live Postgres database and role means downtime and a credential rotation. |
+| Local and CI Postgres `episteme` / `episteme_dev`, test DB `episteme_dbtest`, corpus DBs `episteme_corpus*` | `docker-compose.yml`, `.env.example`, `drizzle.config.ts`, `.github/workflows/*`, `tests/db/`, `scripts/corpus/` | They mirror production, so the scripts' and tests' guard (refuse any database named `episteme`) protects dev and prod by the same name. Renaming would also strand every existing local Docker volume, which keeps its original role. |
+| Recorded database names in eval scorecards and replays | `corpus/`, `web/content/evals/` | Historical records of what each run read from; rewriting them would falsify the record. |
+| SQS queues `episteme-url-extraction`, `episteme-claim-pipeline` (+ `-dlq`) | `infra/lib/queue-stack.ts` | Physical names: renaming replaces the queues and drops anything in flight. |
+| Secrets Manager entries `episteme/*` | `infra/lib/secrets-stack.ts`, `infra/lib/lean-checker-stack.ts`, docs | Renaming means a new secret, a copied value, and a coordinated deploy; `episteme/operator-key` is imported by name. Their descriptions say "Episteme" too; they are left alone so the secrets are not touched by a deploy. |
+| Log stream prefixes `episteme-api`, `episteme-solver` | `infra/lib/api-stack.ts`, `infra/lib/solver-stack.ts` | Changing them splits the log history across two prefixes. |
+| RDS snapshot prefix `episteme-epoch-` | `docs/graph-epochs.md` | Matches the existing snapshot `episteme-epoch-legacy-20260713`, so epoch snapshots list together. |
+| Vercel project `episteme` | Vercel | Renaming changes its `*.vercel.app` preview hostnames; the production domain is `minerval.ai` either way. |
+| `EPISTEME_API_URL` / `EPISTEME_API_KEY` fallback | `web/lib/api.ts`, `web/lib/account-api.ts` | Temporary: remove once Vercel holds only the `MINERVAL_*` names (above). |
+| Extension storage key `episteme-settings` | `extension/lib/settings.ts` | Read only as a fallback so existing installs keep their settings; the first save moves them to `minerval-settings`. |
 
 ### Persistent citation URLs (w3id.org)
 
@@ -111,7 +146,8 @@ server-to-server there is no CORS configuration to maintain.
   issue TLS): `A @ 76.76.21.21`, `A www 76.76.21.21`.
 - **claimgraph.io DNS** (Cloudflare): `CNAME api → <ALB DNS name>` (proxied),
   `AAAA @ 100::` + `CNAME www → claimgraph.io` (proxied, placeholders for the redirect rule).
-- **Redirect rule** (Cloudflare → Rules → Redirect Rules): host `claimgraph.io`/`www` →
+- **Redirect rules** (Cloudflare → Rules → Redirect Rules), one per zone: host
+  `claimgraph.io`/`www` and host `episteme.wiki`/`www` →
   301 `concat("https://minerval.ai", http.request.uri.path)`.
 - **TLS to the origin**: the ALB has an HTTPS:443 listener with an ACM certificate for
   `api.claimgraph.io` (see `infra/lib/api-stack.ts`). Cloudflare SSL/TLS mode for the

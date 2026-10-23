@@ -1,7 +1,7 @@
 /**
  * Elicit domain-tool adapter (#299).
  *
- * Episteme is an agentic USER, not a builder, of scientific-literature
+ * Minerval is an agentic USER, not a builder, of scientific-literature
  * infrastructure: instead of wiring our own connections to journals, the
  * Claim Steward consumes Elicit's remote MCP server as a client — the mirror
  * image of the MCP server we expose in src/mcp/server.ts (#73).

@@ -9,7 +9,7 @@ import { OWL_PATH } from "../app/Mark";
  * engraved bird. Quiet greys keep it a coin, not jewellery; the geometry is
  * simple enough to stay legible at 14–16 px inline next to a number.
  *
- * Same artwork, full fidelity: public/episteme-logo/owl-tetradrachm.svg.
+ * Same artwork, full fidelity: public/minerval-logo/owl-tetradrachm.svg.
  * Plain server-compatible component — no hooks, safe in client islands too.
  */
 

@@ -1,5 +1,5 @@
 {
-  "name": "episteme-extension",
+  "name": "minerval-extension",
   "displayName": "Minerval",
   "version": "0.1.0",
   "description": "Reads the page against the Minerval claim graph: flags misleading claims, explains unsettled ones, answers questions with citations.",

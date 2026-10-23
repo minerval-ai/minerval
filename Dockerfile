@@ -10,7 +10,7 @@ RUN npm run build
 # Production stage
 FROM node:22-alpine
 RUN apk add --no-cache curl
-RUN addgroup -S episteme && adduser -S episteme -G episteme
+RUN addgroup -S minerval && adduser -S minerval -G minerval
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
@@ -31,7 +31,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 COPY rds-ca-bundle.pem ./
 COPY src/db/migrations/ ./drizzle-migrations/
-USER episteme
+USER minerval
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1

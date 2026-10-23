@@ -201,7 +201,7 @@ function BitmapGlyph({ base, px }: { base: string; px: number }) {
   const sized = [14, 16, 24, 32, 48, 180];
   const file = sized.includes(px) ? `${base}-${px}.png` : `${base}-180.png`;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={`/episteme-logo/${file}`} width={px} height={px} alt="" style={{ display: "block" }} />;
+  return <img src={`/minerval-logo/${file}`} width={px} height={px} alt="" style={{ display: "block" }} />;
 }
 
 function BitmapCard({ base, title, note }: { base: string; title: string; note: string }) {

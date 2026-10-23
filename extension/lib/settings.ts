@@ -4,17 +4,21 @@ import {
   type SitePolicy,
 } from "./types";
 
-const KEY = "episteme-settings";
+const KEY = "minerval-settings";
+// The pre-rebrand storage key (#311). Read when KEY is absent so an existing
+// install keeps its API key and site policies; the first save moves them over.
+const LEGACY_KEY = "episteme-settings";
 
 export async function getSettings(): Promise<Settings> {
-  const stored = await chrome.storage.sync.get(KEY);
-  return { ...DEFAULT_SETTINGS, ...(stored[KEY] ?? {}) };
+  const stored = await chrome.storage.sync.get([KEY, LEGACY_KEY]);
+  return { ...DEFAULT_SETTINGS, ...(stored[KEY] ?? stored[LEGACY_KEY] ?? {}) };
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   const current = await getSettings();
   const next = { ...current, ...patch };
   await chrome.storage.sync.set({ [KEY]: next });
+  await chrome.storage.sync.remove(LEGACY_KEY);
   return next;
 }
 

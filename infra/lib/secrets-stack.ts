@@ -51,10 +51,10 @@ export class SecretsStack extends cdk.Stack {
       }
     );
 
-    // Operator API keys for the Episteme API itself (#70): comma-separated
+    // Operator API keys for the Minerval API itself (#70): comma-separated
     // "key" or "key:contributor_external_id" entries. These are the service-
     // trusted keys (e.g. the web frontend's BFF key, which must match
-    // EPISTEME_API_KEY in Vercel) — end-user keys are DB-backed and minted
+    // MINERVAL_API_KEY in Vercel) — end-user keys are DB-backed and minted
     // from the dashboard. The API fails closed in production without this.
     // Elicit connector for the Claim Steward (#299). Until the real key is
     // populated this holds a CDK-generated placeholder, which fails Elicit
