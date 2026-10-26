@@ -93,7 +93,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       const parsed = listFindingsParams.safeParse(request.query);
       if (!parsed.success) {
         return reply.code(400).send({
-          error: parsed.error.errors.map((e) => e.message).join("; "),
+          error: parsed.error.issues.map((e) => e.message).join("; "),
           code: "INVALID_QUERY",
         });
       }
@@ -189,7 +189,7 @@ export async function findingRoutes(app: FastifyInstance): Promise<void> {
       const body = statusBody.safeParse(request.body);
       if (!body.success) {
         return reply.code(400).send({
-          error: body.error.errors.map((e) => e.message).join("; "),
+          error: body.error.issues.map((e) => e.message).join("; "),
           code: "INVALID_BODY",
         });
       }

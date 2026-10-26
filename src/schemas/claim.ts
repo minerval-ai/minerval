@@ -88,7 +88,7 @@ export const assessmentResponse = z.object({
   claim_credence: z.number().nullable().optional(),
   summary: z.string(),
   reasoning_trace: z.string(),
-  subclaim_summary: z.record(z.unknown()),
+  subclaim_summary: z.record(z.string(), z.unknown()),
   assessed_at: z.string(),
 });
 
@@ -261,7 +261,7 @@ export const assessmentHistoryItem = z.object({
   summary: z.string(),
   reasoning_trace: z.string(),
   is_current: z.boolean(),
-  subclaim_summary: z.record(z.unknown()),
+  subclaim_summary: z.record(z.string(), z.unknown()),
   trigger: z.string().nullable(),
   trigger_context: z.string().nullable(),
   assessed_at: z.string(),

@@ -48,7 +48,7 @@ export const extensionChatBody = z.object({
           z.object({
             verbatim_text: z.string().max(2_000),
             verdict: z.string().max(40),
-            claim_id: z.string().uuid().nullable().default(null),
+            claim_id: z.guid().nullable().default(null),
             canonical_form: z.string().max(2_000).nullable().default(null),
             status: z.string().max(40).nullable().default(null),
           })

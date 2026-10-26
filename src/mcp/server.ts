@@ -396,7 +396,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "is a checker verdict (`verification`; `include: \"proofs\"` lists " +
         "the check records). Free.",
       inputSchema: {
-        claim_id: z.string().uuid(),
+        claim_id: z.guid(),
         include: z
           .array(z.enum(["provenance", "arguments", "dependents", "proofs"]))
           .default(["provenance"])
@@ -505,7 +505,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "parent marks exactly where the disagreement lives. Descends only: " +
         "for what rests ON this claim, use get_dependents. Free.",
       inputSchema: {
-        claim_id: z.string().uuid(),
+        claim_id: z.guid(),
         max_depth: z.number().int().min(1).max(8).default(3),
       },
     },
@@ -535,7 +535,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "get_decomposition, and the question 'what would move if this " +
         "verdict changed'. Free.",
       inputSchema: {
-        claim_id: z.string().uuid(),
+        claim_id: z.guid(),
         max_depth: z
           .number()
           .int()
@@ -570,7 +570,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "the rules version in force, and whether claims are being accepted " +
         "now (the statement's review period must have ended). Offering a " +
         "prize does not change how the claim is assessed. Free.",
-      inputSchema: { claim_id: z.string().uuid() },
+      inputSchema: { claim_id: z.guid() },
     },
     async ({ claim_id }) => {
       const claim = await getClaimById(claim_id);
@@ -735,11 +735,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "the contribution succeeds. Attributed to your account; returns a " +
         "contribution id for checking the outcome.",
       inputSchema: {
-        claim_id: z.string().uuid(),
+        claim_id: z.guid(),
         contribution_type: contributionTypeEnum,
         content: z.string().min(1).max(10_000),
         evidence_urls: z.array(z.string().url()).max(20).default([]),
-        merge_target_claim_id: z.string().uuid().optional(),
+        merge_target_claim_id: z.guid().optional(),
         proposed_canonical_form: z.string().max(2000).optional(),
       },
     },
@@ -839,11 +839,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         body: z.string().min(1).max(REPORT_BODY_MAX_CHARS),
         surface: z.string().max(200).optional(),
         context_refs: z
-          .record(z.union([z.string().max(500), z.number(), z.boolean()]))
+          .record(z.string(), z.union([z.string().max(500), z.number(), z.boolean()]))
           .optional(),
         joins: z
-          .string()
-          .uuid()
+          .guid()
           .optional()
           .describe(
             "The id of a report on record that yours repeats (a related " +
@@ -927,7 +926,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Check the outcome of a submitted contribution: pending until " +
         "reviewed, then the decision (accept, reject, or escalate) with the " +
         "reviewer's reasoning and policy citations. Free.",
-      inputSchema: { contribution_id: z.string().uuid() },
+      inputSchema: { contribution_id: z.guid() },
     },
     async ({ contribution_id }) => {
       const contribution = await getContributionById(contribution_id);

@@ -64,7 +64,7 @@ const configSchema = z.object({
   apiKeys: z
     .string()
     .transform((s) => s.split(",").map((k) => k.trim().split(":")[0]!))
-    .default(""),
+    .prefault(""),
   apiKeyContributors: z
     .string()
     .transform((s) => {
@@ -78,7 +78,7 @@ const configSchema = z.object({
       }
       return map;
     })
-    .default(""),
+    .prefault(""),
 
   // CORS
   corsOrigins: z.string().default(""),
@@ -217,7 +217,7 @@ const configSchema = z.object({
       });
       return packs;
     })
-    .default("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
+    .prefault("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
   // Reputation / good-faith policy (#71)
   // Hourly cap on contributions per contributor (0 = unlimited)...
   contributionRateLimitPerHour: z.coerce.number().default(10),
@@ -415,7 +415,7 @@ const configSchema = z.object({
   backgroundFallbackLaneEnabled: z
     .string()
     .transform((s) => s === "true")
-    .default("false"),
+    .prefault("false"),
   // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
   // can chain passes within a day (continue_review) when the mission needs
   // the bandwidth — enumerating a big source backlog, a territory survey.
@@ -587,7 +587,7 @@ const configSchema = z.object({
   solverEnabled: z
     .string()
     .transform((s) => s === "true")
-    .default("false"),
+    .prefault("false"),
   // The solver breaker (§7.3): a durable daily cap on math_solver spend
   // (llm_usage plus Lean rows) independent of any mandate, in owls; the
   // in-memory budget tracker exempts attributed calls and is per process,
@@ -628,7 +628,7 @@ const configSchema = z.object({
   researcherEnabled: z
     .string()
     .transform((s) => s === "true")
-    .default("false"),
+    .prefault("false"),
   // Backstops, never decisions: the durable daily cap on researcher spend
   // across processes, the most one run may be given, the most runs one
   // launching administrator's run may start, and the wall and turn caps on
@@ -660,7 +660,7 @@ const configSchema = z.object({
         .map((a) => a.trim())
         .filter((a) => a.length > 0)
     )
-    .default("math_solver"),
+    .prefault("math_solver"),
 
   // --- Mathematics: bounties (§8.1) ---
   // A bounty is denominated in owls (stored, like every owl amount, as
@@ -881,7 +881,7 @@ const configSchema = z.object({
   enableContributions: z
     .string()
     .transform((s) => s === "true")
-    .default("false"),
+    .prefault("false"),
   // Audit invocation (#180). The sweep period: at most one pattern_analysis
   // sweep per this many hours (skipped when the period saw no review
   // decisions). 0 disables the scheduler entirely — event-triggered audits
@@ -958,7 +958,7 @@ const configSchema = z.object({
   githubIssuesIncludeExternal: z
     .string()
     .transform((s) => s === "true")
-    .default("false"),
+    .prefault("false"),
   // The GitHub sync worker: every tick files issues for open reports that
   // have none yet (the backlog from before the sync existed, and any filing
   // that failed at raise time), at most this many per tick so a first run
