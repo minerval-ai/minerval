@@ -17,7 +17,7 @@
  *   npx tsx scripts/backfill-argument-written-forms.ts            # dry run
  *   npx tsx scripts/backfill-argument-written-forms.ts --confirm  # apply
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { enqueueSteward } from "../src/services/queue-service.js";
 

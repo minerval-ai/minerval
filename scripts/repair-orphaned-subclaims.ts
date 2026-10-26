@@ -22,7 +22,7 @@
  *   npx tsx scripts/repair-orphaned-subclaims.ts            # dry run
  *   npx tsx scripts/repair-orphaned-subclaims.ts --confirm  # apply
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { closeDb, rawQuery, withTransaction } from "../src/db/client.js";
 import {
   attachEdgeToArgument,

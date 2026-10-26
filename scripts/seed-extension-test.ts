@@ -2,7 +2,7 @@
  * Seed two assessed claims so the extension pipeline (issue #72) has graph
  * state to judge against. Throwaway manual-test helper, not product code.
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { getDb, closeDb } from "../src/db/client.js";
 import { claims, assessments } from "../src/db/schema.js";
 import { generateEmbedding } from "../src/services/embedding-service.js";

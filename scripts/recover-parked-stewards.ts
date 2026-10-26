@@ -15,7 +15,7 @@
  *   npx tsx scripts/recover-parked-stewards.ts            # dry run
  *   npx tsx scripts/recover-parked-stewards.ts --confirm  # apply
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { isTransientApiError } from "../src/llm/errors.js";
 

@@ -25,7 +25,7 @@
  *   npx tsx scripts/seed-tags-from-clusters.ts --min-size=5    # skip tiny clusters
  *   npx tsx scripts/seed-tags-from-clusters.ts --write         # mint tags
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/config.js";
 import { completeStructured } from "../src/llm/client.js";

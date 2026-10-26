@@ -25,7 +25,7 @@
  *       waiting for the scheduler; the backfill of an existing graph is
  *       this, repeated until `queue` reports zero pending.
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import {
   findOrCreateTag,

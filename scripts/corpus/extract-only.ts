@@ -27,7 +27,7 @@
  *   tsx scripts/corpus/extract-only.ts CoZhXrhpQxpy9xw9y --chars=6000
  */
 import { config as loadDotenv } from "dotenv";
-loadDotenv();
+loadDotenv({ quiet: true });
 // Extraction never connects to a DB; satisfy config validation with a dummy URL
 // so we don't require a running Postgres just to exercise the extractor prompt.
 process.env.DATABASE_URL ??=

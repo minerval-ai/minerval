@@ -28,7 +28,7 @@
  *   npx tsx scripts/backfill-review-outcomes.ts            # dry run
  *   npx tsx scripts/backfill-review-outcomes.ts --confirm  # apply
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { applyReviewOutcome } from "../src/services/reputation-service.js";
 

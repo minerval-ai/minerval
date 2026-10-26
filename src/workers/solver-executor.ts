@@ -473,7 +473,7 @@ const invokedDirectly =
 
 if (invokedDirectly) {
   (async () => {
-    await import("dotenv/config");
+    await import("../load-env.js");
     assertSkillToolsRegistered();
     const config = loadConfig();
     if (!config.solverEnabled) {

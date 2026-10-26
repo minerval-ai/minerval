@@ -30,7 +30,7 @@
  *   npx tsx scripts/sweep-fallback-matches.ts                       # dry run
  *   npx tsx scripts/sweep-fallback-matches.ts --claim <uuid> --confirm
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { requestCuration } from "../src/services/curation-service.js";
 

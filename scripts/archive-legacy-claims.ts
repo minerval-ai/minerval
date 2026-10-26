@@ -22,7 +22,7 @@
  *   npx tsx scripts/archive-legacy-claims.ts --confirm           # archive
  *   npx tsx scripts/archive-legacy-claims.ts --restore --confirm # undo
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 
 function argValue(name: string): string | undefined {

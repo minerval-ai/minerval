@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./load-env.js";
 import { join } from "path";
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";

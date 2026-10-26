@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     const lib = await import("./corpus/lib.js");
     lib.assertCorpusDb();
   } else {
-    loadDotenv();
+    loadDotenv({ quiet: true });
   }
   const { closeDb } = await import("../src/db/client.js");
   const monitors = await import("../src/services/monitor-service.js");

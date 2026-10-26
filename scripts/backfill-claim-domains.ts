@@ -20,7 +20,7 @@
  *   npx tsx scripts/backfill-claim-domains.ts --skill=mathematics  # one skill
  *   npx tsx scripts/backfill-claim-domains.ts --write              # apply
  */
-import "dotenv/config";
+import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 import { generateEmbeddings } from "../src/services/embedding-service.js";
 import { listSkills } from "../src/llm/prompts/skills.js";

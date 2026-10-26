@@ -47,7 +47,7 @@ import {
   type RegisteredModel,
 } from "./models-discover-lib.js";
 
-loadDotenv();
+loadDotenv({ quiet: true });
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PRICING_PATH = join(here, "..", "src", "llm", "pricing.ts");

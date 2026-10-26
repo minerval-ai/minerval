@@ -357,7 +357,7 @@ async function main(): Promise<void> {
     // config; lib.ts also honours --profile.
     await import("./corpus/lib.js");
   } else {
-    (await import("dotenv")).config();
+    (await import("dotenv")).config({ quiet: true });
   }
   const [command] = positionals();
   switch (command) {

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "../../src/config.js";
 import { applyProductionProfile } from "./production-pins.js";
 
-loadDotenv(); // pull ANTHROPIC_API_KEY / OPENAI_API_KEY etc. from .env if present
+loadDotenv({ quiet: true }); // pull ANTHROPIC_API_KEY / OPENAI_API_KEY etc. from .env if present
 
 // Dedicated, disposable database. Override with CORPUS_DATABASE_URL if you want
 // to point somewhere else, but it must NOT be the main `episteme` database.
