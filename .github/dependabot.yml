@@ -1,0 +1,54 @@
+# Weekly version updates for the three npm projects and the workflows'
+# actions. Minor and patch bumps land as one grouped PR per project; each
+# major bump gets its own PR, since those can need code changes.
+#
+# The cooldown holds back any version published less than a week ago. A
+# hijacked maintainer account usually gets its malicious release pulled
+# within hours or days, so a week-old release has had time to be caught.
+# Security updates (Dependabot alerts) skip the cooldown and open
+# immediately.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      backend-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /extension
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      extension-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /infra
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      infra-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Actions are pinned to commit SHAs with the version in a trailing
+  # comment; Dependabot bumps both together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

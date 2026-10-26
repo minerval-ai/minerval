@@ -65,9 +65,9 @@ jobs:
       # and migrates it. Never the main graph, by construction.
       CORPUS_DATABASE_URL: postgresql://episteme:episteme@localhost:5432/episteme_corpus
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload the golden report
         if: always() && steps.keys.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: golden-report
           path: runs/golden-matcher-*/golden-report.json
