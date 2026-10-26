@@ -8,11 +8,15 @@ const mockListTools = vi.fn();
 const mockCallTool = vi.fn();
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
-  Client: vi.fn().mockImplementation(() => ({
-    connect: mockConnect,
-    listTools: mockListTools,
-    callTool: mockCallTool,
-  })),
+  // `function`, not an arrow: the adapter calls `new Client(...)`, and
+  // vitest 4+ constructs through the implementation.
+  Client: vi.fn().mockImplementation(function () {
+    return {
+      connect: mockConnect,
+      listTools: mockListTools,
+      callTool: mockCallTool,
+    };
+  }),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
