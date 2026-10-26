@@ -287,3 +287,65 @@ describe("a claim's instances and the Steward's control of them", () => {
     ).toMatchObject({ success: true, was_detached: false });
   });
 });
+
+describe("record_claim_instance deduplicates per (claim, source, speaker) (#481)", () => {
+  let claim: string;
+  let paperUrl: string;
+  const record = (speaker: string | undefined, verbatim: string) =>
+    steward("record_claim_instance", {
+      claim_id: claim,
+      url: paperUrl,
+      verbatim_text: verbatim,
+      stance: "affirms",
+      ...(speaker ? { speaker } : {}),
+    });
+
+  beforeAll(async () => {
+    claim = await seedClaim("two voices in one paper");
+    paperUrl = (await source("A jointly signed paper", "paper")).url;
+  });
+
+  it("holds two speakers' assertions from one source, and dedups each speaker", async () => {
+    const gowers = await record("W. T. Gowers", "Section 5: I believe the claim holds.");
+    const tsimerman = await record("Jacob Tsimerman", "Section 9: the claim holds.");
+    expect(gowers).toMatchObject({ success: true });
+    expect(gowers.deduplicated).toBeUndefined();
+    expect(tsimerman).toMatchObject({ success: true });
+    expect(tsimerman.deduplicated).toBeUndefined();
+    expect(tsimerman.instance_id).not.toBe(gowers.instance_id);
+    expect(tsimerman.source_id).toBe(gowers.source_id);
+
+    // The same voice again, in any case, is the same instance.
+    const again = await record("jacob tsimerman", "Section 9 on a re-read.");
+    expect(again).toMatchObject({ deduplicated: true, instance_id: tsimerman.instance_id });
+    expect(await countClaimInstances(claim)).toBe(2);
+  });
+
+  it("a call without a speaker deduplicates against the whole source", async () => {
+    const out = await record(undefined, "Someone in the paper asserts it.");
+    expect(out).toMatchObject({ success: true, deduplicated: true });
+    expect(out.message).toMatch(/with speaker set/);
+    expect(await countClaimInstances(claim)).toBe(2);
+  });
+
+  it("an unattributed instance blocks a named voice until it is attributed", async () => {
+    const other = await seedClaim("unattributed first");
+    const url = (await source("Another paper", "paper")).url;
+    const first = await steward("record_claim_instance", {
+      claim_id: other,
+      url,
+      verbatim_text: "Unattributed passage.",
+      stance: "affirms",
+    });
+    const named = await steward("record_claim_instance", {
+      claim_id: other,
+      url,
+      verbatim_text: "A named passage.",
+      stance: "affirms",
+      speaker: "A. Author",
+    });
+    expect(named).toMatchObject({ deduplicated: true, instance_id: first.instance_id });
+    expect(named.message).toMatch(/names no speaker/);
+    expect(await countClaimInstances(other)).toBe(1);
+  });
+});

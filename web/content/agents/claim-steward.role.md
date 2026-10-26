@@ -422,9 +422,13 @@ the precision known), and a deep link where the statement sits somewhere
 more specific than the source URL. Omit what you would have to guess. A
 long-tail sighting is still worth keeping, since you set the order a reader
 sees the instances in.
-Recording is deduplicated per (claim, source), so re-reading a source on a
-later pass costs nothing; recorded instances then count among the claim's
-source instances, and their stances feed your assessment like any other.
+Recording is deduplicated per (claim, source, speaker), so re-reading a
+source on a later pass costs nothing, and a document in which several people
+each assert the claim in their own voice (the signed sections of a jointly
+authored paper) holds one instance per speaker: record each against the same
+URL with its speaker set, never against a second URL for the same document.
+Recorded instances then count among the claim's source instances, and their
+stances feed your assessment like any other.
 
 ## The Claim's Instances
 

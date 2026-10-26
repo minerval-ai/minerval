@@ -232,8 +232,12 @@ export function getStewardToolDefinitions(): Tool[] {
         "questions it, or reports on the debate without taking a side is " +
         "not an instance; a source quoting someone who asserts it is an " +
         "instance whose speaker is the person quoted. One instance per " +
-        "(claim, source): re-recording the same source is deduplicated, so " +
-        "re-assessments never pile up duplicates.",
+        "(claim, source, speaker): re-recording the same source is " +
+        "deduplicated, so re-assessments never pile up duplicates, but a " +
+        "document in which several people each assert the claim in their " +
+        "own voice (the signed sections of a jointly authored paper, a " +
+        "panel transcript) holds one instance per speaker. Set speaker on " +
+        "each; a call without one deduplicates against the whole source.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -315,8 +319,8 @@ export function getStewardToolDefinitions(): Tool[] {
       description:
         "Correct an already-recorded instance of the claim you steward " +
         "(#420): its stance, confidence, speaker, or the passage it rests " +
-        "on. Recording is deduplicated per (claim, source), so this is the " +
-        "only way to fix an instance that misrepresents its source: a " +
+        "on. Recording is deduplicated per (claim, source, speaker), so " +
+        "this is the only way to fix an instance that misrepresents its source: a " +
         "quote attributed to the outlet instead of the person quoted, a " +
         "stance read backwards, a passage that is not the one carrying the " +
         "stance. " +
@@ -1318,20 +1322,42 @@ export async function executeStewardTool(
           title: optText(input.title),
         });
 
-        // Dedup on (claim, source) so re-assessments that reread the same
-        // source don't pile up duplicate instances (#278).
+        // Dedup on (claim, source, speaker) so re-assessments that reread the
+        // same source don't pile up duplicate instances (#278), while a
+        // jointly signed document can still hold each author's own assertion
+        // (#481). Speakers compare case-insensitively. An unattributed row on
+        // either side matches any voice: without a name there is no telling
+        // it is a different one, so a call without a speaker deduplicates
+        // against the source as before, and an unattributed instance blocks a
+        // named one until it is attributed.
+        const speaker = optText(input.speaker);
         const [existing] = await rawQuery<{
           id: string;
           stance: string;
+          speaker: string | null;
           detached_at: Date | null;
           detached_reason: string | null;
         }>(
-          `SELECT id, stance, detached_at, detached_reason FROM claim_instances
+          `SELECT id, stance, speaker, detached_at, detached_reason
+           FROM claim_instances
            WHERE claim_id = $1 AND source_id = $2
-           ORDER BY (detached_at IS NULL) DESC, created_at
+             AND ($3::text IS NULL OR speaker IS NULL
+                  OR lower(speaker) = lower($3::text))
+           ORDER BY COALESCE(lower(speaker) = lower($3::text), false) DESC,
+                    (detached_at IS NULL) DESC, created_at
            LIMIT 1`,
-          [claimId, source.id]
+          [claimId, source.id, speaker ?? null]
         );
+        const voice = existing?.speaker ? ` from ${existing.speaker}` : "";
+        // An unattributed instance matched a named voice: it may be this
+        // speaker's assertion or another's, and only the Steward can tell.
+        const unattributedNote =
+          existing && speaker && !existing.speaker
+            ? ` The existing instance names no speaker, so it may be this ` +
+              `voice or another one. If it is a different speaker's ` +
+              `assertion, attribute it with update_claim_instance ` +
+              `(instance_id ${existing.id}), then record ${speaker}'s again.`
+            : "";
         // A detached instance from this source records a judgment that it
         // does not state the claim; a new row would silently overturn it.
         if (existing?.detached_at) {
@@ -1340,12 +1366,13 @@ export async function executeStewardTool(
             deduplicated: true,
             instance_id: existing.id,
             message:
-              `This source has an instance on this claim that was detached` +
+              `This source has an instance${voice} on this claim that was detached` +
               (existing.detached_reason ? ` ("${existing.detached_reason}")` : "") +
               `; nothing new was written. If your reading shows the source ` +
               `does assert, deny or pose the claim, reattach it with ` +
               `reattach_claim_instance (instance_id ${existing.id}) and correct ` +
-              `it with update_claim_instance if needed.`,
+              `it with update_claim_instance if needed.` +
+              unattributedNote,
           });
         }
         if (existing) {
@@ -1354,8 +1381,8 @@ export async function executeStewardTool(
             deduplicated: true,
             instance_id: existing.id,
             message:
-              `This source is already recorded as an instance of this claim ` +
-              `(stance: ${existing.stance}); nothing new was written.` +
+              `This source is already recorded as an instance${voice} of this ` +
+              `claim (stance: ${existing.stance}); nothing new was written.` +
               (existing.stance !== stance
                 ? ` Note: the existing instance's stance differs from the one ` +
                   `you just observed — if the source genuinely takes both ` +
@@ -1363,7 +1390,11 @@ export async function executeStewardTool(
                   `reasoning_trace; if the recorded stance is simply wrong, ` +
                   `correct it with update_claim_instance (instance_id ` +
                   `${existing.id}) and say why.`
-                : ""),
+                : "") +
+              (speaker
+                ? unattributedNote
+                : ` If this passage is a different speaker's assertion in ` +
+                  `the same source, record it again with speaker set.`),
           });
         }
 
@@ -1377,7 +1408,7 @@ export async function executeStewardTool(
             context: optText(input.context),
             stance,
             confidence: clampUnit(input.confidence) ?? 1.0,
-            speaker: optText(input.speaker),
+            speaker,
             publication: optText(input.publication),
             sourceDate: optText(input.source_date),
             link: optText(input.link),

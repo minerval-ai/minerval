@@ -353,6 +353,25 @@ describe("steward record_claim_instance", () => {
     expect(insertedValues.find((r) => "verbatimText" in r)).toBeUndefined();
   });
 
+  it("keys the dedup on the speaker too, case-insensitively (#481)", async () => {
+    claimExists();
+    await executeStewardTool("record_claim_instance", {
+      claim_id: CLAIM,
+      url: "https://example.org/joint-paper",
+      verbatim_text: "Section 9: the claim holds.",
+      stance: "affirms",
+      speaker: "  Jacob Tsimerman ",
+    });
+    const dedup = vi
+      .mocked(rawQuery)
+      .mock.calls.find(([sql]) => /FROM claim_instances/.test(String(sql)));
+    expect(String(dedup?.[0])).toMatch(/lower\(speaker\) = lower\(\$3::text\)/);
+    expect(dedup?.[1]).toEqual([CLAIM, SOURCE_ID, "Jacob Tsimerman"]);
+    // No instance for this voice yet, so it is written with its speaker.
+    const row = insertedValues.find((r) => "verbatimText" in r);
+    expect(row?.speaker).toBe("Jacob Tsimerman");
+  });
+
   it("flags a stance conflict with the already-recorded instance instead of writing", async () => {
     claimExists();
     vi.mocked(rawQuery).mockResolvedValueOnce([
