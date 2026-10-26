@@ -1,0 +1,61 @@
+name: Extension release
+
+# Builds the extension and uploads it to the Chrome Web Store, which submits it
+# for review; it goes live once review passes. Bump `version` in
+# extension/package.json first: the store rejects an upload that doesn't raise it.
+#
+# Run it from the Actions tab (Run workflow), or push a tag that matches the
+# version, e.g. `git tag extension-v0.3.0 && git push origin extension-v0.3.0`.
+#
+# Needs four repository secrets, from the Google Cloud project and the Chrome
+# Web Store account of jackson@minerval.ai: CWS_CLIENT_ID, CWS_CLIENT_SECRET,
+# CWS_REFRESH_TOKEN and CWS_PUBLISHER_ID.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['extension-v*']
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - run: npm ci
+
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "extension-v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match extension/package.json version ${version}"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build and package
+        run: npm run build && npm run package
+
+      - name: Upload and submit for review
+        env:
+          EXTENSION_ID: ojpdkgmlbffliefddfendfakpiiopkci
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: npx --yes chrome-webstore-upload-cli@4.0.2 --source build/chrome-mv3-prod.zip
