@@ -306,7 +306,8 @@ To the code: issues and pull requests are welcome. Start with
 
 ## License
 
-The code is MIT; see [LICENSE](LICENSE).
+The code is licensed under the [Apache License 2.0](LICENSE); copyright
+Minerval, Inc. See [NOTICE](NOTICE).
 
 The claim graph content (claims, assessments, arguments, and the
 nanopublication exports built from them) is dedicated to the public domain
