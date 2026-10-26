@@ -1,7 +1,7 @@
 {
   "name": "minerval-extension",
   "displayName": "Minerval",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reads the page against the Minerval claim graph: flags misleading claims, explains unsettled ones, answers questions with citations.",
   "author": "Minerval",
   "packageManager": "npm@10.0.0",
