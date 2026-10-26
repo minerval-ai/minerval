@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ContactForm } from "@/components/ContactForm";
 
-// The about page: the problem, what Minerval is (#112), where it's going, who
+// The about page: what Minerval is (#112), where it's going, who
 // builds it, and how to reach the project (#81). The explainer content lives
 // in /docs. Asides are sidenotes styled after the browser extension's
 // annotations: a tinted, underlined span in the text and a card in the margin.
@@ -38,18 +38,6 @@ export default function About() {
         About
       </h1>
       <p className="dropcap">
-        What to link to to prove your point on the internet is an underappreciated
-        unsolved problem, even when you are &lsquo;demonstrably&rsquo; right. None of the
-        existing solutions are really adequate. Some random paper on Arxiv whose jargony
-        abstract plausibly says something adjacent to the thing you&rsquo;re saying? A
-        blog post by some guy your interlocutor doesn&rsquo;t know and doesn&rsquo;t
-        trust? A news article? The Wikipedia page for an adjacent topic? A link to your
-        conversation with Claude where you controlled the framing of the question? None
-        of these things is likely to satisfy the objector.
-      </p>
-
-      <h2 id="what-is-minerval">What is Minerval?</h2>
-      <p>
         Minerval is an open source project to build a database of{" "}
         <Annot n={1} text="claims about the world">
           Claims are canonical forms of public claims about the world. More details in
@@ -58,10 +46,20 @@ export default function About() {
         , figure out what the important ones are, and ask LLMs to assess their epistemic
         statuses. Its claim pages (
         <Link href="/claims/0d59fb15-7dc1-49b1-b9d9-9462f17d2d21/map">example</Link>) are
-        intended to be the place that one links to or consults for the canonical, neutral
-        epistemic status of any claim, much as Wikipedia is the canonical (and at least
-        aspirationally neutral) place one goes for a standard introduction to any given
-        topic.
+        intended to be{" "}
+        <Annot n={2} text="the place that one links to">
+          What to link to to prove your point on the internet is an underappreciated
+          unsolved problem, even when you are &lsquo;demonstrably&rsquo; right. None of the
+          existing solutions are really adequate. Some random paper on Arxiv whose jargony
+          abstract plausibly says something adjacent to the thing you&rsquo;re saying? A
+          blog post by some guy your interlocutor doesn&rsquo;t know and doesn&rsquo;t
+          trust? A news article? The Wikipedia page for an adjacent topic? A link to your
+          conversation with Claude where you controlled the framing of the question? None
+          of these things is likely to satisfy the objector.
+        </Annot>{" "}
+        or consults for the canonical, neutral epistemic status of any claim, much as
+        Wikipedia is the canonical (and at least aspirationally neutral) place one goes
+        for a standard introduction to any given topic.
       </p>
       <p>
         Minerval decomposes every claim to its bedrock, weighs it against the evidence,
@@ -78,14 +76,14 @@ export default function About() {
       </p>
       <p>
         If done properly, with{" "}
-        <Annot n={2} text="today’s best LLMs">
+        <Annot n={3} text="today’s best LLMs">
           Nobody will use this, and no one should use it, if the outputs are noticeably
           worse than what they could get by opening a new tab and simply asking their own
           frontier model.
         </Annot>
         , this should allow for actually good mass fact-checking, in the same way that
         Pangram allows{" "}
-        <Annot n={3} text="actually good mass slop-detection">
+        <Annot n={4} text="actually good mass slop-detection">
           Including via our browser extension or, ideally, since no one uses browser
           extensions, direct integration with platforms such as LessWrong, Substack
           (similar to what they&rsquo;ve done with Pangram), or X.
@@ -106,7 +104,7 @@ export default function About() {
         organizes the funding of research and knowledge production across domains. To
         efficiently allocate attention in a scientific domain, we must first have a map
         of the work to be done, and then{" "}
-        <Annot n={4} text="a mechanism for pricing that work">
+        <Annot n={5} text="a mechanism for pricing that work">
           A complex problem. See{" "}
           <a href="https://jacksonhurley.com/allocating-attention-in-claimspace">
             Allocating Attention in Claimspace
@@ -124,7 +122,7 @@ export default function About() {
         which, if robustly satisfied at the graph level by the multi-agent system that
         administers the graph, would ensure that it can scale efficiently without losing
         coherence or accuracy (stability, path independence, consistency, and{" "}
-        <Annot n={5} text="adversarial robustness">
+        <Annot n={6} text="adversarial robustness">
           If Minerval succeeds at becoming a canonical source, people will try to
           influence it. Minerval invites contributions and new evidence, but that comes
           with substantial attack surface area for bad-faith actors. The plan here is to
@@ -146,7 +144,7 @@ export default function About() {
       <h2 id="whos-behind-this">Who&rsquo;s behind this</h2>
       <p>
         Minerval is built by{" "}
-        <Annot n={6} text={<a href="https://jacksonhurley.com/">Jackson Hurley</a>}>
+        <Annot n={7} text={<a href="https://jacksonhurley.com/">Jackson Hurley</a>}>
           I have incorporated Minerval, Inc. as a vanilla Delaware C-Corp, but I have no
           immediate plans to either raise money from VCs or provide excludable goods and
           services, with the very minor exception of the chat feature in the browser

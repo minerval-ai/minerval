@@ -1,16 +1,5 @@
 # Minerval
 
-What to link to to prove your point on the internet is an underappreciated
-unsolved problem, even when you are 'demonstrably' right. None of the existing
-solutions are really adequate. Some random paper on Arxiv whose jargony
-abstract plausibly says something adjacent to the thing you're saying? A blog
-post by some guy your interlocutor doesn't know and doesn't trust? A news
-article? The Wikipedia page for an adjacent topic? A link to your conversation
-with Claude where you controlled the framing of the question? None of these
-things is likely to satisfy the objector.
-
-## What is Minerval?
-
 Minerval is an open source project to build a database of claims about the
 world, figure out what the important ones are, and ask LLMs to assess their
 epistemic statuses.[^claims] Its claim pages
@@ -19,6 +8,15 @@ are intended to be the place that one links to or consults for the canonical,
 neutral epistemic status of any claim, much as Wikipedia is the canonical (and
 at least aspirationally neutral) place one goes for a standard introduction to
 any given topic.
+
+What to link to to prove your point on the internet is an underappreciated
+unsolved problem, even when you are 'demonstrably' right. None of the existing
+solutions are really adequate. Some random paper on Arxiv whose jargony
+abstract plausibly says something adjacent to the thing you're saying? A blog
+post by some guy your interlocutor doesn't know and doesn't trust? A news
+article? The Wikipedia page for an adjacent topic? A link to your conversation
+with Claude where you controlled the framing of the question? None of these
+things is likely to satisfy the objector.
 
 Minerval decomposes every claim to its bedrock, weighs it against the
 evidence, and keeps the verdict current as the world changes. The graph is
