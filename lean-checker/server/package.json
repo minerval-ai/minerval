@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "The Minerval Lean checker service: warm-lane elaboration and cold-lane proof checks against a pinned Mathlib (docs/mathematics.md section 5).",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
