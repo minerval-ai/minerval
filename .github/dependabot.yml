@@ -41,6 +41,29 @@ updates:
       infra-minor-and-patch:
         update-types: [minor, patch]
 
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      web-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Baked into the lean-checker image, which is built and pushed by hand
+  # (lean-checker/README.md): a merged bump takes effect at the next
+  # image build.
+  - package-ecosystem: npm
+    directory: /lean-checker/server
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      lean-checker-minor-and-patch:
+        update-types: [minor, patch]
+
   # Actions are pinned to commit SHAs with the version in a trailing
   # comment; Dependabot bumps both together.
   - package-ecosystem: github-actions
