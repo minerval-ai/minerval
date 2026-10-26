@@ -7,7 +7,7 @@
     "build": "tsc",
     "synth": "cdk synth",
     "deploy": "cdk deploy --all --require-approval never",
-    "test": "ts-node test/lean-checker-stack.test.ts"
+    "test": "tsx test/lean-checker-stack.test.ts"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.239.0",
@@ -16,7 +16,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "aws-cdk": "^2.1106.1",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.7.0"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

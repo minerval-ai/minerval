@@ -30,10 +30,13 @@ jobs:
       - name: Test
         run: npx vitest run
 
-      - name: CDK synth
+      # The CDK app runs through tsx, which strips types without checking
+      # them, so the infra code is typechecked here before synth.
+      - name: CDK typecheck and synth
         working-directory: infra
         run: |
           npm ci
+          npx tsc --noEmit
           npx cdk synth
 
   db-tests:

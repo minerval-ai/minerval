@@ -43,4 +43,5 @@ jobs:
         working-directory: infra
         run: |
           npm ci
+          npx tsc --noEmit
           npx cdk deploy --all --require-approval never

@@ -1,6 +1,6 @@
 /**
  * Synth-level assertions on LeanCheckerStack. Run with `npm test` in infra/
- * (ts-node over node:test; no extra dependencies).
+ * (tsx over node:test; no extra dependencies).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
