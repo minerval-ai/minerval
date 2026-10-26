@@ -7,16 +7,16 @@
     "skipLibCheck": true,
     "target": "esnext",
     "lib": ["dom", "dom.iterable", "esnext"],
+    "types": ["chrome", "node"],
     "allowJs": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
     "resolveJsonModule": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
     "jsx": "preserve",
-    "baseUrl": ".",
     "paths": {
       "~*": ["./*"]
     }
