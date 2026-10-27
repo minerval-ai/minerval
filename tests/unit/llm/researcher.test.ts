@@ -453,4 +453,15 @@ describe("the budget guide", () => {
     });
     expect(guide).toContain("each elicit_ search costs $2.00, and they are capped at 5 calls this run");
   });
+
+  it("states Pangram's per-call ceiling and cap when the Pangram tools are in the toolset", async () => {
+    const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
+    const guide = budgetGuide({
+      task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
+      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      pangramMaxCalls: 3, pangramMaxUsdPerCall: 0.75,
+      toolNames: ["pangram_check_ai", "pangram_find_sources", "report"], sandbox: false, notebook: {},
+    });
+    expect(guide).toContain("each pangram_ analysis is billed per word, up to $0.75 a call, and they are capped at 3 calls this run");
+  });
 });

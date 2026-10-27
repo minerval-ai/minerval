@@ -180,6 +180,10 @@ export interface ResearcherTaskInput {
   elicitMaxCalls: number;
   /** What one Elicit call costs, in USD. */
   elicitUsdPerCall: number;
+  /** The per-run cap on Pangram calls, when the Pangram tools are in the toolset. */
+  pangramMaxCalls?: number;
+  /** The most one Pangram call can cost, in USD (it is billed per word sent). */
+  pangramMaxUsdPerCall?: number;
   toolNames: string[];
   /** Whether the code-execution sandbox is in the toolset (Anthropic models only). */
   sandbox: boolean;
@@ -262,6 +266,11 @@ export function budgetGuide(input: ResearcherTaskInput): string {
   if (input.toolNames.some((n) => n.startsWith("elicit_"))) {
     costs.push(
       `each elicit_ search costs $${input.elicitUsdPerCall.toFixed(2)}, and they are capped at ${input.elicitMaxCalls} calls this run`
+    );
+  }
+  if (input.toolNames.some((n) => n.startsWith("pangram_"))) {
+    costs.push(
+      `each pangram_ analysis is billed per word, up to $${(input.pangramMaxUsdPerCall ?? 0).toFixed(2)} a call, and they are capped at ${input.pangramMaxCalls ?? 0} calls this run`
     );
   }
   if (costs.length > 0) {
