@@ -69,7 +69,7 @@
 .mapbox {
   border: 1px solid var(--rule); border-radius: 5px; overflow: hidden;
   background: var(--paper);
-  box-shadow: 0 10px 34px -20px rgba(26, 24, 19, 0.18);
+  box-shadow: 0 10px 34px -20px rgb(var(--shadow) / 0.18);
 }
 .mapbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -87,9 +87,9 @@
   animation: pulse 2.4s ease-out infinite;
 }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(79, 125, 74, 0.5); }
-  70% { box-shadow: 0 0 0 6px rgba(79, 125, 74, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(79, 125, 74, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-supported) 50%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 .mapLinks { margin: 0.8rem 0 0; text-align: right; }
@@ -97,7 +97,7 @@
 /* ----- extension panel: the annotated browser demo ----- */
 .browser {
   background: var(--paper-card); border: 1px solid var(--rule); border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(26, 24, 19, 0.04), 0 10px 34px -18px rgba(26, 24, 19, 0.14);
+  box-shadow: 0 1px 2px rgb(var(--shadow) / 0.04), 0 10px 34px -18px rgb(var(--shadow) / 0.14);
   overflow: hidden;
 }
 .chrome {
