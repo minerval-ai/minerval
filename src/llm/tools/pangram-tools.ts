@@ -84,6 +84,8 @@ const textOrUrlSchema = {
 export function getPangramToolDefinitions(config: Config = loadConfig()): Tool[] {
   if (!pangramConfigured(config)) return [];
   const cap = `Only the first ${config.pangramMaxWords} words are sent.`;
+  const per100 = (usdPerWord: number) =>
+    `Billed ${+(usdPerWord * 100 * 100).toFixed(2)}¢ per 100 words.`;
   return [
     {
       name: PANGRAM_CHECK_AI_TOOL_NAME,
@@ -91,7 +93,7 @@ export function getPangramToolDefinitions(config: Config = loadConfig()): Tool[]
         "Pangram's AI-writing detection: classifies a text as human-written, " +
         "AI-generated, AI-assisted, or mixed. Returns the overall verdict, the " +
         "fraction of the text in each class, and the most AI-like passages " +
-        `with their scores and confidence. Billed per word. ${cap}`,
+        `with their scores and confidence. ${per100(config.pangramAiUsdPerWord)} ${cap}`,
       input_schema: textOrUrlSchema,
     },
     {
@@ -99,7 +101,8 @@ export function getPangramToolDefinitions(config: Config = loadConfig()): Tool[]
       description:
         "Pangram's plagiarism check: searches the web for content matching a " +
         "text. Returns whether matching content was found, the share of the " +
-        `text that matches, and the matching sources with their urls. Billed per word. ${cap}`,
+        "text that matches, and the matching sources with their urls. " +
+        `${per100(config.pangramPlagiarismUsdPerWord)} ${cap}`,
       input_schema: textOrUrlSchema,
     },
   ];

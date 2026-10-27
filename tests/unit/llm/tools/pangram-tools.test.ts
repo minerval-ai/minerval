@@ -87,6 +87,10 @@ describe("pangram gating", () => {
   it("offers both tools when configured and enabled, none when disabled", () => {
     const names = createPangramTools({ maxCalls: 2, config: baseConfig }).definitions.map((t) => t.name);
     expect(names).toEqual([PANGRAM_CHECK_AI_TOOL_NAME, PANGRAM_FIND_SOURCES_TOOL_NAME]);
+    const [ai, sources] = createPangramTools({ maxCalls: 2, config: baseConfig }).definitions;
+    // The price comes from config: $0.0005/word is 5¢ per 100 words.
+    expect(ai!.description).toContain("Billed 5¢ per 100 words. Only the first 5 words are sent.");
+    expect(sources!.description).toContain("Billed 10¢ per 100 words.");
     expect(createPangramTools({ maxCalls: 2, enabled: false, config: baseConfig }).definitions).toEqual([]);
   });
 
