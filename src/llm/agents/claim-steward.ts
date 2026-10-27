@@ -323,11 +323,9 @@ The Pangram tools are in your toolset (up to ${
           config.stewardPangramMaxCallsPerRun > 0
             ? config.stewardPangramMaxCallsPerRun
             : "unlimited"
-        } calls this run, each billed per word): pangram_check_ai asks whether
-a source's text was written by a model, and pangram_find_sources finds the
-original a page copied. Reach for them only when a source the verdict leans
-on has no evident author or reads as copied or generated; what they return is
-evidence you weigh, never proof (§9).`
+        } calls this run, each billed per word): pangram_check_ai detects
+AI-generated writing, and pangram_find_sources finds web content matching a
+text.`
       : "";
 
 
