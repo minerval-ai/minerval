@@ -48,6 +48,54 @@
 
   --measure: 38rem;
   --frame:   62rem;   /* text column + room for the sidenote margin */
+
+  /* — heavier hairlines (map connectors, timeline spines), the wordmark, and
+       the shadow ink as bare channels for rgb(var(--shadow) / alpha) — */
+  --rule-strong: #c9c2b1;
+  --rule-heavy:  #b6af9f;
+  --owl-ink:     #063f1d;
+  --shadow:      26 24 19;
+
+  color-scheme: light;
+}
+
+/* ----- dark ("Ink"): neutral near-black, off-white ink. Every status keeps
+   its hue, lifted in lightness so it reads on the dark ground; tints become
+   deep washes of the same hue. The attribute is set before first paint by the
+   script in app/layout.tsx: from the reader's choice when they made one, else
+   from the system preference. ----- */
+:root[data-theme="dark"] {
+  --paper:      #121314;
+  --paper-sunk: #1b1c1e;
+  --paper-card: #17181a;
+  --ink:        #e9e9e6;
+  --ink-soft:   #c6c7c3;
+  --muted:      #93958f;
+  --faint:      #6f716c;
+  --rule:       #2b2d30;
+  --rule-soft:  #222426;
+  --rule-strong:#3d4043;
+  --rule-heavy: #4a4d50;
+
+  --link:       #84b4ea;
+  --link-visited:#b3a2dc;
+
+  --st-verified:      #62c08a;  --st-verified-tint:    #15261c;
+  --st-supported:     #98c27e;  --st-supported-tint:   #1b2318;
+  --st-inconclusive:  #e0b14f;  --st-inconclusive-tint:#2a2313;
+  --st-doubtful:      #dd9d80;  --st-doubtful-tint:    #2b1f19;
+  --st-contradicted:  #ef8571;  --st-contradicted-tint:#2f1b17;
+  --st-unknown:       #a6a8a2;  --st-unknown-tint:     #212224;
+  --st-unassessed:    #7d7f7a;  --st-unassessed-tint:  #1b1c1e;
+
+  --stance-for:     #98c27e;
+  --stance-against: #ef8571;
+  --stance-neutral: #93958f;
+
+  --owl-ink:  #62c08a;
+  --shadow:   0 0 0;
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -134,6 +182,20 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 }
 .masthead nav a:hover { color: var(--link); text-decoration: none; }
 
+/* light/dark switch (components/ThemeToggle.tsx): an icon button at the far
+   end of the masthead, showing the theme it switches to */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.6rem; height: 1.6rem; padding: 0; align-self: center;
+  border: 1px solid var(--rule); border-radius: 3px;
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+}
+.theme-toggle:hover { color: var(--link); border-color: var(--faint); }
+.theme-toggle svg { width: 0.9rem; height: 0.9rem; }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+:root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+
 /* on narrow screens the masthead wraps: wordmark on its own line, the nav
    beneath it spanning the full width and wrapping as needed — never an
    off-screen horizontal scroll */
@@ -157,6 +219,10 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
      the tightened gap fit on one line down to 320px, with room for the next
      entry rather than a wrap the next word would bring straight back. */
   .masthead nav a.wide-only { display: none; }
+  /* the switch rides the wordmark's line, at its right end, so the nav keeps
+     its one full-width line beneath */
+  .theme-toggle { order: 1; margin-left: auto; }
+  .masthead nav { order: 2; }
 }
 
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
@@ -191,7 +257,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
    faint tint and a hairline underline, the note is a small paper card in the
    margin, and hovering either one lights up the pair */
 .annot {
-  background: rgba(62, 98, 138, 0.07);
+  background: color-mix(in srgb, var(--link) 8%, transparent);
   border-bottom: 1px solid var(--link);
   border-radius: 1px;
   transition: background 0.15s;
@@ -208,9 +274,9 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .annot-note .sc { color: var(--link); }
-.annot:hover, .annot:has(+ .annot-note:hover) { background: rgba(62, 98, 138, 0.15); }
+.annot:hover, .annot:has(+ .annot-note:hover) { background: color-mix(in srgb, var(--link) 16%, transparent); }
 .annot:hover + .annot-note, .annot-note:hover {
-  border-color: var(--link); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-color: var(--link); box-shadow: 0 2px 8px rgb(var(--shadow) / 0.08);
 }
 @media (max-width: 1000px) {
   .sidenote.annot-note { border-left: 2px solid var(--link); padding-left: 0.8rem; }
@@ -228,6 +294,8 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   border: 1px solid currentColor;
 }
 .badge .badge-glyph { font-size: 0.82rem; line-height: 1; }
+/* a full-strength outline glows on the dark ground; soften it there */
+:root[data-theme="dark"] .badge { border-color: color-mix(in srgb, currentColor 60%, transparent); }
 .badge.lg { font-size: 0.82rem; padding: 0.32rem 0.7rem; }
 
 .swatch {
@@ -333,7 +401,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   color: var(--ink-soft);
   border: 1px solid var(--rule);
   border-radius: 3px;
-  box-shadow: 0 2px 10px rgba(26, 24, 19, 0.08);
+  box-shadow: 0 2px 10px rgb(var(--shadow) / 0.08);
   font-family: var(--sans);
   font-size: 0.72rem;
   font-weight: 400;

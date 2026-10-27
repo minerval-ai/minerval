@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Mark } from "./Mark";
+import { THEME_SCRIPT } from "./theme";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,7 +13,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // data-theme is set by THEME_SCRIPT before React hydrates
+    <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>
         <header className="masthead">
           <div className="masthead-inner">
@@ -30,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
             </nav>
+            <ThemeToggle />
           </div>
         </header>
         <main className="frame">{children}</main>

@@ -1168,13 +1168,13 @@ export function GraphView({
         <span className={styles.legendRule} />
         <span className={styles.legendGroup}>
           <Term gloss={RELATION.supports.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={styles.legendEdge} style={{ borderColor: "rgba(79,125,74,.7)" }} /><span className="rel-supports">supports</span>
+            <span className={styles.legendEdge} style={{ borderColor: "color-mix(in srgb, var(--st-supported) 70%, transparent)" }} /><span className="rel-supports">supports</span>
           </Term>
           <Term gloss={RELATION.contradicts.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendEdge} ${styles.dashed}`} style={{ borderColor: "rgba(143,58,44,.7)" }} /><span className="rel-contradicts">contradicts</span>
+            <span className={`${styles.legendEdge} ${styles.dashed}`} style={{ borderColor: "color-mix(in srgb, var(--st-contradicted) 70%, transparent)" }} /><span className="rel-contradicts">contradicts</span>
           </Term>
           <Term gloss={RELATION.assumes.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendEdge} ${styles.dotted}`} style={{ borderColor: "rgba(154,109,18,.8)" }} /><span className="rel-assumes">assumes</span>
+            <span className={`${styles.legendEdge} ${styles.dotted}`} style={{ borderColor: "color-mix(in srgb, var(--st-inconclusive) 80%, transparent)" }} /><span className="rel-assumes">assumes</span>
           </Term>
           <Term gloss={RELATION.requires.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
             <span className={styles.legendEdge} style={{ borderColor: "var(--rule)" }} />requires

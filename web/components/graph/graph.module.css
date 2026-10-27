@@ -82,11 +82,11 @@
   stroke: var(--rule);
   stroke-width: 1.1;
 }
-.edges path[data-rel="supports"]     { stroke: rgba(79, 125, 74, 0.55); }
-.edges path[data-rel="contradicts"]  { stroke: rgba(143, 58, 44, 0.6); stroke-dasharray: 5 3; }
+.edges path[data-rel="supports"]     { stroke: color-mix(in srgb, var(--st-supported) 55%, transparent); }
+.edges path[data-rel="contradicts"]  { stroke: color-mix(in srgb, var(--st-contradicted) 60%, transparent); stroke-dasharray: 5 3; }
 .edges path[data-rel="assumes"],
-.edges path[data-rel="presupposes"]  { stroke: rgba(154, 109, 18, 0.55); stroke-dasharray: 1.5 3; } /* presupposes: legacy alias, #205 */
-.edges path[data-rel="defines"]      { stroke: rgba(42, 80, 120, 0.5); }
+.edges path[data-rel="presupposes"]  { stroke: color-mix(in srgb, var(--st-inconclusive) 55%, transparent); stroke-dasharray: 1.5 3; } /* presupposes: legacy alias, #205 */
+.edges path[data-rel="defines"]      { stroke: color-mix(in srgb, var(--link) 50%, transparent); }
 .edges path[data-rel="spine"]        { stroke: var(--faint); }
 .edges path.miniEdge                 { stroke: var(--rule-soft); }
 .edges path.hl                       { stroke: var(--ink-soft) !important; stroke-width: 1.5; }
@@ -346,14 +346,14 @@
 /* bedrock hatching — engineering ground marks; shape, never colour alone */
 .bed { height: 7px; border-radius: 1px; margin-top: 4px; }
 .bedLg { height: 9px; }
-.bedFact  { background: repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px); }
-.bedOpen  { background: repeating-linear-gradient(45deg, rgba(154, 109, 18, 0.6) 0 1px, transparent 1px 7px); }
-.bedValue { background-image: radial-gradient(circle, rgba(90, 74, 120, 0.65) 1px, transparent 1.4px); background-size: 6px 5px; }
+.bedFact  { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px); }
+.bedOpen  { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-inconclusive) 60%, transparent) 0 1px, transparent 1px 7px); }
+.bedValue { background-image: radial-gradient(circle, color-mix(in srgb, var(--link-visited) 65%, transparent) 1px, transparent 1.4px); background-size: 6px 5px; }
 /* a machine-checked theorem (§8.3): the fact hatch crossed, proven ground */
 .bedTheorem {
   background:
-    repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(-45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px);
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px);
 }
 .bedNone  { border-top: 1px dashed var(--faint); height: 0; }
 .bedTag {
@@ -376,7 +376,7 @@
   max-height: calc(100% - 28px);
   overflow-y: auto;
   z-index: 30;
-  background: rgba(254, 253, 251, 0.97);
+  background: color-mix(in srgb, var(--paper-card) 97%, transparent);
   border: 1px solid var(--rule);
   border-radius: 3px;
   padding: 12px 14px;
@@ -489,7 +489,7 @@
     width: auto;
     border-radius: 6px 6px 0 0;
     border-bottom: none;
-    box-shadow: 0 -4px 18px rgba(26, 24, 19, 0.08);
+    box-shadow: 0 -4px 18px rgb(var(--shadow) / 0.08);
     max-height: 42vh;
     overflow-y: auto;
     z-index: 60;
