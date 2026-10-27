@@ -129,13 +129,14 @@ Results are cached server-side by url + content hash.
 
 ## Development
 
-You'll need [Node.js](https://nodejs.org) 18 or newer.
+You'll need [Node.js](https://nodejs.org) 22 or newer.
 
 ```bash
 cd extension
 npm install
-npm run dev      # dev build in build/chrome-mv3-dev
-npm run build    # production build in build/chrome-mv3-prod
+npm run dev      # dev build in build/chrome-mv3-dev, opened in a fresh Chrome with live reload
+npm run build    # production build in build/chrome-mv3
+npm run package  # zips the production build to build/chrome-mv3-prod.zip
 ```
 
 To load a local build: open `chrome://extensions`, turn on **Developer
@@ -143,7 +144,12 @@ mode** (top right), click **Load unpacked**, and select the build directory
 above. A loaded local build runs alongside or instead of the store version —
 disable one of the two to avoid double annotations.
 
-Built with [Plasmo](https://www.plasmo.com/) (cross-browser MV3). Point the
+Built with [WXT](https://wxt.dev/) (Vite, MV3). The manifest lives in
+`wxt.config.ts`; `entrypoints/` holds the three thin entries (background,
+content script, popup) that call into `background.ts`,
+`contents/overlay.ts`, and `popup.tsx`. The toolbar icons in `public/icon/`
+are fixed PNGs resized from `assets/icon.png`; regenerate them by hand if
+the master icon changes. Point the
 extension at a local API by setting the API base URL in settings
 (`http://localhost:3000`, the default — no API key needed against a keyless
 dev server).

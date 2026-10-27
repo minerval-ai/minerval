@@ -7,13 +7,12 @@
   "author": "Minerval",
   "packageManager": "npm@10.0.0",
   "scripts": {
-    "dev": "plasmo dev",
-    "build": "plasmo build",
-    "package": "plasmo package",
+    "dev": "wxt",
+    "build": "wxt build",
+    "package": "wxt zip",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "plasmo": "0.90.5",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -22,16 +21,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "typescript": "^7.0.2"
-  },
-  "manifest": {
-    "name": "Minerval",
-    "permissions": [
-      "storage"
-    ],
-    "host_permissions": [
-      "http://*/*",
-      "https://*/*"
-    ]
+    "typescript": "^7.0.2",
+    "wxt": "0.21.4"
   }
 }

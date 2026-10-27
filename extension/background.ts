@@ -71,60 +71,67 @@ function setBadge(tabId: number | undefined, count: number): void {
   });
 }
 
-chrome.runtime.onMessage.addListener(
-  (message: BackgroundRequest, sender, sendResponse) => {
-    const respond = (result: Result<unknown>) => sendResponse(result);
+/**
+ * The service worker's entry (entrypoints/background.ts). Listeners are
+ * registered here rather than at module load so the build can import this
+ * module without side effects.
+ */
+export function startBackground(): void {
+  chrome.runtime.onMessage.addListener(
+    (message: BackgroundRequest, sender, sendResponse) => {
+      const respond = (result: Result<unknown>) => sendResponse(result);
 
-    (async () => {
-      try {
-        switch (message.type) {
-          case "analyze":
-            respond({ ok: true, data: await handleAnalyze(message) });
-            break;
-          case "check-analysis":
-            respond({
-              ok: true,
-              data: await handleCheckAnalysis(message.contentHash),
-            });
-            break;
-          case "chat":
-            respond({ ok: true, data: await chat(message) });
-            break;
-          case "claim-detail":
-            respond({ ok: true, data: await getClaimDetail(message.claimId) });
-            break;
-          case "propose-claim":
-            respond({
-              ok: true,
-              data: await proposeClaim({
-                claim: message.claim,
-                argument: message.argument,
-              }),
-            });
-            break;
-          case "shared-lookup": {
-            const analysis = await lookupSharedAnalysis(message.urlHash);
-            if (analysis) cacheAnalysis(analysis);
-            respond({ ok: true, data: analysis });
-            break;
+      (async () => {
+        try {
+          switch (message.type) {
+            case "analyze":
+              respond({ ok: true, data: await handleAnalyze(message) });
+              break;
+            case "check-analysis":
+              respond({
+                ok: true,
+                data: await handleCheckAnalysis(message.contentHash),
+              });
+              break;
+            case "chat":
+              respond({ ok: true, data: await chat(message) });
+              break;
+            case "claim-detail":
+              respond({ ok: true, data: await getClaimDetail(message.claimId) });
+              break;
+            case "propose-claim":
+              respond({
+                ok: true,
+                data: await proposeClaim({
+                  claim: message.claim,
+                  argument: message.argument,
+                }),
+              });
+              break;
+            case "shared-lookup": {
+              const analysis = await lookupSharedAnalysis(message.urlHash);
+              if (analysis) cacheAnalysis(analysis);
+              respond({ ok: true, data: analysis });
+              break;
+            }
+            case "entitlement":
+              respond({ ok: true, data: await getEntitlement() });
+              break;
+            case "badge":
+              setBadge(sender.tab?.id, message.count);
+              respond({ ok: true, data: null });
+              break;
           }
-          case "entitlement":
-            respond({ ok: true, data: await getEntitlement() });
-            break;
-          case "badge":
-            setBadge(sender.tab?.id, message.count);
-            respond({ ok: true, data: null });
-            break;
+        } catch (err) {
+          respond({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-      } catch (err) {
-        respond({
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    })();
+      })();
 
-    // Keep the message channel open for the async response.
-    return true;
-  }
-);
+      // Keep the message channel open for the async response.
+      return true;
+    }
+  );
+}

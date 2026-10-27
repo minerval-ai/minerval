@@ -1,4 +1,3 @@
-import type { PlasmoCSConfig } from "plasmo";
 import {
   buildTextIndex,
   findOccurrences,
@@ -22,11 +21,6 @@ import {
   type Submission,
   type Verdict,
 } from "~lib/types";
-
-export const config: PlasmoCSConfig = {
-  matches: ["http://*/*", "https://*/*"],
-  run_at: "document_idle",
-};
 
 /**
  * Non-destructive page markup: highlights are absolutely-positioned overlay
@@ -735,55 +729,6 @@ function watchPage(): void {
   }, 1500);
 }
 
-// --- Messages from the popup -----------------------------------------------------
-
-chrome.runtime.onMessage.addListener(
-  (message: ContentRequest, _sender, sendResponse) => {
-    if (message.type === "get-page-state") {
-      const pageState: PageState = {
-        url: location.href,
-        title: document.title,
-        analyzed: state.analysis !== null,
-        running: state.running,
-        error: state.error,
-        annotations: state.analysis?.annotations ?? [],
-        analyzedAt: state.analysis?.analyzed_at ?? null,
-        shared: state.shared,
-        isDraft: looksLikeDraft(),
-        share: willShare(),
-        claimSubmissions: state.claimSubmissions,
-      };
-      sendResponse({ ok: true, data: pageState });
-      return;
-    }
-    if (message.type === "propose-claim") {
-      void proposeFromPage(message.verbatimText, message.argument).then((r) => {
-        if (r.ok) anchorAnnotations();
-        sendResponse(r);
-      });
-      return true;
-    }
-    if (message.type === "set-share") {
-      state.shareOptOut = !message.share;
-      sendResponse({ ok: true, data: willShare() });
-      return;
-    }
-    if (message.type === "reveal-claim") {
-      sendResponse({ ok: true, data: revealClaim(message.verbatimText) });
-      return;
-    }
-    if (message.type === "run-analysis") {
-      void runAnalysis().then(() => {
-        sendResponse({
-          ok: state.error === null,
-          data: null,
-          error: state.error ?? undefined,
-        });
-      });
-      return true; // async response
-    }
-  }
-);
 
 /**
  * On arriving at a page: show another reader's analysis if there is one,
@@ -799,12 +744,69 @@ async function showPage(): Promise<void> {
 
 // --- Boot -------------------------------------------------------------------------
 
-void (async () => {
-  state.settings = await getSettings();
-  onSettingsChanged((s) => {
-    state.settings = s;
-    if (state.analysis) anchorAnnotations();
-  });
-  watchPage();
-  window.setTimeout(() => void showPage(), 1500);
-})();
+/**
+ * The content script's entry (entrypoints/overlay.content.ts): everything
+ * that touches the page or registers listeners runs from here, so the
+ * build can import this module without side effects.
+ */
+export function startOverlay(): void {
+  // Messages from the popup.
+  chrome.runtime.onMessage.addListener(
+    (message: ContentRequest, _sender, sendResponse) => {
+      if (message.type === "get-page-state") {
+        const pageState: PageState = {
+          url: location.href,
+          title: document.title,
+          analyzed: state.analysis !== null,
+          running: state.running,
+          error: state.error,
+          annotations: state.analysis?.annotations ?? [],
+          analyzedAt: state.analysis?.analyzed_at ?? null,
+          shared: state.shared,
+          isDraft: looksLikeDraft(),
+          share: willShare(),
+          claimSubmissions: state.claimSubmissions,
+        };
+        sendResponse({ ok: true, data: pageState });
+        return;
+      }
+      if (message.type === "propose-claim") {
+        void proposeFromPage(message.verbatimText, message.argument).then((r) => {
+          if (r.ok) anchorAnnotations();
+          sendResponse(r);
+        });
+        return true;
+      }
+      if (message.type === "set-share") {
+        state.shareOptOut = !message.share;
+        sendResponse({ ok: true, data: willShare() });
+        return;
+      }
+      if (message.type === "reveal-claim") {
+        sendResponse({ ok: true, data: revealClaim(message.verbatimText) });
+        return;
+      }
+      if (message.type === "run-analysis") {
+        void runAnalysis().then(() => {
+          sendResponse({
+            ok: state.error === null,
+            data: null,
+            error: state.error ?? undefined,
+          });
+        });
+        return true; // async response
+      }
+    }
+  );
+
+  // Boot.
+  void (async () => {
+    state.settings = await getSettings();
+    onSettingsChanged((s) => {
+      state.settings = s;
+      if (state.analysis) anchorAnnotations();
+    });
+    watchPage();
+    window.setTimeout(() => void showPage(), 1500);
+  })();
+}

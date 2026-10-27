@@ -1,7 +1,7 @@
 {
-  "//": "Self-contained (options inlined from plasmo/templates/tsconfig.base + strict): the repo's root vitest imports lib/anchor.ts, and an `extends` into extension/node_modules would break any tooling that hasn't installed the extension's deps (e.g. CI).",
-  "exclude": ["node_modules", "build", ".plasmo"],
-  "include": [".plasmo/index.d.ts", "./**/*.ts", "./**/*.tsx"],
+  "//": "Self-contained (no extends into .wxt/): the repo's root vitest imports lib/anchor.ts, and an `extends` into extension/node_modules would break any tooling that hasn't installed the extension's deps (e.g. CI).",
+  "exclude": ["node_modules", "build", ".wxt", ".output"],
+  "include": ["./**/*.ts", "./**/*.tsx"],
   "compilerOptions": {
     "strict": true,
     "skipLibCheck": true,
