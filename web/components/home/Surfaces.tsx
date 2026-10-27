@@ -111,7 +111,7 @@ export function Surfaces({
 
   return (
     <section className={styles.section}>
-      <div className={styles.tabs} role="tablist" aria-label="What's built on the graph" data-tour="tabs">
+      <div className={styles.tabs} role="tablist" aria-label="What's built on the graph">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -129,7 +129,7 @@ export function Surfaces({
 
       {/* ---- 01 · the graph: the live claim map ---- */}
       <div id="panel-graph" role="tabpanel" aria-labelledby="tab-graph" hidden={tab !== "graph"}>
-        <div className={styles.mapbox} data-tour="map">
+        <div className={styles.mapbox}>
           <div className={styles.mapbar}>
             <span className="sc">
               Claim map · {source === "live" ? "click a claim to open it full-screen" : "click a claim to focus on it"}

@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { FLAGSHIP_ID } from "@/lib/fixtures";
 import { apiConfigured } from "@/lib/api";
@@ -6,7 +5,6 @@ import { loadClaim } from "@/lib/data";
 import { TERRITORIES, territoryHref } from "@/lib/territories";
 import { SearchInput } from "@/components/home/SearchInput";
 import { Surfaces } from "@/components/home/Surfaces";
-import { HomeTour } from "@/components/home/Tour";
 import styles from "@/components/home/home.module.css";
 
 // The home page (issue #80): show the graph, don't describe it. Hero + search,
@@ -43,7 +41,7 @@ export default async function Home() {
           An open repository of claims, assessed and maintained by AI administrators
           under a public constitution.
         </p>
-        <form className={styles.search} role="search" action="/claims" method="get" data-tour="search">
+        <form className={styles.search} role="search" action="/claims" method="get">
           <SearchInput />
         </form>
         {/* coverage caption (#246): the corpus is a few investigations so far, and
@@ -65,13 +63,6 @@ export default async function Home() {
         </p>
       </div>
 
-      {/* guided walkthrough (#251), opened only from a "tour" entry (masthead
-          above 640px, footer below); Suspense because it watches ?tour=1 via
-          useSearchParams */}
-      <Suspense fallback={null}>
-        <HomeTour />
-      </Suspense>
-
       {/* what's built on the graph: 01 map · 02 extension · 03 MCP & API */}
       <Surfaces detail={detail} source={source} />
 
@@ -82,7 +73,7 @@ export default async function Home() {
           The graph is maintained by ten LLM administrators. Every decision carries a
           reasoning trace, and every trace is open to challenge.
         </p>
-        <div className={styles.triptych} data-tour="docs">
+        <div className={styles.triptych}>
           <Link className={styles.panelLink} href="/docs/constitution">
             <span className="sc">The constitution</span>
             <h3>The principles that bind every agent</h3>

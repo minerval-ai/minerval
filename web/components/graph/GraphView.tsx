@@ -1123,7 +1123,7 @@ export function GraphView({
       </div>
 
       {/* legend — a figure caption, not app chrome */}
-      <div className={styles.legend} data-tour="legend">
+      <div className={styles.legend}>
         {/* the map's grammar first (#253): what the shapes are, before what
             their colours and edges say */}
         <span className={styles.legendGroup}>
