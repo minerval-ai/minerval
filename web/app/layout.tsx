@@ -18,17 +18,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="wordmark plain">
               <span className="glyph" aria-hidden><Mark size="0.82em" /></span>Minerval
             </Link>
-            {/* Four routes carry the phone masthead; `tour` and `about` are marked
-                wide-only and drop out below 640px, where the footer nav carries
-                both (#367). Anything added here should be weighed the same way:
+            {/* Four routes carry the phone masthead; `findings` and `about` are
+                marked wide-only and drop out below 640px, where the footer nav
+                carries both (#367). Anything added here should be weighed the same way:
                 the phone row is one line, and it stays one line. */}
             <nav>
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
-              {/* reopens the home walkthrough (#251) */}
               <Link className="wide-only" href="/findings">findings</Link>
-              <Link className="wide-only" href="/?tour=1">tour</Link>
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
             </nav>
@@ -46,9 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
-              {/* the walkthrough's entry point on phones, where the masthead
-                  drops its wide-only entries (#367) */}
-              <Link href="/?tour=1">tour</Link>
               <Link href="/about">about</Link>
               {/* the findings feed (#394): the record of what the
                   administrators found worth telling people */}
