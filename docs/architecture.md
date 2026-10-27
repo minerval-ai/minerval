@@ -937,7 +937,8 @@ the right choice for reading and mapping a large literature economically.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
-Elicit search tools where configured, a notebook, and, on a claim-scoped
+Elicit search tools and the Pangram tools (`pangram_check_ai`,
+`pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
 task, the Provenance skill's tools except `provenance_write_map`; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher

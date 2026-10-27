@@ -101,12 +101,12 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
 }
 
 export interface ExternalUsage {
-  /** `lean`, `elicit`, `anthropic_code_execution`, or `anthropic_web_search` (docs/mathematics.md §6.3). */
-  provider: "lean" | "elicit" | "anthropic_code_execution" | "anthropic_web_search";
+  /** `lean`, `elicit`, `pangram`, `anthropic_code_execution`, or `anthropic_web_search` (docs/mathematics.md §6.3). */
+  provider: "lean" | "elicit" | "pangram" | "anthropic_code_execution" | "anthropic_web_search";
   /** The pinned identity, e.g. `lean-checker/mathlib-v4.33.0` or `elicit/search_papers`. */
   model: string;
   units: number;
-  unitKind: "wall_ms" | "call" | "container_seconds" | "search";
+  unitKind: "wall_ms" | "call" | "container_seconds" | "search" | "words";
   costMicroUsd: number;
 }
 

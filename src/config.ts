@@ -523,6 +523,27 @@ const configSchema = z.object({
   // judgment about whether to call at all stays with the Steward, but one
   // run cannot burn unbounded provider spend. 0 disables the cap.
   stewardElicitMaxCallsPerRun: z.coerce.number().default(3),
+  // Pangram domain tools (src/llm/tools/pangram-tools.ts): AI-writing
+  // detection and original-source search over Pangram's API, for the
+  // Steward and the researcher. Empty key (the default) disables them
+  // entirely. Billed per word, so opt-in per deployment like Elicit.
+  pangramApiKey: z.string().default(""),
+  pangramApiUrl: z.string().default("https://text.external-api.pangram.com"),
+  pangramPlagiarismApiUrl: z.string().default("https://plagiarism.api.pangram.com"),
+  pangramModel: z.string().default("pangram-4"),
+  // What Pangram charges per word, in USD, metered per call so the caller's
+  // ceiling and the daily caps see it. The detection default is Pangram 4's
+  // pay-as-you-go rate ($0.05 per 100 words); set the source search's from
+  // the account's actual rate.
+  pangramAiUsdPerWord: z.coerce.number().min(0).default(0.0005),
+  pangramPlagiarismUsdPerWord: z.coerce.number().min(0).default(0.0005),
+  // The most words one call sends (the rest of the text is cut), which
+  // bounds one call's cost: 1500 words is $0.75 at the default rate.
+  pangramMaxWords: z.coerce.number().int().min(50).default(1500),
+  // Importance gate (§19) and per-run backstop for the Steward, as for
+  // Elicit. 0.6 is the constitution's Major anchor. 0 disables the cap.
+  stewardPangramMinImportance: z.coerce.number().default(0.6),
+  stewardPangramMaxCallsPerRun: z.coerce.number().min(0).default(2),
   // Per-run backstops on the Lean tools the Mathematics skill brings to the
   // Steward (docs/mathematics.md §6.2). There is no importance gate on these:
   // the skill text carries the judgment about when a check is worth its
@@ -640,6 +661,7 @@ const configSchema = z.object({
   researcherMaxTurns: z.coerce.number().min(1).default(60),
   researcherWebSearchMaxUses: z.coerce.number().min(0).default(15),
   researcherElicitMaxCalls: z.coerce.number().min(0).default(5),
+  researcherPangramMaxCalls: z.coerce.number().min(0).default(3),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
@@ -1089,6 +1111,15 @@ export function loadConfig(): Config {
     elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
     stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,
     stewardElicitMaxCallsPerRun: process.env.STEWARD_ELICIT_MAX_CALLS_PER_RUN,
+    pangramApiKey: process.env.PANGRAM_API_KEY,
+    pangramApiUrl: process.env.PANGRAM_API_URL,
+    pangramPlagiarismApiUrl: process.env.PANGRAM_PLAGIARISM_API_URL,
+    pangramModel: process.env.PANGRAM_MODEL,
+    pangramAiUsdPerWord: process.env.PANGRAM_AI_USD_PER_WORD,
+    pangramPlagiarismUsdPerWord: process.env.PANGRAM_PLAGIARISM_USD_PER_WORD,
+    pangramMaxWords: process.env.PANGRAM_MAX_WORDS,
+    stewardPangramMinImportance: process.env.STEWARD_PANGRAM_MIN_IMPORTANCE,
+    stewardPangramMaxCallsPerRun: process.env.STEWARD_PANGRAM_MAX_CALLS_PER_RUN,
     stewardLeanMaxSearchesPerRun: process.env.STEWARD_LEAN_MAX_SEARCHES_PER_RUN,
     stewardLeanMaxElaborationsPerRun:
       process.env.STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN,
@@ -1116,6 +1147,7 @@ export function loadConfig(): Config {
     researcherMaxTurns: process.env.RESEARCHER_MAX_TURNS,
     researcherWebSearchMaxUses: process.env.RESEARCHER_WEB_SEARCH_MAX_USES,
     researcherElicitMaxCalls: process.env.RESEARCHER_ELICIT_MAX_CALLS,
+    researcherPangramMaxCalls: process.env.RESEARCHER_PANGRAM_MAX_CALLS,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,

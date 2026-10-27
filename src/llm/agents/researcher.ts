@@ -70,6 +70,7 @@ import {
   getElicitToolDefinitions,
   isElicitTool,
 } from "../tools/elicit-tools.js";
+import { createPangramTools } from "../tools/pangram-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -286,6 +287,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
+  const pangramTools = createPangramTools({ maxCalls: config.researcherPangramMaxCalls, config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
 
@@ -294,6 +296,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...graphReadTools,
     getReadPageToolDefinition(),
     ...elicitTools,
+    ...pangramTools.definitions,
     ...skillTools,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
@@ -323,6 +326,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     maxTurns,
     elicitMaxCalls: config.researcherElicitMaxCalls,
     elicitUsdPerCall: config.elicitUsdPerCall,
+    pangramMaxCalls: config.researcherPangramMaxCalls,
+    pangramMaxUsdPerCall:
+      config.pangramMaxWords * Math.max(config.pangramAiUsdPerWord, config.pangramPlagiarismUsdPerWord),
     toolNames,
     sandbox,
     notebook,
@@ -418,6 +424,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       elicitCalls++;
       return executeElicitTool(name, toolInput, config);
     }
+    const pangram = await pangramTools.execute(name, toolInput);
+    if (pangram !== null) return pangram;
     if (isSkillTool(name)) {
       // Provenance records land on the run's claim and no other: a claim_id
       // in the input that names a different one is refused, not honoured.

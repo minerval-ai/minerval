@@ -33,6 +33,7 @@ import {
   executeElicitTool,
   isElicitTool,
 } from "../tools/elicit-tools.js";
+import { createPangramTools, pangramEnabledForImportance } from "../tools/pangram-tools.js";
 import {
   executeSkillTool,
   getActiveSkillToolDefinitions,
@@ -228,6 +229,13 @@ async function runClaimStewardImpl(input: {
   )
     ? await getElicitToolDefinitions(config)
     : [];
+  // Pangram (AI-writing detection, original-source search), gated the same
+  // way on the pre-run importance and capped per run inside the bundle.
+  const pangramTools = createPangramTools({
+    maxCalls: config.stewardPangramMaxCallsPerRun,
+    enabled: pangramEnabledForImportance(claimRow?.importance ?? 0.5, config),
+    config,
+  });
 
   // Domain skills (docs/mathematics.md §3.4): selected by the claim's
   // recorded domains, never by who funds the run. Their tools sit in a fixed
@@ -269,6 +277,7 @@ async function runClaimStewardImpl(input: {
     ...getStewardToolDefinitions(),
     getMatcherToolDefinition(),
     ...elicitTools,
+    ...pangramTools.definitions,
     ...skillTools,
     ...researchTools.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
@@ -304,6 +313,19 @@ elicit_* tools are in your toolset (up to ${
         } calls this run). They are
 likely overkill even here: reach for them only if ordinary web_search proves
 insufficient for a verdict that turns on the scientific literature.`
+      : "";
+
+  const pangramNote =
+    pangramTools.definitions.length > 0
+      ? `
+
+The Pangram tools are in your toolset (up to ${
+          config.stewardPangramMaxCallsPerRun > 0
+            ? config.stewardPangramMaxCallsPerRun
+            : "unlimited"
+        } calls this run, each billed per word): pangram_check_ai detects
+AI-generated writing, and pangram_find_sources finds web content matching a
+text.`
       : "";
 
 
@@ -350,7 +372,7 @@ assessment (update_claim_assessment) and logged your decision
 mid-task. If you are warned that few iterations remain, stop exploring and record
 your conclusion immediately.
 
-${formalTask ?? defaultTask(passNote)}${elicitNote}${skillsNote}`;
+${formalTask ?? defaultTask(passNote)}${elicitNote}${pangramNote}${skillsNote}`;
 
   // One cached block for the constitution and role, plus one per active skill,
   // so the shared block's cache entry is the same for skilled and unskilled runs.
@@ -456,6 +478,8 @@ ${formalTask ?? defaultTask(passNote)}${elicitNote}${skillsNote}`;
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);
       if (research !== null) return research;
+      const pangram = await pangramTools.execute(name, toolInput);
+      if (pangram !== null) return pangram;
       if (name === "match_claim") {
         // The Matcher receives the domains its caller knows.
         return executeMatcherTool(name, toolInput, { domains: claimDomains });
