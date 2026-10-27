@@ -23,6 +23,9 @@ const nextConfig = {
       { source: "/evals", destination: "/docs/evals", permanent: true },
       // The logo assets were renamed from their pre-rebrand directory (#311).
       { source: "/episteme-logo/:file", destination: "/minerval-logo/:file", permanent: true },
+      // The blog is a Substack on its own subdomain; the short URL points at it.
+      // Temporary, so the target can move without browsers caching it.
+      { source: "/blog", destination: "https://blog.minerval.ai", permanent: false },
     ];
   },
 };

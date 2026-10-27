@@ -52,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>
               <Link href="/privacy">privacy</Link>
+              <a href="https://blog.minerval.ai">blog</a>
               <a href="https://github.com/minerval-ai/minerval">source</a>
             </nav>
           </div>

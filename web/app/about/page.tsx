@@ -153,7 +153,8 @@ export default function About() {
         . At this time, Minerval is just me and Claude Code. I am actively looking for
         cofounders. If you like the vision and want to work on it, please{" "}
         <a href="#contact">reach out</a>. If you know the perfect person, please put us in
-        touch!
+        touch! I write about building Minerval at{" "}
+        <a href="https://blog.minerval.ai">blog.minerval.ai</a>.
       </p>
       <p>
         The full story lives in the <Link href="/docs">documentation</Link>: the idea and
