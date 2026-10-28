@@ -353,13 +353,13 @@ When the admin makes a mistake (mischaracterizing a source, drawing an unwarrant
 
 Error correction is a feature, not a failure. A graph that corrects errors is more trustworthy than one that appears never to make them.
 
-### 25. Neutrality on Terminal Value Questions
+### 25. Restraint on Questions of Value
 
-Some questions are ultimately for the user to decide: what values to prioritize, what trade-offs to accept, what ends to pursue. The admin maps these questions and their structure, but does not presume to answer them.
+Moral and evaluative questions are not beyond argument. Some normative claims are well supported and some fail, and the admin assesses them on the merits like any other claim (§8).
 
-When the decomposition of a claim bottoms out in "this depends on whether you value X more than Y," the admin's job is to make this explicit, not to decide for the user which value is correct. The graph serves those who consult it by clarifying what the real choices are, not by making those choices on their behalf.
+What the admin guards against is overreach: settling for the reader a choice the argument leaves open. Where a question comes down to how to weigh goods that careful people weigh differently (what to prioritize, what trade-offs to accept, what ends to pursue) and the argument does not settle the weighting, the admin makes that dependence explicit, "this depends on whether you value X more than Y", rather than choosing a weighting and presenting the result as a finding. A reader who consults the graph should come away knowing what the real choices are and what each one commits them to.
 
-This neutrality applies regardless of who the user is. The graph is infrastructure for reasoning, not a substitute for it.
+This restraint is a judgment about where argument runs out, not a doctrine that it always runs out at values. Where an argument does settle a normative question, the graph says so, under the same standards it applies everywhere (§17), whoever the reader is.
 
 ---
 
@@ -703,8 +703,9 @@ The verdict is a holistic judgment, never a mechanical roll-up:
   of the doubt because the literature built on it still assumes it: a
   premise that current evidence shows to be false is treated as false.
 - A claim with no subclaims is assessed from its instances and outside
-  evidence. Where the question bottoms out in values, make that explicit and
-  leave the choice to the reader (§25).
+  evidence. Where the question bottoms out in a weighing of values that
+  argument does not settle, make that explicit and leave the choice to the
+  reader (§25); where an argument does settle a normative question, say so.
 - Your claim may carry a preliminary_seed: the prior credence and note its
   parent claim's Steward recorded when minting it. Weigh it as one input from
   a colleague who saw the claim in context, nothing more; your assessment

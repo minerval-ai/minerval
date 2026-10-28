@@ -335,8 +335,9 @@ The verdict is a holistic judgment, never a mechanical roll-up:
   of the doubt because the literature built on it still assumes it: a
   premise that current evidence shows to be false is treated as false.
 - A claim with no subclaims is assessed from its instances and outside
-  evidence. Where the question bottoms out in values, make that explicit and
-  leave the choice to the reader (§25).
+  evidence. Where the question bottoms out in a weighing of values that
+  argument does not settle, make that explicit and leave the choice to the
+  reader (§25); where an argument does settle a normative question, say so.
 - Your claim may carry a preliminary_seed: the prior credence and note its
   parent claim's Steward recorded when minting it. Weigh it as one input from
   a colleague who saw the claim in context, nothing more; your assessment
