@@ -59,6 +59,7 @@ interface TreeEdgeRow extends MathRowFields {
   argument_stance: string | null;
   argument_content: string | null;
   argument_verdict: string | null;
+  argument_decisive: boolean | null;
   argument_evaluation: string | null;
   assessment_status: string | null;
   assessment_confidence: number | null;
@@ -167,7 +168,8 @@ export async function getClaimTree(
               am.argument_id,
               arg.name AS argument_name, arg.stance AS argument_stance,
               arg.content AS argument_content,
-              ae.verdict AS argument_verdict, ae.content AS argument_evaluation,
+              ae.verdict AS argument_verdict, ae.decisive AS argument_decisive,
+              ae.content AS argument_evaluation,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
               a.claim_credence AS assessment_credence,
               CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
@@ -440,6 +442,7 @@ function assembleTree(
       argument_stance: edge?.argument_stance ?? null,
       argument_content: edge?.argument_content ?? null,
       argument_verdict: edge?.argument_verdict ?? null,
+      argument_decisive: edge?.argument_decisive ?? null,
       argument_evaluation: edge?.argument_evaluation ?? null,
       ...mathFields(node),
       argument_lean_check: edge ? leanCheckSummaryFromLateral(edge) : null,

@@ -24,11 +24,11 @@ export type RelationType =
   | "requires" | "supports" | "contradicts"
   | "specifies" | "defines" | "assumes";
 
-// Steward verdict on a named argument's inference (issue #173): does it go
-// through granting its premises? "contested" means the framework's validity
-// is itself live-disputed.
-export type ArgumentVerdict =
-  | "holds" | "holds_with_caveats" | "fails" | "contested";
+// Steward rating of a named argument's inference (issues #173, #540).
+// How far does the conclusion follow IF the premises hold (#540)? A rating of
+// the step, never of the conclusion: whether the premises hold is read from
+// their own assessments.
+export type ArgumentVerdict = "certain" | "likely" | "slight" | "none";
 
 // Mirrors the backend sourceTypeEnum (src/schemas/common.ts).
 export type SourceType =
@@ -69,6 +69,10 @@ export interface TreeNode {
   // the written form. Null until the steward has evaluated the argument;
   // optional while API deploys race the frontend.
   argument_verdict?: ArgumentVerdict | string | null;
+  // The Steward's decisive mark (§7, #540): the argument settles its
+  // conclusion as its premises now stand. Optional while API deploys race
+  // the frontend.
+  argument_decisive?: boolean | null;
   argument_evaluation?: string | null;
   // The checker record behind a machine-checked argument (mathematics): the
   // argument's evidence is a lean_checks row the checker accepted. Threaded
@@ -161,6 +165,7 @@ export interface ArgumentItem {
   created_at: string;
   // Steward evaluation of the inference (issue #173); null until judged.
   verdict?: ArgumentVerdict | string | null;
+  decisive?: boolean | null;
   evaluation?: string | null;
   // The checker record when this argument is a machine-checked proof or
   // disproof (docs/mathematics.md §2.3); null or absent otherwise.

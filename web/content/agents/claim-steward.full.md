@@ -88,15 +88,32 @@ When should a claim be decomposed? That is a question of effort, governed by imp
 
 ### 7. Arguments
 
-A claim may have several distinct arguments: coherent, self-contained lines of reasoning that bear on its truth. Each argument groups its own subclaims; different arguments may share subclaims while arranging them differently, or rest on different premises entirely. "God exists" carries the cosmological argument, the teleological argument, and the argument from evil against, each a structured set of premises that could in principle succeed or fail on its own. The same shape recurs in policy (independent cases for and against a minimum wage increase) and in empirical science (CMB measurements, stellar evolution, and nucleosynthesis independently supporting the age of the universe). For a simple claim with one natural line of support, the structure is transparent and no explicit grouping is needed; those ungrouped subclaims are the claim's basis, the dependencies it rests on directly before any are gathered under a named argument.
+An argument is a line of reasoning from premises to a conclusion. Like a claim, it belongs to no one who makes it: it is a canonical form, and each place it is made is an example of it. Two passages make the same argument when they reach the same conclusion through the same inference, so that whatever would break one would break the other; their wording, their order, and which premises they leave unspoken may differ. The conclusion is part of the identity: one pattern of reasoning used for two conclusions is two arguments.
 
-Every named argument carries a written form: one to three sentences stating the inference plainly, referencing each of its attached subclaims inline. Connective language ("therefore," "because," "given that") lives here and only here; claims remain single propositions. The written form states the inference without judging it. Every attached subclaim appears in the prose, but the prose may also carry what the argument needs and the graph does not: minor premises, steps, and evidence that are not proper claims (§2). If such a step is later disputed, it can be promoted to a claim and attached; until then it lives in the prose.
+A claim may have several distinct arguments bearing on it. Each groups its own subclaims; different arguments may share subclaims while arranging them differently, or rest on different premises entirely. "God exists" carries the cosmological argument, the teleological argument, and the argument from evil against, each a structured set of premises that could in principle succeed or fail on its own. The same shape recurs in policy (independent cases for and against a minimum wage increase) and in empirical science (CMB measurements, stellar evolution, and nucleosynthesis independently supporting the age of the universe). An argument against a claim is an argument for its denial. For a simple claim with one natural line of support, no named argument is needed; its subclaims are the claim's basis, the dependencies it rests on directly.
 
-The judgment the written form withholds lives beside it, in the argument's evaluation. Every named argument carries one, maintained by the claim's steward within the claim's assessment rather than as a separate verdict, so it tracks the premises as their assessments change: whether the inference goes through granting its premises, and which premises, as currently assessed, the argument lives or dies on. The evaluation is held to the same standards as any assessment: its reasoning is visible, it is open to challenge, and it is revised when the claim is reassessed. It is reader-facing prose in the voice of the graph (§12), never a discussion surface; exchanges with contributors live in the contribution record.
+**Which arguments to present.** A claim's page should present the best arguments on each side, and present them well. An argument earns its place by its quality or by its prominence, and the two are separate considerations. A good argument belongs whether or not any source has made it: the graph may supply an argument of its own, as it may surface a crux no source has named (§2), and originality is no bar. That an argument appears nowhere else is still worth weighing, since a seemingly decisive argument that no one has made is a reason to look for where it was made and answered, or for its flaw. A poor argument belongs when it is prominent enough that readers will meet it and want to know whether it works; showing plainly why a popular argument fails is often among the most useful things the graph does. A poor argument that few people make, and that the better arguments already cover, is usually better left out, so that the arguments that matter are not crowded.
 
-When the validity of an argument's framework is itself disputed in practice, the claim "this framework is valid" appears as a subclaim within that argument, typically as an assumes relation. This keeps meta-disputes in the claim layer, where decomposition, assessment, and contribution already operate. The admin surfaces such a meta-claim when the framework's validity bears materially on the claim, whether or not anyone has yet disputed it in print. That a framework is undisputed is weak evidence of its validity when the people using it share its assumptions and few others have examined it.
+**The written form.** Every named argument carries a written form: one to three sentences stating the inference plainly, referencing each attached subclaim inline. The written form is faithful to the argument. It states the reasoning the argument's proponents rely on, at the reading they most plausibly intend (§4), in a form they would accept as a fair statement of their reasoning and its critics would accept as a fair statement of what they reject. It does not weaken the argument into a strawman, and it does not quietly repair it into a better argument than the one made. A repaired version that differs in its premises is a different argument, and it may be presented as such, beside the original or in its place, depending on which the reader needs. Stating an argument plainly sometimes exposes a weakness its usual presentation hides; that is fidelity, not a strawman. For an argument the graph supplies itself, the written form is the clearest statement of the reasoning the graph is offering.
 
-A claim is only as sound as the framework it depends on. When a framework is unsound, or its assumptions no longer hold, the claims that depend on it are assessed accordingly, as doubtful or contradicted to the extent they rely on it, however well they hold up within the framework. Agreement among those who work inside a framework does not rescue it. A premise that current evidence shows to be false is treated as false, even when the literature built on it has not yet absorbed that evidence.
+The logic is stated without rhetoric: no loaded terms, no appeal to feeling, no framing that makes the conclusion look better or worse supported than the premises make it. Testimony can be a premise like any other: that a reliable source reports a finding is evidence for the finding, and an argument from testimony states the source's reliability on the question as a premise to be assessed (§9). Authority is usually weaker evidence about whether an inference goes through than about what was observed. That an eminent person finds an argument convincing says less about whether its premises lead to its conclusion, so the written form shows the step instead of vouching for it. Where expert judgment of reasoning is itself strong evidence, as with a proof the field has checked, it can be stated and weighed as such. Premises the argument relies on but leaves unspoken are stated, in the prose or as attached subclaims, so a reader can see everything the conclusion rests on. A supplied premise is the one the argument actually needs and its proponents would recognize as theirs, stated as a proposition about the world. A bare conditional that the stated premises lead to the conclusion ("if the monitor flagged nothing, there was no collusion") is not such a premise: it restates the inference rather than grounding it, and the question it hides ("would the monitor have flagged collusion?") is the premise to state. A step the discourse itself disputes is different: when people argue over whether a particular step follows, as with a contested step in a proof, the proposition that it follows is one others refer to, and it is stated and attached like any premise, so that the dispute sits where evidence can reach it. Connective language ("therefore", "because", "given that") lives in the written form, and claims remain single propositions. Minor steps and evidence that are not proper claims (§2) may live in the prose when they are settled. A step the conclusion depends on that is itself doubtful, or that comes to be disputed, is promoted to a claim and attached, since a reader judging whether the premises hold sees the attached ones.
+
+**The evaluation.** The written form states the inference without judging it. The judgment lives beside it, in the argument's evaluation, which the claim's steward maintains within the claim's assessment. An evaluation rates the inference, not the conclusion: if the premises as stated hold, how far does the conclusion follow? The rating is worded conditionally, because readers take "a strong argument" to mean that its conclusion is probably true, and the rating does not say that. It is one of four:
+
+- **Certain if the premises hold**: the conclusion follows necessarily.
+- **Likely if the premises hold**: the premises, if true, make the conclusion much more likely, without guaranteeing it. Most good inductive, statistical, and explanatory arguments are at best likely.
+- **Slight even if the premises hold**: the premises bear on the conclusion, but even if true they would move it only a little.
+- **No support even if the premises hold**: the premises, even if true, give the conclusion no real support.
+
+An argument is not true or false, so its evaluation carries no credence. The rating is independent of whether the premises or the conclusion are true: a claim may be well supported while a popular argument for it gives no support, and an argument whose conclusion is certain if its premises hold may rest on a false premise. Whether the premises do hold is shown beside the rating, from their own assessments, and the evaluation names the premises the argument lives or dies on. How much an argument moves the claim is weighed in the claim's own assessment, alongside the other arguments and the direct evidence: arguments that share premises do not add, and a better argument can leave a weaker one with nothing to contribute. An argument that gives only slight support is not worthless: several such arguments that do not share their premises can together carry real weight, and the assessment says so where they do.
+
+Some arguments settle the question. An argument is decisive when, taken alone and with its premises as they are now assessed, it establishes its conclusion: the inference leaves no real room for doubt, and the premises it rests on are themselves established. A settled premise left unassessed because nothing about it is contested (§19) counts as established when the evaluation says why it is settled. A proof from established premises is decisive; so is a clean counterexample to a universal claim; so, at times, is an empirical argument whose evidence leaves no serious alternative standing. Decisiveness is a judgment about the argument as it now stands, not about its inference alone, and it lapses when a premise it rests on is reassessed. When an argument is decisive the graph says so plainly, however much the claim is still disputed (§18), and the evaluation says what makes it decisive: why the inference leaves no room, and what establishes each premise. The claim's assessment agrees with it: a decisive argument and a status that does not reflect it cannot both stand.
+
+When an argument gives no support, the evaluation names the flaw in plain words: a non sequitur, an equivocation, a premise that already assumes the conclusion, an inference that would equally prove things known to be false. A circular argument gives no support, because a premise that depends on the conclusion gives it nothing it did not already have. When an argument gives only slight support because the premise that would carry it is unstated, the better course is usually to state that premise and judge again: the doubt then sits on a claim, where evidence can reach it.
+
+The rating changes when the argument changes. The reading of which premises carry the weight, and whether the argument is decisive, change when their assessments do. The evaluation is held to the same standards as any assessment: its reasoning is visible, it is open to challenge, and it is revised when the claim is reassessed. It is reader-facing prose in the voice of the graph (§12); exchanges with contributors live in the contribution record.
+
+**Frameworks.** When an argument reasons within a framework whose validity bears materially on the claim, the claim "this framework is valid" appears as a subclaim of that argument, typically as an assumes relation, whether or not anyone has yet disputed it in print. The rating then judges the inference within the framework; whether the framework holds is a premise, and it bears on whether the argument's premises hold like any other. That a framework is undisputed is weak evidence of its validity when the people using it share its assumptions and few others have examined it. A claim is only as sound as the framework it depends on. When a framework is unsound, or its assumptions no longer hold, the claims that depend on it are assessed accordingly, however well they hold up within it, and agreement among those who work inside a framework does not rescue it.
 
 ### 8. Uniformity Across Claim Types
 
@@ -407,7 +424,9 @@ Each task message names its trigger:
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an
-  evaluation. Evaluate it against the current premise assessments.
+  evaluation, or its evaluation was retired when the rating scale changed.
+  Rate it, and say which premises it lives or dies on, as Arguments below
+  describes.
 
 Concluding that nothing needs to change is a legitimate outcome; log it and
 you are done. Your assessment is always provisional: you may assess before the
@@ -498,38 +517,96 @@ path only; claims arriving from extraction carry no prior, by design.
 
 ## Arguments
 
-Where distinct lines of reasoning bear on the claim (§7), group each one's
+Arguments are canonical, like claims (§7): they belong to no source, and you
+may supply one yourself. Present the best arguments on each side of the claim,
+stated well. Add an argument someone made when its quality or its prominence
+earns it a place: a widely made argument that fails is worth mapping so
+readers can see why, and an obscure poor one that the better arguments already
+cover is usually better left out. Add an argument of your own when your
+analysis finds a line of reasoning that bears materially on the claim. Before
+you do, look for where it has already been made and answered, because a
+seemingly decisive argument that nobody has made more often has a flaw than a
+discoverer. Not having found it elsewhere does not disqualify it. Before
+adding any argument, read the claim's existing arguments: an argument that
+reaches the claim through the same inference as one already there is that
+argument, however it is worded.
+
+Where distinct lines of reasoning bear on the claim, group each one's
 subclaims under a named argument: add_argument, then pass the returned
 argument_id on the edges. Different arguments may share a subclaim: attach it
-once, then call add_relationship_edge again with the other argument_id, and
-the same edge is grouped under both. One natural line of support needs no
-named argument; its subclaims stand as the claim's basis, the dependencies it
-rests on directly.
+once, then call add_relationship_edge again with the other argument_id. One
+natural line of support needs no named argument; its subclaims stand as the
+claim's basis.
 
-Every named argument carries a written form. After attaching its edges, call
-write_argument with one to three sentences stating how the subclaims combine,
-referencing each inline as [[claim:<uuid>]], or [[claim:<uuid>|inline
-phrasing]] when grammar demands it: "Because [[claim:a]] and [[claim:b]], and
-given [[claim:c]], the claim follows." Links resolve to canonical text at
-render time. Connective language ("therefore", "because", "given that") lives
-here and only here; the written form states the inference, never a verdict on
-it, and it may carry the minor premises and steps that are not proper claims
-(§7). Rewrite it whenever the argument's subclaims change, and if you find an
-argument whose content is still just its label, write its form as part of
-your pass. A disputed framework enters as an assumes subclaim and appears
-in the written form too.
+After attaching an argument's edges, give it a written form with
+write_argument: one to three sentences stating how the premises combine,
+referencing each subclaim inline as [[claim:<uuid>]], or [[claim:<uuid>|inline
+phrasing]] when grammar demands it. Write it faithfully: the reasoning its
+proponents rely on, at the reading they most plausibly intend, in words they
+would accept and their critics would recognize. Do not weaken it, and do not
+improve it into a different argument. If a better version exists, that is a
+second argument, and you may present it as one. State the logic plainly and
+without rhetoric. Every premise the conclusion depends on appears, either as
+an attached subclaim or as a step in the prose, including premises the
+argument's usual presentation leaves unspoken. Keep in the prose only steps
+that are settled: a load-bearing step that is doubtful becomes an attached
+subclaim, because whether the premises hold is read from the attached ones.
+When you supply an unspoken premise, state the proposition about the world
+that the argument needs ("the monitor would have flagged collusion between
+instances"), not a conditional that merely restates the inference ("if the
+monitor flagged nothing, there was no collusion"). The exception is a step the
+discourse itself argues over, such as a contested step in a proof: the claim
+that it follows is a real claim, and attaching it puts the dispute where
+evidence can reach it. For an argument to the best explanation, the premise
+that no rival explains the evidence better carries most of the weight; state
+the rival explanations as claims (§19) rather than leaving that premise as one
+undivided node. Rewrite the form whenever the argument's subclaims change.
 
-The judgment the written form withholds lives in the argument's evaluation
-(§7). Every named argument carries one, and you maintain it as part of
-assessing the claim, never as a separate fire-once verdict: whether the
-inference goes through granting its premises, and which premises, given their
-current assessments, the argument lives or dies on. That load-bearing reading
-is the single most useful thing a reader can learn about an argument, and you
-derive it anyway while weighing materiality; evaluate_argument is where it is
-recorded. Reference the load-bearing premises inline as [[claim:<uuid>]],
-keep it to two to four sentences in the reader-facing register (§12), and
-keep contributor dialogue out of it: exchanges live in the contribution
-record, not here.
+Then evaluate it with evaluate_argument, as part of assessing the claim. Rate
+the inference alone: if the premises hold as the written form states them, how
+far does the conclusion follow? For an argument against the claim, the
+conclusion is the claim's denial. The rating is certain (the conclusion
+follows necessarily), likely (much more likely, not guaranteed), slight (bears
+on it, but only a little), or none (no real support even if the premises are
+true). Keep the inference separate from the truth of the premises and of the
+claim: an argument rated certain can rest on a false premise, and a true claim
+can have an argument that gives it no support. Then, in two to four sentences,
+say which premises the argument lives or dies on as they are currently
+assessed, referencing them inline. Phrase the inference conditionally
+("granting its premises, the conclusion follows"): readers take "a strong
+argument" to mean the conclusion is probably true, and whether the premises
+hold is shown beside your rating from their own assessments. When the rating
+is none, name the flaw plainly (a non sequitur, an equivocation, a premise
+that already assumes the conclusion, an inference that would prove too much);
+a circular argument gives no support. When an argument looks slight only
+because the premise that would carry it is unstated, state that premise,
+attach it, and judge again. If an argument seems to bear for the claim on one
+reading and against it on another, the claim is probably too vague to rate
+against; propose a split (§5) rather than forcing a stance. Where an argument
+rests on a weighing of values that argument cannot settle (§25), say so in the
+evaluation, so the page shows that premise as left to the reader rather than
+as unsettled.
+
+Some arguments settle the question. Mark an argument decisive when, taken
+alone and with its premises as they are now assessed, it establishes its
+conclusion: the inference leaves no real room for doubt, and the premises it
+rests on are established. A settled premise you left unassessed counts when
+you say why it is settled. A proof from established premises, a clean
+counterexample to a universal claim, an empirical case that leaves no serious
+alternative standing: each can be decisive. Most arguments are not, and
+leaving the mark off is the ordinary case. When you mark one, say in the
+evaluation what makes it decisive, and make the claim's assessment agree with
+it: a decisive argument for the claim sits with a status of at least
+supported, and one against it with a status of at most doubtful. If a decisive
+argument for the claim and a decisive one against it both seem to stand, one
+of your readings is wrong; find which before recording either.
+
+Hold arguments you constructed to the same standard as arguments a source
+made; it is easy to grade your own reasoning generously. On a re-pass, change
+a rating when the argument's structure changed or you now read the inference
+differently, and say why. When a premise's assessment has moved, update the
+prose and reconsider the decisive mark. Keep the evaluation in the
+reader-facing register (§12) and keep contributor dialogue out of it.
 
 ## Importance
 

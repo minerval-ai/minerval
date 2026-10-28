@@ -203,8 +203,10 @@ reasoning. A single claim routinely has several:
   independently by the CMB, stellar evolution, and nucleosynthesis.
 
 Forcing these into one flat set of edges would lose the structure of which
-subclaim belongs to which line of reasoning. An argument has a `stance` (`for`,
-`against`, `neutral`), an optional `name` and `description` (a short label),
+subclaim belongs to which line of reasoning. An argument has a `stance` (`for`
+or `against`: its conclusion is the claim or the claim's denial; older rows may
+carry `neutral`, which Stewards no longer record), an optional `name` and
+`description` (a short label),
 its `content` (the written form, below), any `evidence_urls`, and provenance.
 
 **The written form.** A name is not an argument: the grouping records *which*
@@ -225,13 +227,23 @@ claim texts ("therefore", "because", "given that") lives here and only here.
 **The evaluation.** The written form deliberately withholds judgment; the
 judgment lives in a separate steward-maintained evaluation
 (`argument_evaluations`, one `is_current` row per argument with prior rows
-kept as history). It records a verdict on the inference itself: `holds`,
-`holds_with_caveats`, `fails`, or `contested` (the framework's validity is
-itself live-disputed), plus two to four sentences of reader-facing prose
-saying whether the inference goes through granting its premises and which
-premises, given their current assessments, the argument lives or dies on,
-with those load-bearing premises linked inline exactly as in the written
-form. The evaluation is derived within the claim's assessment process, not
+kept as history). It rates the inference itself (#540): how far the
+conclusion follows if the premises hold, as `certain` (it follows
+necessarily), `likely` (much more likely, not guaranteed), `slight` (the
+premises bear on it only a little) or `none` (no real support even if they
+are true). The rating is worded conditionally on every surface ("certain if
+the premises hold") because it is not a verdict on the conclusion: whether
+the premises hold is read from their own assessments and shown beside it. An
+evaluation may also mark the argument `decisive`: the Steward's judgment that,
+taken alone and with its premises as they are now assessed, it settles its
+conclusion. The mark lapses with its premises, and the claim's status has to
+agree with it. Beside the rating sit two to four sentences of reader-facing
+prose saying how far the inference goes and which premises, given their
+current assessments, the argument lives or dies on, with those load-bearing
+premises linked inline exactly as in the written form. Evaluations written
+under the earlier scale (`holds`, `holds_with_caveats`, `fails`,
+`contested`) were retired as history rather than relabelled, since none of
+those values maps cleanly onto the new ones. The evaluation is derived within the claim's assessment process, not
 as a fire-once verdict: the Steward's `evaluate_argument` tool stamps each
 evaluation with the assessment it was derived under, so an evaluation left
 behind by a later reassessment is detectably stale, and the assessment tool's
@@ -257,9 +269,11 @@ Two design decisions follow:
 
 When the *validity of an argument's framework* is itself disputed in the
 discourse, "this framework is valid" is added as a subclaim within that
-argument, typically with an `assumes` relation, and the evaluation marks
-the verdict `contested`. The meta-dispute itself stays inside the claim
-layer, where decomposition, assessment, and contribution already operate.
+argument, typically with an `assumes` relation. The rating then judges the
+inference within the framework, and the framework's own assessment bears on
+whether the argument's premises hold, like any other premise. The
+meta-dispute itself stays inside the claim layer, where decomposition,
+assessment, and contribution already operate.
 
 ### Decomposition edges
 
@@ -937,7 +951,8 @@ the right choice for reading and mapping a large literature economically.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
-Elicit search tools where configured, a notebook, and, on a claim-scoped
+Elicit search tools and the Pangram tools (`pangram_check_ai`,
+`pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
 task, the Provenance skill's tools except `provenance_write_map`; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher

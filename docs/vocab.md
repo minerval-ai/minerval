@@ -53,7 +53,8 @@ undocumented predicate.
 | `mv:stance` | Whether an instance/argument affirms or denies (`affirms` / `denies`; arguments: `for` / `against`). |
 | `mv:hasArgument` | Assertion → an argument carried on the claim. |
 | `mv:hasPremise` | Argument → a basis subclaim it rests on. |
-| `mv:verdict` | The Steward's evaluation of an argument's inference (`holds` / `holds_with_caveats` / `fails` / `contested`). |
+| `mv:verdict` | The Steward's rating of an argument's inference: how far the conclusion follows if the premises hold (`certain` / `likely` / `slight` / `none`). It rates the step, not the conclusion; whether the premises hold is read from their own assessments. Nanopublications exported before #540 carry the earlier values `holds` / `holds_with_caveats` / `fails` / `contested`, which are not mapped onto the new ones. |
+| `mv:decisive` | `xsd:boolean`. Whether the Steward judged the argument, taken alone and with its premises as they were then assessed, to settle its conclusion. Exported only for an evaluated argument. |
 | `mv:evaluation` | The prose of that evaluation. |
 
 ## Publication-info properties

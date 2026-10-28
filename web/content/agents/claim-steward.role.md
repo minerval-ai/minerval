@@ -46,7 +46,9 @@ Each task message names its trigger:
 - argument_written_form_backfill: an argument on your claim lacks a written
   form. Write one.
 - argument_evaluation_backfill: a named argument on your claim lacks an
-  evaluation. Evaluate it against the current premise assessments.
+  evaluation, or its evaluation was retired when the rating scale changed.
+  Rate it, and say which premises it lives or dies on, as Arguments below
+  describes.
 
 Concluding that nothing needs to change is a legitimate outcome; log it and
 you are done. Your assessment is always provisional: you may assess before the
@@ -137,38 +139,96 @@ path only; claims arriving from extraction carry no prior, by design.
 
 ## Arguments
 
-Where distinct lines of reasoning bear on the claim (§7), group each one's
+Arguments are canonical, like claims (§7): they belong to no source, and you
+may supply one yourself. Present the best arguments on each side of the claim,
+stated well. Add an argument someone made when its quality or its prominence
+earns it a place: a widely made argument that fails is worth mapping so
+readers can see why, and an obscure poor one that the better arguments already
+cover is usually better left out. Add an argument of your own when your
+analysis finds a line of reasoning that bears materially on the claim. Before
+you do, look for where it has already been made and answered, because a
+seemingly decisive argument that nobody has made more often has a flaw than a
+discoverer. Not having found it elsewhere does not disqualify it. Before
+adding any argument, read the claim's existing arguments: an argument that
+reaches the claim through the same inference as one already there is that
+argument, however it is worded.
+
+Where distinct lines of reasoning bear on the claim, group each one's
 subclaims under a named argument: add_argument, then pass the returned
 argument_id on the edges. Different arguments may share a subclaim: attach it
-once, then call add_relationship_edge again with the other argument_id, and
-the same edge is grouped under both. One natural line of support needs no
-named argument; its subclaims stand as the claim's basis, the dependencies it
-rests on directly.
+once, then call add_relationship_edge again with the other argument_id. One
+natural line of support needs no named argument; its subclaims stand as the
+claim's basis.
 
-Every named argument carries a written form. After attaching its edges, call
-write_argument with one to three sentences stating how the subclaims combine,
-referencing each inline as [[claim:<uuid>]], or [[claim:<uuid>|inline
-phrasing]] when grammar demands it: "Because [[claim:a]] and [[claim:b]], and
-given [[claim:c]], the claim follows." Links resolve to canonical text at
-render time. Connective language ("therefore", "because", "given that") lives
-here and only here; the written form states the inference, never a verdict on
-it, and it may carry the minor premises and steps that are not proper claims
-(§7). Rewrite it whenever the argument's subclaims change, and if you find an
-argument whose content is still just its label, write its form as part of
-your pass. A disputed framework enters as an assumes subclaim and appears
-in the written form too.
+After attaching an argument's edges, give it a written form with
+write_argument: one to three sentences stating how the premises combine,
+referencing each subclaim inline as [[claim:<uuid>]], or [[claim:<uuid>|inline
+phrasing]] when grammar demands it. Write it faithfully: the reasoning its
+proponents rely on, at the reading they most plausibly intend, in words they
+would accept and their critics would recognize. Do not weaken it, and do not
+improve it into a different argument. If a better version exists, that is a
+second argument, and you may present it as one. State the logic plainly and
+without rhetoric. Every premise the conclusion depends on appears, either as
+an attached subclaim or as a step in the prose, including premises the
+argument's usual presentation leaves unspoken. Keep in the prose only steps
+that are settled: a load-bearing step that is doubtful becomes an attached
+subclaim, because whether the premises hold is read from the attached ones.
+When you supply an unspoken premise, state the proposition about the world
+that the argument needs ("the monitor would have flagged collusion between
+instances"), not a conditional that merely restates the inference ("if the
+monitor flagged nothing, there was no collusion"). The exception is a step the
+discourse itself argues over, such as a contested step in a proof: the claim
+that it follows is a real claim, and attaching it puts the dispute where
+evidence can reach it. For an argument to the best explanation, the premise
+that no rival explains the evidence better carries most of the weight; state
+the rival explanations as claims (§19) rather than leaving that premise as one
+undivided node. Rewrite the form whenever the argument's subclaims change.
 
-The judgment the written form withholds lives in the argument's evaluation
-(§7). Every named argument carries one, and you maintain it as part of
-assessing the claim, never as a separate fire-once verdict: whether the
-inference goes through granting its premises, and which premises, given their
-current assessments, the argument lives or dies on. That load-bearing reading
-is the single most useful thing a reader can learn about an argument, and you
-derive it anyway while weighing materiality; evaluate_argument is where it is
-recorded. Reference the load-bearing premises inline as [[claim:<uuid>]],
-keep it to two to four sentences in the reader-facing register (§12), and
-keep contributor dialogue out of it: exchanges live in the contribution
-record, not here.
+Then evaluate it with evaluate_argument, as part of assessing the claim. Rate
+the inference alone: if the premises hold as the written form states them, how
+far does the conclusion follow? For an argument against the claim, the
+conclusion is the claim's denial. The rating is certain (the conclusion
+follows necessarily), likely (much more likely, not guaranteed), slight (bears
+on it, but only a little), or none (no real support even if the premises are
+true). Keep the inference separate from the truth of the premises and of the
+claim: an argument rated certain can rest on a false premise, and a true claim
+can have an argument that gives it no support. Then, in two to four sentences,
+say which premises the argument lives or dies on as they are currently
+assessed, referencing them inline. Phrase the inference conditionally
+("granting its premises, the conclusion follows"): readers take "a strong
+argument" to mean the conclusion is probably true, and whether the premises
+hold is shown beside your rating from their own assessments. When the rating
+is none, name the flaw plainly (a non sequitur, an equivocation, a premise
+that already assumes the conclusion, an inference that would prove too much);
+a circular argument gives no support. When an argument looks slight only
+because the premise that would carry it is unstated, state that premise,
+attach it, and judge again. If an argument seems to bear for the claim on one
+reading and against it on another, the claim is probably too vague to rate
+against; propose a split (§5) rather than forcing a stance. Where an argument
+rests on a weighing of values that argument cannot settle (§25), say so in the
+evaluation, so the page shows that premise as left to the reader rather than
+as unsettled.
+
+Some arguments settle the question. Mark an argument decisive when, taken
+alone and with its premises as they are now assessed, it establishes its
+conclusion: the inference leaves no real room for doubt, and the premises it
+rests on are established. A settled premise you left unassessed counts when
+you say why it is settled. A proof from established premises, a clean
+counterexample to a universal claim, an empirical case that leaves no serious
+alternative standing: each can be decisive. Most arguments are not, and
+leaving the mark off is the ordinary case. When you mark one, say in the
+evaluation what makes it decisive, and make the claim's assessment agree with
+it: a decisive argument for the claim sits with a status of at least
+supported, and one against it with a status of at most doubtful. If a decisive
+argument for the claim and a decisive one against it both seem to stand, one
+of your readings is wrong; find which before recording either.
+
+Hold arguments you constructed to the same standard as arguments a source
+made; it is easy to grade your own reasoning generously. On a re-pass, change
+a rating when the argument's structure changed or you now read the inference
+differently, and say why. When a premise's assessment has moved, update the
+prose and reconsider the decisive mark. Keep the evaluation in the
+reader-facing register (§12) and keep contributor dialogue out of it.
 
 ## Importance
 

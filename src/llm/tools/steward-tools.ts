@@ -528,14 +528,19 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "add_argument",
       description:
-        "Create a named argument (a line of reasoning) on a claim: a grouping " +
-        "that subclaims attach to. Use when distinct for/against lines of reasoning " +
-        "exist; pass the returned argument_id to add_relationship_edge / " +
-        "add_decomposition_edge to group subclaims under it. The description is a " +
-        "label for the line of reasoning, not itself a proposition. An argument is " +
-        "NOT finished at creation: once its subclaim edges are attached, you MUST " +
-        "give it a written form with write_argument, and when you record the " +
-        "claim's assessment you evaluate it with evaluate_argument.",
+        "Create a named argument on a claim: a line of reasoning, for or " +
+        "against, that subclaims attach to. Arguments are canonical, " +
+        "like claims, and may be ones you supply yourself (§7). Before " +
+        "creating one, check the claim's existing arguments: one that " +
+        "reaches the claim through the same inference is the same " +
+        "argument, however worded. Name it by its reasoning (\"the " +
+        "argument from the unlinked early cases\"). A conventional name " +
+        "is fine where the discourse uses one (\"Pascal's wager\"). Pass " +
+        "the returned argument_id to add_relationship_edge / " +
+        "add_decomposition_edge to group subclaims under it. Once its " +
+        "edges are attached, give it a written form with write_argument. " +
+        "When you record the claim's assessment, evaluate it with " +
+        "evaluate_argument.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -549,8 +554,10 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           stance: {
             type: "string",
-            enum: ["for", "against", "neutral"],
-            description: "Whether this argument supports, opposes, or is neutral",
+            enum: ["for", "against"],
+            description:
+              "'for': the argument's conclusion is the claim. 'against': " +
+              "its conclusion is the claim's denial.",
           },
           description: {
             type: "string",
@@ -563,18 +570,20 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "write_argument",
       description:
-        "Write (or revise) an argument's written form: a brief, logically " +
-        "straightforward prose statement of HOW its subclaims combine to bear on " +
-        "the claim, the inferential step the grouping alone leaves implicit. " +
-        "1–3 sentences, e.g. 'Because [[claim:<uuid>]] and [[claim:<uuid>]], and " +
-        "given [[claim:<uuid>]], the claim follows.' Reference EVERY subclaim in " +
-        "the argument inline as [[claim:<uuid>]] (or [[claim:<uuid>|inline " +
-        "phrasing]] when grammar needs it); links resolve to the claims' " +
-        "canonical text at render time. The written form is structural, not " +
-        "epistemic: state the inference, never a verdict on whether it holds; " +
-        "your judgment of the inference belongs in evaluate_argument. " +
-        "Call this after attaching the argument's subclaim edges; call it again " +
-        "whenever the argument's subclaims change (and then re-evaluate).",
+        "Write or revise an argument's written form: one to three " +
+        "sentences stating plainly how its premises combine to reach its " +
+        "conclusion, e.g. 'Because [[claim:<uuid>]] and " +
+        "[[claim:<uuid>]], and given [[claim:<uuid>]], the claim " +
+        "follows.' Reference every attached subclaim inline as " +
+        "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]). State " +
+        "the argument faithfully, as its proponents would recognize it, " +
+        "at its most plausible intended reading, without weakening or " +
+        "repairing it. Use no rhetoric. Include every premise the " +
+        "conclusion depends on, including unspoken ones, stated as " +
+        "propositions about the world rather than as conditionals that " +
+        "restate the inference. The form states the inference without " +
+        "judging it; your judgment goes in evaluate_argument. Call again " +
+        "whenever the subclaims change, then re-evaluate.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -595,14 +604,19 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "evaluate_argument",
       description:
-        "Record (or revise) your evaluation of a named argument: does the " +
-        "inference go through granting its premises, and which premises does " +
-        "the argument currently live or die on? This is the epistemic " +
-        "counterpart of the written form (which states the inference without " +
-        "judging it), derived as part of assessing the claim — call it for " +
-        "each named argument when you record an assessment, and again when a " +
-        "premise's standing changes. It is reader-facing prose in the same " +
-        "register as an assessment, not a discussion surface: contributor " +
+        "Record or revise your evaluation of a named argument: how far " +
+        "its conclusion follows if its premises hold as the written form " +
+        "states them, which premises it currently lives or dies on, and " +
+        "whether it is decisive. For an argument against the claim, the " +
+        "conclusion is the claim's denial. Rate the inference, not the " +
+        "truth of the premises or the claim: whether the premises hold " +
+        "is shown beside your rating from their own assessments, and how " +
+        "much the argument moves the claim belongs in the claim's " +
+        "assessment. Call it for each named argument when you record an " +
+        "assessment. Change the rating when the argument's structure or " +
+        "your reading of the inference changes; update the prose and " +
+        "reconsider the decisive mark when a premise's standing does. " +
+        "Reader-facing, in the register of an assessment; contributor " +
         "exchanges stay in the contribution record.",
       input_schema: {
         type: "object" as const,
@@ -615,26 +629,46 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             enum: [...ARGUMENT_VERDICTS],
             description:
-              "Whether the inference goes through granting its premises. " +
-              "'holds': the conclusion follows if the premises hold. " +
-              "'holds_with_caveats': it goes through, but only under stated " +
-              "qualifications. 'fails': the conclusion does not follow even " +
-              "granting the premises. 'contested': the validity of the " +
-              "argument's framework is itself live-disputed (it should then " +
-              "also carry an assumes subclaim, §7).",
+              "How far the conclusion follows if the premises hold. " +
+              "'certain': it follows necessarily. 'likely': the premises " +
+              "make it much more likely, without guaranteeing it (most " +
+              "good inductive, statistical and explanatory arguments). " +
+              "'slight': the premises bear on it, but only a little. " +
+              "'none': even if true, the premises give it no real " +
+              "support; name the flaw in the evaluation. A circular " +
+              "argument gives no support. If the argument is slight only " +
+              "because a premise is unstated, state that premise and " +
+              "attach it before rating. This rates the step, not the " +
+              "conclusion.",
           },
           evaluation: {
             type: "string",
             description:
-              "Two to four sentences, reader-facing (§12 voice): whether the " +
-              "inference goes through, and which premises, given their current " +
-              "assessments, bear the argument's weight — reference those " +
-              "load-bearing premises inline as [[claim:<uuid>]] (or " +
-              "[[claim:<uuid>|inline phrasing]]), the same syntax as the " +
-              "written form. E.g. 'The inference is valid; the argument " +
-              "stands or falls with [[claim:<uuid>]], which remains " +
-              "contested.' No tool names, no UUID prose, no verdict-label " +
-              "restating.",
+              "Two to four sentences, reader-facing (§12): how far the " +
+              "inference goes, phrased conditionally ('granting its " +
+              "premises, ...'), and, for a rating of none, the flaw in " +
+              "plain words; then which premises bear the weight, given " +
+              "their current assessments, referenced inline as " +
+              "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]); " +
+              "for a decisive argument, what makes it decisive. E.g. " +
+              "'Granting its premises the conclusion follows, so the " +
+              "argument stands or falls with [[claim:<uuid>]], which the " +
+              "evidence currently leaves unsettled.' No tool names, no " +
+              "ids in prose, no restating the rating label.",
+          },
+          decisive: {
+            type: "boolean",
+            description:
+              "True when this argument, taken alone and with its " +
+              "premises as they are now assessed, settles its " +
+              "conclusion: the inference leaves no real room for doubt, " +
+              "and the premises it rests on are established (a settled " +
+              "premise left unassessed counts when the evaluation says " +
+              "why it is settled). Most arguments are not decisive, and " +
+              "false is the ordinary case. When you set it, the " +
+              "evaluation says what makes the argument decisive, and the " +
+              "claim's status agrees with it. The mark lapses with its " +
+              "premises: reconsider it when one of them is reassessed.",
           },
         },
         required: ["argument_id", "verdict", "evaluation"],
@@ -1788,8 +1822,20 @@ export async function executeStewardTool(
       case "add_argument": {
         const claimId = input.claim_id as string;
         const name = input.name as string;
-        const stance = input.stance as "for" | "against" | "neutral";
+        const stance = input.stance as "for" | "against";
         const description = input.description as string;
+        // An argument's conclusion is the claim or its denial (§7); a
+        // "neutral" line has no conclusion for its evaluation to rate.
+        if (stance !== "for" && stance !== "against") {
+          return JSON.stringify({
+            success: false,
+            message:
+              `stance must be "for" or "against". If a line of reasoning ` +
+              `bears for the claim on one reading and against it on another, ` +
+              `the claim is probably too vague to rate against: propose a ` +
+              `split rather than recording a neutral argument.`,
+          });
+        }
 
         const argument = await addArgument({
           claimId,
@@ -1894,13 +1940,15 @@ export async function executeStewardTool(
         const argumentId = input.argument_id as string;
         const verdict = String(input.verdict).toLowerCase();
         const content = ((input.evaluation as string) ?? "").trim();
+        const decisive = input.decisive === true;
 
         if (!isArgumentVerdict(verdict)) {
           return JSON.stringify({
             success: false,
             message:
-              `Unknown verdict "${verdict}". Use one of: ` +
-              `${ARGUMENT_VERDICTS.join(", ")}.`,
+              `Unknown rating "${verdict}". Use one of: ` +
+              `${ARGUMENT_VERDICTS.join(", ")} (how far the conclusion ` +
+              `follows if the premises hold).`,
           });
         }
 
@@ -1923,7 +1971,7 @@ export async function executeStewardTool(
         if (content.length === 0) {
           return JSON.stringify({
             success: false,
-            message: "The evaluation prose is required; a bare verdict is a label, not a judgment.",
+            message: "The evaluation prose is required; a bare rating is a label, not a judgment.",
           });
         }
         // Same brevity budget as the written form: links cost ~46 chars each,
@@ -1999,6 +2047,7 @@ export async function executeStewardTool(
           argumentId,
           verdict,
           content,
+          decisive,
           assessmentId: currentAssessment?.id ?? null,
           createdBy: "claim_steward",
         });
@@ -2006,7 +2055,8 @@ export async function executeStewardTool(
         return JSON.stringify({
           success: true,
           message:
-            `Evaluation recorded for argument "${argument.name}": ${verdict}.` +
+            `Evaluation recorded for argument "${argument.name}": ${verdict}` +
+            (decisive ? ", decisive." : ".") +
             (currentAssessment
               ? ""
               : ` Note: the claim has no current assessment yet; record one ` +

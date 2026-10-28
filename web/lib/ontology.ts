@@ -241,40 +241,85 @@ export const STANCE_GLOSS: Record<Stance, string> = {
   neutral: "This argument informs or reframes the claim without taking a side.",
 };
 
-// The steward's evaluation of a named argument (issue #173): does the
-// inference go through granting its premises? Distinct from the computed net
-// effect below — that mechanically rolls up premise statuses, while this is
-// the steward's recorded judgment of the inference itself. The two can
-// disagree, and the disagreement is itself informative.
+// The steward's evaluation of a named argument (issues #173, #540): how far
+// the conclusion follows IF the premises hold. Worded conditionally on every
+// surface, because readers take "a strong argument" to mean the conclusion is
+// probably true, and this rating does not say that: whether the premises hold
+// is read from their own assessments and shown beside it (premiseSummary).
+// Distinct from the computed net effect below, which mechanically rolls up
+// premise statuses; this is the steward's recorded judgment of the step.
 export const ARGUMENT_VERDICT: Record<
   ArgumentVerdict,
   { label: string; cls: string; gloss: string }
 > = {
-  holds: {
-    label: "inference holds", cls: "st-supported",
-    gloss: "Granting its premises, the conclusion follows.",
+  certain: {
+    label: "certain if the premises hold", cls: "st-supported",
+    gloss: "If the premises are true, the conclusion must be. Whether they are is shown beside this.",
   },
-  holds_with_caveats: {
-    label: "holds with caveats", cls: "st-inconclusive",
-    gloss: "The inference goes through only under the qualifications the evaluation states.",
+  likely: {
+    label: "likely if the premises hold", cls: "st-supported",
+    gloss: "If the premises are true, the conclusion is much more likely, though not guaranteed.",
   },
-  fails: {
-    label: "inference fails", cls: "st-contradicted",
-    gloss: "The conclusion does not follow even granting the premises.",
+  slight: {
+    label: "slight even if the premises hold", cls: "st-inconclusive",
+    gloss: "Even if the premises are true, they make the conclusion only a little more likely.",
   },
-  contested: {
-    label: "validity contested", cls: "st-inconclusive",
-    gloss: "Whether this argument's framework is valid is itself disputed.",
+  none: {
+    label: "no support even if the premises hold", cls: "st-contradicted",
+    gloss: "Even if the premises are true, they give the conclusion no real support.",
   },
 };
 
 export function isArgumentVerdict(v: unknown): v is ArgumentVerdict {
-  return typeof v === "string" && v in ARGUMENT_VERDICT;
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(ARGUMENT_VERDICT, v);
 }
 
-// Null for an unevaluated argument (render nothing, not a default verdict).
+// Null for an unevaluated argument (render nothing, not a default rating).
+// Ratings from the scale #540 retired (holds, holds_with_caveats, fails,
+// contested) also read as null: none of them maps cleanly onto the new scale,
+// so an archived recording shows no rating rather than a relabelled one.
 export function argumentVerdictMeta(v: unknown) {
   return isArgumentVerdict(v) ? ARGUMENT_VERDICT[v] : null;
+}
+
+// The Steward's decisive mark (§7): the argument, taken alone and with its
+// premises as they are now assessed, settles its conclusion. The one label on
+// an argument that speaks to whether the conclusion is true.
+export const DECISIVE = {
+  label: "Decisive",
+  gloss: "Taken alone, with its premises as they are now assessed, this argument settles the question.",
+};
+
+// "Do the premises hold?": the argument's own premises counted by their
+// current status, beside the rating of the step. A display of judgments
+// already recorded, deciding nothing. It counts statuses rather than saying
+// "all hold", since several premises that are each probably true can be
+// doubtful together. Ordered so what undermines the argument reads first.
+const PREMISE_ORDER: (AssessmentStatus | "unassessed")[] = [
+  "contradicted", "doubtful", "inconclusive", "unknown", "supported", "verified", "unassessed",
+];
+
+export interface PremiseCount {
+  key: AssessmentStatus | "unassessed";
+  count: number;
+  label: string;
+  cls: string;
+}
+
+export function premiseSummary(nodes: TreeNode[]): PremiseCount[] {
+  const counts = new Map<AssessmentStatus | "unassessed", number>();
+  for (const n of nodes) {
+    const key = n.assessment_status ? normalizeStatus(n.assessment_status) : "unassessed";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return PREMISE_ORDER.filter((k) => counts.has(k)).map((key) => {
+    const count = counts.get(key)!;
+    if (key === "unassessed") {
+      return { key, count, label: `${count} not separately assessed`, cls: "st-unassessed" };
+    }
+    const meta = STATUS[key];
+    return { key, count, label: `${count} ${meta.label.toLowerCase()}`, cls: meta.cls };
+  });
 }
 
 // The machine-checked badge (docs/mathematics.md §2.3, §11.4): derived at
@@ -633,6 +678,8 @@ export interface ArgumentGroup {
   // The steward's evaluation (issue #173): verdict on the inference plus prose
   // naming the load-bearing premises. Null until the argument is evaluated.
   verdict: string | null;
+  // The Steward's decisive mark (#540); false or null when not marked.
+  decisive: boolean;
   evaluation: string | null;
   // The checker record when the argument is machine-checked (mathematics);
   // null for every other argument.
@@ -660,6 +707,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         stance: s.node.argument_stance ?? null,
         content: s.node.argument_content ?? null,
         verdict: s.node.argument_verdict ?? null,
+        decisive: s.node.argument_decisive === true,
         evaluation: s.node.argument_evaluation ?? null,
         leanCheck: s.node.argument_lean_check ?? null,
         named: Boolean(s.node.argument_name),

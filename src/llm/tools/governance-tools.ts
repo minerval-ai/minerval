@@ -338,10 +338,11 @@ async function getClaim(claimId: string) {
   const evaluations = await rawQuery<{
     argument_id: string;
     verdict: string;
+    decisive: boolean;
     content: string;
     stale: boolean;
   }>(
-    `SELECT ae.argument_id, ae.verdict, ae.content,
+    `SELECT ae.argument_id, ae.verdict, ae.decisive, ae.content,
             (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id) AS stale
        FROM argument_evaluations ae
        JOIN arguments a ON a.id = ae.argument_id
@@ -486,6 +487,7 @@ async function getClaim(claimId: string) {
         evaluation: evaluation
           ? {
               verdict: evaluation.verdict,
+              decisive: evaluation.decisive,
               content: evaluation.content,
               stale: evaluation.stale,
             }

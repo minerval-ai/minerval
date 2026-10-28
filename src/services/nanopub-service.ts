@@ -233,6 +233,11 @@ function buildGraphs(
     );
     if (arg.name) provenance.push({ s: argUri, p: "rdfs:label", o: lit(arg.name) });
     if (arg.verdict) provenance.push({ s: argUri, p: "mv:verdict", o: lit(arg.verdict) });
+    // Only a recorded mark is exported: an unevaluated argument says nothing
+    // about decisiveness, so no triple stands in for a judgment never made.
+    if (arg.verdict && arg.decisive !== null) {
+      provenance.push({ s: argUri, p: "mv:decisive", o: typed(String(arg.decisive), "xsd:boolean") });
+    }
     if (arg.evaluation) {
       provenance.push({ s: argUri, p: "mv:evaluation", o: lit(prose(arg.evaluation)) });
     }

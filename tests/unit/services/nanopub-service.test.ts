@@ -47,7 +47,8 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
         stance: "for",
         content: `Because [[claim:${SUB_ID}]], the rise was transitory.`,
         evidence_urls: [],
-        verdict: "contested",
+        verdict: "likely",
+        decisive: false,
         evaluation: null,
         subclaims: [
           {
@@ -95,7 +96,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
       contestation: 0.7,
       affirming_instances: 1,
       denying_instances: 1,
-      contested_arguments: [],
+      arguments_on_unsettled_premises: [],
     },
     ...overrides,
   };
@@ -133,6 +134,20 @@ describe("evidenceRecordToTrig", () => {
     expect(trig).toContain(`<${CLAIM_URI}#provenance> {`);
     expect(trig).toContain(`<${CLAIM_URI}#pubinfo> {`);
     expect(trig).toContain("np:hasAssertion");
+  });
+
+  it("exports an argument's rating and decisive mark, and no mark for an unevaluated argument (#540)", () => {
+    const trig = evidenceRecordToTrig(record(), opts);
+    expect(trig).toContain('mv:verdict "likely"');
+    expect(trig).toContain('mv:decisive "false"^^xsd:boolean');
+
+    const base = record();
+    const unevaluated = evidenceRecordToTrig(
+      record({ arguments: [{ ...base.arguments[0]!, verdict: null, decisive: null }] }),
+      opts
+    );
+    expect(unevaluated).not.toContain("mv:verdict");
+    expect(unevaluated).not.toContain("mv:decisive");
   });
 
   it("omits credence exactly when the graph omits it (§10)", () => {

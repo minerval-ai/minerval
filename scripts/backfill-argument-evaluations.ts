@@ -1,7 +1,9 @@
 /**
- * Backfill for issue #173: named arguments created before evaluate_argument
- * existed carry no evaluation (whether the inference goes through granting
- * its premises, and which premises bear the weight).
+ * Backfill for issues #173 and #540: named arguments with no current
+ * evaluation. Some were created before evaluate_argument existed; the rest
+ * had their evaluations retired by migration 0072 when the rating scale
+ * changed (how far the conclusion follows if the premises hold: certain,
+ * likely, slight, none, with an optional decisive mark).
  *
  * Rather than composing evaluations here, this re-enqueues each affected
  * claim's Steward — the prompt instructs it to evaluate every named argument
@@ -12,7 +14,7 @@
  *
  * Safe by default: prints what it WOULD enqueue and exits. Pass `--confirm`
  * to actually enqueue. Re-driving stewards costs real model spend — run it
- * deliberately, after the evaluate_argument deploy has settled.
+ * deliberately, after the deploy carrying migration 0072 has settled.
  *
  *   npx tsx scripts/backfill-argument-evaluations.ts            # dry run
  *   npx tsx scripts/backfill-argument-evaluations.ts --confirm  # apply
@@ -66,10 +68,10 @@ async function main(): Promise<void> {
       context:
         `Named argument(s) on this claim lack an evaluation: ` +
         `${r.argument_names.join(", ")}. For each, record with ` +
-        `evaluate_argument whether the inference goes through granting its ` +
-        `premises and which premises, given their current assessments, bear ` +
-        `the weight, referencing the load-bearing subclaims inline as ` +
-        `[[claim:<uuid>]].`,
+        `evaluate_argument how far the conclusion follows if its premises ` +
+        `hold, whether it is decisive as its premises now stand, and which ` +
+        `premises, given their current assessments, bear the weight, ` +
+        `referencing the load-bearing subclaims inline as [[claim:<uuid>]].`,
     });
   }
   console.log(`\nEnqueued ${rows.length} Stewards. The drain will re-drive them.`);
