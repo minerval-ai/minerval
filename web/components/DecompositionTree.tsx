@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
 import {
   RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
+  DECISIVE, premiseSummary,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
   groupByArgument, topLevelEffects, type ArgumentGroup,
   seedVerity, SEED_PRELIM_GLOSS,
@@ -22,11 +23,10 @@ function argKey(group: ArgumentGroup): string {
   return group.id ?? "basis";
 }
 
-// The steward's verdict on the inference (issue #173), beside the stance.
-// Boxed like every verdict on the site (cf. the claim's assessment badge), so
-// the bare small-caps stance and the verdict read as two tokens, not one
-// phrase ("For Inference Holds") (#250). Nothing renders until the argument
-// has been evaluated.
+// The steward's rating of the inference (issues #173, #540). Boxed like every
+// verdict on the site (cf. the claim's assessment badge), so it reads as a
+// judgment rather than a structural label (#250). Nothing renders until the
+// argument has been evaluated.
 function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
   const meta = argumentVerdictMeta(verdict);
   if (!meta) return null;
@@ -34,6 +34,43 @@ function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
     <Term gloss={meta.gloss} href={DEFINED_IN.argument} className={`badge arg-verdict ${meta.cls}`}>
       {meta.label}
     </Term>
+  );
+}
+
+// The decisive mark (§7, #540), in the argument's head: the one label on an
+// argument that speaks to whether its conclusion is true.
+function DecisiveTag({ decisive }: { decisive: boolean }) {
+  if (!decisive) return null;
+  return (
+    <Term gloss={DECISIVE.gloss} href={DEFINED_IN.argument} className="badge arg-verdict arg-decisive st-verified">
+      {DECISIVE.label}
+    </Term>
+  );
+}
+
+// Two questions side by side, so the rating of the step never appears alone
+// (#540): "Does it follow?" is the steward's rating, which is conditional on
+// the premises; "Do the premises hold?" counts the argument's own premises by
+// their current status. Readers take "a strong argument" to mean a probably
+// true conclusion, and the second row is what stops that misreading.
+function ArgumentCheck({ group }: { group: ArgumentGroup }) {
+  if (!argumentVerdictMeta(group.verdict)) return null;
+  const premises = premiseSummary(group.nodes.map((s) => s.node));
+  return (
+    <dl className="argcheck">
+      <dt>Does it follow?</dt>
+      <dd><ArgumentVerdictTag verdict={group.verdict} /></dd>
+      {premises.length > 0 && (
+        <>
+          <dt>Do the premises hold?</dt>
+          <dd>
+            {premises.map((p) => (
+              <span className={`premise-count ${p.cls}`} key={p.key}>{p.label}</span>
+            ))}
+          </dd>
+        </>
+      )}
+    </dl>
   );
 }
 
@@ -169,7 +206,7 @@ function ArgumentBlock({
           <span className="sc">argument</span>
           <span className="argname">{group.name}</span>
           {group.stance && <StanceTag stance={group.stance} />}
-          <ArgumentVerdictTag verdict={group.verdict} />
+          <DecisiveTag decisive={group.decisive} />
         </div>
       )}
       {isBasis && <p className="basis-note">{BASIS.gloss}</p>}
@@ -179,6 +216,7 @@ function ArgumentBlock({
           <p className="argform">
             <ArgumentText content={written} texts={texts} />
           </p>
+          <ArgumentCheck group={group} />
           {group.evaluation && (
             <p className="argeval">
               <ArgumentText content={group.evaluation} texts={texts} />

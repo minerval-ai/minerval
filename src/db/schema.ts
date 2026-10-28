@@ -542,11 +542,17 @@ export const argumentEvaluations = pgTable(
     argumentId: uuid("argument_id")
       .notNull()
       .references(() => arguments_.id, { onDelete: "cascade" }),
-    // Does the inference go through granting its premises?
-    //   holds | holds_with_caveats | fails | contested
-    // "contested" is for a framework whose validity is itself live-disputed
-    // (the ASSUMES case, constitution §7).
+    // How far the conclusion follows if the premises hold (#540):
+    //   certain | likely | slight | none
+    // A rating of the inference, not of the conclusion: whether the premises
+    // hold is read from their own assessments. Rows written under the older
+    // holds | holds_with_caveats | fails | contested scale are history only
+    // (is_current = false since migration 0072).
     verdict: text("verdict").notNull(),
+    // The Steward's judgment that the argument, taken alone and with its
+    // premises as they are now assessed, settles its conclusion (§7). Lapses
+    // with its premises: reconsidered whenever one of them is reassessed.
+    decisive: boolean("decisive").notNull().default(false),
     // Reader-facing prose (2–4 sentences, §12 voice): whether the inference
     // goes through and which premises, given their current assessments, the
     // argument lives or dies on — those premises referenced inline as

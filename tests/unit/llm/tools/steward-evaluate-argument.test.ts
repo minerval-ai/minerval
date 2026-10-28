@@ -97,20 +97,49 @@ describe("steward evaluate_argument", () => {
   it("records the evaluation, stamped with the claim's current assessment", async () => {
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "HOLDS",
-      evaluation: `The inference is valid; the argument stands or falls with [[claim:${SUB_ID}]], which remains inconclusive.`,
+      verdict: "CERTAIN",
+      evaluation: `Granting its premises the conclusion follows; the argument stands or falls with [[claim:${SUB_ID}]], which remains inconclusive.`,
     });
 
     expect(JSON.parse(out).success).toBe(true);
     expect(setArgumentEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({
         argumentId: ARG_ID,
-        // Prompt-cased verdicts are normalized, like assessment statuses.
-        verdict: "holds",
+        // Prompt-cased ratings are normalized, like assessment statuses.
+        verdict: "certain",
+        // Unset means not decisive: the ordinary case (#540).
+        decisive: false,
         assessmentId: ASSESSMENT_ID,
         createdBy: "claim_steward",
       })
     );
+  });
+
+  it("records the decisive mark when the Steward sets it (#540)", async () => {
+    const out = await executeStewardTool("evaluate_argument", {
+      argument_id: ARG_ID,
+      verdict: "certain",
+      decisive: true,
+      evaluation: `Granting its premises the conclusion follows, and [[claim:${SUB_ID}]] is verified, so the argument settles the question.`,
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(true);
+    expect(parsed.message).toContain("decisive");
+    expect(setArgumentEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ verdict: "certain", decisive: true })
+    );
+  });
+
+  it("rejects the ratings of the retired scale (#540)", async () => {
+    for (const verdict of ["holds", "holds_with_caveats", "fails", "contested"]) {
+      const out = await executeStewardTool("evaluate_argument", {
+        argument_id: ARG_ID,
+        verdict,
+        evaluation: `Stands on [[claim:${SUB_ID}]].`,
+      });
+      expect(JSON.parse(out).success).toBe(false);
+    }
+    expect(setArgumentEvaluation).not.toHaveBeenCalled();
   });
 
   it("accepts a link to one of the claim's ungrouped basis subclaims (#434)", async () => {
@@ -120,7 +149,7 @@ describe("steward evaluate_argument", () => {
     ]);
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "holds",
+      verdict: "likely",
       evaluation:
         `Granting [[claim:${BASIS_ID}]], the inference goes through and rests ` +
         `on [[claim:${SUB_ID}]].`,
@@ -138,7 +167,7 @@ describe("steward evaluate_argument", () => {
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
-    expect(parsed.message).toContain("holds_with_caveats");
+    expect(parsed.message).toContain("certain, likely, slight, none");
     expect(setArgumentEvaluation).not.toHaveBeenCalled();
   });
 
@@ -149,7 +178,7 @@ describe("steward evaluate_argument", () => {
     } as never);
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "holds",
+      verdict: "certain",
       evaluation: `Stands on [[claim:${SUB_ID}]].`,
     });
     expect(JSON.parse(out).success).toBe(false);
@@ -159,8 +188,8 @@ describe("steward evaluate_argument", () => {
   it("requires a load-bearing link when the argument has attached subclaims", async () => {
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "holds",
-      evaluation: "The inference is valid and the premises are all solid.",
+      verdict: "certain",
+      evaluation: "Granting its premises the conclusion follows, and they are all solid.",
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
@@ -172,9 +201,9 @@ describe("steward evaluate_argument", () => {
     vi.mocked(getArgumentSubclaims).mockResolvedValue([]);
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "holds_with_caveats",
+      verdict: "slight",
       evaluation:
-        "The inference goes through only if the minor premise stated in the written form is granted.",
+        "Even granting the minor premise stated in the written form, the conclusion becomes only a little more likely.",
     });
     expect(JSON.parse(out).success).toBe(true);
     expect(setArgumentEvaluation).toHaveBeenCalled();
@@ -184,13 +213,27 @@ describe("steward evaluate_argument", () => {
     const stranger = "99999999-9999-9999-9999-999999999999";
     const out = await executeStewardTool("evaluate_argument", {
       argument_id: ARG_ID,
-      verdict: "fails",
+      verdict: "none",
       evaluation: `The conclusion does not follow from [[claim:${stranger}]].`,
     });
     const parsed = JSON.parse(out);
     expect(parsed.success).toBe(false);
     expect(parsed.message).toContain(stranger);
     expect(setArgumentEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe("steward add_argument stance (#540)", () => {
+  it("rejects a neutral stance: an argument's conclusion is the claim or its denial", async () => {
+    const out = await executeStewardTool("add_argument", {
+      claim_id: CLAIM_ID,
+      name: "A reframing",
+      stance: "neutral",
+      description: "Reframes the question",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.success).toBe(false);
+    expect(parsed.message).toContain("split");
   });
 });
 
@@ -206,13 +249,15 @@ describe("steward update_claim_assessment evaluation nudge", () => {
         argument_id: ARG_ID,
         argument_name: "Cosmological argument",
         verdict: null,
+        decisive: null,
         content: null,
         stale: false,
       },
       {
         argument_id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
         argument_name: "Teleological argument",
-        verdict: "holds",
+        verdict: "certain",
+        decisive: false,
         content: "…",
         stale: true,
       },
@@ -239,7 +284,8 @@ describe("steward update_claim_assessment evaluation nudge", () => {
       {
         argument_id: ARG_ID,
         argument_name: "Cosmological argument",
-        verdict: "holds",
+        verdict: "certain",
+        decisive: false,
         content: "…",
         stale: false,
       },

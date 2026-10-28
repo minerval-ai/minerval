@@ -25,7 +25,16 @@ reading is subtler, and it lives in the reasoning:
 - Dependency mismatch (dependency_mismatch): a verdict that is not a
   defensible function of its subclaims and direct evidence (a conclusion
   more confident than what it rests on allows), or dependents that
-  presuppose different verdicts on the same upstream claim.
+  presuppose different verdicts on the same upstream claim. Arguments are
+  part of this (§7). A claim with an argument marked decisive for it whose
+  status is below supported, or one marked decisive against it whose
+  status is above doubtful; a decisive argument for a claim alongside a
+  decisive one against it; a decisive argument resting on a premise that
+  is not at least supported, where the evaluation does not say why that
+  premise is settled; an evaluation that reads as though the argument
+  holds while a premise it names is doubtful or contradicted, without
+  saying so. Each of these is a dependency mismatch for the claim's
+  Steward to resolve.
 - Stale premise (stale_premise): an assessment that relies on a
   neighbor's verdict that has since changed, where the change matters to
   its reasoning.

@@ -134,12 +134,14 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     // The argument's written form (issue #129): brief prose with inline
     // [[claim:<uuid>]] references, stating how the grouped subclaims combine.
     argument_content: z.string().nullable(),
-    // The steward's current evaluation of the argument (issue #173): whether
-    // the inference goes through granting its premises (verdict: holds |
-    // holds_with_caveats | fails | contested) and which premises bear the
-    // weight (prose with inline [[claim:<uuid>]] references). Null until the
-    // steward has evaluated the argument.
+    // The steward's current evaluation of the argument (issues #173, #540):
+    // how far the conclusion follows if the premises hold (verdict: certain |
+    // likely | slight | none), whether the argument is decisive as its
+    // premises now stand, and which premises bear the weight (prose with
+    // inline [[claim:<uuid>]] references). Null until the steward has
+    // evaluated the argument.
     argument_verdict: z.string().nullable(),
+    argument_decisive: z.boolean().nullable().optional(),
     argument_evaluation: z.string().nullable(),
     children: z.array(treeNodeResponse),
     // Set (true) only on a repeated occurrence of a shared subclaim: the graph
@@ -170,6 +172,7 @@ export interface TreeNode {
   argument_stance: string | null;
   argument_content: string | null;
   argument_verdict: string | null;
+  argument_decisive?: boolean | null;
   argument_evaluation: string | null;
   children: TreeNode[];
   subtree_collapsed?: boolean;
@@ -203,8 +206,11 @@ export const claimDetailResponse = z.object({
         evidence_urls: z.array(z.string()),
         created_by: z.string(),
         created_at: z.string(),
-        // Steward evaluation of the inference (issue #173); null until judged.
+        // Steward evaluation of the inference (issues #173, #540): how far
+        // the conclusion follows if the premises hold, and whether the
+        // argument is decisive as its premises now stand. Null until judged.
         verdict: z.string().nullable().optional(),
+        decisive: z.boolean().nullable().optional(),
         evaluation: z.string().nullable().optional(),
       })
     )

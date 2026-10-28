@@ -79,7 +79,10 @@ export interface EvidenceRecord {
     stance: string;
     content: string;
     evidence_urls: string[];
+    /** How far the conclusion follows if the premises hold (#540). */
     verdict: string | null;
+    /** Decisive as its premises now stand (§7); null until evaluated. */
+    decisive: boolean | null;
     evaluation: string | null;
     subclaims: {
       id: string;
@@ -111,7 +114,18 @@ export interface EvidenceRecord {
     denying_instances: number;
     /** Sources that state the proposition as an open question (#445). */
     posing_instances: number;
-    contested_arguments: { id: string; name: string | null }[];
+    /**
+     * Arguments whose inference is rated certain or likely but which rest on
+     * a premise currently assessed as inconclusive, doubtful, contradicted or
+     * unknown (#540): a good step from a shaky premise, the case a reader is
+     * most likely to misread. Replaces contested_arguments, which keyed on a
+     * rating the scale no longer has.
+     */
+    arguments_on_unsettled_premises: {
+      id: string;
+      name: string | null;
+      premises: { id: string; text: string; status: string | null }[];
+    }[];
   };
 }
 
@@ -284,9 +298,20 @@ export async function assembleEvidenceRecord(
     await getProvenanceStory(claimId).catch(() => null)
   );
 
-  const contestedArguments = args
-    .filter((a) => evalByArgument.get(a.id)?.verdict === "contested")
-    .map((a) => ({ id: a.id, name: a.name }));
+  const UNSETTLED = new Set(["inconclusive", "doubtful", "contradicted", "unknown"]);
+  const argumentsOnUnsettledPremises = args
+    .filter((a) => {
+      const v = evalByArgument.get(a.id)?.verdict;
+      return v === "certain" || v === "likely";
+    })
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      premises: (subclaimsByArgument.get(a.id) ?? [])
+        .filter((s) => s.status !== null && UNSETTLED.has(s.status))
+        .map((s) => ({ id: s.id, text: s.text, status: s.status })),
+    }))
+    .filter((a) => a.premises.length > 0);
 
   const evidenceRecord: EvidenceRecord = {
     claim: {
@@ -318,6 +343,7 @@ export async function assembleEvidenceRecord(
       content: a.content,
       evidence_urls: a.evidenceUrls,
       verdict: evalByArgument.get(a.id)?.verdict ?? null,
+      decisive: evalByArgument.get(a.id)?.decisive ?? null,
       evaluation: evalByArgument.get(a.id)?.content ?? null,
       subclaims: subclaimsByArgument.get(a.id) ?? [],
     })),
@@ -340,7 +366,7 @@ export async function assembleEvidenceRecord(
       // Sources that state the proposition as an open question (#445): they
       // cite the claim without voting on it, so they sit in neither camp.
       posing_instances: instanceRows.filter((i) => i.stance === "poses").length,
-      contested_arguments: contestedArguments,
+      arguments_on_unsettled_premises: argumentsOnUnsettledPremises,
     },
   };
 

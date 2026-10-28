@@ -653,7 +653,7 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 /* The steward's evaluation of a named argument (issue #173): whether the
    inference goes through granting its premises, and which premises bear the
    weight. Epistemic where the written form is structural, so it is set off
-   with a quiet left rule; the verdict renders as a tag in the arghead. */
+   with a quiet left rule; the rating renders in .argcheck above it. */
 .argeval {
   margin: 0 0 0.8rem;
   padding-left: 0.7rem;
@@ -675,6 +675,25 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
   padding: 0.12rem 0.42rem 0.1rem;
   /* the swatch precedent: at this scale a full-strength border overwhelms */
   border-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+/* "Does it follow?" beside "Do the premises hold?" (#540): the rating of the
+   step is conditional on the premises, so it is never shown alone. The
+   rating keeps the badge's border and tint but drops the small caps, since it
+   is a phrase ("certain if the premises hold") rather than a status word. */
+.argcheck {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 0.8rem; align-items: baseline;
+  margin: 0 0 0.7rem; font-family: var(--sans); font-size: 0.78rem;
+}
+.argcheck dt { color: var(--muted); }
+.argcheck dd { margin: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.7rem; }
+.argcheck .arg-verdict { text-transform: none; letter-spacing: 0.01em; font-size: 0.72rem; }
+.premise-count { font-weight: 600; white-space: nowrap; }
+.arg-decisive { margin-left: 0.1rem; }
+@media (max-width: 480px) {
+  .argcheck { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+  .argcheck dd { margin-bottom: 0.35rem; }
 }
 
 /* The basis (#204): the default decomposition — a claim's direct subclaims that

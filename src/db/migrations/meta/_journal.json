@@ -505,6 +505,13 @@
       "when": 1792779899949,
       "tag": "0071_scoped_ingest",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793204771144,
+      "tag": "0072_argument_inference_scale",
+      "breakpoints": true
     }
   ]
 }

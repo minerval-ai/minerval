@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   decompositionEffects, topLevelEffects, effectCounts, netEffect,
   groupByArgument, seedVerity, unassessedTintOf,
+  premiseSummary, argumentVerdictMeta,
   SEED_LEANS_TRUE, SEED_LEANS_FALSE, type Effect,
 } from "../../../web/lib/ontology";
 import type { TreeNode } from "../../../web/lib/types";
@@ -203,5 +204,46 @@ describe("effectCounts / groupByArgument", () => {
     expect(groups[0]).toMatchObject({ named: true, net: "unassessed" });
     // the argument-less remainder collects into the single basis group
     expect(groups[1]).toMatchObject({ id: null, named: false, net: "against" });
+  });
+});
+
+// #540: the rating of the step is conditional on the premises, so the page
+// shows it beside a count of the premises by status, never alone.
+describe("argument ratings and the premise row (#540)", () => {
+  it("words every rating conditionally", () => {
+    for (const v of ["certain", "likely", "slight", "none"]) {
+      expect(argumentVerdictMeta(v)!.label).toMatch(/if the premises hold/);
+    }
+  });
+
+  it("reads ratings of the retired scale as no rating, not a relabelled one", () => {
+    for (const v of ["holds", "holds_with_caveats", "fails", "contested"]) {
+      expect(argumentVerdictMeta(v)).toBeNull();
+    }
+  });
+
+  it("counts premises by status, what undermines the argument first", () => {
+    const summary = premiseSummary([
+      node({ assessment_status: "supported" }),
+      node({ assessment_status: "supported" }),
+      node({ assessment_status: "contradicted" }),
+      node({ assessment_status: null }),
+    ]);
+    expect(summary.map((p) => p.label)).toEqual([
+      "1 contradicted", "2 supported", "1 not separately assessed",
+    ]);
+  });
+
+  it("counts a lone verified premise rather than saying 'all hold'", () => {
+    const summary = premiseSummary([node({ assessment_status: "verified" })]);
+    expect(summary.map((p) => p.label)).toEqual(["1 verified"]);
+  });
+
+  it("carries the decisive mark onto the argument group", () => {
+    const groups = groupByArgument(topLevelEffects(root([
+      node({ argument_id: "a1", argument_name: "Euclid", argument_verdict: "certain", argument_decisive: true }),
+      node({ argument_id: "a2", argument_name: "Other", argument_verdict: "likely" }),
+    ])));
+    expect(groups.map((g) => g.decisive)).toEqual([true, false]);
   });
 });

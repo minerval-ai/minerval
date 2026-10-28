@@ -534,6 +534,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             created_by: a.createdBy,
             created_at: a.createdAt.toISOString(),
             verdict: evalByArgument.get(a.id)?.verdict ?? null,
+            decisive: evalByArgument.get(a.id)?.decisive ?? null,
             evaluation: evalByArgument.get(a.id)?.content ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
           }));

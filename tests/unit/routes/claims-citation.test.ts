@@ -91,7 +91,7 @@ function assembled() {
         contestation: null,
         affirming_instances: 1,
         denying_instances: 0,
-        contested_arguments: [],
+        arguments_on_unsettled_premises: [],
       },
     },
   };

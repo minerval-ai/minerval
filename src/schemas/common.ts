@@ -80,8 +80,8 @@ export const RELATION_GUIDANCE =
   "the parent is ill-posed or beside the point rather than simply false — a " +
   "framework premise. Whether the framework is fit for the question is often " +
   "the deepest crux, disputed in print or not; when it is in doubt it still " +
-  "enters here, and the argument's evaluation carries the 'contested' " +
-  "verdict (§7). " +
+  "enters here, as a premise whose assessment bears on whether the " +
+  "argument's premises hold (§7). " +
   "'specifies': a narrower or more precise version of part of the parent. " +
   "'defines': fixes the meaning of a term in the parent, only when that " +
   "meaning is itself disputed and load-bearing.";
