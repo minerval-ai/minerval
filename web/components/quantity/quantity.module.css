@@ -1,0 +1,180 @@
+/* ==========================================================================
+   Quantities (constitution §2, §10): the estimate strip and the sections of
+   a quantity's page. Ink, not status colour, for estimates: a value is not a
+   verdict. Status colour appears only where a threshold claim's verdict does.
+   ========================================================================== */
+
+/* ---- the strip ---------------------------------------------------------- */
+.strip {
+  position: relative;
+  height: 22px;
+  min-width: 0;
+}
+.tall { height: 30px; }
+.track {
+  position: absolute; left: 0; right: 0; top: 50%;
+  border-top: 1px solid var(--rule);
+}
+.zero {
+  position: absolute; top: 2px; bottom: 2px; width: 0;
+  border-left: 1px solid var(--rule-strong);
+}
+.strip > span { pointer-events: none; }
+
+/* the graph's own estimate behind a source's figure */
+.ctx {
+  position: absolute; top: 3px; bottom: 3px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  border-radius: 1px;
+}
+.ctxMid {
+  position: absolute; top: 3px; bottom: 3px; width: 0;
+  border-left: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
+.toneGraph  { --mark: var(--ink); }
+.toneSource { --mark: var(--ink-soft); }
+.toneRange  { --mark: var(--muted); }
+
+.outer {
+  position: absolute; top: calc(50% - 1px); height: 2px;
+  background: var(--mark);
+}
+.inner {
+  position: absolute; top: calc(50% - 4px); height: 8px;
+  background: var(--mark);
+  border-radius: 1px;
+}
+.toneSource.inner { opacity: 0.85; }
+.mid {
+  position: absolute; top: calc(50% - 8px); height: 16px; width: 0;
+  border-left: 2px solid var(--mark);
+  transform: translateX(-1px);
+}
+.toneGraph.mid { box-shadow: 0 0 0 1.5px var(--paper); }
+.dot {
+  position: absolute; top: 50%;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--mark);
+  border: 1.5px solid var(--paper);
+  transform: translate(-50%, -50%);
+}
+.boundRun {
+  position: absolute; top: calc(50% - 1px); height: 0;
+  border-top: 2px dashed var(--mark);
+}
+.boundStop {
+  position: absolute; top: calc(50% - 7px); height: 14px; width: 0;
+  border-left: 2px solid var(--mark);
+  transform: translateX(-1px);
+}
+.arrow {
+  position: absolute; top: calc(50% - 5px);
+  width: 0; height: 0;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.arrowRight { border-left: 7px solid var(--mark); transform: translateX(-7px); }
+.arrowLeft  { border-right: 7px solid var(--mark); }
+.mag {
+  position: absolute; top: calc(50% - 5px); height: 10px;
+  border: 1px solid var(--mark);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--mark) 45%, transparent) 0 1px, transparent 1px 5px);
+  border-radius: 1px;
+}
+
+/* an argument's conclusion: an open box */
+.range {
+  position: absolute; top: calc(50% - 6px); height: 12px;
+  border: 1px solid var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-radius: 2px;
+}
+.rangeOpenRight { border-right: none; border-radius: 2px 0 0 2px; }
+.rangeOpenLeft  { border-left: none; border-radius: 0 2px 2px 0; }
+
+/* a threshold claim's side of its cut */
+.cutShade { position: absolute; top: 0; bottom: 0; }
+.cutLine {
+  position: absolute; top: -3px; bottom: -3px; width: 0;
+  border-left: 1.5px dashed;
+  transform: translateX(-0.75px);
+}
+
+/* axis labels */
+.axis {
+  position: relative; height: 16px;
+  font-family: var(--sans); font-size: 0.66rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tick { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.tickMinor { color: var(--faint); font-size: 0.6rem; }
+.tickStart { transform: none; }
+.tickEnd { transform: translateX(-100%); }
+.axisCaption { position: absolute; right: 0; top: 15px; font-size: 0.62rem; color: var(--faint); }
+
+/* ---- the quantity's head ------------------------------------------------ */
+.defn {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem; margin: -0.2rem 0 1.1rem;
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  max-width: 38rem;
+}
+.defn dt { color: var(--muted); }
+.defn dd { margin: 0; }
+.lead {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.6rem;
+  margin: 0.9rem 0 0.15rem;
+}
+.leadFigure {
+  font-family: var(--serif); font-size: 2.1rem; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: lining-nums tabular-nums; color: var(--ink);
+}
+.leadUnit { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); }
+.words { margin: 0 0 0.7rem; color: var(--ink-soft); font-size: 0.98rem; }
+.headStrip { max-width: 34rem; margin-bottom: 0.4rem; }
+.formNote { font-family: var(--sans); font-size: 0.74rem; color: var(--faint); margin: 0.3rem 0 0; }
+
+/* ---- estimates by argument ---------------------------------------------- */
+.plot { margin: 0.6rem 0 0.4rem; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: 0.25rem 1.1rem; align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule-soft);
+}
+.axisRow { border-top: none; padding: 0 0 0.1rem; }
+.rowLabel { min-width: 0; font-family: var(--sans); font-size: 0.78rem; line-height: 1.4; color: var(--ink-soft); }
+.rowTitle { color: var(--ink); font-weight: 500; }
+.rowMeta { display: block; color: var(--muted); font-size: 0.72rem; }
+.rowStated { font-family: var(--serif); font-style: italic; color: var(--ink-soft); }
+.bridge { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.35rem; font-size: 0.72rem; margin-top: 0.15rem; }
+.bridge .sc { font-size: 0.56rem; }
+.group { margin-top: 1.2rem; }
+.groupHead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem;
+  padding-bottom: 0.35rem; border-bottom: 1px dotted var(--rule-strong);
+}
+.groupName { font-weight: 600; font-size: 0.98rem; }
+.concludes { font-family: var(--sans); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.groupStrip { margin: 0.35rem 0 0; display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 0 1.1rem; align-items: center; }
+.groupStripLabel { font-family: var(--sans); font-size: 0.7rem; color: var(--muted); }
+.plotKey { font-family: var(--sans); font-size: 0.74rem; color: var(--muted); margin: 0.7rem 0 0; max-width: 38rem; }
+@media (max-width: 640px) {
+  .row, .groupStrip { grid-template-columns: minmax(0, 1fr); }
+  .axisRow > :first-child, .groupStripLabel { display: none; }
+}
+
+/* ---- claims that cut the quantity --------------------------------------- */
+.cuts { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 0.8rem; }
+.cuts td { padding: 0.5rem 0.5rem 0.5rem 0; border-top: 1px solid var(--rule); vertical-align: baseline; }
+.cuts td:first-child { font-family: var(--serif); font-size: 0.92rem; }
+.cutsWrap { overflow-x: auto; }
+.implied { color: var(--muted); white-space: nowrap; }
+.drift { color: var(--st-inconclusive); font-weight: 600; }
+
+/* ---- a threshold claim's panel ------------------------------------------ */
+.panel {
+  border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-card);
+  padding: 0.8rem 1rem 0.7rem; margin: 1.1rem 0 0.4rem; max-width: 38rem;
+}
+.panelCap { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); margin: 0.5rem 0 0; line-height: 1.5; }

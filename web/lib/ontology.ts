@@ -161,6 +161,8 @@ export const RELATION: Record<RelationType, { label: string; cls: string; gloss:
   specifies:   { label: "specifies",   cls: "rel-specifies",   gloss: "a more specific version of the parent" },
   defines:     { label: "defines",     cls: "rel-defines",     gloss: "defines a key term in the parent" },
   assumes:     { label: "assumes",     cls: "rel-assumes",     gloss: "background the parent's framing takes as given" },
+  cuts:        { label: "cuts",        cls: "rel-cuts",        gloss: "states which side of a value the quantity falls on; its credence must agree with the quantity's estimate" },
+  answers:     { label: "answers",     cls: "rel-answers",     gloss: "an answer to the question" },
 };
 
 // Legacy alias (#205): the relation was `presupposes` until it was renamed to

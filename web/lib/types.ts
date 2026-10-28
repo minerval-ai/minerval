@@ -22,7 +22,10 @@ export type Stance = "for" | "against" | "neutral";
 
 export type RelationType =
   | "requires" | "supports" | "contradicts"
-  | "specifies" | "defines" | "assumes";
+  | "specifies" | "defines" | "assumes"
+  // Across kinds (constitution §2, §7a): a threshold claim cuts the quantity
+  // whose value it states a side of; an answer answers a question.
+  | "cuts" | "answers";
 
 // Steward rating of a named argument's inference (issues #173, #540).
 // How far does the conclusion follow IF the premises hold (#540)? A rating of
@@ -78,6 +81,13 @@ export interface TreeNode {
   // argument's evidence is a lean_checks row the checker accepted. Threaded
   // onto each of the argument's edges like the other argument_* fields.
   argument_lean_check?: LeanCheckSummary | null;
+  // Kinds (constitution §2, §7a). A quantity node carries its estimate and
+  // unit for the map's chip; an argument about a quantity carries the range
+  // it concludes in place of a for/against stance.
+  node_kind?: NodeKind;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+  argument_conclusion?: ValueRange | null;
   // Mathematics, for the map and the tree (docs/mathematics.md §8.3): the
   // amount of a live bounty on this claim, whether a machine-checked proof or
   // disproof of its published statement exists, and whether a published
@@ -130,6 +140,10 @@ export interface Assessment {
 
 export interface ClaimCore {
   id: string;
+  // A claim about a proposition, a claim about a quantity's value, or a
+  // question (constitution §2, §7a). Absent means "claim": every node an API
+  // served before kinds existed was a proposition.
+  kind?: NodeKind;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -167,6 +181,8 @@ export interface ArgumentItem {
   verdict?: ArgumentVerdict | string | null;
   decisive?: boolean | null;
   evaluation?: string | null;
+  // An argument about a quantity concludes a range of its value (§7).
+  conclusion?: ValueRange | null;
   // The checker record when this argument is a machine-checked proof or
   // disproof (docs/mathematics.md §2.3); null or absent otherwise.
   lean_check?: LeanCheckSummary | null;
@@ -322,6 +338,9 @@ export interface DependentClaim {
   bounty_micro_usd?: number | null;
   checked?: CheckKind | null;
   formal?: boolean;
+  // Kinds: a dependent that cuts this quantity says where (relation "cuts").
+  node_kind?: NodeKind;
+  cut?: { direction: "above" | "below"; value: number } | null;
 }
 
 // --- contribution record (#171) ---------------------------------------------
@@ -432,6 +451,168 @@ export interface ClaimDetail {
   research_runs?: ResearchRunSummary[];
   /** The claim's provenance read from its origins down (#507); absent until the API serves it. */
   provenance_story?: ProvenanceStory | null;
+  // --- kinds (constitution §2, §7a) -----------------------------------------
+  /** A quantity's definition, the graph's estimate, its sources' estimates and the claims that cut it. */
+  quantity?: QuantityDetail | null;
+  /** A threshold claim: the quantity it cuts, and where. Its credence must agree with that estimate. */
+  threshold_of?: ThresholdOf | null;
+  /** A question's presupposition, answers and the state of the question. */
+  question?: QuestionDetail | null;
+  /** Requests filed on this node (Part VIII, Requests). */
+  requests?: RequestItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Node kinds: quantities and questions (constitution §2, §3, §4, §7a, §10)
+// ---------------------------------------------------------------------------
+
+export type NodeKind = "claim" | "quantity" | "question";
+
+// What a quantity's value is measured in. `kind` drives formatting and the
+// default scale; `scale` is the Steward's choice when it has made one.
+export type QuantityUnitKind =
+  | "proportion"   // 0..1, shown as a percentage
+  | "count"        // people, deaths, stars: compact words ("17 million")
+  | "currency"     // money, with `currency`
+  | "temperature"  // signed, with `symbol` ("°C")
+  | "year"         // a calendar year: a date on a time axis
+  | "duration"     // a length of time, with `symbol` ("years")
+  | "rate"         // events per `per`; rare ones read as "1 in N"
+  | "measure";     // anything else with a `symbol`, possibly signed
+
+export interface QuantityUnit {
+  kind: QuantityUnitKind;
+  symbol?: string | null;
+  // The counted thing, for counts and rates: "deaths", "stars", "impacts".
+  noun?: string | null;
+  currency?: string | null;
+  // For rates: "per year".
+  per?: string | null;
+  scale?: "linear" | "log" | null;
+  // The value's natural bounds, when it has them (0 for counts, 0 and 1 for
+  // proportions); axes never run past them.
+  min?: number | null;
+  max?: number | null;
+}
+
+export interface QuantityDefinition {
+  measures: string;
+  population?: string | null;
+  conditions?: string | null;
+  unit: QuantityUnit;
+}
+
+/** A point of the distribution: P(value <= v) = p. */
+export interface Quantile { p: number; v: number }
+
+// The precision the evidence supports (§10): a distribution, an interval, a
+// bound, an order of magnitude, a single figure, or no figure with a reason.
+export type EstimateForm = "distribution" | "interval" | "bound" | "magnitude" | "point" | "none";
+
+export interface QuantityEstimate {
+  form: EstimateForm;
+  quantiles?: Quantile[];
+  low?: number | null;
+  high?: number | null;
+  // The interval's coverage (0.9 for a 90% interval); absent for a range a
+  // source states without one.
+  level?: number | null;
+  central?: number | null;
+  bound?: { side: "above" | "below"; value: number } | null;
+  // A power of ten, for an order-of-magnitude estimate.
+  magnitude?: number | null;
+  shape?: string | null;
+  reason?: string | null;
+}
+
+/** What an argument about a quantity concludes: a range of its value (§7). */
+export interface ValueRange {
+  side: "above" | "below" | "between";
+  low?: number | null;
+  high?: number | null;
+}
+
+/** A source's statement of a quantity's value: the quantity's instance (§4). */
+export interface EstimateInstance {
+  id: string;
+  argument_id: string | null;
+  source_title: string;
+  source_url?: string | null;
+  source_type?: string | null;
+  source_date?: string | null;
+  // The figure as the source states it, and in its words.
+  stated: QuantityEstimate;
+  stated_text: string;
+  method: string;
+  // What was actually measured, when it differs from the quantity's
+  // definition, and the claim that bridges the two.
+  measured?: string | null;
+  bridge?: { id: string; text: string; status: AssessmentStatus | null } | null;
+}
+
+/** A threshold claim cutting this quantity. */
+export interface QuantityCut {
+  id: string;
+  text: string;
+  direction: "above" | "below";
+  value: number;
+  status: AssessmentStatus | null;
+  credence: number | null;
+}
+
+export interface QuantityDetail {
+  definition: QuantityDefinition;
+  estimate: QuantityEstimate | null;
+  estimates: EstimateInstance[];
+  cuts: QuantityCut[];
+}
+
+export interface ThresholdOf {
+  quantity_id: string;
+  quantity_text: string;
+  definition: QuantityDefinition;
+  estimate: QuantityEstimate | null;
+  direction: "above" | "below";
+  value: number;
+}
+
+export interface QuestionAnswer {
+  id: string;
+  text: string;
+  kind: NodeKind;
+  status: AssessmentStatus | null;
+  credence?: number | null;
+  // Answers that rule each other out compete; contributing answers can all
+  // be true together, and have no leading answer.
+  group: "competing" | "contributing";
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+}
+
+export interface QuestionDetail {
+  presupposition: { id: string; text: string; status: AssessmentStatus | null } | null;
+  state: string | null;
+  state_at?: string | null;
+  answers: QuestionAnswer[];
+  // The leading competing answer, when the evidence favors one.
+  leading_id?: string | null;
+  // The Steward's note when it judges the answer set incomplete.
+  incomplete?: string | null;
+}
+
+export type RequestState =
+  | "open" | "fulfilled" | "supplied" | "answered" | "refused" | "obsolete" | "withdrawn";
+
+/** A gap someone should fill (Part VIII, Requests). */
+export interface RequestItem {
+  id: string;
+  // Null when open to anyone; otherwise who holds the evidence.
+  recipient: string | null;
+  ask: string;
+  would_change: string;
+  state: RequestState;
+  state_note?: string | null;
+  filed_at: string;
 }
 
 export interface SearchResultItem {
