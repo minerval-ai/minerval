@@ -16,7 +16,9 @@
  * and turn caps, and a terminal `report` tool. What the researcher may
  * write: its notebook, the provenance tables through the Provenance skill's
  * tools, and the stored copy of a source it fetched. Nothing else; a unit
- * test holds that line.
+ * test holds that line. A run a Grantmaker launched writes only its
+ * notebook: the provenance and examination tools are withheld from it
+ * whatever it was given (research-run-service.ts says why).
  *
  * The toolset follows the model. Every tier has web_search and read_page
  * (tools/web-search-tool.ts serves the search on any provider). A
@@ -80,6 +82,7 @@ import {
   NOTEBOOK_MAX_SECTIONS,
   NOTEBOOK_MAX_SECTION_CHARS,
   RESEARCHER_AGENT,
+  launcherWritesGraph,
   readResearcherPaused,
   stampResearchRun,
   updateResearchProgress,
@@ -279,8 +282,10 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   // examination needs provenance_read_source to read its document; the
   // examination tools only on a run launched as an examination.
   const examination = input.examination ?? null;
+  const graphWrites = launcherWritesGraph(run.requested_by);
   const skillTools = getActiveSkillToolDefinitions(skills, "researcher").filter(
     (t) =>
+      (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
       (checker || !isLeanTool(t.name)) &&
       (!t.name.startsWith(PROVENANCE_PREFIX) || !!input.claim || (!!examination && t.name === "provenance_read_source")) &&
       (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)

@@ -970,7 +970,13 @@ holds the line. Its report is the instrument's narrative and is data: the
 launcher reads it against the sources it names and records what it
 concludes in its own reasoning (§9, §11). Provenance rows it recorded are
 reviewed by the Steward with `provenance_get_map`, and the map's reader-
-facing summary stays the Steward's to write.
+facing summary stays the Steward's to write. A run a Grantmaker launched
+writes only its notebook: a Grantmaker serves its mandate as well as the
+graph, and funding is kept apart from what the graph says (§19), so
+`delegate_research` from a mandate takes no `claim_id` and no
+`examine_source_id`, and the researcher withholds the provenance and
+examination tools from any run whose launcher is not a Claim Steward
+(`launcherWritesGraph`, `src/services/research-run-service.ts`).
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 (at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter before

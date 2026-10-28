@@ -3,6 +3,12 @@
  * one bundle for every administrator that may launch the researcher (the
  * Claim Steward on its claim, the Grantmaker on its mandate).
  *
+ * Only the Claim Steward's runs write to the graph. A Grantmaker serves its
+ * mandate as well as the graph, and funding is kept apart from what the
+ * graph says (constitution §19), so a run it launches gets neither the
+ * provenance tools nor an examination: it reads and reports, and anything
+ * it finds reaches the graph the way anyone's findings do.
+ *
  * Launching is a judgment the administrator makes: what to ask, on which
  * tier, with how much budget, and whether the instrument should carry the
  * constitution. The tool description says what each tier can do, so the
@@ -28,6 +34,7 @@ import {
   checkResearcherBudget,
   closeResearchRun,
   getResearchRun,
+  launcherWritesGraph,
   modelForTier,
   openResearchRun,
   readResearcherPaused,
@@ -70,8 +77,11 @@ export interface ResearchToolsOptions {
 }
 
 /** The tool definitions, with the affordances of each tier spelled out. */
-export function getResearchToolDefinitions(input: { claimScoped: boolean } = { claimScoped: true }): Tool[] {
+export function getResearchToolDefinitions(
+  input: { claimScoped: boolean; graphWrites?: boolean } = { claimScoped: true }
+): Tool[] {
   const config = loadConfig();
+  const graphWrites = input.graphWrites ?? true;
   const maxOwls = config.researcherMaxCeilingOwls;
   const maxRuns = config.researcherMaxRunsPerLauncherRun;
   return [
@@ -80,8 +90,12 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
       description:
         "Launch the researcher: an instrument that works for you on one bounded " +
         "investigation and returns a report you weigh. It answers only to you, writes " +
-        "nothing to the graph except provenance rows (readings, edges, source relations) " +
-        "on the claim in scope, and cannot launch instruments of its own. Delegate work " +
+        (graphWrites
+          ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
+            "on the claim in scope, "
+          : "nothing to the graph (research a mandate launches reads and reports; it does not " +
+            "record provenance or examine documents), ") +
+        "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
         "checking whether a dataset shows what a paper says, or a proof attempt outside " +
@@ -89,7 +103,9 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
         "who knows nothing of this claim: the question, what is already known, what a good " +
         "answer looks like, which sources to start from, and what to avoid. " +
         "Every tier has web search, read_page, the graph's read tools, scholarly search " +
-        "where configured, a notebook, and the provenance tools on a claim-scoped task. " +
+        (graphWrites
+          ? "where configured, a notebook, and the provenance tools on a claim-scoped task. "
+          : "where configured, and a notebook. ") +
         "Tiers: 'strong' runs the best model class on the long-run loop with a " +
         "code-execution sandbox (Python, no network), for a replication or an analysis " +
         "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
@@ -129,7 +145,7 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
               "Whether the instrument's prompt opens with the constitution in full. Defaults to true; " +
               "drop it only for a task where it would compete with the problem for attention.",
           },
-          examine_source_id: {
+          ...(graphWrites ? { examine_source_id: {
             type: "string",
             description:
               "Optional: launch the run as an examination of one document, by its source id. The " +
@@ -146,8 +162,8 @@ export function getResearchToolDefinitions(input: { claimScoped: boolean } = { c
             description:
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
               "\"method\", \"attribution\"), at most eight.",
-          },
-          ...(input.claimScoped
+          } } : {}),
+          ...(input.claimScoped || !graphWrites
             ? {}
             : {
                 claim_id: {
@@ -193,15 +209,22 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
   const config = loadConfig();
   const claimScoped = !!options.claimId;
+  const graphWrites = launcherWritesGraph(options.requestedBy);
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
-  const definitions = config.researcherEnabled ? getResearchToolDefinitions({ claimScoped }) : [];
+  const definitions = config.researcherEnabled ? getResearchToolDefinitions({ claimScoped, graphWrites }) : [];
   const run = options.runResearcher ?? runResearcher;
   let launched = 0;
 
   const delegate = async (input: Record<string, unknown>): Promise<string> => {
     if (!config.researcherEnabled) {
       return refuse("The researcher is disabled in this deployment (RESEARCHER_ENABLED). Do the work inline or record what you would have delegated in your reasoning.");
+    }
+    if (!graphWrites && (input.claim_id !== undefined || input.examine_source_id !== undefined || input.facets !== undefined)) {
+      return refuse(
+        "Research a mandate launches writes nothing to the graph, so it takes no claim_id and examines no document. " +
+          "Name the claims or documents in the brief; the researcher can read them."
+      );
     }
     const task = str(input.task);
     if (task.length < MIN_TASK_CHARS) {
