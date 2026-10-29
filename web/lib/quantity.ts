@@ -159,6 +159,10 @@ export function makeScale(unit: QuantityUnit, values: number[], prefer?: ScaleKi
     const d = Math.abs(max) * 0.2 || 1;
     min -= d; max += d;
   }
+  // A quantity with a natural floor (a count, a share) starts its axis there
+  // when the values sit close enough to it that a cropped axis would
+  // exaggerate their spread.
+  if (unit.min != null && min > unit.min && min - unit.min < (max - min) * 3) min = unit.min;
   const span = max - min;
   const step = unit.kind === "year" ? Math.max(1, niceStep(span / 4)) : niceStep(span / 4);
   let lo = Math.floor((min - span * 0.04) / step) * step;
@@ -166,9 +170,24 @@ export function makeScale(unit: QuantityUnit, values: number[], prefer?: ScaleKi
   if (unit.min != null) lo = Math.max(lo, unit.min);
   if (unit.max != null) hi = Math.min(hi, unit.max);
   const ticks: Tick[] = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) {
-    const vv = Math.abs(v) < step * 1e-9 ? 0 : Number(v.toPrecision(12));
-    ticks.push({ v: vv, label: formatTick(vv, unit), major: true });
+  if (unit.kind === "rate" && hi > 0 && hi < 0.01) {
+    // A rare rate reads as a waiting time, so its ticks sit at round waits
+    // ("1 in 500k"), not at round rates that would read as "1 in 333k".
+    const waits: number[] = [];
+    for (let k = Math.floor(Math.log10(1 / hi)) - 1; k <= Math.ceil(Math.log10(1 / Math.max(lo, hi / 1e3))) + 1; k++) {
+      for (const m of [1, 2, 5]) waits.push(m * 10 ** k);
+    }
+    for (const w of waits) {
+      const r = 1 / w;
+      if (r >= lo && r <= hi) ticks.push({ v: r, label: formatTick(r, unit), major: true });
+    }
+    if (lo <= 0) ticks.push({ v: 0, label: "0", major: true });
+    ticks.sort((a, b) => a.v - b.v);
+  } else {
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) {
+      const vv = Math.abs(v) < step * 1e-9 ? 0 : Number(v.toPrecision(12));
+      ticks.push({ v: vv, label: formatTick(vv, unit), major: true });
+    }
   }
   return {
     kind, lo, hi, unit, ticks,
@@ -320,9 +339,19 @@ const FORM_LABEL: Record<QuantityEstimate["form"], string> = {
   none: "no figure",
 };
 
-/** An estimate, stated at the precision it carries (§10). */
-export function describeEstimate(est: QuantityEstimate, unit: QuantityUnit): EstimateWords {
-  const digits = digitsFor(est);
+/** An estimate, stated at the precision it carries (§10), with any share that lies outside every value. */
+export function describeEstimate(est: QuantityEstimate, unit: QuantityUnit, digits?: number): EstimateWords {
+  const w = describeValues(est, unit, digits);
+  const out = est.outside;
+  if (!out || !(out.share > 0) || est.form === "none") return w;
+  const pct = out.share < 0.01 ? "under 1%" : `${Math.round(out.share * 100)}%`;
+  return { ...w, words: `${w.words}, with a ${pct} chance that ${out.meaning}` };
+}
+
+// `exact` keeps a source's own precision: a figure a source states is
+// reported as it was stated, not rounded to the interval's width.
+function describeValues(est: QuantityEstimate, unit: QuantityUnit, exact?: number): EstimateWords {
+  const digits = exact ?? digitsFor(est);
   const formLabel = FORM_LABEL[est.form];
   switch (est.form) {
     case "distribution": {
@@ -370,7 +399,7 @@ export function describeEstimate(est: QuantityEstimate, unit: QuantityUnit): Est
   }
 }
 
-/** What an argument about a quantity concludes, in words: "above 50 million", "2 to 4.5 °C". */
+/** A place on the value's axis in words: "above 50 million", "2 to 4.5 °C". */
 export function describeRange(r: ValueRange, unit: QuantityUnit): string {
   if (r.side === "above" && r.low != null) return `above ${formatValue(r.low, unit, 3)}`;
   if (r.side === "below" && r.high != null) return `below ${formatValue(r.high, unit, 3)}`;

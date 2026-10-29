@@ -1,6 +1,6 @@
 import type {
   ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
-  RelationType, Stance, TreeNode,
+  QuestionStanding, RelationType, RequestOutcome, RequestState, Stance, TreeNode, ValueShown,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -18,6 +18,10 @@ export const DEFINED_IN = {
   claimType: "/docs/constitution#8-uniformity-across-claim-types",
   relation: "/docs/agents/claim-steward#decomposition",
   argument: "/docs/constitution#7-arguments",
+  quantity: "/docs/constitution#2-what-a-claim-is",
+  question: "/docs/constitution#7a-questions",
+  standing: "/docs/constitution#10-explicit-uncertainty",
+  request: "/docs/constitution#instruments",
   importance: "/docs/constitution#claim-importance-and-proportional-effort",
   effect: "/docs/constitution#6-decomposition",
   // The prize vocabulary is defined by the official rules, not the
@@ -161,8 +165,9 @@ export const RELATION: Record<RelationType, { label: string; cls: string; gloss:
   specifies:   { label: "specifies",   cls: "rel-specifies",   gloss: "a more specific version of the parent" },
   defines:     { label: "defines",     cls: "rel-defines",     gloss: "defines a key term in the parent" },
   assumes:     { label: "assumes",     cls: "rel-assumes",     gloss: "background the parent's framing takes as given" },
-  cuts:        { label: "cuts",        cls: "rel-cuts",        gloss: "states which side of a value the quantity falls on; its credence must agree with the quantity's estimate" },
-  answers:     { label: "answers",     cls: "rel-answers",     gloss: "an answer to the question" },
+  cuts:        { label: "cuts",        cls: "rel-cuts",        gloss: "states which side of a figure the quantity lies; its credence must agree with the quantity's estimate" },
+  answers:     { label: "answers",     cls: "rel-answers",     gloss: "a candidate answer to the question" },
+  part_of:     { label: "part of",     cls: "rel-part-of",     gloss: "a subquestion whose answer the question needs" },
 };
 
 // Legacy alias (#205): the relation was `presupposes` until it was renamed to
@@ -683,6 +688,9 @@ export interface ArgumentGroup {
   // The Steward's decisive mark (#540); false or null when not marked.
   decisive: boolean;
   evaluation: string | null;
+  // On a quantity (§7): what the argument shows about the value, in place of
+  // a for/against stance.
+  shows: ValueShown | null;
   // The checker record when the argument is machine-checked (mathematics);
   // null for every other argument.
   leanCheck: LeanCheckSummary | null;
@@ -711,6 +719,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         verdict: s.node.argument_verdict ?? null,
         decisive: s.node.argument_decisive === true,
         evaluation: s.node.argument_evaluation ?? null,
+        shows: s.node.argument_shows ?? null,
         leanCheck: s.node.argument_lean_check ?? null,
         named: Boolean(s.node.argument_name),
         nodes: [],
@@ -730,3 +739,54 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
   }
   return groups;
 }
+
+// How well answered a question is (constitution §7a, §10). Its own visual
+// family, round and in ink, so it is never read as a claim's verdict: a
+// question is answered, not affirmed or denied.
+export const QUESTION_STANDING: Record<QuestionStanding, { label: string; glyph: string; def: string }> = {
+  answered: {
+    label: "Answered", glyph: "●",
+    def: "The evidence establishes an answer.",
+  },
+  leaning: {
+    label: "Leaning", glyph: "◐",
+    def: "The evidence favors an answer without establishing it.",
+  },
+  open: {
+    label: "Open", glyph: "○",
+    def: "The evidence has been examined and leaves the leading answers level.",
+  },
+  ill_posed: {
+    label: "Ill-posed", glyph: "⊘",
+    def: "The question rests on a presupposition that is false.",
+  },
+  unknown: {
+    label: "Unknown", glyph: "?",
+    def: "Too little is known to say how well the question is answered.",
+  },
+};
+
+export function isStanding(s: unknown): s is QuestionStanding {
+  return typeof s === "string" && s in QUESTION_STANDING;
+}
+
+// A request's life and what came back from work on it (Part VIII, Requests;
+// the Researcher role). Every outcome is a complete one.
+export const REQUEST_STATE: Record<RequestState, { label: string; def: string }> = {
+  open:        { label: "Open",        def: "Open to anyone who can do what it asks." },
+  addressed:   { label: "Addressed",   def: "Asked of the party who can supply what it asks for." },
+  in_progress: { label: "In progress", def: "Someone has taken it up." },
+  met:         { label: "Met",         def: "Its keeper judged that the work met it." },
+  declined:    { label: "Declined",    def: "Whoever it was asked of declined, or it was judged not worth doing; the reason is on the record." },
+  withdrawn:   { label: "Withdrawn",   def: "Withdrawn by whoever filed it, or closed by its keeper, with the reason." },
+  moot:        { label: "Moot",        def: "It no longer bears on anything the graph holds." },
+};
+
+export const REQUEST_OUTCOME: Record<RequestOutcome, { label: string; def: string }> = {
+  met:           { label: "met",               def: "The work did what the request asked." },
+  partly_met:    { label: "partly met",        def: "The work did part of what the request asked; the report says which." },
+  negative:      { label: "negative result",   def: "The work was done properly and the evidence was not there, or pointed the other way." },
+  cannot_be_met: { label: "cannot be met",     def: "The request cannot be met as asked, for the reason given." },
+  declined:      { label: "declined",          def: "The request was flawed, moot, or could be met only by intrusion." },
+  revise:        { label: "revise the request", def: "The work recommends asking for something different, and says what." },
+};

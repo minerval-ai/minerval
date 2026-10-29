@@ -2,16 +2,17 @@ import Link from "next/link";
 import type { ArgumentItem, ClaimDetail, QuantityDefinition, QuantityEstimate, ThresholdOf } from "@/lib/types";
 import { argumentVerdictMeta, DEFINED_IN } from "@/lib/ontology";
 import {
-  describeCut, describeEstimate, describeRange, makeScale, probAbove, valuesOf,
+  describeCut, describeEstimate, makeScale, probAbove, valuesOf,
 } from "@/lib/quantity";
 import { StatusBadge, Swatch, Unassessed } from "@/components/Assessment";
 import { Term } from "@/components/Term";
 import { EstimateStrip, ValueAxis } from "./EstimateStrip";
 import styles from "./quantity.module.css";
 
-// The quantity's page (constitution §2, §4, §7, §10): its definition, the
-// graph's estimate, every source's figure grouped under the argument it
-// belongs to, and the threshold claims that cut it.
+// The quantity's page (constitution §2, §3, §4, §7, §10): its definition,
+// the graph's estimate, every figure a source states grouped under the
+// argument it belongs to, the readings that bear on it, and, rarely, claims
+// about which side of a figure it lies that have nodes of their own.
 
 function unitLabel(def: QuantityDefinition): string {
   const u = def.unit;
@@ -23,18 +24,39 @@ function unitLabel(def: QuantityDefinition): string {
   return u.symbol ?? "—";
 }
 
-/** Values that a view of this estimate must fit, including room for a bound to point. */
+/** Values that a view of this estimate must fit, with a little room for a bound to point. */
 function fitValues(est: QuantityEstimate | null | undefined): number[] {
   if (!est) return [];
   const vals = valuesOf(est);
   if (est.form === "bound" && est.bound) {
     const v = est.bound.value;
-    vals.push(est.bound.side === "above" ? v * 4 : v / 4);
+    // Room for the arrow, wide enough that the axis does not suggest a
+    // precision the bound does not claim.
+    vals.push(est.bound.side === "above" ? v * 2 : v * 0.5);
   }
   return vals;
 }
 
-export function QuantityHead({ detail }: { detail: ClaimDetail }) {
+function sentence(s: string): string {
+  const t = s[0].toUpperCase() + s.slice(1);
+  return /[.!?]$/.test(t) ? t : `${t}.`;
+}
+
+// "Author (year), “Title”, Venue": the citation's head set apart from the
+// rest, so a long title does not bury who said it.
+function SourceLabel({ title, url }: { title: string; url?: string | null }) {
+  const m = /^(.*?\(\d{4}\)),\s*(.*)$/.exec(title);
+  const head = m ? m[1] : title;
+  const rest = m ? m[2] : null;
+  return (
+    <>
+      {url ? <a className={styles.rowTitle} href={url}>{head}</a> : <span className={styles.rowTitle}>{head}</span>}
+      {rest && <span className={styles.rowWork}>{rest}</span>}
+    </>
+  );
+}
+
+export function QuantityHead({ detail, aside }: { detail: ClaimDetail; aside?: React.ReactNode }) {
   const q = detail.quantity!;
   const def = q.definition;
   const est = q.estimate;
@@ -54,8 +76,9 @@ export function QuantityHead({ detail }: { detail: ClaimDetail }) {
           <div className={styles.lead}>
             <span className={styles.leadFigure}>{w.lead}</span>
             {def.unit.kind === "count" && def.unit.noun && <span className={styles.leadUnit}>{def.unit.noun}</span>}
+            {aside}
           </div>
-          <p className={styles.words}>{w.words[0].toUpperCase() + w.words.slice(1)}.</p>
+          <p className={styles.words}>{sentence(w.words)}</p>
           {est.form !== "none" && (
             <div className={styles.headStrip}>
               <EstimateStrip scale={scale} estimate={est} tone="graph" tall label={`The graph's estimate: ${w.words}`} />
@@ -82,23 +105,22 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
   const vals = [
     ...fitValues(est),
     ...q.estimates.flatMap((e) => fitValues(e.stated)),
-    ...args.flatMap((a) => valuesOf(a.conclusion ?? null)),
+    ...args.flatMap((a) => valuesOf(a.shows?.range ?? null)),
   ];
   const scale = makeScale(unit, vals, est?.form === "magnitude" ? "log" : undefined);
-  const groups: { arg: ArgumentItem | null; rows: typeof q.estimates }[] = [
-    ...args.map((a) => ({ arg: a, rows: q.estimates.filter((e) => e.argument_id === a.id) })),
-  ];
+  const groups: { arg: ArgumentItem | null; rows: typeof q.estimates }[] = args
+    .map((a) => ({ arg: a, rows: q.estimates.filter((e) => e.argument_id === a.id) }))
+    .filter((g) => g.rows.length > 0 || g.arg.shows?.range);
   const loose = q.estimates.filter((e) => !e.argument_id || !args.some((a) => a.id === e.argument_id));
   if (loose.length) groups.push({ arg: null, rows: loose });
-  if (!q.estimates.length && !args.length) return null;
+  if (!groups.length) return null;
 
   return (
     <section>
       <h2>Estimates</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-        Each source&apos;s figure, as it states it, under the argument it belongs to, read
-        against the graph&apos;s estimate. Where a source measured something other than this
-        quantity, the claim that bridges the two is shown with its status.
+      <p className={styles.intro}>
+        Each figure a source states for this quantity, in its own words, under the argument
+        it belongs to and read against the graph&apos;s estimate.
       </p>
       <div className={styles.plot}>
         <div className={`${styles.row} ${styles.axisRow}`}>
@@ -107,48 +129,46 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
         </div>
         {groups.map(({ arg, rows }) => {
           const meta = arg ? argumentVerdictMeta(arg.verdict) : null;
+          const range = arg?.shows?.range ?? null;
           return (
             <div className={styles.group} key={arg?.id ?? "loose"}>
               <div className={styles.groupHead}>
                 <span className={styles.groupName}>{arg ? arg.name : "Not yet placed under an argument"}</span>
-                {arg?.conclusion && (
-                  <span className={styles.concludes}>concludes {describeRange(arg.conclusion, unit)}</span>
-                )}
                 {meta && (
-                  <Term gloss={meta.gloss} href={DEFINED_IN.argument} className={`badge arg-verdict ${meta.cls}`} >
+                  <Term gloss={meta.gloss} href={DEFINED_IN.argument} className={`badge arg-verdict ${meta.cls}`}>
                     {meta.label}
                   </Term>
                 )}
               </div>
-              {arg?.conclusion && (
+              {arg?.shows && (
                 <div className={styles.groupStrip}>
-                  <span className={styles.groupStripLabel}>what the argument concludes</span>
-                  <EstimateStrip scale={scale} range={arg.conclusion} context={est} label={`Concludes ${describeRange(arg.conclusion, unit)}`} />
+                  <span className={styles.groupStripLabel}>
+                    <span className="sc">shows</span> {arg.shows.text}
+                  </span>
+                  {range ? (
+                    <EstimateStrip scale={scale} range={range} context={est} label={`The argument shows ${arg.shows.text}`} />
+                  ) : (
+                    <span />
+                  )}
                 </div>
               )}
-              {rows.map((e) => (
-                <div className={styles.row} key={e.id}>
+              {rows.map((e, i) => (
+                <div className={`${styles.row}${i > 0 && rows[i - 1].source_title === e.source_title ? ` ${styles.rowSame}` : ""}`} key={e.id}>
                   <div className={styles.rowLabel}>
-                    {e.source_url ? (
-                      <a className={styles.rowTitle} href={e.source_url}>{e.source_title}</a>
-                    ) : (
-                      <span className={styles.rowTitle}>{e.source_title}</span>
+                    {!(i > 0 && rows[i - 1].source_title === e.source_title) && (
+                      <SourceLabel title={e.source_title} url={e.source_url} />
                     )}
                     <span className={styles.rowMeta}>
-                      <span className={styles.rowStated}>“{e.stated_text}”</span> · {e.method}
+                      {e.verbatim_text ? (
+                        <span className={styles.rowStated}>“{e.verbatim_text}”</span>
+                      ) : (
+                        <>{describeEstimate(e.stated, unit, 3).words}, from the source&apos;s tables</>
+                      )}
                     </span>
-                    {e.measured && <span className={styles.rowMeta}>measured: {e.measured}</span>}
-                    {e.bridge && (
-                      <span className={styles.bridge}>
-                        <span className="sc">bridge</span>
-                        <Swatch status={e.bridge.status} />
-                        <Link href={`/claims/${e.bridge.id}`}>{e.bridge.text}</Link>
-                      </span>
-                    )}
                   </div>
                   <EstimateStrip
                     scale={scale} estimate={e.stated} tone="source" context={est}
-                    label={`${e.source_title}: ${describeEstimate(e.stated, unit).words}`}
+                    label={`${e.source_title}: ${describeEstimate(e.stated, unit, 3).words}`}
                   />
                 </div>
               ))}
@@ -160,9 +180,43 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
         Grey band: the graph&apos;s {est && est.form === "distribution" ? "90% interval" : "estimate"}, with
         its central value as a line. Dark marks: each source&apos;s own figure. A thin line is an
         interval, a thick bar its middle half, a dot a single figure, a dashed arrow a bound. An open
-        box is the range an argument concludes.
+        box is where an argument places the value.
       </p>
     </section>
+  );
+}
+
+/** Readings of instruments taken to indicate the quantity: evidence about it, kept in its provenance (§3). */
+export function QuantityReadings({ detail }: { detail: ClaimDetail }) {
+  const readings = detail.quantity?.readings ?? [];
+  if (!readings.length) return null;
+  return (
+    <div className={styles.readings}>
+      <h3>Readings</h3>
+      <p className={styles.intro}>
+        Figures from instruments taken to indicate this quantity. Each is evidence about the
+        quantity, not its value: what was actually measured is stated with it, and how far it
+        speaks to the quantity is the Steward&apos;s judgment.
+      </p>
+      {readings.map((r) => (
+        <div className={styles.reading} key={r.id}>
+          <div className={styles.readingHead}>
+            {r.source_url ? <a href={r.source_url}>{r.source_title}</a> : <span>{r.source_title}</span>}
+            <span className={styles.readingFigure}>{r.figure}</span>
+          </div>
+          <dl className={styles.readingDl}>
+            <dt>measured</dt><dd>{r.measured}</dd>
+            <dt>bearing</dt><dd>{r.bearing}</dd>
+          </dl>
+          {r.claim && (
+            <p className={styles.readingClaim}>
+              <Swatch status={r.claim.status} />{" "}
+              <Link href={`/claims/${r.claim.id}`}>{r.claim.text}</Link>
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -171,10 +225,11 @@ export function QuantityCuts({ detail }: { detail: ClaimDetail }) {
   if (!q.cuts.length) return null;
   return (
     <section>
-      <h2>Claims that cut this quantity</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-        Each states which side of a value the quantity falls on. Its credence has to agree with
-        the estimate above; the figure the estimate implies is shown beside it.
+      <h2>Claims about where the value lies</h2>
+      <p className={styles.intro}>
+        Most statements about this value are estimates on the quantity itself. These few have
+        nodes of their own, because other claims rely on them directly. Each one&apos;s credence
+        has to agree with the estimate; the figure the estimate implies is shown beside it.
       </p>
       <div className={styles.cutsWrap}>
         <table className={styles.cuts}>

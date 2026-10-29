@@ -144,11 +144,11 @@
 }
 .axisRow { border-top: none; padding: 0 0 0.1rem; }
 .rowLabel { min-width: 0; font-family: var(--sans); font-size: 0.78rem; line-height: 1.4; color: var(--ink-soft); }
-.rowTitle { color: var(--ink); font-weight: 500; }
+.rowTitle { display: block; color: var(--ink); font-weight: 500; }
+.rowWork { display: block; color: var(--muted); font-size: 0.72rem; line-height: 1.35; margin-bottom: 0.15rem; }
+.rowSame { border-top-style: dotted; padding-top: 0.3rem; }
 .rowMeta { display: block; color: var(--muted); font-size: 0.72rem; }
 .rowStated { font-family: var(--serif); font-style: italic; color: var(--ink-soft); }
-.bridge { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.35rem; font-size: 0.72rem; margin-top: 0.15rem; }
-.bridge .sc { font-size: 0.56rem; }
 .group { margin-top: 1.2rem; }
 .groupHead {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem;
@@ -157,7 +157,9 @@
 .groupName { font-weight: 600; font-size: 0.98rem; }
 .concludes { font-family: var(--sans); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .groupStrip { margin: 0.35rem 0 0; display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 0 1.1rem; align-items: center; }
-.groupStripLabel { font-family: var(--sans); font-size: 0.7rem; color: var(--muted); }
+.groupStripLabel { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; }
+.groupStripLabel .sc { font-size: 0.58rem; color: var(--muted); margin-right: 0.2rem; }
+.intro { color: var(--muted); font-family: var(--sans); font-size: 0.8rem; margin-top: -0.3rem; max-width: 40rem; }
 .plotKey { font-family: var(--sans); font-size: 0.74rem; color: var(--muted); margin: 0.7rem 0 0; max-width: 38rem; }
 @media (max-width: 640px) {
   .row, .groupStrip { grid-template-columns: minmax(0, 1fr); }
@@ -178,3 +180,18 @@
   padding: 0.8rem 1rem 0.7rem; margin: 1.1rem 0 0.4rem; max-width: 38rem;
 }
 .panelCap { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); margin: 0.5rem 0 0; line-height: 1.5; }
+
+/* ---- readings (§3) ------------------------------------------------------ */
+.readings { margin: 1.2rem 0 0.6rem; }
+.readings h3 { font-size: 1rem; margin: 0 0 0.3rem; }
+.reading {
+  border-left: 2px solid var(--rule); padding: 0.35rem 0 0.35rem 0.8rem; margin: 0.7rem 0;
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+}
+.readingHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.2rem 0.8rem; }
+.readingHead a, .readingHead > span:first-child { font-weight: 500; color: var(--ink); }
+.readingFigure { font-family: var(--serif); font-size: 0.95rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+.readingDl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.15rem 0.7rem; margin: 0.3rem 0 0; }
+.readingDl dt { color: var(--muted); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 0.12rem; }
+.readingDl dd { margin: 0; line-height: 1.45; }
+.readingClaim { margin: 0.35rem 0 0; font-size: 0.78rem; }

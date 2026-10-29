@@ -356,6 +356,12 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .badge.st-contradicted{ background: var(--st-contradicted-tint); }
 .badge.st-unknown     { background: var(--st-unknown-tint); }
 
+/* a question's standing (§7a, §10): round and in ink, never a status colour */
+.badge.standing { border-radius: 999px; color: var(--ink-soft); background: var(--paper-card); }
+.badge.standing.standing-answered { color: var(--ink); }
+.badge.standing.standing-ill_posed { border-style: dashed; }
+.badge.standing.unassessed { border-style: dashed; color: var(--muted); }
+
 /* credence meter — the Steward's probability that the claim is true. Neutral
    ink, not status-coloured, so the bar never reads as a restatement of the
    verdict badge beside it. */
@@ -530,6 +536,18 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .rel-defines     { color: var(--link); }
 .rel-assumes,
 .rel-presupposes { color: var(--st-inconclusive); } /* .rel-presupposes: legacy alias, #205 */
+.rel-cuts        { color: var(--muted); }
+/* a quantity premise shows its estimate where a claim shows its status */
+.qty-chip {
+  display: inline-block; font-family: var(--sans); font-size: 0.7rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink); padding: 0 0.3rem;
+  border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--paper-card);
+}
+/* what an argument about a quantity shows about its value (§7) */
+.arg-shows { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.arg-shows .sc { font-size: 0.58rem; color: var(--muted); margin-right: 0.25rem; }
+.rel-answers     { color: var(--ink-soft); }
+.rel-part-of     { color: var(--muted); }
 
 /* ==========================================================================
    Claim view

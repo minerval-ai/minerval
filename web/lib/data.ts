@@ -3,12 +3,13 @@ import {
   fetchList, fetchOpenPrizes, fetchSearch, fetchSourcePage, fetchTag, fetchTags,
 } from "./api";
 import { getSourcePageFixture } from "./fixtures-source";
+import { REQUESTS, getRequest } from "./fixtures-kinds";
 import {
   getAttempt, getClaim, getClaimEvents, listClaims, listOpenPrizeMandates, listOpenPrizes,
 } from "./fixtures";
 import type {
   AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
-  SearchResultItem, SourcePage, TagSummary,
+  RequestItem, SearchResultItem, SourcePage, TagSummary,
 } from "./types";
 import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
@@ -46,6 +47,19 @@ export async function loadClaim(
     console.error("[minerval] live claim fetch failed, using fixture:", err);
     return { detail: getClaim(id), source: "fixture" };
   }
+}
+
+// Requests (Part VIII). The API does not serve them yet, so a live
+// deployment shows none rather than the design fixtures; offline, the
+// fixtures stand in so the pages can be seen.
+export async function loadRequests(): Promise<{ requests: RequestItem[]; source: DataSource }> {
+  if (!apiConfigured()) return { requests: REQUESTS, source: "fixture" };
+  return { requests: [], source: "live" };
+}
+
+export async function loadRequest(id: string): Promise<{ request: RequestItem | null; source: DataSource }> {
+  if (!apiConfigured()) return { request: getRequest(id), source: "fixture" };
+  return { request: null, source: "live" };
 }
 
 // The unified per-claim history (#175). A null result with a non-null claim
