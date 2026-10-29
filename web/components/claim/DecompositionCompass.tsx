@@ -6,7 +6,7 @@ import {
   decompositionEffects, effectCounts, topLevelEffects, groupByArgument,
   unassessedTintOf, EFFECT, EFFECT_ORDER,
   UNASSESSED_TINT, UNASSESSED_TINT_ORDER, type UnassessedTint,
-  DEFINED_IN, BASIS,
+  DEFINED_IN, BASIS, STATUS, STATUS_ORDER, normalizeStatus, showsMark,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
 import styles from "./margins.module.css";
@@ -100,6 +100,14 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
   const groups = groupByArgument(scored);
   const namedCount = groups.filter((g) => g.named).length;
   const activeArg = useActiveArg();
+  // A quantity's arguments place its value rather than argue for or against
+  // it (§7), so "in favour" and "against" mean nothing there: its compass
+  // counts the premises by their own status instead.
+  const isQuantity = tree.node_kind === "quantity";
+  const byStatus = STATUS_ORDER.map((st) => ({
+    st, n: scored.filter((s) => s.node.assessment_status && normalizeStatus(s.node.assessment_status) === st).length,
+  })).filter((x) => x.n > 0);
+  const unassessedN = scored.filter((s) => !s.node.assessment_status).length;
 
   // Atomic claim: nothing to summarise. Show a quiet resting note, no bar.
   if (total === 0) {
@@ -134,6 +142,38 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
         )}
       </div>
 
+      {isQuantity ? (
+        <>
+          <div className={styles.distBar} title="the premises by their own status" aria-hidden>
+            {byStatus.map(({ st, n }) => (
+              <span key={st} className={STATUS[st].cls} style={{ width: `${(n / total) * 100}%`, background: "currentColor" }} />
+            ))}
+            {unassessedN > 0 && (
+              <span className={`${styles.unassessedSeg} st-unassessed`} style={{ width: `${(unassessedN / total) * 100}%` }} />
+            )}
+          </div>
+          <ul className={styles.legend}>
+            {byStatus.map(({ st, n }) => (
+              <li key={st} className={STATUS[st].cls}>
+                <span className={`swatch ${STATUS[st].cls}`} aria-hidden />
+                <span className={styles.legendN}>{n}</span>
+                <Term gloss={STATUS[st].def} href={DEFINED_IN.status} className={styles.legendLbl} align="start">
+                  {STATUS[st].label.toLowerCase()}
+                </Term>
+              </li>
+            ))}
+            {unassessedN > 0 && (
+              <li className="st-unassessed">
+                <span className="swatch st-unassessed" aria-hidden />
+                <span className={styles.legendN}>{unassessedN}</span>
+                <span className={styles.legendLbl}>unassessed</span>
+              </li>
+            )}
+          </ul>
+          <p className={styles.compassNote}>premises by their own status; a quantity&apos;s arguments place its value</p>
+        </>
+      ) : (
+      <>
       {/* the compass: how the direct subclaims bear on THIS claim */}
       <div className={styles.distBar} title="how the direct subclaims bear on this claim" aria-hidden>
         {present.map((e) => (
@@ -171,6 +211,8 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
         ))}
       </ul>
       <p className={styles.compassNote}>by effect on this claim, not by subclaim status</p>
+      </>
+      )}
 
       {/* jump-list: the top-level lines of reasoning. Clicking scrolls the centre
           column to that block; the active one tracks the reading position. No
@@ -191,7 +233,11 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
                 onClick={() => scrollToArg(key)}
                 title={g.named ? undefined : BASIS.gloss}
               >
-                <span className={`swatch ${EFFECT[g.net].cls}`} aria-hidden />
+                {isQuantity ? (
+                  <span className={styles.jumpGlyph} title={showsMark(g.shows)?.label} aria-hidden>{showsMark(g.shows)?.glyph ?? "·"}</span>
+                ) : (
+                  <span className={`swatch ${EFFECT[g.net].cls}`} aria-hidden />
+                )}
                 <span className={styles.jumpName}>{g.name ?? BASIS.label}</span>
                 <span className={styles.jumpCount}>{g.nodes.length}</span>
               </button>

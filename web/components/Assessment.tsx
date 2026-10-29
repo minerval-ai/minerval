@@ -1,7 +1,7 @@
-import type { AssessmentStatus } from "@/lib/types";
+import type { AssessmentStatus, QuestionStanding } from "@/lib/types";
 import {
   statusMeta, importanceLevel, IMPORTANCE, UNASSESSED_META, DEFINED_IN,
-  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS, disputeMeta,
+  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS, disputeMeta, QUESTION_STANDING, isStanding,
 } from "@/lib/ontology";
 import { Term } from "./Term";
 
@@ -11,6 +11,27 @@ export function StatusBadge({
   const s = statusMeta(status);
   return (
     <Term gloss={s.def} href={DEFINED_IN.status} linkTo={linkTo} className={`badge ${s.cls}${size === "lg" ? " lg" : ""}`}>
+      <span className="badge-glyph" aria-hidden>{s.glyph}</span>
+      {s.label}
+    </Term>
+  );
+}
+
+// How well answered a question is (§7a, §10): round and in ink, a family of
+// its own beside the claim statuses.
+export function StandingBadge({
+  standing, size = "sm", linkTo,
+}: { standing: QuestionStanding | string | null; size?: "sm" | "lg"; linkTo?: string }) {
+  if (!isStanding(standing)) {
+    return (
+      <Term gloss="This question has not yet been assessed." href={DEFINED_IN.question} linkTo={linkTo} className="badge standing unassessed">
+        Unassessed
+      </Term>
+    );
+  }
+  const s = QUESTION_STANDING[standing];
+  return (
+    <Term gloss={s.def} href={DEFINED_IN.standing} linkTo={linkTo} className={`badge standing standing-${standing}${size === "lg" ? " lg" : ""}`}>
       <span className="badge-glyph" aria-hidden>{s.glyph}</span>
       {s.label}
     </Term>
