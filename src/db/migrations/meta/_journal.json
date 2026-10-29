@@ -519,6 +519,13 @@
       "when": 1793289247784,
       "tag": "0073_node_kinds_and_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793292698488,
+      "tag": "0074_kind_agents",
+      "breakpoints": true
     }
   ]
 }

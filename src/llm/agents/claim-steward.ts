@@ -54,6 +54,34 @@ import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js"
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
+import {
+  executeKindTool,
+  getQuantityToolDefinitions,
+  getQuestionToolDefinitions,
+  getRequestToolDefinitions,
+} from "../tools/kind-tools.js";
+import type { NodeKind } from "../../schemas/kinds.js";
+
+/**
+ * The Steward's tools that belong to propositions and quantities, withheld
+ * from a question's Steward: a question has no verdict, no arguments of its
+ * own, and its instances ask or answer it (§7a).
+ */
+const CLAIM_ONLY_TOOLS = new Set([
+  "update_claim_assessment",
+  "record_claim_instance",
+  "add_argument",
+  "write_argument",
+  "evaluate_argument",
+]);
+
+/** The tool that records each kind's assessment, which every pass must leave on the record. */
+const ASSESSMENT_TOOL: Record<NodeKind, string> = {
+  claim: "update_claim_assessment",
+  quantity: "update_quantity_estimate",
+  question: "update_question_assessment",
+};
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -63,20 +91,30 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
  * by its role prompt; a numbered procedure here read as a checklist to get
  * through rather than a question to think about.
  */
-function defaultTask(passNote: string): string {
-  return `You own this claim: its structure and its assessment. Your role describes
+function defaultTask(passNote: string, kind: NodeKind = "claim"): string {
+  const noun = kind === "claim" ? "claim" : kind;
+  const record =
+    kind === "quantity"
+      ? `the estimate
+(update_quantity_estimate, with the assessment and the work), an evaluation
+of each named argument`
+      : kind === "question"
+        ? `the assessment
+(update_question_assessment, with its standing and both texts)`
+        : `the assessment
+(update_claim_assessment, with both texts and marginal_yield), an evaluation
+of each named argument`;
+  return `You own this ${noun}: its structure and its assessment. Your role describes
 what that involves. How you go about this pass is your judgment.
 
 ${passNote}
 
-Read the claim with get_claim. Form your own view of the question before you
+Read the ${noun} with get_claim. Form your own view of the question before you
 read its instances. When you need them, get_claim_instances returns the
-instances recorded so far; which of them belong on the claim, and in what
+instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.
 
-Before the run ends, the following must be recorded: the assessment
-(update_claim_assessment, with both texts and marginal_yield), an evaluation
-of each named argument, the claim's importance and contestation, and your
+Before the run ends, the following must be recorded: ${record}, the ${noun}'s importance and contestation, and your
 decision (log_stewardship_decision). If the assessment changed materially,
 notify the dependents it could matter to (notify_dependent_stewards).`;
 }
@@ -223,6 +261,11 @@ async function runClaimStewardImpl(input: {
   // conservative direction for a real-money connector. Discovery failure
   // degrades to no tools, never a failed run (§20).
   const claimRow = await getClaimById(input.claimId);
+  // The node's kind decides the role (a question has a Steward of its own,
+  // §7a), the tools, and what the pass must leave on the record.
+  const kind = (claimRow?.kind ?? "claim") as NodeKind;
+  const assessmentTool = ASSESSMENT_TOOL[kind];
+  const kindRole = kind === "question" ? "question_steward" : "claim_steward";
   const elicitTools = elicitEnabledForImportance(
     claimRow?.importance ?? 0.5,
     config
@@ -274,7 +317,9 @@ async function runClaimStewardImpl(input: {
     // A search hit is a snippet; the page is where an abstract, a results
     // table, or a retraction notice actually is (#333).
     getReadPageToolDefinition(),
-    ...getStewardToolDefinitions(),
+    ...getStewardToolDefinitions().filter((t) => kind !== "question" || !CLAIM_ONLY_TOOLS.has(t.name)),
+    ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
+    ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
@@ -286,11 +331,12 @@ async function runClaimStewardImpl(input: {
 
   const isInitial = input.trigger === "structure_and_assess";
 
+  const noun = kind === "claim" ? "claim" : kind;
   const passNote = isInitial
-    ? `This is the claim's first pass. It has no structure yet: decompose it as
+    ? `This is the ${noun}'s first pass. It has no structure yet: decompose it as
 well as assess it.`
     : `This is a later pass, prompted by the change described in the context. The
-claim already has structure; change it where what you find warrants, rather
+${noun} already has structure; change it where what you find warrants, rather
 than starting again.`;
 
   const iterationBudget = config.stewardMaxIterations;
@@ -357,26 +403,29 @@ Skills active for this run: ${skills
   // stands rather than as of the model's training (§9).
   const today = new Date().toISOString().slice(0, 10);
 
-  const userMessage = `You have been triggered to steward a claim.
+  const userMessage = `You have been triggered to steward a ${noun}.
 
 Today's date: ${today}
 Trigger: ${input.trigger}
-Claim ID: ${input.claimId}
+${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 Context: ${input.context}
 
 Budget: you have up to ${iterationBudget} tool-use iterations for this stewardship.
 That is a generous backstop, not a target: use as few or as many as the claim's
 importance warrants. But it is a hard limit: make sure you have recorded an
-assessment (update_claim_assessment) and logged your decision
+assessment (${assessmentTool}) and logged your decision
 (log_stewardship_decision) before you approach it, so your work is never lost
 mid-task. If you are warned that few iterations remain, stop exploring and record
 your conclusion immediately.
 
-${formalTask ?? defaultTask(passNote)}${elicitNote}${pangramNote}${skillsNote}`;
+${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsNote}`;
 
   // One cached block for the constitution and role, plus one per active skill,
   // so the shared block's cache entry is the same for skilled and unskilled runs.
-  const system = getClaimStewardSystemPromptBlocks({ skills });
+  const system =
+    kind === "question"
+      ? getQuestionStewardSystemPromptBlocks({ skills })
+      : getClaimStewardSystemPromptBlocks({ skills });
 
   // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
   // the Elicit cap: each refusal tells the agent what to do instead.
@@ -446,10 +495,14 @@ ${formalTask ?? defaultTask(passNote)}${elicitNote}${pangramNote}${skillsNote}`;
       max: 1,
       when: () => !assessmentRecorded,
       message:
-        "You ended your turn without recording an assessment for this claim. " +
-        "Record it now with update_claim_assessment (status, confidence, the " +
-        "reader-facing assessment, and your reasoning_trace), then log your " +
-        "decision with log_stewardship_decision.",
+        kind === "claim"
+          ? "You ended your turn without recording an assessment for this claim. " +
+            "Record it now with update_claim_assessment (status, confidence, the " +
+            "reader-facing assessment, and your reasoning_trace), then log your " +
+            "decision with log_stewardship_decision."
+          : `You ended your turn without recording an assessment for this ${noun}. ` +
+            `Record it now with ${assessmentTool}, then log your decision with ` +
+            `log_stewardship_decision.`,
     },
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -466,7 +519,7 @@ ${formalTask ?? defaultTask(passNote)}${elicitNote}${pangramNote}${skillsNote}`;
       message: (remaining) =>
         `⚠ Stewardship budget notice: ${remaining} tool-use iteration(s) remain ` +
         `before you are stopped. Wrap up now: if you have not yet recorded your ` +
-        `assessment with update_claim_assessment and logged it with ` +
+        `assessment with ${assessmentTool} and logged it with ` +
         `log_stewardship_decision, do so on your next turn so your work is saved.`,
     },
     executeTool: async (name, toolInput) => {
@@ -517,6 +570,56 @@ ${formalTask ?? defaultTask(passNote)}${elicitNote}${pangramNote}${skillsNote}`;
         }
         elicitCallsThisRun++;
         return executeElicitTool(name, toolInput, config);
+      }
+      // The kinds' tools (quantities, questions, requests), under the same
+      // per-run backstops as the claim tools they parallel: a new node
+      // minted for a question counts against the new-claim cap, and a
+      // recorded figure or question instance against the instance cap.
+      if (name === "record_estimate" || name === "record_question_instance") {
+        const cap = config.stewardMaxInstancesPerRun;
+        if (cap > 0 && instancesRecordedThisRun >= cap) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This run has already recorded ${instancesRecordedThisRun} instances, the per-run ` +
+              `backstop (${cap}). Note any remaining ones in your reasoning and proceed to your assessment.`,
+          });
+        }
+        instancesRecordedThisRun++;
+      }
+      if (
+        (name === "add_answer" || name === "add_subquestion" || name === "add_presupposition") &&
+        typeof toolInput.new_text === "string" &&
+        toolInput.new_text.trim()
+      ) {
+        const cap = config.stewardMaxNewSubclaimsPerRun;
+        if (cap > 0 && newClaimsThisRun >= cap) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `This run has already minted ${newClaimsThisRun} new nodes, the per-run backstop ` +
+              `(${cap}). Link existing nodes by id, note the rest in your reasoning, and proceed ` +
+              `to your assessment.`,
+          });
+        }
+        newClaimsThisRun++;
+      }
+      const kindOutput = await executeKindTool(name, toolInput, {
+        role: kindRole,
+        claimId: input.claimId,
+        model,
+        trigger: input.trigger,
+        context: input.context,
+      });
+      if (kindOutput !== null) {
+        if (name === assessmentTool) {
+          try {
+            assessmentRecorded = (JSON.parse(kindOutput) as { success?: boolean }).success !== false;
+          } catch {
+            assessmentRecorded = true;
+          }
+        }
+        return kindOutput;
       }
       if (graphNames.has(name)) {
         return executeGraphTool(name, toolInput);

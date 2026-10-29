@@ -903,6 +903,9 @@ export const claimInstances = pgTable(
     // a table has no sentence: its verbatim_text is empty, and read paths
     // serve it as null.
     statedEstimate: jsonb("stated_estimate"),
+    // A probability the source states for the claim (§4): what the source
+    // said, recorded with its instance, never the graph's own credence.
+    statedProbability: real("stated_probability"),
     argumentId: uuid("argument_id").references((): AnyPgColumn => arguments_.id, {
       onDelete: "set null",
     }),
@@ -951,6 +954,10 @@ export const claimInstances = pgTable(
       .defaultNow(),
   },
   (table) => [
+    check(
+      "ck_instances_stated_probability",
+      sql`${table.statedProbability} IS NULL OR (${table.statedProbability} >= 0 AND ${table.statedProbability} <= 1)`
+    ),
     index("idx_instances_claim").on(table.claimId),
     index("idx_instances_segment").on(table.segmentId),
     index("idx_instances_source").on(table.sourceId),
@@ -3568,6 +3575,12 @@ export const researchRuns = pgTable(
     claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
     // The mandate whose Grantmaker launched it, when one did.
     grantId: uuid("grant_id"),
+    // The request the run takes up, when a mandate funded one (Part VIII):
+    // the request's text is the brief, and the outcome is recorded as work
+    // on the request for its keeper to judge.
+    requestId: uuid("request_id").references((): AnyPgColumn => requests.id, {
+      onDelete: "set null",
+    }),
     // The agent key of the launcher (claim_steward, grantmaker) and its
     // agent_runs row, so a report is traceable to the run that asked for it.
     requestedBy: text("requested_by").notNull(),
@@ -3610,6 +3623,7 @@ export const researchRuns = pgTable(
     index("idx_research_runs_claim").on(table.claimId),
     index("idx_research_runs_examination").on(table.examinationId),
     index("idx_research_runs_grant").on(table.grantId),
+    index("idx_research_runs_request").on(table.requestId),
     index("idx_research_runs_status").on(table.status),
     check("ck_research_runs_ceiling", sql`ceiling_micro_usd > 0`),
     check("ck_research_runs_spent", sql`spent_micro_usd >= 0`),
