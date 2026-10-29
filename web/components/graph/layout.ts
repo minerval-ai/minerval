@@ -1,6 +1,6 @@
 import type {
   AssessmentStatus, CheckKind, ClaimDetail, ClaimType, DependentClaim, NodeKind,
-  QuantityEstimate, QuantityUnit, QuestionStanding, RelationType, Stance, TreeNode,
+  QuantityEstimate, QuantityUnit, QuestionStanding, RelationType, Stance, TreeNode, ValueShown,
 } from "@/lib/types";
 import { orderByMention } from "@/lib/claim-links";
 import { isAssumesRelation } from "@/lib/ontology";
@@ -123,7 +123,7 @@ export interface LNode {
   // in place of a stance.
   // `question`: the pill groups a question's answers or subquestions rather
   // than naming an argument.
-  pill?: { argId: string; name: string; stance: Stance; shows?: string | null; question?: boolean };
+  pill?: { argId: string; name: string; stance: Stance; shows?: ValueShown | null; question?: boolean };
   more?: { label: string; action: "group" | "deps"; key: string };
   expandable?: boolean;
   expandedNow?: boolean;
@@ -346,7 +346,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
   // unnamed group, which renders with zero chrome (the transparent one-argument
   // case from the constitution).
   const byGroup = new Map<string, ChildEntry[]>();
-  const groupMeta = new Map<string, { name: string; stance: Stance; shows: string | null; question?: boolean }>();
+  const groupMeta = new Map<string, { name: string; stance: Stance; shows: ValueShown | null; question?: boolean }>();
   // A question's children are its candidate answers and its subquestions,
   // each drawn as a group of its own under a pill (§7a).
   const QGROUP: Record<string, { name: string }> = {
@@ -367,7 +367,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       groupMeta.set(key, {
         name: c.argument_name!,
         stance: c.argument_stance ?? "neutral",
-        shows: c.argument_shows?.text ?? null,
+        shows: c.argument_shows ?? null,
       });
     }
     if (!byGroup.has(key)) byGroup.set(key, []);

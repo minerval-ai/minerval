@@ -13,7 +13,7 @@ import {
   claimTypeMeta, decompositionNote, statusMeta,
   nodeStatusMeta, UNASSESSED_META, VERDICT_CONFIDENCE_GLOSS, CREDENCE_GLOSS,
   DEFINED_IN, STEWARD_SOURCE, RULES_SOURCE, isAssumesRelation,
-  seedVerity, SEED_PRELIM_GLOSS, QUESTION_STANDING, isStanding,
+  seedVerity, SEED_PRELIM_GLOSS, QUESTION_STANDING, isStanding, showsMark,
 } from "@/lib/ontology";
 import { describeEstimate, makeScale, valuesOf } from "@/lib/quantity";
 import { EstimateStrip, ValueAxis } from "@/components/quantity/EstimateStrip";
@@ -827,8 +827,9 @@ export function GraphView({
         return (
           <>
             {/* on a quantity, an argument places the value rather than
-                arguing for or against: ≈ in place of a stance (§7) */}
-            {n.pill!.shows && <span className={styles.pillStance} aria-hidden>≈ </span>}
+                arguing for or against: =, > or < for where it puts the
+                value, ? where it bears on whether the value can be known (§7) */}
+            {n.pill!.shows && <span className={styles.pillStance} title={showsMark(n.pill!.shows)?.label} aria-hidden>{showsMark(n.pill!.shows)?.glyph} </span>}
             <span>{n.pill!.name}</span>
             {!n.pill!.shows && !n.pill!.question && <span className={styles.pillStance}>· {n.pill!.stance}</span>}
           </>

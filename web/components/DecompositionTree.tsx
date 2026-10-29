@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
 import {
-  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
+  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta, showsMark,
   DECISIVE, premiseSummary,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
   groupByArgument, topLevelEffects, type ArgumentGroup,
@@ -216,7 +216,8 @@ function ArgumentBlock({
           <DecisiveTag decisive={group.decisive} />
           {group.shows && (
             <span className="arg-shows" title="What this argument shows about the quantity's value (constitution §7).">
-              <span className="sc">shows</span> {group.shows.text}
+              <span className="sc">shows</span>
+              <span className="arg-shows-mark" aria-hidden>{showsMark(group.shows)?.glyph}</span> {group.shows.text}
             </span>
           )}
         </div>

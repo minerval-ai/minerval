@@ -550,6 +550,7 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 /* what an argument about a quantity shows about its value (§7) */
 .arg-shows { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
 .arg-shows .sc { font-size: 0.58rem; color: var(--muted); margin-right: 0.25rem; }
+.arg-shows-mark { font-weight: 700; color: var(--ink); }
 .rel-answers     { color: var(--ink-soft); }
 .rel-part-of     { color: var(--muted); }
 

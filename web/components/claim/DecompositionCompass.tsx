@@ -6,7 +6,7 @@ import {
   decompositionEffects, effectCounts, topLevelEffects, groupByArgument,
   unassessedTintOf, EFFECT, EFFECT_ORDER,
   UNASSESSED_TINT, UNASSESSED_TINT_ORDER, type UnassessedTint,
-  DEFINED_IN, BASIS, STATUS, STATUS_ORDER, normalizeStatus,
+  DEFINED_IN, BASIS, STATUS, STATUS_ORDER, normalizeStatus, showsMark,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
 import styles from "./margins.module.css";
@@ -234,7 +234,7 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
                 title={g.named ? undefined : BASIS.gloss}
               >
                 {isQuantity ? (
-                  <span className={styles.jumpGlyph} aria-hidden>≈</span>
+                  <span className={styles.jumpGlyph} title={showsMark(g.shows)?.label} aria-hidden>{showsMark(g.shows)?.glyph ?? "·"}</span>
                 ) : (
                   <span className={`swatch ${EFFECT[g.net].cls}`} aria-hidden />
                 )}

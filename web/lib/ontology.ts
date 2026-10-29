@@ -790,3 +790,16 @@ export const REQUEST_OUTCOME: Record<RequestOutcome, { label: string; def: strin
   declined:      { label: "declined",          def: "The request was flawed, moot, or could be met only by intrusion." },
   revise:        { label: "revise the request", def: "The work recommends asking for something different, and says what." },
 };
+
+// The mark for an argument about a quantity (§7), by what it shows about the
+// value: = for a value or a range, > or < for a side of a figure, and ? for
+// an argument that bears on whether the value can be pinned down at all, which
+// has no place on the axis.
+export function showsMark(shows: ValueShown | null | undefined): { glyph: string; label: string } | null {
+  if (!shows) return null;
+  const r = shows.range;
+  if (!r) return { glyph: "?", label: "bears on whether the value can be pinned down" };
+  if (r.side === "above") return { glyph: ">", label: "places the value above a figure" };
+  if (r.side === "below") return { glyph: "<", label: "places the value below a figure" };
+  return { glyph: "=", label: "places the value at a figure or within a range" };
+}
