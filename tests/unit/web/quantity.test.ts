@@ -64,12 +64,11 @@ describe("makeScale", () => {
     expect(makeScale({ kind: "proportion", min: 0, max: 1 }, [0.001, 0.5]).kind).toBe("linear");
   });
 
-  it("ticks a rare rate at round waiting times", () => {
+  it("ticks a rare rate at round waiting times, with room between the labels", () => {
     const s = makeScale({ kind: "rate", noun: "impact", per: "per year", min: 0 }, [1e-6, 4e-6]);
-    for (const t of s.ticks.filter((t) => t.v > 0)) {
-      const wait = 1 / t.v;
-      expect(Number(wait.toPrecision(1))).toBeCloseTo(wait, -1);
-    }
+    expect(s.ticks.map((t) => t.label)).toEqual(["0", "1 in 1M", "1 in 500k", "1 in 250k"]);
+    const xs = s.ticks.map((t) => s.pos(t.v));
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(0.14);
   });
 });
 

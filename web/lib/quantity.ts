@@ -173,14 +173,26 @@ export function makeScale(unit: QuantityUnit, values: number[], prefer?: ScaleKi
   if (unit.kind === "rate" && hi > 0 && hi < 0.01) {
     // A rare rate reads as a waiting time, so its ticks sit at round waits
     // ("1 in 500k"), not at round rates that would read as "1 in 333k".
-    const waits: number[] = [];
-    for (let k = Math.floor(Math.log10(1 / hi)) - 1; k <= Math.ceil(Math.log10(1 / Math.max(lo, hi / 1e3))) + 1; k++) {
-      for (const m of [1, 2, 5]) waits.push(m * 10 ** k);
+    // Waits crowd toward zero on a rate axis, so ticks are chosen roundest
+    // first and kept only where their labels have room.
+    const pos = (v: number) => (v - lo) / (hi - lo);
+    const MANTISSA: [number, number][] = [
+      [1, 0], [2, 1], [5, 1], [2.5, 2], [4, 2], [1.5, 3], [3, 3], [6, 3], [8, 3], [1.25, 4],
+    ];
+    const k0 = Math.floor(Math.log10(1 / hi));
+    const cands: { v: number; rank: number }[] = [];
+    for (let k = k0; k <= k0 + 2; k++) {
+      for (const [m, rank] of MANTISSA) {
+        const r = 1 / (m * 10 ** k);
+        if (r >= lo && r <= hi && pos(r) >= 0.08) cands.push({ v: r, rank });
+      }
     }
-    for (const w of waits) {
-      const r = 1 / w;
-      if (r >= lo && r <= hi) ticks.push({ v: r, label: formatTick(r, unit), major: true });
+    cands.sort((a, b) => a.rank - b.rank || b.v - a.v);
+    const kept: number[] = [];
+    for (const c of cands) {
+      if (kept.every((v) => Math.abs(pos(v) - pos(c.v)) >= 0.14)) kept.push(c.v);
     }
+    for (const r of kept) ticks.push({ v: r, label: formatTick(r, unit), major: true });
     if (lo <= 0) ticks.push({ v: 0, label: "0", major: true });
     ticks.sort((a, b) => a.v - b.v);
   } else {
