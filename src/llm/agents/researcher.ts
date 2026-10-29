@@ -73,6 +73,11 @@ import {
   isElicitTool,
 } from "../tools/elicit-tools.js";
 import { createPangramTools } from "../tools/pangram-tools.js";
+import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
+
+/** The one request tool a run that takes up a request carries. */
+const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t) => t.name === "file_request")!;
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -194,6 +199,32 @@ export const RESEARCH_REPORT_TOOL: Tool = {
   },
 };
 
+/**
+ * The report a run that takes up a request ends with: the ordinary report,
+ * plus the request's outcome (Part VIII). Every outcome is a complete one.
+ */
+export const REQUEST_REPORT_TOOL: Tool = {
+  ...RESEARCH_REPORT_TOOL,
+  description:
+    RESEARCH_REPORT_TOOL.description +
+    " This run takes up a request: request_outcome says what came of it, for its keeper to judge.",
+  input_schema: {
+    ...RESEARCH_REPORT_TOOL.input_schema,
+    properties: {
+      ...(RESEARCH_REPORT_TOOL.input_schema.properties as Record<string, unknown>),
+      request_outcome: {
+        type: "string",
+        enum: [...REQUEST_OUTCOMES],
+        description:
+          "met, partly_met (say which parts in answer), negative (you looked properly and the evidence is " +
+          "not there or points the other way), cannot_be_met (with the reason), declined (the request is " +
+          "flawed, moot, or could be met only by intrusion), or revise (say how in answer).",
+      },
+    },
+    required: [...((RESEARCH_REPORT_TOOL.input_schema.required as string[]) ?? []), "request_outcome"],
+  },
+};
+
 const NOTEBOOK_WRITE_TOOL: Tool = {
   name: "notebook_write",
   description:
@@ -295,6 +326,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const pangramTools = createPangramTools({ maxCalls: config.researcherPangramMaxCalls, config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
+  const takesUpRequest = run.requested_by === "request";
 
   const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
@@ -305,7 +337,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...skillTools,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
-    RESEARCH_REPORT_TOOL,
+    // A run that takes up a request reports its outcome, and may file the
+    // further request its work shows is needed.
+    ...(takesUpRequest ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL] : [RESEARCH_REPORT_TOOL]),
     webSearch.tool,
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
@@ -414,6 +448,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     }
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
     if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
+    if (name === FILE_REQUEST_TOOL.name) {
+      return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
+    }
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;

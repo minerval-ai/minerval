@@ -13,6 +13,12 @@ export interface ExtractedClaim {
   context: string | null;
   proposed_canonical_form: string;
   claim_type: string;
+  /**
+   * claim, quantity, or question (constitution §2, §7a). For a quantity the
+   * canonical form is its definition, with its unit, and verbatim_text the
+   * figure as the document states it.
+   */
+  kind?: "claim" | "quantity" | "question";
   confidence: number;
   /** Provisional importance prior (0-1); the Steward later overrides it. */
   importance: number;
@@ -59,6 +65,7 @@ const EXTRACTED_CLAIM_SCHEMA = {
     context: { type: ["string", "null"], description: "Surrounding text for disambiguation" },
     proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition as it is actually debated, about fifteen words, stated at the precision the discourse debates it" },
     claim_type: { type: "string", description: "One of: empirical_verifiable, empirical_derived, definitional, evaluative, causal, normative" },
+    kind: { type: "string", enum: ["claim", "quantity", "question"], description: "claim, quantity, or question. For a quantity, proposed_canonical_form is its definition, with its unit, and verbatim_text the figure as the document states it" },
     confidence: { type: "number", description: "Confidence this is a valid claim (0.0-1.0)" },
     importance: { type: "number", description: "Provisional importance (0.0-1.0): how much it is worth getting this claim right (roughly consequence-if-wrong × liveness), from document salience, contestedness, and discourse reach. Settled/uncontested facts score low even if load-bearing. A prior the Steward will revise; distinct from confidence." },
     contestation: { type: "number", description: "Provisional contestation (0.0-1.0): how live this proposition is in the discourse at large, disputed or actively consulted, on its own — ~0 for a settled fact stated in passing, ~1 for an actively argued crux with credible parties on both sides. The liveness half of the importance formula recorded separately; a prior the Steward will revise." },
@@ -67,7 +74,7 @@ const EXTRACTED_CLAIM_SCHEMA = {
   // Native structured outputs require additionalProperties: false and a
   // complete required array on every object; the nullable fields (context,
   // source_location) are now required but may be null.
-  required: ["verbatim_text", "context", "proposed_canonical_form", "claim_type", "confidence", "importance", "contestation", "source_location"],
+  required: ["verbatim_text", "context", "proposed_canonical_form", "claim_type", "kind", "confidence", "importance", "contestation", "source_location"],
   additionalProperties: false,
 };
 

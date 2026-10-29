@@ -41,6 +41,8 @@ import {
   type ResearchModelTier,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
+import { getRequest, notifyRequestKeeper, recordWork } from "../../services/request-service.js";
+import { REQUEST_OUTCOMES, type RequestOutcome } from "../../schemas/kinds.js";
 import {
   ExaminationError,
   linkResearchRun,
@@ -50,9 +52,11 @@ import {
 
 export const DELEGATE_RESEARCH_TOOL_NAME = "delegate_research";
 export const GET_RESEARCH_RUN_TOOL_NAME = "get_research_run";
+export const FUND_REQUEST_TOOL_NAME = "fund_request";
 export const RESEARCH_TOOL_NAMES: readonly string[] = [
   DELEGATE_RESEARCH_TOOL_NAME,
   GET_RESEARCH_RUN_TOOL_NAME,
+  FUND_REQUEST_TOOL_NAME,
 ];
 
 export const EFFORT_LEVELS = ["medium", "high", "max"] as const;
@@ -77,6 +81,38 @@ export interface ResearchToolsOptions {
 }
 
 /** The tool definitions, with the affordances of each tier spelled out. */
+/**
+ * fund_request (Part VIII, Requests): a mandate's Grantmaker pays for the
+ * graph's own Researcher to take up an open request. The request is the
+ * brief; the Grantmaker decides whether and how much, and nothing about
+ * how the work is done or what it finds.
+ */
+export function getFundRequestToolDefinition(): Tool {
+  const config = loadConfig();
+  return {
+    name: FUND_REQUEST_TOOL_NAME,
+    description:
+      "Fund the Researcher to take up an open request in your scope (list_requests shows them). " +
+      "You decide whether the request is worth funding and how much; the request itself is the " +
+      "brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
+      "is a complete one and paid for alike: met, partly met, a negative result, cannot be met, " +
+      "declined, or a recommendation to revise the request. The outcome is recorded as work on " +
+      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, at " +
+      `most ${config.researcherMaxCeilingOwls} per run. The call blocks until the work reports.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        request_id: { type: "string" },
+        model_tier: { type: "string", enum: [...RESEARCH_MODEL_TIERS] },
+        budget_usd: { type: "number" },
+        effort: { type: "string", enum: [...EFFORT_LEVELS] },
+      },
+      required: ["request_id", "model_tier", "budget_usd"],
+      additionalProperties: false,
+    },
+  };
+}
+
 export function getResearchToolDefinitions(
   input: { claimScoped: boolean; graphWrites?: boolean } = { claimScoped: true }
 ): Tool[] {
@@ -212,9 +248,75 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const graphWrites = launcherWritesGraph(options.requestedBy);
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
-  const definitions = config.researcherEnabled ? getResearchToolDefinitions({ claimScoped, graphWrites }) : [];
+  // Only a mandate's Grantmaker funds requests: a Steward files them.
+  const fundsRequests = options.requestedBy === "grantmaker";
+  const definitions = config.researcherEnabled
+    ? [
+        ...getResearchToolDefinitions({ claimScoped, graphWrites }),
+        ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
+      ]
+    : [];
   const run = options.runResearcher ?? runResearcher;
   let launched = 0;
+
+  /**
+   * Run the researcher on an opened run row under its own meter, and add
+   * what it billed back to the launcher's meter, where the launcher's action
+   * and allocation accounting read it.
+   */
+  const runOnRow = async (
+    row: Awaited<ReturnType<typeof openResearchRun>>,
+    claim: { id: string; text: string; domains: string[] } | null,
+    examination: ExaminationRow | null
+  ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
+    const ctx = getUsageContext();
+    let result: ResearcherResult | null = null;
+    let billed = 0;
+    let failure: unknown = null;
+    // The researcher runs under its own meter, so its ceiling reads only its
+    // own spend; that meter shadows the launcher's, so what it billed is
+    // added back to the launcher's below, where the launcher's action and
+    // allocation accounting read it.
+    const launcherMeter = ctx.meter;
+    try {
+      // A Grantmaker that names a claim attributes the spend to it, as the
+      // Steward's context already does.
+      const metered = await runWithUsageContext(claim ? { claimId: claim.id } : {}, () => withCostMeter(() =>
+        run({
+          run: {
+            id: row.id,
+            claim_id: row.claim_id,
+            grant_id: row.grant_id,
+            requested_by: row.requested_by,
+            task: row.task,
+            model: row.model,
+            model_tier: row.model_tier,
+            effort: row.effort,
+            include_constitution: row.include_constitution,
+            ceiling_micro_usd: row.ceiling_micro_usd,
+            notebook: row.notebook,
+          },
+          claim,
+          examination: examination
+            ? {
+                id: examination.id,
+                source_id: examination.source_id,
+                source_title: examination.source_title,
+                source_url: examination.source_url,
+                facets: examination.facets,
+                scope: examination.scope,
+              }
+            : null,
+        })
+      ));
+      result = metered.value;
+      billed = metered.billedMicroUsd;
+    } catch (err) {
+      failure = err;
+    }
+    if (launcherMeter) launcherMeter.billedMicroUsd += billed;
+    return { result, billed, failure };
+  };
 
   const delegate = async (input: Record<string, unknown>): Promise<string> => {
     if (!config.researcherEnabled) {
@@ -323,51 +425,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     launched++;
     if (examination) await linkResearchRun(examination.id, row.id);
 
-    let result: ResearcherResult | null = null;
-    let billed = 0;
-    let failure: unknown = null;
-    // The researcher runs under its own meter, so its ceiling reads only its
-    // own spend; that meter shadows the launcher's, so what it billed is
-    // added back to the launcher's below, where the launcher's action and
-    // allocation accounting read it.
-    const launcherMeter = ctx.meter;
-    try {
-      // A Grantmaker that names a claim attributes the spend to it, as the
-      // Steward's context already does.
-      const metered = await runWithUsageContext(claim ? { claimId: claim.id } : {}, () => withCostMeter(() =>
-        run({
-          run: {
-            id: row.id,
-            claim_id: row.claim_id,
-            grant_id: row.grant_id,
-            requested_by: row.requested_by,
-            task: row.task,
-            model: row.model,
-            model_tier: row.model_tier,
-            effort: row.effort,
-            include_constitution: row.include_constitution,
-            ceiling_micro_usd: row.ceiling_micro_usd,
-            notebook: row.notebook,
-          },
-          claim,
-          examination: examination
-            ? {
-                id: examination.id,
-                source_id: examination.source_id,
-                source_title: examination.source_title,
-                source_url: examination.source_url,
-                facets: examination.facets,
-                scope: examination.scope,
-              }
-            : null,
-        })
-      ));
-      result = metered.value;
-      billed = metered.billedMicroUsd;
-    } catch (err) {
-      failure = err;
-    }
-    if (launcherMeter) launcherMeter.billedMicroUsd += billed;
+    const { result, billed, failure } = await runOnRow(row, claim, examination);
 
     if (failure || !result) {
       const message = failure instanceof Error ? failure.message : String(failure);
@@ -417,6 +475,123 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     });
   };
 
+  const fund = async (input: Record<string, unknown>): Promise<string> => {
+    if (!config.researcherEnabled) return refuse("The researcher is disabled in this deployment (RESEARCHER_ENABLED).");
+    if (!fundsRequests) return refuse("Only a mandate's Grantmaker funds requests.");
+    const requestId = str(input.request_id);
+    if (!UUID_RE.test(requestId)) return refuse(`"${requestId}" is not a request id.`);
+    const request = await getRequest(requestId);
+    if (!request) return refuse(`No request ${requestId} exists.`);
+    if (!["open", "addressed", "in_progress"].includes(request.state)) {
+      return refuse(`Request ${requestId} is ${request.state}; only a live request can be taken up.`);
+    }
+    const tierRaw = str(input.model_tier);
+    if (!(RESEARCH_MODEL_TIERS as readonly string[]).includes(tierRaw)) {
+      return refuse(`model_tier must be one of ${RESEARCH_MODEL_TIERS.join(", ")}.`);
+    }
+    const tier = tierRaw as ResearchModelTier;
+    const budgetUsd = Number(input.budget_usd);
+    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
+    const ceilingMicroUsd = Math.min(owlsToMicroUsd(config.researcherMaxCeilingOwls), Math.round(budgetUsd * 1_000_000));
+    if (ceilingMicroUsd <= 0) return refuse("The researcher's per-run ceiling is zero in this deployment.");
+    const cap = config.researcherMaxRunsPerLauncherRun;
+    if (cap > 0 && launched >= cap) {
+      return refuse(`This pass has already launched ${launched} research run(s), the per-run backstop (${cap}).`);
+    }
+    if (await readResearcherPaused()) return refuse("The operator has paused the researcher.");
+    try {
+      await checkResearcherBudget(ceilingMicroUsd);
+    } catch (err) {
+      if (err instanceof LlmBudgetExceededError) {
+        return refuse(`The researcher's daily spend cap would be exceeded by this run (${err.message}).`);
+      }
+      throw err;
+    }
+
+    // The request is the brief, verbatim; the funder adds nothing to it.
+    const task = [
+      `Request ${request.id}`,
+      `Asks for: ${request.ask}`,
+      `Why: ${request.why}`,
+      `What would satisfy it: ${request.satisfied_by}`,
+      request.who_could ? `Who could do it: ${request.who_could}` : null,
+      request.addressed_to ? `Addressed to: ${request.addressed_to}` : null,
+      request.bears_on.length
+        ? `Bears on: ${request.bears_on.map((n) => `${n.kind} ${n.id} ("${n.text}")`).join("; ")}`
+        : null,
+      request.bears_on_sources.length
+        ? `Bears on sources: ${request.bears_on_sources.map((src) => `${src.title}${src.url ? ` (${src.url})` : ""}`).join("; ")}`
+        : null,
+      request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
+      request.work.length
+        ? `Work already done on it: ${request.work.map((w) => `${w.by}${w.outcome ? ` (${w.outcome})` : ""}: ${w.summary}`).join(" | ")}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const ctx = getUsageContext();
+    const effortRaw = str(input.effort);
+    const row = await openResearchRun({
+      claimId: null,
+      grantId: options.grantId ?? null,
+      requestedBy: "request",
+      requesterRunId: ctx.runId ?? null,
+      jobId: ctx.jobId ?? null,
+      task,
+      model: modelForTier(tier),
+      modelTier: tier,
+      effort: tier === "strong" ? ((EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high") : null,
+      includeConstitution: true,
+      ceilingMicroUsd,
+      requestId,
+    });
+    launched++;
+    await recordWork({
+      requestId,
+      byLabel: "Researcher",
+      researchRunId: row.id,
+      outcome: null,
+      summary: "Taken up with funding from a mandate.",
+      fundedByJobId: ctx.jobId ?? null,
+    });
+
+    const { result, billed, failure } = await runOnRow(row, null, null);
+    const report = result?.report ?? null;
+    await closeResearchRun(row.id, {
+      status: failure || !result ? "failed" : result.status,
+      report,
+      spentMicroUsd: billed,
+      turns: result?.turns,
+      servedModels: result?.servedModels,
+      error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+    }).catch(() => null);
+
+    const outcomeRaw = typeof report?.request_outcome === "string" ? report.request_outcome : null;
+    const outcome = outcomeRaw && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw) ? (outcomeRaw as RequestOutcome) : null;
+    const answer = typeof report?.answer === "string" ? report.answer.trim() : "";
+    const summary = outcome
+      ? answer || `Returned ${outcome}.`
+      : `The run ended without a report (${failure ? "failed" : (result?.status ?? "no report")}); the request stays open.`;
+    await recordWork({
+      requestId,
+      byLabel: "Researcher",
+      researchRunId: row.id,
+      outcome,
+      summary: summary.slice(0, 4000),
+      fundedByJobId: ctx.jobId ?? null,
+    }).catch(() => null);
+    if (outcome) await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 600)}`);
+    return JSON.stringify({
+      success: !!outcome,
+      research_run_id: row.id,
+      request_id: requestId,
+      outcome,
+      spent_usd: Math.round(billed / 10_000) / 100,
+      summary,
+      note: "The outcome is recorded on the request; its keeper decides whether the request has been met.",
+    });
+  };
+
   const get = async (input: Record<string, unknown>): Promise<string> => {
     const id = str(input.research_run_id);
     if (!id) return refuse("research_run_id is required.");
@@ -454,6 +629,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const execute = async (name: string, input: Record<string, unknown>): Promise<string | null> => {
     if (name === DELEGATE_RESEARCH_TOOL_NAME) return delegate(input);
     if (name === GET_RESEARCH_RUN_TOOL_NAME) return get(input);
+    if (name === FUND_REQUEST_TOOL_NAME) return fund(input);
     return null;
   };
 

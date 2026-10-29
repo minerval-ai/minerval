@@ -55,8 +55,9 @@ Not claims:
 - **Source attributions.** "Smith asserts X": the claim is X, stated plainly.
   Extract the attribution itself only when what was said, or who said it, is
   itself disputed or consulted.
-- **Questions, commands, meta-text** ("in this post I argue..."), rhetoric,
-  and hedged non-assertions ("some might say...").
+- **Rhetorical questions, commands, meta-text** ("in this post I argue..."),
+  rhetoric, and hedged non-assertions ("some might say..."). A real
+  question the document turns on is proposed as a question (below).
 - **Personal detail about private individuals.** The graph holds
   propositions the discourse refers to, not facts about people who have not
   entered it (§2). A passage about a named private person's health,
@@ -97,6 +98,23 @@ fifteen words, rarely more than twenty-five.
   The Matcher settles direction with the graph in view; give it a form
   that does not need flipping.
 
+## Quantities and Questions
+
+A figure in a document (a value, a count, a rate, a date) is a statement
+about a quantity. Propose the quantity by its definition (§3), with the
+figure as the document states it in verbatim_text. A statement that a value
+exceeds or falls below some figure is a statement about the quantity too,
+not a separate claim. Propose the figures the document turns on, as with
+claims; a figure quoted in passing is not worth proposing. If a document
+calls something large without giving a figure, propose the claim that it is
+large; do not supply a number the document does not give.
+
+A question that asks whether X is so should normally be proposed as the
+claim X, and one that asks how much, how many, how often, or when as the
+quantity. A question that asks what, why, how, or which, that the document
+is organized around and that anyone reasoning about the subject would need
+to ask, is proposed as a question, in neutral wording.
+
 ## Fields
 
 - **verbatim_text**: the exact span, as this source states it. This is
@@ -111,6 +129,8 @@ fifteen words, rarely more than twenty-five.
   mathematical (a proposition of mathematics: true or false by proof rather
   than by observation, settled by a proof others can check, and most firmly
   by one a machine has checked).
+- **kind**: claim, quantity, or question. For a quantity,
+  proposed_canonical_form is its definition, with its unit.
 - **confidence**: 0 to 1, how sure you are that this is a well-formed,
   reusable claim. It scores form, not truth; the pipeline drops
   low-confidence extractions as a backstop against non-claims entering the

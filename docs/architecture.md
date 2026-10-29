@@ -373,6 +373,14 @@ it, each with an outcome (met, partly met, negative, cannot be met, declined,
 revise); a negative result or a refusal is a complete outcome. The keeper
 decides when the request is met, and a closed request (met, declined,
 withdrawn, moot) stays closed.
+
+A mandate's Grantmaker can fund the Researcher to take up an open request
+(`fund_request`): the request is the brief, the run writes nothing to the
+graph, and its outcome is recorded as work on the request, after which the
+keeper is asked to judge it. Contributors propose requests, answers and
+estimates, and offer material for a request, through the Contribution
+Reviewer like any other contribution.
+
 ### Formal statements and machine-checked arguments
 
 A mathematical claim may carry a **formal statement**: the graph's own
@@ -677,7 +685,17 @@ These act through tools over the life of a claim and the graph:
   adversarial second pass, minor settled ones a light touch. Decomposition
   terminates without a depth cap because shared ancestors get linked, not
   re-created; recursion is bounded economically by the importance brake, and a
-  per-run cap on newly minted subclaims backstops a single runaway pass.
+  per-run cap on newly minted subclaims backstops a single runaway pass. On a
+  quantity the same Steward keeps the definition, records the figures sources
+  state and the readings of instruments, and sets the estimate
+  (`update_quantity_estimate`) in place of a status. Any Steward may file a
+  request, and keeps the requests that bear on its node alone.
+- **Question Steward** owns a question the way a Claim Steward owns a claim,
+  in the same runner (the node's kind selects the role and tools): it keeps
+  the wording and the presuppositions, gathers the candidate answers and
+  subquestions, records where sources ask or answer the question, and gives
+  the best answer it can with the question's standing
+  (`update_question_assessment`).
 - **Curator** is the graph-level counterpart: it owns the connective tissue
   *between* claims, merging duplicates and counterparts the Matcher missed,
   splitting conflated claims (§5), and suggesting cross-claim edges for the
@@ -687,7 +705,10 @@ These act through tools over the life of a claim and the graph:
   request on an anchor claim, a mandate values and funds the row, and one
   run reads every concern waiting on the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
-  reverse it, and the Curator never overrides a Steward's verdict.
+  reverse it, and the Curator never overrides a Steward's verdict. It also
+  corrects a node created as the wrong kind (`change_node_kind`, reversible),
+  merges a claim that only states a value into its quantity, and keeps the
+  requests that bear on several nodes or on none.
 - **Contribution Reviewer** evaluates each incoming contribution against policy
   (accept, reject, or escalate), including `propose_argument` contributions,
   and flags suspected bad faith. It is also the graph's **admission gate**:

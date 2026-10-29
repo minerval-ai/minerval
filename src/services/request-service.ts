@@ -21,6 +21,7 @@ import {
   type RequestState,
 } from "../schemas/kinds.js";
 import { getFundingLabelForJob } from "./grant-service.js";
+import { enqueueSteward } from "./queue-service.js";
 
 export class RequestError extends Error {
   constructor(message: string) {
@@ -185,6 +186,122 @@ export async function setRequestState(input: {
       [input.requestId, input.state, note, isClosed(input.state)]
     );
   });
+}
+
+/** Sharpen a request's wording: what it asks, why, what would satisfy it, who could do it, whom it is put to. */
+export async function reviseRequest(input: {
+  requestId: string;
+  ask?: string | null;
+  why?: string | null;
+  satisfiedBy?: string | null;
+  whoCould?: string | null;
+  addressedTo?: string | null;
+  bearsOnText?: string | null;
+}): Promise<void> {
+  const text = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null);
+  const fields: [string, string | null | undefined][] = [
+    ["ask", text(input.ask)],
+    ["why", text(input.why)],
+    ["satisfied_by", text(input.satisfiedBy)],
+    ["who_could", text(input.whoCould)],
+    ["addressed_to", text(input.addressedTo)],
+    ["bears_on_text", text(input.bearsOnText)],
+  ];
+  for (const [col, v] of fields) {
+    if (["ask", "why", "satisfied_by"].includes(col) && v === null) {
+      throw new RequestError(`A request keeps its ${col}`);
+    }
+  }
+  const set = fields.filter(([, v]) => v !== undefined);
+  if (set.length === 0) throw new RequestError("Nothing to revise");
+  await withTransaction(async (tx) => {
+    const [req] = await tx.query<{ state: RequestState; addressed_to: string | null }>(
+      `SELECT state, addressed_to FROM requests WHERE id = $1 FOR UPDATE`,
+      [input.requestId]
+    );
+    if (!req) throw new RequestError(`Request ${input.requestId} not found`);
+    if (isClosed(req.state)) throw new RequestError(`Request ${input.requestId} is ${req.state}`);
+    const params: unknown[] = [input.requestId];
+    const assignments = set.map(([col, v]) => {
+      params.push(v);
+      return `${col} = $${params.length}`;
+    });
+    // Putting an open request to a party addresses it, and withdrawing the
+    // address opens it again; work under way stays under way.
+    const addressed = set.find(([col]) => col === "addressed_to");
+    if (addressed && req.state !== "in_progress") {
+      assignments.push(`state = '${addressed[1] ? "addressed" : "open"}'`);
+    }
+    await tx.query(`UPDATE requests SET ${assignments.join(", ")}, updated_at = now() WHERE id = $1`, params);
+  });
+}
+
+/**
+ * Set what a request bears on, as the graph comes to hold it, and fix its
+ * keeper again: a request that now bears on one node alone passes to that
+ * node's Steward, and one that bears on several, on a source, or on nothing
+ * the graph holds stays with the Curator.
+ */
+export async function setRequestTargets(input: {
+  requestId: string;
+  claimIds: string[];
+  sourceIds?: string[];
+}): Promise<{ keeper: "steward" | "curator"; keeperClaimId: string | null }> {
+  const claimIds = [...new Set(input.claimIds)];
+  const sourceIds = [...new Set(input.sourceIds ?? [])];
+  return withTransaction(async (tx) => {
+    const [req] = await tx.query<{ state: RequestState; bears_on_text: string | null }>(
+      `SELECT state, bears_on_text FROM requests WHERE id = $1 FOR UPDATE`,
+      [input.requestId]
+    );
+    if (!req) throw new RequestError(`Request ${input.requestId} not found`);
+    if (isClosed(req.state)) throw new RequestError(`Request ${input.requestId} is ${req.state}`);
+    if (claimIds.length === 0 && sourceIds.length === 0 && !req.bears_on_text) {
+      throw new RequestError("A request bears on a node, a source, or something described in bears_on_text");
+    }
+    if (claimIds.length > 0) {
+      const live = await tx.query<{ id: string }>(
+        `SELECT id FROM claims WHERE id = ANY($1::uuid[]) AND state = 'active'`,
+        [claimIds]
+      );
+      const found = new Set(live.map((r) => r.id));
+      const missing = claimIds.filter((id) => !found.has(id));
+      if (missing.length > 0) throw new RequestError(`No active node ${missing.join(", ")}`);
+    }
+    await tx.query(`DELETE FROM request_targets WHERE request_id = $1`, [input.requestId]);
+    for (const claimId of claimIds) {
+      await tx.query(`INSERT INTO request_targets (request_id, claim_id) VALUES ($1, $2)`, [input.requestId, claimId]);
+    }
+    for (const sourceId of sourceIds) {
+      await tx.query(`INSERT INTO request_targets (request_id, source_id) VALUES ($1, $2)`, [input.requestId, sourceId]);
+    }
+    const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
+    const keeper = keeperClaimId ? "steward" : "curator";
+    await tx.query(
+      `UPDATE requests SET keeper_kind = $2, keeper_claim_id = $3, updated_at = now() WHERE id = $1`,
+      [input.requestId, keeper, keeperClaimId]
+    );
+    return { keeper, keeperClaimId };
+  });
+}
+
+/**
+ * Tell a request's keeper that work on it has come back. A Steward keeper
+ * gets a pass on its node; the Curator reads the requests it keeps when it
+ * next runs, so there is nothing to send it.
+ */
+export async function notifyRequestKeeper(requestId: string, note: string): Promise<boolean> {
+  const [req] = await rawQuery<{ keeper_kind: string; keeper_claim_id: string | null; ask: string }>(
+    `SELECT keeper_kind, keeper_claim_id, ask FROM requests WHERE id = $1`,
+    [requestId]
+  );
+  if (!req || req.keeper_kind !== "steward" || !req.keeper_claim_id) return false;
+  await enqueueSteward({
+    claimId: req.keeper_claim_id,
+    trigger: "request_returned",
+    context: `Request ${requestId} ("${req.ask.slice(0, 160)}"): ${note}`,
+  });
+  return true;
 }
 
 // ---------------------------------------------------------------------------

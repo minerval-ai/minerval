@@ -105,12 +105,14 @@ export async function openResearchRun(input: {
   effort: string | null;
   includeConstitution: boolean;
   ceilingMicroUsd: number;
+  /** The request the run takes up, when a mandate funded one (Part VIII). */
+  requestId?: string | null;
 }): Promise<ResearchRunRow> {
   const rows = await rawQuery<ResearchRunRow>(
     `INSERT INTO research_runs
        (claim_id, grant_id, requested_by, requester_run_id, job_id, task, model, model_tier,
-        effort, include_constitution, ceiling_micro_usd)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        effort, include_constitution, ceiling_micro_usd, request_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${COLUMNS}`,
     [
       input.claimId,
@@ -124,6 +126,7 @@ export async function openResearchRun(input: {
       input.effort,
       input.includeConstitution,
       Math.max(1, Math.round(input.ceilingMicroUsd)),
+      input.requestId ?? null,
     ]
   );
   return normalize(rows[0]!);
