@@ -8,6 +8,7 @@ import {
   stanceEnum,
   claimLinkKindEnum,
 } from "./common.js";
+import { nodeKindEnum } from "./kinds.js";
 
 // ---- Request schemas ----
 
@@ -69,6 +70,8 @@ export const claimPatchBody = z.object({
 
 export const claimResponse = z.object({
   id: uuidSchema,
+  // Absent on payloads from before kinds existed, which held claims only.
+  kind: nodeKindEnum.optional(),
   text: z.string(),
   claim_type: claimTypeEnum,
   state: claimStateEnum,
@@ -143,6 +146,14 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     argument_verdict: z.string().nullable(),
     argument_decisive: z.boolean().nullable().optional(),
     argument_evaluation: z.string().nullable(),
+    // Kinds (constitution §2, §7a): what an argument about a quantity shows
+    // about its value, the node's kind, a quantity's current estimate and
+    // unit, and a question's standing. Optional so older payloads parse.
+    argument_shows: z.unknown().nullable().optional(),
+    node_kind: nodeKindEnum.optional(),
+    estimate: z.unknown().nullable().optional(),
+    unit: z.unknown().nullable().optional(),
+    standing: z.string().nullable().optional(),
     children: z.array(treeNodeResponse),
     // Set (true) only on a repeated occurrence of a shared subclaim: the graph
     // is a DAG, and the node's children are rendered at its first occurrence
@@ -174,6 +185,11 @@ export interface TreeNode {
   argument_verdict: string | null;
   argument_decisive?: boolean | null;
   argument_evaluation: string | null;
+  argument_shows?: unknown | null;
+  node_kind?: "claim" | "quantity" | "question";
+  estimate?: unknown | null;
+  unit?: unknown | null;
+  standing?: string | null;
   children: TreeNode[];
   subtree_collapsed?: boolean;
   children_truncated?: boolean;
