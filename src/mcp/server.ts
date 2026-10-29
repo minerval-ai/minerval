@@ -92,6 +92,14 @@ import {
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
+import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
+import {
+  getCurrentEstimate,
+  getQuantityDetail,
+  getThresholdOf,
+} from "../services/quantity-service.js";
+import { getCurrentStanding, getQuestionDetail } from "../services/question-service.js";
+import { listRequests } from "../services/request-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -199,11 +207,15 @@ async function agentic<T>(
 async function matchAssertion(
   assertion: string,
   context?: string,
-  domains?: readonly string[]
+  domains?: readonly string[],
+  kind?: NodeKind
 ) {
   const decision = await matchClaim({
     extractedText: context ? `${assertion}\n\nContext: ${context}` : assertion,
     proposedCanonical: assertion,
+    // The kind of node proposed (§2, §7a): a figure is matched to the
+    // quantity it is a value of, a question to the question it asks.
+    kind,
     domains:
       domains ?? (await inferDomainPrior({ text: assertion, context: context ?? null })),
   });
@@ -223,18 +235,30 @@ async function matchAssertion(
     return {
       matched: false as const,
       proposed_canonical_form: decision.new_canonical_form ?? assertion,
+      // The Matcher may re-kind a new node (a question asking how much is a
+      // quantity); otherwise it keeps the kind proposed.
+      proposed_kind: decision.kind ?? kind ?? "claim",
       confidence: decision.confidence,
       reasoning: decision.reasoning,
     };
   }
 
   const claim = await getClaimById(decision.matched_claim_id);
-  const assessment = claim ? await getCurrentAssessment(claim.id) : null;
+  const nodeKind: NodeKind = nodeKindEnum.safeParse(claim?.kind).data ?? "claim";
+  // Each kind has its own judgment: a proposition's assessment, a
+  // quantity's estimate, a question's standing (§7a). Only the matched
+  // kind's is read; the others are null.
+  const [assessment, estimate, standing] = await Promise.all([
+    claim && nodeKind === "claim" ? getCurrentAssessment(claim.id) : null,
+    claim && nodeKind === "quantity" ? getCurrentEstimate(claim.id) : null,
+    claim && nodeKind === "question" ? getCurrentStanding(claim.id) : null,
+  ]);
   return {
     matched: true as const,
     claim: claim
       ? {
           id: claim.id,
+          kind: nodeKind,
           canonical_form: claim.text,
           claim_type: claim.claimType,
           state: claim.state,
@@ -247,6 +271,10 @@ async function matchAssertion(
     // states the proposition as an open question and takes no side (#445).
     stance: decision.instance_stance,
     assessment: formatAssessment(assessment),
+    estimate: estimate
+      ? { ...estimate.estimate, assessed_at: estimate.assessed.assessed_at.toISOString() }
+      : null,
+    standing,
     confidence: decision.confidence,
     reasoning: decision.reasoning,
   };
@@ -401,7 +429,15 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "(`formalization`: Lean 4 against a pinned Mathlib, with a " +
         "correspondence note) and a machine-checked argument whose evidence " +
         "is a checker verdict (`verification`; `include: \"proofs\"` lists " +
-        "the check records). Free.",
+        "the check records). A node is a claim, a quantity, or a question " +
+        "(`claim.kind`): a quantity has no assessment but a `quantity` " +
+        "record (definition, the graph's estimate with its work, the " +
+        "figures sources state, instrument readings, and the cut claims on " +
+        "it); a question has a `question` record (standing, favored and " +
+        "candidate answers, presuppositions, subquestions). A claim that " +
+        "cuts a quantity carries `threshold_of`. `requests` lists the work " +
+        "someone could do on the node that would improve what the graph " +
+        "knows. Free.",
       inputSchema: {
         claim_id: z.guid(),
         include: z
@@ -417,13 +453,24 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       if (!claim) return errorResult("NOT_FOUND", "Claim not found");
 
       const assessment = await getCurrentAssessment(claim_id);
-      const [formalization, verification] = await Promise.all([
-        getFormalizationSummary(claim_id),
-        getVerificationSummary(claim_id),
-      ]);
+      const [formalization, verification, quantity, thresholdOf, question, requests] =
+        await Promise.all([
+          getFormalizationSummary(claim_id),
+          getVerificationSummary(claim_id),
+          // The kinds' records (§7a), as GET /claims/:id serves them.
+          claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
+          claim.kind === "claim" ? getThresholdOf(claim_id) : null,
+          claim.kind === "question" ? getQuestionDetail(claim_id) : null,
+          // Requests degrade to none rather than failing the claim, as tags do.
+          listRequests({ claimId: claim_id, limit: 20 }).catch(() => ({
+            items: [],
+            total: 0,
+          })),
+        ]);
       const payload: Record<string, unknown> = {
         claim: {
           id: claim.id,
+          kind: claim.kind ?? "claim",
           canonical_form: claim.text,
           claim_type: claim.claimType,
           state: claim.state,
@@ -449,6 +496,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         // badge (docs/mathematics.md §11.2); null when the claim has none.
         formalization,
         verification,
+        quantity,
+        threshold_of: thresholdOf,
+        question,
+        requests: requests.items,
         subclaim_count: await getSubclaimCount(claim_id),
       };
       if (include.includes("provenance")) {
@@ -603,8 +654,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "the graph, under any wording or as its negation (a claim and its " +
         "denial are one node). On a match, returns the canonical claim, " +
         "whether the assertion affirms or denies it, and its current " +
-        "assessment; otherwise, a proposed canonical form. Runs a model: " +
-        "metered to your account and quota-gated.",
+        "assessment; otherwise, a proposed canonical form. A node is a " +
+        "claim, a quantity, or a question (`kind`): pass `kind: \"quantity\"` " +
+        "for a figure, matched to the quantity it is a value of, or " +
+        "`\"question\"` for a question. A matched quantity carries its " +
+        "`estimate` and a matched question its `standing` in place of an " +
+        "assessment. Runs a model: metered to your account and quota-gated.",
       inputSchema: {
         assertion: z
           .string()
@@ -616,11 +671,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .max(2000)
           .optional()
           .describe("Optional surrounding text for disambiguation"),
+        kind: nodeKindEnum
+          .default("claim")
+          .describe("The kind of node the assertion is: claim, quantity, or question"),
       },
     },
-    async ({ assertion, context }) => {
+    async ({ assertion, context, kind }) => {
       const run = await agentic(ctx, "text_analysis", () =>
-        matchAssertion(assertion, context)
+        matchAssertion(assertion, context, undefined, kind)
       );
       if (!run.ok) return run.denied;
       return jsonResult(run.value);
@@ -635,7 +693,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Run a passage through Minerval's Extractor to surface the claims it " +
         "asserts or relies on: single reusable propositions assessable with " +
         "evidence and reasons, each with a proposed canonical form, claim " +
-        "type, and provisional importance. Claims worth minting are scarce " +
+        "type, kind (claim, quantity, or question; a quantity's canonical " +
+        "form is its definition with its unit), and provisional importance. " +
+        "Claims worth minting are scarce " +
         "relative to text, so most sentences yield none. Runs a model: metered to your " +
         "account and quota-gated.",
       inputSchema: {
@@ -674,8 +734,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "contradicted, unknown. 'unknown' with matched: false means the graph " +
         "holds no such claim; on a matched claim it is the assessed status " +
         "(not enough information to assess). 'unassessed' means the claim " +
-        "exists but has no assessment yet. Runs a model: metered to your " +
-        "account and quota-gated.",
+        "exists but has no assessment yet. A figure is matched to the " +
+        "quantity it is a value of ('estimated', with the graph's " +
+        "`estimate`) and a question to the question it asks (its standing: " +
+        "answered, leaning, open, ill_posed, or unknown). Runs a model: " +
+        "metered to your account and quota-gated.",
       inputSchema: {
         text: z.string().min(1).max(50_000).describe("The passage to assess"),
         max_claims: z
@@ -699,24 +762,35 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         // passage's claims often overlap — bursting them in parallel just
         // races the same vector searches while multiplying peak LLM load.
         for (const c of extracted) {
+          const kind = nodeKindEnum.safeParse(c.kind).data ?? "claim";
           const match = await matchAssertion(
             c.verbatim_text,
             c.context ?? undefined,
-            sanitizeDomains(c.domains)
+            sanitizeDomains(c.domains),
+            kind
           );
           judgments.push({
             verbatim_text: c.verbatim_text,
             proposed_canonical_form: c.proposed_canonical_form,
             claim_type: c.claim_type,
+            kind,
             // "unknown": the graph has no canonical claim for this assertion.
             // "undecided": the Matcher reached no verdict (#419).
-            // "unassessed": it exists but has no current assessment yet.
+            // "unassessed": it exists but has no current judgment yet.
+            // A matched quantity is "estimated" (its `estimate` beside it),
+            // a matched question its standing.
             verdict:
               match.matched === null
                 ? "undecided"
                 : !match.matched
                   ? "unknown"
-                  : (match.assessment?.status ?? "unassessed"),
+                  : match.claim.kind === "quantity"
+                    ? match.estimate
+                      ? "estimated"
+                      : "unassessed"
+                    : match.claim.kind === "question"
+                      ? (match.standing ?? "unassessed")
+                      : (match.assessment?.status ?? "unassessed"),
             ...match,
           });
         }
@@ -736,7 +810,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       description:
         "Contribute to an existing claim: a challenge, supporting evidence, " +
         "a new source appearance, a proposed merge, split, or edit, or an " +
-        "argument for or against it. A contribution gets a hearing, not " +
+        "argument for or against it; on a quantity, a source's figure " +
+        "(add_estimate); on a question, a candidate answer (propose_answer); " +
+        "on any node, a request for work (propose_request) or material " +
+        "offered to meet one of its requests (answer_request). A contribution gets a hearing, not " +
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +

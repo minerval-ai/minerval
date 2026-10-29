@@ -182,21 +182,35 @@ and the tool description says what a call spends.
   that carries one, the public check record (verdict, gates, pin, hashes,
   and the submission source once public) behind a machine-checked proof or
   disproof.
+  The node's `kind` rides on `claim`: a quantity carries a `quantity`
+  record (definition, the graph's estimate with its work, stated figures,
+  readings, cut claims) and no assessment, a question a `question` record
+  (standing, answers, presuppositions, subquestions), a cut claim
+  `threshold_of`, and every node its open `requests`, as
+  `GET /claims/:id` serves them.
 - **`get_decomposition`** `{claim_id, max_depth?}` — the subclaim tree with
   per-node assessment status: unsettled-vs-settled structure at a glance.
-- **`match_claim`** `{assertion, context?}` — run a free-text assertion
+- **`match_claim`** `{assertion, context?, kind?}` — run a free-text assertion
   through the Matcher agent → the canonical claim it states (or negates — see
   `stance`) plus its assessment, `matched: false` for new/unknown, or
   `matched: null` when the Matcher ran out of search budget without a
-  verdict (not a finding that the claim is new; retry).
+  verdict (not a finding that the claim is new; retry). `kind` (`claim`,
+  the default, `quantity`, or `question`) says what the assertion is: a
+  figure matches the quantity it is a value of. A matched node carries its
+  `kind` and its own judgment: a claim's `assessment`, a quantity's
+  `estimate`, a question's `standing`; a new node carries `proposed_kind`,
+  which the Matcher may change (a question asking how much is a quantity).
 - **`extract_claims`** `{text, source_type?, max_claims?}` — run text through
   the Extractor agent → discrete checkable claims with proposed canonical
-  forms.
+  forms, each with its `kind`.
 - **`assess_text`** `{text, max_claims?}` — the judgment surface: extract the
   passage's claims, match each into the graph, and return per-claim verdicts
   (`well_supported`/`disputed`/… from the graph's assessments, `unassessed`
   if matched but not yet assessed, `unknown` if the graph has no such claim,
   `undecided` if the Matcher reached no verdict for that claim).
+  A figure's verdict is `estimated` when its quantity has an estimate
+  (beside it as `estimate`); a question's verdict is its standing
+  (`answered`, `leaning`, `open`, `ill_posed`, `unknown`).
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
   assessment applies inverted.
