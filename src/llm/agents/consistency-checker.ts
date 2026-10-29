@@ -24,6 +24,7 @@
  * is a candidate the allocator funds or not, and its flags are recorded so
  * its precision can be read (consistency-service.ts).
  */
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -65,8 +66,8 @@ export interface ConsistencyCheckerResult {
   runId: string | null;
 }
 
-/** Tool calls per sweep: a careful read of one partition. */
-const MAX_ITERATIONS = 30;
+/** A runaway guard: the sweep's budget is what bounds it. */
+const MAX_ITERATIONS = RUN_TURN_GUARD;
 /** Claims per list_partition_claims page. */
 const PAGE = 15;
 
@@ -86,7 +87,6 @@ async function runConsistencyCheckerImpl(input: {
   claimsInScope: number;
   /** The partition's last completed sweep, if any. */
   lastSweep: { started_at: Date; note: string | null } | null;
-  maxFlags?: number;
   model?: string;
   /**
    * Read and judge, write nothing: flag_inconsistency records the proposal
@@ -98,7 +98,6 @@ async function runConsistencyCheckerImpl(input: {
 }): Promise<ConsistencyCheckerResult> {
   const config = loadConfig();
   const model = input.model ?? config.consistencyModel;
-  const maxFlags = input.maxFlags ?? config.consistencyMaxFlagsPerSweep;
   const system = getConsistencyCheckerSystemPromptBlocks();
   const reportTools = createReportTools({ model });
   const runId = getUsageContext().runId ?? null;
@@ -160,7 +159,8 @@ async function runConsistencyCheckerImpl(input: {
         "with your expected_gain; the allocator decides whether it runs. " +
         "The primary is the claim whose " +
         "assessment looks wrong. A primary already flagged and still waiting " +
-        `counts as a repeat. At most ${maxFlags} new flag(s) this sweep.`,
+        "counts as a repeat. Flag what is material: each flag asks for a " +
+        "funded pass, and your flags' precision is tracked.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -211,7 +211,7 @@ async function runConsistencyCheckerImpl(input: {
       ? `Your last sweep of it was on ${input.lastSweep.started_at.toISOString().slice(0, 10)}. ` +
         `Your note from it:\n\n${input.lastSweep.note?.trim() || "(none)"}\n\n`
       : `This partition has never been swept.\n\n`) +
-    `Your bounds: at most ${maxFlags} new flag(s); about ${MAX_ITERATIONS} tool turns.\n\n` +
+    `${turnBudgetLine(MAX_ITERATIONS)}\n\n` +
     `Read the partition, compare what needs comparing, flag what does not ` +
     `cohere, and finish with your note. Nobody is watching this run; act ` +
     `with the judgment of a careful person paid to find real defects and to ` +
@@ -273,15 +273,6 @@ async function runConsistencyCheckerImpl(input: {
         return JSON.stringify(await figureAndAnswerChecks(input.scope));
       }
       if (name === "flag_inconsistency") {
-        if (flagsRaised >= maxFlags) {
-          return JSON.stringify({
-            ok: false,
-            code: "SWEEP_LIMIT",
-            problem:
-              `You have raised ${flagsRaised} flag(s) this sweep, the limit. ` +
-              `Name any others in your finish_sweep note.`,
-          });
-        }
         const proposal: ProposedFlag = {
           kind: String(toolInput.kind ?? ""),
           primary_claim_id: String(toolInput.primary_claim_id ?? ""),

@@ -14,8 +14,9 @@
  * Every call costs real money, billed by the word, so the contract mirrors
  * the Elicit adapter (elicit-tools.ts): the tools exist only when a
  * PANGRAM_API_KEY is configured, the text sent is capped at
- * pangramMaxWords, each bundle carries a per-run call cap, and every call
- * Pangram accepted is metered into llm_usage like any other external spend.
+ * pangramMaxWords, a call the run's budget cannot cover is declined before
+ * it is sent, and every call Pangram accepted is metered into llm_usage like
+ * any other external spend.
  * Failures degrade gracefully (§20): an error tool-result the agent routes
  * around, never a crashed run.
  *
@@ -27,6 +28,7 @@ type Tool = Anthropic.Tool;
 import { loadConfig, type Config } from "../../config.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { readPage } from "../../services/source-watch-service.js";
+import { budgetRefusal } from "../usage-context.js";
 
 export const PANGRAM_TOOL_PREFIX = "pangram_";
 export const PANGRAM_CHECK_AI_TOOL_NAME = "pangram_check_ai";
@@ -48,18 +50,6 @@ const EXCERPT_CHARS = 240;
 /** Whether the Pangram tools are configured at all (deploy-level switch). */
 export function pangramConfigured(config: Config = loadConfig()): boolean {
   return !!config.pangramApiKey;
-}
-
-/**
- * Whether the Steward run for a claim of this importance should be offered
- * the Pangram tools. Like Elicit's gate (§19): a per-word fee is not worth
- * paying on every minor claim.
- */
-export function pangramEnabledForImportance(
-  importance: number,
-  config: Config = loadConfig()
-): boolean {
-  return pangramConfigured(config) && importance >= config.stewardPangramMinImportance;
 }
 
 export function isPangramTool(name: string): boolean {
@@ -327,11 +317,10 @@ export interface PangramTools {
 
 /**
  * The Pangram tools for one run: no definitions when unconfigured (or when
- * `enabled` is false), and at most `maxCalls` analyses across both tools
- * (0 = uncapped).
+ * `enabled` is false). Each call is priced by its words before it is sent
+ * and declined when the run's budget cannot cover it.
  */
 export function createPangramTools(opts: {
-  maxCalls: number;
   enabled?: boolean;
   config?: Config;
   /** Test hook: the wait between polls. */
@@ -340,23 +329,20 @@ export function createPangramTools(opts: {
   const config = opts.config ?? loadConfig();
   const enabled = (opts.enabled ?? true) && pangramConfigured(config);
   const wait = opts.wait ?? sleep;
-  let calls = 0;
   return {
     definitions: enabled ? getPangramToolDefinitions(config) : [],
     async execute(name, input) {
       if (!isPangramTool(name)) return null;
       if (!enabled) return failure(`${name} is not in this run's toolset.`);
-      if (opts.maxCalls > 0 && calls >= opts.maxCalls) {
-        return failure(
-          `This run has already made ${calls} Pangram call(s), its cap (${opts.maxCalls}). ` +
-            `Work with what those returned.`
-        );
-      }
       const resolved = await resolveText(input);
       if ("error" in resolved) return failure(resolved.error);
       const text = truncateToWords(resolved.text, config.pangramMaxWords);
-      if (countWords(text) === 0) return failure("There is no text to analyze.");
-      calls += 1;
+      const words = countWords(text);
+      if (words === 0) return failure("There is no text to analyze.");
+      const usdPerWord =
+        name === PANGRAM_CHECK_AI_TOOL_NAME ? config.pangramAiUsdPerWord : config.pangramPlagiarismUsdPerWord;
+      const refusal = budgetRefusal(name, words * usdPerWord * 1_000_000);
+      if (refusal) return refusal;
       try {
         return name === PANGRAM_CHECK_AI_TOOL_NAME
           ? await checkAi(text, resolved.url, config, wait)

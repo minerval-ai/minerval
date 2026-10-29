@@ -70,7 +70,6 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
         "est_steward_run_cost_owls",
         "est_steward_run_cost_strong_owls",
         "staleness_base_days",
-        "staleness_max_per_sweep",
         ...MATH_KEYS,
         ...MAINTENANCE_KEYS,
       ].sort()

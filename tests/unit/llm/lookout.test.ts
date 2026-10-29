@@ -50,6 +50,8 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ lookoutModel: "openai/gpt-6-luna" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   withAgent: (_a: string, fn: () => unknown) => fn(),
   withSkills: (_s: string[], fn: () => unknown) => fn(),
   getUsageContext: () => ({}),
@@ -216,7 +218,7 @@ describe("runLookout", () => {
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
-    expect(state.loop!.briefing).toContain("web searches");
+    expect(state.loop!.briefing).toContain("Each tool result shows what you have spent");
 
     // No pin: the cheap-tier default, with the client-side tool of the same name.
     state.lookout = lookout({ model: null });
@@ -248,7 +250,7 @@ describe("runLookout", () => {
     expect(JSON.parse(await state.loop!.executeTool("nope", {}))).toEqual({ error: "unknown tool nope" });
   });
 
-  it("gives a lookout that follows feeds its inbox, a feeds briefing, more turns, and a shared ingest limit", async () => {
+  it("gives a lookout that follows feeds its inbox, a feeds briefing, and a shared ingest limit", async () => {
     state.lookout = lookout({ max_ingests_per_run: 3 });
     state.feeds = [
       { feed_id: "f-1", title: "Some Substack", url: "https://x.substack.com/feed", status: "active", wake: "batch", waiting: 7, deferred: 2, oldest_waiting: "2026-09-09T10:00:00.000Z", last_polled_at: null, last_error: null },
@@ -261,7 +263,7 @@ describe("runLookout", () => {
     const res = await runLookout({ lookoutId: LOOKOUT });
     const names = state.loop!.tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(["feed_inbox", "read_item", "triage_items", "set_feed_rule", "read_listing"]));
-    expect(state.maxIterations).toBe(32);
+    expect(state.maxIterations).toBe(200);
     expect(state.loop!.briefing).toContain('f-1 "Some Substack"');
     expect(state.loop!.briefing).toContain("7 waiting, 2 deferred");
     expect(state.triage[0]).toMatchObject({ lookoutId: LOOKOUT, grantId: GRANT, ingestAllowance: 3 });

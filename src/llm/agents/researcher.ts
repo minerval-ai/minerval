@@ -27,6 +27,7 @@
  * cheap tier runs the ordinary loop without it, since the sandbox is an
  * Anthropic server tool. The task message tells the researcher which it has.
  */
+import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../../config.js";
 import {
@@ -123,8 +124,6 @@ import {
 } from "../tools/graph-read-tools.js";
 import { leanCheckerConfigured } from "../../services/lean-checker-client.js";
 import {
-  NOTEBOOK_MAX_SECTIONS,
-  NOTEBOOK_MAX_SECTION_CHARS,
   RESEARCHER_AGENT,
   launcherWritesGraph,
   readResearcherPaused,
@@ -344,7 +343,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const longRun = sandbox && modelSupportsLongRun(model);
   const ceiling = Math.max(1, run.ceiling_micro_usd);
   const maxWallMs = input.maxWallMs ?? config.researcherMaxWallMinutes * 60_000;
-  const maxTurns = input.maxTurns ?? config.researcherMaxTurns;
+  const maxTurns = input.maxTurns ?? RUN_TURN_GUARD;
 
   // Skills: the method skills that address the researcher, plus the claim's
   // domain skills for their tools (a domain skill with no researcher section
@@ -368,14 +367,14 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
-  const pangramTools = createPangramTools({ maxCalls: config.researcherPangramMaxCalls, config });
+  const pangramTools = createPangramTools({ config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
   const takesUpRequest = run.requested_by === "request";
   let contributionsLeft =
     run.requested_by === "grantmaker" && run.grant_id ? Math.max(0, Math.floor(input.contributionAllowance ?? 0)) : 0;
 
-  const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
+  const webSearch = createWebSearch(model);
   const tools: ToolUnion[] = [
     ...graphReadTools,
     getReadPageToolDefinition(),
@@ -414,9 +413,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     model,
     estimate: null,
     maxTurns,
-    elicitMaxCalls: config.researcherElicitMaxCalls,
     elicitUsdPerCall: config.elicitUsdPerCall,
-    pangramMaxCalls: config.researcherPangramMaxCalls,
+    maxWallMinutes: Math.round(maxWallMs / 60_000),
     pangramMaxUsdPerCall:
       config.pangramMaxWords * Math.max(config.pangramAiUsdPerWord, config.pangramPlagiarismUsdPerWord),
     toolNames,
@@ -435,7 +433,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   });
 
   let reportInput: Record<string, unknown> | null = null;
-  let elicitCalls = 0;
   let reminded = false;
   // What the meter read after the previous turn, for the spend line.
   let meterAtLastTurn = 0;
@@ -461,18 +458,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     const section = asString(toolInput.section).trim().slice(0, 200);
     const content = asString(toolInput.content);
     if (!section) return JSON.stringify({ success: false, message: "section is required." });
-    if (content.length > NOTEBOOK_MAX_SECTION_CHARS) {
-      return JSON.stringify({
-        success: false,
-        message: `A section holds at most ${NOTEBOOK_MAX_SECTION_CHARS} characters; split it.`,
-      });
-    }
-    if (!(section in notebook) && Object.keys(notebook).length >= NOTEBOOK_MAX_SECTIONS) {
-      return JSON.stringify({
-        success: false,
-        message: `The notebook holds at most ${NOTEBOOK_MAX_SECTIONS} sections; rewrite one.`,
-      });
-    }
     notebook[section] = content;
     await writeResearchNotebookSection(run.id, section, content);
     return JSON.stringify({ success: true, section, sections: Object.keys(notebook) });
@@ -518,17 +503,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;
     }
-    if (isElicitTool(name)) {
-      const cap = config.researcherElicitMaxCalls;
-      if (cap > 0 && elicitCalls >= cap) {
-        return JSON.stringify({
-          success: false,
-          message: `This run has made ${elicitCalls} Elicit calls, its cap (${cap}). Work with what they returned.`,
-        });
-      }
-      elicitCalls++;
-      return executeElicitTool(name, toolInput, config);
-    }
+    if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
     if (isSkillTool(name)) {

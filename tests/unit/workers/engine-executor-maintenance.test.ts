@@ -68,6 +68,8 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 
 vi.mock("../../../src/services/action-service.js", () => ({
+  actionBudgetMicroUsd: (a: { cost_est_micro_usd: number | string; coverage_micro_usd: number | string }) =>
+    Math.max(Number(a.cost_est_micro_usd) || 0, Number(a.coverage_micro_usd) || 0),
   nextRunnableAction: vi.fn(async () => state.covered),
   claimAction: vi.fn(async () => true),
   releaseAction: vi.fn(async () => {}),
@@ -120,6 +122,8 @@ vi.mock("../../../src/llm/agents/mandate-review.js", () => ({ runMandateReview: 
 vi.mock("../../../src/services/source-service.js", () => ({ submitSource: vi.fn() }));
 vi.mock("../../../src/workers/steward-direct.js", () => ({ invokeStewardDirect: vi.fn() }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   runWithUsageContext: (ctx: Record<string, unknown>, fn: () => Promise<unknown>) => {
     state.contexts.push(ctx);
     return fn();

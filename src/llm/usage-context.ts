@@ -60,8 +60,14 @@ export interface UsageContext {
    * (owl-ledger-service.settleMeteredCharge) can read the operation's cost
    * the moment the work finishes, without waiting on the async llm_usage
    * insert. The field keeps its historical name.
+   *
+   * `ceilingMicroUsd` is the run's budget when the operation has one: what
+   * its funders covered, or what the platform expects to spend on it. The
+   * tool loop shows the agent its spend against it after every turn, and
+   * paid tools check it before they charge, so an agent always knows what
+   * it has to work with (runBudget below).
    */
-  meter?: { billedMicroUsd: number };
+  meter?: { billedMicroUsd: number; ceilingMicroUsd?: number };
 }
 
 const storage = new AsyncLocalStorage<UsageContext>();
@@ -150,12 +156,60 @@ export function untraced<T>(fn: () => T): T {
 /**
  * Run `fn` with a fresh cost meter and return what its LLM calls actually
  * cost at the billed (cost-plus) rate. The meter is scoped: nested meters
- * shadow outer ones, so an operation measures only its own work.
+ * shadow outer ones, so an operation measures only its own work. A
+ * `ceilingMicroUsd` gives the run a budget its agent is shown.
  */
 export async function withCostMeter<T>(
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  opts: { ceilingMicroUsd?: number | null } = {}
 ): Promise<{ value: T; billedMicroUsd: number }> {
-  const meter = { billedMicroUsd: 0 };
+  const meter: { billedMicroUsd: number; ceilingMicroUsd?: number } = { billedMicroUsd: 0 };
+  if (opts.ceilingMicroUsd != null && opts.ceilingMicroUsd > 0) {
+    meter.ceilingMicroUsd = Math.round(opts.ceilingMicroUsd);
+  }
   const value = await runWithUsageContext({ meter }, fn);
   return { value, billedMicroUsd: meter.billedMicroUsd };
+}
+
+/** The enclosing run's budget and what it has spent so far, in micro-USD. */
+export interface RunBudget {
+  ceilingMicroUsd: number;
+  spentMicroUsd: number;
+  remainingMicroUsd: number;
+}
+
+/**
+ * The enclosing run's budget, or null when the run has none (an unmetered
+ * call, or a meter opened without a ceiling).
+ */
+export function runBudget(): RunBudget | null {
+  const meter = getUsageContext().meter;
+  if (!meter?.ceilingMicroUsd) return null;
+  const spent = meter.billedMicroUsd;
+  return {
+    ceilingMicroUsd: meter.ceilingMicroUsd,
+    spentMicroUsd: spent,
+    remainingMicroUsd: meter.ceilingMicroUsd - spent,
+  };
+}
+
+/**
+ * A paid tool's check before it charges: null when the call fits the run's
+ * budget (or the run has none), else the refusal to return to the agent,
+ * saying what the call costs and what is left.
+ */
+export function budgetRefusal(tool: string, priceMicroUsd: number): string | null {
+  const budget = runBudget();
+  if (!budget) return null;
+  const price = Math.max(0, priceMicroUsd);
+  if (budget.remainingMicroUsd > 0 && price <= budget.remainingMicroUsd) return null;
+  const usd = (micro: number) => `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+  return JSON.stringify({
+    success: false,
+    message:
+      `${tool} would cost about ${usd(price)}, and this run has ${usd(budget.remainingMicroUsd)} ` +
+      `of its ${usd(budget.ceilingMicroUsd)} budget left. Work with what you have and record ` +
+      `your conclusion; if the question needs more, say so in your reasoning, and a ` +
+      `better-funded pass can take it up.`,
+  });
 }

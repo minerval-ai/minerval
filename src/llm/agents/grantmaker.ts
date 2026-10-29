@@ -348,7 +348,7 @@ async function runGrantmakerTurnImpl(input: {
       "contestation_floor, staleness_saturation_days, " +
       "user_provenance_boost, strong_gain_multiplier, " +
       "est_steward_run_cost_owls, est_steward_run_cost_strong_owls, " +
-      "staleness_base_days, staleness_max_per_sweep.",
+      "staleness_base_days.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -478,7 +478,7 @@ async function runGrantmakerTurnImpl(input: {
   // Web search on every provider (tools/web-search-tool.ts): a funder who
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
-  const webSearch = createWebSearch(model, 5);
+  const webSearch = createWebSearch(model);
   // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
   // and — once a mandate is live — its workspace, one implementation
   // shared with the planning and review passes.

@@ -39,6 +39,8 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ grantmakerModel: "claude-sonnet-5-5" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   withAgent: (_a: string, fn: () => unknown) => fn(),
   withSkills: (_s: string[], fn: () => unknown) => fn(),
   getUsageContext: () => ({}),

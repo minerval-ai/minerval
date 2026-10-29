@@ -45,7 +45,6 @@ export async function runConsistencySweep(
   opts: {
     partition?: SweepPartition;
     model?: string;
-    maxFlags?: number;
     /** Judge without writing: no sweep row, no flags (the eval's coherence read). */
     dryRun?: boolean;
   } = {}
@@ -80,7 +79,6 @@ export async function runConsistencySweep(
       claimsInScope,
       lastSweep,
       model: opts.model,
-      maxFlags: opts.maxFlags,
       dryRun: opts.dryRun,
     });
     await close({ status: "done", runId: run.runId, flagsRaised: run.flagsRaised, note: run.note });

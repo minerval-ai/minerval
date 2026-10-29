@@ -64,6 +64,8 @@ vi.mock("../../../src/db/client.js", () => ({
 }));
 
 vi.mock("../../../src/services/action-service.js", () => ({
+  actionBudgetMicroUsd: (a: { cost_est_micro_usd: number | string; coverage_micro_usd: number | string }) =>
+    Math.max(Number(a.cost_est_micro_usd) || 0, Number(a.coverage_micro_usd) || 0),
   nextRunnableAction: vi.fn(async () => state.action),
   claimAction: vi.fn(async () => true),
   releaseAction: vi.fn(async (id: string) => {
@@ -123,6 +125,8 @@ vi.mock("../../../src/services/source-service.js", () => ({
 }));
 
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   runWithUsageContext: (_ctx: unknown, fn: () => Promise<unknown>) => fn(),
   withCostMeter: async (fn: () => Promise<unknown>) => {
     await fn();

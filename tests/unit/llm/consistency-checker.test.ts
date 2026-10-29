@@ -31,11 +31,13 @@ const { state } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ consistencyModel: "openai/gpt-6-luna", consistencyMaxFlagsPerSweep: 2 }),
+  loadConfig: () => ({ consistencyModel: "openai/gpt-6-luna" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  budgetRefusal: () => null,
   withAgent: (_a: string, fn: () => unknown) => fn(),
   getUsageContext: () => ({ runId: "run-1" }),
+  runBudget: () => null,
 }));
 vi.mock("../../../src/llm/prompts/consistency-checker.js", () => ({
   getConsistencyCheckerSystemPromptBlocks: () => ["SYSTEM"],
@@ -140,19 +142,18 @@ describe("runConsistencyChecker", () => {
     expect(JSON.parse(state.outputs[0]!)).toMatchObject({ total: 20, offset: 15 });
   });
 
-  it("passes the expected gain through and stops at the per-sweep cap", async () => {
-    state.script = [flag(), flag(OTHER), flag()];
+  it("passes the expected gain through, with no count on the flags a sweep may raise", async () => {
+    state.script = [flag(), flag(OTHER), flag("dd99c243-0000-4000-8000-000000000003")];
     const res = await runConsistencyChecker(base);
-    expect(state.flags).toHaveLength(2);
+    expect(state.flags).toHaveLength(3);
     expect(state.flags[0]).toMatchObject({ sweepId: "sweep-1", primaryClaimId: PRIMARY, expectedGain: 0.7 });
-    expect(JSON.parse(state.outputs[2]!)).toMatchObject({ ok: false, code: "SWEEP_LIMIT" });
-    expect(res.flagsRaised).toBe(2);
-    expect(res.proposed).toHaveLength(2);
+    expect(res.flagsRaised).toBe(3);
+    expect(res.proposed).toHaveLength(3);
   });
 
   it("writes nothing in a dry run, and counts only valid, distinct proposals", async () => {
     state.script = [flag(), flag(OTHER), flag(), flag("dd99c243")];
-    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true, maxFlags: 10 });
+    const res = await runConsistencyChecker({ ...base, sweepId: null, dryRun: true });
     expect(state.flags).toHaveLength(0);
     expect(res.proposed.map((p) => p.primary_claim_id)).toEqual([PRIMARY, OTHER]);
     expect(res.repeats).toBe(1);

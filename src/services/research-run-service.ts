@@ -48,9 +48,6 @@ export function modelForTier(tier: ResearchModelTier): string {
   }
 }
 
-export const NOTEBOOK_MAX_SECTION_CHARS = 40_000;
-export const NOTEBOOK_MAX_SECTIONS = 100;
-
 export interface ResearchRunRow {
   id: string;
   claim_id: string | null;

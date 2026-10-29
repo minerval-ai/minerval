@@ -30,19 +30,17 @@ vi.mock("../../../../src/services/usage-service.js", () => ({
 
 import {
   elicitConfigured,
-  elicitEnabledForImportance,
   getElicitToolDefinitions,
   executeElicitTool,
   isElicitTool,
   resetElicitClientForTests,
 } from "../../../../src/llm/tools/elicit-tools.js";
 import type { Config } from "../../../../src/config.js";
+import { withCostMeter } from "../../../../src/llm/usage-context.js";
 
 const baseConfig = {
   elicitApiKey: "test-key",
   elicitMcpUrl: "https://elicit.example/api/mcp",
-  stewardElicitMinImportance: 0.75,
-  stewardElicitMaxCallsPerRun: 3,
   elicitUsdPerCall: 0.1,
 } as Config;
 
@@ -51,16 +49,7 @@ const disabledConfig = { ...baseConfig, elicitApiKey: "" } as Config;
 describe("elicit gating", () => {
   it("is off entirely without an API key", () => {
     expect(elicitConfigured(disabledConfig)).toBe(false);
-    expect(elicitEnabledForImportance(0.95, disabledConfig)).toBe(false);
-  });
-
-  it("enables only at or above the importance threshold", () => {
-    // The caveat in #299's steward wiring: Elicit is overkill for most
-    // claims, so only the highest-importance ones get the tools at all.
-    expect(elicitEnabledForImportance(0.9, baseConfig)).toBe(true);
-    expect(elicitEnabledForImportance(0.75, baseConfig)).toBe(true);
-    expect(elicitEnabledForImportance(0.6, baseConfig)).toBe(false);
-    expect(elicitEnabledForImportance(0.15, baseConfig)).toBe(false);
+    expect(elicitConfigured(baseConfig)).toBe(true);
   });
 
   it("recognizes prefixed tool names", () => {
@@ -108,7 +97,8 @@ describe("getElicitToolDefinitions", () => {
       "elicit_search_papers",
       "elicit_search_trials",
     ]);
-    expect(defs[0]!.description).toBe("Search papers");
+    // The price is part of the definition: the agent decides with it.
+    expect(defs[0]!.description).toBe("Search papers\n\nEach call costs $0.10 against the run's budget.");
   });
 
   it("degrades to [] when the provider is unreachable (§20)", async () => {
@@ -150,6 +140,17 @@ describe("executeElicitTool", () => {
       unitKind: "call",
       costMicroUsd: 100_000,
     });
+  });
+
+  it("declines a call the run's budget cannot cover, before dialing Elicit", async () => {
+    const { value } = await withCostMeter(
+      () => executeElicitTool("elicit_search_papers", { query: "x" }, baseConfig),
+      { ceilingMicroUsd: 50_000 }
+    );
+    expect(JSON.parse(value)).toMatchObject({ success: false });
+    expect(JSON.parse(value).message).toContain("$0.10");
+    expect(mockCallTool).not.toHaveBeenCalled();
+    expect(mockMeterExternal).not.toHaveBeenCalled();
   });
 
   it("meters nothing for a call that never reached Elicit", async () => {

@@ -45,6 +45,7 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
 import { runGeneralAllocator } from "../services/allocation-service.js";
 import {
+  actionBudgetMicroUsd,
   claimAction,
   completeAction,
   largestActionFunder,
@@ -53,6 +54,7 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { estimateStewardRunCostMicroUsd } from "../services/cost-estimate-service.js";
 import {
   STEWARD_LEASE_STALE_MINUTES,
   stewardReleaseSet,
@@ -289,6 +291,12 @@ async function runStewardOnClaim(
   const attempts = task.steward_attempts ?? 0;
   const action = input.action;
 
+  // The run's budget: what the action's funders covered, or the expected
+  // cost of a pass on this tier when no action stands behind it.
+  const ceilingMicroUsd = action
+    ? actionBudgetMicroUsd(action)
+    : await estimateStewardRunCostMicroUsd(input.model).catch(() => undefined);
+
   try {
     const { billedMicroUsd } = await withStewardLease(
       { claimId: task.id, ...(action ? { actionId: action.id } : {}) },
@@ -300,7 +308,8 @@ async function runStewardOnClaim(
               claimId: task.id,
               context: task.steward_context ?? "",
               model: input.model,
-            })
+            }),
+            { ceilingMicroUsd }
           )
         )
     );

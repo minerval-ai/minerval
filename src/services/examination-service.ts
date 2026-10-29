@@ -28,7 +28,6 @@ export class ExaminationError extends Error {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_FACETS = 8;
 
 function uuid(value: unknown, field: string): string {
   const v = typeof value === "string" ? value.trim() : "";
@@ -60,7 +59,6 @@ export function normalizeFacets(value: unknown): string[] {
   if (facets.length === 0) {
     throw new ExaminationError('facets is required: what to check, as short labels such as "data", "quotation", "method".');
   }
-  if (facets.length > MAX_FACETS) throw new ExaminationError(`At most ${MAX_FACETS} facets; scope the examination.`);
   for (const f of facets) {
     if (!/^[a-z0-9_-]{1,40}$/.test(f)) {
       throw new ExaminationError(`Facet "${f}" must be a short label of letters, digits, hyphens, or underscores.`);

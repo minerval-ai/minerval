@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The delegation tools (#298) over a mocked run service and a scripted
 // researcher: the brief is validated, the tier resolves to a model, the
-// ceiling is capped, the per-pass count and the daily cap and the pause
-// flag refuse a launch, the run row is opened and closed around the run,
-// and the report comes back as the tool result.
+// ceiling must fit the launcher's remaining budget, the daily cap and the
+// pause flag refuse a launch, the run row is opened and closed around the
+// run, and the report comes back as the tool result.
 
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
@@ -20,10 +20,7 @@ const mocks = vi.hoisted(() => ({
     researcherStrongModel: "claude-opus-5-5",
     researcherStandardModel: "claude-sonnet-5-5",
     researcherCheapModel: "openai/gpt-6-luna",
-    researcherMaxCeilingOwls: 3,
-    researcherMaxRunsPerLauncherRun: 2,
     researcherMaxWallMinutes: 20,
-    researcherMaxTurns: 60,
     owlCostMicroUsd: 1_000_000,
   },
 }));
@@ -57,7 +54,7 @@ import {
   getResearchToolDefinitions,
 } from "../../../../src/llm/tools/research-tools.js";
 import type { ResearcherInput, ResearcherResult } from "../../../../src/llm/agents/researcher.js";
-import { getUsageContext, runWithUsageContext } from "../../../../src/llm/usage-context.js";
+import { getUsageContext, runWithUsageContext, withCostMeter } from "../../../../src/llm/usage-context.js";
 
 const CLAIM = "aaaaaaaa-0000-4000-8000-000000000001";
 const RUN = "cccccccc-0000-4000-8000-000000000001";
@@ -105,13 +102,14 @@ beforeEach(() => {
 });
 
 describe("definitions", () => {
-  it("names the tiers, the ceiling, and the per-pass cap, and offers claim_id only off a claim", () => {
+  it("names the tiers and where the budget comes from, and offers claim_id only off a claim", () => {
     const [delegate, get] = getResearchToolDefinitions({ claimScoped: true });
     expect(delegate!.name).toBe("delegate_research");
     expect(get!.name).toBe("get_research_run");
     expect(delegate!.description).toMatch(/'strong'.*'standard'.*'cheap'/s);
-    expect(delegate!.description).toContain("at most 3 per run");
-    expect(delegate!.description).toContain("at most 2 runs");
+    expect(delegate!.description).toContain("comes out of your own run's budget");
+    expect(delegate!.description).toContain("wall-clock cap of 20 minutes");
+    expect(delegate!.description).not.toMatch(/at most \d+ (per run|runs)/);
     const props = (delegate!.input_schema as { properties: Record<string, unknown> }).properties;
     expect(Object.keys(props)).toEqual([
       "task", "model_tier", "budget_usd", "effort", "include_constitution", "examine_source_id", "facets",
@@ -146,7 +144,7 @@ describe("delegate_research", () => {
     expect(await tools.execute("something_else", {})).toBeNull();
   });
 
-  it("resolves the tier, caps the ceiling, opens and closes the run, and returns the report", async () => {
+  it("resolves the tier, takes the ceiling asked for, opens and closes the run, and returns the report", async () => {
     const runResearcher = vi.fn(async (_input: ResearcherInput) => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     const out = JSON.parse(
@@ -174,8 +172,8 @@ describe("delegate_research", () => {
         modelTier: "standard",
         effort: null,
         includeConstitution: false,
-        // 12 USD asked, 3 owls (3 USD) is the most a run may be given.
-        ceilingMicroUsd: 3_000_000,
+        // A launcher with no budget of its own gives what it asks for.
+        ceilingMicroUsd: 12_000_000,
       })
     );
     const passed = runResearcher.mock.calls[0]![0];
@@ -252,15 +250,19 @@ describe("delegate_research", () => {
     );
   });
 
-  it("refuses past the per-pass cap, when paused, over the daily cap, and when disabled", async () => {
+  it("refuses a run larger than the launcher has left, when paused, over the daily cap, and when disabled", async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
-    const call = () => tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 });
-    expect(JSON.parse((await call())!).success).toBe(true);
-    expect(JSON.parse((await call())!).success).toBe(true);
-    const third = JSON.parse((await call())!);
-    expect(third.success).toBe(false);
-    expect(third.message).toMatch(/already launched 2 research run\(s\)/);
+    const call = (budget_usd: number) =>
+      tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd });
+    // No count of launches: three in one pass are fine.
+    for (let i = 0; i < 3; i++) expect(JSON.parse((await call(1))!).success).toBe(true);
+    // Inside a run with $2 of budget, a $3 run does not fit; a $1.50 one does.
+    const { value: over } = await withCostMeter(() => call(3), { ceilingMicroUsd: 2_000_000 });
+    expect(JSON.parse(over!).success).toBe(false);
+    expect(JSON.parse(over!).message).toMatch(/would exceed what your run has left \(\$2\.00 of \$2\.00\)/);
+    const { value: fits } = await withCostMeter(() => call(1.5), { ceilingMicroUsd: 2_000_000 });
+    expect(JSON.parse(fits!).success).toBe(true);
 
     const fresh = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     mocks.readResearcherPaused.mockResolvedValueOnce(true);

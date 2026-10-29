@@ -589,29 +589,27 @@ export async function fundGrantSelfActions(): Promise<number> {
         AND a.kind IN ('grant_planning', 'mandate_review', 'lookout_run', 'ingest', 'consistency_sweep')
         AND g.status IN ('planning', 'active')
         AND j.status = 'running'
-        -- Review passes are chainable but not unbounded: fund at most the
-        -- configured passes per mandate per UTC day (each pass consumes
-        -- one allocation on its review group, so counting today's
-        -- allocations counts today's funded passes). Lookout runs carry
-        -- the same bound with their own cap: a burst of queued events is
-        -- read by the next funded run, never turned into a burst of runs.
-        AND (a.kind NOT IN ('mandate_review', 'lookout_run')
-             OR (SELECT COUNT(*) FROM action_allocations al
-                  WHERE al.exclusion_group = a.exclusion_group
-                    AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-                < (CASE WHEN a.kind = 'mandate_review' THEN $1::int ELSE $2::int END))
+        -- Review passes and lookout runs have no count of their own: each
+        -- is funded out of the mandate's day like any of its work, so a
+        -- mandate that chains passes or keeps a busy watch spends its own
+        -- day's room doing so, and its Grantmaker sees that room in the
+        -- review briefing. A burst of queued lookout events is still read
+        -- by one run, since a run reads everything waiting. The two
+        -- switches are deployment off-switches only.
+        AND (a.kind <> 'mandate_review' OR $2::boolean)
+        AND (a.kind <> 'lookout_run' OR $3::boolean)
         -- Consistency sweeps are capped per day across ALL partitions:
         -- the cap bounds the platform's sweep spend, not each tag's.
         AND (a.kind <> 'consistency_sweep'
              OR (SELECT COUNT(*) FROM action_allocations al
                   WHERE al.exclusion_group LIKE 'consistency:%'
                     AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-                < $3::int)
+                < $1::int)
       LIMIT 100`,
     [
-      loadConfig().mandateReviewMaxPassesPerDay ?? 12,
-      loadConfig().lookoutMaxRunsPerDay ?? 6,
       loadConfig().consistencyMaxSweepsPerDay ?? 0,
+      loadConfig().mandateReviewEnabled !== false,
+      loadConfig().lookoutRunsEnabled !== false,
     ]
   );
   let placed = 0;

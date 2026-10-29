@@ -30,6 +30,8 @@ vi.mock("../../../src/services/shared-analysis-service.js", () => ({
 
 // Capture the ambient usage context the route establishes for metering (#70).
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   runWithUsageContext: (ctx: unknown, fn: () => unknown) => {
     mocks.usageContexts.push(ctx);
     return fn();

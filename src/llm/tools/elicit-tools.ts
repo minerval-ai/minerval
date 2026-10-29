@@ -13,13 +13,13 @@
  * minutes and would burn the Steward's iteration budget polling; if that
  * tier is ever warranted it belongs to the researcher subagent (#298).
  *
- * Every call here costs real money, not just tokens (#300), so availability
- * is gated twice before this module is even consulted: an ELICIT_API_KEY
- * must be configured, and the claim being stewarded must clear the
- * stewardElicitMinImportance threshold (§19 — only the highest-importance
- * claims warrant it). Failures degrade gracefully (§20): a down or erroring
- * provider yields an error tool-result the agent routes around, never a
- * crashed stewardship run.
+ * Every call here costs real money, not just tokens (#300). The tools exist
+ * only when an ELICIT_API_KEY is configured; each definition states the
+ * per-call price, and a call the run's budget cannot cover is declined
+ * before it is sent, so whether a claim warrants a scholarly search is the
+ * agent's judgment, priced. Failures degrade gracefully (§20): a down or
+ * erroring provider yields an error tool-result the agent routes around,
+ * never a crashed stewardship run.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -27,6 +27,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig, type Config } from "../../config.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
+import { budgetRefusal } from "../usage-context.js";
 
 export const ELICIT_TOOL_PREFIX = "elicit_";
 
@@ -37,20 +38,6 @@ const ALLOWED_ELICIT_TOOLS = new Set(["search_papers", "search_trials"]);
 /** Whether the Elicit connector is configured at all (deploy-level switch). */
 export function elicitConfigured(config: Config = loadConfig()): boolean {
   return config.elicitApiKey.length > 0;
-}
-
-/**
- * Whether the Steward run for a claim of this importance should be offered
- * the Elicit tools. The gate is importance (§19): Elicit is overkill for
- * most claims, so only those at or above the configured threshold (default
- * 0.75 — between the Major ≈0.6 and Central ≈0.9 anchors) get the tools in
- * their toolset at all.
- */
-export function elicitEnabledForImportance(
-  importance: number,
-  config: Config = loadConfig()
-): boolean {
-  return elicitConfigured(config) && importance >= config.stewardElicitMinImportance;
 }
 
 export function isElicitTool(name: string): boolean {
@@ -107,7 +94,9 @@ export async function getElicitToolDefinitions(
       .filter((t) => ALLOWED_ELICIT_TOOLS.has(t.name))
       .map((t) => ({
         name: `${ELICIT_TOOL_PREFIX}${t.name}`,
-        description: t.description ?? "",
+        description:
+          `${t.description ?? ""}\n\nEach call costs $${config.elicitUsdPerCall.toFixed(2)} ` +
+          `against the run's budget.`.trimStart(),
         input_schema: t.inputSchema as Tool["input_schema"],
       }));
   } catch (err) {
@@ -137,6 +126,8 @@ export async function executeElicitTool(
       message: `Unknown Elicit tool: ${toolName}`,
     });
   }
+  const refusal = budgetRefusal(toolName, config.elicitUsdPerCall * 1_000_000);
+  if (refusal) return refusal;
   try {
     const client = await getElicitClient(config);
     const result = await client.callTool({

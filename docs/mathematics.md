@@ -1140,13 +1140,11 @@ Steward to assess on the informal evidence and to record in the reasoning
 trace that formal verification was unavailable. A `lean_check` timeout is a
 result (`verdict: "error"`), not an exception.
 
-Per-run caps in the Steward's `executeTool` dispatcher, beside the Elicit cap
-(`src/llm/agents/claim-steward.ts:207-223`):
-`STEWARD_LEAN_MAX_SEARCHES_PER_RUN` (12), `STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN`
-(10), `STEWARD_LEAN_MAX_CHECKS_PER_RUN` (3).
-Each refusal is a JSON tool result telling the agent what to do instead. The
-caps are backstops in the constitution's sense; the judgment about whether a
-check is worth its cost lives in the skill text.
+There is no count on the Lean tools in a Steward run. A proof check is
+billed from the checker's time against the run's budget, which the Steward
+sees after every turn, and `lean_check` is declined once that budget is
+spent (docs/allocation.md, "Agents work to a budget they can see"). The
+judgment about whether a check is worth its cost lives in the skill text.
 
 ### 6.3 Metering real money
 
@@ -1258,9 +1256,9 @@ the standard computer-algebra toolkit, a simple persistent prompt stating the
 problem," on the strong model. That is what this is. Tools, declared at run
 start and never changed (the preserved-thinking rule): `lean_search`,
 `lean_elaborate`, `lean_check` (with `formalization_id` fixed to the
-attempt's statement, so the solver cannot check against a different one, and
-solver caps `SOLVER_LEAN_MAX_CHECKS` 60 and `SOLVER_LEAN_MAX_ELABORATIONS`
-200); the provider's code-execution tool as the computer-algebra toolkit
+attempt's statement, so the solver cannot check against a different one;
+there is no count on checks or elaborations, since the attempt's dollar
+ceiling bounds them); the provider's code-execution tool as the computer-algebra toolkit
 (sympy and mpmath are preinstalled; the container has one CPU, five
 gibibytes, no network, and cannot hold Mathlib, which is why Lean is a client
 tool); `notebook_write {section, content}` and `notebook_read {}` backed by

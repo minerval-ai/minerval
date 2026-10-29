@@ -27,6 +27,7 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { estimateStewardRunCostMicroUsd } from "../services/cost-estimate-service.js";
 import {
   acquireStewardLock,
   releaseStewardLock,
@@ -71,6 +72,11 @@ export interface DirectStewardInput {
   userId?: string;
   /** Test and harness override; production ignores it unless it is the strong model. */
   model?: string;
+  /**
+   * The run's budget: what the funding action covered. Defaults to the
+   * expected cost of a Steward run on the trigger's model.
+   */
+  ceilingMicroUsd?: number;
 }
 
 export interface DirectStewardResult {
@@ -135,6 +141,7 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
   }
   const model = moneyTriggerModel(input.trigger, input.model);
   await assertTriggerToolsActive(input.trigger, input.claimId);
+  const ceilingMicroUsd = input.ceilingMicroUsd ?? (await estimateStewardRunCostMicroUsd(model));
   const restore = await acquireStewardLock(input.claimId);
   try {
     const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
@@ -151,7 +158,8 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
               claimId: input.claimId,
               context: input.context,
               model,
-            })
+            }),
+            { ceilingMicroUsd }
           )
       )
     );

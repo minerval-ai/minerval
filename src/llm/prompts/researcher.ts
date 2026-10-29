@@ -220,12 +220,10 @@ export interface ResearcherTaskInput {
   estimate: BudgetEstimate | null;
   /** The turn cap, a backstop the budget normally reaches first. */
   maxTurns: number;
-  /** The per-run cap on Elicit calls, when Elicit is in the toolset. */
-  elicitMaxCalls: number;
   /** What one Elicit call costs, in USD. */
   elicitUsdPerCall: number;
-  /** The per-run cap on Pangram calls, when the Pangram tools are in the toolset. */
-  pangramMaxCalls?: number;
+  /** The wall-clock cap, in minutes: the launcher's run waits on this one. */
+  maxWallMinutes?: number;
   /** The most one Pangram call can cost, in USD (it is billed per word sent). */
   pangramMaxUsdPerCall?: number;
   toolNames: string[];
@@ -308,7 +306,10 @@ export function budgetGuide(input: ResearcherTaskInput): string {
   }
   lines.push(
     `After every turn you will see what you have spent and about how many turns remain at your recent rate, and a notice when about fifteen percent remains. ` +
-      `The run is also capped at ${input.maxTurns} turns.`
+      `Separately, a guard of ${input.maxTurns} turns stops a stuck loop` +
+      (input.maxWallMinutes
+        ? `, and the run must report within ${input.maxWallMinutes} minutes of wall-clock time, because whoever launched it is waiting on the report.`
+        : ".")
   );
   const costs: string[] = [];
   const has = (n: string) => input.toolNames.includes(n);
@@ -317,12 +318,12 @@ export function budgetGuide(input: ResearcherTaskInput): string {
   if (has("code_execution")) costs.push(`code_execution is billed at $${CODE_EXECUTION_USD_PER_HOUR.toFixed(2)} per container-hour, small next to tokens`);
   if (input.toolNames.some((n) => n.startsWith("elicit_"))) {
     costs.push(
-      `each elicit_ search costs $${input.elicitUsdPerCall.toFixed(2)}, and they are capped at ${input.elicitMaxCalls} calls this run`
+      `each elicit_ search costs $${input.elicitUsdPerCall.toFixed(2)}`
     );
   }
   if (input.toolNames.some((n) => n.startsWith("pangram_"))) {
     costs.push(
-      `each pangram_ analysis is billed per word, up to $${(input.pangramMaxUsdPerCall ?? 0).toFixed(2)} a call, and they are capped at ${input.pangramMaxCalls ?? 0} calls this run`
+      `each pangram_ analysis is billed per word, up to $${(input.pangramMaxUsdPerCall ?? 0).toFixed(2)} a call`
     );
   }
   if (costs.length > 0) {

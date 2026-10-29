@@ -27,8 +27,7 @@ type Tool = Anthropic.Tool;
 import { loadConfig } from "../../config.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
-import { getUsageContext, runWithUsageContext, withCostMeter } from "../usage-context.js";
-import { owlsToMicroUsd } from "../../services/owl.js";
+import { getUsageContext, runBudget, runWithUsageContext, withCostMeter } from "../usage-context.js";
 import {
   RESEARCH_MODEL_TIERS,
   checkResearcherBudget,
@@ -97,8 +96,10 @@ export function getFundRequestToolDefinition(): Tool {
       "brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
       "is a complete one and paid for alike: met, partly met, a negative result, cannot be met, " +
       "declined, or a recommendation to revise the request. The outcome is recorded as work on " +
-      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, at " +
-      `most ${config.researcherMaxCeilingOwls} per run. The call blocks until the work reports.`,
+      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, paid " +
+      "from the mandate's escrow: size it to what the request is worth to the mission. The call " +
+      `blocks until the work reports (a wall-clock cap of ${config.researcherMaxWallMinutes} ` +
+      "minutes applies).",
     input_schema: {
       type: "object",
       properties: {
@@ -118,8 +119,6 @@ export function getResearchToolDefinitions(
 ): Tool[] {
   const config = loadConfig();
   const graphWrites = input.graphWrites ?? true;
-  const maxOwls = config.researcherMaxCeilingOwls;
-  const maxRuns = config.researcherMaxRunsPerLauncherRun;
   return [
     {
       name: DELEGATE_RESEARCH_TOOL_NAME,
@@ -148,9 +147,10 @@ export function getResearchToolDefinitions(
         "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
         "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
         "sandbox, and is right for reading and mapping a large literature economically. " +
-        `Budget is in USD of metered work, at most ${maxOwls} per run; you may launch at most ` +
-        `${maxRuns} runs in this pass. The call blocks until the researcher reports (a wall ` +
-        `cap of ${config.researcherMaxWallMinutes} minutes applies). Its findings are evidence ` +
+        "Budget is in USD of metered work and comes out of your own run's budget, since what " +
+        "the researcher spends is billed to your run: a run larger than what you have left is " +
+        "declined. The call blocks until the researcher reports (a wall-clock cap of " +
+        `${config.researcherMaxWallMinutes} minutes applies, because your run waits on it). Its findings are evidence ` +
         "you weigh, never a verdict: read the report against its sources, and record what " +
         "you conclude in your own reasoning.",
       input_schema: {
@@ -169,7 +169,7 @@ export function getResearchToolDefinitions(
           },
           budget_usd: {
             type: "number",
-            description: `The ceiling on metered work for this run, in USD (at most ${maxOwls}).`,
+            description: "The ceiling on metered work for this run, in USD, out of your own run's remaining budget.",
           },
           effort: {
             type: "string",
@@ -198,7 +198,7 @@ export function getResearchToolDefinitions(
             items: { type: "string" },
             description:
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
-              "\"method\", \"attribution\"), at most eight.",
+              "\"method\", \"attribution\"). Each facet shares the run's budget.",
           } } : {}),
           ...(!graphWrites
             ? {
@@ -207,7 +207,7 @@ export function getResearchToolDefinitions(
                   description:
                     "How many contributions the researcher may submit from what it finds, under the " +
                     "mandate, each reviewed like anyone's at the mandate's expense (default 0: it only " +
-                    `reports). At most ${MAX_MANDATE_CONTRIBUTIONS}.`,
+                    "reports).",
                 },
               }
             : {}),
@@ -252,8 +252,6 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
-/** The most contributions one mandate-funded run may submit. */
-const MAX_MANDATE_CONTRIBUTIONS = 10;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
@@ -324,7 +322,8 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
                 scope: examination.scope,
               }
             : null,
-        })
+        }),
+        { ceilingMicroUsd: row.ceiling_micro_usd }
       ));
       result = metered.value;
       billed = metered.billedMicroUsd;
@@ -360,20 +359,21 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
       return refuse("budget_usd must be a positive number of USD.");
     }
-    const maxCeilingMicroUsd = owlsToMicroUsd(config.researcherMaxCeilingOwls);
-    const ceilingMicroUsd = Math.min(maxCeilingMicroUsd, Math.round(budgetUsd * 1_000_000));
-    if (ceilingMicroUsd <= 0) {
-      return refuse("The researcher's per-run ceiling is zero in this deployment (RESEARCHER_MAX_CEILING_OWLS).");
+    const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
+    // The run is billed to the launcher's own (see runOnRow), so it must
+    // fit what the launcher has left.
+    const launcherBudget = runBudget();
+    if (launcherBudget && ceilingMicroUsd > launcherBudget.remainingMicroUsd) {
+      return refuse(
+        `A $${budgetUsd.toFixed(2)} research run would exceed what your run has left ` +
+          `($${(Math.max(0, launcherBudget.remainingMicroUsd) / 1_000_000).toFixed(2)} of ` +
+          `$${(launcherBudget.ceilingMicroUsd / 1_000_000).toFixed(2)}). Launch a smaller one, ` +
+          `do the work inline, or record in your reasoning what a better-funded pass should delegate.`
+      );
     }
     const effortRaw = str(input.effort);
     const effort = (EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high";
     const includeConstitution = input.include_constitution !== false;
-    const cap = config.researcherMaxRunsPerLauncherRun;
-    if (cap > 0 && launched >= cap) {
-      return refuse(
-        `This pass has already launched ${launched} research run(s), the per-run backstop (${cap}). Work with the reports you have and record what you would have delegated in your reasoning.`
-      );
-    }
     if (await readResearcherPaused()) {
       return refuse("The operator has paused the researcher. Do the work inline or leave it for a later pass.");
     }
@@ -447,7 +447,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     // provenance instead.
     const contributionAllowance = graphWrites
       ? 0
-      : Math.min(MAX_MANDATE_CONTRIBUTIONS, Math.max(0, Math.floor(Number(input.max_contributions) || 0)));
+      : Math.max(0, Math.floor(Number(input.max_contributions) || 0));
     const { result, billed, failure } = await runOnRow(row, claim, examination, contributionAllowance);
 
     if (failure || !result) {
@@ -515,12 +515,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const tier = tierRaw as ResearchModelTier;
     const budgetUsd = Number(input.budget_usd);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
-    const ceilingMicroUsd = Math.min(owlsToMicroUsd(config.researcherMaxCeilingOwls), Math.round(budgetUsd * 1_000_000));
-    if (ceilingMicroUsd <= 0) return refuse("The researcher's per-run ceiling is zero in this deployment.");
-    const cap = config.researcherMaxRunsPerLauncherRun;
-    if (cap > 0 && launched >= cap) {
-      return refuse(`This pass has already launched ${launched} research run(s), the per-run backstop (${cap}).`);
-    }
+    const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
     if (await readResearcherPaused()) return refuse("The operator has paused the researcher.");
     try {
       await checkResearcherBudget(ceilingMicroUsd);

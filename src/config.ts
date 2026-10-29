@@ -166,9 +166,11 @@ const configSchema = z.object({
   // idempotency keys, and leaderboard accounting are all live and tested,
   // so enabling is a config change, not a deploy.
   contributionAwardOwlPerPoint: z.coerce.number().default(0),
-  // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited).
-  // A blunt in-memory backstop against runaway clients; the real spend
-  // guardrail is the owl balance.
+  // Per-key rate limit on agentic endpoints (requests/hour, 0 = unlimited),
+  // for the traffic no price covers: service calls with no acting user,
+  // which run as system work and are charged to nobody. A caller acting as
+  // a user pays for each operation from their owl balance, which is the
+  // bound on what they can spend, so their calls are not rate-limited.
   agenticRateLimitPerHour: z.coerce.number().default(30),
 
   // Stripe (#309). Empty/placeholder secret key = payments off: owls can't
@@ -419,19 +421,16 @@ const configSchema = z.object({
   // Mandate review passes (kind 'mandate_review'): a mandate's Grantmaker
   // can chain passes within a day (continue_review) when the mission needs
   // the bandwidth — enumerating a big source backlog, a territory survey.
-  // This caps how many passes a day the ledger will FUND per mandate: a
-  // cost bound on the mechanism, deliberately not a narrowing of the
-  // agent's affordances. Each pass is also individually capped and metered.
-  // 0 is a deliberate off-switch (no autonomous review passes get funded);
-  // negative values are a misconfiguration, refused at startup.
-  // 12 was set when review passes were funded beside the daily rate rather
-  // than out of it, so the count was the only bound. Now that they compete
-  // with the mandate's substantive work for the same room, a mandate that
-  // spends a third of its day deliberating is choosing that at the expense
-  // of assessments, and 4 is the honest ceiling on a pace nobody would set
-  // deliberately. Raise it per-deployment if a mission genuinely needs the
-  // bandwidth.
-  mandateReviewMaxPassesPerDay: z.coerce.number().int().min(0).default(4),
+  // There is no count of passes: each is funded out of the mandate's day
+  // like the rest of its work, and the briefing shows the Grantmaker what
+  // the day has left, so chaining is a choice it makes against its own
+  // assessments. This switch is the deployment's off-switch alone: "false"
+  // funds no autonomous review passes (the corpus evals use it). Same
+  // string convention as enableContributions.
+  mandateReviewEnabled: z
+    .string()
+    .transform((s) => s !== "false")
+    .prefault("true"),
   // Structural bounds on the AUTONOMOUS review pass's money movement
   // (regrant + spawn_mandate): at most this fraction of the mandate's
   // escrowed budget per pass / per UTC day. The review agent reads
@@ -441,13 +440,15 @@ const configSchema = z.object({
   // Grantmaker chat is not bound by them (a human is in the loop).
   mandateReviewMoveFractionPerPass: z.coerce.number().min(0).max(1).default(0.25),
   mandateReviewMoveFractionPerDay: z.coerce.number().min(0).max(1).default(0.5),
-  // Lookout runs (kind 'lookout_run'): the cap on how many runs a day the
-  // ledger will FUND per lookout, the same shape as the review-pass cap. A
-  // lookout wakes on its heartbeat and on queued events, and a burst of
-  // events (a poller matching many retractions at once) must not turn into
-  // a burst of runs; the events wait for the next funded run, which reads
-  // them all. 0 is the off-switch: no lookout runs get funded.
-  lookoutMaxRunsPerDay: z.coerce.number().int().min(0).default(6),
+  // Lookout runs (kind 'lookout_run'): funded out of the mandate's day like
+  // the rest of its work, with no count of runs. A burst of events (a
+  // poller matching many retractions at once) does not become a burst of
+  // runs, because one run reads everything waiting. "false" is the
+  // deployment's off-switch: no lookout runs get funded.
+  lookoutRunsEnabled: z
+    .string()
+    .transform((s) => s !== "false")
+    .prefault("true"),
   // The retraction poller (workers/lookout-triggers.ts): how often to ask
   // Crossref for retractions and corrections added since the last poll and
   // match them against the graph's sources (0 disables). Each match queues
@@ -459,11 +460,10 @@ const configSchema = z.object({
   lookoutFeedPollMaxFeeds: z.coerce.number().int().min(0).default(100),
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
-  // (0 disables), and the reassessment-inflow cap per sweep — a bounded
-  // producer so cadence can never cascade the queue (#295's R<1).
+  // (0 disables). Every claim past its interval is re-enqueued; which of
+  // them run is the ledger's call, bounded by the mandates' daily rates.
   allocationSweepIntervalHours: z.coerce.number().default(6),
   stalenessBaseDays: z.coerce.number().default(60),
-  stalenessMaxPerSweep: z.coerce.number().default(5),
   // Grant policy 'maintain': in-scope assessments older than this many days
   // are due for a funded refresh.
   grantMaintainCadenceDays: z.coerce.number().default(30),
@@ -488,21 +488,6 @@ const configSchema = z.object({
   // without a blunt depth cap. 0.25 = the ontology's "peripheral" ceiling, so
   // only genuinely peripheral subclaims are gated; set 0 to disable.
   stewardEnqueueMinImportance: z.coerce.number().default(0.25),
-  // Blast-radius backstop on a single Steward run (#157 phase 3): the maximum
-  // number of NEW subclaims one run may mint (add_decomposition_edge). This is
-  // a runaway guard in the constitution's "mechanism as backstop" sense — the
-  // judgment about how far to decompose stays with the Steward and the
-  // importance brake above; a run that hits this cap is told to link existing
-  // claims or stop, and the recursion (child runs) is bounded economically by
-  // stewardEnqueueMinImportance, not by this. 0 disables.
-  stewardMaxNewSubclaimsPerRun: z.coerce.number().default(20),
-  // Blast-radius backstop on a single Steward run (#278): the maximum number
-  // of claim instances one run may record (record_claim_instance). Recording
-  // instances is a cheap side effect of evidence reading the Steward does
-  // anyway — this cap only stops a runaway loop from ballooning a run, it is
-  // not a target. web_search is capped at 5 calls per run, so the default
-  // leaves room for a couple of instances per source read. 0 disables.
-  stewardMaxInstancesPerRun: z.coerce.number().default(10),
   // Elicit domain connector for the Steward (#299): scholarly search over
   // Elicit's remote MCP server. Empty key (the default) disables the
   // connector entirely — the Steward's toolset simply omits the elicit_*
@@ -510,19 +495,10 @@ const configSchema = z.object({
   // per deployment.
   elicitApiKey: z.string().default(""),
   elicitMcpUrl: z.string().default("https://elicit.com/api/mcp"),
-  // What one Elicit search costs, in USD, metered per call so the caller's
-  // ceiling and the daily caps see it.
+  // What one Elicit search costs, in USD: the price the tool states, the
+  // amount the run's budget must cover before a call goes out, and what
+  // is metered per call.
   elicitUsdPerCall: z.coerce.number().min(0).default(2),
-  // Importance gate (§19): only claims at or above this importance get the
-  // Elicit tools in their Steward run's toolset. Default 0.75 sits between
-  // the constitution's Major (≈0.6) and Central (≈0.9) anchors — Elicit is
-  // likely overkill for most claims, so only the highest-importance ones
-  // are offered it. 0 offers it on every claim (when the key is set).
-  stewardElicitMinImportance: z.coerce.number().default(0.75),
-  // Per-run backstop on Elicit calls, mirroring web_search's max_uses: the
-  // judgment about whether to call at all stays with the Steward, but one
-  // run cannot burn unbounded provider spend. 0 disables the cap.
-  stewardElicitMaxCallsPerRun: z.coerce.number().default(3),
   // Pangram domain tools (src/llm/tools/pangram-tools.ts): AI-writing
   // detection and original-source search over Pangram's API, for the
   // Steward and the researcher. Empty key (the default) disables them
@@ -537,21 +513,10 @@ const configSchema = z.object({
   // the account's actual rate.
   pangramAiUsdPerWord: z.coerce.number().min(0).default(0.0005),
   pangramPlagiarismUsdPerWord: z.coerce.number().min(0).default(0.0005),
-  // The most words one call sends (the rest of the text is cut), which
-  // bounds one call's cost: 1500 words is $0.75 at the default rate.
+  // The most words one call sends (the rest of the text is cut): a sample
+  // size the tool states, not a cost control (the run's budget is that).
+  // 1500 words is $0.75 at the default rate.
   pangramMaxWords: z.coerce.number().int().min(50).default(1500),
-  // Importance gate (§19) and per-run backstop for the Steward, as for
-  // Elicit. 0.6 is the constitution's Major anchor. 0 disables the cap.
-  stewardPangramMinImportance: z.coerce.number().default(0.6),
-  stewardPangramMaxCallsPerRun: z.coerce.number().min(0).default(2),
-  // Per-run backstops on the Lean tools the Mathematics skill brings to the
-  // Steward (docs/mathematics.md §6.2). There is no importance gate on these:
-  // the skill text carries the judgment about when a check is worth its
-  // cost, and the caps are the backstop. A "fresh" replay of lean_check
-  // counts double. 0 disables a cap.
-  stewardLeanMaxSearchesPerRun: z.coerce.number().default(12),
-  stewardLeanMaxElaborationsPerRun: z.coerce.number().default(10),
-  stewardLeanMaxChecksPerRun: z.coerce.number().default(3),
 
   // --- Mathematics: the Lean checker (docs/mathematics.md §5) ---
   // The lean-checker service's private base URL and bearer token. Empty
@@ -615,9 +580,6 @@ const configSchema = z.object({
   // so this one is a query. Calibration runs (§7.5) get the lower cap.
   solverDailyCapOwls: z.coerce.number().min(0).default(400),
   solverCalibrationDailyCapOwls: z.coerce.number().min(0).default(100),
-  // Per-attempt caps on the solver's Lean tool calls (§7.1); 0 = uncapped.
-  solverLeanMaxChecks: z.coerce.number().min(0).default(60),
-  solverLeanMaxElaborations: z.coerce.number().min(0).default(200),
   // The researcher (#298): the instrument an administrator launches for one
   // bounded investigation. The launcher picks a tier; these say what each
   // tier runs. Strong: the long-run loop (effort, streaming), for work
@@ -650,18 +612,16 @@ const configSchema = z.object({
     .string()
     .transform((s) => s === "true")
     .prefault("false"),
-  // Backstops, never decisions: the durable daily cap on researcher spend
-  // across processes, the most one run may be given, the most runs one
-  // launching administrator's run may start, and the wall and turn caps on
-  // one run. The launcher allocates within these.
+  // What a researcher run may spend is its ceiling, which the launcher sets
+  // out of its own budget (the run is billed to the launcher's), or out of
+  // the mandate's escrow when a Grantmaker funds a request. Two bounds
+  // remain, neither of them a judgment: the durable daily cap on researcher
+  // spend across processes (an operator's circuit breaker against a
+  // metering fault), and the wall-clock cap on one run, because the
+  // launching agent's run blocks on the report and holds its lease while it
+  // waits. The researcher is told the wall cap up front.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
-  researcherMaxCeilingOwls: z.coerce.number().min(0).default(3),
-  researcherMaxRunsPerLauncherRun: z.coerce.number().min(0).default(3),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
-  researcherMaxTurns: z.coerce.number().min(1).default(60),
-  researcherWebSearchMaxUses: z.coerce.number().min(0).default(15),
-  researcherElicitMaxCalls: z.coerce.number().min(0).default(5),
-  researcherPangramMaxCalls: z.coerce.number().min(0).default(3),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
   // turn re-reads the history, so no turn is free and the ceiling ends
@@ -777,10 +737,6 @@ const configSchema = z.object({
   // dev databases and corpus runs): Curator runs per process, 0 = unlimited,
   // mirroring stewardMaxRuns.
   curatorMaxRuns: z.coerce.number().default(0),
-  // A Steward may hold at most this many LIVE curation requests from one
-  // claim (#363): a bounded producer, so one run cannot flood the ledger with
-  // structural concerns. A request stops counting once a run has read it.
-  curationEscalationsPerClaim: z.coerce.number().int().min(0).default(3),
 
   // Governance — model IDs. Any provider-resolvable ID works (see
   // src/llm/providers/routing.ts); the defaults below come from
@@ -887,8 +843,6 @@ const configSchema = z.object({
   // capConsistencySweepOwls). 0, the default, is the off-switch: no sweep
   // rows are opened or funded.
   consistencyMaxSweepsPerDay: z.coerce.number().int().min(0).default(0),
-  // Most flags one sweep may raise: flag materially, not exhaustively.
-  consistencyMaxFlagsPerSweep: z.coerce.number().int().min(0).default(5),
   // A tag is a sweep partition only when it carries at least this many live
   // claims; every claim no such tag covers falls in the residual bucket.
   consistencyMinTagClaims: z.coerce.number().int().min(1).default(10),
@@ -936,10 +890,6 @@ const configSchema = z.object({
   // and looks for the re-assessment within this many days of acceptance.
   monitorMonotonicityTolerance: z.coerce.number().min(0).max(1).default(0.05),
   monitorMonotonicityHorizonDays: z.coerce.number().default(30),
-  // Agent reports (#366). The most raise_issue calls one agent run may
-  // record; past the cap the tool acknowledges without writing, so a chatty
-  // run cannot flood the table. 0 = unlimited.
-  agentReportsPerRun: z.coerce.number().default(3),
   // Hourly cap on raise_issue calls per external (MCP) contributor. 0 =
   // unlimited.
   reportRateLimitPerHour: z.coerce.number().default(5),
@@ -1088,29 +1038,23 @@ export function loadConfig(): Config {
     costEstimatePercentile: process.env.COST_ESTIMATE_PERCENTILE,
     backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
     backgroundFallbackLaneEnabled: process.env.BACKGROUND_FALLBACK_LANE_ENABLED,
-    mandateReviewMaxPassesPerDay: process.env.MANDATE_REVIEW_MAX_PASSES_PER_DAY,
+    mandateReviewEnabled: process.env.MANDATE_REVIEW_ENABLED,
     mandateReviewMoveFractionPerPass:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
     mandateReviewMoveFractionPerDay:
       process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
-    lookoutMaxRunsPerDay: process.env.LOOKOUT_MAX_RUNS_PER_DAY,
+    lookoutRunsEnabled: process.env.LOOKOUT_RUNS_ENABLED,
     lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
     lookoutFeedPollMaxFeeds: process.env.LOOKOUT_FEED_POLL_MAX_FEEDS,
     allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
     stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
-    stalenessMaxPerSweep: process.env.STALENESS_MAX_PER_SWEEP,
     grantMaintainCadenceDays: process.env.GRANT_MAINTAIN_CADENCE_DAYS,
     stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
-    stewardMaxNewSubclaimsPerRun:
-      process.env.STEWARD_MAX_NEW_SUBCLAIMS_PER_RUN,
-    stewardMaxInstancesPerRun: process.env.STEWARD_MAX_INSTANCES_PER_RUN,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
     elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
-    stewardElicitMinImportance: process.env.STEWARD_ELICIT_MIN_IMPORTANCE,
-    stewardElicitMaxCallsPerRun: process.env.STEWARD_ELICIT_MAX_CALLS_PER_RUN,
     pangramApiKey: process.env.PANGRAM_API_KEY,
     pangramApiUrl: process.env.PANGRAM_API_URL,
     pangramPlagiarismApiUrl: process.env.PANGRAM_PLAGIARISM_API_URL,
@@ -1118,12 +1062,6 @@ export function loadConfig(): Config {
     pangramAiUsdPerWord: process.env.PANGRAM_AI_USD_PER_WORD,
     pangramPlagiarismUsdPerWord: process.env.PANGRAM_PLAGIARISM_USD_PER_WORD,
     pangramMaxWords: process.env.PANGRAM_MAX_WORDS,
-    stewardPangramMinImportance: process.env.STEWARD_PANGRAM_MIN_IMPORTANCE,
-    stewardPangramMaxCallsPerRun: process.env.STEWARD_PANGRAM_MAX_CALLS_PER_RUN,
-    stewardLeanMaxSearchesPerRun: process.env.STEWARD_LEAN_MAX_SEARCHES_PER_RUN,
-    stewardLeanMaxElaborationsPerRun:
-      process.env.STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN,
-    stewardLeanMaxChecksPerRun: process.env.STEWARD_LEAN_MAX_CHECKS_PER_RUN,
     leanCheckerUrl: process.env.LEAN_CHECKER_URL,
     leanCheckerToken: process.env.LEAN_CHECKER_TOKEN,
     leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,
@@ -1134,20 +1072,12 @@ export function loadConfig(): Config {
     solverEnabled: process.env.SOLVER_ENABLED,
     solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
     solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
-    solverLeanMaxChecks: process.env.SOLVER_LEAN_MAX_CHECKS,
-    solverLeanMaxElaborations: process.env.SOLVER_LEAN_MAX_ELABORATIONS,
     researcherStrongModel: process.env.RESEARCHER_STRONG_MODEL,
     researcherStandardModel: process.env.RESEARCHER_STANDARD_MODEL,
     researcherCheapModel: process.env.RESEARCHER_CHEAP_MODEL,
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
-    researcherMaxCeilingOwls: process.env.RESEARCHER_MAX_CEILING_OWLS,
-    researcherMaxRunsPerLauncherRun: process.env.RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
-    researcherMaxTurns: process.env.RESEARCHER_MAX_TURNS,
-    researcherWebSearchMaxUses: process.env.RESEARCHER_WEB_SEARCH_MAX_USES,
-    researcherElicitMaxCalls: process.env.RESEARCHER_ELICIT_MAX_CALLS,
-    researcherPangramMaxCalls: process.env.RESEARCHER_PANGRAM_MAX_CALLS,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
     maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,
@@ -1179,7 +1109,6 @@ export function loadConfig(): Config {
     mathMandateDailyOwls: process.env.MATH_MANDATE_DAILY_OWLS,
     mathPrizesEscrowOwls: process.env.MATH_PRIZES_ESCROW_OWLS,
     curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
-    curationEscalationsPerClaim: process.env.CURATION_ESCALATIONS_PER_CLAIM,
     matcherModel: process.env.MATCHER_MODEL,
     stewardModel: process.env.STEWARD_MODEL,
     curatorModel: process.env.CURATOR_MODEL,
@@ -1195,7 +1124,6 @@ export function loadConfig(): Config {
     lookoutModel: process.env.LOOKOUT_MODEL,
     consistencyModel: process.env.CONSISTENCY_MODEL,
     consistencyMaxSweepsPerDay: process.env.CONSISTENCY_MAX_SWEEPS_PER_DAY,
-    consistencyMaxFlagsPerSweep: process.env.CONSISTENCY_MAX_FLAGS_PER_SWEEP,
     consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
     taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
     taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
@@ -1210,7 +1138,6 @@ export function loadConfig(): Config {
     monitorRecentChallengeDays: process.env.MONITOR_RECENT_CHALLENGE_DAYS,
     monitorMonotonicityTolerance: process.env.MONITOR_MONOTONICITY_TOLERANCE,
     monitorMonotonicityHorizonDays: process.env.MONITOR_MONOTONICITY_HORIZON_DAYS,
-    agentReportsPerRun: process.env.AGENT_REPORTS_PER_RUN,
     reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
     reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
     reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,

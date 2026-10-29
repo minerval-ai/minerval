@@ -117,9 +117,10 @@ export async function checkAgenticQuota(
 ): Promise<QuotaDecision> {
   const config = loadConfig();
 
-  const callerKey =
-    auth?.apiKeyId ?? auth?.userId ?? auth?.method ?? "anonymous";
-  if (rateLimited(callerKey, config.agenticRateLimitPerHour)) {
+  // Only unpriced traffic is rate-limited: a user pays for each operation
+  // from their balance, and that is the bound on their spend.
+  const callerKey = auth?.apiKeyId ?? auth?.method ?? "anonymous";
+  if (!auth?.userId && rateLimited(callerKey, config.agenticRateLimitPerHour)) {
     return {
       allowed: false,
       statusCode: 429,
@@ -199,7 +200,7 @@ export async function withAgenticCharge<T>(
   const charge = await chargeAgenticOp(auth, op, refs);
   if (!charge.allowed) return { ok: false, denied: charge };
   try {
-    const { value, billedMicroUsd } = await withCostMeter(fn);
+    const { value, billedMicroUsd } = await withCostMeter(fn, { ceilingMicroUsd: capMicroUsd(op) });
     if (auth?.userId && charge.entryId) {
       await settleMeteredCharge({
         userId: auth.userId,

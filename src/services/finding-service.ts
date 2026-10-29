@@ -61,7 +61,6 @@ export interface FindingRef {
 /** Write-time caps: a finding is a record, not an essay. */
 export const FINDING_HEADLINE_MAX_CHARS = 300;
 export const FINDING_ACCOUNT_MAX_CHARS = 6000;
-export const FINDING_MAX_REFS = 20;
 /** How many near matches the tool shows before writing. */
 export const FINDING_MATCH_CANDIDATES = 3;
 
@@ -145,7 +144,6 @@ export function parseFindingRefs(raw: unknown): {
   const seen = new Set<string>();
   let malformed = 0;
   for (const entry of raw) {
-    if (refs.length >= FINDING_MAX_REFS) break;
     if (!entry || typeof entry !== "object") {
       malformed++;
       continue;

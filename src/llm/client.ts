@@ -24,7 +24,8 @@ type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 import { checkBudget } from "./budget-tracker.js";
 import { DEFAULT_MODEL } from "./models.js";
-import { getUsageContext } from "./usage-context.js";
+import { getUsageContext, runBudget } from "./usage-context.js";
+import { spendLine } from "./budget-line.js";
 import { recordAgentStep } from "../services/trace-service.js";
 import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
@@ -304,6 +305,22 @@ export function turnCounterLine(used: number, max: number): string {
 }
 
 /**
+ * The notices a run with a budget gets, once each: when most of it is
+ * spent, and when all of it is. The money, not the turn guard, is what
+ * normally ends such a run.
+ */
+export const BUDGET_WRAP_UP_FRACTION = 0.85;
+export function budgetWrapUpNotice(spentMicroUsd: number, ceilingMicroUsd: number): string {
+  const over = spentMicroUsd >= ceilingMicroUsd;
+  return over
+    ? `Budget notice: this run has spent its whole budget. Make your concluding ` +
+        `tool call(s) now; whatever is not recorded is lost.`
+    : `Budget notice: most of this run's budget is spent. Finish the work in ` +
+        `hand and make your concluding tool call(s) soon; whatever is not ` +
+        `recorded when the run ends is lost.`;
+}
+
+/**
  * The budget notice an agent gets when it sets none of its own (#474): every
  * agent records its conclusions through a tool call, so every agent needs
  * telling, shortly before the cut, that unrecorded conclusions are lost.
@@ -401,8 +418,12 @@ export async function toolUseLoop(options: {
   // Anthropic-only; the other adapters never return one.
   let containerId: string | undefined;
 
+  // 0: no notice yet; 1: the wrap-up notice went out; 2: the spent one did.
+  let budgetWarned = 0;
+
   for (let i = 0; i < maxIter; i++) {
     if (options.beforeTurn) await options.beforeTurn(i);
+    const spentAtTurnStart = runBudget()?.spentMicroUsd ?? 0;
     const result = await completeWithTools({
       messages,
       tools: options.tools,
@@ -533,9 +554,36 @@ export async function toolUseLoop(options: {
     const userContent: Array<ToolResultBlockParam | { type: "text"; text: string }> = [
       ...toolResults,
     ];
+    // A run with a budget is told its spend against it (the binding
+    // constraint) as well as the turn guard; an instrument that writes its
+    // own line (turnNote) already does both.
+    const budget = options.turnNote ? null : runBudget();
     if (turnCounter) {
-      const line = options.turnNote ? options.turnNote(i + 1, maxIter) : turnCounterLine(i + 1, maxIter);
+      let line = options.turnNote ? options.turnNote(i + 1, maxIter) : turnCounterLine(i + 1, maxIter);
+      if (budget) {
+        line =
+          spendLine({
+            spentMicroUsd: budget.spentMicroUsd,
+            ceilingMicroUsd: budget.ceilingMicroUsd,
+            lastTurnMicroUsd: budget.spentMicroUsd - spentAtTurnStart,
+          }) + ` ${line}`;
+      }
       if (line) userContent.push({ type: "text", text: line });
+    }
+    if (budget) {
+      const stage =
+        budget.spentMicroUsd >= budget.ceilingMicroUsd
+          ? 2
+          : budget.spentMicroUsd >= budget.ceilingMicroUsd * BUDGET_WRAP_UP_FRACTION
+            ? 1
+            : 0;
+      if (stage > budgetWarned) {
+        budgetWarned = stage;
+        userContent.push({
+          type: "text",
+          text: budgetWrapUpNotice(budget.spentMicroUsd, budget.ceilingMicroUsd),
+        });
+      }
     }
     if (remaining > 0 && remaining <= notice.warnWithin) {
       userContent.push({ type: "text", text: notice.message(remaining) });

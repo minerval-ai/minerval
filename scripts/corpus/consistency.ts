@@ -128,8 +128,6 @@ async function dryRunRead(label: string): Promise<DryRead> {
     const res = await runConsistencySweep({
       partition: { partition: "graph", tagId: null, label: "whole graph" },
       dryRun: true,
-      // A read, not a budgeted sweep: let it say everything it would flag.
-      maxFlags: 20,
     });
     reads.push({ proposed: res?.proposed ?? [], note: res?.note ?? "" });
     claimsInScope = res?.claimsInScope ?? 0;
@@ -618,7 +616,7 @@ async function run(cluster: string): Promise<void> {
     runChild(SCRIPT, ["arm", `--arm=${name}`, `--out=${outDir}`, ...passthrough], {
       BACKGROUND_FALLBACK_LANE_ENABLED: "false",
       // The eval mandate's own review pass is not what either arm measures.
-      MANDATE_REVIEW_MAX_PASSES_PER_DAY: "0",
+      MANDATE_REVIEW_ENABLED: "false",
       CONSISTENCY_MAX_SWEEPS_PER_DAY: name === "checker" ? (argFlag("sweeps") ?? "2") : "0",
     });
     await saveSnapshot(CORPUS_DATABASE_URL, `cc_${stamp}_${name}`);

@@ -30,9 +30,6 @@ const mocks = vi.hoisted(() => ({
   meter: { billedMicroUsd: 0 },
   config: {
     researcherMaxWallMinutes: 20,
-    researcherMaxTurns: 40,
-    researcherWebSearchMaxUses: 15,
-    researcherElicitMaxCalls: 5,
     leanCheckerUrl: "",
     elicitApiKey: "",
   },
@@ -211,7 +208,8 @@ describe("toolset by model", () => {
     expect(task).toContain("web_search carries a fee");
     expect(task).toContain("read_page has no fee");
     expect(task).toContain("code_execution is billed at $0.05 per container-hour");
-    expect(task).toContain("capped at 40 turns");
+    expect(task).toContain("a guard of 200 turns stops a stuck loop");
+    expect(task).toContain("must report within 20 minutes of wall-clock time");
     expect(task).toContain("launched by the Claim Steward of the claim below");
     expect(task).toContain("The code-execution sandbox is available");
   });
@@ -458,24 +456,26 @@ describe("what the researcher may write", () => {
 });
 
 describe("the budget guide", () => {
-  it("states Elicit's per-call price and cap when Elicit is in the toolset", async () => {
+  it("states Elicit's per-call price, with no count, when Elicit is in the toolset", async () => {
     const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
     const guide = budgetGuide({
       task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
-      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      estimate: null, maxTurns: 60, elicitUsdPerCall: 2,
       toolNames: ["elicit_search_papers", "report"], sandbox: false, notebook: {},
     });
-    expect(guide).toContain("each elicit_ search costs $2.00, and they are capped at 5 calls this run");
+    expect(guide).toContain("each elicit_ search costs $2.00");
+    expect(guide).not.toContain("capped at");
   });
 
-  it("states Pangram's per-call ceiling and cap when the Pangram tools are in the toolset", async () => {
+  it("states Pangram's per-call ceiling, with no count, when the Pangram tools are in the toolset", async () => {
     const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
     const guide = budgetGuide({
       task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
-      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
-      pangramMaxCalls: 3, pangramMaxUsdPerCall: 0.75,
+      estimate: null, maxTurns: 60, elicitUsdPerCall: 2,
+      pangramMaxUsdPerCall: 0.75,
       toolNames: ["pangram_check_ai", "pangram_find_sources", "report"], sandbox: false, notebook: {},
     });
-    expect(guide).toContain("each pangram_ analysis is billed per word, up to $0.75 a call, and they are capped at 3 calls this run");
+    expect(guide).toContain("each pangram_ analysis is billed per word, up to $0.75 a call");
+    expect(guide).not.toContain("capped at");
   });
 });

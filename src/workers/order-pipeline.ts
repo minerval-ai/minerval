@@ -24,6 +24,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { estimateStewardRunCostMicroUsd } from "../services/cost-estimate-service.js";
 import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
@@ -202,13 +203,24 @@ export async function processNextOrderTask(
     : "A user ordered a (re)assessment of this claim (paid). Re-examine the " +
       "evidence with fresh eyes and record a current assessment.";
 
+  // The run's budget is what a pass on this model is expected to cost, or
+  // the buyer's cap when that is more. The buyer is charged at most the
+  // cap whatever the run spends; the platform covers the difference, so
+  // the Steward is not asked to do a strong-model pass on a cheaper one's
+  // money.
+  const ceilingMicroUsd = Math.max(
+    Number(order.price_micro_usd) || 0,
+    await estimateStewardRunCostMicroUsd(model).catch(() => 0)
+  );
+
   try {
     const { billedMicroUsd } = await withStewardLease(
       { claimId: order.claim_id },
       () =>
         runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
-          withCostMeter(() =>
-            runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+          withCostMeter(
+            () => runClaimSteward({ trigger, claimId: order.claim_id, context, model }),
+            { ceilingMicroUsd }
           )
         )
     );

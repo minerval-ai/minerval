@@ -49,7 +49,6 @@ vi.mock("../../../../src/services/owl.js", () => ({
 import {
   createMandateTools,
   estimatePlanCosts,
-  WORKSPACE_MAX_CHARS,
 } from "../../../../src/llm/tools/mandate-tools.js";
 
 beforeEach(() => {
@@ -96,7 +95,7 @@ describe("createMandateTools", () => {
     });
   });
 
-  it("reads a page, prices work, and rewrites a bounded workspace", async () => {
+  it("reads a page, prices work, and rewrites the workspace whole", async () => {
     const tools = createMandateTools({ grantId: "g-1" });
     expect(JSON.parse((await tools.execute("read_page", { url: "https://x.test/a" }))!)).toEqual({
       ok: true,
@@ -119,9 +118,10 @@ describe("createMandateTools", () => {
     expect(quote.suggested_total_owls).toBe(12.6);
 
     const res = JSON.parse(
-      (await tools.execute("update_workspace", { content: "x".repeat(WORKSPACE_MAX_CHARS + 10) }))!
+      (await tools.execute("update_workspace", { content: "x".repeat(150_000) }))!
     );
-    expect(res).toEqual({ success: true, chars: WORKSPACE_MAX_CHARS });
+    // Stored whole: the workspace is the agent's own memory, paid for in tokens.
+    expect(res).toEqual({ success: true, chars: 150_000 });
     expect(state.updates[0]!.sql).toContain("UPDATE grants SET workspace");
     expect(state.updates[0]!.params[0]).toBe("g-1");
   });

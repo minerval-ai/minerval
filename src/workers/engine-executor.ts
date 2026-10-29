@@ -80,6 +80,7 @@ import {
   largestActionFunder,
   nextRunnableAction,
   releaseAction,
+  actionBudgetMicroUsd,
   type RunnableAction,
 } from "../services/action-service.js";
 
@@ -261,7 +262,8 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
               `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
               `about this claim are waiting, and this run was funded to answer them:\n` +
               describeCurationRequests(requests),
-          })
+          }),
+          { ceilingMicroUsd: actionBudgetMicroUsd(action) }
         )
     );
     billedMicroUsd = metered.billedMicroUsd;
@@ -357,7 +359,8 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
       { userId: context.userId, jobId: context.jobId },
       () =>
         withCostMeter(() =>
-          runAudit({ auditType: run.audit_type, context: run.context, runId: run.id })
+          runAudit({ auditType: run.audit_type, context: run.context, runId: run.id }),
+          { ceilingMicroUsd: actionBudgetMicroUsd(action) }
         )
     );
     await close(billedMicroUsd);
@@ -434,9 +437,14 @@ async function runFormalizeAction(
     ...(opts.model ? { model: opts.model } : {}),
   };
   let billedMicroUsd = 0;
+  // The two passes share the action's budget: the review gets what the
+  // drafting pass left, or a run's expected cost when drafting spent it all
+  // (a review given nothing to work with is no review).
+  const budget = actionBudgetMicroUsd(action);
   try {
     const first = await invokeStewardDirect({
       ...passOpts,
+      ceilingMicroUsd: budget,
       trigger: "formalize",
       context:
         "Write the claim's formal statement: draft, elaborate, review for vacuity, " +
@@ -454,6 +462,7 @@ async function runFormalizeAction(
     if (reviewed) {
       const second = await invokeStewardDirect({
         ...passOpts,
+        ...(budget - billedMicroUsd > 0 ? { ceilingMicroUsd: budget - billedMicroUsd } : {}),
         trigger: "formalization_review",
         context: reviewed.id,
       });
@@ -551,7 +560,7 @@ async function runLookoutAction(
           const run = await runLookout({ lookoutId: lookout.id, model: opts.model });
           note = run.note;
           flagsRaised = run.flagsRaised;
-        })
+        }, { ceilingMicroUsd: actionBudgetMicroUsd(action) })
     );
     await recordLookoutRun({ lookoutId: lookout.id, note, flagsRaised }).catch(() => {});
     await completeAction(action.id, billedMicroUsd, {
@@ -637,7 +646,7 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
   try {
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
-      () => withCostMeter(() => runConsistencySweep({ partition }))
+      () => withCostMeter(() => runConsistencySweep({ partition }), { ceilingMicroUsd: actionBudgetMicroUsd(action) })
     );
     await completeAction(action.id, billedMicroUsd, {
       meteredJobId: funder.jobId ?? general.budgetJobId,
@@ -741,7 +750,7 @@ async function runGrantAgentAction(
             });
             continueRequested = review.continueRequested;
           }
-        })
+        }, { ceilingMicroUsd: actionBudgetMicroUsd(action) })
     );
     await completeAction(action.id, billedMicroUsd, {
       meteredJobId: funder.jobId ?? null,
@@ -754,8 +763,8 @@ async function runGrantAgentAction(
     );
     if (continueRequested) {
       // The agent judged one pass wasn't enough: reopen its review action
-      // so the next drain iteration funds and runs another, bounded by
-      // the passes-per-day funding cap (fundGrantSelfActions).
+      // so the next drain iteration funds and runs another out of the
+      // mandate's day (fundGrantSelfActions).
       await rawQuery(
         `UPDATE actions SET status = 'open', updated_at = now()
           WHERE id = $1 AND status = 'done'`,

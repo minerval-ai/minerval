@@ -61,8 +61,6 @@ import {
   updateAttemptProgress,
   writeNotebookSection,
   readNotebook,
-  NOTEBOOK_MAX_SECTION_CHARS,
-  NOTEBOOK_MAX_SECTIONS,
   type AttemptRow,
   type FormalizationRow,
 } from "../../services/attempt-service.js";
@@ -498,8 +496,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
   // Per-attempt state the tools and hooks share.
   const notebook: Record<string, string> = await readNotebook(attempt.id);
   const checksThisAttempt = new Map<string, CheckLookupResult>();
-  let leanChecks = 0;
-  let leanElaborations = 0;
   let reportInput: Record<string, unknown> | null = null;
   const accounting: TurnAccounting = {
     reminded: false,
@@ -559,18 +555,8 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
 
   const executeLeanElaborate = async (toolInput: Record<string, unknown>): Promise<string> => {
     if (!checker) return JSON.stringify({ success: false, message: "No checker is configured." });
-    const cap = config.solverLeanMaxElaborations;
-    if (cap > 0 && leanElaborations >= cap) {
-      return JSON.stringify({
-        success: false,
-        message:
-          `This attempt has already elaborated ${leanElaborations} fragments, its cap (${cap}). ` +
-          `Commit to a route with what you have checked, or run lean_check on a candidate.`,
-      });
-    }
     const source = asString(toolInput.statement);
     if (!source.trim()) return JSON.stringify({ success: false, message: "statement is required." });
-    leanElaborations++;
     try {
       // The warm lane's scratch route: diagnostics for an arbitrary fragment
       // beside the attempt's statement, never a verdict.
@@ -594,7 +580,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
         truncated: truncated || res.truncated === true,
         timed_out: res.timed_out === true,
         ...(res.error ? { error: res.error } : {}),
-        elaborations_remaining: cap > 0 ? cap - leanElaborations : null,
       });
     } catch (err) {
       return leanUnavailable("lean_elaborate", err);
@@ -633,15 +618,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
 
   const executeLeanCheck = async (toolInput: Record<string, unknown>): Promise<string> => {
     if (!checker) return JSON.stringify({ success: false, message: "No checker is configured." });
-    const cap = config.solverLeanMaxChecks;
-    if (cap > 0 && leanChecks >= cap) {
-      return JSON.stringify({
-        success: false,
-        message:
-          `This attempt has used ${leanChecks} of its ${cap} proof checks. No further check ` +
-          `can run: write your report on the checks already recorded.`,
-      });
-    }
     const kind = toolInput.kind === "disproof" ? "disproof" : toolInput.kind === "proof" ? "proof" : null;
     const proof = asString(toolInput.proof);
     if (!kind) return JSON.stringify({ success: false, message: 'kind must be "proof" or "disproof".' });
@@ -678,7 +654,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
       }
     }
 
-    leanChecks++;
     try {
       const submitted = await checker.submitCheck({
         mode: "attempt",
@@ -709,7 +684,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
         diagnostics,
         truncated: truncated || record.truncated,
         resource: record.resource,
-        checks_remaining: cap > 0 ? cap - leanChecks : null,
       });
     } catch (err) {
       if (err instanceof LeanCheckerCapExceeded) {
@@ -729,18 +703,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
     const section = asString(toolInput.section).trim().slice(0, 200);
     const content = asString(toolInput.content);
     if (!section) return JSON.stringify({ success: false, message: "section is required." });
-    if (content.length > NOTEBOOK_MAX_SECTION_CHARS) {
-      return JSON.stringify({
-        success: false,
-        message: `A section holds at most ${NOTEBOOK_MAX_SECTION_CHARS} characters; split it.`,
-      });
-    }
-    if (!(section in notebook) && Object.keys(notebook).length >= NOTEBOOK_MAX_SECTIONS) {
-      return JSON.stringify({
-        success: false,
-        message: `The notebook holds at most ${NOTEBOOK_MAX_SECTIONS} sections; rewrite one.`,
-      });
-    }
     notebook[section] = content;
     await writeNotebookSection(attempt.id, section, content);
     return JSON.stringify({ success: true, section, sections: Object.keys(notebook) });

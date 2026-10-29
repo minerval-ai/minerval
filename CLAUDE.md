@@ -1,3 +1,11 @@
 # Working notes for Claude
 
 Jackson often takes a few days to get to a PR review, so after opening a PR a check-in or two is plenty. Hourly re-checks over several days are not needed.
+
+## Constraints on agents
+
+Agents, like anyone, need to know their affordances and the constraints they work under.
+
+- Every limit an agent works under is stated to it up front, with its running state as it goes (the way the turn counter and the spend line do), and with the reason for it. Never enforce a limit an agent has not been told.
+- Prefer money to counts. Where a resource is metered, the run's budget bounds it (docs/allocation.md, "Agents work to a budget they can see"); do not add a per-run or per-day count on top.
+- A new hard limit needs a reason money cannot serve (injected text near escrow, a loop that has stopped spending, a caller waiting on the result, human attention nothing prices), written in the comment beside it. Add one thoughtfully, not by reflex.

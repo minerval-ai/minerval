@@ -14,8 +14,8 @@
  * be asked:
  *
  *  - one live request per (anchor, other claim, source): a repeat is a repeat;
- *  - at most CURATION_ESCALATIONS_PER_CLAIM live Steward escalations from any
- *    one claim, so a single run cannot flood the ledger;
+ *    distinct concerns are never refused, since a request only waits on the
+ *    ledger until someone values and funds the curation that reads it;
  *  - the reconcile-candidate scan raises at most its policy's per-sweep cap.
  *
  * The one entry point for opening a curate row. The lockdown test
@@ -23,7 +23,6 @@
  * path under src/ to it.
  */
 import { rawQuery } from "../db/client.js";
-import { loadConfig } from "../config.js";
 import { ensureCurateAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
@@ -80,30 +79,6 @@ export async function requestCuration(
     );
     if (!other) {
       return { ok: false, problem: `claim ${input.otherClaimId} is not an active claim` };
-    }
-  }
-
-  // The per-claim bound on live escalations: counted before the insert, so
-  // a repeat of a live request (which inserts nothing) is never refused.
-  if (input.source === "steward_escalation" && input.requestedByClaimId) {
-    const cap = loadConfig().curationEscalationsPerClaim ?? 3;
-    const [live] = await rawQuery<{ n: number; repeat: boolean }>(
-      `SELECT COUNT(*)::int AS n,
-              BOOL_OR(anchor_claim_id = $2
-                      AND other_claim_id IS NOT DISTINCT FROM $3::uuid) AS repeat
-         FROM curation_requests
-        WHERE requested_by_claim_id = $1 AND source = 'steward_escalation'
-          AND consumed_at IS NULL`,
-      [input.requestedByClaimId, input.anchorClaimId, input.otherClaimId ?? null]
-    );
-    if (!live?.repeat && Number(live?.n ?? 0) >= cap) {
-      return {
-        ok: false,
-        problem:
-          `this claim already has ${live!.n} structural concerns waiting for the ` +
-          `Curator (the most one claim may hold at once is ${cap}); they are on the ` +
-          `ledger and will be read together when curation is funded`,
-      };
     }
   }
 

@@ -1,6 +1,6 @@
 /**
  * The issue tools (#366): attribution comes from the ambient usage context,
- * the per-run cap holds across raise and update (never on a withdrawal), a
+ * there is no per-run count on reports (repeats are deduplicated by meaning), a
  * near match comes back to the agent with the record's status and note and
  * counts for nothing, and every tool acknowledges no matter what.
  */
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   updateReport: vi.fn(),
   searchReports: vi.fn(),
   getReportView: vi.fn(),
-  config: { agentReportsPerRun: 2 },
+  config: {},
 }));
 
 vi.mock("../../../../src/services/report-service.js", () => ({
@@ -83,7 +83,6 @@ beforeEach(() => {
   });
   mocks.searchReports.mockReset().mockResolvedValue({ matches: [] });
   mocks.getReportView.mockReset().mockResolvedValue(null);
-  mocks.config.agentReportsPerRun = 2;
 });
 
 describe("raise_issue tool", () => {
@@ -174,16 +173,13 @@ describe("raise_issue tool", () => {
     );
   });
 
-  it("enforces the per-run cap without writing past it", async () => {
+  it("records every report a run raises: there is no per-run count", async () => {
     const tools = createReportTools();
-    expect(JSON.parse((await tools.execute("raise_issue", GOOD_INPUT))!).success).toBe(true);
-    expect(JSON.parse((await tools.execute("raise_issue", GOOD_INPUT))!).success).toBe(true);
-    const third = JSON.parse((await tools.execute("raise_issue", GOOD_INPUT))!);
-    expect(third.success).toBe(false);
-    expect(third.acknowledged).toBe(true);
-    expect(third.message).toMatch(/per-run cap \(2\)/);
-    expect(mocks.raiseIssue).toHaveBeenCalledTimes(2);
-    expect(tools.raisedCount).toBe(2);
+    for (let i = 0; i < 4; i++) {
+      expect(JSON.parse((await tools.execute("raise_issue", GOOD_INPUT))!).success).toBe(true);
+    }
+    expect(mocks.raiseIssue).toHaveBeenCalledTimes(4);
+    expect(tools.raisedCount).toBe(4);
   });
 
   it("a rejected (unpersisted) report does not count against the cap", async () => {
@@ -328,17 +324,9 @@ describe("update_issue tool", () => {
     expect(tools.raisedCount).toBe(1);
   });
 
-  it("withdraws past the cap: a correction is never blocked", async () => {
-    mocks.config.agentReportsPerRun = 1;
+  it("withdraws a report it raised", async () => {
     const tools = createReportTools();
     await tools.execute("raise_issue", GOOD_INPUT);
-    const blocked = JSON.parse(
-      (await tools.execute("update_issue", { report_id: REPORT_ID, note: "more" }))!
-    );
-    expect(blocked.success).toBe(false);
-    expect(blocked.message).toMatch(/per-run cap/);
-    expect(mocks.updateReport).not.toHaveBeenCalled();
-
     mocks.updateReport.mockResolvedValue({
       acknowledged: true,
       reportId: REPORT_ID,

@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type MessageParam = Anthropic.MessageParam;
+import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import { completeStructuredList, toolUseLoop } from "../client.js";
 import {
   getAssessorSystemPrompt,
@@ -187,7 +188,9 @@ async function extensionChatImpl(input: {
     tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
     system: getChatSystemPrompt(),
     maxTokens: 4096,
-    maxIterations: 8,
+    // The chat's budget is the op's cap (withAgenticCharge); the turn cap
+    // only halts a loop that has stopped spending.
+    maxIterations: RUN_TURN_GUARD,
     model: input.model,
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".

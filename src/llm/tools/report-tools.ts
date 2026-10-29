@@ -18,11 +18,12 @@
  * the tracker is the only place a known workaround lives. Every report
  * becomes a GitHub issue for the maintainers; the tools say so once.
  *
- * Shape differs from the other bundles on purpose. The per-run cap needs
- * state, and the executors are stateless functions, so this is a factory:
- * one createReportTools() per agent run yields the definitions and an
- * executor with its own counter (the same closure-counter idiom the Steward
- * uses for subclaims and instances). The executor follows graph-read-tools'
+ * Shape differs from the other bundles on purpose. The run's tally of what
+ * it raised needs state, and the executors are stateless functions, so this
+ * is a factory: one createReportTools() per agent run yields the definitions
+ * and an executor with its own counter. There is no per-run cap on reports:
+ * repeats are deduplicated by meaning before they are written, and a run
+ * that has much to report should. The executor follows graph-read-tools'
  * null-delegate convention — null means "not my tool" — so every agent
  * wires it with one spread and one early return at the top of executeTool.
  *
@@ -36,7 +37,6 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
-import { loadConfig } from "../../config.js";
 import {
   getReportView,
   raiseIssue,
@@ -317,25 +317,7 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
   const definitions = getReportToolDefinitions();
   let raised = 0;
 
-  const capped = (): string | null => {
-    const cap = loadConfig().agentReportsPerRun;
-    if (cap > 0 && raised >= cap) {
-      return JSON.stringify({
-        success: false,
-        acknowledged: true,
-        message:
-          `This run has already recorded ${raised} report(s) or note(s), the ` +
-          `per-run cap (${cap}). Nothing was recorded. Continue with your task; ` +
-          `if this recurs it will be reported by a later run.`,
-      });
-    }
-    return null;
-  };
-
   const executeRaise = async (input: Record<string, unknown>): Promise<string> => {
-    const blocked = capped();
-    if (blocked) return blocked;
-
     const ctx = getUsageContext();
     const body = ctx.untraced ? UNTRACED_BODY_NOTE : String(input.body ?? "");
     const result = await raiseIssue({
@@ -415,12 +397,6 @@ export function createReportTools(options: { model?: string } = {}): ReportTools
 
   const executeUpdate = async (input: Record<string, unknown>): Promise<string> => {
     const withdraw = input.withdraw === true;
-    // Withdrawing is a correction, never blocked by the cap: a run that
-    // spent its reports must still be able to take one back.
-    if (!withdraw) {
-      const blocked = capped();
-      if (blocked) return blocked;
-    }
     const ctx = getUsageContext();
     const rawNote = typeof input.note === "string" ? input.note : "";
     const note = ctx.untraced && rawNote.trim() ? UNTRACED_BODY_NOTE : rawNote;
