@@ -435,7 +435,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .term-pop.pop-end { left: auto; right: 0; transform: none; }
 .term-src {
   display: block; margin-top: 0.35rem;
-  font-size: 0.68rem; font-variant: small-caps; letter-spacing: 0.03em;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
 }
 
 /* ----- type / state tags ----- */
@@ -445,7 +445,11 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   padding: 0.1rem 0.42rem; border: 1px solid var(--rule); border-radius: 2px;
   background: var(--paper-card); white-space: nowrap;
 }
-.tag.kind { font-variant: small-caps; text-transform: none; letter-spacing: 0.02em; }
+/* Capitals at a reduced size rather than font-variant: small-caps. Inter 4
+   ships small-cap forms for only some letters, so where it is installed the
+   OpenType feature leaves b, d and p as lowercase among small capitals;
+   uppercase renders the same in every face. */
+.tag.kind { text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.06em; }
 
 /* topic tags (#272): what a claim is about. A chip is a link into the
    filtered list, so it reads as ink rather than as the muted type/state
@@ -520,8 +524,8 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
    Never a meter: every meter and number in this UI measures belief, so an
    unlabelled row of pips beside a claim read as P(claim true). */
 .imp-label {
-  font-family: var(--sans); font-size: 0.66rem; color: var(--muted);
-  font-variant: small-caps; letter-spacing: 0.02em; white-space: nowrap;
+  font-family: var(--sans); color: var(--muted);
+  font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
 }
 
 /* relation label on a decomposition edge */
