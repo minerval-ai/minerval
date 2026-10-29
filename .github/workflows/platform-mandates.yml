@@ -46,9 +46,18 @@ jobs:
         run: npx tsx scripts/platform-mandates.ts verify
 
   fund:
+    # Only a Deploy run started by a push to main of this repository may
+    # fund. The workflow_run filters above match a run's workflow name and
+    # head branch, both of which a pull request from a fork controls (it can
+    # add a workflow named Deploy, from its own branch named main). Requiring
+    # a push in this repository makes head_sha a commit pushed to main here,
+    # so the checkout below never runs fork code with the operator key.
     if: >-
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success'
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     # One funding pass at a time; a pass already running is never cancelled.
     concurrency:

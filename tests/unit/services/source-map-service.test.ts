@@ -78,6 +78,37 @@ describe("htmlToText", () => {
     expect(looksLikeHtml("Just some text with 3 < 4 in it.")).toBe(false);
     expect(htmlToText("line one  \r\nline two\r\n")).toBe("line one\nline two");
   });
+
+  it("keeps the edge cases of its stripping: unclosed comments and elements, tag case, `<>`", () => {
+    expect(htmlToText("<p>a<!-- x -->b <!-- never closed")).toBe("a b <!-- never closed");
+    expect(
+      htmlToText("<div><SCRIPT type=x>if (a < b) {}</script >Kept<scripts>too</scripts><style>p{}</STYLE\n>.</div>")
+    ).toBe("Kept too .");
+    // An unclosed <script> stays as text and does not hide a closed <style> after it.
+    expect(htmlToText("<p>x <script never closed <style>gone</style> y</p>")).toBe("x <script never closed y");
+    expect(htmlToText("<p>1 <> 2 < 3</p>")).toBe("1 <> 2 < 3");
+    // Plain text loses spaces and tabs before a line break, not a no-break space.
+    expect(htmlToText("keep\u00a0 \t\nnext \t \r\nlast  ")).toBe("keep\u00a0\nnext\nlast");
+  });
+
+  it("takes linear time on stored content built to make it backtrack", () => {
+    // Each took seconds at this size (minutes at 1 MB) when every later
+    // start position was retried after a failed match.
+    const n = 100_000;
+    const cases: Array<[string, string]> = [
+      ["a" + " ".repeat(n) + "a", "a" + " ".repeat(n) + "a"],
+      ["<p>" + "<!--".repeat(n / 4), "<!--".repeat(n / 4)],
+      ["<p>" + "<script ".repeat(n / 8), "<script ".repeat(n / 8).trim()],
+      ["<p>" + "<".repeat(n), "<".repeat(n)],
+    ];
+    for (const [input, expected] of cases) {
+      const start = performance.now();
+      const text = htmlToText(input);
+      const ms = performance.now() - start;
+      expect(text).toBe(expected);
+      expect(ms).toBeLessThan(500);
+    }
+  });
 });
 
 describe("quoteCheck", () => {

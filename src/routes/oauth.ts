@@ -265,8 +265,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const q = request.query as Record<string, string | undefined>;
 
-      // Client/redirect_uri failures MUST NOT redirect (open-redirect risk);
-      // everything after that redirects back to the client per RFC 6749 §4.1.2.1.
+      // No validation failure here redirects to the client. Client/redirect_uri
+      // failures MUST NOT (RFC 6749 §4.1.2.1), and nor may the rest: every
+      // client is self-registered via unauthenticated dynamic registration
+      // with any https redirect_uri, so bouncing an error there before the
+      // user has signed in and seen consent would make this host an open
+      // redirector (RFC 9700 §4.11.2). The client only hears back after
+      // consent (code or access_denied).
       const client = q.client_id
         ? await getClientByClientId(q.client_id)
         : null;
@@ -282,26 +287,21 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const redirectError = (error: string, description: string) => {
-        const url = new URL(q.redirect_uri!);
-        url.searchParams.set("error", error);
-        url.searchParams.set("error_description", description);
-        if (q.state) url.searchParams.set("state", q.state);
-        return reply.redirect(url.toString(), 302);
-      };
+      const requestError = (error: string, description: string) =>
+        reply.code(400).send({ error, error_description: description });
 
       if (q.response_type !== "code") {
-        return redirectError(
+        return requestError(
           "unsupported_response_type",
           "Only response_type=code is supported"
         );
       }
       // PKCE is mandatory (OAuth 2.1 / MCP spec), S256 only.
       if (!q.code_challenge) {
-        return redirectError("invalid_request", "code_challenge is required");
+        return requestError("invalid_request", "code_challenge is required");
       }
       if ((q.code_challenge_method ?? "plain") !== "S256") {
-        return redirectError(
+        return requestError(
           "invalid_request",
           "code_challenge_method must be S256"
         );
@@ -311,7 +311,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         .filter(Boolean)
         .find((s) => !SCOPES_SUPPORTED.includes(s));
       if (unknownScope) {
-        return redirectError("invalid_scope", `Unknown scope: ${unknownScope}`);
+        return requestError("invalid_scope", `Unknown scope: ${unknownScope}`);
       }
 
       const authRequest = await createAuthorizationRequest({

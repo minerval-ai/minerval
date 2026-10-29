@@ -292,9 +292,9 @@ returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
 below). Charges carry the operation (`op`) and
 link to the claim or contribution they paid for, so the account history
 reads as "up to 1 owl held for the assessment of claim X, 0.6 returned".
-Charges are balance-guarded single-statement inserts; two racing requests
-can overshoot by at most one operation each (the same slack the metered
-era accepted). Settlements are idempotent per settle key.
+Charges, escrow holds, and allocations are balance-guarded inserts taken
+under a per-user lock, so racing requests queue and can never overdraw a
+balance. Settlements are idempotent per settle key.
 
 **Earning owls (#71):** an accepted contribution awards importance-scaled
 points (1–5, the old kudos rule) × `CONTRIBUTION_AWARD_OWL_PER_POINT`

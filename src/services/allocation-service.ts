@@ -35,6 +35,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import {
@@ -135,7 +136,8 @@ export async function allocateToClaimAssessment(input: {
 
   // Debit behind the balance guard, and record the allocation in the SAME
   // transaction — a failure after the debit must not eat the user's owls.
-  const debited = await withTransaction(async (tx) => {
+  // The user's owl-balance lock serializes it against their other debits.
+  const debited = await withOwlBalanceLock(input.userId, async (tx) => {
     const rows = await tx.query<{ id: string }>(
       `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id)
        SELECT $1, $2, 'claim_contribution', $3

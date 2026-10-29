@@ -42,6 +42,20 @@ class ApiError extends Error {
   }
 }
 
+// An id as exactly one segment of a backend path. Ids arrive from route
+// params, which Next has already percent-decoded, and every request here
+// carries the service key, so a raw "/", "?" or "#" in an id would rewrite
+// the path or query of a privileged request. Encoding keeps those inside the
+// segment; "." and ".." are refused because URL parsing resolves them as dot
+// segments even when encoded. The API's ids are UUIDs, which encoding leaves
+// unchanged; a refused id reads as unknown (404), as a missing one does.
+function pathSegment(id: string): string {
+  if (id === "." || id === "..") {
+    throw new ApiError(`Minerval API: no resource has id ${JSON.stringify(id)}`, 404);
+  }
+  return encodeURIComponent(id);
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, {
@@ -98,17 +112,18 @@ interface TrajectoryResponse {
 }
 
 export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
+  const seg = pathSegment(id);
   // Detail (deep), trajectory, and the contribution record (#171) are separate
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
   const [detail, trajectory, record, findings, provenanceStory] = await Promise.all([
-    apiGet<RawDetail>(`/claims/${id}?information_depth=deep`),
-    apiGet<TrajectoryResponse>(`/claims/${id}/assessments/trajectory`).catch(() => null),
-    apiGet<{ record: ContributionExchange[] }>(`/claims/${id}/record`).catch(() => null),
+    apiGet<RawDetail>(`/claims/${seg}?information_depth=deep`),
+    apiGet<TrajectoryResponse>(`/claims/${seg}/assessments/trajectory`).catch(() => null),
+    apiGet<{ record: ContributionExchange[] }>(`/claims/${seg}/record`).catch(() => null),
     // Findings noted on this claim (#394); absent rather than failing the page.
     fetchFindings({ claimId: id, limit: 10 }).catch(() => [] as Finding[]),
     // The origins-first provenance map (#507); absent rather than failing the page.
-    apiGet<ProvenanceStory>(`/claims/${id}/provenance`).catch(() => null),
+    apiGet<ProvenanceStory>(`/claims/${seg}/provenance`).catch(() => null),
   ]);
   return {
     ...withMathDefaults(detail),
@@ -124,18 +139,20 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
 // than failing it. Null when the source does not exist.
 export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
   let facts: SourceFacts;
+  let seg: string;
   try {
-    facts = await apiGet<SourceFacts>(`/sources/${id}`);
+    seg = pathSegment(id);
+    facts = await apiGet<SourceFacts>(`/sources/${seg}`);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
   const [document, examinations, context] = await Promise.all([
-    apiGet<SourceDocument>(`/sources/${id}/document`).catch(() => null),
-    apiGet<{ examinations: Examination[] }>(`/sources/${id}/examinations`)
+    apiGet<SourceDocument>(`/sources/${seg}/document`).catch(() => null),
+    apiGet<{ examinations: Examination[] }>(`/sources/${seg}/examinations`)
       .then((r) => r.examinations)
       .catch(() => [] as Examination[]),
-    apiGet<SourceContext>(`/sources/${id}/context`).catch(() => null),
+    apiGet<SourceContext>(`/sources/${seg}/context`).catch(() => null),
   ]);
   return { facts, document, examinations, context };
 }
@@ -143,7 +160,7 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
 // The unified per-claim history (#175): assessments, contributions, decisions,
 // steward notes, newest-first. The API caps a window at 200 events.
 export async function fetchClaimEvents(id: string): Promise<ClaimEventsPage> {
-  return apiGet<ClaimEventsPage>(`/claims/${id}/events?limit=200`);
+  return apiGet<ClaimEventsPage>(`/claims/${pathSegment(id)}/events?limit=200`);
 }
 
 // The claim plus its decomposition tree, without the deep payload (arguments,
@@ -159,7 +176,7 @@ export async function fetchClaimEvents(id: string): Promise<ClaimEventsPage> {
 // old one, so it is safe whichever of Vercel and the API deploys first.
 export async function fetchClaimTree(id: string): Promise<ClaimDetail> {
   return withMathDefaults(
-    await apiGet<RawDetail>(`/claims/${id}?information_depth=standard&depth=8`),
+    await apiGet<RawDetail>(`/claims/${pathSegment(id)}?information_depth=standard&depth=8`),
   );
 }
 
@@ -319,7 +336,9 @@ export async function fetchAttemptStats(grantId?: string | null): Promise<Attemp
 
 export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
   try {
-    const r = await apiGet<{ attempt?: AttemptSummary } | AttemptSummary>(`/attempts/${id}`);
+    const r = await apiGet<{ attempt?: AttemptSummary } | AttemptSummary>(
+      `/attempts/${pathSegment(id)}`,
+    );
     const a = "attempt" in r && r.attempt ? r.attempt : (r as AttemptSummary);
     if (!a || typeof a.id !== "string") return null;
     return { ...a, report: a.report ?? null, notebook: a.notebook ?? null };
@@ -332,7 +351,7 @@ export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
 // record, pinned to the current assessment version. Fetched on demand when a
 // reader opens the cite panel, not with the page.
 export async function fetchClaimCitation(id: string): Promise<ClaimCitationPayload> {
-  return apiGet<ClaimCitationPayload>(`/claims/${id}/citation`);
+  return apiGet<ClaimCitationPayload>(`/claims/${pathSegment(id)}/citation`);
 }
 
 export async function fetchContribution(
@@ -341,7 +360,7 @@ export async function fetchContribution(
   try {
     // A contribution's status flips when its review lands; the default
     // 30-second window is fresh enough and keeps repeat reads cheap.
-    return await apiGet<ContributionDetail>(`/contributions/${id}`);
+    return await apiGet<ContributionDetail>(`/contributions/${pathSegment(id)}`);
   } catch {
     // 404 (unknown contribution) renders as not-found upstream.
     return null;
@@ -361,7 +380,7 @@ export async function fetchContributorProfile(
   id: string,
 ): Promise<ContributorProfile | null> {
   try {
-    return await apiGet<ContributorProfile>(`/contributors/${id}`);
+    return await apiGet<ContributorProfile>(`/contributors/${pathSegment(id)}`);
   } catch {
     // 404 (unknown contributor) renders as not-found upstream.
     return null;
@@ -424,7 +443,7 @@ export async function fetchMandateAllocation(
   const qs = params.size > 0 ? `?${params}` : "";
   try {
     const r = await apiGet<{ allocation: MandateAllocationView }>(
-      `/mandates/${mandateId}/allocation${qs}`,
+      `/mandates/${pathSegment(mandateId)}/allocation${qs}`,
     );
     return r.allocation;
   } catch {

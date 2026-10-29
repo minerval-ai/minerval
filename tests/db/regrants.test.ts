@@ -122,6 +122,31 @@ describe("createRegrant", () => {
     expect(await jobBudget(target.jobId)).toBe(0);
   });
 
+  it("a source whose escrow job is settled cannot regrant, even with its grant still 'active'", async () => {
+    // A settled job (here cancelled outside cancelGrant) has already
+    // refunded its escrow; its budget_micro_usd is no longer held money.
+    const funder = await seedUser("regrant-settled-source");
+    const source = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: OWL,
+      jobStatus: "cancelled",
+    });
+    const target = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: 0,
+      withEscrowHold: false,
+    });
+    const res = await createRegrant({
+      fromGrantId: source.grantId,
+      toGrantId: target.grantId,
+      owls: 0.1,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("SOURCE_NOT_FOUND");
+    expect(await regrantRowsFrom(source.grantId)).toHaveLength(0);
+    expect(await jobBudget(target.jobId)).toBe(0);
+  });
+
   it("a target whose job is paused at its floor resumes on the credit", async () => {
     const funder = await seedUser("regrant-resume");
     const source = await seedGrantWithJob({

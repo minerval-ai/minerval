@@ -278,37 +278,80 @@ describe("GET /oauth/authorize", () => {
     expect(badRedirect.statusCode).toBe(400);
   });
 
-  it("redirects errors back to the client for PKCE/response_type problems", async () => {
-    const noPkce = await app.inject({
+  it("still reaches consent when the optional scope and state are omitted", async () => {
+    mocks.createAuthorizationRequest.mockResolvedValue({ id: REQUEST_ID });
+    const { scope: _scope, state: _state, ...minimal } = goodQuery;
+    const res = await app.inject({
       method: "GET",
       url: "/oauth/authorize",
-      query: { ...goodQuery, code_challenge: "" },
+      query: minimal,
     });
-    expect(noPkce.statusCode).toBe(302);
-    const url = new URL(noPkce.headers.location as string);
-    expect(url.origin + url.pathname).toBe(
-      "https://claude.ai/api/mcp/auth_callback"
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe(
+      `https://minerval.ai/oauth/consent?request_id=${REQUEST_ID}`
     );
-    expect(url.searchParams.get("error")).toBe("invalid_request");
-    expect(url.searchParams.get("state")).toBe("xyz");
+    expect(mocks.createAuthorizationRequest).toHaveBeenCalledWith({
+      client: CLIENT_ROW,
+      redirectUri: "https://claude.ai/api/mcp/auth_callback",
+      scope: null,
+      state: null,
+      codeChallenge: "a".repeat(43),
+      resource: null,
+    });
+  });
 
-    const plainPkce = await app.inject({
+  // Every client is self-registered through unauthenticated dynamic
+  // registration, so redirecting a pre-consent error to its redirect_uri
+  // would make this host an open redirector (RFC 9700 §4.11.2).
+  const omit = (key: keyof typeof goodQuery) => {
+    const { [key]: _omitted, ...rest } = goodQuery;
+    return rest;
+  };
+  const BAD_TYPE = "Only response_type=code is supported";
+  const NO_PKCE = "code_challenge is required";
+  const NOT_S256 = "code_challenge_method must be S256";
+  it.each([
+    ["response_type missing", omit("response_type"), "unsupported_response_type", BAD_TYPE],
+    ["response_type=token", { ...goodQuery, response_type: "token" }, "unsupported_response_type", BAD_TYPE],
+    ["code_challenge missing", omit("code_challenge"), "invalid_request", NO_PKCE],
+    ["code_challenge empty", { ...goodQuery, code_challenge: "" }, "invalid_request", NO_PKCE],
+    ["code_challenge_method missing", omit("code_challenge_method"), "invalid_request", NOT_S256],
+    ["code_challenge_method=plain", { ...goodQuery, code_challenge_method: "plain" }, "invalid_request", NOT_S256],
+    ["unknown scope", { ...goodQuery, scope: "mcp admin" }, "invalid_scope", "Unknown scope: admin"],
+  ])(
+    "400s without redirecting to the client: %s",
+    async (_label, query, error, description) => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/oauth/authorize",
+        query,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.headers.location).toBeUndefined();
+      expect(res.json()).toEqual({ error, error_description: description });
+      expect(mocks.createAuthorizationRequest).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not bounce victims to an attacker-registered redirect_uri", async () => {
+    mocks.getClientByClientId.mockResolvedValue({
+      ...CLIENT_ROW,
+      clientId: "attacker-client",
+      name: "Unnamed MCP client",
+      redirectUris: ["https://evil.example/login"],
+      clientUri: null,
+    });
+    const res = await app.inject({
       method: "GET",
       url: "/oauth/authorize",
-      query: { ...goodQuery, code_challenge_method: "plain" },
+      query: {
+        client_id: "attacker-client",
+        redirect_uri: "https://evil.example/login",
+      },
     });
-    expect(
-      new URL(plainPkce.headers.location as string).searchParams.get("error")
-    ).toBe("invalid_request");
-
-    const badType = await app.inject({
-      method: "GET",
-      url: "/oauth/authorize",
-      query: { ...goodQuery, response_type: "token" },
-    });
-    expect(
-      new URL(badType.headers.location as string).searchParams.get("error")
-    ).toBe("unsupported_response_type");
+    expect(res.statusCode).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    expect(res.body).not.toContain("evil.example");
   });
 });
 

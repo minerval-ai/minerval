@@ -17,7 +17,7 @@
  */
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, withTransaction, type TxQuery } from "../db/client.js";
 import {
   contributors,
   oauthAuthorizationRequests,
@@ -241,13 +241,15 @@ export interface IssuedTokens {
   scope: string | null;
 }
 
-async function issueTokenPair(input: {
-  grantId: string;
-  clientId: string; // oauth_clients.id (uuid)
-  userId: string;
-  scope: string | null;
-}): Promise<IssuedTokens> {
-  const db = getDb();
+async function issueTokenPair(
+  input: {
+    grantId: string;
+    clientId: string; // oauth_clients.id (uuid)
+    userId: string;
+    scope: string | null;
+  },
+  db: TxQuery["db"] = getDb()
+): Promise<IssuedTokens> {
   const accessToken = randomToken(ACCESS_TOKEN_PREFIX);
   const refreshToken = randomToken(REFRESH_TOKEN_PREFIX);
   const now = Date.now();
@@ -372,16 +374,37 @@ export async function refreshAccessToken(input: {
   if (row.expiresAt.getTime() < Date.now()) {
     throw new OAuthTokenError("invalid_grant", "Refresh token expired");
   }
-  await db
-    .update(oauthTokens)
-    .set({ revokedAt: new Date() })
-    .where(eq(oauthTokens.id, row.id));
-  return issueTokenPair({
-    grantId: row.grantId,
-    clientId: row.clientId,
-    userId: row.userId,
-    scope: row.scope,
+  // Atomically claim the token: the revoked_at guard in the WHERE clause
+  // means a concurrent refresh with the same token loses the race instead
+  // of double-issuing, and is then treated as reuse. The claim and the new
+  // pair commit together: the losing UPDATE comes back empty only once the
+  // winner has committed, so the loser's grant revocation below also
+  // catches the pair the winner just minted.
+  const issued = await withTransaction(async (tx) => {
+    const [claimed] = await tx.db
+      .update(oauthTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthTokens.id, row.id), isNull(oauthTokens.revokedAt)))
+      .returning({ id: oauthTokens.id });
+    if (!claimed) return null;
+    return issueTokenPair(
+      {
+        grantId: row.grantId,
+        clientId: row.clientId,
+        userId: row.userId,
+        scope: row.scope,
+      },
+      tx.db
+    );
   });
+  if (!issued) {
+    await revokeGrant(row.grantId);
+    throw new OAuthTokenError(
+      "invalid_grant",
+      "Refresh token was already used; the grant has been revoked. Re-authorize."
+    );
+  }
+  return issued;
 }
 
 export async function revokeGrant(grantId: string): Promise<void> {

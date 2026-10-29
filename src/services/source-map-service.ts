@@ -128,6 +128,88 @@ export function looksLikeHtml(content: string): boolean {
   return /<(!doctype\s+html|html|head|body)[\s>]/i.test(head) || /<\/?(p|div|span|a|br|h[1-6])[\s>]/i.test(head);
 }
 
+/*
+ * The stripping steps below are linear-time scans with exactly the output of
+ * the regex replacements named on each. Those regexes, run on stored or
+ * fetched content, retried every later start position after a failed match:
+ * a long run of `<!--` with no `-->` after it (or of `<` with no `>`, or of
+ * `<script` with no `</script>`) cost time quadratic in its length, enough
+ * for one stored source to pin the event loop for minutes per read.
+ */
+
+/** `html.replace(/<!--[\s\S]*?-->/g, " ")`, in linear time. */
+function stripComments(html: string): string {
+  let out = "";
+  let pos = 0;
+  for (;;) {
+    const start = html.indexOf("<!--", pos);
+    if (start < 0) break;
+    const end = html.indexOf("-->", start + 4);
+    // No `-->` after this `<!--` means none after any later one: the rest stays as written.
+    if (end < 0) break;
+    out += html.slice(pos, start) + " ";
+    pos = end + 3;
+  }
+  return out + html.slice(pos);
+}
+
+const HIDDEN_ELEMENT_OPEN = /<(head|script|style|noscript|template|svg)\b/gi;
+
+/**
+ * `html.replace(/<(head|script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/gi, " ")`,
+ * in linear time: once an element has no closing tag after one opening tag,
+ * it has none after any later one either, so that is remembered rather than
+ * searched for again.
+ */
+function stripHiddenElements(html: string): string {
+  const open = new RegExp(HIDDEN_ELEMENT_OPEN.source, "gi");
+  const unclosed = new Set<string>();
+  let out = "";
+  let pos = 0;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(html)) !== null) {
+    // One of the six fixed names above, so safe to build a pattern from.
+    const name = m[1]!.toLowerCase();
+    let close: RegExpExecArray | null = null;
+    if (!unclosed.has(name)) {
+      const closeTag = new RegExp(`<\\/${name}\\s*>`, "gi");
+      closeTag.lastIndex = open.lastIndex;
+      close = closeTag.exec(html);
+      if (!close) unclosed.add(name);
+    }
+    if (!close) {
+      // Unclosed: this opening tag stays, and the scan goes on one character later.
+      open.lastIndex = m.index + 1;
+      continue;
+    }
+    out += html.slice(pos, m.index) + " ";
+    pos = open.lastIndex = close.index + close[0].length;
+  }
+  return out + html.slice(pos);
+}
+
+/** `html.replace(/<[^>]+>/g, " ")`, in linear time. */
+function stripTags(html: string): string {
+  let out = "";
+  let pos = 0;
+  let from = 0;
+  for (;;) {
+    const lt = html.indexOf("<", from);
+    if (lt < 0) break;
+    const gt = html.indexOf(">", lt + 1);
+    // No `>` after this `<` means none after any later one: the rest stays as written.
+    if (gt < 0) break;
+    // `<>` encloses nothing, so it is not a tag.
+    if (gt === lt + 1) {
+      from = gt + 1;
+      continue;
+    }
+    out += html.slice(pos, lt) + " ";
+    pos = from = gt + 1;
+  }
+  return out + html.slice(pos);
+}
+
 /**
  * Reduce an HTML document to readable text: scripts, styles, and markup
  * removed, block boundaries kept as line breaks, entities decoded, and
@@ -138,14 +220,15 @@ export function looksLikeHtml(content: string): boolean {
  */
 export function htmlToText(content: string): string {
   if (!looksLikeHtml(content)) {
-    return decodeEntities(content).replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+    // The lookbehind starts a match only where a run of spaces and tabs
+    // starts, so a long run not followed by a newline is scanned once, not
+    // once per character (quadratic).
+    return decodeEntities(content).replace(/\r\n?/g, "\n").replace(/(?<![ \t])[ \t]+\n/g, "\n").trim();
   }
-  let text = content
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(head|script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/gi, " ")
+  let text = stripHiddenElements(stripComments(content))
     .replace(/<\s*br\s*\/?>/gi, "\n")
-    .replace(/<\/\s*(p|div|li|tr|h[1-6]|blockquote|section|article|header|footer|pre|table|ul|ol|dd|dt|figcaption)\s*>/gi, "\n\n")
-    .replace(/<[^>]+>/g, " ");
+    .replace(/<\/\s*(p|div|li|tr|h[1-6]|blockquote|section|article|header|footer|pre|table|ul|ol|dd|dt|figcaption)\s*>/gi, "\n\n");
+  text = stripTags(text);
   text = decodeEntities(text);
   return text
     .replace(/\r\n?/g, "\n")

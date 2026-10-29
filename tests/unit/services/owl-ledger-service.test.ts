@@ -6,11 +6,25 @@ const mocks = vi.hoisted(() => ({
   ),
   inserted: [] as unknown[],
   insertReturns: [] as Array<Array<{ id: string }>>,
+  /** Owl-balance lock statements, in order, as [sql, params]. */
+  locks: [] as Array<[string, unknown[] | undefined]>,
 }));
 
 // Drizzle insert chain stub: .insert().values().onConflictDoNothing().returning()
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: mocks.rawQuery,
+  // Transaction statements go through rawQuery too, except the owl-balance
+  // lock, which is recorded on its own so call indices stay comparable.
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      query: async (sql: string, params?: unknown[]) => {
+        if (sql.includes("pg_advisory_xact_lock")) {
+          mocks.locks.push([sql, params]);
+          return [];
+        }
+        return mocks.rawQuery(sql, params);
+      },
+    }),
   getDb: () => ({
     insert: () => ({
       values: (v: unknown) => {
@@ -40,6 +54,7 @@ beforeEach(() => {
   mocks.rawQuery.mockReset().mockResolvedValue([]);
   mocks.inserted.length = 0;
   mocks.insertReturns.length = 0;
+  mocks.locks.length = 0;
 });
 
 describe("chargeOwls", () => {
@@ -66,6 +81,10 @@ describe("chargeOwls", () => {
       1_000_000,
       null, // idempotency key: none for plain route charges
     ]);
+    // The debit ran under the user's owl-balance lock.
+    expect(mocks.locks).toHaveLength(1);
+    expect(mocks.locks[0]![0]).toContain("'owl-balance:'");
+    expect(mocks.locks[0]![1]).toEqual(["u-1"]);
   });
 
   it("reports an uncovered charge without writing anything", async () => {
@@ -86,6 +105,7 @@ describe("chargeOwls", () => {
     });
     expect(result.charged).toBe(true);
     expect(mocks.rawQuery).not.toHaveBeenCalled();
+    expect(mocks.locks).toHaveLength(0);
   });
 });
 
