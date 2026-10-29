@@ -284,6 +284,12 @@ permission is assuming the CDK bootstrap roles, which do the deploy itself.
 A package that runs in a CI job, or a stolen copy of the repository's
 secrets, gets nothing usable in AWS.
 
+The repository uses GitHub's immutable OIDC subject, which names the owner
+and repository by ID as well as by name, so a renamed or re-created
+repository can't take over the role. The trust policy's `sub` must match it
+exactly; `gh api repos/minerval-ai/minerval/actions/oidc/customization/sub`
+shows the prefix.
+
 One-time setup, as an AWS admin (`702111526219`, `us-east-1`):
 
 ```bash
@@ -301,7 +307,7 @@ cat > trust.json <<'JSON'
     "Condition": {
       "StringEquals": {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": "repo:minerval-ai/minerval:ref:refs/heads/main"
+        "token.actions.githubusercontent.com:sub": "repo:minerval-ai@257872689/minerval@1140703112:ref:refs/heads/main"
       }
     }
   }]
@@ -313,7 +319,7 @@ cat > permissions.json <<'JSON'
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Action": "sts:AssumeRole",
+    "Action": ["sts:AssumeRole", "sts:TagSession"],
     "Resource": "arn:aws:iam::702111526219:role/cdk-hnb659fds-*-702111526219-us-east-1"
   }]
 }
