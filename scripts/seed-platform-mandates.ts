@@ -311,11 +311,11 @@ function mandates(): PlatformMandate[] {
         "committed. Co-fund partially backed claims rather than duplicate " +
         "other funders' allocations.",
       // The escrow is the only hard ceiling on this mandate's spend, since the
-      // daily rate is a pace target rather than a cap. 200 owls is deliberately
-      // a first-run number: roughly a week at the rate below, after which the
-      // mandate halts until someone tops it up. Raise it once the live epoch
-      // shows where the money actually goes.
-      budgetOwls: 200,
+      // daily rate is a pace target rather than a cap. 500 owls is roughly
+      // two and a half weeks at the rate below, after which the mandate halts
+      // until someone tops it up. Raise it once the live epoch shows where
+      // the money actually goes.
+      budgetOwls: 500,
       policy: "general",
       dailyBudgetOwls: 30,
       skills: [],
