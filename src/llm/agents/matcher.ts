@@ -9,6 +9,8 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { INSTANCE_STANCES, isInstanceStance, type InstanceStance } from "../../schemas/common.js";
+import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
+import { rawQuery } from "../../db/client.js";
 
 /**
  * How the Matcher's run ended (#419). `match` and `new` are verdicts the
@@ -40,6 +42,12 @@ export interface MatchDecision {
    * on the claim so a later agent does not silently re-invert the form.
    */
   direction_note?: string | null;
+  /**
+   * For a new node: the kind it should have (§2, §7a), which may differ from
+   * the kind proposed (a question that asks how much is a quantity). Null
+   * leaves the proposed kind. On a match, the matched node keeps its own.
+   */
+  kind?: NodeKind | null;
   confidence: number;
   reasoning: string;
   alternative_matches: string[];
@@ -54,6 +62,7 @@ const MATCH_DECISION_SCHEMA = {
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
     instance_stance: { type: "string", enum: [...INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation/contrary (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
+    kind: { type: ["string", "null"], enum: [...NODE_KINDS, null], description: "For a new node: its kind (claim, quantity, or question), when it differs from the kind proposed; null to keep the proposed kind. A question that asks whether X is so is the claim X; one that asks how much, how many, how often, or when is a quantity." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
     alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
@@ -106,11 +115,14 @@ async function matchClaimImpl(input: {
    * view is spliced in: identity is judged differently in some domains.
    */
   domains?: readonly string[];
+  /** The kind of node proposed (§2, §7a); claim when absent. */
+  kind?: NodeKind;
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
   const skills = skillsForDomains(input.domains, "matcher");
   const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
+    kind: input.kind ?? "claim",
     domains: input.domains ?? [],
     skills,
     turnBudget: MATCHER_TURN_BUDGET,
@@ -152,7 +164,7 @@ async function matchClaimImpl(input: {
   // the part of that record the agent itself already holds, so it is kept
   // here rather than asked for through one more tool call the budget cannot
   // spare.
-  type SearchHit = { id: string; canonical_form: string; score: number };
+  type SearchHit = { id: string; canonical_form: string; score: number; kind?: NodeKind };
   const searchLog: Array<{ query: string; results: SearchHit[] }> = [];
 
   // Every claim id the Matcher has been shown (#470). Its searches are its
@@ -194,6 +206,9 @@ async function matchClaimImpl(input: {
     }
     if (!isInstanceStance(raw.instance_stance)) {
       return 'instance_stance must be "affirms", "denies", or "poses"';
+    }
+    if (raw.kind != null && !(NODE_KINDS as readonly unknown[]).includes(raw.kind)) {
+      return 'kind must be "claim", "quantity", "question", or null';
     }
     return null;
   };
@@ -309,10 +324,21 @@ async function matchClaimImpl(input: {
         } catch (err) {
           return `Error searching: ${err instanceof Error ? err.message : String(err)}`;
         }
+        // A hit's kind, where it is not a claim: identity is judged within a
+        // kind, and a figure matches the quantity it is a value of.
+        const kinds = new Map<string, NodeKind>();
+        if (results.length > 0) {
+          const rows = await rawQuery<{ id: string; kind: NodeKind }>(
+            `SELECT id, kind FROM claims WHERE id = ANY($1::uuid[]) AND kind != 'claim'`,
+            [results.map((r) => r.id)]
+          ).catch(() => []);
+          for (const r of rows) kinds.set(r.id, r.kind);
+        }
         const hits: SearchHit[] = results.map((r) => ({
           id: r.id,
           canonical_form: r.text,
           score: Number(r.similarity_score.toFixed(3)),
+          ...(kinds.has(r.id) ? { kind: kinds.get(r.id) } : {}),
         }));
         searchLog.push({ query, results: hits });
         for (const hit of hits) retrievedIds.add(hit.id);

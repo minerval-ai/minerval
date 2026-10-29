@@ -68,6 +68,7 @@ import {
   type IncomingFile,
 } from "../services/attachment-service.js";
 import { retryCheckError } from "../workers/prize-check-pipeline.js";
+import { presentsCredentials } from "../server/plugins/auth.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -128,7 +129,7 @@ function parseJson<T>(raw: string | undefined, fallback: T): T {
 export async function prizesRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; reads stay open.
   const optionalAuth = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.headers["x-api-key"] || request.headers.authorization) {
+    if (presentsCredentials(request)) {
       await app.authenticate(request, reply);
     }
   };

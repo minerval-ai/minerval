@@ -27,7 +27,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import {
   stewardFailureSet,
   stewardReleaseSet,
@@ -344,7 +344,12 @@ export async function processNextGrantTask(
     await withStewardLease({ claimId: target.id }, () =>
       runWithUsageContext(
         { userId: grant.funder_user_id, jobId: grant.budget_job_id },
-        () => runClaimSteward({ trigger, claimId: target.id, context, model })
+        // The pass spends from the mandate's headroom (budget less committed).
+        () =>
+          withPassBudget(
+            { microUsd: Number(grant.budget_micro_usd) - committed, source: "the funded mandate's uncommitted budget" },
+            () => runClaimSteward({ trigger, claimId: target.id, context, model })
+          )
       )
     );
     await rawQuery(

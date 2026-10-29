@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
     researcherEnabled: true,
-    researcherMaxCeilingOwls: 3,
     researcherMaxRunsPerLauncherRun: 3,
     researcherMaxWallMinutes: 20,
   },
@@ -111,6 +110,7 @@ vi.mock("../../../src/llm/client.js", async () => {
 });
 
 import { runClaimSteward } from "../../../src/llm/agents/claim-steward.js";
+import { withPassBudget } from "../../../src/llm/usage-context.js";
 import { getSkill } from "../../../src/llm/prompts/skills.js";
 
 const CLAIM_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -125,7 +125,10 @@ type LoopOptions = {
 
 async function run(domains: string[]): Promise<LoopOptions> {
   mocks.claim = { id: CLAIM_ID, importance: 0.5, domains };
-  await runClaimSteward({ trigger: "structure_and_assess", claimId: CLAIM_ID, context: "" });
+  // A pass the lane funds, so the Steward is offered research to launch.
+  await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>
+    runClaimSteward({ trigger: "structure_and_assess", claimId: CLAIM_ID, context: "" })
+  );
   return mocks.loopOptions.at(-1) as unknown as LoopOptions;
 }
 

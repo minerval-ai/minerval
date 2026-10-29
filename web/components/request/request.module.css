@@ -1,0 +1,56 @@
+/* Requests (Part VIII). A request's state is in ink, never a status colour:
+   a request is not a verdict on anything. */
+
+.state {
+  display: inline-block; font-family: var(--sans); font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft);
+  border: 1px solid var(--rule-strong); border-radius: 2px; padding: 0.05rem 0.35rem;
+}
+.state_open, .state_addressed { color: var(--ink); border-color: var(--ink-soft); }
+.state_in_progress { color: var(--ink); border-style: dashed; }
+.state_met, .state_declined, .state_withdrawn, .state_moot { color: var(--muted); }
+
+.rail { display: block; margin: 0 0 2rem; font-family: var(--sans); }
+.railHead {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+  padding: 0 0 0.55rem; border-bottom: 1px solid var(--rule);
+}
+.railCount { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; line-height: 1; color: var(--ink-soft); }
+.railCountUnit { font-family: var(--sans); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-left: 0.45rem; }
+.railList { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.railList li { padding: 0.5rem 0; border-top: 1px solid var(--rule-soft); }
+.railList li:first-child { border-top: none; }
+.railAsk { display: block; font-size: 0.8rem; line-height: 1.4; color: var(--ink); }
+.railMeta { display: block; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); }
+.railFoot { margin: 0.4rem 0 0; font-size: 0.74rem; color: var(--muted); }
+.empty { font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0; }
+
+.ask { font-size: 1.7rem; line-height: 1.25; margin: 0.6rem 0 0.6rem; }
+.addressed { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.stateNote { font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft); margin: 0 0 1rem; }
+.facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.65rem 1.2rem;
+  margin: 1.4rem 0; font-size: 0.98rem; line-height: 1.5;
+}
+.facts dt { font-family: var(--sans); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 0.3rem; }
+.facts dd { margin: 0; }
+@media (max-width: 640px) { .facts { grid-template-columns: minmax(0, 1fr); } .facts dt { padding-top: 0.5rem; } }
+.bears { list-style: none; margin: 0; padding: 0; }
+.bears li { margin: 0 0 0.25rem; }
+.kind { font-family: var(--sans); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-right: 0.45rem; }
+.bearsText { margin: 0.2rem 0 0; color: var(--ink-soft); }
+.intro { color: var(--muted); font-family: var(--sans); font-size: 0.8rem; margin-top: -0.3rem; max-width: 40rem; }
+.work { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.work li { border-left: 2px solid var(--rule); padding: 0.2rem 0 0.2rem 0.9rem; margin: 0.8rem 0; }
+.work p { margin: 0.3rem 0 0; }
+.workHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.7rem; font-family: var(--sans); font-size: 0.8rem; color: var(--ink); }
+.outcome { font-weight: 600; }
+.workWhen { color: var(--muted); margin-left: auto; }
+.funded { font-family: var(--sans); font-size: 0.74rem; color: var(--faint); }
+
+.lede { color: var(--ink-soft); max-width: 40rem; }
+.index { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.index li { padding: 0.7rem 0; border-top: 1px solid var(--rule-soft); }
+.index li:first-child { border-top: none; }
+.indexAsk { display: block; font-size: 1.02rem; line-height: 1.45; color: var(--ink); }
+.indexMeta { display: block; margin-top: 0.3rem; font-family: var(--sans); font-size: 0.74rem; color: var(--muted); }

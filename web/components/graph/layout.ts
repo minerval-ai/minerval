@@ -1,6 +1,6 @@
 import type {
-  AssessmentStatus, CheckKind, ClaimDetail, ClaimType, DependentClaim, RelationType,
-  Stance, TreeNode,
+  AssessmentStatus, CheckKind, ClaimDetail, ClaimType, DependentClaim, NodeKind,
+  QuantityEstimate, QuantityUnit, QuestionStanding, RelationType, Stance, TreeNode, ValueShown,
 } from "@/lib/types";
 import { orderByMention } from "@/lib/claim-links";
 import { isAssumesRelation } from "@/lib/ontology";
@@ -19,7 +19,7 @@ import { liveBountyMicro } from "@/lib/prizes";
 // focus card; GraphView scales the world to fit the stage.
 // ---------------------------------------------------------------------------
 
-export type BedrockKind = "fact" | "open" | "value" | "theorem";
+export type BedrockKind = "fact" | "unsettled" | "value" | "theorem";
 
 // Bedrock is a property of the ontology, not a column: an atomic claim bottoms
 // out as a checkable fact, a genuinely open empirical question, a value
@@ -39,7 +39,7 @@ export function bedrockOf(
   if (claimType === "empirical_verifiable" && (status === "verified" || status === "contradicted")) {
     return "fact";
   }
-  if (status === "inconclusive") return "open";
+  if (status === "inconclusive") return "unsettled";
   return null;
 }
 
@@ -48,9 +48,11 @@ export const BEDROCK: Record<BedrockKind, { tag: string; note: string }> = {
     tag: "bedrock · fact",
     note: "Bedrock: a verified fact. It is checked directly against sources; nothing lies beneath it.",
   },
-  open: {
-    tag: "bedrock · open question",
-    note: "Bedrock: a genuinely open empirical question. The evidence, examined, does not come down on either side, and the graph records that rather than forcing a resolution.",
+  // "Unsettled", not "open question": questions are nodes of their own
+  // (constitution §7a), and this is a claim the evidence leaves level.
+  unsettled: {
+    tag: "bedrock · unsettled",
+    note: "Bedrock: an unsettled empirical claim. The evidence, examined, does not come down on either side, and the graph records that rather than forcing a resolution.",
   },
   value: {
     tag: "bedrock · value premise",
@@ -66,6 +68,13 @@ export const BEDROCK: Record<BedrockKind, { tag: string; note: string }> = {
 // the focus claim all normalise into this shape.
 export interface ClaimBits {
   id: string;
+  // A proposition, a quantity, or a question (constitution §2, §7a). A
+  // quantity shows its estimate where a claim shows its status; a question
+  // shows how well answered it is.
+  kind?: NodeKind;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+  standing?: QuestionStanding | null;
   text: string;
   claimType: ClaimType | null;
   status: AssessmentStatus | null;
@@ -96,6 +105,9 @@ export interface ClaimBits {
   // (children_truncated). Both must suppress the atomic tag and bedrock hatch.
   collapsed?: boolean;
   truncated?: boolean;
+  // Beneath a question: an answer or a subquestion is decomposed on its own
+  // page, so the map does not call it atomic.
+  underQuestion?: boolean;
 }
 
 export interface LNode {
@@ -107,7 +119,11 @@ export interface LNode {
   h: number;
   claim?: ClaimBits;
   node?: TreeNode;                 // the subtree, for optimistic recentering
-  pill?: { argId: string; name: string; stance: Stance };
+  // `shows`: on a quantity, what the argument shows about the value (§7),
+  // in place of a stance.
+  // `question`: the pill groups a question's answers or subquestions rather
+  // than naming an argument.
+  pill?: { argId: string; name: string; stance: Stance; shows?: ValueShown | null; question?: boolean };
   more?: { label: string; action: "group" | "deps"; key: string };
   expandable?: boolean;
   expandedNow?: boolean;
@@ -160,9 +176,10 @@ const H = { t1: 112, t2: 76, mini: 18, dep: 58, depstub: 46, more: 34, pill: 22,
 // The focus card's height tracks its text: the hero clamps at three lines, so
 // estimate the line count from length (conservative chars-per-line so a
 // misjudged wrap gains whitespace, never an overflowing status band).
-function focusHeight(text: string): number {
+function focusHeight(text: string, kind: NodeKind = "claim"): number {
   const lines = Math.min(3, Math.max(1, Math.ceil(text.length / 40)));
-  return 88 + lines * 26;
+  // A quantity's card carries its estimate on a small axis under the text.
+  return 88 + lines * 26 + (kind === "quantity" ? 70 : 0);
 }
 const GAP = 10;
 const GRPGAP = 26;
@@ -183,10 +200,15 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
   const focusId = detail.claim.id;
   seen.add(focusId);
   const children = detail.tree?.children ?? [];
-  const focusH = focusHeight(detail.claim.text);
+  const focusKind: NodeKind = detail.claim.kind ?? "claim";
+  const focusH = focusHeight(detail.claim.text, focusKind);
 
   const treeBits = (n: TreeNode): ClaimBits => ({
     id: n.id,
+    kind: n.node_kind ?? "claim",
+    estimate: n.estimate ?? null,
+    unit: n.unit ?? null,
+    standing: n.standing ?? null,
     text: n.text,
     claimType: n.claim_type,
     status: n.assessment_status,
@@ -203,7 +225,10 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     childCount: n.children.length,
     // A node is only a leaf if its children are genuinely absent — not elided
     // as a shared-subclaim repeat or dropped by the response's node cap.
-    bedrock: bedrockOf(
+    // Bedrock is a claim's: a quantity or a question bottoms out differently,
+    // and a question's answers and presuppositions are decomposed on their
+    // own pages, not beneath the question.
+    bedrock: (n.node_kind ?? "claim") !== "claim" || focusKind === "question" ? null : bedrockOf(
       n.claim_type,
       n.assessment_status,
       n.children.length === 0 && !n.subtree_collapsed && !n.children_truncated,
@@ -215,6 +240,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     up: false,
     collapsed: !!n.subtree_collapsed,
     truncated: !!n.children_truncated,
+    underQuestion: focusKind === "question",
   });
 
   // ---- dependents band (above the focus) ----------------------------------
@@ -256,6 +282,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
         x: cx, y: ry, w: ws[i], h: row.h,
         claim: {
           id: r.dep.id,
+          kind: r.dep.node_kind ?? "claim",
           text: r.dep.text,
           claimType: r.dep.claim_type,
           status: r.dep.assessment_status,
@@ -277,7 +304,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       const lx = Math.max(-W.focus / 2 + 40, Math.min(W.focus / 2 - 40, cx * 0.35));
       edges.push({ x1: cx, y1: ry + row.h, x2: lx, y2: yFocus, rel: r.dep.relation_type, ids: [r.dep.id] });
       if (!r.stub) {
-        labels.push({ x: (cx + lx) / 2, y: (ry + row.h + yFocus) / 2 + (i % 2 ? 10 : -4), rel: r.dep.relation_type, text: r.dep.relation_type });
+        labels.push({ x: (cx + lx) / 2, y: (ry + row.h + yFocus) / 2 + (i % 2 ? 10 : -4), rel: r.dep.relation_type, text: relText(r.dep.relation_type) });
       }
       rx += ws[i] + GAP;
     });
@@ -319,11 +346,29 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
   // unnamed group, which renders with zero chrome (the transparent one-argument
   // case from the constitution).
   const byGroup = new Map<string, ChildEntry[]>();
-  const groupMeta = new Map<string, { name: string; stance: Stance }>();
+  const groupMeta = new Map<string, { name: string; stance: Stance; shows: ValueShown | null; question?: boolean }>();
+  // A question's children are its candidate answers and its subquestions,
+  // each drawn as a group of its own under a pill (§7a).
+  const QGROUP: Record<string, { name: string }> = {
+    answers: { name: "Candidate answers" },
+    part_of: { name: "Subquestions" },
+  };
   for (const c of laneChildren) {
+    const qg = focusKind === "question" && c.relation_type && QGROUP[c.relation_type] ? c.relation_type : null;
+    if (qg) {
+      const key = `_q:${qg}`;
+      if (!groupMeta.has(key)) groupMeta.set(key, { name: QGROUP[qg].name, stance: "neutral", shows: null, question: true });
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key)!.push({ node: c, groupKey: key });
+      continue;
+    }
     const key = c.argument_name && c.argument_id ? c.argument_id : "_";
     if (key !== "_" && !groupMeta.has(key)) {
-      groupMeta.set(key, { name: c.argument_name!, stance: c.argument_stance ?? "neutral" });
+      groupMeta.set(key, {
+        name: c.argument_name!,
+        stance: c.argument_stance ?? "neutral",
+        shows: c.argument_shows ?? null,
+      });
     }
     if (!byGroup.has(key)) byGroup.set(key, []);
     byGroup.get(key)!.push({ node: c, groupKey: key });
@@ -364,7 +409,9 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       byGroup.get(key)![0]?.node.argument_content,
     );
     const open = opts.moreOpen.has(key);
-    const vis = open ? members : members.slice(0, caps.t1);
+    // A question's answers are shown together: the set is the point.
+    const cap = groupMeta.get(key)?.question ? Math.max(caps.t1, 4) : caps.t1;
+    const vis = open ? members : members.slice(0, cap);
     const extra = members.length - vis.length;
     const slots = vis.map((m) => slotW(m.node));
     const meta = key === "_" ? null : groupMeta.get(key)!;
@@ -374,7 +421,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     // 6.4 undershot, and a centred overflow clips BOTH ends of the name. Cap at
     // the focus card's width — past that the CSS ellipsis takes over.
     const pillW = meta
-      ? Math.min(W.focus, Math.max(130, (meta.name.length + meta.stance.length + 3) * 8.3 + 50))
+      ? Math.min(W.focus, Math.max(130, (meta.name.length + (meta.shows || meta.question ? 2 : meta.stance.length + 3)) * 8.3 + 50))
       : 0;
     return { key, meta, vis, extra, open, slots, rowW, w: Math.max(rowW, pillW), pillW };
   });
@@ -390,7 +437,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       nodes.push({
         key: `pill:${g.key}`, kind: "pill",
         x: gc, y: yPill, w: g.pillW, h: H.pill,
-        pill: { argId: g.key, name: g.meta.name, stance: g.meta.stance },
+        pill: { argId: g.key, name: g.meta.name, stance: g.meta.stance, shows: g.meta.shows, question: !!g.meta.question },
       });
       edges.push({ x1: 0, y1: yFocus + focusH, x2: gc, y2: yPill, rel: "spine", ids: [`pill:${g.key}`] });
       srcX = gc;
@@ -411,8 +458,11 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       });
       const rel = t1.relation_type ?? "requires";
       edges.push({ x1: srcX, y1: srcY, x2: cx, y2: yT1, rel, ids: [t1.id] });
-      // Alternate label heights so adjacent siblings' labels never touch.
-      labels.push({ x: (srcX + cx) / 2, y: (srcY + yT1) / 2 + (i % 2 ? 10 : -4), rel, text: rel });
+      // Alternate label heights so adjacent siblings' labels never touch. A
+      // question's groups say their relation on the pill, once.
+      if (!g.meta?.question) {
+        labels.push({ x: (srcX + cx) / 2, y: (srcY + yT1) / 2 + (i % 2 ? 10 : -4), rel, text: relText(rel) });
+      }
 
       const t2 = t2list(t1);
       const t2w = t2.length * (W.t2 + 6) - 6;
@@ -467,12 +517,13 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     const sx = -(W.focus / 2 + 88 + W.side / 2);
     const sy = yFocus + 4 + i * (H.side + 12);
     nodes.push({ key: p.id, kind: "side", x: sx, y: sy, w: W.side, h: H.side, claim: treeBits(p), node: p });
+    // a question's presupposition reads as one: what the question takes as given
     edges.push({
       x1: -W.focus / 2, y1: yFocus + focusH / 2,
       x2: sx + W.side / 2, y2: sy + H.side / 2,
       rel: "assumes", ids: [p.id], horiz: true,
     });
-    labels.push({ x: (-W.focus / 2 + sx + W.side / 2) / 2, y: yFocus + focusH / 2 - 12 + i * (H.side + 12), rel: "assumes", text: "assumes" });
+    labels.push({ x: (-W.focus / 2 + sx + W.side / 2) / 2, y: yFocus + focusH / 2 - 12 + i * (H.side + 12), rel: "assumes", text: focusKind === "question" ? "presupposes" : "assumes" });
   });
 
   // ---- the focus card -------------------------------------------------------
@@ -487,9 +538,14 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     key: focusId, kind: "focus", x: 0, y: yFocus, w: W.focus, h: focusH,
     claim: {
       id: focusId,
+      kind: focusKind,
+      estimate: detail.quantity?.estimate ?? null,
+      unit: detail.quantity?.definition.unit ?? null,
+      standing: detail.question?.standing ?? null,
       text: detail.claim.text,
       claimType: detail.claim.claim_type,
-      status: detail.assessment?.status ?? null,
+      // A quantity's or a question's status column is not its judgment.
+      status: focusKind === "claim" ? detail.assessment?.status ?? null : null,
       confidence: detail.assessment?.confidence ?? null,
       credence: detail.assessment?.claim_credence ?? null,
       seedCredence: detail.assessment ? null : detail.seed?.credence ?? null,
@@ -497,7 +553,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
       reasoning: null,
       argumentId: null, argumentName: null, argumentStance: null,
       childCount: children.length,
-      bedrock: bedrockOf(
+      bedrock: focusKind !== "claim" ? null : bedrockOf(
         detail.claim.claim_type,
         detail.assessment?.status ?? null,
         children.length === 0 && !detail.tree?.children_truncated,
@@ -551,6 +607,11 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
   const bounds = { minX: gutterX - 150, maxX, minY: 0, maxY: bottom + 16 };
 
   return { nodes, edges, labels, misc, bounds, focus: focusCentre };
+}
+
+// An edge label in words: "part_of" reads "part of".
+function relText(rel: string): string {
+  return rel.replace(/_/g, " ");
 }
 
 // Which tier-1 subclaims start expanded after a recenter: the first few that

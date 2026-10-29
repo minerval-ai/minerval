@@ -61,7 +61,7 @@ Contribution ID: ${input.contributionId}
 
 Please review this contribution:
 1. Use get_contribution_details to load the contribution and understand what is being proposed.
-2. If it targets an existing claim, use get_claim to understand that claim, and get_claim_instances when the contribution concerns what its sources say (a disputed instance, a stance, a quote). Intake contributions (propose_claim, propose_source) have no target claim; the proposal itself is what you are judging.
+2. If it targets an existing claim, use get_claim to understand that claim, and get_claim_instances when the contribution concerns what its sources say (a disputed instance, a stance, a quote). Intake contributions (propose_claim, propose_question, propose_source) have no target claim; the proposal itself is what you are judging.
 3. Use get_contributor_profile to understand the contributor's history and trust level.
 4. Evaluate the contribution against the acceptance criteria for its type.
 5. Record your decision using record_review_decision (accept, reject, or escalate).

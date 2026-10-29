@@ -20,6 +20,8 @@ import { listOrderedClaimInstances } from "./claim-instance-service.js";
 export async function proposeClaim(input: {
   claim: string;
   argument: string;
+  /** A question carries no argument of its own (§7a); its argument text is not stored as one. */
+  kind?: "claim" | "question";
   createdBy?: string;
   /** Metering attribution (#70): the requesting account/key. */
   attribution?: { userId?: string | null; apiKeyId?: string | null };
@@ -38,6 +40,7 @@ export async function proposeClaim(input: {
   // Create claim
   const newClaim: NewClaim = {
     text: input.claim,
+    kind: input.kind ?? "claim",
     createdBy,
     embedding,
     pipelineEpoch: loadConfig().pipelineEpoch,
@@ -46,15 +49,18 @@ export async function proposeClaim(input: {
   const [claim] = await db.insert(claims).values(newClaim).returning();
 
   // Create argument
-  const [argument] = await db
-    .insert(arguments_)
-    .values({
-      claimId: claim!.id,
-      stance: "for",
-      content: input.argument,
-      createdBy,
-    })
-    .returning();
+  const [argument] =
+    input.kind === "question"
+      ? [null]
+      : await db
+          .insert(arguments_)
+          .values({
+            claimId: claim!.id,
+            stance: "for",
+            content: input.argument,
+            createdBy,
+          })
+          .returning();
 
   // Create tracking job (carrying metering attribution to the pipeline)
   const job = await createJob(
@@ -69,7 +75,7 @@ export async function proposeClaim(input: {
     jobId: job.id,
   });
 
-  return { claim: claim!, argument: argument!, jobId: job.id };
+  return { claim: claim!, argument: argument ?? null, jobId: job.id };
 }
 
 // Opaque keyset cursor over (updated_at, id) — the sort key for the browse feed.

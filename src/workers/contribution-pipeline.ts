@@ -31,12 +31,16 @@ import { runWithUsageContext } from "../llm/usage-context.js";
  * job: real money, metered correctly, assigned to nobody. Reviewing is not
  * platform overhead — it happens because somebody asked for something.
  */
-async function reviewSubject(contributionId: string): Promise<string | null> {
-  const [row] = await rawQuery<{ contributor_id: string | null }>(
-    `SELECT contributor_id FROM contributions WHERE id = $1`,
+async function reviewSubject(
+  contributionId: string
+): Promise<{ userId: string | null; jobId: string | null }> {
+  const [row] = await rawQuery<{ contributor_id: string | null; funded_by_job_id: string | null }>(
+    `SELECT contributor_id, funded_by_job_id FROM contributions WHERE id = $1`,
     [contributionId]
   );
-  return row?.contributor_id ?? null;
+  // A contribution a mandate's research submitted is reviewed at the
+  // mandate's expense: its review is metered to the mandate's budget job.
+  return { userId: row?.contributor_id ?? null, jobId: row?.funded_by_job_id ?? null };
 }
 
 /** Reclaim window: a claim older than this counts as abandoned (crashed process). */
@@ -71,9 +75,13 @@ export async function handleContributionMessage(
   );
   if (claimed.length === 0) return; // already reviewed, in flight, or parked
 
+  // What the review cost, recorded on the contribution even when the review
+  // fails partway: a mandate's research pays its reviews from a delegated
+  // budget, and recent costs set the estimate a submission reserves.
+  const meter = { billedMicroUsd: 0 };
   try {
-    const userId = await reviewSubject(message.contributionId);
-    await runWithUsageContext({ userId }, () =>
+    const { userId, jobId } = await reviewSubject(message.contributionId);
+    await runWithUsageContext({ userId, ...(jobId ? { jobId } : {}), meter }, () =>
       runContributionReview({
         contributionId: message.contributionId,
       })
@@ -89,5 +97,14 @@ export async function handleContributionMessage(
       );
     }
     throw err;
+  } finally {
+    if (meter.billedMicroUsd > 0) {
+      await rawQuery(
+        `UPDATE contributions
+            SET review_cost_micro_usd = COALESCE(review_cost_micro_usd, 0) + $2
+          WHERE id = $1`,
+        [message.contributionId, Math.round(meter.billedMicroUsd)]
+      );
+    }
   }
 }

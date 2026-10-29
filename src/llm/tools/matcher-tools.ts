@@ -12,6 +12,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { matchClaim } from "../agents/matcher.js";
+import { rawQuery } from "../../db/client.js";
+import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
 
 export function getMatcherToolDefinition(): Tool {
   return {
@@ -29,6 +31,13 @@ export function getMatcherToolDefinition(): Tool {
         text: {
           type: "string",
           description: "The proposition (claim text) to check for existence",
+        },
+        kind: {
+          type: "string",
+          enum: [...NODE_KINDS],
+          description:
+            "The kind of node you are about to create (default claim). For a " +
+            "quantity, pass its definition in words as text.",
         },
         exclude_claim_id: {
           type: "string",
@@ -57,9 +66,13 @@ export async function executeMatcherTool(
     if (!text.trim()) {
       return JSON.stringify({ error: "match_claim requires non-empty `text`" });
     }
+    const kind = (NODE_KINDS as readonly string[]).includes(String(input.kind))
+      ? (String(input.kind) as NodeKind)
+      : "claim";
     const decision = await matchClaim({
       extractedText: text,
       proposedCanonical: text,
+      kind,
       excludeClaimId: input.exclude_claim_id
         ? String(input.exclude_claim_id)
         : undefined,
@@ -67,7 +80,16 @@ export async function executeMatcherTool(
         ? { domains: [...opts.domains] }
         : {}),
     });
+    // The matched node's own kind: a figure matched to a quantity is
+    // recorded on it with record_estimate, not linked as a claim.
+    const [matched] = decision.matched_claim_id
+      ? await rawQuery<{ kind: NodeKind }>(`SELECT kind FROM claims WHERE id = $1`, [decision.matched_claim_id]).catch(
+          () => []
+        )
+      : [];
     return JSON.stringify({
+      ...(matched && matched.kind !== "claim" ? { matched_kind: matched.kind } : {}),
+      ...(decision.kind && decision.kind !== kind ? { kind_for_new_node: decision.kind } : {}),
       // "match" | "new" | "undecided" (#419). Undecided means the Matcher ran
       // out of search budget without a verdict: it is NOT a finding that the
       // proposition is new, so the caller must not create a claim from it.

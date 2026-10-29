@@ -1,0 +1,63 @@
+/* A question's page (constitution §7a). Ink, not status colour, for what is
+   the question's own; status colour only on the claims it is made of. */
+
+.intro { color: var(--muted); font-family: var(--sans); font-size: 0.8rem; margin-top: -0.3rem; max-width: 40rem; }
+
+.presupposes {
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+  border-left: 2px solid var(--rule-strong); padding: 0.2rem 0 0.2rem 0.8rem; margin: 1.2rem 0 0.4rem;
+}
+.presupposes ul { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.presupposes li { margin: 0.2rem 0; line-height: 1.45; }
+.presStatus { color: var(--muted); }
+.presNote { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.76rem; }
+
+.answers { list-style: none; margin: 0.8rem 0 0; padding: 0; counter-reset: none; }
+.answer {
+  display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); gap: 0 0.6rem;
+  padding: 0.7rem 0; border-top: 1px solid var(--rule-soft);
+}
+.answer:first-child { border-top: none; }
+.letter {
+  font-family: var(--serif); font-weight: 600; font-size: 1rem; color: var(--muted);
+  width: 1.5rem; height: 1.5rem; border: 1px solid var(--rule-strong); border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center; margin-top: 0.1rem;
+}
+.favored .letter { color: var(--ink); border-color: var(--ink); }
+.answerBody { min-width: 0; }
+.answerText { margin: 0 0 0.3rem; font-size: 1.02rem; line-height: 1.45; }
+.answerMeta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem;
+  font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+}
+.favoredTag { color: var(--ink); font-weight: 600; }
+.basis { font-style: italic; }
+.rel { color: var(--muted); }
+.incomplete { font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft); }
+.incomplete .sc { margin-right: 0.4rem; }
+
+.subqs { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.subqs li {
+  display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); align-items: baseline; gap: 0.6rem;
+  padding: 0.5rem 0; border-top: 1px solid var(--rule-soft); line-height: 1.45;
+}
+.subqs li > :first-child { justify-self: start; }
+@media (max-width: 640px) { .subqs li { grid-template-columns: minmax(0, 1fr); gap: 0.3rem; } }
+.subqs li:first-child { border-top: none; }
+
+.instHead { font-size: 1rem; margin: 1rem 0 0.2rem; }
+.answeredBy { list-style: none; margin: 0.4rem 0 0; padding: 0; font-family: var(--sans); font-size: 0.82rem; }
+.answeredBy li { padding: 0.35rem 0; border-top: 1px solid var(--rule-soft); line-height: 1.45; }
+.answeredBy li:first-child { border-top: none; }
+.answeredWith { color: var(--muted); }
+
+.rail { display: block; margin-bottom: 2rem; font-family: var(--sans); }
+.railStanding {
+  margin: 0.35rem 0 0.6rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--rule);
+  font-family: var(--serif); font-size: 1.15rem; color: var(--ink);
+}
+.railList { list-style: none; margin: 0; padding: 0; font-size: 0.84rem; }
+.railList li { margin: 0.35rem 0; }
+.railList a { color: var(--ink-soft); }
+.railList a:hover { color: var(--link); }
+.railN { display: inline-block; min-width: 1.2rem; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }

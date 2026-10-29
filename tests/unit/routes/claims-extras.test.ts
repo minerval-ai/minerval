@@ -109,6 +109,16 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
   listClaimDependents: vi.fn(),
 }));
+vi.mock("../../../src/services/quantity-service.js", () => ({
+  getQuantityDetail: vi.fn(async () => null),
+  getThresholdOf: vi.fn(async () => null),
+}));
+vi.mock("../../../src/services/question-service.js", () => ({
+  getQuestionDetail: vi.fn(async () => null),
+}));
+vi.mock("../../../src/services/request-service.js", () => ({
+  listRequests: vi.fn(async () => ({ items: [], total: 0 })),
+}));
 vi.mock("../../../src/services/claim-link-service.js", () => ({
   listRelatedClaims: vi.fn(async () => []),
 }));

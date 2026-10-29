@@ -23,6 +23,7 @@ const APPELLANT = "u0000000-0000-4000-8000-000000000004";
 const { state, record } = vi.hoisted(() => {
   const state = {
     contributorId: null as string | null,
+    fundedByJobId: null as string | null,
     appellantId: null as string | null,
     /** Usage context observed inside each agent run. */
     seen: [] as Array<{
@@ -46,8 +47,8 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.trimStart().startsWith("UPDATE") && q.includes("RETURNING")) {
       return [{ id: params[0] }];
     }
-    if (q.includes("contributor_id FROM contributions")) {
-      return [{ contributor_id: state.contributorId }];
+    if (q.includes("contributor_id") && q.includes("FROM contributions")) {
+      return [{ contributor_id: state.contributorId, funded_by_job_id: state.fundedByJobId }];
     }
     if (q.includes("appellant_id FROM appeals")) {
       return [{ appellant_id: state.appellantId }];
@@ -74,6 +75,7 @@ import { handleContributionMessage } from "../../../src/workers/contribution-pip
 import { handleArbitrationMessage } from "../../../src/workers/arbitration-pipeline.js";
 
 beforeEach(() => {
+  state.fundedByJobId = null;
   state.contributorId = CONTRIBUTOR;
   state.appellantId = APPELLANT;
   state.seen = [];
@@ -86,6 +88,14 @@ describe("contribution review attribution", () => {
     // not by a funded job, and inventing a job would be a lie in the meter.
     expect(state.seen).toEqual([
       { agent: "contribution_reviewer", userId: CONTRIBUTOR, jobId: undefined },
+    ]);
+  });
+
+  it("meters a mandate's contribution to the mandate's budget job", async () => {
+    state.fundedByJobId = "j0000000-0000-4000-8000-000000000009";
+    await handleContributionMessage({ contributionId: CONTRIB });
+    expect(state.seen).toEqual([
+      { agent: "contribution_reviewer", userId: CONTRIBUTOR, jobId: "j0000000-0000-4000-8000-000000000009" },
     ]);
   });
 

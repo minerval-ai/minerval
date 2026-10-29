@@ -43,7 +43,11 @@ export function getCuratorToolDefinitions(): Tool[] {
         "stance_relation='opposed' when the loser is the survivor's negation/" +
         "counterpart; moved instance/argument stances are then flipped. After " +
         "merging, notify the survivor's Steward to reconcile wording/arguments and " +
-        "re-assess.",
+        "re-assess. Nodes merge within a kind; across kinds, only a claim that " +
+        "states a value into its quantity, or a question into the claim or " +
+        "quantity it asks about (stance_relation 'same'), and their instances " +
+        "take the survivor's stances. A quantity's readings and cuts, a " +
+        "question's answer relations, and the requests on the loser move too.",
       input_schema: {
         type: "object" as const,
         properties: {

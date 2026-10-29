@@ -35,6 +35,15 @@ reading is subtler, and it lives in the reasoning:
   holds while a premise it names is doubtful or contradicted, without
   saying so. Each of these is a dependency mismatch for the claim's
   Steward to resolve.
+- Numeric mismatch (numeric_mismatch): a claim whose verdict the estimate
+  of a quantity it depends on does not bear out (list_figure_and_answer_checks
+  lists the claims about which side of a figure a quantity lies whose
+  credence sits well away from what the estimate implies); a quantity
+  defined from others whose estimate does not agree with theirs; a quantity
+  whose estimate rests on one instrument's readings while the assessment
+  does not weigh how far those readings speak to the quantity.
+- Answer mismatch (answer_mismatch): a question whose answer does not agree
+  with the assessments of the answers it draws on.
 - Stale premise (stale_premise): an assessment that relies on a
   neighbor's verdict that has since changed, where the change matters to
   its reasoning.

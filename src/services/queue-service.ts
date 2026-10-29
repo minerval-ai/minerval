@@ -80,6 +80,10 @@ export interface StewardMessage {
     // names the neighbors, their verdicts, and the checker's reading; the
     // ledger row it valued decides whether the pass runs.
     | "consistency_flag"
+    // Work on a request this claim's Steward keeps has come back (Part VIII,
+    // Requests): the context names the request and the outcome. The keeper
+    // decides whether the request has been met.
+    | "request_returned"
     // A user paid for a (re)assessment (assessment_orders, express lane).
     | "user_order"
     // The Curator merged/split this claim, or suggests a structural edge — review

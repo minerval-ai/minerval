@@ -47,6 +47,7 @@ import { getExtractorSystemPrompt } from "../src/llm/prompts/extractor.js";
 import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
 import { getContributionReviewerSystemPrompt } from "../src/llm/prompts/contribution-reviewer.js";
 import { getClaimStewardSystemPrompt } from "../src/llm/prompts/claim-steward.js";
+import { getQuestionStewardSystemPrompt } from "../src/llm/prompts/question-steward.js";
 import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
@@ -143,6 +144,10 @@ const AGENTS: AgentMeta[] = [
     tagline: "The owner of a claim: it decomposes the claim, maintains its canonical form, and assesses it over time. Its duty runs to the constitution and the health of the graph, not to any one contributor.",
     invokedWhen: "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     model: "Claude Opus 5.5", fn: getClaimStewardSystemPrompt },
+  { key: "question-steward", name: "Question Steward", stage: 4, group: "governance",
+    tagline: "The owner of a question: it keeps the question's wording and presuppositions, gathers its candidate answers and subquestions, and gives the best answer it can with how well answered the question is.",
+    invokedWhen: "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
+    model: "Claude Opus 5.5", fn: getQuestionStewardSystemPrompt },
   { key: "curator", name: "Curator", stage: 5, group: "governance",
     tagline: "The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.",
     invokedWhen: "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",

@@ -52,6 +52,8 @@ import {
 import { getUsageContext } from "../usage-context.js";
 import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
+import { setArgumentShows } from "../../services/quantity-service.js";
+import { NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
 import {
   ClaimInstanceError,
   detachClaimInstance,
@@ -85,6 +87,31 @@ const RETIRED_STATUSES: Record<string, string> = {
     "and none was found, the absence is a reason for doubt: 'doubtful'. If " +
     "such evidence would not be expected, the claim is 'unknown'.",
 };
+
+/**
+ * A verdict on a proposition (update_claim_assessment) refused for a node
+ * of another kind, pointing at the tool that records its judgment (§10).
+ */
+async function wrongKindForAssessment(claimId: string): Promise<string | null> {
+  const [row] = await rawQuery<{ kind: string }>(`SELECT kind FROM claims WHERE id = $1`, [claimId]);
+  if (row?.kind === "quantity") {
+    return JSON.stringify({
+      success: false,
+      message:
+        `Node ${claimId} is a quantity: its assessment is an estimate, recorded with ` +
+        `update_quantity_estimate, not a status.`,
+    });
+  }
+  if (row?.kind === "question") {
+    return JSON.stringify({
+      success: false,
+      message:
+        `Node ${claimId} is a question: its assessment is recorded with ` +
+        `update_question_assessment.`,
+    });
+  }
+  return null;
+}
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -309,6 +336,13 @@ export function getStewardToolDefinitions(): Tool[] {
               "0.0-1.0: how confident you are this is a genuine assertion " +
               "of THIS claim (not a near-miss proposition or a passing " +
               "mention). Defaults to 1.",
+          },
+          stated_probability: {
+            type: "number",
+            description:
+              "When the source itself states a probability for the claim " +
+              "(a forecast, \"a 30% chance\"), that probability, 0..1: what " +
+              "the source said, never your own credence.",
           },
         },
         required: ["claim_id", "url", "verbatim_text", "stance"],
@@ -557,14 +591,39 @@ export function getStewardToolDefinitions(): Tool[] {
             enum: ["for", "against"],
             description:
               "'for': the argument's conclusion is the claim. 'against': " +
-              "its conclusion is the claim's denial.",
+              "its conclusion is the claim's denial. Omit for a quantity, " +
+              "whose arguments pass shows instead.",
           },
           description: {
             type: "string",
             description: "Brief label for this line of reasoning (not a proposition)",
           },
+          shows: {
+            type: "object",
+            description:
+              "For an argument about a quantity, in place of stance (§7): " +
+              "what it shows about the value, as {text, range}. range.side " +
+              "is at, about, between, above or below (a figure or lower " +
+              "bound in low, an upper bound in high; inclusive for 'at " +
+              "least' or 'at most'); omit range for an argument that the " +
+              "value is ill defined or cannot be known.",
+            properties: {
+              text: { type: "string" },
+              range: {
+                type: "object",
+                properties: {
+                  side: { type: "string", enum: ["at", "about", "between", "above", "below"] },
+                  low: { type: "number" },
+                  high: { type: "number" },
+                  inclusive: { type: "boolean" },
+                },
+                required: ["side"],
+              },
+            },
+            required: ["text"],
+          },
         },
-        required: ["claim_id", "name", "stance", "description"],
+        required: ["claim_id", "name", "description"],
       },
     },
     {
@@ -847,6 +906,24 @@ export function getStewardToolDefinitions(): Tool[] {
               "pass it when the subclaim is of another kind, as when a " +
               "mathematical proposition rests on an empirical_derived claim " +
               "about a proof or a dataset.",
+          },
+          kind: {
+            type: "string",
+            enum: [...NODE_KINDS],
+            description:
+              "The new node's kind (§2, §7a): claim (the default), quantity " +
+              "when the premise is about a value (link the quantity itself, " +
+              "never a claim that it lies above or below a figure), or " +
+              "question when what your claim asserts turns on how a question " +
+              "is answered.",
+          },
+          definition: {
+            type: "object",
+            description:
+              "For a new quantity: {measures, population, conditions, unit}, " +
+              "where unit is {kind: proportion|count|currency|temperature|" +
+              "year|duration|rate|measure, symbol, noun, currency, per, " +
+              "scale, min, max}. child_text is the definition in words.",
           },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
@@ -1207,6 +1284,9 @@ export async function executeStewardTool(
           }
         }
 
+        const kindRefusal = await wrongKindForAssessment(claimId);
+        if (kindRefusal) return kindRefusal;
+
         const db = getDb();
 
         // Carry over the current assessment's subclaim breakdown: a steward
@@ -1337,14 +1417,40 @@ export async function executeStewardTool(
 
         // A hallucinated claim id would otherwise surface as an opaque FK
         // error from the insert.
-        const claimRows = await rawQuery<{ id: string }>(
-          `SELECT id FROM claims WHERE id = $1`,
+        const claimRows = await rawQuery<{ id: string; kind: string }>(
+          `SELECT id, kind FROM claims WHERE id = $1`,
           [claimId]
         );
         if (claimRows.length === 0) {
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}`,
+          });
+        }
+        // A figure is an instance of its quantity, and a question is asked or
+        // answered (§4, §7a): each has its own tool.
+        if (claimRows[0]!.kind === "quantity") {
+          return JSON.stringify({
+            success: false,
+            message: `Node ${claimId} is a quantity: record a source's figure with record_estimate.`,
+          });
+        }
+        if (claimRows[0]!.kind === "question") {
+          return JSON.stringify({
+            success: false,
+            message: `Node ${claimId} is a question: record where a source asks or answers it with record_question_instance.`,
+          });
+        }
+        // A probability the source itself states for the claim (§4): what
+        // the source said, kept with its instance.
+        const statedProbability =
+          input.stated_probability === undefined || input.stated_probability === null
+            ? null
+            : Number(input.stated_probability);
+        if (statedProbability !== null && !(statedProbability >= 0 && statedProbability <= 1)) {
+          return JSON.stringify({
+            success: false,
+            message: "stated_probability must be between 0 and 1, as the source states it.",
           });
         }
 
@@ -1446,6 +1552,7 @@ export async function executeStewardTool(
             publication: optText(input.publication),
             sourceDate: optText(input.source_date),
             link: optText(input.link),
+            statedProbability,
             createdBy: "claim_steward",
           })
           .returning();
@@ -1824,6 +1931,47 @@ export async function executeStewardTool(
         const name = input.name as string;
         const stance = input.stance as "for" | "against";
         const description = input.description as string;
+        // An argument about a quantity has no for or against (§7): it shows
+        // something about the value, recorded as `shows`.
+        const [node] = await rawQuery<{ kind: string }>(`SELECT kind FROM claims WHERE id = $1`, [claimId]);
+        if (node?.kind === "question") {
+          return JSON.stringify({
+            success: false,
+            message:
+              "A question has no arguments of its own: its answers carry them. " +
+              "Add the answer with add_answer and argue on its page.",
+          });
+        }
+        if (node?.kind === "quantity") {
+          const parsed = valueShownSchema.safeParse(input.shows);
+          if (!parsed.success) {
+            return JSON.stringify({
+              success: false,
+              message:
+                "An argument about a quantity records what it shows about the value " +
+                "in place of a stance: pass shows as {text, range}. " +
+                parsed.error.issues.map((i) => i.message).join("; "),
+            });
+          }
+          const argument = await addArgument({
+            claimId,
+            stance: "neutral",
+            content: description,
+            name,
+            description,
+            createdBy: "claim_steward",
+          });
+          await setArgumentShows({ argumentId: argument.id, shows: parsed.data });
+          return JSON.stringify({
+            success: true,
+            message:
+              `Created argument "${name}" on quantity ${claimId}, showing ${parsed.data.text}. ` +
+              `Attach its premises and the figures it rests on (record_estimate with ` +
+              `argument_id), give it a written form with write_argument, and evaluate ` +
+              `how strongly it shows that when you record the estimate.`,
+            argument_id: argument.id,
+          });
+        }
         // An argument's conclusion is the claim or its denial (§7); a
         // "neutral" line has no conclusion for its evaluation to rate.
         if (stance !== "for" && stance !== "against") {
@@ -2030,7 +2178,13 @@ export async function executeStewardTool(
         // Provenance: stamp the claim assessment this evaluation was derived
         // under, so an evaluation left behind by a later reassessment is
         // detectably stale. Call evaluate_argument AFTER update_claim_assessment
-        // so the stamp lands on the fresh assessment.
+        // so the stamp lands on the fresh assessment. A quantity has no
+        // assessment: its evaluations are stamped with the current estimate.
+        const [currentEstimate] = await rawQuery<{ id: string }>(
+          `SELECT qe.id FROM quantity_estimates qe JOIN claims c ON c.id = qe.claim_id
+            WHERE qe.claim_id = $1 AND qe.is_current = true AND c.kind = 'quantity'`,
+          [argument.claimId]
+        );
         const db = getDb();
         const [currentAssessment] = await db
           .select({ id: assessments.id })
@@ -2049,6 +2203,7 @@ export async function executeStewardTool(
           content,
           decisive,
           assessmentId: currentAssessment?.id ?? null,
+          estimateId: currentEstimate?.id ?? null,
           createdBy: "claim_steward",
         });
 
@@ -2307,6 +2462,26 @@ export async function executeStewardTool(
           }
         }
 
+        // The new node's kind (§2, §7a), and a quantity's definition, checked
+        // before anything is written.
+        const childKind = typeof input.kind === "string" && input.kind.trim() ? input.kind.trim().toLowerCase() : "claim";
+        if (!(NODE_KINDS as readonly string[]).includes(childKind)) {
+          return JSON.stringify({ success: false, message: `Unknown kind "${childKind}". Use one of: ${NODE_KINDS.join(", ")}.` });
+        }
+        let childDefinition: ReturnType<typeof quantityDefinitionSchema.parse> | null = null;
+        if (childKind === "quantity") {
+          const parsed = quantityDefinitionSchema.safeParse(input.definition);
+          if (!parsed.success) {
+            return JSON.stringify({
+              success: false,
+              message:
+                "A new quantity needs its definition: " +
+                parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`).join("; "),
+            });
+          }
+          childDefinition = parsed.data;
+        }
+
         // Create the subclaim
         let embedding: number[] | undefined;
         try {
@@ -2358,10 +2533,24 @@ export async function executeStewardTool(
                 : {}),
               ...(gated ? { stewardState: "deferred" } : {}),
               ...(domainsSource !== null ? { domains, domainsSource } : {}),
+              kind: childKind,
               pipelineEpoch,
               createdBy: "claim_steward",
             })
             .returning();
+          if (childDefinition) {
+            await tx.query(
+              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
+               VALUES ($1, $2, $3, $4, $5, 'claim_steward')`,
+              [
+                created!.id,
+                childDefinition.measures,
+                childDefinition.population ?? null,
+                childDefinition.conditions ?? null,
+                JSON.stringify(childDefinition.unit),
+              ]
+            );
+          }
 
           // The child is brand new, so the edge cannot collide.
           const edge = await insertRelationshipEdge(
@@ -2399,7 +2588,7 @@ export async function executeStewardTool(
         return JSON.stringify({
           success: true,
           message:
-            `Added subclaim to ${parentId}: "${childText}" (${relation})` +
+            `Added ${childKind === "claim" ? "subclaim" : `a ${childKind}`} to ${parentId}: "${childText}" (${relation})` +
             (seedCredence !== undefined
               ? `; seeded with prior credence ${seedCredence}` +
                 (seedNote ? " and a preliminary note" : "")

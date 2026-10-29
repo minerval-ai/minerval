@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
 import {
-  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
+  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta, showsMark,
   DECISIVE, premiseSummary,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
   groupByArgument, topLevelEffects, type ArgumentGroup,
@@ -12,7 +12,8 @@ import {
 } from "@/lib/ontology";
 import { buildClaimTextMap, hasClaimLinks } from "@/lib/claim-links";
 import { ArgumentText } from "./ArgumentText";
-import { Swatch } from "./Assessment";
+import { Swatch, StandingBadge } from "./Assessment";
+import { describeEstimate } from "@/lib/quantity";
 import { Term } from "./Term";
 import { fmtDate } from "@/lib/format";
 
@@ -113,7 +114,13 @@ function BasisNode({ node }: { node: TreeNode }) {
   return (
     <li className="basis-item">
       <div className="basis-row">
-        {node.assessment_status ? <Swatch status={node.assessment_status} /> : <SeedSwatch node={node} />}{" "}
+        {node.node_kind === "quantity" && node.estimate && node.unit ? (
+          <span className="qty-chip" title="This premise is a quantity; its estimate stands where a status would.">
+            {describeEstimate(node.estimate, node.unit).lead}
+          </span>
+        ) : node.node_kind === "question" ? (
+          <StandingBadge standing={node.standing ?? null} />
+        ) : node.assessment_status ? <Swatch status={node.assessment_status} /> : <SeedSwatch node={node} />}{" "}
         {rel && (
           <Term
             gloss={rel.gloss}
@@ -207,6 +214,12 @@ function ArgumentBlock({
           <span className="argname">{group.name}</span>
           {group.stance && <StanceTag stance={group.stance} />}
           <DecisiveTag decisive={group.decisive} />
+          {group.shows && (
+            <span className="arg-shows" title="What this argument shows about the quantity's value (constitution §7).">
+              <span className="sc">shows</span>
+              <span className="arg-shows-mark" aria-hidden>{showsMark(group.shows)?.glyph}</span> {group.shows.text}
+            </span>
+          )}
         </div>
       )}
       {isBasis && <p className="basis-note">{BASIS.gloss}</p>}
