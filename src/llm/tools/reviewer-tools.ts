@@ -32,7 +32,7 @@ import {
   materializeAcceptedIntake,
   type IntakeMaterializationResult,
 } from "../../services/intake-service.js";
-import { getContributionById } from "../../services/contribution-service.js";
+import { getContributionById, MANDATE_LABEL } from "../../services/contribution-service.js";
 import {
   admitPrizeClaim,
   prizeClaimReviewBlock,
@@ -47,7 +47,7 @@ export function getReviewerToolDefinitions(): Tool[] {
         "Record your review decision for a contribution. This writes the " +
         "decision to the database and updates the contribution's review " +
         "status. Accepting an intake contribution (propose_claim, " +
-        "propose_source) also materializes it here: the Matcher decides " +
+        "propose_question, propose_source) also materializes it here: the Matcher decides " +
         "identity, then the claim is created or the source queued for " +
         "extraction, and the outcome is reported in the tool result.",
       input_schema: {
@@ -339,7 +339,10 @@ export async function executeReviewerTool(
             addressedTo: text(r.addressed_to) || null,
             claimIds: reviewed.claimId ? [reviewed.claimId] : [],
             bearsOnText: reviewed.claimId ? null : reviewed.content.slice(0, 1000),
-            filer: { kind: "contributor", contributorId: reviewed.contributorId },
+            // A mandate's research proposes under the mandate (Part VIII).
+            filer: reviewed.grantId
+              ? { kind: "mandate", grantId: reviewed.grantId }
+              : { kind: "contributor", contributorId: reviewed.contributorId },
           });
           requestNote = ` Request ${filed.id} filed.`;
         }
@@ -358,8 +361,9 @@ export async function executeReviewerTool(
           );
           await recordWork({
             requestId,
-            byLabel: contributor?.display_name ?? "a contributor",
-            contributorId: reviewed.contributorId,
+            byLabel: reviewed.grantId ? MANDATE_LABEL : (contributor?.display_name ?? "a contributor"),
+            contributorId: reviewed.grantId ? null : reviewed.contributorId,
+            fundedByJobId: reviewed.fundedByJobId ?? null,
             outcome: null,
             summary: reviewed.content.slice(0, 4000),
           });

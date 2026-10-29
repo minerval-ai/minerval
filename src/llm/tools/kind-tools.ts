@@ -29,7 +29,7 @@ import { generateEmbedding } from "../../services/embedding-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
 import { insertRelationshipEdge } from "../../services/relationship-service.js";
 import { enqueueClaimPipeline, enqueueSteward } from "../../services/queue-service.js";
-import { parseClaimLinks } from "../../services/argument-service.js";
+import { getEvaluationStateForClaim, parseClaimLinks } from "../../services/argument-service.js";
 import { KindError, lockNodeKind } from "../../services/node-kind.js";
 import {
   addReading,
@@ -848,7 +848,17 @@ async function executeKindToolImpl(
         trigger: ctx.trigger ?? "steward_reassessment",
         triggerContext: ctx.context?.trim() ? ctx.context : null,
       });
-      return ok(`Estimate recorded for quantity ${claimId}.`, { estimate_id: id });
+      // A fresh estimate makes every named argument's evaluation due, as a
+      // fresh verdict does on a claim.
+      const evals = await getEvaluationStateForClaim(claimId);
+      const due = evals.filter((e) => e.content === null || e.stale).map((e) => `"${e.argument_name}"`);
+      return ok(
+        `Estimate recorded for quantity ${claimId}.` +
+          (due.length
+            ? ` These arguments' evaluations are missing or predate it: ${due.join(", ")}. Evaluate each with evaluate_argument, or re-record it unchanged to confirm it holds.`
+            : ""),
+        { estimate_id: id }
+      );
     }
 
     case "record_quantity_reading": {

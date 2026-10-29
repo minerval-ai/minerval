@@ -154,6 +154,10 @@ export const contributionTypeEnum = z.enum([
 // claim_id until review accepts and materializes them.
 export const intakeContributionTypeEnum = z.enum([
   "propose_claim",
+  // A question proposed directly (constitution §7a): materialized like a
+  // claim, through the Matcher, as a question node or as the claim or
+  // quantity it turns out to ask about.
+  "propose_question",
   "propose_source",
 ]);
 

@@ -587,6 +587,12 @@ export const argumentEvaluations = pgTable(
     assessmentId: uuid("assessment_id").references(() => assessments.id, {
       onDelete: "set null",
     }),
+    // On a quantity, the estimate the evaluation was made under (§7, §10):
+    // a quantity has no verdict, so its evaluations are dated against its
+    // estimates instead of its assessments.
+    estimateId: uuid("estimate_id").references((): AnyPgColumn => quantityEstimates.id, {
+      onDelete: "set null",
+    }),
     isCurrent: boolean("is_current").notNull().default(true),
     createdBy: text("created_by").notNull().default("claim_steward"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -2900,6 +2906,14 @@ export const contributions = pgTable(
     contributionType: text("contribution_type").notNull(),
     content: text("content").notNull(),
     evidenceUrls: text("evidence_urls").array().notNull().default([]),
+    // Research a mandate funds submits what it finds as contributions
+    // (Part VIII): the mandate, shown as "a funded mandate" and never by
+    // name (§12/§19), and the budget job its review is metered to. A
+    // mandate's contribution builds no one's reputation and earns no owls.
+    grantId: uuid("grant_id").references((): AnyPgColumn => grants.id, {
+      onDelete: "set null",
+    }),
+    fundedByJobId: uuid("funded_by_job_id"),
     submittedAt: timestamp("submitted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -2,7 +2,8 @@
  * Contribution service -- DB operations for contributions, reviews, appeals.
  */
 import { eq, sql, desc, inArray } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
+import { enqueueContribution } from "./queue-service.js";
 import {
   contributions,
   contributionReviews,
@@ -12,6 +13,51 @@ import {
   type NewContribution,
 } from "../db/schema.js";
 
+/**
+ * A contribution submitted by research a mandate funds (Part VIII): filed
+ * under the mandate's funder account but shown as "a funded mandate", its
+ * review metered to the mandate's budget job, and queued for review like
+ * anyone's. Refusals come back as a message the researcher can act on.
+ */
+export async function submitMandateContribution(input: {
+  grantId: string;
+  jobId: string | null;
+  input: Record<string, unknown>;
+}): Promise<{ success: boolean; message: string; contribution_id?: string }> {
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const claimId = text(input.input.claim_id);
+  const type = text(input.input.contribution_type);
+  const content = text(input.input.content);
+  const allowed = ["challenge", "support", "add_instance", "add_estimate", "propose_argument", "propose_answer", "propose_request", "answer_request"];
+  if (!allowed.includes(type)) return { success: false, message: `contribution_type must be one of ${allowed.join(", ")}.` };
+  if (content.length < 40) return { success: false, message: "content must say what you found and what it rests on." };
+  const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
+  if (!node) return { success: false, message: `No active node ${claimId}.` };
+  const [grant] = await rawQuery<{ funder_user_id: string }>(`SELECT funder_user_id FROM grants WHERE id = $1`, [input.grantId]);
+  if (!grant) return { success: false, message: "The mandate behind this run no longer exists." };
+  const urls = Array.isArray(input.input.evidence_urls)
+    ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
+    : [];
+  const contribution = await createContribution({
+    claimId,
+    contributorId: grant.funder_user_id,
+    contributionType: type,
+    content: content.slice(0, 10_000),
+    evidenceUrls: urls,
+    grantId: input.grantId,
+    fundedByJobId: input.jobId,
+  });
+  await enqueueContribution({ contributionId: contribution.id });
+  return {
+    success: true,
+    message: `Contribution ${contribution.id} submitted for review under the mandate.`,
+    contribution_id: contribution.id,
+  };
+}
+
+/** How a contribution from a mandate's research is shown: the arrangement, not the funder. */
+export const MANDATE_LABEL = "a funded mandate";
+
 export async function createContribution(input: {
   claimId: string;
   contributorId: string;
@@ -20,6 +66,9 @@ export async function createContribution(input: {
   evidenceUrls?: string[];
   mergeTargetClaimId?: string;
   proposedCanonicalForm?: string;
+  /** Submitted by research a mandate funds (Part VIII): the mandate, and the job its review is metered to. */
+  grantId?: string | null;
+  fundedByJobId?: string | null;
 }) {
   const db = getDb();
   const values: NewContribution = {
@@ -30,6 +79,8 @@ export async function createContribution(input: {
     evidenceUrls: input.evidenceUrls ?? [],
     mergeTargetClaimId: input.mergeTargetClaimId ?? null,
     proposedCanonicalForm: input.proposedCanonicalForm ?? null,
+    grantId: input.grantId ?? null,
+    fundedByJobId: input.fundedByJobId ?? null,
   };
 
   const [contribution] = await db
@@ -192,7 +243,8 @@ export async function getContributionRecordForClaim(claimId: string) {
     const appealRow = appealFor.get(row.contribution.id);
     return {
       contribution: row.contribution,
-      contributorDisplayName: row.contributorDisplayName,
+      // A mandate's contribution names the arrangement, never the party (§12/§19).
+      contributorDisplayName: row.contribution.grantId ? MANDATE_LABEL : row.contributorDisplayName,
       review: reviewFor.get(row.contribution.id) ?? null,
       appeal: appealRow
         ? {

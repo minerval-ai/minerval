@@ -163,6 +163,7 @@ describe("write-surface governance (#157)", () => {
         claimText: "The sky is blue",
         argumentText: "Look up.",
         contributorId: CONTRIBUTOR.id,
+        kind: "claim",
       });
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
     });

@@ -494,6 +494,11 @@ not a fixed sequence:
   result or a refusal included, is paid for alike. You do not file
   requests. Value requests like any other work, by what meeting them would
   change.
+- research you launch (delegate_research) reports to you. Where it may find
+  something the graph should hold, give it max_contributions: it then
+  submits what it establishes as contributions under the mandate, reviewed
+  like anyone's at the mandate's expense, and the node's Steward decides
+  what they change. Nothing it submits earns standing for anyone.
 
 A mandate's scope can be a question or a quantity as well as a claim, and
 a question with its subquestions and the requests they raise is the natural

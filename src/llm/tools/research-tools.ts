@@ -129,8 +129,9 @@ export function getResearchToolDefinitions(
         (graphWrites
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
             "on the claim in scope, "
-          : "nothing to the graph (research a mandate launches reads and reports; it does not " +
-            "record provenance or examine documents), ") +
+          : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
+            "not record provenance or examine documents, and with max_contributions it submits what " +
+            "the graph should hold as contributions, reviewed like anyone's at the mandate's expense), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
@@ -199,6 +200,17 @@ export function getResearchToolDefinitions(
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
               "\"method\", \"attribution\"), at most eight.",
           } } : {}),
+          ...(!graphWrites
+            ? {
+                max_contributions: {
+                  type: "number",
+                  description:
+                    "How many contributions the researcher may submit from what it finds, under the " +
+                    "mandate, each reviewed like anyone's at the mandate's expense (default 0: it only " +
+                    `reports). At most ${MAX_MANDATE_CONTRIBUTIONS}.`,
+                },
+              }
+            : {}),
           ...(input.claimScoped || !graphWrites
             ? {}
             : {
@@ -240,6 +252,8 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
+/** The most contributions one mandate-funded run may submit. */
+const MAX_MANDATE_CONTRIBUTIONS = 10;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
@@ -267,7 +281,8 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
     claim: { id: string; text: string; domains: string[] } | null,
-    examination: ExaminationRow | null
+    examination: ExaminationRow | null,
+    contributionAllowance = 0
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
     let result: ResearcherResult | null = null;
@@ -295,7 +310,9 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
             include_constitution: row.include_constitution,
             ceiling_micro_usd: row.ceiling_micro_usd,
             notebook: row.notebook,
+            job_id: row.job_id,
           },
+          contributionAllowance,
           claim,
           examination: examination
             ? {
@@ -425,7 +442,13 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     launched++;
     if (examination) await linkResearchRun(examination.id, row.id);
 
-    const { result, billed, failure } = await runOnRow(row, claim, examination);
+    // A mandate's research may submit what it finds, up to the allowance
+    // its Grantmaker delegates (Part VIII); a Steward's research records
+    // provenance instead.
+    const contributionAllowance = graphWrites
+      ? 0
+      : Math.min(MAX_MANDATE_CONTRIBUTIONS, Math.max(0, Math.floor(Number(input.max_contributions) || 0)));
+    const { result, billed, failure } = await runOnRow(row, claim, examination, contributionAllowance);
 
     if (failure || !result) {
       const message = failure instanceof Error ? failure.message : String(failure);
