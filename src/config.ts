@@ -656,11 +656,10 @@ const configSchema = z.object({
   // one run. The launcher allocates within these.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
   researcherMaxCeilingOwls: z.coerce.number().min(0).default(3),
-  // The most a Grantmaker may delegate to one research run for reviewing the
-  // contributions it submits (Part VIII), and the review cost each
-  // submission reserves against that budget until its review has run and
-  // its real cost is known (used until the graph has reviews to average).
-  researcherMaxContributionBudgetOwls: z.coerce.number().min(0).default(10),
+  // The review cost each contribution from a mandate's research reserves
+  // against the budget its Grantmaker delegated (Part VIII) until its review
+  // has run and its real cost is known, used until there are reviews to
+  // average.
   contributionReviewEstimateUsd: z.coerce.number().min(0).default(0.25),
   researcherMaxRunsPerLauncherRun: z.coerce.number().min(0).default(3),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
@@ -1148,7 +1147,6 @@ export function loadConfig(): Config {
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
     researcherMaxCeilingOwls: process.env.RESEARCHER_MAX_CEILING_OWLS,
-    researcherMaxContributionBudgetOwls: process.env.RESEARCHER_MAX_CONTRIBUTION_BUDGET_OWLS,
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     researcherMaxRunsPerLauncherRun: process.env.RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,

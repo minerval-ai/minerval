@@ -56,8 +56,6 @@ import { applyReviewOutcome } from "../../src/services/reputation-service.js";
 import { createResearchTools } from "../../src/llm/tools/research-tools.js";
 import { openResearchRun } from "../../src/services/research-run-service.js";
 import { handleContributionMessage } from "../../src/workers/contribution-pipeline.js";
-import { loadConfig } from "../../src/config.js";
-import { owlsToMicroUsd } from "../../src/services/owl.js";
 
 const DEF = { measures: "Deaths", unit: { kind: "count" as const } };
 
@@ -202,11 +200,12 @@ describe("contributions from a mandate's research", () => {
       submitMandateContribution({ researchRunId: run.id, input: { claim_id: claim, contribution_type: "support", content: FINDING } });
 
     const first = await submit();
-    expect(first).toMatchObject({ success: true, budget_left_usd: expect.any(Number) });
+    // Each result says where the budget stands.
+    expect(first).toMatchObject({ success: true, budget: expect.stringContaining("across 1 submission,") });
     expect((await submit()).success).toBe(true);
-    expect(await mandateContributionBudget(run.id, estimate)).toEqual({ budgetMicroUsd: Math.round(estimate * 2.5), committedMicroUsd: 2 * estimate });
+    expect(await mandateContributionBudget(run.id, estimate)).toEqual({ budgetMicroUsd: Math.round(estimate * 2.5), committedMicroUsd: 2 * estimate, submitted: 2 });
     const third = await submit();
-    expect(third).toMatchObject({ success: false, message: expect.stringContaining("spent") });
+    expect(third).toMatchObject({ success: false, message: expect.stringContaining("does not cover another review") });
 
     // The first review costs far less than estimated: its real cost
     // replaces the reservation, and the budget has room again. The pipeline
@@ -224,7 +223,7 @@ describe("contributions from a mandate's research", () => {
     mocks.reviewCost = 0;
   });
 
-  it("is offered to the Researcher only with a budget a Grantmaker delegates, capped by the backstop", async () => {
+  it("is offered to the Researcher only with a budget a Grantmaker delegates, and reported back to it", async () => {
     const funder = await seedUser("funder");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
     const seen: Array<{ budget: number | undefined; requestedBy: string }> = [];
@@ -234,16 +233,21 @@ describe("contributions from a mandate's research", () => {
     };
     const brief = "Survey the regional mortality literature for the 1918 pandemic and say which estimates have stated methods.";
     const gm = createResearchTools({ requestedBy: "grantmaker", grantId, runResearcher: stub as never });
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 2.5 });
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 10_000 });
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1 });
+    const delegated = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 2.5 }))!);
+    expect(delegated.contribution_reviews).toMatch(/^Contribution reviews: \$0\.00 of \$2\.50 committed across 0 submissions, \$2\.50 left\./);
+    const read = JSON.parse((await gm.execute("get_research_run", { research_run_id: delegated.research_run_id }))!);
+    expect(read.research_run.contribution_reviews).toBe(delegated.contribution_reviews);
+    // No backstop clamps what the Grantmaker delegates.
+    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 40 });
+    const none = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1 }))!);
+    expect(none.contribution_reviews).toBeUndefined();
     const negative = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: -1 }))!);
     expect(negative.success).toBe(false);
     const steward = createResearchTools({ requestedBy: "claim_steward", claimId: await seedClaim("c"), runResearcher: stub as never });
     await steward.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 5 });
     expect(seen).toEqual([
       { budget: 2_500_000, requestedBy: "grantmaker" },
-      { budget: owlsToMicroUsd(loadConfig().researcherMaxContributionBudgetOwls), requestedBy: "grantmaker" },
+      { budget: 40_000_000, requestedBy: "grantmaker" },
       { budget: 0, requestedBy: "grantmaker" },
       { budget: 0, requestedBy: "claim_steward" },
     ]);

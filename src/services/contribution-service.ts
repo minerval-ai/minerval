@@ -34,6 +34,7 @@ export interface MandateContributionBudget {
   budgetMicroUsd: number;
   /** Real review costs of the run's reviewed contributions plus the estimate reserved for each one not yet reviewed. */
   committedMicroUsd: number;
+  submitted: number;
 }
 
 /** Where a run's delegated contribution budget stands, unreviewed submissions reserved at `estimate`. */
@@ -42,14 +43,37 @@ export async function mandateContributionBudget(
   estimate: number,
   run: { query: <T>(q: string, p?: unknown[]) => Promise<T[]> } = { query: rawQuery }
 ): Promise<MandateContributionBudget> {
-  const [row] = await run.query<{ budget: string; committed: string }>(
+  const [row] = await run.query<{ budget: string; committed: string; submitted: string }>(
     `SELECT r.contribution_budget_micro_usd::bigint AS budget,
-            COALESCE((SELECT SUM(COALESCE(c.review_cost_micro_usd, $2::bigint))
-                        FROM contributions c WHERE c.research_run_id = r.id), 0)::bigint AS committed
-       FROM research_runs r WHERE r.id = $1`,
+            COALESCE(SUM(COALESCE(c.review_cost_micro_usd, $2::bigint)), 0)::bigint AS committed,
+            COUNT(c.id) AS submitted
+       FROM research_runs r LEFT JOIN contributions c ON c.research_run_id = r.id
+      WHERE r.id = $1
+      GROUP BY r.id`,
     [researchRunId, estimate]
   );
-  return { budgetMicroUsd: Number(row?.budget ?? 0), committedMicroUsd: Number(row?.committed ?? 0) };
+  return {
+    budgetMicroUsd: Number(row?.budget ?? 0),
+    committedMicroUsd: Number(row?.committed ?? 0),
+    submitted: Number(row?.submitted ?? 0),
+  };
+}
+
+const usdText = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
+
+/**
+ * The review budget as the agents working under it see it: what is
+ * committed, what is left, and what a review is expected to cost.
+ */
+export function contributionBudgetLine(budget: MandateContributionBudget, estimate: number): string {
+  const left = Math.max(0, budget.budgetMicroUsd - budget.committedMicroUsd);
+  const more = estimate > 0 ? Math.floor(left / estimate) : 0;
+  return (
+    `Contribution reviews: ${usdText(budget.committedMicroUsd)} of ${usdText(budget.budgetMicroUsd)} committed ` +
+    `across ${budget.submitted} submission${budget.submitted === 1 ? "" : "s"}, ${usdText(left)} left. ` +
+    `A review is estimated at ${usdText(estimate)} (the average of recent reviews), so about ${more} more ` +
+    `submission${more === 1 ? "" : "s"} fit. Reviews not yet run count at the estimate until their real cost is known.`
+  );
 }
 
 /**
@@ -64,7 +88,7 @@ export async function mandateContributionBudget(
 export async function submitMandateContribution(input: {
   researchRunId: string;
   input: Record<string, unknown>;
-}): Promise<{ success: boolean; message: string; contribution_id?: string; budget_left_usd?: number }> {
+}): Promise<{ success: boolean; message: string; contribution_id?: string; budget?: string }> {
   const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const claimId = text(input.input.claim_id);
   const type = text(input.input.contribution_type);
@@ -78,7 +102,6 @@ export async function submitMandateContribution(input: {
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
   const estimate = await reviewCostEstimateMicroUsd();
-  const usd = (micro: number) => Math.round(micro / 10_000) / 100;
 
   const outcome = await withTransaction(async (tx) => {
     // The run row is the lock: two submissions from one run cannot both
@@ -97,9 +120,8 @@ export async function submitMandateContribution(input: {
       return {
         success: false as const,
         message:
-          `The review budget delegated to this run is spent: $${usd(budget.committedMicroUsd)} of ` +
-          `$${usd(budget.budgetMicroUsd)} is committed, and a review is estimated at $${usd(estimate)}. ` +
-          `Put the rest of what you found in your report.`,
+          `The review budget delegated to this run does not cover another review. ` +
+          `${contributionBudgetLine(budget, estimate)} Put the rest of what you found in your report.`,
       };
     }
     const [row] = await tx.query<{ id: string }>(
@@ -108,11 +130,8 @@ export async function submitMandateContribution(input: {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [claimId, grant.funder_user_id, type, content.slice(0, 10_000), urls, run.grant_id, run.job_id, input.researchRunId]
     );
-    return {
-      success: true as const,
-      id: row!.id,
-      left: budget.budgetMicroUsd - budget.committedMicroUsd - estimate,
-    };
+    const after = { ...budget, committedMicroUsd: budget.committedMicroUsd + estimate, submitted: budget.submitted + 1 };
+    return { success: true as const, id: row!.id, budget: contributionBudgetLine(after, estimate) };
   });
   if (!outcome.success) return outcome;
   await enqueueContribution({ contributionId: outcome.id });
@@ -120,7 +139,7 @@ export async function submitMandateContribution(input: {
     success: true,
     message: `Contribution ${outcome.id} submitted for review under the mandate.`,
     contribution_id: outcome.id,
-    budget_left_usd: usd(Math.max(0, outcome.left)),
+    budget: outcome.budget,
   };
 }
 

@@ -25,6 +25,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { loadConfig } from "../../config.js";
+import {
+  contributionBudgetLine,
+  mandateContributionBudget,
+  reviewCostEstimateMicroUsd,
+} from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, runWithUsageContext, withCostMeter } from "../usage-context.js";
@@ -120,7 +125,6 @@ export function getResearchToolDefinitions(
   const graphWrites = input.graphWrites ?? true;
   const maxOwls = config.researcherMaxCeilingOwls;
   const maxRuns = config.researcherMaxRunsPerLauncherRun;
-  const maxContributionOwls = config.researcherMaxContributionBudgetOwls;
   return [
     {
       name: DELEGATE_RESEARCH_TOOL_NAME,
@@ -206,11 +210,12 @@ export function getResearchToolDefinitions(
                 contribution_budget_usd: {
                   type: "number",
                   description:
-                    "USD the mandate delegates for reviewing the contributions the researcher submits " +
-                    "from what it finds, each reviewed like anyone's (default 0: it only reports). " +
-                    "Separate from budget_usd, which pays for the research itself. A submission is " +
-                    "refused once the reviews it has already used, plus the estimated cost of one " +
-                    `more, would exceed it. At most ${maxContributionOwls} owls.`,
+                    "USD of the mandate's budget delegated for reviewing the contributions the " +
+                    "researcher submits from what it finds, each reviewed like anyone's (default 0: " +
+                    "it only reports). Separate from budget_usd, which pays for the research itself. " +
+                    "The researcher sees what is committed and left, and what a review is expected " +
+                    "to cost, and stops submitting when what is left would not cover one; the result " +
+                    "tells you what the reviews used.",
                 },
               }
             : {}),
@@ -255,6 +260,17 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
+/**
+ * Where a run's delegated review budget stands, for the Grantmaker that
+ * delegated it. Reviews run after the research ends, so committed spend
+ * keeps moving from estimates to real costs; get_research_run shows it later.
+ */
+async function contributionReviews(runId: string, budgetMicroUsd: number): Promise<{ contribution_reviews?: string }> {
+  if (budgetMicroUsd <= 0) return {};
+  const estimate = await reviewCostEstimateMicroUsd();
+  return { contribution_reviews: contributionBudgetLine(await mandateContributionBudget(runId, estimate), estimate) };
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
@@ -372,7 +388,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     if (!graphWrites && input.contribution_budget_usd !== undefined) {
       const usd = Number(input.contribution_budget_usd);
       if (!Number.isFinite(usd) || usd < 0) return refuse("contribution_budget_usd must be a non-negative number of USD.");
-      contributionBudgetMicroUsd = Math.min(owlsToMicroUsd(config.researcherMaxContributionBudgetOwls), Math.round(usd * 1_000_000));
+      contributionBudgetMicroUsd = Math.round(usd * 1_000_000);
     }
     const effortRaw = str(input.effort);
     const effort = (EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high";
@@ -490,6 +506,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       report: result.report,
       ...(examination ? { examination_id: examination.id } : {}),
       notebook_sections: Object.keys(closed?.notebook ?? {}),
+      ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
       ...(result.error ? { harness_note: result.error } : {}),
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
@@ -649,6 +666,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
         report: row.report,
         notebook: row.notebook,
         error: row.error,
+        ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
       },
     });
   };

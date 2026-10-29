@@ -75,7 +75,12 @@ import {
 import { createPangramTools } from "../tools/pangram-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
-import { submitMandateContribution } from "../../services/contribution-service.js";
+import {
+  contributionBudgetLine,
+  mandateContributionBudget,
+  reviewCostEstimateMicroUsd,
+  submitMandateContribution,
+} from "../../services/contribution-service.js";
 
 export const MANDATE_CONTRIBUTION_TYPES = [
   "challenge",
@@ -377,6 +382,17 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const submitsContributions =
     run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
+  // The review budget a Grantmaker delegated, as the researcher sees it: in
+  // the task message, after every turn (reviews settle while it works, so
+  // committed spend moves from estimates to real costs), and in each
+  // submission's result.
+  let contributionBudgetNote = "";
+  const readContributionBudget = async (): Promise<string> => {
+    const estimate = await reviewCostEstimateMicroUsd();
+    contributionBudgetNote = contributionBudgetLine(await mandateContributionBudget(run.id, estimate), estimate);
+    return contributionBudgetNote;
+  };
+
   const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
     ...graphReadTools,
@@ -408,7 +424,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskInput = {
     task: run.task,
     requestedBy: run.requested_by,
-    contributionBudgetUsd: submitsContributions ? (run.contribution_budget_micro_usd ?? 0) / 1_000_000 : 0,
+    contributionBudget: submitsContributions ? await readContributionBudget() : null,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
@@ -448,7 +464,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
    */
   const turnNote = (): string => {
     const spent = meterMicroUsd();
-    const line = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    const spend = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    const line = contributionBudgetNote ? `${spend}\n${contributionBudgetNote}` : spend;
     meterAtLastTurn = spent;
     if (!reminded && !halted && spent >= REMINDER_FRACTION * ceiling) {
       reminded = true;
@@ -506,7 +523,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
     }
     if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
-      return JSON.stringify(await submitMandateContribution({ researchRunId: run.id, input: toolInput }));
+      const submitted = await submitMandateContribution({ researchRunId: run.id, input: toolInput });
+      if (submitted.budget) contributionBudgetNote = submitted.budget;
+      return JSON.stringify(submitted);
     }
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);
@@ -596,6 +615,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
           await meterCodeExecution((endedAt - lastTurnEndedAt) / 1000);
         }
         lastTurnEndedAt = endedAt;
+        if (submitsContributions) await readContributionBudget();
         await progress(state.turn);
       };
       const loop = await longRunToolLoop({
@@ -640,6 +660,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         lastTurn = true;
       }
       turns = turn + 1;
+      if (submitsContributions) await readContributionBudget();
       await progress(turns);
     };
     let stopped: HarnessStop | null = null;

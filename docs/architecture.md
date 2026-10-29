@@ -384,15 +384,19 @@ Reviewer like any other contribution, and propose a question directly
 launches with `contribution_budget_usd` submits what it establishes as
 contributions under the mandate: reviewed like anyone's, with the review
 metered to the mandate's budget job, shown as "a funded mandate", and
-earning no one reputation or owls. The budget is a dollar amount the
-Grantmaker delegates for those reviews (`research_runs.contribution_budget_micro_usd`,
-capped by `RESEARCHER_MAX_CONTRIBUTION_BUDGET_OWLS`). Each submission
-reserves an estimate of its review's cost (the average of recent reviews,
-or `CONTRIBUTION_REVIEW_ESTIMATE_USD` before there are any) and is refused
+earning no one reputation or owls. The budget is a dollar amount of the
+mandate's budget that the Grantmaker delegates for those reviews
+(`research_runs.contribution_budget_micro_usd`). Each submission reserves
+an estimate of its review's cost (the average of recent reviews, or
+`CONTRIBUTION_REVIEW_ESTIMATE_USD` before there are any) and is refused
 when the run's committed review costs plus that estimate would exceed the
 budget; once reviewed, the real cost (`contributions.review_cost_micro_usd`)
-replaces the estimate. A review that costs more than estimated can carry a
-run somewhat past its budget.
+replaces the estimate. The budget is visible to both agents: the
+Researcher sees what is committed, what is left and what a review is
+expected to cost in its task message, after every turn and in each
+submission's result, and the Grantmaker sees the same in the
+`delegate_research` and `get_research_run` results. A review that costs
+more than estimated can carry a run somewhat past its budget.
 
 ### Formal statements and machine-checked arguments
 
