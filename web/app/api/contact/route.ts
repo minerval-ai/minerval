@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { SESv2Client, SendEmailCommand, type SESv2ClientConfig } from "@aws-sdk/client-sesv2";
 
 // Contact form delivery (issue #81): a route handler that forwards messages by
 // email over SES. The destination and sender live in env, never in the client
@@ -29,6 +29,19 @@ function rateLimited(ip: string): boolean {
   recent.push(now);
   hits.set(ip, recent);
   return false;
+}
+
+// Vercel reserves AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION and
+// fills them with its own Lambda credentials, so the SES sender's keys come in
+// under CONTACT_AWS_* names. Without them (local dev), the default provider
+// chain applies.
+function sesConfig(): SESv2ClientConfig {
+  const accessKeyId = process.env.CONTACT_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.CONTACT_AWS_SECRET_ACCESS_KEY;
+  return {
+    region: process.env.CONTACT_AWS_REGION ?? "us-east-1",
+    ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -74,7 +87,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ses = new SESv2Client({});
+  const ses = new SESv2Client(sesConfig());
   try {
     await ses.send(
       new SendEmailCommand({

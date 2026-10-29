@@ -115,6 +115,29 @@ Cloudflare (Cloudflare Registrar requires it), so it's purely additive:
 The store's privacy questionnaire will ask about data handling — the extension sends page
 text to the API on user action, so answer accordingly and link the site's privacy policy.
 
+### The `/about` contact form (SES)
+
+`web/app/api/contact/route.ts` forwards form messages to `hello@minerval.ai` over SES
+(us-east-1), from `contact@minerval.ai` with the sender's address as Reply-To. Set up by
+hand on 2026-10-29, outside CDK:
+
+- **SES domain identity `minerval.ai`** with Easy DKIM. It verifies once the three DKIM
+  CNAMEs are in the Cloudflare zone (DNS-only), which also gives DMARC alignment:
+  - `k6xcexko4zz3dbtfagxitdvhblhkajxr._domainkey` → `k6xcexko4zz3dbtfagxitdvhblhkajxr.dkim.amazonses.com`
+  - `jiufkjnakz5qzgu2dmh3v76p6qdsrnad._domainkey` → `jiufkjnakz5qzgu2dmh3v76p6qdsrnad.dkim.amazonses.com`
+  - `hu6xd7qgamgri42rdozivxxsqp7nygmu._domainkey` → `hu6xd7qgamgri42rdozivxxsqp7nygmu.dkim.amazonses.com`
+- **SES is still in the sandbox** (200/day, 1/s). That is fine: the only recipient,
+  `hello@minerval.ai`, is covered by the verified domain.
+- **IAM user `minerval-web-contact`**, inline policy `ses-send-contact`: `ses:SendEmail` on
+  the `minerval.ai`, `contact@minerval.ai` and `hello@minerval.ai` identity ARNs (the
+  sandbox also authorizes against the recipient), conditioned on
+  `ses:FromAddress = contact@minerval.ai`. Nothing else.
+- **Vercel (Production)**: `CONTACT_TO_EMAIL`, `CONTACT_FROM_EMAIL`, `CONTACT_AWS_REGION`,
+  and the user's key as `CONTACT_AWS_ACCESS_KEY_ID` / `CONTACT_AWS_SECRET_ACCESS_KEY`
+  (sensitive). Vercel reserves the standard `AWS_*` names, hence the prefix. To rotate:
+  `aws iam create-access-key --user-name minerval-web-contact`, replace the two Vercel
+  vars, redeploy, then delete the old key.
+
 ## Request flow
 
 ```
