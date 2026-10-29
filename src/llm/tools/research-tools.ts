@@ -13,10 +13,12 @@
  * tier, with how much budget, and whether the instrument should carry the
  * constitution. The tool description says what each tier can do, so the
  * brief can be written with the instrument's affordances in mind. What
- * lives here is the mechanism around that judgment: the per-launcher-run
- * count cap, the ceiling cap, the daily cap, the pause flag, the run row,
- * and the synchronous run itself. The launcher's tool call blocks until
- * the researcher reports; the report comes back as the tool result and is
+ * lives here is the mechanism around that judgment: the launcher's own
+ * money (a Steward pays from its pass's budget, a Grantmaker from its
+ * mandate's uncommitted budget, and each is shown what it has), the
+ * per-launcher-run count cap, the daily cap on research no funder pays
+ * for, the pause flag, the run row, and the synchronous run itself. The
+ * launcher's tool call blocks until the researcher reports; the report comes back as the tool result and is
  * also kept on the run row for `get_research_run` and for the record.
  *
  * Same factory shape as the report tools: per-run state (the count) lives
@@ -32,8 +34,8 @@ import {
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
-import { getUsageContext, runWithUsageContext, withCostMeter } from "../usage-context.js";
-import { owlsToMicroUsd } from "../../services/owl.js";
+import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withCostMeter } from "../usage-context.js";
+import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
   RESEARCH_MODEL_TIERS,
   checkResearcherBudget,
@@ -93,7 +95,6 @@ export interface ResearchToolsOptions {
  * how the work is done or what it finds.
  */
 export function getFundRequestToolDefinition(): Tool {
-  const config = loadConfig();
   return {
     name: FUND_REQUEST_TOOL_NAME,
     description:
@@ -102,8 +103,8 @@ export function getFundRequestToolDefinition(): Tool {
       "brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
       "is a complete one and paid for alike: met, partly met, a negative result, cannot be met, " +
       "declined, or a recommendation to revise the request. The outcome is recorded as work on " +
-      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, at " +
-      `most ${config.researcherMaxCeilingOwls} per run. The call blocks until the work reports.`,
+      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, paid " +
+      "from the mandate's uncommitted budget and at most what that holds. The call blocks until the work reports.",
     input_schema: {
       type: "object",
       properties: {
@@ -119,11 +120,21 @@ export function getFundRequestToolDefinition(): Tool {
 }
 
 export function getResearchToolDefinitions(
-  input: { claimScoped: boolean; graphWrites?: boolean } = { claimScoped: true }
+  input: {
+    claimScoped: boolean;
+    graphWrites?: boolean;
+    /** Where the launcher's research money comes from and what it holds now, for the description. */
+    funding?: string;
+  } = { claimScoped: true }
 ): Tool[] {
   const config = loadConfig();
   const graphWrites = input.graphWrites ?? true;
-  const maxOwls = config.researcherMaxCeilingOwls;
+  const funding =
+    input.funding ??
+    (graphWrites
+      ? "Research is paid from this pass's own budget, and a run's budget_usd may be at most what the pass has left. "
+      : "Research is paid from the mandate's uncommitted budget, and a run's budget_usd (with any " +
+        "contribution_budget_usd) may be at most what that holds. ");
   const maxRuns = config.researcherMaxRunsPerLauncherRun;
   return [
     {
@@ -153,8 +164,10 @@ export function getResearchToolDefinitions(
         "where the best model pays; 'standard' runs a Claude model with the same sandbox, " +
         "for most delegated reading and checking; 'cheap' runs the cheap tier with no " +
         "sandbox, and is right for reading and mapping a large literature economically. " +
-        `Budget is in USD of metered work, at most ${maxOwls} per run; you may launch at most ` +
-        `${maxRuns} runs in this pass. The call blocks until the researcher reports (a wall ` +
+        "Budget is in USD of metered work. " +
+        funding +
+        "Each result says what is left after the run. " +
+        `You may launch at most ${maxRuns} runs in this pass. The call blocks until the researcher reports (a wall ` +
         `cap of ${config.researcherMaxWallMinutes} minutes applies). Its findings are evidence ` +
         "you weigh, never a verdict: read the report against its sources, and record what " +
         "you conclude in your own reasoning.",
@@ -174,7 +187,7 @@ export function getResearchToolDefinitions(
           },
           budget_usd: {
             type: "number",
-            description: `The ceiling on metered work for this run, in USD (at most ${maxOwls}).`,
+            description: "The ceiling on metered work for this run, in USD, paid from your own budget.",
           },
           effort: {
             type: "string",
@@ -260,6 +273,7 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
+const usdText = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 /**
  * Where a run's delegated review budget stands, for the Grantmaker that
  * delegated it. Reviews run after the research ends, so committed spend
@@ -281,12 +295,89 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   // refuses would cost every launcher's prompt and invite wasted calls.
   // Only a mandate's Grantmaker funds requests: a Steward files them.
   const fundsRequests = options.requestedBy === "grantmaker";
+  // A Steward pays for research from its pass's budget, which the lane
+  // funding the pass set; a pass with none (a test, an unfunded lane) has
+  // nothing to launch research with, so it is offered only the reading of
+  // earlier runs.
+  const ctxAtStart = getUsageContext();
+  const passLeft = passBudgetLeftMicroUsd(ctxAtStart);
+  const paysFromPass = options.requestedBy !== "grantmaker";
+  const stewardFunding =
+    paysFromPass && passLeft !== null
+      ? `Research is paid from this pass's own budget (${ctxAtStart.passBudget!.source}), which holds ` +
+        `${usdText(passLeft)} now, less what the pass spends as it goes; a run's budget_usd may be at most ` +
+        "what the pass has left when you launch it. "
+      : undefined;
   const definitions = config.researcherEnabled
     ? [
-        ...getResearchToolDefinitions({ claimScoped, graphWrites }),
+        ...getResearchToolDefinitions({ claimScoped, graphWrites, funding: stewardFunding }).filter(
+          (t) => t.name !== DELEGATE_RESEARCH_TOOL_NAME || !paysFromPass || passLeft !== null
+        ),
         ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
       ]
     : [];
+
+  /**
+   * What the launcher's own money holds now: a Steward's pass budget less
+   * what the pass has spent (research it launched included, since that is
+   * added to the pass's meter), or a Grantmaker's mandate budget less
+   * committed money.
+   */
+  const available = async (): Promise<{ microUsd: number; source: string } | null> => {
+    if (paysFromPass) {
+      const ctx = getUsageContext();
+      const left = passBudgetLeftMicroUsd(ctx);
+      return left === null ? null : { microUsd: left, source: `this pass's budget (${ctx.passBudget!.source})` };
+    }
+    if (!options.grantId) return null;
+    const [grant] = await rawQuery<{ id: string; budget_job_id: string; budget: string }>(
+      `SELECT g.id, g.budget_job_id, j.budget_micro_usd::bigint AS budget
+         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
+      [options.grantId]
+    );
+    if (!grant) return null;
+    // Committed money reads metered spend from llm_usage, whose rows are
+    // written fire-and-forget, so right after a run it can trail by the
+    // run's last call or two.
+    const committed = await grantCommittedMicroUsd({ id: grant.id, budgetJobId: grant.budget_job_id });
+    return { microUsd: Math.max(0, Number(grant.budget) - committed), source: "the mandate's uncommitted budget" };
+  };
+
+  /** What the launcher has left once a run is done, for its result. */
+  const budgetLeft = async (): Promise<{ budget_left?: string }> => {
+    const have = await available();
+    return have ? { budget_left: `${usdText(have.microUsd)} left in ${have.source}` } : {};
+  };
+
+  /** Refuse a launch the launcher's own money does not cover, saying what it has. */
+  const unaffordable = async (askMicroUsd: number): Promise<string | null> => {
+    const have = await available();
+    if (!have) return refuse("There is no budget of your own here to pay for research.");
+    if (askMicroUsd > have.microUsd) {
+      return refuse(
+        `This run asks for ${usdText(askMicroUsd)}, and ${have.source} has ${usdText(have.microUsd)} left. ` +
+          "Ask for what that covers, or do the work inline."
+      );
+    }
+    return null;
+  };
+
+  /** The daily cap is the operator's net under research no funder pays for. */
+  const checkUnfundedDailyCap = async (ceilingMicroUsd: number): Promise<string | null> => {
+    const ctx = getUsageContext();
+    if (ctx.jobId || ctx.userId) return null;
+    try {
+      await checkResearcherBudget(ceilingMicroUsd);
+      return null;
+    } catch (err) {
+      if (err instanceof LlmBudgetExceededError) {
+        return refuse(
+          `This pass is not paid for by a funder, and the daily cap on such research would be exceeded by this run (${err.message}). Do the work inline or leave it for a later pass.`
+        );
+      }
+      throw err;
+    }
+  };
   const run = options.runResearcher ?? runResearcher;
   let launched = 0;
 
@@ -376,11 +467,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
       return refuse("budget_usd must be a positive number of USD.");
     }
-    const maxCeilingMicroUsd = owlsToMicroUsd(config.researcherMaxCeilingOwls);
-    const ceilingMicroUsd = Math.min(maxCeilingMicroUsd, Math.round(budgetUsd * 1_000_000));
-    if (ceilingMicroUsd <= 0) {
-      return refuse("The researcher's per-run ceiling is zero in this deployment (RESEARCHER_MAX_CEILING_OWLS).");
-    }
+    const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
     // A mandate's research may submit what it finds, its reviews paid from
     // the budget its Grantmaker delegates (Part VIII); a Steward's research
     // records provenance instead.
@@ -402,16 +489,8 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     if (await readResearcherPaused()) {
       return refuse("The operator has paused the researcher. Do the work inline or leave it for a later pass.");
     }
-    try {
-      await checkResearcherBudget(ceilingMicroUsd);
-    } catch (err) {
-      if (err instanceof LlmBudgetExceededError) {
-        return refuse(
-          `The researcher's daily spend cap would be exceeded by this run (${err.message}). Do the work inline or leave it for a later pass.`
-        );
-      }
-      throw err;
-    }
+    const short = (await unaffordable(ceilingMicroUsd + contributionBudgetMicroUsd)) ?? (await checkUnfundedDailyCap(ceilingMicroUsd));
+    if (short) return short;
 
     const claimId = claimScoped ? options.claimId! : str(input.claim_id) || null;
     if (claimId && !UUID_RE.test(claimId)) return refuse(`claim_id "${claimId}" is not a claim id.`);
@@ -501,6 +580,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       status: result.status,
       model: row.model,
       spent_usd: spentUsd,
+      ...(await budgetLeft()),
       turns: result.turns,
       tools_offered: result.toolNames,
       report: result.report,
@@ -536,21 +616,14 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const tier = tierRaw as ResearchModelTier;
     const budgetUsd = Number(input.budget_usd);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
-    const ceilingMicroUsd = Math.min(owlsToMicroUsd(config.researcherMaxCeilingOwls), Math.round(budgetUsd * 1_000_000));
-    if (ceilingMicroUsd <= 0) return refuse("The researcher's per-run ceiling is zero in this deployment.");
+    const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
     const cap = config.researcherMaxRunsPerLauncherRun;
     if (cap > 0 && launched >= cap) {
       return refuse(`This pass has already launched ${launched} research run(s), the per-run backstop (${cap}).`);
     }
     if (await readResearcherPaused()) return refuse("The operator has paused the researcher.");
-    try {
-      await checkResearcherBudget(ceilingMicroUsd);
-    } catch (err) {
-      if (err instanceof LlmBudgetExceededError) {
-        return refuse(`The researcher's daily spend cap would be exceeded by this run (${err.message}).`);
-      }
-      throw err;
-    }
+    const short = (await unaffordable(ceilingMicroUsd)) ?? (await checkUnfundedDailyCap(ceilingMicroUsd));
+    if (short) return short;
 
     // The request is the brief, verbatim; the funder adds nothing to it.
     const task = [
@@ -631,6 +704,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       request_id: requestId,
       outcome,
       spent_usd: Math.round(billed / 10_000) / 100,
+      ...(await budgetLeft()),
       summary,
       note: "The outcome is recorded on the request; its keeper decides whether the request has been met.",
     });

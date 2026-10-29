@@ -651,11 +651,10 @@ const configSchema = z.object({
     .transform((s) => s === "true")
     .prefault("false"),
   // Backstops, never decisions: the durable daily cap on researcher spend
-  // across processes, the most one run may be given, the most runs one
-  // launching administrator's run may start, and the wall and turn caps on
-  // one run. The launcher allocates within these.
+  // no funder pays for, the most runs one launching administrator's run may
+  // start, and the wall and turn caps on one run. What a run may be given is
+  // the launcher's own budget, not a deployment setting.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
-  researcherMaxCeilingOwls: z.coerce.number().min(0).default(3),
   // The review cost each contribution from a mandate's research reserves
   // against the budget its Grantmaker delegated (Part VIII) until its review
   // has run and its real cost is known, used until there are reviews to
@@ -1146,7 +1145,6 @@ export function loadConfig(): Config {
     researcherCheapModel: process.env.RESEARCHER_CHEAP_MODEL,
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
-    researcherMaxCeilingOwls: process.env.RESEARCHER_MAX_CEILING_OWLS,
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     researcherMaxRunsPerLauncherRun: process.env.RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,

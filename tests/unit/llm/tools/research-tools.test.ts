@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The delegation tools (#298) over a mocked run service and a scripted
 // researcher: the brief is validated, the tier resolves to a model, the
-// ceiling is capped, the per-pass count and the daily cap and the pause
-// flag refuse a launch, the run row is opened and closed around the run,
-// and the report comes back as the tool result.
+// ceiling is paid from the launcher's own budget (a Steward's pass, a
+// Grantmaker's mandate), the per-pass count, the daily cap on unfunded
+// research and the pause flag refuse a launch, the run row is opened and
+// closed around the run, and the report comes back as the tool result.
 
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
@@ -15,12 +16,13 @@ const mocks = vi.hoisted(() => ({
   readResearcherPaused: vi.fn(async () => false),
   openExamination: vi.fn(),
   linkResearchRun: vi.fn(async () => undefined),
+  grantBudget: 100_000_000,
+  grantCommitted: 0,
   config: {
     researcherEnabled: true,
     researcherStrongModel: "claude-opus-5-5",
     researcherStandardModel: "claude-sonnet-5-5",
     researcherCheapModel: "openai/gpt-6-luna",
-    researcherMaxCeilingOwls: 3,
     researcherMaxRunsPerLauncherRun: 2,
     researcherMaxWallMinutes: 20,
     researcherMaxTurns: 60,
@@ -45,6 +47,10 @@ vi.mock("../../../../src/services/research-run-service.js", async (importOrigina
   };
 });
 
+vi.mock("../../../../src/services/regrant-service.js", () => ({
+  grantCommittedMicroUsd: vi.fn(async () => mocks.grantCommitted),
+}));
+
 vi.mock("../../../../src/services/examination-service.js", () => {
   class ExaminationError extends Error {}
   return { ExaminationError, openExamination: mocks.openExamination, linkResearchRun: mocks.linkResearchRun };
@@ -57,7 +63,11 @@ import {
   getResearchToolDefinitions,
 } from "../../../../src/llm/tools/research-tools.js";
 import type { ResearcherInput, ResearcherResult } from "../../../../src/llm/agents/researcher.js";
-import { getUsageContext, runWithUsageContext } from "../../../../src/llm/usage-context.js";
+import { getUsageContext, runWithUsageContext, withPassBudget } from "../../../../src/llm/usage-context.js";
+
+/** Run `fn` as a Steward pass the test lane funds with `microUsd`. */
+const funded = async <T>(fn: () => Promise<T>, microUsd = 5_000_000): Promise<T> =>
+  (await withPassBudget({ microUsd, source: "the test lane" }, fn)).value;
 
 const CLAIM = "aaaaaaaa-0000-4000-8000-000000000001";
 const RUN = "cccccccc-0000-4000-8000-000000000001";
@@ -80,8 +90,14 @@ beforeEach(() => {
   mocks.checkResearcherBudget.mockReset().mockResolvedValue(undefined);
   mocks.readResearcherPaused.mockReset().mockResolvedValue(false);
   mocks.rawQuery.mockReset().mockImplementation(async (sql: string) =>
-    sql.includes("FROM claims") ? [{ id: CLAIM, text: "The claim.", domains: [] }] : []
+    sql.includes("FROM claims")
+      ? [{ id: CLAIM, text: "The claim.", domains: [] }]
+      : sql.includes("FROM grants g JOIN budget_jobs")
+        ? [{ id: "grant-1", budget_job_id: "job-1", budget: mocks.grantBudget }]
+        : []
   );
+  mocks.grantBudget = 100_000_000;
+  mocks.grantCommitted = 0;
   mocks.openResearchRun.mockImplementation(async (input: Record<string, unknown>) => ({
     id: "run-1",
     claim_id: input.claimId,
@@ -105,12 +121,13 @@ beforeEach(() => {
 });
 
 describe("definitions", () => {
-  it("names the tiers, the ceiling, and the per-pass cap, and offers claim_id only off a claim", () => {
+  it("names the tiers, where the budget comes from, and the per-pass cap, and offers claim_id only off a claim", () => {
     const [delegate, get] = getResearchToolDefinitions({ claimScoped: true });
     expect(delegate!.name).toBe("delegate_research");
     expect(get!.name).toBe("get_research_run");
     expect(delegate!.description).toMatch(/'strong'.*'standard'.*'cheap'/s);
-    expect(delegate!.description).toContain("at most 3 per run");
+    expect(delegate!.description).toContain("paid from this pass's own budget");
+    expect(delegate!.description).not.toMatch(/at most \d+ per run/);
     expect(delegate!.description).toContain("at most 2 runs");
     const props = (delegate!.input_schema as { properties: Record<string, unknown> }).properties;
     expect(Object.keys(props)).toEqual([
@@ -130,7 +147,7 @@ describe("definitions", () => {
 });
 
 describe("delegate_research", () => {
-  it("refuses a thin brief, an unknown tier, and a bad budget before touching anything", async () => {
+  it("refuses a thin brief, an unknown tier, and a bad budget before touching anything", () => funded(async () => {
     const runResearcher = vi.fn();
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     for (const input of [
@@ -144,9 +161,9 @@ describe("delegate_research", () => {
     expect(runResearcher).not.toHaveBeenCalled();
     expect(mocks.openResearchRun).not.toHaveBeenCalled();
     expect(await tools.execute("something_else", {})).toBeNull();
-  });
+  }));
 
-  it("resolves the tier, caps the ceiling, opens and closes the run, and returns the report", async () => {
+  it("resolves the tier, opens and closes the run with the ceiling asked for, and returns the report", () => funded(async () => {
     const runResearcher = vi.fn(async (_input: ResearcherInput) => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     const out = JSON.parse(
@@ -157,6 +174,7 @@ describe("delegate_research", () => {
         include_constitution: false,
       }))!
     );
+    expect(out.budget_left).toBe("$20.00 left in this pass's budget (the test lane)");
     expect(out.success).toBe(true);
     expect(out.research_run_id).toBe("run-1");
     expect(out.status).toBe("completed");
@@ -174,8 +192,8 @@ describe("delegate_research", () => {
         modelTier: "standard",
         effort: null,
         includeConstitution: false,
-        // 12 USD asked, 3 owls (3 USD) is the most a run may be given.
-        ceilingMicroUsd: 3_000_000,
+        // What the Steward asked for, within what its pass holds: no deployment cap.
+        ceilingMicroUsd: 12_000_000,
       })
     );
     const passed = runResearcher.mock.calls[0]![0];
@@ -186,9 +204,9 @@ describe("delegate_research", () => {
       expect.objectContaining({ status: "completed", turns: 7, servedModels: ["claude-sonnet-5-5"] })
     );
     expect(tools.launchedCount).toBe(1);
-  });
+  }, 20_000_000));
 
-  it("launches an examination of a document: opened before the run, linked to it, and handed to the researcher (#507)", async () => {
+  it("launches an examination of a document: opened before the run, linked to it, and handed to the researcher (#507)", () => funded(async () => {
     const SOURCE = "dddddddd-0000-4000-8000-000000000001";
     mocks.openExamination.mockImplementation(async (input: Record<string, unknown>) => ({
       id: "exam-1", source_id: input.sourceId, source_title: "Registry study", source_url: "https://x.org/s",
@@ -223,9 +241,9 @@ describe("delegate_research", () => {
     expect(refused.message).toMatch(/writes nothing to the graph/);
     expect(mocks.openExamination).toHaveBeenCalledTimes(1);
     expect(grantmaker.definitions[0]!.input_schema).not.toHaveProperty("properties.examine_source_id");
-  });
+  }));
 
-  it("refuses a malformed examination before any spend, and facets without a document", async () => {
+  it("refuses a malformed examination before any spend, and facets without a document", () => funded(async () => {
     const runResearcher = vi.fn();
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     mocks.openExamination.mockRejectedValue(new ExaminationError("That source is not in this claim's map"));
@@ -241,18 +259,18 @@ describe("delegate_research", () => {
     expect(stray.message).toMatch(/facets go with examine_source_id/);
     expect(mocks.openResearchRun).not.toHaveBeenCalled();
     expect(runResearcher).not.toHaveBeenCalled();
-  });
+  }));
 
-  it("keeps effort on the strong tier only", async () => {
+  it("keeps effort on the strong tier only", () => funded(async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     await tools.execute("delegate_research", { task: BRIEF, model_tier: "strong", budget_usd: 1, effort: "max" });
     expect(mocks.openResearchRun).toHaveBeenCalledWith(
       expect.objectContaining({ model: "claude-opus-5-5", modelTier: "strong", effort: "max" })
     );
-  });
+  }));
 
-  it("refuses past the per-pass cap, when paused, over the daily cap, and when disabled", async () => {
+  it("refuses past the per-pass cap, when paused, over the daily cap on unfunded research, and when disabled", () => funded(async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     const call = () => tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 });
@@ -266,7 +284,7 @@ describe("delegate_research", () => {
     mocks.readResearcherPaused.mockResolvedValueOnce(true);
     expect(JSON.parse((await fresh.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message).toMatch(/paused/);
     mocks.checkResearcherBudget.mockRejectedValueOnce(new LlmBudgetExceededError("researcher_daily_cap_micro_usd", 5, 4));
-    expect(JSON.parse((await fresh.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message).toMatch(/daily spend cap/);
+    expect(JSON.parse((await fresh.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message).toMatch(/not paid for by a funder/);
     expect(fresh.launchedCount).toBe(0);
     // The kill switch is read when the bundle is created, once per launcher run.
     mocks.config.researcherEnabled = false;
@@ -274,9 +292,9 @@ describe("delegate_research", () => {
     // Off, the launcher is offered nothing, and a call anyway is refused.
     expect(disabled.definitions).toEqual([]);
     expect(JSON.parse((await disabled.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message).toMatch(/disabled/);
-  });
+  }));
 
-  it("closes the run as failed when the researcher throws, and never throws itself", async () => {
+  it("closes the run as failed when the researcher throws, and never throws itself", () => funded(async () => {
     const runResearcher = vi.fn(async () => {
       throw new Error("provider down");
     });
@@ -286,9 +304,9 @@ describe("delegate_research", () => {
     expect(out.status).toBe("failed");
     expect(out.message).toMatch(/provider down/);
     expect(mocks.closeResearchRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ status: "failed", error: "provider down" }));
-  });
+  }));
 
-  it("runs a Grantmaker's research with no claim, and refuses one named per call", async () => {
+  it("runs a Grantmaker's research with no claim, and refuses one named per call", () => funded(async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1", runResearcher });
     await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 });
@@ -298,9 +316,9 @@ describe("delegate_research", () => {
     expect(named.message).toMatch(/writes nothing to the graph, so it takes no claim_id/);
     expect(mocks.openResearchRun).toHaveBeenCalledTimes(1);
     expect(runResearcher).toHaveBeenCalledTimes(1);
-  });
+  }));
 
-  it("adds what the researcher billed to the launcher's meter, and attributes the claim", async () => {
+  it("adds what the researcher billed to the launcher's meter, and attributes the claim", () => funded(async () => {
     let seenClaim: string | null | undefined;
     const runResearcher = vi.fn(async () => {
       seenClaim = getUsageContext().claimId;
@@ -315,6 +333,61 @@ describe("delegate_research", () => {
     expect(launcher.billedMicroUsd).toBe(251_000);
     expect(seenClaim).toBe(CLAIM);
     expect(mocks.closeResearchRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ spentMicroUsd: 250_000 }));
+  }));
+
+  it("holds a Steward to what its pass has left, and offers it no launch without a pass budget", async () => {
+    const runResearcher = vi.fn(async () => {
+      getUsageContext().meter!.billedMicroUsd += 700_000;
+      return okResult();
+    });
+    await funded(async () => {
+      const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+      expect(tools.definitions[0]!.description).toContain("(the test lane), which holds $2.00 now");
+      // The pass has spent some of its budget on its own work.
+      getUsageContext().meter!.billedMicroUsd += 500_000;
+      const over = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1.6 }))!);
+      expect(over).toEqual({
+        success: false,
+        message: "This run asks for $1.60, and this pass's budget (the test lane) has $1.50 left. Ask for what that covers, or do the work inline.",
+      });
+      const ok = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1.5 }))!);
+      // What the research billed is the pass's spend too.
+      expect(ok.budget_left).toBe("$0.80 left in this pass's budget (the test lane)");
+    }, 2_000_000);
+    expect(runResearcher).toHaveBeenCalledTimes(1);
+
+    const unfunded = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+    expect(unfunded.definitions.map((t) => t.name)).toEqual(["get_research_run"]);
+    expect(JSON.parse((await unfunded.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).message)
+      .toMatch(/no budget of your own/);
+  });
+
+  it("lets a Grantmaker give a run any budget its mandate's uncommitted money covers", async () => {
+    const runResearcher = vi.fn(async () => okResult());
+    const tools = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1", runResearcher });
+    mocks.grantCommitted = 30_000_000;
+    const big = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "strong", budget_usd: 60 }))!);
+    expect(big.success).toBe(true);
+    expect(mocks.openResearchRun).toHaveBeenLastCalledWith(expect.objectContaining({ ceilingMicroUsd: 60_000_000 }));
+    expect(big.budget_left).toBe("$70.00 left in the mandate's uncommitted budget");
+    const over = JSON.parse(
+      (await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 60, contribution_budget_usd: 15 }))!
+    );
+    expect(over.message).toBe(
+      "This run asks for $75.00, and the mandate's uncommitted budget has $70.00 left. Ask for what that covers, or do the work inline."
+    );
+  });
+
+  it("applies the daily cap only to research no funder pays for", async () => {
+    const runResearcher = vi.fn(async () => okResult());
+    mocks.checkResearcherBudget.mockRejectedValue(new LlmBudgetExceededError("researcher_daily_cap_micro_usd", 5, 4));
+    await runWithUsageContext({ jobId: "job-1" }, () =>
+      funded(async () => {
+        const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
+        expect(JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 }))!).success).toBe(true);
+      })
+    );
+    expect(mocks.checkResearcherBudget).not.toHaveBeenCalled();
   });
 });
 

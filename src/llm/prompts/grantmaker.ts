@@ -138,7 +138,8 @@ question, say what you will do with the answer, choose the tier for the
 work (cheap for reading and mapping a large literature economically;
 standard for most checking; strong where the best model class pays), and
 set the budget from what the mandate can bear: a run's spend is metered to
-the mandate like any other work. Research you launch writes nothing to
+the mandate like any other work, and a run may be given any amount the
+mandate's uncommitted budget covers. Research you launch writes nothing to
 the graph: you serve your mandate as well as the graph, and what the graph
 says is kept apart from who funds it, so the instrument gets no provenance
 tools and examines no document for the record. Name the claims or

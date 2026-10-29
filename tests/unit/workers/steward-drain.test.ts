@@ -7,8 +7,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // empty/budget transitions, and that a budget error returns the claim to the
 // queue — by mocking the DB layer and the Steward agent.
 
-const { runCalls, state } = vi.hoisted(() => ({
+const { runCalls, passBudgets, state } = vi.hoisted(() => ({
   runCalls: [] as string[],
+  // The pass budget each Steward run saw on its usage context.
+  passBudgets: [] as Array<{ microUsd: number; source: string } | null>,
   state: {
     pending: [] as string[],
     // Claims whose assess action is covered on the ledger: the executor
@@ -124,6 +126,9 @@ vi.mock("../../../src/db/client.js", () => ({
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
   runClaimSteward: vi.fn(async (input: { claimId: string }) => {
     runCalls.push(input.claimId);
+    const { getUsageContext } = await import("../../../src/llm/usage-context.js");
+    const budget = getUsageContext().passBudget;
+    passBudgets.push(budget ? { microUsd: budget.microUsd, source: budget.source } : null);
     if (state.budgetThrows) {
       const { LlmBudgetExceededError } = await import("../../../src/llm/errors.js");
       throw new LlmBudgetExceededError("daily_token_count", 1, 1);
@@ -153,6 +158,7 @@ import {
 describe("Steward DB-backed drain", () => {
   beforeEach(() => {
     runCalls.length = 0;
+    passBudgets.length = 0;
     state.pending = [];
     state.fundedPending = [];
     state.completedActions = [];
@@ -208,6 +214,9 @@ describe("Steward DB-backed drain", () => {
     // allocation SQL itself is covered live).
     expect(runCalls).toEqual(["funded-1", "a"]);
     expect(state.completedActions).toEqual(["act:funded-1"]);
+    // The covered pass spends what its allocations hold; the fallback pass,
+    // with no daily background budget configured here, has none to spend.
+    expect(passBudgets).toEqual([{ microUsd: 150_000, source: "the allocations funding this pass" }, null]);
     expect(res.processed).toBe(2);
   });
 

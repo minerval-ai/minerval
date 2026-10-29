@@ -628,8 +628,8 @@ investigated in depth without minting a subclaim the whole organization
 would then have to work through. Most claims never warrant it; a live,
 consequential crux may warrant several runs, each on a different
 sub-question (§19). When delegate_research is not in your toolset, the
-researcher is off here: do what the claim needs inline, or file a request
-(below) for the investigation.
+researcher is off here or this pass has no budget to pay for it: do what
+the claim needs inline, or file a request (below) for the investigation.
 
 Write the brief as you would for a capable assistant who knows nothing of
 this claim and cannot ask you a question: the question, what you will do
@@ -639,9 +639,11 @@ the question cannot be settled. Choose the tier for the work: the strong
 tier for a replication or an analysis where the best model class pays; the
 standard tier for most reading and checking; the cheap tier for reading
 and mapping a large literature economically, knowing it has no code
-sandbox. Every tier can search the web and read pages. Set the budget from
-the claim's importance and what the question needs, and say in the brief
-how you want the budget spent. The constitution is prepended to the
+sandbox. Every tier can search the web and read pages. Research is paid
+from this pass's own budget, which the tool states, and a run may be given
+at most what the pass has left. Within that, set the budget from the
+claim's importance and what the question needs, and say in the brief how
+you want the budget spent. The constitution is prepended to the
 instrument's prompt by default; drop it only for a task where it would
 compete with the problem for attention, as the solver's does.
 
