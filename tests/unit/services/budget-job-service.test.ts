@@ -20,8 +20,14 @@ const { state, handleQuery } = vi.hoisted(() => {
     sourceLive: true,
     sourceFunder: "funder-src",
     budgetCredits: [] as unknown[][],
+    cancelStatements: [] as string[],
+    cancelRow: null as null | { id: string; user_id: string; budget_micro_usd: number },
   };
   const handleQuery = async (q: string, params: unknown[] = []) => {
+    if (q.includes("UPDATE budget_jobs") && q.includes("SET status = 'cancelled'")) {
+      state.cancelStatements.push(q);
+      return state.cancelRow ? [state.cancelRow] : [];
+    }
     if (q.includes("SELECT id FROM grants WHERE budget_job_id")) {
       return state.grantForJob ? [state.grantForJob] : [];
     }
@@ -98,7 +104,10 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   ),
 }));
 
-import { refundUnspentBudget } from "../../../src/services/budget-job-service.js";
+import {
+  refundUnspentBudget,
+  cancelBudgetJob,
+} from "../../../src/services/budget-job-service.js";
 
 beforeEach(() => {
   state.grantForJob = null;
@@ -111,6 +120,8 @@ beforeEach(() => {
   state.stampAccepted = true;
   state.sourceLive = true;
   state.budgetCredits = [];
+  state.cancelStatements = [];
+  state.cancelRow = null;
   ledger.length = 0;
 });
 
@@ -192,5 +203,30 @@ describe("refundUnspentBudget", () => {
     });
     expect(refunded).toBe(0);
     expect(ledger).toEqual([]);
+  });
+});
+
+describe("cancelBudgetJob", () => {
+  it("a grant's escrow job: cancels the grant in the same statement, then refunds", async () => {
+    // Cancelling the job behind a mandate settles the mandate. Leaving the
+    // grant 'active' over a refunded escrow let it regrant money already
+    // returned to its funder (and get it credited a second time).
+    state.cancelRow = { id: "job-g", user_id: "u-1", budget_micro_usd: 10_000_000 };
+    state.grantForJob = { id: "g-1" };
+    state.contributions = [{ user_id: "u-1", held: 10_000_000 }];
+    const r = await cancelBudgetJob({ jobId: "job-g", userId: "u-1" });
+    expect(r).toEqual({ ok: true, refundedMicroUsd: 10_000_000 });
+    // One statement: the job's cancel and the grant's cancel commit together.
+    expect(state.cancelStatements).toHaveLength(1);
+    const sql = state.cancelStatements[0]!;
+    expect(sql).toMatch(/UPDATE grants\s+SET status = 'cancelled'/);
+    expect(sql).toMatch(/WHERE budget_job_id IN \(SELECT id FROM job\)/);
+    expect(sql).toMatch(/status NOT IN \('completed', 'cancelled'\)/);
+    // The job's own guard is unchanged: owner only, live jobs only.
+    expect(sql).toMatch(/WHERE id = \$1 AND user_id = \$2/);
+    expect(sql).toMatch(/status IN \('running', 'paused_budget'\)/);
+    expect(ledger).toEqual([
+      { userId: "u-1", amountMicroUsd: 10_000_000, key: "escrow_refund:job-g:u-1" },
+    ]);
   });
 });

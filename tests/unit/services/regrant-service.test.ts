@@ -85,6 +85,7 @@ beforeEach(() => {
     id: "g-src",
     budget_job_id: "job-src",
     budget_micro_usd: 10_000_000,
+    job_status: "running",
     funder_user_id: "u-1",
   };
   state.target = { id: "g-dst", budget_job_id: "job-dst" };
@@ -135,6 +136,34 @@ describe("createRegrant", () => {
       (await createRegrant({ fromGrantId: "g-src", toGrantId: "g-x", owls: 1 }))
     ).toMatchObject({ ok: false, code: "TARGET_NOT_FOUND" });
   });
+
+  it("refuses a source whose escrow job is settled, even if the grant still says active", async () => {
+    // A grant-backed job cancelled outside cancelGrant has already refunded
+    // its escrow; its unchanged budget_micro_usd is not money it holds.
+    for (const status of ["cancelled", "completed", "failed"]) {
+      state.source!.job_status = status;
+      state.inserted = [];
+      state.jobUpdates = [];
+      const r = await createRegrant({
+        fromGrantId: "g-src",
+        toGrantId: "g-dst",
+        owls: 3,
+      });
+      expect(r, status).toMatchObject({ ok: false, code: "SOURCE_NOT_FOUND" });
+      expect(state.inserted, status).toHaveLength(0);
+      expect(state.jobUpdates, status).toHaveLength(0);
+    }
+  });
+
+  it("still regrants from a source paused at its budget floor", async () => {
+    state.source!.job_status = "paused_budget";
+    const r = await createRegrant({
+      fromGrantId: "g-src",
+      toGrantId: "g-dst",
+      owls: 3,
+    });
+    expect(r).toMatchObject({ ok: true, toGrantId: "g-dst" });
+  });
 });
 
 describe("spawnFundedMandate", () => {
@@ -164,6 +193,23 @@ describe("spawnFundedMandate", () => {
       owls: 5,
     });
     expect(r.ok).toBe(false);
+    expect(state.deleted.some((q) => q.includes("FROM grants"))).toBe(true);
+    expect(state.deleted.some((q) => q.includes("FROM budget_jobs"))).toBe(true);
+  });
+
+  it("refuses to spawn from a source whose escrow job is settled", async () => {
+    state.source!.job_status = "cancelled";
+    state.target = { id: "grant-new", budget_job_id: "job-new" };
+    const r = await spawnFundedMandate({
+      fromGrantId: "g-src",
+      title: "x",
+      objective: "y",
+      owls: 5,
+    });
+    expect(r).toMatchObject({ ok: false, code: "SOURCE_NOT_FOUND" });
+    expect(state.inserted.some((i) => i.table === "regrants")).toBe(false);
+    expect(state.jobUpdates).toHaveLength(0);
+    // The placeholder grant and job are rolled back.
     expect(state.deleted.some((q) => q.includes("FROM grants"))).toBe(true);
     expect(state.deleted.some((q) => q.includes("FROM budget_jobs"))).toBe(true);
   });

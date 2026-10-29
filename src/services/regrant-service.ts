@@ -193,13 +193,20 @@ export async function createRegrant(input: {
       id: string;
       budget_job_id: string;
       budget_micro_usd: number;
+      job_status: string;
     }>(
-      `SELECT g.id, g.budget_job_id, j.budget_micro_usd
+      `SELECT g.id, g.budget_job_id, j.budget_micro_usd, j.status AS job_status
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.id = $1 AND g.status = 'active'`,
       [input.fromGrantId]
     );
-    if (!source) {
+    // The escrow itself must still be live: a settled job (cancelled,
+    // completed, failed) has already refunded its unspent budget, so its
+    // budget_micro_usd is no longer money the mandate holds.
+    if (
+      !source ||
+      (source.job_status !== "running" && source.job_status !== "paused_budget")
+    ) {
       return {
         ok: false as const,
         code: "SOURCE_NOT_FOUND" as const,

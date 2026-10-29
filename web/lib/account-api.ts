@@ -28,6 +28,24 @@ class AccountApiError extends Error {
 }
 export { AccountApiError };
 
+// An id as exactly one segment of a backend path. Ids arrive from route
+// params, which Next has already percent-decoded, and from form fields, and
+// every request here carries the service key, so a raw "/", "?" or "#" in an
+// id would rewrite the path or query of a privileged request. Encoding keeps
+// those inside the segment; "." and ".." are refused because URL parsing
+// resolves them as dot segments even when encoded. The API's ids are UUIDs,
+// which encoding leaves unchanged; a refused id reads as unknown (404), as a
+// missing one does.
+function pathSegment(id: string): string {
+  if (id === "." || id === "..") {
+    throw new AccountApiError(
+      `Minerval API: no resource has id ${JSON.stringify(id)}`,
+      404
+    );
+  }
+  return encodeURIComponent(id);
+}
+
 async function accountFetch<T>(
   path: string,
   options: {
@@ -299,7 +317,7 @@ export async function revokeApiKey(
   externalId: string,
   keyId: string
 ): Promise<void> {
-  await accountFetch(`/api-keys/${keyId}`, {
+  await accountFetch(`/api-keys/${pathSegment(keyId)}`, {
     method: "DELETE",
     actingUser: externalId,
   });
@@ -327,7 +345,7 @@ export async function createAssessmentOrder(
   claimId: string
 ): Promise<AssessmentOrderView> {
   const r = await accountFetch<{ order: AssessmentOrderView }>(
-    `/claims/${claimId}/order`,
+    `/claims/${pathSegment(claimId)}/order`,
     { method: "POST", actingUser: externalId }
   );
   return r.order;
@@ -339,7 +357,7 @@ export async function getOpenOrderForClaim(
   claimId: string
 ): Promise<AssessmentOrderView | null> {
   const r = await accountFetch<{ orders: AssessmentOrderView[] }>(
-    `/orders?claim_id=${claimId}`,
+    `/orders?claim_id=${encodeURIComponent(claimId)}`,
     { actingUser: externalId }
   );
   return r.orders[0] ?? null;
@@ -359,7 +377,7 @@ export async function cancelAssessmentOrder(
   externalId: string,
   orderId: string
 ): Promise<{ cancelled: boolean; refunded: boolean }> {
-  return accountFetch(`/orders/${orderId}`, {
+  return accountFetch(`/orders/${pathSegment(orderId)}`, {
     method: "DELETE",
     actingUser: externalId,
   });
@@ -391,7 +409,7 @@ export async function createDecompositionJob(
   budgetOwls: number
 ): Promise<BudgetJobView> {
   const r = await accountFetch<{ job: BudgetJobView }>(
-    `/claims/${claimId}/decompose`,
+    `/claims/${pathSegment(claimId)}/decompose`,
     {
       method: "POST",
       body: { budget_owls: budgetOwls },
@@ -415,7 +433,7 @@ export async function getBudgetJob(
   jobId: string
 ): Promise<BudgetJobView> {
   const r = await accountFetch<{ job: BudgetJobView }>(
-    `/budget-jobs/${jobId}`,
+    `/budget-jobs/${pathSegment(jobId)}`,
     { actingUser: externalId }
   );
   return r.job;
@@ -427,7 +445,7 @@ export async function topUpBudgetJob(
   owls: number
 ): Promise<BudgetJobView> {
   const r = await accountFetch<{ job: BudgetJobView }>(
-    `/budget-jobs/${jobId}/topup`,
+    `/budget-jobs/${pathSegment(jobId)}/topup`,
     { method: "POST", body: { owls }, actingUser: externalId }
   );
   return r.job;
@@ -437,7 +455,7 @@ export async function cancelBudgetJob(
   externalId: string,
   jobId: string
 ): Promise<{ cancelled: boolean; refunded_owls: number }> {
-  return accountFetch(`/budget-jobs/${jobId}/cancel`, {
+  return accountFetch(`/budget-jobs/${pathSegment(jobId)}/cancel`, {
     method: "POST",
     actingUser: externalId,
   });
@@ -512,7 +530,7 @@ export async function getGrant(
   externalId: string,
   grantId: string
 ): Promise<GrantView> {
-  const r = await accountFetch<{ grant: GrantView }>(`/grants/${grantId}`, {
+  const r = await accountFetch<{ grant: GrantView }>(`/grants/${pathSegment(grantId)}`, {
     actingUser: externalId,
   });
   return r.grant;
@@ -523,7 +541,7 @@ export async function approveGrant(
   grantId: string
 ): Promise<GrantView> {
   const r = await accountFetch<{ grant: GrantView }>(
-    `/grants/${grantId}/approve`,
+    `/grants/${pathSegment(grantId)}/approve`,
     { method: "POST", actingUser: externalId }
   );
   return r.grant;
@@ -535,7 +553,7 @@ export async function topUpGrant(
   owls: number
 ): Promise<GrantView> {
   const r = await accountFetch<{ grant: GrantView }>(
-    `/grants/${grantId}/topup`,
+    `/grants/${pathSegment(grantId)}/topup`,
     { method: "POST", body: { owls }, actingUser: externalId }
   );
   return r.grant;
@@ -545,7 +563,7 @@ export async function cancelGrant(
   externalId: string,
   grantId: string
 ): Promise<{ cancelled: boolean; refunded_owls: number }> {
-  return accountFetch(`/grants/${grantId}/cancel`, {
+  return accountFetch(`/grants/${pathSegment(grantId)}/cancel`, {
     method: "POST",
     actingUser: externalId,
   });
@@ -635,7 +653,7 @@ export interface OAuthRequestView {
 export async function fetchOAuthRequest(
   requestId: string
 ): Promise<OAuthRequestView> {
-  return accountFetch(`/oauth/requests/${requestId}`);
+  return accountFetch(`/oauth/requests/${pathSegment(requestId)}`);
 }
 
 /** Approve as the signed-in user; returns the client redirect URL. */
@@ -644,7 +662,7 @@ export async function approveOAuthRequest(
   requestId: string
 ): Promise<string> {
   const r = await accountFetch<{ redirect_to: string }>(
-    `/oauth/requests/${requestId}/approve`,
+    `/oauth/requests/${pathSegment(requestId)}/approve`,
     { method: "POST", actingUser: externalId }
   );
   return r.redirect_to;
@@ -652,7 +670,7 @@ export async function approveOAuthRequest(
 
 export async function denyOAuthRequest(requestId: string): Promise<string> {
   const r = await accountFetch<{ redirect_to: string }>(
-    `/oauth/requests/${requestId}/deny`,
+    `/oauth/requests/${pathSegment(requestId)}/deny`,
     { method: "POST" }
   );
   return r.redirect_to;
@@ -712,7 +730,7 @@ export async function continueGrantConversation(
   message: string
 ): Promise<GrantConversationView> {
   const r = await accountFetch<{ conversation: GrantConversationView }>(
-    `/grant-conversations/${conversationId}/messages`,
+    `/grant-conversations/${pathSegment(conversationId)}/messages`,
     { method: "POST", body: { message }, actingUser: externalId }
   );
   return r.conversation;
@@ -723,7 +741,7 @@ export async function fundGrantConversation(
   conversationId: string,
   budgetOwls: number
 ): Promise<{ conversation: GrantConversationView; grant_id: string }> {
-  return accountFetch(`/grant-conversations/${conversationId}/fund`, {
+  return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
     method: "POST",
     body: { budget_owls: budgetOwls },
     actingUser: externalId,
@@ -735,7 +753,7 @@ export async function getGrantConversation(
   conversationId: string
 ): Promise<GrantConversationView> {
   const r = await accountFetch<{ conversation: GrantConversationView }>(
-    `/grant-conversations/${conversationId}`,
+    `/grant-conversations/${pathSegment(conversationId)}`,
     { actingUser: externalId }
   );
   return r.conversation;
@@ -911,7 +929,7 @@ export async function fetchMandateView(
   externalId?: string | null
 ): Promise<MandateDetailView> {
   const r = await accountFetch<{ mandate: MandateDetailView }>(
-    `/mandates/${mandateId}`,
+    `/mandates/${pathSegment(mandateId)}`,
     externalId ? { actingUser: externalId } : {}
   );
   return {
@@ -927,7 +945,7 @@ export async function contributeToMandateApi(
   owls: number
 ): Promise<MandateDetailView> {
   const r = await accountFetch<{ mandate: MandateDetailView }>(
-    `/mandates/${mandateId}/contribute`,
+    `/mandates/${pathSegment(mandateId)}/contribute`,
     { method: "POST", body: { owls }, actingUser: externalId }
   );
   return r.mandate;
@@ -946,7 +964,7 @@ export async function allocateToClaim(
   claimId: string,
   owls: number
 ): Promise<ClaimAllocationResult> {
-  return accountFetch(`/claims/${claimId}/contribute`, {
+  return accountFetch(`/claims/${pathSegment(claimId)}/contribute`, {
     method: "POST",
     body: { owls },
     actingUser: externalId,
@@ -982,7 +1000,7 @@ export async function submitPrizeClaim(
   form: FormData
 ): Promise<SubmittedPrizeClaim> {
   const r = await accountFetchForm<{ prize_claim: FiledPrizeClaim }>(
-    `/claims/${claimId}/prize-claims`,
+    `/claims/${pathSegment(claimId)}/prize-claims`,
     form,
     { actingUser: externalId }
   );
@@ -1021,7 +1039,7 @@ export async function submitPrizePayee(
   prize_claim_id: string;
   payee: { country: string; us_person: boolean; identity_recorded_at: string };
 }> {
-  return accountFetch(`/prize-claims/${prizeClaimId}/payee`, {
+  return accountFetch(`/prize-claims/${pathSegment(prizeClaimId)}/payee`, {
     method: "POST",
     body: input,
     actingUser: externalId,
@@ -1038,7 +1056,7 @@ export async function uploadPrizeTaxForm(
   prizeClaimId: string,
   form: FormData
 ): Promise<{ attachment_id: string }> {
-  return accountFetchForm(`/prize-claims/${prizeClaimId}/attachments`, form, {
+  return accountFetchForm(`/prize-claims/${pathSegment(prizeClaimId)}/attachments`, form, {
     actingUser: externalId,
   });
 }
@@ -1063,7 +1081,7 @@ export async function requestPrizeClaimCode(
   prizeClaimId: string,
   purpose: PrizeCodePurpose
 ): Promise<IssuedPrizeCode> {
-  return accountFetch(`/prize-claims/${prizeClaimId}/code`, {
+  return accountFetch(`/prize-claims/${pathSegment(prizeClaimId)}/code`, {
     method: "POST",
     body: { purpose },
     actingUser: externalId,

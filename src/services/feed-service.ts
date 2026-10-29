@@ -140,16 +140,53 @@ export function normalizeUrl(raw: string | null | undefined, base?: string | nul
 }
 
 /**
+ * Every `<script …</script>` and `<style …</style>` element replaced by a
+ * space: exactly `text.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, " ")`,
+ * in linear time. That regex retries every opening tag to the end of the
+ * text when no closing tag follows, which is quadratic on a hostile feed
+ * (CWE-1333). Here each opening tag looks for its closing tag from where the
+ * regex would, and once a tag name has no closing tag left, none of its
+ * later opening tags is searched again.
+ */
+function stripScriptsAndStyles(text: string): string {
+  const open = /<(script|style)\b/gi;
+  const close = { script: /<\/script\s*>/gi, style: /<\/style\s*>/gi };
+  const unclosed = { script: false, style: false };
+  let out = "";
+  let last = 0;
+  for (let m = open.exec(text); m !== null; m = open.exec(text)) {
+    const name = m[1]!.toLowerCase() as keyof typeof close;
+    if (unclosed[name]) continue;
+    const end = close[name];
+    end.lastIndex = open.lastIndex;
+    if (end.exec(text) === null) {
+      unclosed[name] = true;
+      continue;
+    }
+    out += `${text.slice(last, m.index)} `;
+    last = open.lastIndex = end.lastIndex;
+  }
+  return out + text.slice(last);
+}
+
+/**
+ * Every tag replaced by a space: exactly `text.replace(/<[^>]+>/g, " ")`. A
+ * match ends at the first ">" after its "<", so nothing after the last ">"
+ * can match; leaving that tail out keeps a run of unclosed "<" from being
+ * retried to the end of the text, which made the regex quadratic (CWE-1333).
+ */
+function stripTags(text: string): string {
+  const end = text.lastIndexOf(">") + 1;
+  return text.slice(0, end).replace(/<[^>]+>/g, " ") + text.slice(end);
+}
+
+/**
  * A fragment (a title, a summary, a link's text) as one line of plain text.
  * htmlToText keeps inline markup in text it does not take for a document,
  * so short fragments are stripped here.
  */
 function plain(fragment: string): string {
-  return decodeEntities(
-    fragment
-      .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-  )
+  return decodeEntities(stripTags(stripScriptsAndStyles(fragment)))
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -282,12 +319,63 @@ export function parseFeed(text: string, baseUrl: string | null = null): ParsedFe
   return null;
 }
 
+// The page scanners below read the fetched body once, front to back. Each
+// replaces a regex that backtracked over the rest of the body from every
+// unfinished tag (quadratic, or worse, in a crafted page) and yields exactly
+// what that regex matched, in the same order.
+
+/**
+ * The first match of the global regex `re` in `s` at or after `from`. It
+ * keeps its last answer, so asked at non-decreasing positions it reads `s`
+ * once in all, where a fresh search each time would reread the same tail.
+ */
+function seeker(s: string, re: RegExp): (from: number) => RegExpExecArray | null {
+  let asked = Infinity;
+  let found: RegExpExecArray | null = null;
+  return (from) => {
+    if (from < asked || (found !== null && found.index < from)) {
+      re.lastIndex = from;
+      found = re.exec(s);
+      asked = from;
+    }
+    return found;
+  };
+}
+
+/** The tags `/<link\b[^>]*>/gi` matches. */
+function* linkTags(html: string): Generator<string> {
+  const open = /<link\b/gi;
+  for (let m = open.exec(html); m; m = open.exec(html)) {
+    const end = html.indexOf(">", m.index + 5);
+    if (end < 0) return; // no ">" left to close this or any later <link
+    open.lastIndex = end + 1;
+    yield html.slice(m.index, end + 1);
+  }
+}
+
+/**
+ * `/rel\s*=\s*["']?[^"'>]*\balternate\b/i.test(tag)`: a whole-word
+ * "alternate" in a rel= value before the quote or ">" that ends it.
+ */
+function relAlternate(tag: string): boolean {
+  const word = seeker(tag, /\balternate\b/gi);
+  const stop = seeker(tag, /["'>]/g);
+  const rel = /rel\s*=\s*["']?/gi;
+  for (let m = rel.exec(tag); m; m = rel.exec(tag)) {
+    const value = m.index + m[0].length;
+    const w = word(value);
+    if (!w) return false;
+    const s = stop(value);
+    if (!s || w.index < s.index) return true;
+  }
+  return false;
+}
+
 /** Feed URLs an HTML page advertises (<link rel="alternate" type="application/rss+xml">). */
 export function discoverFeedLinks(html: string, baseUrl: string): string[] {
   const out: string[] = [];
-  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
-    const tag = m[0];
-    if (!/rel\s*=\s*["']?[^"'>]*\balternate\b/i.test(tag)) continue;
+  for (const tag of linkTags(html)) {
+    if (!relAlternate(tag)) continue;
     if (!/type\s*=\s*["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
     const href = tag.match(/href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
     const url = normalizeUrl(href?.[1] ?? href?.[2] ?? href?.[3] ?? null, baseUrl);
@@ -301,19 +389,90 @@ export interface PageLink {
   text: string | null;
 }
 
+/**
+ * The href value and inner text of each match of
+ * `/<a\b[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a\s*>/gi`.
+ * At an <a, as that regex settles it: the first href= before the tag's first
+ * ">" with a value after it; that value in quotes if the quote closes and a
+ * </a> follows the first ">" after it, else the value up to whitespace or
+ * ">" and the text from the tag's first ">" to the next </a>. No </a> after
+ * that ">" means no later <a can match either.
+ */
+function* anchors(html: string): Generator<{ href: string; text: string }> {
+  const open = /<a\b/gi;
+  const bare = /[^\s>]+/y;
+  const tagEnd = seeker(html, />/g);
+  const close = seeker(html, /<\/a\s*>/gi);
+  // A set per quote character, so that each is asked at rising positions.
+  const quoted = (quote: RegExp) => ({
+    end: seeker(html, quote),
+    tagEnd: seeker(html, />/g),
+    close: seeker(html, /<\/a\s*>/gi),
+  });
+  const double = quoted(/"/g);
+  const single = quoted(/'/g);
+  for (let m = open.exec(html); m; m = open.exec(html)) {
+    const gt = tagEnd(m.index + 2);
+    if (!gt) return; // no ">" left to end this or any later <a
+    const attr = /href\s*=\s*/i.exec(html.slice(m.index + 2, gt.index));
+    const v = attr ? m.index + 2 + attr.index + attr[0].length : gt.index;
+    if (v === gt.index) {
+      open.lastIndex = gt.index + 1; // no href value in this tag, for this or any <a inside it
+      continue;
+    }
+    const q = html[v] === '"' ? double : html[v] === "'" ? single : null;
+    if (q) {
+      const end = q.end(v + 1);
+      const qGt = end && q.tagEnd(end.index + 1);
+      const qClose = qGt && q.close(qGt.index + 1);
+      if (end && qGt && qClose) {
+        open.lastIndex = qClose.index + qClose[0].length;
+        yield { href: html.slice(v + 1, end.index), text: html.slice(qGt.index + 1, qClose.index) };
+        continue;
+      }
+    }
+    const c = close(gt.index + 1);
+    if (!c) return; // no </a> after this tag, so none for any later <a either
+    bare.lastIndex = v;
+    open.lastIndex = c.index + c[0].length;
+    yield { href: bare.exec(html)![0], text: html.slice(gt.index + 1, c.index) };
+  }
+}
+
 /** The links in an HTML document, absolute, de-duplicated, in order. */
 export function extractLinks(html: string, baseUrl: string | null, limit = 500): PageLink[] {
   const out: PageLink[] = [];
   const seen = new Set<string>();
-  for (const m of html.matchAll(/<a\b[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a\s*>/gi)) {
-    const url = normalizeUrl(m[1] ?? m[2] ?? m[3] ?? null, baseUrl);
+  for (const a of anchors(html)) {
+    const url = normalizeUrl(a.href, baseUrl);
     if (!url || seen.has(url)) continue;
     seen.add(url);
-    const text = plain(m[4] ?? "").slice(0, 200) || null;
+    const text = plain(a.text).slice(0, 200) || null;
     out.push({ url, text });
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * What `/<loc>\s*([^<]+?)\s*<\/loc>/gi` captures: the text up to the next
+ * "<", when that is a </loc>, trimmed (all whitespace, its last character).
+ * The regex was cubic in a run of whitespace inside a <loc> left open.
+ */
+function* locValues(text: string): Generator<string> {
+  const open = /<loc>/gi;
+  const close = /<\/loc>/iy;
+  for (let m = open.exec(text); m; m = open.exec(text)) {
+    const from = m.index + 5;
+    const lt = text.indexOf("<", from);
+    if (lt < 0) return; // no "<" left for a </loc>, nor for a later <loc>
+    open.lastIndex = lt;
+    close.lastIndex = lt;
+    if (lt === from || !close.test(text)) continue;
+    open.lastIndex = close.lastIndex;
+    const inner = text.slice(from, lt);
+    yield inner.trim() || inner.slice(-1);
+  }
 }
 
 /** The <loc> entries of a sitemap or sitemap index, or null when it is not one. */
@@ -322,8 +481,8 @@ export function parseSitemap(text: string): { index: boolean; urls: string[] } |
   const index = /<sitemapindex[\s>]/i.test(head);
   if (!index && !/<urlset[\s>]/i.test(head)) return null;
   const urls: string[] = [];
-  for (const m of text.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
-    const u = normalizeUrl(m[1]!.replace(/&amp;/g, "&"));
+  for (const loc of locValues(text)) {
+    const u = normalizeUrl(loc.replace(/&amp;/g, "&"));
     if (u) urls.push(u);
   }
   return { index, urls };

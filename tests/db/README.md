@@ -74,6 +74,12 @@ setup refuses to run against a database named `episteme` (the dev DB).
   guard.
 - **Allocator concurrency** (`allocator-concurrency.test.ts`): N
   parallel `runMandateAllocator` passes commit the daily rate once.
+- **Owl-balance concurrency** (`budget-contribution-concurrency.test.ts`):
+  parallel mandate contributions, and a contribution racing every other
+  balance-guarded debit (decomposition hold, grant and conversation
+  escrows, claim allocation, `chargeOwls`), never overdraw the balance.
+  A test-only trigger parks each debit inside the race window, so the
+  race is forced rather than left to timing.
 
 ## CI
 

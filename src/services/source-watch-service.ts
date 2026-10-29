@@ -371,14 +371,63 @@ export async function claimsRestingOnSources(sourceIds: string[]): Promise<Resti
   );
 }
 
+/*
+ * The two stripping steps below are linear-time scans with exactly the
+ * output of the regex replacements named on each. Those regexes, run on a
+ * fetched page, retried every later start position after a failed match: a
+ * long run of `<` with no `>` after it (or of `<script` with no `</script>`)
+ * cost time quadratic in its length, enough for one page to pin the event
+ * loop for hours.
+ */
+
+/** `html.replace(/<NAME[\s\S]*?<\/NAME>/gi, " ")`, in linear time. */
+function stripElement(html: string, name: "script" | "style" | "noscript"): string {
+  // One of the three fixed names above, so safe to build a pattern from.
+  const open = new RegExp(`<${name}`, "gi");
+  const close = new RegExp(`<\\/${name}>`, "gi");
+  let out = "";
+  let pos = 0;
+  for (;;) {
+    open.lastIndex = pos;
+    const o = open.exec(html);
+    if (!o) break;
+    close.lastIndex = o.index + o[0].length;
+    const c = close.exec(html);
+    // No closing tag after this opening tag means none after any later one: the rest stays as written.
+    if (!c) break;
+    out += html.slice(pos, o.index) + " ";
+    pos = c.index + c[0].length;
+  }
+  return out + html.slice(pos);
+}
+
+/** `html.replace(/<[^>]+>/g, " ")`, in linear time. */
+function stripTags(html: string): string {
+  let out = "";
+  let pos = 0;
+  let from = 0;
+  for (;;) {
+    const lt = html.indexOf("<", from);
+    if (lt < 0) break;
+    const gt = html.indexOf(">", lt + 1);
+    // No `>` after this `<` means none after any later one: the rest stays as written.
+    if (gt < 0) break;
+    // `<>` encloses nothing, so it is not a tag.
+    if (gt === lt + 1) {
+      from = gt + 1;
+      continue;
+    }
+    out += html.slice(pos, lt) + " ";
+    pos = from = gt + 1;
+  }
+  return out + html.slice(pos);
+}
+
 /** Reduce an HTML document to readable text, bounded. */
 export function htmlToText(html: string, maxChars = 12_000): string {
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<\/(p|div|li|h[1-6]|tr|br|section|article)>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
+  const blocks = stripElement(stripElement(stripElement(html, "script"), "style"), "noscript")
+    .replace(/<\/(p|div|li|h[1-6]|tr|br|section|article)>/gi, "\n");
+  const text = stripTags(blocks)
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")

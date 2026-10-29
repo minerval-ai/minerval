@@ -7,6 +7,7 @@ import {
   googleEnabled,
   devLoginEnabled,
 } from "../../auth";
+import { isSafeRelativePath } from "../../lib/safe-redirect";
 
 export const metadata: Metadata = { title: "Sign in · Minerval" };
 
@@ -19,10 +20,7 @@ export default async function SignInPage({
 }) {
   const { callbackUrl } = await searchParams;
   // Same-site relative paths only — never an open redirect.
-  const redirectTo =
-    callbackUrl?.startsWith("/") && !callbackUrl.startsWith("//")
-      ? callbackUrl
-      : "/account";
+  const redirectTo = isSafeRelativePath(callbackUrl) ? callbackUrl : "/account";
 
   const session = await auth();
   if (session?.externalId) redirect(redirectTo);

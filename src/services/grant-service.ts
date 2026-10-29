@@ -20,6 +20,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
+import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
 import {
   getJobSpentMicroUsd,
@@ -265,14 +266,17 @@ export async function createGrant(input: {
     })
     .returning();
 
-  // Escrow behind the balance guard (same shape as chargeOwls).
-  const held = await rawQuery<{ id: string }>(
-    `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
-     SELECT $1, $2, 'escrow_hold', $3
-      WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-               FROM owl_ledger WHERE user_id = $1) >= $4
-     RETURNING id`,
-    [input.funderUserId, -budgetMicro, job!.id, budgetMicro]
+  // Escrow behind the balance guard, under the owl-balance lock (same
+  // shape as chargeOwls).
+  const held = await withOwlBalanceLock(input.funderUserId, (tx) =>
+    tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
+       SELECT $1, $2, 'escrow_hold', $3
+        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
+                 FROM owl_ledger WHERE user_id = $1) >= $4
+       RETURNING id`,
+      [input.funderUserId, -budgetMicro, job!.id, budgetMicro]
+    )
   );
   if (held.length === 0) {
     await db.delete(budgetJobs).where(eq(budgetJobs.id, job!.id));

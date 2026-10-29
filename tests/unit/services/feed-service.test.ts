@@ -14,6 +14,7 @@ import {
   discoverFeedLinks,
   extractLinks,
   feedWakeDue,
+  FEED_BOUNDS,
   normalizeFeedRule,
   normalizeUrl,
   parseFeed,
@@ -119,6 +120,55 @@ describe("parseFeed", () => {
   });
 });
 
+describe("parseFeed on hostile markup (CWE-1333)", () => {
+  // Titles and summaries are stripped of tags. The regexes that did it retried
+  // every unclosed "<", "<script", or "<style" to the end of the text, which is
+  // quadratic: one item in a 10 MB feed could block the event loop for hours.
+  const rss = (items: Array<[title: string, description: string]>) =>
+    `<rss version="2.0"><channel><title>T</title>${items
+      .map(([t, d], i) => `<item><guid>k${i}</guid><title><![CDATA[${t}]]></title><description><![CDATA[${d}]]></description></item>`)
+      .join("")}</channel></rss>`;
+  const cut = (text: string) => `${text.slice(0, FEED_BOUNDS.summaryChars - 1)}…`;
+
+  it("gets through runs of unclosed tags in linear time, keeping them as text", () => {
+    const hostile: Array<[title: string, description: string, summary: string | null]> = [
+      ["<".repeat(200_000), `<p>${"<".repeat(200_000)}`, cut("<".repeat(200_000))],
+      ["<script ".repeat(25_000), "<style ".repeat(25_000), cut("<style ".repeat(25_000))],
+      ["<script <style ".repeat(15_000), `${"<script>".repeat(25_000)}</style>`, null],
+      ["<a ".repeat(70_000), `<script>${"</script ".repeat(25_000)}`, cut("</script ".repeat(25_000))],
+    ];
+    for (const [title, description, summary] of hostile) {
+      const started = performance.now();
+      const [item] = parseFeed(rss([[title, description]]))!.items;
+      expect(performance.now() - started).toBeLessThan(2_000);
+      expect(item!.title).toBe(title.trim().slice(0, 500));
+      expect(item!.summary).toBe(summary);
+    }
+  });
+
+  it("strips scripts, styles, and tags exactly as before", () => {
+    const f = parseFeed(
+      rss([
+        [
+          "Hello <b>World</b> &amp; <i>more</i>",
+          `<p>Intro.</p><SCRIPT type="text/javascript">alert("<b>hi</b>")</Script ><style>p { color: red }</STYLE\n>Body &amp; <em>more</em></p>`,
+        ],
+        ["<scripts>Kept</scripts> and <style-guide>this</style-guide>", "<p>Before</p><script>never closed <b>bold</b> after"],
+        ["a <> b < c", "<script>x<style>y</style>z"],
+        ["<<b>Nested", `<p>Unclosed <a href="x"`],
+        ["</script>Stray closer", "<script</script>Gone<style/></style>"],
+      ])
+    )!;
+    expect(f.items.map(({ title, summary }) => ({ title, summary }))).toEqual([
+      { title: "Hello World & more", summary: "Intro. Body & more" },
+      { title: "Kept and this", summary: "Before never closed bold after" },
+      { title: "a <> b < c", summary: "x z" },
+      { title: "Nested", summary: `Unclosed <a href="x"` },
+      { title: "Stray closer", summary: "Gone" },
+    ]);
+  });
+});
+
 describe("pages, links, sitemaps", () => {
   it("finds the feeds a page advertises, resolved against the page", () => {
     const html = `<html><head>
@@ -157,6 +207,139 @@ describe("pages, links, sitemaps", () => {
     expect(normalizeUrl("HTTPS://Example.org/a#frag")).toBe("https://example.org/a");
     expect(normalizeUrl("javascript:alert(1)")).toBeNull();
     expect(normalizeUrl("not a url")).toBeNull();
+  });
+});
+
+/**
+ * Links, feeds and sitemap entries are read by forward scans that replaced
+ * backtracking regexes. The scans keep the regexes' reading of odd and
+ * malformed markup, quirks included, and finish in time on a crafted page
+ * that kept each regex busy for seconds (up to hours at the 10 MB fetch cap).
+ */
+describe("pages, links, sitemaps: odd markup and hostile pages", () => {
+  const BASE = "https://blog.example.org/p/post";
+
+  /** fn's result and how long it took, in ms. */
+  function timed<T>(fn: () => T): [T, number] {
+    const start = performance.now();
+    const value = fn();
+    return [value, performance.now() - start];
+  }
+
+  it("reads anchors in any case and attribute order, and malformed ones as before", () => {
+    const html = `<nav>
+  <A HREF="/upper">Upper</A>
+  <a class="c" href='/single' title="t">Single</a >
+  <a href='/no-closing-quote>No closing quote</a>
+  <a href=/bare target=_blank>Bare <b>bold</b></a>
+  <a data-x="1"
+     href = "/spaced"
+  >Spaced
+     text</a
+  >
+  <abbr href="/not-an-anchor">No</abbr>
+  <a name="no-href">No href</a>
+  <a title="x > y" href="/after-gt-in-title">Lost</a>
+  <a href="/quoted>gt">Quoted gt</a>
+  <a href="/outer">Outer <a href="/inner">Inner</a> tail</a>
+  <a href="">Empty</a>
+  <a href="/upper#again">Again</a>
+  <a href="/dangling">Dangling
+  <a href="/swallowed">Swallowed</a>
+  <a href="/last">Last</a>
+</nav>
+<a href="/q></a>z">`;
+    expect(extractLinks(html, BASE)).toEqual([
+      { url: "https://blog.example.org/upper", text: "Upper" },
+      { url: "https://blog.example.org/single", text: "Single" },
+      { url: "https://blog.example.org/p/'/no-closing-quote", text: "No closing quote" },
+      { url: "https://blog.example.org/bare", text: "Bare bold" },
+      { url: "https://blog.example.org/spaced", text: "Spaced text" },
+      { url: "https://blog.example.org/quoted%3Egt", text: "Quoted gt" },
+      { url: "https://blog.example.org/outer", text: "Outer Inner" },
+      { url: "https://blog.example.org/dangling", text: "Dangling Swallowed" },
+      { url: "https://blog.example.org/last", text: "Last" },
+      { url: "https://blog.example.org/p/%22/q", text: null },
+    ]);
+    expect(extractLinks(html, BASE, 2)).toEqual([
+      { url: "https://blog.example.org/upper", text: "Upper" },
+      { url: "https://blog.example.org/single", text: "Single" },
+    ]);
+  });
+
+  it("finds advertised feeds in any case and attribute order, and malformed ones as before", () => {
+    const html = `<head>
+  <LINK REL="Alternate" TYPE="application/RSS+xml" HREF="/upper.xml">
+  <link href='/single.xml' type='application/atom+xml' rel='alternate'>
+  <link rel=alternate type=application/rss+xml href=/bare.xml>
+  <link rel="alternate stylesheet" type="application/rss+xml" href="/alternate-stylesheet.xml"/>
+  <link rel="alternates" type="application/rss+xml" href="/not-whole-word.xml">
+  <link rel="me" title="alternate" type="application/rss+xml" href="/alternate-outside-rel.xml">
+  <link rel="alternate" type="text/css" href="/not-a-feed.css">
+  <linkx rel="alternate" type="application/rss+xml" href="/not-a-link-tag.xml">
+  <link rel="alternate" type="application/rss+xml" href="/upper.xml">
+  <link rel="alternate" type="application/rss+xml" href="/closed-by-a-later-tag.xml"
+</head>
+<link rel="alternate" type="application/rss+xml" href="/never-closed.xml"`;
+    expect(discoverFeedLinks(html, BASE)).toEqual([
+      "https://blog.example.org/upper.xml",
+      "https://blog.example.org/single.xml",
+      "https://blog.example.org/bare.xml",
+      "https://blog.example.org/alternate-stylesheet.xml",
+      "https://blog.example.org/closed-by-a-later-tag.xml",
+    ]);
+  });
+
+  it("reads <loc> entries trimmed and in any case, and malformed ones as before", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>
+    https://x.example/a
+  </loc></url>
+  <url><LOC>https://x.example/b</LOC></url>
+  <url><loc>https://x.example/c?x=1&amp;y=2</loc></url>
+  <url><loc>https://x.example/d</loc ></url>
+  <url><loc>   </loc></url>
+  <url><loc></loc></url>
+  <url><loc>https://x.example/<b>e</b></loc></url>
+  <url><loc>https://x.example/unclosed
+  <url><loc>https://x.example/f</loc></url>
+</urlset>`;
+    expect(parseSitemap(xml)).toEqual({
+      index: false,
+      urls: ["https://x.example/a", "https://x.example/b", "https://x.example/c?x=1&y=2", "https://x.example/f"],
+    });
+  });
+
+  // The regexes took seconds on each input below; the scans take about a millisecond.
+  const first = `<a href="/first">First</a>`;
+  it.each([
+    ["<a href=x> repeated, never closed", first + "<a href=x>".repeat(40_000)],
+    ['<a href="x> repeated, quote and anchor never closed', first + '<a href="x>'.repeat(20_000)],
+  ])("extractLinks stays linear on %s", (_, html) => {
+    const [links, ms] = timed(() => extractLinks(html, BASE, 5000));
+    expect(links).toEqual([{ url: "https://blog.example.org/first", text: "First" }]);
+    expect(ms).toBeLessThan(500);
+  });
+
+  const feed = `<link rel="alternate" type="application/rss+xml" href="/feed">`;
+  it.each([
+    ["<link repeated, never closed", feed + "<link ".repeat(25_000)],
+    ["rel= repeated in one tag", feed + "<link type=application/rss+xml href=/x " + "rel=".repeat(25_000) + ">"],
+  ])("discoverFeedLinks stays linear on %s", (_, html) => {
+    const [feeds, ms] = timed(() => discoverFeedLinks(html, BASE));
+    expect(feeds).toEqual(["https://blog.example.org/feed"]);
+    expect(ms).toBeLessThan(500);
+  });
+
+  const head = `<urlset><url><loc>https://x.example/a</loc></url>`;
+  it.each([
+    ["text, then whitespace, in a <loc> left open", head + "<url><loc>x" + " ".repeat(70_000) + "y"],
+    ["whitespace, then text, in a <loc> left open", head + "<url><loc>" + " ".repeat(2_500) + "x"],
+  ])("parseSitemap stays linear on %s", (_, xml) => {
+    const [sitemap, ms] = timed(() => parseSitemap(xml));
+    expect(sitemap).toEqual({ index: false, urls: ["https://x.example/a"] });
+    expect(ms).toBeLessThan(500);
   });
 });
 

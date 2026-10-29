@@ -7,13 +7,13 @@
  * observability, but the bill is the ledger. See src/services/owl.ts for the
  * unit itself and docs/accounts.md for the product shape.
  *
- * Charges are conditional inserts guarded by a balance subquery. Two racing
- * requests can each pass the guard — the same one-operation overshoot slack
- * the metered era accepted — but a drained balance can never be spent twice
- * beyond that, and every path that fails after charging refunds explicitly.
+ * Charges are conditional inserts guarded by a balance subquery, run under
+ * the user's owl-balance lock (withOwlBalanceLock) so racing debits queue
+ * and each guard sees every earlier one — parallel requests cannot overdraw
+ * a balance — and every path that fails after charging refunds explicitly.
  */
 import { eq, sql } from "drizzle-orm";
-import { getDb, rawQuery } from "../db/client.js";
+import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { owlLedger } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { owlsToMicroUsd, type PricedOp } from "./owl.js";
@@ -52,6 +52,37 @@ export async function getOwlBalanceMicroUsd(userId: string): Promise<number> {
     .from(owlLedger)
     .where(eq(owlLedger.userId, userId));
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Run a balance-guarded debit under the user's owl-balance lock. Every
+ * debit written behind `SUM(amount_micro_usd) >= amount` goes through
+ * here: the guard alone is not enough, because under READ COMMITTED each
+ * racing INSERT evaluates it against its own statement snapshot, so N
+ * parallel debits all read the same pre-debit balance and all land. The
+ * per-user transaction-scoped advisory lock is the transaction's FIRST
+ * statement and the guarded INSERT a later one, so the guard's snapshot
+ * includes every debit committed by an earlier holder. One key for every
+ * debit path: a contribution, an escrow, an allocation and a charge all
+ * queue on the same lock.
+ *
+ * Deadlock-free by construction: a waiter has taken nothing else in its
+ * transaction yet, and `fn` must stay on `tx` (no second connection,
+ * nothing else that takes this lock) and callers must not hold another
+ * open transaction around it, so the holder never waits on a waiter. The
+ * lock releases at COMMIT/ROLLBACK.
+ */
+export async function withOwlBalanceLock<T>(
+  userId: string,
+  fn: (tx: TxQuery) => Promise<T>
+): Promise<T> {
+  return withTransaction(async (tx) => {
+    await tx.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended('owl-balance:' || $1, 0))`,
+      [userId]
+    );
+    return fn(tx);
+  });
 }
 
 export interface OwlEntryInput {
@@ -95,9 +126,9 @@ export async function recordOwlEntry(input: OwlEntryInput): Promise<boolean> {
 /**
  * Charge an operation's cap: insert the debit only if the balance covers it.
  * Returns the ledger entry id when charged, null when the balance was
- * insufficient. The guard and insert are one statement, so concurrent
- * charges can overshoot by at most one operation each — never re-spend a
- * drained balance systematically. A zero cap returns "free" (no row).
+ * insufficient. The insert runs under the user's owl-balance lock, so
+ * concurrent debits serialize and can never overdraw the balance. A zero
+ * cap returns "free" (no row).
  *
  * With an idempotencyKey, a retried charge (a requeued order whose first
  * attempt crashed after debiting) returns the EXISTING entry instead of
@@ -118,24 +149,26 @@ export async function chargeOwls(input: {
 }): Promise<{ charged: boolean; entryId: string | null }> {
   const priceMicro = owlsToMicroUsd(input.priceOwls);
   if (priceMicro <= 0) return { charged: true, entryId: null };
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO owl_ledger
-       (user_id, amount_micro_usd, reason, op, claim_id, contribution_id,
-        idempotency_key)
-     SELECT $1, $2, 'charge', $3, $4, $5, $7
-      WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-               FROM owl_ledger WHERE user_id = $1) >= $6
-     ON CONFLICT (idempotency_key) DO NOTHING
-     RETURNING id`,
-    [
-      input.userId,
-      -priceMicro,
-      input.op,
-      input.claimId ?? null,
-      input.contributionId ?? null,
-      priceMicro,
-      input.idempotencyKey ?? null,
-    ]
+  const rows = await withOwlBalanceLock(input.userId, (tx) =>
+    tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger
+         (user_id, amount_micro_usd, reason, op, claim_id, contribution_id,
+          idempotency_key)
+       SELECT $1, $2, 'charge', $3, $4, $5, $7
+        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
+                 FROM owl_ledger WHERE user_id = $1) >= $6
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id`,
+      [
+        input.userId,
+        -priceMicro,
+        input.op,
+        input.claimId ?? null,
+        input.contributionId ?? null,
+        priceMicro,
+        input.idempotencyKey ?? null,
+      ]
+    )
   );
   if (rows.length > 0) return { charged: true, entryId: rows[0]!.id };
   if (input.idempotencyKey) {

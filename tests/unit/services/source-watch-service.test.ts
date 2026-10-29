@@ -122,6 +122,42 @@ describe("htmlToText / readPage", () => {
     expect(htmlToText("<p>" + "a".repeat(50) + "</p>", 10)).toBe("aaaaaaaaaa\n[truncated]");
   });
 
+  it("keeps the edge cases of its stripping: tag case, unclosed elements, `<>`", () => {
+    expect(
+      htmlToText("<div><SCRIPT type=x>if (a < b) {}</Script>Kept<scripts>gone</SCRIPT> <style>p{}</STYLE><noscript>x</noscript>.</div>")
+    ).toBe("Kept .");
+    // An unclosed <script> stays as text and does not hide a closed <style> after it.
+    expect(htmlToText("<p>x <script never closed <style>gone</style> y</p>")).toBe("x <script never closed y");
+    expect(htmlToText("<p>a</p><p>b<style>never closed")).toBe("a\nb never closed");
+    expect(htmlToText("a<script>x</script >b</script>c")).toBe("a c");
+    expect(htmlToText("<p>1 <> 2 < 3</p>")).toBe("1 <> 2 < 3");
+  });
+
+  it("takes linear time on a page built to make it backtrack", async () => {
+    // Each took seconds at this size (hours at the 10 MB a read allows) when
+    // every later start position was retried after a failed match.
+    const n = 100_000;
+    const cases: Array<[string, string]> = [
+      ["<".repeat(n), "<".repeat(n)],
+      ["<script ".repeat(n / 8), "<script ".repeat(n / 8).trim()],
+      ["<style ".repeat(n / 10), "<style ".repeat(n / 10).trim()],
+      ["<noscript ".repeat(n / 10), "<noscript ".repeat(n / 10).trim()],
+    ];
+    for (const [input, expected] of cases) {
+      const start = performance.now();
+      const text = htmlToText(input, 2 * n);
+      const ms = performance.now() - start;
+      expect(text).toBe(expected);
+      expect(ms).toBeLessThan(500);
+    }
+
+    state.responses.set("https://attacker.example/", "<".repeat(n));
+    const start = performance.now();
+    const res = await readPage("https://attacker.example/brief");
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(res).toEqual({ ok: true, text: `${"<".repeat(12_000)}\n[truncated]`, chars: 12_012 });
+  });
+
   it("returns a problem rather than throwing on an unfetchable page", async () => {
     const res = await readPage("https://nowhere.example/x");
     expect(res).toMatchObject({ ok: false, problem: expect.stringContaining("no response") });

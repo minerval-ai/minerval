@@ -11,30 +11,36 @@
  * top-up — it never silently dies mid-run (src/workers/budget-job-pipeline.ts).
  */
 import { desc, eq } from "drizzle-orm";
-import { getDb, rawQuery, withTransaction } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
-import { recordOwlEntry, OWL_REASONS } from "./owl-ledger-service.js";
+import {
+  recordOwlEntry,
+  OWL_REASONS,
+  withOwlBalanceLock,
+} from "./owl-ledger-service.js";
 import { prizeCommitmentSql } from "./prize-commitment.js";
 
 /**
  * Escrow owls into a job behind the balance guard: the hold is written only
- * if the spendable balance covers it (same single-statement race posture as
- * chargeOwls). Returns the hold's ledger entry id, or null when the balance
- * was insufficient.
+ * if the spendable balance covers it, under the user's owl-balance lock
+ * (same as chargeOwls). Returns the hold's ledger entry id, or null when
+ * the balance was insufficient.
  */
 async function holdOwls(input: {
   userId: string;
   amountMicroUsd: number;
   jobId: string;
 }): Promise<string | null> {
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
-     SELECT $1, $2, 'escrow_hold', $3
-      WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
-               FROM owl_ledger WHERE user_id = $1) >= $4
-     RETURNING id`,
-    [input.userId, -input.amountMicroUsd, input.jobId, input.amountMicroUsd]
+  const rows = await withOwlBalanceLock(input.userId, (tx) =>
+    tx.query<{ id: string }>(
+      `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
+       SELECT $1, $2, 'escrow_hold', $3
+        WHERE (SELECT COALESCE(SUM(amount_micro_usd), 0)
+                 FROM owl_ledger WHERE user_id = $1) >= $4
+       RETURNING id`,
+      [input.userId, -input.amountMicroUsd, input.jobId, input.amountMicroUsd]
+    )
   );
   return rows[0]?.id ?? null;
 }
@@ -130,7 +136,9 @@ async function addBudget(input: {
   // just untidy — a settlement racing the reversal counts the hold in its
   // pro-rata refund basis and pays the contributor a share of money that
   // is also being handed back to them, at the other funders' expense.
-  const outcome = await withTransaction(async (tx) => {
+  // The user's owl-balance lock serializes the guarded hold against every
+  // other debit of theirs, so parallel contributions can't overdraw.
+  const outcome = await withOwlBalanceLock(input.userId, async (tx) => {
     const held = await tx.query<{ id: string }>(
       `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id)
        SELECT $1, $2, 'escrow_hold', $3
@@ -461,7 +469,14 @@ export type CancelJobResult =
   | { ok: true; refundedMicroUsd: number }
   | { ok: false; code: "NOT_FOUND" | "NOT_CANCELLABLE"; message: string };
 
-/** Stop a job and return its unspent budget. */
+/**
+ * Stop a job and return its unspent budget. A job that backs a GRANT is
+ * the mandate's escrow: cancelling it settles the mandate, so the grant is
+ * cancelled in the same statement (as cancelGrant does). Leaving the grant
+ * 'active' over a refunded escrow let it keep regranting money that had
+ * already gone back to its funder — and a regrant returning to a dead
+ * source is credited to the funder again.
+ */
 export async function cancelBudgetJob(input: {
   jobId: string;
   userId: string;
@@ -471,11 +486,18 @@ export async function cancelBudgetJob(input: {
     user_id: string;
     budget_micro_usd: number;
   }>(
-    `UPDATE budget_jobs
-        SET status = 'cancelled', completed_at = now(), updated_at = now()
-      WHERE id = $1 AND user_id = $2
-        AND status IN ('running', 'paused_budget')
-      RETURNING id, user_id, budget_micro_usd`,
+    `WITH job AS (
+       UPDATE budget_jobs
+          SET status = 'cancelled', completed_at = now(), updated_at = now()
+        WHERE id = $1 AND user_id = $2
+          AND status IN ('running', 'paused_budget')
+        RETURNING id, user_id, budget_micro_usd
+     ), mandate AS (
+       UPDATE grants SET status = 'cancelled', updated_at = now()
+        WHERE budget_job_id IN (SELECT id FROM job)
+          AND status NOT IN ('completed', 'cancelled')
+     )
+     SELECT id, user_id, budget_micro_usd FROM job`,
     [input.jobId, input.userId]
   );
   if (rows.length === 0) {

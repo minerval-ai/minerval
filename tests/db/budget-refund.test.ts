@@ -271,6 +271,51 @@ describe("refundUnspentBudget — regrant-return path", () => {
   });
 });
 
+describe("cancelBudgetJob on a grant's escrow", () => {
+  // Regression: cancelling a grant-backed job through the budget-job
+  // cancel refunded the escrow but left the grant 'active', so the mandate
+  // could still regrant (or spawn from) money already returned to its
+  // funder — and the share returning to that "dead" source was credited to
+  // the funder a second time.
+  it("cancels the grant with the job; the refunded mandate can no longer regrant", async () => {
+    const { cancelBudgetJob } = await import(
+      "../../src/services/budget-job-service.js"
+    );
+    const funder = await seedUser("cancel-grant-job");
+    const source = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: 1_000_000,
+    });
+    const target = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: 0,
+      withEscrowHold: false,
+    });
+
+    const res = await cancelBudgetJob({ jobId: source.jobId, userId: funder });
+    expect(res).toEqual({ ok: true, refundedMicroUsd: 1_000_000 });
+    const [grant] = await rawQuery<{ status: string }>(
+      `SELECT status FROM grants WHERE id = $1`,
+      [source.grantId]
+    );
+    expect(grant!.status).toBe("cancelled");
+
+    const regrant = await createRegrant({
+      fromGrantId: source.grantId,
+      toGrantId: target.grantId,
+      owls: 0.5,
+    });
+    expect(regrant.ok).toBe(false);
+    if (!regrant.ok) expect(regrant.code).toBe("SOURCE_NOT_FOUND");
+    expect(await jobBudget(target.jobId)).toBe(0);
+    const refunds = (await ledgerRows(funder)).filter(
+      (r) => r.reason === "escrow_refund"
+    );
+    expect(refunds).toHaveLength(1);
+    expect(Number(refunds[0]!.amount_micro_usd)).toBe(1_000_000);
+  });
+});
+
 describe("contribution racing cancellation", () => {
   // Regression (found by a live-DB probe): addBudget used to commit the
   // hold and reverse it afterwards when the status guard failed. A
