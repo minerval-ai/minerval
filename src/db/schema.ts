@@ -63,6 +63,13 @@ export const claims = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     text: text("text").notNull(),
+    // What kind of node this is (constitution §2, §7a): a claim about a
+    // proposition, a quantity (a value the discourse estimates), or a
+    // question. NODE_KINDS in src/schemas/kinds.ts. A quantity's definition
+    // and estimates live in quantity_definitions and quantity_estimates, a
+    // question's standing in question_assessments; `assessments` holds
+    // verdicts on propositions only.
+    kind: text("kind").notNull().default("claim"),
     claimType: text("claim_type").notNull().default("empirical_derived"),
     // Claim lifecycle: 'active' (live), 'merged' (merge loser, aliased to the
     // survivor via mergedInto), 'deprecated' (reversed curator-created claim,
@@ -201,6 +208,7 @@ export const claims = pgTable(
   },
   (table) => [
     index("idx_claims_state").on(table.state),
+    check("ck_claims_kind", sql`${table.kind} IN ('claim', 'quantity', 'question')`),
     index("idx_claims_updated").on(table.updatedAt),
     // Drain ordering: among pending claims, highest composite priority first.
     // The partial index keeps it small (only the live work queue) and fast as
@@ -334,6 +342,10 @@ export const claimRelationships = pgTable(
       .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     relationType: text("relation_type").notNull().default("requires"),
+    // On an 'answers' edge (KIND_RELATION_TYPES in src/schemas/kinds.ts):
+    // why the answer is in the question's set, its quality, its prominence,
+    // or both (§7a). NULL on every other edge.
+    answerBasis: text("answer_basis"),
     // Which named argument(s) an edge belongs to is NOT a column here: it is
     // the argument_subclaims relation below, so one edge can be grouped under
     // several arguments of the same claim (constitution §7, #437). An edge
@@ -356,6 +368,10 @@ export const claimRelationships = pgTable(
     check(
       "no_self_reference",
       sql`${table.parentClaimId} != ${table.childClaimId}`
+    ),
+    check(
+      "ck_cr_answer_basis",
+      sql`${table.answerBasis} IS NULL OR (${table.relationType} = 'answers' AND ${table.answerBasis} IN ('quality', 'prominence', 'both'))`
     ),
   ]
 );
@@ -485,6 +501,12 @@ export const arguments_ = pgTable(
     name: text("name"),
     description: text("description"),
     stance: text("stance").notNull(),
+    // What an argument about a quantity shows about its value (§7): the
+    // Steward's words and, where the argument places the value on its axis,
+    // a range ({side: at|about|between|above|below, low, high, inclusive}).
+    // valueShownSchema in src/schemas/kinds.ts. NULL for arguments about
+    // propositions, which carry a stance instead.
+    shows: jsonb("shows"),
     content: text("content").notNull(),
     evidenceUrls: text("evidence_urls").array().notNull().default([]),
     createdBy: text("created_by").notNull(),
@@ -872,6 +894,21 @@ export const claimInstances = pgTable(
     // disagreement lives on the claim instead of in two mirror-image pages.
     // Values are INSTANCE_STANCES in schemas/common.ts.
     stance: text("stance").notNull().default("affirms"),
+    // Kinds (§4, §7a). An instance of a quantity states its value
+    // (stance 'states'): the figure as the source gives it, in the estimate
+    // shape (quantityEstimateSchema in src/schemas/kinds.ts), and the
+    // quantity's argument that rests on it, if one does. An instance of a
+    // question asks it ('asks') or answers it ('answers'), and an answering
+    // instance names the answer node its answer matches. A figure read from
+    // a table has no sentence: its verbatim_text is empty, and read paths
+    // serve it as null.
+    statedEstimate: jsonb("stated_estimate"),
+    argumentId: uuid("argument_id").references((): AnyPgColumn => arguments_.id, {
+      onDelete: "set null",
+    }),
+    answerClaimId: uuid("answer_claim_id").references((): AnyPgColumn => claims.id, {
+      onDelete: "set null",
+    }),
     confidence: real("confidence").notNull().default(1.0),
     // Attribution metadata (#278/#281), all nullable — many instances won't
     // have all of these. Who asserted it (the speaker/author, which for a
@@ -4222,3 +4259,308 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type Tagging = typeof taggings.$inferSelect;
 export type NewTagging = typeof taggings.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Node kinds: quantities (constitution §2, §3, §10)
+//
+// A quantity is a node whose subject is a value: what it measures, in which
+// population and under which conditions, and in what unit. The graph's
+// estimate of it is a distribution at the precision the evidence supports,
+// with the share of probability that lies outside every value (the event
+// does not happen, the quantity proves undefined). Estimates are kept apart
+// from `assessments` so that table stays a record of verdicts on
+// propositions, and a quantity is never "verified".
+// ---------------------------------------------------------------------------
+export const quantityDefinitions = pgTable("quantity_definitions", {
+  claimId: uuid("claim_id")
+    .primaryKey()
+    .references(() => claims.id, { onDelete: "cascade" }),
+  measures: text("measures").notNull(),
+  population: text("population"),
+  conditions: text("conditions"),
+  // quantityUnitSchema in src/schemas/kinds.ts.
+  unit: jsonb("unit").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const quantityEstimates = pgTable(
+  "quantity_estimates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // quantityEstimateSchema in src/schemas/kinds.ts: the form (distribution,
+    // interval, bound, magnitude, point, none) and its figures.
+    estimate: jsonb("estimate").notNull(),
+    // Reader-facing account of what is known about the value; `work` is the
+    // audit detail, as reasoning_trace is on an assessment.
+    summary: text("summary"),
+    work: text("work").notNull(),
+    model: text("model"),
+    fundedByJobId: uuid("funded_by_job_id"),
+    isCurrent: boolean("is_current").notNull().default(true),
+    trigger: text("trigger"),
+    triggerContext: text("trigger_context"),
+    assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_quantity_estimates_current")
+      .on(table.claimId)
+      .where(sql`${table.isCurrent} = true`),
+    index("idx_quantity_estimates_claim").on(table.claimId),
+  ]
+);
+
+// A reading of an instrument (a survey, a test, a register, a model) taken
+// to indicate the quantity: evidence about it, recorded with what was
+// actually measured (§3). How far it speaks to the quantity is the
+// Steward's `bearing`, and a claim of its own (bearing_claim_id) when that
+// is disputed or load-bearing.
+export const quantityReadings = pgTable(
+  "quantity_readings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    measured: text("measured").notNull(),
+    figure: text("figure").notNull(),
+    bearing: text("bearing").notNull(),
+    bearingClaimId: uuid("bearing_claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_quantity_readings_claim").on(table.claimId)]
+);
+
+// A claim about which side of a figure a quantity lies, where one has a node
+// of its own (rare: most such statements are estimates on the quantity). The
+// claim's credence must agree with the quantity's estimate, which the
+// consistency checks read from here.
+export const quantityCuts = pgTable(
+  "quantity_cuts",
+  {
+    claimId: uuid("claim_id")
+      .primaryKey()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    quantityId: uuid("quantity_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    direction: text("direction").notNull(),
+    value: real("value").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_quantity_cuts_quantity").on(table.quantityId),
+    check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
+    check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// Node kinds: questions (constitution §7a, §10)
+//
+// A question's answers, subquestions and presuppositions are edges in
+// claim_relationships from the question ('answers', 'part_of', and the
+// ordinary 'assumes'/'requires'); how two answers bear on each other is
+// recorded pair by pair in answer_relations; how well answered it is lives
+// here.
+// ---------------------------------------------------------------------------
+export const questionAssessments = pgTable(
+  "question_assessments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // QUESTION_STANDINGS in src/schemas/kinds.ts.
+    standing: text("standing").notNull(),
+    // The answers the assessment favors: one when answered, one or more when
+    // leaning, none otherwise. Not foreign keys (a uuid array cannot be);
+    // read paths join and drop ids that no longer resolve.
+    favoredClaimIds: uuid("favored_claim_ids").array().notNull().default([]),
+    summary: text("summary"),
+    reasoningTrace: text("reasoning_trace").notNull(),
+    // The Steward's note when it judges the set of answers incomplete.
+    incomplete: text("incomplete"),
+    model: text("model"),
+    fundedByJobId: uuid("funded_by_job_id"),
+    isCurrent: boolean("is_current").notNull().default(true),
+    trigger: text("trigger"),
+    triggerContext: text("trigger_context"),
+    assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_question_assessments_current")
+      .on(table.claimId)
+      .where(sql`${table.isCurrent} = true`),
+    index("idx_question_assessments_claim").on(table.claimId),
+    check(
+      "ck_question_assessments_standing",
+      sql`${table.standing} IN ('answered', 'leaning', 'open', 'ill_posed', 'unknown')`
+    ),
+  ]
+);
+
+// How two of a question's answers bear on each other (§7a): whether they
+// exclude each other or can both hold. Stored in canonical order (a < b), as
+// claim_links is, so one row covers both directions.
+export const answerRelations = pgTable(
+  "answer_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    questionId: uuid("question_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    claimAId: uuid("claim_a_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    claimBId: uuid("claim_b_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    relation: text("relation").notNull(),
+    reasoning: text("reasoning"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId),
+    check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
+    check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// requests (constitution Part VIII, Requests)
+//
+// Something someone could do that would improve what the graph knows: a
+// measurement, a document, a proof, an expert's reading. Filed by an
+// administrator, a contributor, or a mandate (through the Reviewer); kept
+// by the Steward of the one node it bears on, or by the Curator when it
+// bears on several or on none the graph holds. The keeper decides when it
+// is met. Work on a request is recorded in request_work, and every outcome
+// there (including a negative result or a refusal) is a complete one.
+// ---------------------------------------------------------------------------
+export const requests = pgTable(
+  "requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ask: text("ask").notNull(),
+    // What the judgments it bears on would become under its outcomes.
+    why: text("why").notNull(),
+    satisfiedBy: text("satisfied_by").notNull(),
+    whoCould: text("who_could"),
+    // A party the request is put to, in words; NULL = open to anyone.
+    addressedTo: text("addressed_to"),
+    // What it bears on that the graph does not yet hold, in words.
+    bearsOnText: text("bears_on_text"),
+    // admin | contributor | mandate. A mandate's request names no party on
+    // public surfaces (§12/§19): the label read paths serve is "a funded
+    // mandate", and filer_grant_id is for the funder's own dashboard.
+    filerKind: text("filer_kind").notNull(),
+    // The administrator role that filed it (claim_steward, curator, ...).
+    filerAgent: text("filer_agent"),
+    filerContributorId: uuid("filer_contributor_id").references(() => contributors.id, {
+      onDelete: "set null",
+    }),
+    filerGrantId: uuid("filer_grant_id").references(() => grants.id, {
+      onDelete: "set null",
+    }),
+    filerRunId: uuid("filer_run_id"),
+    // steward | curator, fixed when the request is filed from its targets.
+    keeperKind: text("keeper_kind").notNull(),
+    keeperClaimId: uuid("keeper_claim_id").references(() => claims.id, {
+      onDelete: "set null",
+    }),
+    state: text("state").notNull().default("open"),
+    stateNote: text("state_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_requests_state").on(table.state, table.createdAt),
+    index("idx_requests_keeper").on(table.keeperClaimId),
+    check("ck_requests_filer_kind", sql`${table.filerKind} IN ('admin', 'contributor', 'mandate')`),
+    check("ck_requests_keeper_kind", sql`${table.keeperKind} IN ('steward', 'curator')`),
+    check(
+      "ck_requests_keeper_claim",
+      sql`(${table.keeperKind} = 'steward') = (${table.keeperClaimId} IS NOT NULL)`
+    ),
+    check(
+      "ck_requests_state",
+      sql`${table.state} IN ('open', 'addressed', 'in_progress', 'met', 'declined', 'withdrawn', 'moot')`
+    ),
+  ]
+);
+
+// What a request bears on: graph nodes, or sources (a request for a
+// document's full text, a corrected table).
+export const requestTargets = pgTable(
+  "request_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => requests.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id").references(() => sources.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    index("idx_request_targets_request").on(table.requestId),
+    index("idx_request_targets_claim").on(table.claimId),
+    uniqueIndex("idx_request_targets_unique").on(
+      table.requestId,
+      sql`COALESCE(${table.claimId}, ${table.sourceId})`
+    ),
+    check(
+      "ck_request_targets_one",
+      sql`(${table.claimId} IS NULL) != (${table.sourceId} IS NULL)`
+    ),
+  ]
+);
+
+export const requestWork = pgTable(
+  "request_work",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => requests.id, { onDelete: "cascade" }),
+    // Who did it, in words a reader can follow ("Researcher", a
+    // contributor's display name); the ids below are the record.
+    byLabel: text("by_label").notNull(),
+    contributorId: uuid("contributor_id").references(() => contributors.id, {
+      onDelete: "set null",
+    }),
+    researchRunId: uuid("research_run_id").references(() => researchRuns.id, {
+      onDelete: "set null",
+    }),
+    // NULL while the work is under way.
+    outcome: text("outcome"),
+    summary: text("summary").notNull(),
+    fundedByJobId: uuid("funded_by_job_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_request_work_request").on(table.requestId),
+    check(
+      "ck_request_work_outcome",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('met', 'partly_met', 'negative', 'cannot_be_met', 'declined', 'revise')`
+    ),
+  ]
+);
+
+export type QuantityDefinition = typeof quantityDefinitions.$inferSelect;
+export type QuantityEstimateRow = typeof quantityEstimates.$inferSelect;
+export type QuestionAssessment = typeof questionAssessments.$inferSelect;
+export type RequestRow = typeof requests.$inferSelect;

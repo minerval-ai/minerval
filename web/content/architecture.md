@@ -319,6 +319,60 @@ history: exactly one row per claim is flagged `is_current`, enforced by a
 partial unique index, so the timeline of *why* a claim's status changed is
 fully recoverable. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
+
+### Node kinds: quantities and questions
+
+A node in the graph is one of three kinds (constitution §2, §7a), recorded in
+`claims.kind`: a **claim** about a proposition, a **quantity** whose subject
+is a value, or a **question**. Every node written before kinds existed is a
+claim. A fresh claim can become a quantity or a question until it holds an
+assessment or an argument; after that, a quantity or question on the same
+subject is a new node. `assessments` stays a record of verdicts on
+propositions, so a quantity is never "verified" and a question never
+"supported".
+
+A quantity's `quantity_definitions` row says what it measures, in which
+population, under which conditions, and in what unit. The graph's estimate of
+it lives in `quantity_estimates`, append-only with one `is_current` row like
+assessments, as a distribution at the precision the evidence supports
+(a distribution by quantiles, an interval, a bound, an order of magnitude, a
+single figure, or no figure with a reason) and the share of probability that
+lies outside every value. A source's statement of the value is an instance
+with stance `states` and its figure in `stated_estimate`, linked to the
+argument that rests on it. `quantity_readings` records readings of
+instruments taken to indicate the quantity, with what was actually measured
+and how far it bears. An argument about a quantity records what it `shows`
+about the value (a figure, a range, a side of a figure, or words alone) in
+place of a stance. A claim about which side of a figure a quantity lies is
+recorded in `quantity_cuts`, so its credence can be checked against the
+estimate.
+
+A question's candidate answers (claims or quantities) are `answers` edges
+from the question, carrying an `answer_basis` (quality, prominence, or both);
+its subquestions are `part_of` edges; its presuppositions are the ordinary
+`assumes` and `requires` edges. `answer_relations` records, pair by pair,
+whether two answers exclude each other or can both hold. How well answered a
+question is lives in `question_assessments` as a standing (answered, leaning,
+open, ill-posed, unknown) with the answers it favors. A source that asks the
+question is an instance with stance `asks`; one that answers it has stance
+`answers` and names the answer node its answer matches. The vocabularies and
+the JSON shapes are in `src/schemas/kinds.ts`, and the agents' tools do not
+offer them until the tools that write them exist.
+
+### Requests
+
+A **request** (constitution Part VIII) is something someone could do that
+would improve what the graph knows: what is asked, why (what the judgments it
+bears on would become under its outcomes), and what would satisfy it. An
+administrator, a contributor, or a mandate files it; a mandate's request is
+shown as filed by "a funded mandate", never by name. Its keeper is fixed when
+it is filed: the Steward of the one node it bears on, or the Curator when it
+bears on several nodes, a source, or something the graph does not hold yet.
+`request_targets` holds what it bears on and `request_work` the work done on
+it, each with an outcome (met, partly met, negative, cannot be met, declined,
+revise); a negative result or a refusal is a complete outcome. The keeper
+decides when the request is met, and a closed request (met, declined,
+withdrawn, moot) stays closed.
 ### Formal statements and machine-checked arguments
 
 A mathematical claim may carry a **formal statement**: the graph's own
@@ -1292,6 +1346,12 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
   ├──< claim_links >── claims          (lateral see-also: related, rival
   │                                     explanation, counterpart; never walked)
   ├──▶ assessments        (verdict history; one is_current per claim)
+  ├──▶ quantity_definitions, quantity_estimates, quantity_readings, quantity_cuts
+  │                       (a quantity's definition and estimate history)
+  ├──▶ question_assessments, answer_relations
+  │                       (a question's standing history; how answers bear on each other)
+  ├──< request_targets >── requests ──▶ request_work
+  │                       (what someone could do; its keeper; work and outcomes)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
   │        ├──▶ claim_instance_readings         (does the source bear its own assertion)
   │        └──▶ claim_provenance_edges ──▶ sources   (what the assertion draws on)
@@ -1368,8 +1428,10 @@ tag as a filter.
 
 A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
-contributor profiles, the topic vocabulary, and the findings feed
-(`GET /findings`, filterable by claim, tag, and importance). Anything that writes or spends model tokens
+contributor profiles, the topic vocabulary, the findings feed
+(`GET /findings`, filterable by claim, tag, and importance), and requests
+(`GET /requests`, filterable by node and state). A claim's detail carries its
+`kind`, and a quantity's or question's detail its `quantity` or `question`. Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
 graph directly: proposed claims and submitted sources become pending intake
