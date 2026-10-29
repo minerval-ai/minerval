@@ -533,11 +533,17 @@ export interface QuantityEstimate {
   outside?: { share: number; meaning: string } | null;
 }
 
-/** A place on a value's axis: a range, or a side of a figure. */
+/**
+ * A place on a value's axis: a figure ("at", or "about" it), a range
+ * ("between"), or a side of a figure ("above", "below"; `inclusive` reads
+ * "at least" or "at most"). A figure or a lower bound sits in `low`, an
+ * upper bound in `high`.
+ */
 export interface ValueRange {
-  side: "above" | "below" | "between";
+  side: "at" | "about" | "between" | "above" | "below";
   low?: number | null;
   high?: number | null;
+  inclusive?: boolean | null;
 }
 
 // What an argument about a quantity shows about its value (§7). Most argue

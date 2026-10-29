@@ -79,7 +79,7 @@ function premise(
 const A_EXTRAP = {
   id: "arg-flu-extrap", name: "Extrapolation from registered deaths",
   content: ARG_EXTRAP_WRITTEN, evaluation: ARG_EXTRAP_EVAL, verdict: "likely",
-  shows: { text: "about 17 million, and not more than 25 million", range: { side: "between" as const, low: 15e6, high: 25e6 } },
+  shows: { text: "at most 25 million, most likely about 17 million", range: { side: "below" as const, high: 25e6, inclusive: true } },
 };
 const A_COMPILE = {
   id: "arg-flu-compile", name: "Compilation of national and regional estimates",

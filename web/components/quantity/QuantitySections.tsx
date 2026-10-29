@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ArgumentItem, ClaimDetail, QuantityDefinition, QuantityEstimate, ThresholdOf } from "@/lib/types";
-import { argumentVerdictMeta, DEFINED_IN } from "@/lib/ontology";
+import { argumentVerdictMeta, DEFINED_IN, showsMark } from "@/lib/ontology";
 import {
   describeCut, describeEstimate, makeScale, probAbove, valuesOf,
 } from "@/lib/quantity";
@@ -143,7 +143,9 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
               {arg?.shows && (
                 <div className={styles.groupStrip}>
                   <span className={styles.groupStripLabel}>
-                    <span className="sc">shows</span> {arg.shows.text}
+                    <span className="sc">shows</span>{" "}
+                    <span className={styles.showsMark} title={showsMark(arg.shows)?.label}>{showsMark(arg.shows)?.glyph}</span>{" "}
+                    {arg.shows.text}
                   </span>
                   {range ? (
                     <EstimateStrip scale={scale} range={range} context={est} label={`The argument shows ${arg.shows.text}`} />

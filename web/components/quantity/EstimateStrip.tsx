@@ -78,8 +78,12 @@ export function EstimateMark({
   }
 }
 
-/** The range an argument about the quantity concludes (§7), as an open box. */
+/** Where an argument places the value (§7): an open box for a range or a side, an open ring for a figure. */
 export function RangeMark({ scale, range }: { scale: ValueScale; range: ValueRange }) {
+  if ((range.side === "at" || range.side === "about") && range.low != null) {
+    // a figure: an open ring, hollow where an estimate's dot is solid
+    return <span className={`${styles.rangePoint}${range.side === "about" ? ` ${styles.rangeAbout}` : ""}`} style={{ left: pct(scale.pos(range.low)) }} />;
+  }
   if (range.side === "between" && range.low != null && range.high != null) {
     return <span className={styles.range} style={span(scale, range.low, range.high)} />;
   }

@@ -89,6 +89,11 @@
   background: color-mix(in srgb, var(--muted) 8%, transparent);
   border-radius: 2px;
 }
+.rangePoint {
+  position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%;
+  border: 1.5px solid var(--muted); background: var(--paper); transform: translate(-50%, -50%);
+}
+.rangeAbout { border-style: dashed; }
 .rangeOpenRight { border-right: none; border-radius: 2px 0 0 2px; }
 .rangeOpenLeft  { border-left: none; border-radius: 0 2px 2px 0; }
 
@@ -195,3 +200,5 @@
 .readingDl dt { color: var(--muted); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 0.12rem; }
 .readingDl dd { margin: 0; line-height: 1.45; }
 .readingClaim { margin: 0.35rem 0 0; font-size: 0.78rem; }
+
+.showsMark { font-weight: 700; color: var(--ink); }

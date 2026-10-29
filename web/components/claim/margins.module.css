@@ -379,4 +379,4 @@
 }
 
 /* a quantity's argument places its value; no for/against swatch (§7) */
-.jumpGlyph { width: 0.62rem; flex: none; text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1; }
+.jumpGlyph { width: 1rem; flex: none; text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1; }

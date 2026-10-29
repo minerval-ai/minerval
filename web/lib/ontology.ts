@@ -792,14 +792,22 @@ export const REQUEST_OUTCOME: Record<RequestOutcome, { label: string; def: strin
 };
 
 // The mark for an argument about a quantity (§7), by what it shows about the
-// value: = for a value or a range, > or < for a side of a figure, and ? for
-// an argument that bears on whether the value can be pinned down at all, which
-// has no place on the axis.
+// value: = a figure, ≈ about a figure, ↔ a range, > < ≥ ≤ a side of a
+// figure, and ? for an argument that bears on whether the value can be pinned
+// down at all, which has no place on the axis.
 export function showsMark(shows: ValueShown | null | undefined): { glyph: string; label: string } | null {
   if (!shows) return null;
   const r = shows.range;
   if (!r) return { glyph: "?", label: "bears on whether the value can be pinned down" };
-  if (r.side === "above") return { glyph: ">", label: "places the value above a figure" };
-  if (r.side === "below") return { glyph: "<", label: "places the value below a figure" };
-  return { glyph: "=", label: "places the value at a figure or within a range" };
+  switch (r.side) {
+    case "at": return { glyph: "=", label: "places the value at a figure" };
+    case "about": return { glyph: "≈", label: "places the value about a figure" };
+    case "between": return { glyph: "↔", label: "places the value within a range" };
+    case "above": return r.inclusive
+      ? { glyph: "≥", label: "places the value at or above a figure" }
+      : { glyph: ">", label: "places the value above a figure" };
+    case "below": return r.inclusive
+      ? { glyph: "≤", label: "places the value at or below a figure" }
+      : { glyph: "<", label: "places the value below a figure" };
+  }
 }

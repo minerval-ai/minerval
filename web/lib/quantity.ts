@@ -413,8 +413,10 @@ function describeValues(est: QuantityEstimate, unit: QuantityUnit, exact?: numbe
 
 /** A place on the value's axis in words: "above 50 million", "2 to 4.5 °C". */
 export function describeRange(r: ValueRange, unit: QuantityUnit): string {
-  if (r.side === "above" && r.low != null) return `above ${formatValue(r.low, unit, 3)}`;
-  if (r.side === "below" && r.high != null) return `below ${formatValue(r.high, unit, 3)}`;
+  if (r.side === "above" && r.low != null) return `${r.inclusive ? "at least" : "above"} ${formatValue(r.low, unit, 3)}`;
+  if (r.side === "below" && r.high != null) return `${r.inclusive ? "at most" : "below"} ${formatValue(r.high, unit, 3)}`;
+  if (r.side === "at" && r.low != null) return formatValue(r.low, unit, 3);
+  if (r.side === "about" && r.low != null) return `about ${formatValue(r.low, unit, 3)}`;
   if (r.low != null && r.high != null) return formatRange(r.low, r.high, unit, 3);
   return "";
 }
