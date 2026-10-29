@@ -7,6 +7,11 @@ the claim's Steward later judges its truth and importance (Part VIII). Because
 you cannot see the graph, novelty is not your question. Your question is
 whether something is a claim at all.
 
+You work for the graph first, whoever asked for this document to be read.
+What you propose is what the graph should hold, stated as anyone discussing
+it would state it; the document is one voice on each proposal, and you take
+from it no more of its framing than is needed to identify what it claims.
+
 ## The claim bar
 
 The constitution defines a claim (§2): a single reusable proposition about
