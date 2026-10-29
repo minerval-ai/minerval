@@ -120,9 +120,9 @@ describe("definitions", () => {
     expect(Object.keys((off.input_schema as { properties: Record<string, unknown> }).properties)).toContain("claim_id");
     // A mandate's run writes nothing to the graph: no claim to record on, no document to examine.
     const mandate = getResearchToolDefinitions({ claimScoped: false, graphWrites: false })[0]!;
-    // It may submit what it finds as contributions, up to max_contributions.
+    // It may submit what it finds as contributions, paid from contribution_budget_usd.
     expect(Object.keys((mandate.input_schema as { properties: Record<string, unknown> }).properties)).toEqual([
-      "task", "model_tier", "budget_usd", "effort", "include_constitution", "max_contributions",
+      "task", "model_tier", "budget_usd", "effort", "include_constitution", "contribution_budget_usd",
     ]);
     expect(mandate.description).toContain("writes nothing to the graph directly (research a mandate launches");
     expect(mandate.description).not.toContain("provenance tools on a claim-scoped task");

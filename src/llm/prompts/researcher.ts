@@ -208,8 +208,8 @@ export interface ResearcherTaskInput {
   task: string;
   /** The launcher's agent key: claim_steward or grantmaker. */
   requestedBy: string;
-  /** For a mandate's research: how many contributions it may submit. */
-  contributionAllowance?: number;
+  /** For a mandate's research: where the review budget its Grantmaker delegated stands. */
+  contributionBudget?: string | null;
   claim: { id: string; text: string } | null;
   /** The document this run examines, when launched as an examination (#507). */
   examination?: { sourceTitle: string; sourceUrl: string | null; facets: string[]; scope: string } | null;
@@ -247,8 +247,8 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
     ? "This run takes up a request, and the section When You Take Up a Request applies. It writes nothing to the graph: what you find goes in your report, which is recorded as work on the request for its keeper to judge. The brief above is the request as filed."
     : input.requestedBy === "grantmaker"
     ? "This investigation serves a mandate. Research a mandate funds writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, and reaches the graph the way anyone's findings do." +
-      ((input.contributionAllowance ?? 0) > 0
-        ? ` Where you establish something a node in the graph should hold, you may submit it with submit_contribution, up to ${input.contributionAllowance} this run: it is reviewed like anyone's contribution, at the mandate's expense, and the node's Steward decides what it changes. Submit what you established and how sure you are, not what the mandate would like the graph to say.`
+      (input.contributionBudget
+        ? ` Where you establish something a node in the graph should hold, you may submit it with submit_contribution. It is reviewed like anyone's contribution, and the node's Steward decides what it changes. The mandate delegated a budget to pay for those reviews, separate from your research budget:\n${input.contributionBudget}\nYou will see where it stands after every turn and in each submission's result. A submission the budget would not cover is refused, so weigh what is worth a review and submit what matters most first. Submit what you established and how sure you are, not what the mandate would like the graph to say.`
         : "")
     : input.claim
     ? `The claim this investigation serves, as the graph states it:\n"${input.claim.text}"\n(claim id ${input.claim.id}; read its record with get_claim and get_decomposition.)`

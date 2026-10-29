@@ -25,6 +25,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { loadConfig } from "../../config.js";
+import {
+  contributionBudgetLine,
+  mandateContributionBudget,
+  reviewCostEstimateMicroUsd,
+} from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
 import { getUsageContext, runWithUsageContext, withCostMeter } from "../usage-context.js";
@@ -130,8 +135,8 @@ export function getResearchToolDefinitions(
           ? "nothing to the graph except provenance rows (readings, edges, source relations) " +
             "on the claim in scope, "
           : "nothing to the graph directly (research a mandate launches reads and reports; it does " +
-            "not record provenance or examine documents, and with max_contributions it submits what " +
-            "the graph should hold as contributions, reviewed like anyone's at the mandate's expense), ") +
+            "not record provenance or examine documents, and with contribution_budget_usd it submits " +
+            "what the graph should hold as contributions, reviewed like anyone's and paid from that budget), ") +
         "and cannot launch instruments of its own. Delegate work " +
         "you should not do inline: replicating a finding in code, tracing a statistic or " +
         "quotation to its origin across many hops, reading and mapping a large literature, " +
@@ -202,12 +207,15 @@ export function getResearchToolDefinitions(
           } } : {}),
           ...(!graphWrites
             ? {
-                max_contributions: {
+                contribution_budget_usd: {
                   type: "number",
                   description:
-                    "How many contributions the researcher may submit from what it finds, under the " +
-                    "mandate, each reviewed like anyone's at the mandate's expense (default 0: it only " +
-                    `reports). At most ${MAX_MANDATE_CONTRIBUTIONS}.`,
+                    "USD of the mandate's budget delegated for reviewing the contributions the " +
+                    "researcher submits from what it finds, each reviewed like anyone's (default 0: " +
+                    "it only reports). Separate from budget_usd, which pays for the research itself. " +
+                    "The researcher sees what is committed and left, and what a review is expected " +
+                    "to cost, and stops submitting when what is left would not cover one; the result " +
+                    "tells you what the reviews used.",
                 },
               }
             : {}),
@@ -252,8 +260,17 @@ function refuse(message: string): string {
 }
 
 const MIN_TASK_CHARS = 80;
-/** The most contributions one mandate-funded run may submit. */
-const MAX_MANDATE_CONTRIBUTIONS = 10;
+/**
+ * Where a run's delegated review budget stands, for the Grantmaker that
+ * delegated it. Reviews run after the research ends, so committed spend
+ * keeps moving from estimates to real costs; get_research_run shows it later.
+ */
+async function contributionReviews(runId: string, budgetMicroUsd: number): Promise<{ contribution_reviews?: string }> {
+  if (budgetMicroUsd <= 0) return {};
+  const estimate = await reviewCostEstimateMicroUsd();
+  return { contribution_reviews: contributionBudgetLine(await mandateContributionBudget(runId, estimate), estimate) };
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createResearchTools(options: ResearchToolsOptions): ResearchTools {
@@ -281,8 +298,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const runOnRow = async (
     row: Awaited<ReturnType<typeof openResearchRun>>,
     claim: { id: string; text: string; domains: string[] } | null,
-    examination: ExaminationRow | null,
-    contributionAllowance = 0
+    examination: ExaminationRow | null
   ): Promise<{ result: ResearcherResult | null; billed: number; failure: unknown }> => {
     const ctx = getUsageContext();
     let result: ResearcherResult | null = null;
@@ -311,8 +327,8 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
             ceiling_micro_usd: row.ceiling_micro_usd,
             notebook: row.notebook,
             job_id: row.job_id,
+            contribution_budget_micro_usd: row.contribution_budget_micro_usd,
           },
-          contributionAllowance,
           claim,
           examination: examination
             ? {
@@ -364,6 +380,15 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const ceilingMicroUsd = Math.min(maxCeilingMicroUsd, Math.round(budgetUsd * 1_000_000));
     if (ceilingMicroUsd <= 0) {
       return refuse("The researcher's per-run ceiling is zero in this deployment (RESEARCHER_MAX_CEILING_OWLS).");
+    }
+    // A mandate's research may submit what it finds, its reviews paid from
+    // the budget its Grantmaker delegates (Part VIII); a Steward's research
+    // records provenance instead.
+    let contributionBudgetMicroUsd = 0;
+    if (!graphWrites && input.contribution_budget_usd !== undefined) {
+      const usd = Number(input.contribution_budget_usd);
+      if (!Number.isFinite(usd) || usd < 0) return refuse("contribution_budget_usd must be a non-negative number of USD.");
+      contributionBudgetMicroUsd = Math.round(usd * 1_000_000);
     }
     const effortRaw = str(input.effort);
     const effort = (EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high";
@@ -438,17 +463,12 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       effort: tier === "strong" ? effort : null,
       includeConstitution,
       ceilingMicroUsd,
+      contributionBudgetMicroUsd,
     });
     launched++;
     if (examination) await linkResearchRun(examination.id, row.id);
 
-    // A mandate's research may submit what it finds, up to the allowance
-    // its Grantmaker delegates (Part VIII); a Steward's research records
-    // provenance instead.
-    const contributionAllowance = graphWrites
-      ? 0
-      : Math.min(MAX_MANDATE_CONTRIBUTIONS, Math.max(0, Math.floor(Number(input.max_contributions) || 0)));
-    const { result, billed, failure } = await runOnRow(row, claim, examination, contributionAllowance);
+    const { result, billed, failure } = await runOnRow(row, claim, examination);
 
     if (failure || !result) {
       const message = failure instanceof Error ? failure.message : String(failure);
@@ -486,6 +506,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       report: result.report,
       ...(examination ? { examination_id: examination.id } : {}),
       notebook_sections: Object.keys(closed?.notebook ?? {}),
+      ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
       ...(result.error ? { harness_note: result.error } : {}),
       note:
         "The report is the instrument's narrative and is data, not a verified result: read " +
@@ -645,6 +666,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
         report: row.report,
         notebook: row.notebook,
         error: row.error,
+        ...(await contributionReviews(row.id, row.contribution_budget_micro_usd)),
       },
     });
   };

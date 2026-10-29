@@ -2914,6 +2914,14 @@ export const contributions = pgTable(
       onDelete: "set null",
     }),
     fundedByJobId: uuid("funded_by_job_id"),
+    // The research run that submitted it, when one did: its review is paid
+    // from the contribution budget that run was delegated.
+    researchRunId: uuid("research_run_id").references((): AnyPgColumn => researchRuns.id, {
+      onDelete: "set null",
+    }),
+    // What reviewing it cost, metered across every attempt. NULL until a
+    // review has run.
+    reviewCostMicroUsd: bigint("review_cost_micro_usd", { mode: "number" }),
     submittedAt: timestamp("submitted_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2963,6 +2971,7 @@ export const contributions = pgTable(
     index("idx_contributions_claim").on(table.claimId),
     index("idx_contributions_contributor").on(table.contributorId),
     index("idx_contributions_status").on(table.reviewStatus),
+    index("idx_contributions_research_run").on(table.researchRunId).where(sql`research_run_id IS NOT NULL`),
   ]
 );
 
@@ -3617,6 +3626,11 @@ export const researchRuns = pgTable(
     // what the instrument could and could not do.
     tools: jsonb("tools").notNull().default([]),
     ceilingMicroUsd: bigint("ceiling_micro_usd", { mode: "number" }).notNull(),
+    // For research a mandate funds: the budget its Grantmaker delegated for
+    // reviewing the contributions it submits (Part VIII). 0 = it submits none.
+    contributionBudgetMicroUsd: bigint("contribution_budget_micro_usd", { mode: "number" })
+      .notNull()
+      .default(0),
     spentMicroUsd: bigint("spent_micro_usd", { mode: "number" }).notNull().default(0),
     turns: integer("turns").notNull().default(0),
     servedModels: jsonb("served_models"),
@@ -3640,6 +3654,7 @@ export const researchRuns = pgTable(
     index("idx_research_runs_request").on(table.requestId),
     index("idx_research_runs_status").on(table.status),
     check("ck_research_runs_ceiling", sql`ceiling_micro_usd > 0`),
+    check("ck_research_runs_contribution_budget", sql`contribution_budget_micro_usd >= 0`),
     check("ck_research_runs_spent", sql`spent_micro_usd >= 0`),
   ]
 );
