@@ -66,6 +66,7 @@ export async function mcpRoutes(app: FastifyInstance): Promise<void> {
       const server = buildMcpServer({
         auth: request.auth!,
         requestId: request.id,
+        app,
       });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless

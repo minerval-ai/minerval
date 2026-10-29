@@ -18,8 +18,12 @@
  *   - Feedback: raise_issue (#366) — the external agent's channel for
  *     reporting a failure or gap in THIS server's tools. Free, attributed,
  *     rate-limited; lands in agent_reports beside our own agents' reports.
+ *   - Route tools: every other REST route an account can call, generated
+ *     from the route and dispatched into it in-process (route-tools.ts),
+ *     so MCP keeps parity with the REST API.
  */
 import { z } from "zod";
+import type { FastifyInstance } from "fastify";
 import {
   McpServer,
   ResourceTemplate,
@@ -87,10 +91,13 @@ import {
   REPORT_BODY_MAX_CHARS,
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
+import { registerRouteTools } from "./route-tools.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
   requestId: string;
+  /** The app whose REST routes become route tools; omitted, there are none. */
+  app?: FastifyInstance;
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -1106,6 +1113,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       ],
     })
   );
+
+  if (ctx.app) registerRouteTools(server, ctx.app, ctx.auth);
 
   return server;
 }

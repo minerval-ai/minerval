@@ -4,7 +4,9 @@ Minerval exposes the claim graph as a **remote MCP server** (Model Context
 Protocol over streamable HTTP), so any MCP client — Claude Code, Claude.ai /
 Cowork, Cursor, ChatGPT — can query claims, inspect decompositions and
 assessments, fact-check text, and submit contributions from an agentic
-workflow (issue #73).
+workflow (issue #73). It keeps **parity with the REST API**: anything an
+account can do through the API, it can do over MCP, unless a stated reason
+says otherwise (see [Parity with the REST API](#parity-with-the-rest-api)).
 
 ## Endpoint
 
@@ -39,9 +41,12 @@ clients discover the whole flow on their own.
 - Access tokens (`eoat_*`, 1 h) refresh via rotating refresh tokens
   (`eort_*`, 30 d); a replayed refresh token revokes the whole grant.
 - Tokens are audience-bound to `/mcp` (scope `mcp`): they authenticate only
-  the MCP surface the consent page describes, never the wider REST API —
-  that's what API keys are for. A broader scope would have to be advertised,
-  consented to, and enforced before tokens work elsewhere.
+  the MCP surface the consent page describes, never the REST API directly —
+  that's what API keys are for. Because MCP keeps parity, the MCP surface
+  reaches every account affordance through its tools (route tools dispatch
+  in-process, carrying the identity the `/mcp` request resolved), but the
+  token itself is refused anywhere but `/mcp`. A broader scope would have to
+  be advertised, consented to, and enforced before tokens work elsewhere.
 
 **API key** (minted from the account dashboard, see
 [accounts.md](accounts.md)) — for clients where you can set headers:
@@ -85,9 +90,62 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 | Tier | Tools | Cost |
 |------|-------|------|
 | Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
-| Agentic | `match_claim`, `extract_claims`, `assess_text` | LLM tokens metered per account; rate-limited and gated on the monthly free-tier grant (402 `QUOTA_EXCEEDED` when exhausted) |
+| Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — new/low-reputation accounts get a tighter hourly cap (`CONTRIBUTION_RATE_LIMITED`), and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
+| Route tools | everything listed under [Route tools](#route-tools) | exactly what the REST route charges, because the route runs: reads are free, `propose_claim` / `submit_source` / `order_assessment` charge their caps, funding tools escrow owls ([accounts.md](accounts.md)) |
+
+## Parity with the REST API
+
+**The rule: MCP has every affordance the REST API offers an account, unless
+there is a good, written reason it should not.** An agent connected through
+Claude.ai has only this surface (its OAuth token is refused off `/mcp`), so a
+route missing here is something those users cannot do at all. The burden is
+on exclusion, not inclusion.
+
+Every REST route is decided in `src/mcp/route-tools.ts`, in exactly one of:
+
+- `ROUTE_TOOLS` — exposed as a generated tool (the name is chosen there; the
+  input schema and description come from the route's own schema);
+- `NATIVE_TOOL_ROUTES` — covered by a hand-written tool in `src/mcp/server.ts`;
+- `MCP_EXCLUDED_ROUTES` / `MCP_EXCLUDED_PREFIXES` — not on MCP, each with its
+  reason.
+
+`tests/unit/mcp/parity.test.ts` builds the real app and fails when a route is
+undecided, decided twice, or a table names a route that no longer exists. So
+adding a REST route means adding its MCP side in the same change: usually one
+line in `ROUTE_TOOLS`.
+
+**How a route tool runs.** It does not reimplement the route: the call is
+injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
+guards, owl charges, validation, and serialization are the ones REST callers
+get, and the two surfaces cannot drift. The identity the `/mcp` request
+resolved is parked under a single-use random nonce for the duration of the
+injected request; the auth plugin trades the nonce back for that identity,
+and refuses a nonce it does not hold. A route's refusal comes back as a tool
+error carrying the route's `code`, `message`, HTTP `status`, and whatever
+else the route sent (an entitlement, owl packs, a cap).
+
+**Good reasons to exclude**, as the table currently records them:
+
+- the route needs a credential no account holds — the service key
+  (provisioning, triage, system usage) or the operator key (anything that
+  moves platform or prize money);
+- the route needs a signed-in dashboard session on purpose (minting API
+  keys, Stripe checkout), so a leaked key, an MCP credential included,
+  cannot do it;
+- a person must read and make something (filing a prize claim: declarations,
+  residency, documents, one-time codes);
+- the route bypasses governance that MCP's equivalent applies
+  (`PATCH /claims/:id` writes an argument without review;
+  `submit_contribution` with `argument` is the reviewed path);
+- it is protocol plumbing (OAuth, discovery, Stripe's webhook, health) or a
+  rendering of something MCP already has (the Atom feed), or another
+  client's own protocol (the browser extension's page analysis and chat,
+  whose MCP equivalents are `assess_text` and `extract_claims`).
+
+"It spends owls" is not a reason: owls are the limiter on both surfaces,
+and the tool description says what a call spends.
 
 ## Tools
 
@@ -170,6 +228,41 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
   like it; if one of them is yours, raise again with `joins` set to its id
   and your body is added to it as a sighting instead. Free, attributed,
   rate-limited; returns the report id.
+
+### Route tools
+
+Generated from the REST routes (see [Parity](#parity-with-the-rest-api));
+each tool's description is its route's summary plus the route it runs.
+
+- **Claims:** `list_claims`, `cite_claim`, `get_claim_provenance`,
+  `export_claim_nanopub`, `get_claim_record`, `get_assessment_history`,
+  `get_assessment_trajectory`, `get_claim_events`, `propose_claim` (reviewed
+  by the Contribution Reviewer before anything enters the graph).
+- **Funding:** `order_assessment`, `fund_claim_assessment`,
+  `fund_deep_decomposition`, `list_orders`, `get_order`, `cancel_order`,
+  `list_budget_jobs`, `get_budget_job`, `top_up_budget_job`,
+  `cancel_budget_job`.
+- **Grants and mandates:** `start_grant_conversation`,
+  `list_grant_conversations`, `get_grant_conversation`,
+  `get_platform_grant_conversation`, `send_grant_message`, `fund_grant`,
+  `list_grants`, `get_grant`, `approve_grant_plan`, `top_up_grant`,
+  `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`,
+  `fund_mandate`, `get_mandate_lookout`.
+- **Sources:** `submit_source` (reviewed before extraction), `get_source`,
+  `get_source_context`, `get_source_examinations`, `get_source_document`,
+  `get_job`.
+- **Contributions:** `list_contributions`, `submit_appeal`, `get_appeal`,
+  `list_contributors`, `get_contributor`.
+- **Your account:** `get_account` (balance, entitlement, the cap list),
+  `get_usage`, `list_owl_packs`, `get_owl_ledger`, `list_api_keys`.
+- **Tags, findings, platform health:** `get_tag`, `list_findings`,
+  `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
+  `get_monitor`.
+- **Formal mathematics and prizes:** `get_formalization_lean`,
+  `list_formalizations`, `get_lean_check`, `list_solver_attempts`,
+  `get_attempt_stats`, `get_solver_attempt`, `list_prizes`,
+  `get_prize_rules`, `get_prize_rules_version`, `list_prize_claims`,
+  `get_prize_claim_eligibility`, `get_prize_claim`, `challenge_prize_claim`.
 
 Claiming a prize over MCP (`claim_prize`) is deferred until the first prize
 has been paid. The tool is thin once the JSON route exists (Lean source as

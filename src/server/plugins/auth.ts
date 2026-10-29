@@ -22,6 +22,11 @@
  *     MCP surface (tokens are scoped 'mcp' — the capability set the consent
  *     page describes, not a general-purpose API credential).
  *
+ *     An MCP tool that dispatches in-process to a REST route (src/mcp/
+ *     dispatch.ts) carries the /mcp request's resolved identity across under
+ *     a single-use nonce; that is how the token reaches the routes MCP
+ *     exposes, without the token itself being accepted off /mcp.
+ *
  *  4. Dev bypass — only when NO keys are configured AND env != production:
  *     acts as the fixed "dev:local" identity with service trust so the whole
  *     dashboard flow works locally with zero setup. In production a missing
@@ -46,6 +51,10 @@ import {
   PLATFORM_EXTERNAL_ID,
   PLATFORM_GRANTMAKING_SCOPE,
 } from "../../services/platform-account.js";
+import {
+  MCP_DISPATCH_HEADER,
+  resolveDispatchedAuth,
+} from "../../mcp/dispatch.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
 
@@ -115,6 +124,19 @@ export function isDirectService(auth: RequestAuth | null): auth is RequestAuth {
   return auth?.isService === true && !auth.isSession;
 }
 
+/**
+ * Whether the request presents a credential at all: an API key, a Bearer
+ * token, or an in-process MCP dispatch. Routes whose reads are open but
+ * whose answer depends on who asks authenticate only when this holds.
+ */
+export function presentsCredentials(request: FastifyRequest): boolean {
+  return Boolean(
+    request.headers["x-api-key"] ||
+      request.headers.authorization ||
+      request.headers[MCP_DISPATCH_HEADER]
+  );
+}
+
 export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorateRequest("contributorExternalId", null);
   app.decorateRequest("auth", null);
@@ -135,6 +157,24 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         : undefined;
 
       let auth: RequestAuth | null = null;
+
+      // An MCP tool dispatched in-process to this route (src/mcp/dispatch.ts):
+      // the /mcp request already authenticated, so its identity is carried
+      // over as resolved, OAuth tokens included — the token was presented to
+      // /mcp, the surface it is bound to. An unknown nonce is refused.
+      const dispatchNonce = request.headers[MCP_DISPATCH_HEADER];
+      if (dispatchNonce !== undefined) {
+        const dispatched =
+          typeof dispatchNonce === "string"
+            ? resolveDispatchedAuth(dispatchNonce)
+            : null;
+        if (!dispatched) {
+          return reply.code(401).send({ error: "Invalid or missing API key" });
+        }
+        request.auth = dispatched;
+        request.contributorExternalId = dispatched.contributorExternalId;
+        return;
+      }
 
       if (bearer && isOAuthAccessToken(bearer)) {
         const resolved = await resolveAccessToken(bearer);
