@@ -89,6 +89,13 @@ npx tsx scripts/archive-legacy-claims.ts                # legacy (NULL epoch)
 npx tsx scripts/archive-legacy-claims.ts --epoch=<tag>  # a named epoch
 ```
 
+A cohort no epoch tag picks out (one topic's claims, say, minted before a change
+that shipped without an epoch bump) goes in a cohort file under
+`scripts/cohorts/`: the claim ids, with the rule that chose them and the
+snapshot taken, passed as `--ids-file=<path>`. Restoring with the same file
+undoes exactly that archive. `2026-10-ai-pre-assessment-as-thinking.json` is
+the first: the AI claims minted under the constitution before #523/#526.
+
 Review the samples, then re-run with `--confirm`. In prod, run it the same way
 one-off scripts are run against the prod DB: an ECS run-task using the API task
 definition with the command overridden to `npx tsx scripts/archive-legacy-claims.ts …`
