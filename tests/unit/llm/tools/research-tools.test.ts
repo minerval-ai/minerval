@@ -118,6 +118,13 @@ describe("definitions", () => {
     ]);
     const off = getResearchToolDefinitions({ claimScoped: false })[0]!;
     expect(Object.keys((off.input_schema as { properties: Record<string, unknown> }).properties)).toContain("claim_id");
+    // A mandate's run writes nothing to the graph: no claim to record on, no document to examine.
+    const mandate = getResearchToolDefinitions({ claimScoped: false, graphWrites: false })[0]!;
+    expect(Object.keys((mandate.input_schema as { properties: Record<string, unknown> }).properties)).toEqual([
+      "task", "model_tier", "budget_usd", "effort", "include_constitution",
+    ]);
+    expect(mandate.description).toContain("writes nothing to the graph (research a mandate launches");
+    expect(mandate.description).not.toContain("provenance tools on a claim-scoped task");
   });
 });
 
@@ -205,14 +212,16 @@ describe("delegate_research", () => {
       facets: ["data", "method"], scope: "claim",
     });
 
-    // A Grantmaker naming no claim reviews the document for its own sake.
+    // A Grantmaker's run writes nothing to the graph, so it examines no document.
     const grantmaker = createResearchTools({ requestedBy: "grantmaker", grantId: "g-1", runResearcher });
-    await grantmaker.execute("delegate_research", {
-      task: BRIEF, model_tier: "cheap", budget_usd: 1, examine_source_id: SOURCE, facets: ["quotation"],
-    });
-    expect(mocks.openExamination).toHaveBeenLastCalledWith(
-      expect.objectContaining({ scope: "document", trigger: "mandate", claimId: null, grantId: "g-1" })
+    const refused = JSON.parse(
+      (await grantmaker.execute("delegate_research", {
+        task: BRIEF, model_tier: "cheap", budget_usd: 1, examine_source_id: SOURCE, facets: ["quotation"],
+      }))!
     );
+    expect(refused.message).toMatch(/writes nothing to the graph/);
+    expect(mocks.openExamination).toHaveBeenCalledTimes(1);
+    expect(grantmaker.definitions[0]!.input_schema).not.toHaveProperty("properties.examine_source_id");
   });
 
   it("refuses a malformed examination before any spend, and facets without a document", async () => {
@@ -278,33 +287,29 @@ describe("delegate_research", () => {
     expect(mocks.closeResearchRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ status: "failed", error: "provider down" }));
   });
 
-  it("lets a Grantmaker name a claim per call, and runs without one", async () => {
+  it("runs a Grantmaker's research with no claim, and refuses one named per call", async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1", runResearcher });
     await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 });
     expect(mocks.openResearchRun).toHaveBeenLastCalledWith(expect.objectContaining({ claimId: null, grantId: "grant-1", requestedBy: "grantmaker" }));
     expect(runResearcher.mock.calls[0]![0].claim).toBeNull();
-    await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: CLAIM });
-    expect(mocks.openResearchRun).toHaveBeenLastCalledWith(expect.objectContaining({ claimId: CLAIM }));
-    const bad = JSON.parse((await createResearchTools({ requestedBy: "grantmaker", runResearcher }).execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: "nope" }))!);
-    expect(bad.message).toMatch(/not a claim id/);
-    const absent = "dddddddd-0000-4000-8000-000000000001";
-    mocks.rawQuery.mockResolvedValueOnce([]);
-    const missing = JSON.parse((await createResearchTools({ requestedBy: "grantmaker", runResearcher }).execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: absent }))!);
-    expect(missing.message).toMatch(/No claim .* exists/);
+    const named = JSON.parse((await tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: CLAIM }))!);
+    expect(named.message).toMatch(/writes nothing to the graph, so it takes no claim_id/);
+    expect(mocks.openResearchRun).toHaveBeenCalledTimes(1);
+    expect(runResearcher).toHaveBeenCalledTimes(1);
   });
 
-  it("adds what the researcher billed to the launcher's meter, and attributes a named claim", async () => {
+  it("adds what the researcher billed to the launcher's meter, and attributes the claim", async () => {
     let seenClaim: string | null | undefined;
     const runResearcher = vi.fn(async () => {
       seenClaim = getUsageContext().claimId;
       getUsageContext().meter!.billedMicroUsd += 250_000;
       return okResult();
     });
-    const tools = createResearchTools({ requestedBy: "grantmaker", grantId: "grant-1", runResearcher });
+    const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     const launcher = { billedMicroUsd: 1_000 };
     await runWithUsageContext({ meter: launcher }, () =>
-      tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1, claim_id: CLAIM })
+      tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 })
     );
     expect(launcher.billedMicroUsd).toBe(251_000);
     expect(seenClaim).toBe(CLAIM);
