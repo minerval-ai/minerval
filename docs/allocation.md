@@ -305,10 +305,12 @@ distort the very agents that must reason in value over cost.
 
 ## Agents work to a budget they can see
 
-Every metered run carries a budget on its cost meter (`withCostMeter`'s
-`ceilingMicroUsd`): what the action's funders covered
-(`actionBudgetMicroUsd`), or the expected cost of the run where no action
-stands behind it, or the operation's cap for a reader's request. The agent
+Every metered run carries a budget on its usage context (`withPassBudget`,
+with a source the agent is shown), set by the lane that funds it: the
+allocations covering a ledger action, what is left of the background
+lane's day, a paid order's quoted cap, the remaining budget of a funding
+job, a mandate's uncommitted budget, or the operation's cap for a reader's
+request (docs/architecture.md describes the Steward lanes). The agent
 is told the figure in its task message, sees what it has spent after every
 turn (the spend line, the same one the instruments use), and gets a notice
 when most of it is gone and another when all of it is. A paid tool (web

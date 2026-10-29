@@ -614,13 +614,18 @@ const configSchema = z.object({
     .prefault("false"),
   // What a researcher run may spend is its ceiling, which the launcher sets
   // out of its own budget (the run is billed to the launcher's), or out of
-  // the mandate's escrow when a Grantmaker funds a request. Two bounds
+  // the mandate's uncommitted budget when a Grantmaker funds it. Two bounds
   // remain, neither of them a judgment: the durable daily cap on researcher
-  // spend across processes (an operator's circuit breaker against a
-  // metering fault), and the wall-clock cap on one run, because the
-  // launching agent's run blocks on the report and holds its lease while it
-  // waits. The researcher is told the wall cap up front.
+  // spend no funder pays for (an operator's circuit breaker), and the
+  // wall-clock cap on one run, because the launching agent's run blocks on
+  // the report and holds its lease while it waits. The researcher is told
+  // the wall cap up front.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
+  // The review cost each contribution from a mandate's research reserves
+  // against the budget its Grantmaker delegated (Part VIII) until its review
+  // has run and its real cost is known, used until there are reviews to
+  // average.
+  contributionReviewEstimateUsd: z.coerce.number().min(0).default(0.25),
   researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
@@ -1077,6 +1082,7 @@ export function loadConfig(): Config {
     researcherCheapModel: process.env.RESEARCHER_CHEAP_MODEL,
     researcherEnabled: process.env.RESEARCHER_ENABLED,
     researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
+    contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,

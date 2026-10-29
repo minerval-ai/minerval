@@ -2,13 +2,13 @@
  * Follow-ups to the kinds against real Postgres: a quantity's argument
  * evaluations dated against its estimates, a question proposed directly
  * through intake, and research a mandate funds submitting what it finds as
- * contributions under the mandate.
+ * contributions under the mandate, its reviews paid from a delegated budget.
  */
 import { describe, it, expect, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   process.env.RESEARCHER_ENABLED = "true";
-  return { matchKind: null as null | string };
+  return { matchKind: null as null | string, reviewCost: 0, reviewFails: false };
 });
 
 vi.mock("../../src/llm/agents/matcher.js", () => ({
@@ -28,6 +28,18 @@ vi.mock("../../src/llm/agents/matcher.js", () => ({
 vi.mock("../../src/llm/agents/domain-prior.js", () => ({
   inferDomainPrior: vi.fn(async () => []),
 }));
+// The Reviewer bills what the test says to the meter it runs under, and
+// fails partway when told to.
+vi.mock("../../src/llm/agents/contribution-reviewer.js", async () => {
+  const { getUsageContext } = await import("../../src/llm/usage-context.js");
+  return {
+    runContributionReview: vi.fn(async () => {
+      const meter = getUsageContext().meter;
+      if (meter) meter.billedMicroUsd += mocks.reviewCost;
+      if (mocks.reviewFails) throw new Error("review failed partway");
+    }),
+  };
+});
 
 import { rawQuery } from "../../src/db/client.js";
 import { seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
@@ -36,10 +48,15 @@ import { addArgument, getEvaluationStateForClaim, setArgumentEvaluation } from "
 import { createClaimProposal, materializeAcceptedIntake } from "../../src/services/intake-service.js";
 import {
   getContributionRecordForClaim,
+  mandateContributionBudget,
+  reviewCostEstimateMicroUsd,
   submitMandateContribution,
 } from "../../src/services/contribution-service.js";
 import { applyReviewOutcome } from "../../src/services/reputation-service.js";
 import { createResearchTools } from "../../src/llm/tools/research-tools.js";
+import { withPassBudget } from "../../src/llm/usage-context.js";
+import { openResearchRun } from "../../src/services/research-run-service.js";
+import { handleContributionMessage } from "../../src/workers/contribution-pipeline.js";
 
 const DEF = { measures: "Deaths", unit: { kind: "count" as const } };
 
@@ -101,31 +118,59 @@ describe("propose_question", () => {
   });
 });
 
+async function mandateRun(input: { grantId: string | null; jobId: string | null; budgetMicroUsd: number; requestedBy?: string }) {
+  return openResearchRun({
+    claimId: null,
+    grantId: input.grantId,
+    requestedBy: input.requestedBy ?? "grantmaker",
+    requesterRunId: null,
+    jobId: input.jobId,
+    task: "Survey the regional mortality literature for the 1918 pandemic.",
+    model: "dbtest",
+    modelTier: "cheap",
+    effort: null,
+    includeConstitution: false,
+    ceilingMicroUsd: 1_000_000,
+    contributionBudgetMicroUsd: input.budgetMicroUsd,
+  });
+}
+
+const FINDING = "Table 3 of the registry report gives 2.6 million registered deaths for the fourteen countries.";
+
 describe("contributions from a mandate's research", () => {
   it("are filed under the mandate, metered to its job, shown as a funded mandate, and earn no standing", async () => {
     const funder = await seedUser("funder");
     const { grantId, jobId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
+    const run = await mandateRun({ grantId, jobId, budgetMicroUsd: 5_000_000 });
     const claim = await seedClaim("node");
 
-    const refused = await submitMandateContribution({ grantId, jobId, input: { claim_id: claim, contribution_type: "propose_merge", content: "x".repeat(50) } });
+    const refused = await submitMandateContribution({
+      researchRunId: run.id,
+      input: { claim_id: claim, contribution_type: "propose_merge", content: "x".repeat(50) },
+    });
     expect(refused.success).toBe(false);
 
     const out = await submitMandateContribution({
-      grantId,
-      jobId,
+      researchRunId: run.id,
       input: {
         claim_id: claim,
         contribution_type: "support",
-        content: "Table 3 of the registry report gives 2.6 million registered deaths for the fourteen countries.",
+        content: FINDING,
         evidence_urls: ["https://example.org/registry", "not a url"],
       },
     });
     expect(out.success).toBe(true);
-    const [row] = await rawQuery<{ contributor_id: string; grant_id: string; funded_by_job_id: string; evidence_urls: string[] }>(
-      `SELECT contributor_id, grant_id, funded_by_job_id, evidence_urls FROM contributions WHERE id = $1`,
+    const [row] = await rawQuery<{ contributor_id: string; grant_id: string; funded_by_job_id: string; research_run_id: string; evidence_urls: string[] }>(
+      `SELECT contributor_id, grant_id, funded_by_job_id, research_run_id, evidence_urls FROM contributions WHERE id = $1`,
       [out.contribution_id]
     );
-    expect(row).toEqual({ contributor_id: funder, grant_id: grantId, funded_by_job_id: jobId, evidence_urls: ["https://example.org/registry"] });
+    expect(row).toEqual({
+      contributor_id: funder,
+      grant_id: grantId,
+      funded_by_job_id: jobId,
+      research_run_id: run.id,
+      evidence_urls: ["https://example.org/registry"],
+    });
 
     const record = await getContributionRecordForClaim(claim);
     expect(record[0]!.contributorDisplayName).toBe("a funded mandate");
@@ -135,24 +180,92 @@ describe("contributions from a mandate's research", () => {
     expect(await rawQuery(`SELECT contributions_accepted FROM contributors WHERE id = $1`, [funder])).toEqual(before);
   });
 
-  it("is offered to the Researcher only up to the allowance a Grantmaker delegates", async () => {
+  it("come only from research a mandate funds", async () => {
+    const steward = await mandateRun({ grantId: null, jobId: null, budgetMicroUsd: 5_000_000, requestedBy: "claim_steward" });
+    const out = await submitMandateContribution({
+      researchRunId: steward.id,
+      input: { claim_id: await seedClaim("node"), contribution_type: "support", content: FINDING },
+    });
+    expect(out).toMatchObject({ success: false, message: expect.stringContaining("mandate") });
+  });
+
+  it("reserve an estimated review cost against the delegated budget, settled at the real cost once reviewed", async () => {
     const funder = await seedUser("funder");
-    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
-    const seen: Array<{ allowance: number | undefined; requestedBy: string }> = [];
-    const stub = async (input: { contributionAllowance?: number; run: { requested_by: string } }) => {
-      seen.push({ allowance: input.contributionAllowance, requestedBy: input.run.requested_by });
+    const { grantId, jobId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
+    const claim = await seedClaim("node");
+    const estimate = await reviewCostEstimateMicroUsd();
+    expect(estimate).toBeGreaterThan(0);
+    // Room for two reviews at the estimate, not three.
+    const run = await mandateRun({ grantId, jobId, budgetMicroUsd: Math.round(estimate * 2.5) });
+    const submit = () =>
+      submitMandateContribution({ researchRunId: run.id, input: { claim_id: claim, contribution_type: "support", content: FINDING } });
+
+    const first = await submit();
+    // Each result says where the budget stands.
+    expect(first).toMatchObject({ success: true, budget: expect.stringContaining("across 1 submission,") });
+    expect((await submit()).success).toBe(true);
+    expect(await mandateContributionBudget(run.id, estimate)).toEqual({ budgetMicroUsd: Math.round(estimate * 2.5), committedMicroUsd: 2 * estimate, submitted: 2 });
+    const third = await submit();
+    expect(third).toMatchObject({ success: false, message: expect.stringContaining("does not cover another review") });
+
+    // The first review costs far less than estimated: its real cost
+    // replaces the reservation, and the budget has room again. The pipeline
+    // records the cost even when the review fails partway.
+    mocks.reviewCost = 1_000;
+    mocks.reviewFails = true;
+    await expect(handleContributionMessage({ contributionId: first.contribution_id! })).rejects.toThrow("partway");
+    mocks.reviewFails = false;
+    const [settled] = await rawQuery<{ review_cost_micro_usd: number }>(
+      `SELECT review_cost_micro_usd FROM contributions WHERE id = $1`,
+      [first.contribution_id]
+    );
+    expect(Number(settled!.review_cost_micro_usd)).toBe(1_000);
+    expect((await submit()).success).toBe(true);
+    mocks.reviewCost = 0;
+  });
+
+  it("is offered to the Researcher only with a budget a Grantmaker delegates, and reported back to it", async () => {
+    const funder = await seedUser("funder");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 100_000_000 });
+    const seen: Array<{ budget: number | undefined; requestedBy: string }> = [];
+    const stub = async (input: { run: { requested_by: string; contribution_budget_micro_usd?: number } }) => {
+      seen.push({ budget: input.run.contribution_budget_micro_usd, requestedBy: input.run.requested_by });
       return { status: "completed" as const, report: { outcome: "answered", answer: "a" }, turns: 1, stopReason: "report", servedModels: [], toolNames: [], error: null };
     };
     const brief = "Survey the regional mortality literature for the 1918 pandemic and say which estimates have stated methods.";
     const gm = createResearchTools({ requestedBy: "grantmaker", grantId, runResearcher: stub as never });
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, max_contributions: 50 });
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1 });
-    const steward = createResearchTools({ requestedBy: "claim_steward", claimId: await seedClaim("c"), runResearcher: stub as never });
-    await steward.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, max_contributions: 5 });
+    const delegated = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 2.5 }))!);
+    expect(delegated.contribution_reviews).toMatch(/^Contribution reviews: \$0\.00 of \$2\.50 committed across 0 submissions, \$2\.50 left\./);
+    const read = JSON.parse((await gm.execute("get_research_run", { research_run_id: delegated.research_run_id }))!);
+    expect(read.research_run.contribution_reviews).toBe(delegated.contribution_reviews);
+    // No backstop clamps what the Grantmaker delegates.
+    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 40 });
+    const none = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1 }))!);
+    expect(none.contribution_reviews).toBeUndefined();
+    const negative = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: -1 }))!);
+    expect(negative.success).toBe(false);
+    const stewardClaim = await seedClaim("c");
+    await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, async () => {
+      const steward = createResearchTools({ requestedBy: "claim_steward", claimId: stewardClaim, runResearcher: stub as never });
+      await steward.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 5 });
+    });
     expect(seen).toEqual([
-      { allowance: 10, requestedBy: "grantmaker" },
-      { allowance: 0, requestedBy: "grantmaker" },
-      { allowance: 0, requestedBy: "claim_steward" },
+      { budget: 2_500_000, requestedBy: "grantmaker" },
+      { budget: 40_000_000, requestedBy: "grantmaker" },
+      { budget: 0, requestedBy: "grantmaker" },
+      { budget: 0, requestedBy: "claim_steward" },
     ]);
+  });
+
+  it("are paid from the mandate's uncommitted budget, whatever the amount, and refused past it", async () => {
+    const funder = await seedUser("funder");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 8_000_000 });
+    const stub = async () => ({ status: "completed" as const, report: { outcome: "answered", answer: "a" }, turns: 1, stopReason: "report", servedModels: [], toolNames: [], error: null });
+    const brief = "Survey the regional mortality literature for the 1918 pandemic and say which estimates have stated methods.";
+    const gm = createResearchTools({ requestedBy: "grantmaker", grantId, runResearcher: stub as never });
+    const ok = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "strong", budget_usd: 7, contribution_budget_usd: 1 }))!);
+    expect(ok).toMatchObject({ success: true, budget_left: "$8.00 left in the mandate's uncommitted budget" });
+    const over = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "strong", budget_usd: 9 }))!);
+    expect(over.message).toMatch(/asks for \$9\.00, and the mandate's uncommitted budget has \$8\.00 left/);
   });
 });

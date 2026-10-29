@@ -41,7 +41,7 @@ import {
   settleMeteredCharge,
 } from "../../services/owl-ledger-service.js";
 import { capOwls, capMicroUsd, type PricedOp } from "../../services/owl.js";
-import { withCostMeter } from "../../llm/usage-context.js";
+import { withPassBudget } from "../../llm/usage-context.js";
 
 // callerKey → timestamps (ms) of requests within the last hour
 const windows = new Map<string, number[]>();
@@ -200,7 +200,10 @@ export async function withAgenticCharge<T>(
   const charge = await chargeAgenticOp(auth, op, refs);
   if (!charge.allowed) return { ok: false, denied: charge };
   try {
-    const { value, billedMicroUsd } = await withCostMeter(fn, { ceilingMicroUsd: capMicroUsd(op) });
+    const { value, billedMicroUsd } = await withPassBudget(
+      { microUsd: capMicroUsd(op), source: "the cap quoted for this operation" },
+      fn
+    );
     if (auth?.userId && charge.entryId) {
       await settleMeteredCharge({
         userId: auth.userId,

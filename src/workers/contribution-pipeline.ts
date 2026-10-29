@@ -75,9 +75,13 @@ export async function handleContributionMessage(
   );
   if (claimed.length === 0) return; // already reviewed, in flight, or parked
 
+  // What the review cost, recorded on the contribution even when the review
+  // fails partway: a mandate's research pays its reviews from a delegated
+  // budget, and recent costs set the estimate a submission reserves.
+  const meter = { billedMicroUsd: 0 };
   try {
     const { userId, jobId } = await reviewSubject(message.contributionId);
-    await runWithUsageContext({ userId, ...(jobId ? { jobId } : {}) }, () =>
+    await runWithUsageContext({ userId, ...(jobId ? { jobId } : {}), meter }, () =>
       runContributionReview({
         contributionId: message.contributionId,
       })
@@ -93,5 +97,14 @@ export async function handleContributionMessage(
       );
     }
     throw err;
+  } finally {
+    if (meter.billedMicroUsd > 0) {
+      await rawQuery(
+        `UPDATE contributions
+            SET review_cost_micro_usd = COALESCE(review_cost_micro_usd, 0) + $2
+          WHERE id = $1`,
+        [message.contributionId, Math.round(meter.billedMicroUsd)]
+      );
+    }
   }
 }

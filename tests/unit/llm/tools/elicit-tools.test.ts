@@ -36,7 +36,7 @@ import {
   resetElicitClientForTests,
 } from "../../../../src/llm/tools/elicit-tools.js";
 import type { Config } from "../../../../src/config.js";
-import { withCostMeter } from "../../../../src/llm/usage-context.js";
+import { withCostMeter, withPassBudget } from "../../../../src/llm/usage-context.js";
 
 const baseConfig = {
   elicitApiKey: "test-key",
@@ -143,10 +143,7 @@ describe("executeElicitTool", () => {
   });
 
   it("declines a call the run's budget cannot cover, before dialing Elicit", async () => {
-    const { value } = await withCostMeter(
-      () => executeElicitTool("elicit_search_papers", { query: "x" }, baseConfig),
-      { ceilingMicroUsd: 50_000 }
-    );
+    const { value } = await withPassBudget({ microUsd: 50_000, source: "the test" }, () => executeElicitTool("elicit_search_papers", { query: "x" }, baseConfig));
     expect(JSON.parse(value)).toMatchObject({ success: false });
     expect(JSON.parse(value).message).toContain("$0.10");
     expect(mockCallTool).not.toHaveBeenCalled();

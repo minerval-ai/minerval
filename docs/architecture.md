@@ -381,10 +381,22 @@ keeper is asked to judge it. Contributors propose requests, answers and
 estimates, and offer material for a request, through the Contribution
 Reviewer like any other contribution, and propose a question directly
 (`POST /claims/propose` with `kind: "question"`). Research a Grantmaker
-launches with `max_contributions` submits what it establishes as
+launches with `contribution_budget_usd` submits what it establishes as
 contributions under the mandate: reviewed like anyone's, with the review
 metered to the mandate's budget job, shown as "a funded mandate", and
-earning no one reputation or owls.
+earning no one reputation or owls. The budget is a dollar amount of the
+mandate's budget that the Grantmaker delegates for those reviews
+(`research_runs.contribution_budget_micro_usd`). Each submission reserves
+an estimate of its review's cost (the average of recent reviews, or
+`CONTRIBUTION_REVIEW_ESTIMATE_USD` before there are any) and is refused
+when the run's committed review costs plus that estimate would exceed the
+budget; once reviewed, the real cost (`contributions.review_cost_micro_usd`)
+replaces the estimate. The budget is visible to both agents: the
+Researcher sees what is committed, what is left and what a review is
+expected to cost in its task message, after every turn and in each
+submission's result, and the Grantmaker sees the same in the
+`delegate_research` and `get_research_run` results. A review that costs
+more than estimated can carry a run somewhat past its budget.
 
 ### Formal statements and machine-checked arguments
 
@@ -1059,15 +1071,31 @@ examination tools from any run whose launcher is not a Claim Steward
 (`launcherWritesGraph`, `src/services/research-run-service.ts`).
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
-(at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter before
-every turn on both loops, a wrap-up notice at 85 percent of it, a wall cap
+from its own budget, read from the usage meter before every turn on both
+loops, a wrap-up notice at 85 percent of it, a wall cap
 (`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
-then stopped. A launcher may start at most
-`RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
+then stopped. What a run may be given is the launcher's own money, and
+the launcher is shown it in the tool description, in a refusal and in each
+result. A Steward pays from its pass's budget: every lane that runs a
+Steward sets one on the usage context (`withPassBudget` in
+`src/llm/usage-context.ts`), namely the allocations covering a ledger
+action, what is left of the background daily budget on the fallback lane,
+the cap a buyer was quoted for a paid order, the remaining budget of the
+job funding a money trigger or a deep decomposition, and a mandate's
+uncommitted budget. What is left is that budget less the pass's metered
+spend, the research it already launched included; a pass with no budget is
+not offered `delegate_research`. A Grantmaker pays from its mandate's
+uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
+which covers a run's `budget_usd` and any `contribution_budget_usd`; there
+is no deployment cap on either, and no count of runs per pass; a run's
+wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
+launcher waits on it, and the launcher is told so. A durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
-it; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+it for research no funder pays for (a pass with neither a user nor a job
+on its usage context), as the LLM budget tracker's limits apply only to
+unattributed calls; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
 the solver is, and while off no launcher is offered `delegate_research`;
 production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.

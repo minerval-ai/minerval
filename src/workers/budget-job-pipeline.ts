@@ -19,7 +19,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
@@ -234,7 +234,11 @@ export async function processNextBudgetJobTask(
   try {
     await withStewardLease({ claimId: target.id }, () =>
       runWithUsageContext({ userId: job.user_id, jobId: job.id }, () =>
-        runClaimSteward({ trigger, claimId: target.id, context, model })
+        // The pass spends from what the funder's budget has left.
+        withPassBudget(
+          { microUsd: Number(job.budget_micro_usd) - spent, source: "the remaining deep-decomposition budget funding this run" },
+          () => runClaimSteward({ trigger, claimId: target.id, context, model })
+        )
       )
     );
     await rawQuery(

@@ -478,4 +478,22 @@ describe("the budget guide", () => {
     expect(guide).toContain("each pangram_ analysis is billed per word, up to $0.75 a call");
     expect(guide).not.toContain("capped at");
   });
+
+  it("shows a mandate's research the review budget it submits contributions under", async () => {
+    const { buildResearcherTaskMessage } = await import("../../../src/llm/prompts/researcher.js");
+    const { contributionBudgetLine } = await import("../../../src/services/contribution-service.js");
+    const line = contributionBudgetLine({ budgetMicroUsd: 2_000_000, committedMicroUsd: 500_000, submitted: 2 }, 250_000);
+    expect(line).toBe(
+      "Contribution reviews: $0.50 of $2.00 committed across 2 submissions, $1.50 left. A review is estimated at " +
+        "$0.25 (the average of recent reviews), so about 6 more submissions fit. Reviews not yet run count at the " +
+        "estimate until their real cost is known."
+    );
+    const base = {
+      task: "t", requestedBy: "grantmaker", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
+      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      toolNames: ["report"], sandbox: false, notebook: {},
+    };
+    expect(buildResearcherTaskMessage({ ...base, contributionBudget: line })).toContain(line);
+    expect(buildResearcherTaskMessage({ ...base, contributionBudget: null })).not.toContain("submit_contribution");
+  });
 });

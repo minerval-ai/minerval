@@ -16,7 +16,7 @@ import {
   createWebSearch,
   WEB_SEARCH_TOOL_NAME,
 } from "../../../../src/llm/tools/web-search-tool.js";
-import { withCostMeter } from "../../../../src/llm/usage-context.js";
+import { withCostMeter, withPassBudget } from "../../../../src/llm/usage-context.js";
 
 beforeEach(() => {
   search.mockReset();
@@ -54,7 +54,7 @@ describe("web_search on every provider", () => {
     const ws = createWebSearch("openai/gpt-6-luna");
     for (const q of ["one", "two", "three"]) await ws.execute!({ query: q });
     expect(search).toHaveBeenCalledTimes(3);
-    const { value } = await withCostMeter(() => ws.execute!({ query: "four" }), { ceilingMicroUsd: 1 });
+    const { value } = await withPassBudget({ microUsd: 1, source: "the test" }, () => ws.execute!({ query: "four" }));
     expect(JSON.parse(value).success).toBe(false);
     expect(search).toHaveBeenCalledTimes(3);
 

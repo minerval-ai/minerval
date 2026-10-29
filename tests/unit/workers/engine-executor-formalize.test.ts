@@ -86,6 +86,10 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
     await fn();
     return { billedMicroUsd: 0 };
   },
+  withPassBudget: async (_budget: unknown, fn: () => Promise<unknown>) => {
+    await fn();
+    return { billedMicroUsd: 0 };
+  },
 }));
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
 vi.mock("../../../src/config.js", () => ({

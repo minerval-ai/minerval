@@ -26,12 +26,12 @@ export function runBudgetSentence(): string {
   const budget = runBudget();
   if (!budget) return "";
   return (
-    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, metered at ` +
-    `real cost (model tokens and any paid tool), which is what its funders ` +
-    `covered. Spend what the work warrants: a short run that settles the ` +
-    `question is better than a long one that does not, and a hard question ` +
-    `is worth the whole budget. Paid tools say what they cost and decline a ` +
-    `call the remaining budget cannot cover.`
+    `This run has a budget of ${usd(budget.ceilingMicroUsd)} (${budget.source}), ` +
+    `metered at real cost: model tokens and any paid tool. It is what you may ` +
+    `spend, not what you should: spend what the work warrants, and a short ` +
+    `run that settles the question is better than a long one that does not. ` +
+    `Paid tools say what they cost and decline a call the remaining budget ` +
+    `cannot cover.`
   );
 }
 

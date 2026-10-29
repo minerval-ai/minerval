@@ -48,7 +48,7 @@
 import { rawQuery } from "../db/client.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
@@ -209,6 +209,11 @@ async function funderContext(
   return { jobId: funder.jobId ?? null, userId: funder.userId ?? null };
 }
 
+/** The pass budget for running `action`: its allocations, or its estimate when more. */
+function actionBudget(action: RunnableAction, source: string): { microUsd: number; source: string } {
+  return { microUsd: actionBudgetMicroUsd(action), source };
+}
+
 /**
  * curate (#363): one Curator run around the anchor claim, reading every
  * live curation request on it. The requests it read are consumed when the
@@ -254,7 +259,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
     const metered = await runWithUsageContext(
       { userId: funder.userId, jobId: funder.jobId, claimId: anchorClaimId },
       () =>
-        withCostMeter(() =>
+        withPassBudget(actionBudget(action, "the allocations funding this curation"), () =>
           runCurator({
             trigger: "curation_request",
             claimId: anchorClaimId,
@@ -262,8 +267,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
               `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
               `about this claim are waiting, and this run was funded to answer them:\n` +
               describeCurationRequests(requests),
-          }),
-          { ceilingMicroUsd: actionBudgetMicroUsd(action) }
+          })
         )
     );
     billedMicroUsd = metered.billedMicroUsd;
@@ -358,9 +362,8 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: context.userId, jobId: context.jobId },
       () =>
-        withCostMeter(() =>
-          runAudit({ auditType: run.audit_type, context: run.context, runId: run.id }),
-          { ceilingMicroUsd: actionBudgetMicroUsd(action) }
+        withPassBudget(actionBudget(action, "the allocations funding this audit"), () =>
+          runAudit({ auditType: run.audit_type, context: run.context, runId: run.id })
         )
     );
     await close(billedMicroUsd);
@@ -438,13 +441,13 @@ async function runFormalizeAction(
   };
   let billedMicroUsd = 0;
   // The two passes share the action's budget: the review gets what the
-  // drafting pass left, or a run's expected cost when drafting spent it all
-  // (a review given nothing to work with is no review).
+  // drafting pass left, or the funding job's remaining budget when drafting
+  // spent it all (a review given nothing to work with is no review).
   const budget = actionBudgetMicroUsd(action);
   try {
     const first = await invokeStewardDirect({
       ...passOpts,
-      ceilingMicroUsd: budget,
+      passBudget: { microUsd: budget, source: "the allocations funding this formalization" },
       trigger: "formalize",
       context:
         "Write the claim's formal statement: draft, elaborate, review for vacuity, " +
@@ -462,7 +465,9 @@ async function runFormalizeAction(
     if (reviewed) {
       const second = await invokeStewardDirect({
         ...passOpts,
-        ...(budget - billedMicroUsd > 0 ? { ceilingMicroUsd: budget - billedMicroUsd } : {}),
+        ...(budget - billedMicroUsd > 0
+          ? { passBudget: { microUsd: budget - billedMicroUsd, source: "what the drafting pass left of this formalization's allocations" } }
+          : {}),
         trigger: "formalization_review",
         context: reviewed.id,
       });
@@ -556,11 +561,11 @@ async function runLookoutAction(
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: lookout.funder_user_id, jobId: funder.jobId ?? null },
       () =>
-        withCostMeter(async () => {
+        withPassBudget(actionBudget(action, "the mandate's allocation for this lookout run"), async () => {
           const run = await runLookout({ lookoutId: lookout.id, model: opts.model });
           note = run.note;
           flagsRaised = run.flagsRaised;
-        }, { ceilingMicroUsd: actionBudgetMicroUsd(action) })
+        })
     );
     await recordLookoutRun({ lookoutId: lookout.id, note, flagsRaised }).catch(() => {});
     await completeAction(action.id, billedMicroUsd, {
@@ -646,7 +651,10 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
   try {
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? general.budgetJobId },
-      () => withCostMeter(() => runConsistencySweep({ partition }), { ceilingMicroUsd: actionBudgetMicroUsd(action) })
+      () =>
+        withPassBudget(actionBudget(action, "the General mandate's allocation for this sweep"), () =>
+          runConsistencySweep({ partition })
+        )
     );
     await completeAction(action.id, billedMicroUsd, {
       meteredJobId: funder.jobId ?? general.budgetJobId,
@@ -730,7 +738,7 @@ async function runGrantAgentAction(
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? null },
       () =>
-        withCostMeter(async () => {
+        withPassBudget(actionBudget(action, "the mandate's allocation for this pass"), async () => {
           if (action.kind === "grant_planning") {
             const plan = await runGrantor({
               grantId: grant.id,
@@ -750,7 +758,7 @@ async function runGrantAgentAction(
             });
             continueRequested = review.continueRequested;
           }
-        }, { ceilingMicroUsd: actionBudgetMicroUsd(action) })
+        })
     );
     await completeAction(action.id, billedMicroUsd, {
       meteredJobId: funder.jobId ?? null,

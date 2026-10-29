@@ -26,8 +26,8 @@ import { loadConfig } from "../config.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
-import { estimateStewardRunCostMicroUsd } from "../services/cost-estimate-service.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { getJobRemainingMicroUsd } from "../services/budget-job-service.js";
 import {
   acquireStewardLock,
   releaseStewardLock,
@@ -73,10 +73,11 @@ export interface DirectStewardInput {
   /** Test and harness override; production ignores it unless it is the strong model. */
   model?: string;
   /**
-   * The run's budget: what the funding action covered. Defaults to the
-   * expected cost of a Steward run on the trigger's model.
+   * The pass's budget when the caller knows it better than the funding
+   * job does (an action's own allocations); defaults to the job's
+   * remaining budget.
    */
-  ceilingMicroUsd?: number;
+  passBudget?: { microUsd: number; source: string };
 }
 
 export interface DirectStewardResult {
@@ -141,7 +142,13 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
   }
   const model = moneyTriggerModel(input.trigger, input.model);
   await assertTriggerToolsActive(input.trigger, input.claimId);
-  const ceilingMicroUsd = input.ceilingMicroUsd ?? (await estimateStewardRunCostMicroUsd(model));
+  // The pass spends from what its caller set, else from the funding job's
+  // remaining budget.
+  const passBudget =
+    input.passBudget ??
+    (input.jobId
+      ? { microUsd: await getJobRemainingMicroUsd(input.jobId), source: "the remaining budget of the job funding this run" }
+      : null);
   const restore = await acquireStewardLock(input.claimId);
   try {
     const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
@@ -152,14 +159,13 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
           claimId: input.claimId,
         },
         () =>
-          withCostMeter(() =>
+          withPassBudget(passBudget, () =>
             runClaimSteward({
               trigger: input.trigger,
               claimId: input.claimId,
               context: input.context,
               model,
-            }),
-            { ceilingMicroUsd }
+            })
           )
       )
     );

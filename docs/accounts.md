@@ -64,7 +64,9 @@ Order of resolution in `src/server/plugins/auth.ts`:
 3. **OAuth access token** (`Authorization: Bearer eoat_…`) — issued by the
    OAuth 2.1 flow for hosted MCP clients (see [mcp.md](mcp.md)); resolves to
    the consenting user, never service-trusted, and only accepted on `/mcp`
-   (audience-bound to the surface the consent page describes).
+   (audience-bound to the surface the consent page describes). MCP's route
+   tools reach the REST routes they mirror by in-process dispatch, carrying
+   the identity `/mcp` resolved, not the token ([mcp.md](mcp.md)).
 4. **Dev bypass** — only when no keys are configured **and** not production.
    Production with no keys fails closed.
 

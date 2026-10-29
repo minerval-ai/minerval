@@ -24,7 +24,7 @@ import {
   PANGRAM_FIND_SOURCES_TOOL_NAME,
 } from "../../../../src/llm/tools/pangram-tools.js";
 import type { Config } from "../../../../src/config.js";
-import { withCostMeter } from "../../../../src/llm/usage-context.js";
+import { withCostMeter, withPassBudget } from "../../../../src/llm/usage-context.js";
 
 const baseConfig = {
   pangramApiKey: "test-key",
@@ -182,10 +182,7 @@ describe("pangram_check_ai", () => {
   it("prices a call by its words and declines one the run's budget cannot cover", async () => {
     const tools = createPangramTools({ config: baseConfig, wait: noWait });
     // Five words at $0.001 a word is half a cent; the run has a tenth of one.
-    const { value } = await withCostMeter(
-      () => tools.execute(PANGRAM_FIND_SOURCES_TOOL_NAME, { text: "one two three four five" }),
-      { ceilingMicroUsd: 1_000 }
-    );
+    const { value } = await withPassBudget({ microUsd: 1_000, source: "the test" }, () => tools.execute(PANGRAM_FIND_SOURCES_TOOL_NAME, { text: "one two three four five" }));
     const out = JSON.parse(value!);
     expect(out.success).toBe(false);
     expect(out.message).toContain("$0.01");

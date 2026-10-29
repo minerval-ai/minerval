@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 53644,
-    "fullChars": 131684,
+    "roleChars": 53822,
+    "fullChars": 131862,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 30157,
-    "fullChars": 108197,
+    "roleChars": 30335,
+    "fullChars": 108375,
     "skills": []
   },
   {
@@ -226,8 +226,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 21244,
-    "fullChars": 99284,
+    "roleChars": 21504,
+    "fullChars": 99544,
     "skills": [
       {
         "name": "mathematics",

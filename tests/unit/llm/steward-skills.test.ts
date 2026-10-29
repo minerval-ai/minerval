@@ -102,6 +102,7 @@ vi.mock("../../../src/llm/client.js", async () => {
 });
 
 import { runClaimSteward } from "../../../src/llm/agents/claim-steward.js";
+import { withPassBudget } from "../../../src/llm/usage-context.js";
 import { getSkill } from "../../../src/llm/prompts/skills.js";
 
 const CLAIM_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -116,7 +117,10 @@ type LoopOptions = {
 
 async function run(domains: string[]): Promise<LoopOptions> {
   mocks.claim = { id: CLAIM_ID, importance: 0.5, domains };
-  await runClaimSteward({ trigger: "structure_and_assess", claimId: CLAIM_ID, context: "" });
+  // A pass the lane funds, so the Steward is offered research to launch.
+  await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>
+    runClaimSteward({ trigger: "structure_and_assess", claimId: CLAIM_ID, context: "" })
+  );
   return mocks.loopOptions.at(-1) as unknown as LoopOptions;
 }
 
@@ -276,14 +280,11 @@ describe("Lean tools under the run's budget", () => {
 
   it("declines a proof check once the run's budget is spent", async () => {
     const opts = await run(["mathematics"]);
-    const { withCostMeter, getUsageContext } = await import("../../../src/llm/usage-context.js");
-    const { value } = await withCostMeter(
-      async () => {
+    const { withPassBudget, getUsageContext } = await import("../../../src/llm/usage-context.js");
+    const { value } = await withPassBudget({ microUsd: 1_000_000, source: "the test" }, async () => {
         getUsageContext().meter!.billedMicroUsd = 1_000_000;
         return opts.executeTool("lean_check", { formalization_id: "f", kind: "proof" });
-      },
-      { ceilingMicroUsd: 1_000_000 }
-    );
+      });
     const out = JSON.parse(value);
     expect(out.success).toBe(false);
     expect(out.message).toMatch(/A proof check would cost/);

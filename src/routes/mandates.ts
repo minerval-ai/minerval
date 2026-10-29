@@ -25,6 +25,7 @@ import {
 } from "../services/mandate-service.js";
 import { mandatePrizesBlock } from "../services/bounty-service.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
+import { presentsCredentials } from "../server/plugins/auth.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
@@ -33,7 +34,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
     request: FastifyRequest,
     reply: FastifyReply
   ) => {
-    if (request.headers["x-api-key"] || request.headers.authorization) {
+    if (presentsCredentials(request)) {
       await app.authenticate(request, reply);
     }
   };

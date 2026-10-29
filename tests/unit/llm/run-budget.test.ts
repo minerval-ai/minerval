@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * A run's budget, shown to its agent: the meter carries the ceiling, the
- * tool loop appends the spend line after every turn and one wrap-up notice
- * when most of it is spent, the task message states it up front, and a paid
+ * A pass's budget (withPassBudget), shown to its agent: the tool loop
+ * appends the spend line after every turn and a notice when most of it, and
+ * when all of it, is spent; the task message states it up front; and a paid
  * tool declines a call the remainder cannot cover.
  */
 
@@ -30,6 +30,7 @@ import {
   getUsageContext,
   runBudget,
   withCostMeter,
+  withPassBudget,
 } from "../../../src/llm/usage-context.js";
 import { turnBudgetLine } from "../../../src/llm/prompts/turn-budget.js";
 import { actionBudgetMicroUsd } from "../../../src/services/action-service.js";
@@ -67,34 +68,29 @@ beforeEach(() => {
 });
 
 describe("the run budget on the meter", () => {
-  it("is absent without a ceiling, and reads spend against it with one", async () => {
+  it("is absent without a pass budget, and reads spend against it with one", async () => {
     expect(runBudget()).toBeNull();
     await withCostMeter(async () => expect(runBudget()).toBeNull());
-    await withCostMeter(
-      async () => {
-        getUsageContext().meter!.billedMicroUsd += 300_000;
-        expect(runBudget()).toEqual({
-          ceilingMicroUsd: 1_000_000,
-          spentMicroUsd: 300_000,
-          remainingMicroUsd: 700_000,
-        });
-      },
-      { ceilingMicroUsd: 1_000_000 }
-    );
+    await withPassBudget({ microUsd: 1_000_000, source: "the test" }, async () => {
+      getUsageContext().meter!.billedMicroUsd += 300_000;
+      expect(runBudget()).toEqual({
+        ceilingMicroUsd: 1_000_000,
+        source: "the test",
+        spentMicroUsd: 300_000,
+        remainingMicroUsd: 700_000,
+      });
+    });
   });
 
   it("lets a paid call through when it fits, and says what it costs and what is left when not", async () => {
     expect(budgetRefusal("A search", 5_000_000)).toBeNull();
-    await withCostMeter(
-      async () => {
+    await withPassBudget({ microUsd: 500_000, source: "the test" }, async () => {
         expect(budgetRefusal("A search", 400_000)).toBeNull();
         const out = JSON.parse(budgetRefusal("Elicit", 2_000_000)!);
         expect(out.success).toBe(false);
         expect(out.message).toContain("Elicit would cost about $2.00");
         expect(out.message).toContain("$0.50 of its $0.50 budget left");
-      },
-      { ceilingMicroUsd: 500_000 }
-    );
+      });
   });
 
   it("covers an action for what its funders put up, or its estimate when that is more", () => {
@@ -106,14 +102,14 @@ describe("the run budget on the meter", () => {
 describe("the task message", () => {
   it("leads with the budget when the run has one, and keeps the turn guard separate", async () => {
     expect(turnBudgetLine(12)).toMatch(/^Budget: you have up to 12 tool-use turns/);
-    await withCostMeter(
-      async () => {
+    await withPassBudget({ microUsd: 1_400_000, source: "the allocations funding this pass" }, async () => {
         const line = turnBudgetLine(200);
-        expect(line).toMatch(/^Budget: This run has a budget of \$1\.40, metered at real cost/);
+        expect(line).toMatch(
+          /^Budget: This run has a budget of \$1\.40 \(the allocations funding this pass\), metered at real cost/
+        );
+        expect(line).toContain("It is what you may spend, not what you should");
         expect(line).toContain("Separately, you have up to 200 tool-use turns");
-      },
-      { ceilingMicroUsd: 1_400_000 }
-    );
+      });
   });
 });
 
@@ -124,17 +120,14 @@ describe("toolUseLoop with a budget", () => {
       .mockResolvedValueOnce(search)
       .mockResolvedValueOnce(search)
       .mockResolvedValueOnce(done);
-    await withCostMeter(
-      () =>
+    await withPassBudget({ microUsd: 1_000_000, source: "the test" }, () =>
         toolUseLoop({
           initialMessages: [{ role: "user", content: "go" }],
           tools,
           model: MODELS.haiku,
           maxIterations: 200,
           executeTool: spend(450_000),
-        }),
-      { ceilingMicroUsd: 1_000_000 }
-    );
+        }));
     const first = trailingText(2);
     expect(first[0]).toBe(
       "Budget: $0.45 of $1.00 spent (45%). Your last turn cost $0.45; at that rate about 1 turn " +

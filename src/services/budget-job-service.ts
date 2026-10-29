@@ -235,6 +235,13 @@ export async function getJobContributions(
   }));
 }
 
+/** A job's budget less its metered spend, in micro-USD (0 for no such job). */
+export async function getJobRemainingMicroUsd(jobId: string): Promise<number> {
+  const [row] = await rawQuery<{ budget: string }>(`SELECT budget_micro_usd::bigint AS budget FROM budget_jobs WHERE id = $1`, [jobId]);
+  if (!row) return 0;
+  return Math.max(0, Number(row.budget) - (await getJobSpentMicroUsd(jobId)));
+}
+
 /** Metered cost attributed to this job so far, in micro-USD. */
 export async function getJobSpentMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
