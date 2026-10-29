@@ -40,6 +40,7 @@ import {
   compareAssessments,
   CONSISTENCY_BOUNDS,
   CONSISTENCY_FLAG_KINDS,
+  figureAndAnswerChecks,
   flagInconsistency,
   partitionClaims,
   type PartitionScope,
@@ -125,6 +126,16 @@ async function runConsistencyCheckerImpl(input: {
         properties: { offset: { type: "number" } },
         required: [],
       },
+    },
+    {
+      name: "list_figure_and_answer_checks",
+      description:
+        "Where figures and answers in this partition may disagree (§7a, §21): claims about which " +
+        "side of a figure a quantity lies whose credence sits well away from the probability the " +
+        "quantity's estimate implies, and questions whose standing or favored answer does not " +
+        "agree with their answers' assessments. Candidates to read, not findings: compare the " +
+        "pages before you flag (numeric_mismatch, answer_mismatch).",
+      input_schema: { type: "object" as const, properties: {}, required: [] },
     },
     {
       name: "compare_assessments",
@@ -257,6 +268,9 @@ async function runConsistencyCheckerImpl(input: {
       }
       if (name === "compare_assessments") {
         return JSON.stringify(await compareAssessments(toolInput.claim_ids));
+      }
+      if (name === "list_figure_and_answer_checks") {
+        return JSON.stringify(await figureAndAnswerChecks(input.scope));
       }
       if (name === "flag_inconsistency") {
         if (flagsRaised >= maxFlags) {

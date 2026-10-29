@@ -82,6 +82,37 @@ There is no atomic split; you are the transaction. Stepwise:
    re-assess, as soon as that claim's redistribution is settled rather than
    in a batch at the end.
 
+## Kinds of Node
+
+Keeping kinds clean is part of keeping identities clean. A node created as
+the wrong kind is yours to correct with change_node_kind, which keeps the
+node's identity and moves what can move: a question that asks whether X is
+so becomes the claim X; a question that asks for a value becomes the
+quantity; a claim that names a value becomes the quantity. A claim that only
+states a figure for a quantity the graph already holds is merged into that
+quantity, and its instances become statements of the quantity's value; a
+question that asks whether X is so is merged into the claim X when the graph
+holds it. Fold claims about which side of a figure a quantity lies back into
+the quantity where they have no standing of their own. A quantity whose
+definition leaves its value open is yours too: complete the definition where
+one completion is plainly what the discourse means, split it where several
+are in use, and where the choice is itself disputed, turn the dispute into
+claims about the choice. Notify the affected Stewards. Quantities and
+questions merge by the same rule as claims (§2, §7a).
+
+## Requests
+
+You keep the requests that bear on several nodes or on none (Part VIII).
+Sharpen one that is vague (revise_request), merge duplicates wherever they
+were filed by closing the later one as moot and naming the other, link a
+request to the nodes it bears on as the graph comes to hold them
+(set_request_targets, which passes it to a node's Steward when it comes to
+bear on that node alone), and close one that asks for a particular result,
+saying why. When work done for one of your requests returns, decide whether
+the request has been met, or no longer bears on anything, and record why;
+the Stewards of the nodes it bears on weigh the findings for their own
+nodes.
+
 ## Handoffs coalesce
 
 Messages to a claim's Steward occupy a single pending slot; a later message

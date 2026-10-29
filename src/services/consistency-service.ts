@@ -38,6 +38,8 @@ import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { enqueueSteward } from "./queue-service.js";
 import { refreshQueuePriority } from "./priority-service.js";
 import { refreshGeneralValuations } from "./mandate-valuer-service.js";
+import { credenceGap, impliedProbability } from "./quantity-math.js";
+import type { QuantityEstimate } from "../schemas/kinds.js";
 
 /**
  * What kind of incoherence a flag names. A label for the record and the
@@ -57,6 +59,14 @@ export const CONSISTENCY_FLAG_KINDS = [
   "dependency_mismatch",
   // An assessment that rests on a neighbor's verdict that has since changed.
   "stale_premise",
+  // Figures that do not agree (§21): a claim about which side of a figure
+  // a quantity lies whose credence the quantity's estimate does not bear
+  // out, or a quantity whose estimate disagrees with those it is defined
+  // from or rests on one instrument's readings without weighing them.
+  "numeric_mismatch",
+  // A question whose standing or favored answer does not agree with the
+  // assessments of the answers it draws on (§7a).
+  "answer_mismatch",
   "other",
 ] as const;
 export type ConsistencyFlagKind = (typeof CONSISTENCY_FLAG_KINDS)[number];
@@ -920,4 +930,122 @@ export async function listSweeps(limit = 20): Promise<Array<{
       ORDER BY s.started_at DESC LIMIT $1`,
     [limit]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Figures and answers (§7a, §21): candidates for the checker to read
+// ---------------------------------------------------------------------------
+
+export interface CutCheck {
+  claim_id: string;
+  claim_text: string;
+  quantity_id: string;
+  quantity_text: string;
+  direction: "above" | "below";
+  value: number;
+  credence: number;
+  implied: number;
+  /** "at_most"/"at_least" when the figure lies beyond the estimate's outermost quantile. */
+  implied_bound: "at_most" | "at_least" | null;
+  gap: number;
+}
+
+export interface AnswerCheck {
+  question_id: string;
+  question_text: string;
+  standing: string;
+  answer_id: string;
+  answer_text: string;
+  answer_status: string | null;
+  favored: boolean;
+  problem: string;
+}
+
+/**
+ * Where figures and answers disagree in scope: cut claims whose credence
+ * sits further than `minGap` from what their quantity's estimate implies,
+ * and questions whose standing does not agree with their answers'
+ * assessments. Candidates, not findings: the checker reads both pages
+ * before it flags, as it does for anything else.
+ */
+export async function figureAndAnswerChecks(
+  scope: PartitionScope,
+  opts: { minGap?: number } = {}
+): Promise<{ cuts: CutCheck[]; answers: AnswerCheck[] }> {
+  const minGap = opts.minGap ?? 0.15;
+  const inScope = `(($1::uuid IS NULL AND $2::uuid[] IS NULL)
+      OR EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim' AND tg.subject_id = {{node}} AND tg.tag_id = $1::uuid)
+      OR {{node}} = ANY(COALESCE($2::uuid[], '{}')))`;
+  const params = [scope.tagId ?? null, scope.claimIds ?? null];
+  const cutRows = await rawQuery<{
+    claim_id: string;
+    claim_text: string;
+    quantity_id: string;
+    quantity_text: string;
+    direction: "above" | "below";
+    value: number;
+    credence: number;
+    estimate: QuantityEstimate;
+  }>(
+    `SELECT qc.claim_id, c.text AS claim_text, qc.quantity_id, q.text AS quantity_text,
+            qc.direction, qc.value, a.claim_credence AS credence, qe.estimate
+       FROM quantity_cuts qc
+       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
+       JOIN claims q ON q.id = qc.quantity_id AND q.state = 'active'
+       JOIN assessments a ON a.claim_id = qc.claim_id AND a.is_current = true AND a.claim_credence IS NOT NULL
+       JOIN quantity_estimates qe ON qe.claim_id = qc.quantity_id AND qe.is_current = true
+      WHERE ${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")}`,
+    params
+  );
+  const cuts: CutCheck[] = [];
+  for (const r of cutRows) {
+    const implied = impliedProbability(r.estimate, r.direction, r.value);
+    if (!implied) continue;
+    const gap = credenceGap(r.credence, implied);
+    if (gap < minGap) continue;
+    const { estimate: _estimate, ...rest } = r;
+    cuts.push({
+      ...rest,
+      implied: Math.round(implied.p * 1000) / 1000,
+      implied_bound: implied.bound,
+      gap: Math.round(gap * 1000) / 1000,
+    });
+  }
+
+  const answerRows = await rawQuery<{
+    question_id: string;
+    question_text: string;
+    standing: string;
+    favored_ids: string[];
+    answer_id: string;
+    answer_text: string;
+    answer_status: string | null;
+  }>(
+    `SELECT q.id AS question_id, q.text AS question_text, qa.standing,
+            qa.favored_claim_ids::text[] AS favored_ids,
+            c.id AS answer_id, c.text AS answer_text, a.status AS answer_status
+       FROM claims q
+       JOIN question_assessments qa ON qa.claim_id = q.id AND qa.is_current = true
+       JOIN claim_relationships r ON r.parent_claim_id = q.id AND r.relation_type = 'answers'
+       JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
+       LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+      WHERE q.kind = 'question' AND q.state = 'active' AND ${inScope.replaceAll("{{node}}", "q.id")}`,
+    params
+  );
+  const answers: AnswerCheck[] = [];
+  for (const r of answerRows) {
+    const favored = r.favored_ids.includes(r.answer_id);
+    let problem: string | null = null;
+    if (favored && (r.answer_status === "doubtful" || r.answer_status === "contradicted")) {
+      problem = `favored by a question that is ${r.standing}, while the answer is ${r.answer_status}`;
+    } else if (favored && r.standing === "answered" && r.answer_status && r.answer_status !== "verified" && r.answer_status !== "supported") {
+      problem = `the question is answered by it, while the answer is only ${r.answer_status}`;
+    } else if (!favored && r.answer_status === "verified" && (r.standing === "open" || r.standing === "unknown")) {
+      problem = `verified, while the question is ${r.standing} and does not favor it`;
+    }
+    if (!problem) continue;
+    const { favored_ids: _favored, ...rest } = r;
+    answers.push({ ...rest, favored, problem });
+  }
+  return { cuts, answers };
 }

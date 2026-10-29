@@ -1,6 +1,22 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { sources, claims, claimInstances } from "../db/schema.js";
+import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+
+const NODE_KIND_SET: ReadonlySet<string> = new Set(NODE_KINDS);
+
+/**
+ * The instance's stance from what the source proposed and what it matched
+ * (§4, §7a). A source that gives a figure states its quantity's value; one
+ * that asks the question asks it, and one that asks a question about a claim
+ * or a quantity poses it; a claim matched to a question answers it.
+ */
+export function instanceStanceFor(proposed: NodeKind, node: NodeKind, matcherStance: string | undefined): string {
+  if (proposed === "question") return node === "question" ? "asks" : "poses";
+  if (node === "quantity") return "states";
+  if (node === "question") return "answers";
+  return matcherStance ?? "affirms";
+}
 import { extractClaims } from "../llm/agents/extractor.js";
 import { matchClaim } from "../llm/agents/matcher.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
@@ -237,9 +253,11 @@ async function processUrlExtraction(
       // The agentic Matcher is the single decider of claim identity: it does
       // its own (multi-framing, ungated) search, so we no longer pre-fetch
       // candidates here (#25).
+      const proposedKind = NODE_KIND_SET.has(claim.kind ?? "") ? (claim.kind as NodeKind) : "claim";
       const matchResult = await matchClaim({
         extractedText: claim.verbatim_text,
         proposedCanonical: claim.proposed_canonical_form,
+        kind: proposedKind,
         // The Matcher receives the domains its caller knows: here, the
         // Extractor's prior for this claim.
         domains: sanitizeDomains(claim.domains),
@@ -255,12 +273,18 @@ async function processUrlExtraction(
       }
 
       let claimId: string;
+      // The node's kind decides the instance's stance (§4, §7a): a figure is
+      // a statement of its quantity's value, and a question is asked.
+      let nodeKind: NodeKind = proposedKind;
 
       if (matchResult.is_match && matchResult.matched_claim_id) {
         // Link to existing claim
         claimId = matchResult.matched_claim_id;
+        const [matched] = await rawQuery<{ kind: NodeKind }>(`SELECT kind FROM claims WHERE id = $1`, [claimId]);
+        nodeKind = matched?.kind ?? "claim";
         claimsMatched++;
       } else {
+        nodeKind = matchResult.kind ?? proposedKind;
         // Create new claim. Embed the final canonical form (which the matcher
         // may have reworded) so the stored vector matches the stored text.
         const canonicalText =
@@ -292,6 +316,7 @@ async function processUrlExtraction(
           .insert(claims)
           .values({
             text: canonicalText,
+            kind: nodeKind,
             claimType: claim.claim_type,
             ...(importance !== undefined ? { importance } : {}),
             ...(contestation !== undefined ? { contestation } : {}),
@@ -362,7 +387,7 @@ async function processUrlExtraction(
         verbatimText: claim.verbatim_text,
         proposedCanonicalForm: claim.proposed_canonical_form,
         context: claim.context,
-        stance: matchResult.instance_stance ?? "affirms",
+        stance: instanceStanceFor(proposedKind, nodeKind, matchResult.instance_stance),
         confidence: claim.confidence,
       });
     }

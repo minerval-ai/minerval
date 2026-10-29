@@ -139,6 +139,13 @@ export const contributionTypeEnum = z.enum([
   "propose_edit",
   "add_instance",
   "propose_argument",
+  // Kinds and requests (constitution §7a, Part VIII): a source's figure for
+  // a quantity, a candidate answer to a question, a request on the node,
+  // and material offered to meet one of its requests.
+  "add_estimate",
+  "propose_answer",
+  "propose_request",
+  "answer_request",
 ]);
 
 // Intake types (#157): suggestions that would mint NEW graph content. They are
