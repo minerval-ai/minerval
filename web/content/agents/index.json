@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 9152,
-    "fullChars": 87192,
+    "roleChars": 10312,
+    "fullChars": 88352,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 11875,
-    "fullChars": 89915,
+    "roleChars": 13001,
+    "fullChars": 91041,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 47578,
-    "fullChars": 125618,
+    "roleChars": 53539,
+    "fullChars": 131579,
     "skills": [
       {
         "name": "mathematics",
@@ -110,6 +110,19 @@
     ]
   },
   {
+    "key": "question-steward",
+    "name": "Question Steward",
+    "stage": 4,
+    "group": "governance",
+    "tagline": "The owner of a question: it keeps the question's wording and presuppositions, gathers its candidate answers and subquestions, and gives the best answer it can with how well answered the question is.",
+    "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
+    "model": "Claude Opus 5.5",
+    "hasConstitution": true,
+    "roleChars": 30157,
+    "fullChars": 108197,
+    "skills": []
+  },
+  {
     "key": "curator",
     "name": "Curator",
     "stage": 5,
@@ -118,8 +131,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15695,
-    "fullChars": 93735,
+    "roleChars": 17487,
+    "fullChars": 95527,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +226,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19943,
-    "fullChars": 97983,
+    "roleChars": 20884,
+    "fullChars": 98924,
     "skills": [
       {
         "name": "mathematics",
@@ -266,8 +279,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 10763,
-    "fullChars": 88803,
+    "roleChars": 11395,
+    "fullChars": 89435,
     "skills": []
   },
   {
@@ -292,8 +305,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 6367,
-    "fullChars": 84407,
+    "roleChars": 8551,
+    "fullChars": 86591,
     "skills": [
       {
         "name": "provenance",

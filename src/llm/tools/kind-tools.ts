@@ -70,7 +70,7 @@ import { getUsageContext } from "../usage-context.js";
 
 /** Who is calling, and on which node. */
 export interface KindToolContext {
-  role: "claim_steward" | "question_steward" | "curator";
+  role: "claim_steward" | "question_steward" | "curator" | "researcher" | "grantmaker";
   /** The node this run stewards; absent for the Curator. */
   claimId?: string | null;
   model?: string | null;
@@ -742,6 +742,9 @@ async function mayKeep(requestId: string, ctx: KindToolContext): Promise<string 
   if (!req) return `Request ${requestId} not found.`;
   if (ctx.role === "curator") {
     return req.keeper_kind === "curator" ? null : "That request is kept by the Steward of the node it bears on.";
+  }
+  if (ctx.role !== "claim_steward" && ctx.role !== "question_steward") {
+    return "Only a request's keeper revises or closes it.";
   }
   if (req.keeper_kind === "steward" && req.keeper_claim_id === ctx.claimId) return null;
   return req.keeper_kind === "curator"

@@ -25,6 +25,9 @@ import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+
+const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
 import { skillsForGrant } from "./skill-selection.js";
@@ -493,6 +496,9 @@ async function runGrantmakerTurnImpl(input: {
     ...reportTools.definitions, ...findingTools.definitions,
     ...mandateTools.definitions,
     ...(managed ? researchTools.definitions : []),
+    // The open requests a funded mandate's money may be able to meet
+    // (fund_request); reading them commits nothing.
+    ...(managed && researchTools.definitions.length > 0 ? [LIST_REQUESTS_TOOL] : []),
     ...(managed
       ? [
           overviewTool,
@@ -558,6 +564,9 @@ async function runGrantmakerTurnImpl(input: {
       if (managed) {
         const research = await researchTools.execute(name, toolInput);
         if (research !== null) return research;
+        if (name === LIST_REQUESTS_TOOL.name) {
+          return (await executeKindTool(name, toolInput, { role: "grantmaker", model }))!;
+        }
       }
       // Shared graph reads first; returns null for anything it doesn't own,
       // so the mandate-specific handlers below still get their turn.

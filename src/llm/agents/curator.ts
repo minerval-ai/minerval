@@ -23,6 +23,11 @@ import {
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
 import {
+  executeKindTool,
+  getChangeKindToolDefinition,
+  getRequestToolDefinitions,
+} from "../tools/kind-tools.js";
+import {
   getCuratorToolDefinitions,
   executeCuratorTool,
 } from "../tools/curator-tools.js";
@@ -67,6 +72,10 @@ async function runCuratorImpl(input: {
     ...claimContextTools,
     getMatcherToolDefinition(),
     ...curatorTools,
+    // Kinds and requests (§2, §7a, Part VIII): correcting a node's kind, and
+    // keeping the requests that bear on several nodes or on none.
+    getChangeKindToolDefinition(),
+    ...getRequestToolDefinitions("curator"),
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
@@ -88,8 +97,10 @@ Proceed:
 1. Use get_claim and search_similar_claims (and match_claim) to examine the
    anchor claim and its neighborhood; get_claim_instances shows how its
    sources state it when wording or identity turns on that.
-2. Look for: duplicates / counterparts to merge; a conflated claim to split; and
-   related-but-disconnected claims that should be linked.
+2. Look for: duplicates / counterparts to merge; a conflated claim to split;
+   related-but-disconnected claims that should be linked; a node of the wrong
+   kind; and requests you keep that need sharpening, retargeting or closing
+   (list_requests).
 3. For merges/splits, perform the surgery, then notify_steward the affected
    claims. For a routine edge into a claim you are not reconciling, use
    suggest_edge_to_steward (do not write it yourself).
@@ -124,6 +135,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}`;
       }
       if (graphNames.has(name)) return executeGraphTool(name, toolInput);
       if (claimContextNames.has(name)) return executeGovernanceTool(name, toolInput);
+      const kindOutput = await executeKindTool(name, toolInput, { role: "curator", model });
+      if (kindOutput !== null) return kindOutput;
       return executeCuratorTool(name, toolInput);
     },
   }));
