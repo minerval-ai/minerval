@@ -37,6 +37,7 @@ import { listRelatedClaims } from "../../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../../services/quantity-service.js";
 import { getQuestionDetail } from "../../services/question-service.js";
 import { listRequests } from "../../services/request-service.js";
+import { EVALUATION_STALE_SQL } from "../../services/argument-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -352,10 +353,12 @@ async function getClaim(claimId: string) {
     stale: boolean;
   }>(
     `SELECT ae.argument_id, ae.verdict, ae.decisive, ae.content,
-            (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id) AS stale
+            ${EVALUATION_STALE_SQL} AS stale
        FROM argument_evaluations ae
        JOIN arguments a ON a.id = ae.argument_id
+       JOIN claims c ON c.id = a.claim_id
        LEFT JOIN assessments ca ON ca.claim_id = a.claim_id AND ca.is_current = true
+       LEFT JOIN quantity_estimates cq ON cq.claim_id = a.claim_id AND cq.is_current = true
       WHERE a.claim_id = $1
         AND ae.is_current = true`,
     [claimId]

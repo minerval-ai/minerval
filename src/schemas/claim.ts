@@ -55,7 +55,10 @@ export const claimDependentsParams = z.object({
 
 export const claimProposeBody = z.object({
   claim: z.string().min(1).max(2000),
+  // For a claim, the argument for it; for a question, why anyone reasoning
+  // about the subject would need to ask it (§7a).
   argument: z.string().min(1).max(5000),
+  kind: z.enum(["claim", "question"]).default("claim"),
 });
 
 export const claimPatchBody = z.object({

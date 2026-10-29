@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 21997,
-    "fullChars": 100037,
+    "roleChars": 22535,
+    "fullChars": 100575,
     "skills": [
       {
         "name": "mathematics",
@@ -226,8 +226,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20884,
-    "fullChars": 98924,
+    "roleChars": 21244,
+    "fullChars": 99284,
     "skills": [
       {
         "name": "mathematics",

@@ -161,6 +161,8 @@ export async function setArgumentEvaluation(input: {
   /** The argument settles its conclusion as its premises now stand (§7). */
   decisive?: boolean;
   assessmentId?: string | null;
+  /** On a quantity: the estimate the evaluation was made under. */
+  estimateId?: string | null;
   createdBy?: string;
 }) {
   const db = getDb();
@@ -176,12 +178,22 @@ export async function setArgumentEvaluation(input: {
       content: input.content,
       decisive: input.decisive ?? false,
       assessmentId: input.assessmentId ?? null,
+      estimateId: input.estimateId ?? null,
       isCurrent: true,
       createdBy: input.createdBy ?? "claim_steward",
     })
     .returning();
   return evaluation!;
 }
+
+/**
+ * Whether an evaluation (alias `ae`) predates its claim's current judgment:
+ * the current assessment (alias `ca`) for a proposition, the current
+ * estimate (alias `cq`) for a quantity (§10). The claim row is alias `c`.
+ */
+export const EVALUATION_STALE_SQL = `(CASE WHEN c.kind = 'quantity'
+    THEN (cq.id IS NULL OR ae.estimate_id IS DISTINCT FROM cq.id)
+    ELSE (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id) END)`;
 
 export interface ArgumentEvaluationState {
   argument_id: string;
@@ -205,12 +217,15 @@ export async function getEvaluationStateForClaim(
   return rawQuery<ArgumentEvaluationState>(
     `SELECT a.id AS argument_id, a.name AS argument_name,
             ae.verdict, ae.decisive, ae.content,
-            (ae.id IS NOT NULL AND (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id)) AS stale
+            (ae.id IS NOT NULL AND ${EVALUATION_STALE_SQL}) AS stale
        FROM arguments a
+       JOIN claims c ON c.id = a.claim_id
        LEFT JOIN argument_evaluations ae
               ON ae.argument_id = a.id AND ae.is_current = true
        LEFT JOIN assessments ca
               ON ca.claim_id = a.claim_id AND ca.is_current = true
+       LEFT JOIN quantity_estimates cq
+              ON cq.claim_id = a.claim_id AND cq.is_current = true
       WHERE a.claim_id = $1
         AND a.name IS NOT NULL
       ORDER BY a.created_at`,

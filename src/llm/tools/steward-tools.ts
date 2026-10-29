@@ -2178,7 +2178,13 @@ export async function executeStewardTool(
         // Provenance: stamp the claim assessment this evaluation was derived
         // under, so an evaluation left behind by a later reassessment is
         // detectably stale. Call evaluate_argument AFTER update_claim_assessment
-        // so the stamp lands on the fresh assessment.
+        // so the stamp lands on the fresh assessment. A quantity has no
+        // assessment: its evaluations are stamped with the current estimate.
+        const [currentEstimate] = await rawQuery<{ id: string }>(
+          `SELECT qe.id FROM quantity_estimates qe JOIN claims c ON c.id = qe.claim_id
+            WHERE qe.claim_id = $1 AND qe.is_current = true AND c.kind = 'quantity'`,
+          [argument.claimId]
+        );
         const db = getDb();
         const [currentAssessment] = await db
           .select({ id: assessments.id })
@@ -2197,6 +2203,7 @@ export async function executeStewardTool(
           content,
           decisive,
           assessmentId: currentAssessment?.id ?? null,
+          estimateId: currentEstimate?.id ?? null,
           createdBy: "claim_steward",
         });
 

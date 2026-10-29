@@ -917,7 +917,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                         contributor: {
                           type: "object",
                           properties: {
-                            id: { type: "string", format: "uuid" },
+                            id: { type: "string", format: "uuid", nullable: true },
                             display_name: { type: "string" },
                           },
                         },
@@ -1002,7 +1002,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             contribution: {
               id: entry.contribution.id,
               contributor: {
-                id: entry.contribution.contributorId,
+                // A mandate's contribution does not link to its funder's profile.
+                id: entry.contribution.grantId ? null : entry.contribution.contributorId,
                 display_name: entry.contributorDisplayName,
               },
               contribution_type: entry.contribution.contributionType,
@@ -1058,13 +1059,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim with an initial argument (user proposals enter the review queue)",
+        "Propose a new claim with an initial argument, or a question with why it needs asking (user proposals enter the review queue)",
       body: {
         type: "object",
         required: ["claim", "argument"],
         properties: {
           claim: { type: "string", minLength: 1, maxLength: 2000 },
           argument: { type: "string", minLength: 1, maxLength: 5000 },
+          // claim (default) or question (§7a).
+          kind: { type: "string", enum: ["claim", "question"], default: "claim" },
         },
       },
       response: {
@@ -1074,6 +1077,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             claim: claimSchema,
             argument: {
               type: "object",
+              nullable: true,
               properties: {
                 id: { type: "string", format: "uuid" },
                 stance: { type: "string" },
@@ -1121,6 +1125,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const result = await proposeClaim({
           claim: body.claim,
           argument: body.argument,
+          kind: body.kind,
           // Provenance: after #157, created_by='user' means "user-proposed,
           // review-approved" — the unreviewed fast path is service seeding
           // and says so.
@@ -1133,13 +1138,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         return reply.code(201).send({
           claim: formatClaim(result.claim),
-          argument: {
-            id: result.argument.id,
-            stance: result.argument.stance,
-            content: result.argument.content,
-            created_by: result.argument.createdBy,
-            created_at: result.argument.createdAt.toISOString(),
-          },
+          argument: result.argument
+            ? {
+                id: result.argument.id,
+                stance: result.argument.stance,
+                content: result.argument.content,
+                created_by: result.argument.createdBy,
+                created_at: result.argument.createdAt.toISOString(),
+              }
+            : null,
           job_id: result.jobId,
         });
       }
@@ -1164,6 +1171,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           claimText: body.claim,
           argumentText: body.argument,
           contributorId: contributor.id,
+          kind: body.kind,
         });
         if (charge.entryId) {
           await attachChargeContribution(charge.entryId, contribution.id);

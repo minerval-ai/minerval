@@ -379,7 +379,12 @@ A mandate's Grantmaker can fund the Researcher to take up an open request
 graph, and its outcome is recorded as work on the request, after which the
 keeper is asked to judge it. Contributors propose requests, answers and
 estimates, and offer material for a request, through the Contribution
-Reviewer like any other contribution.
+Reviewer like any other contribution, and propose a question directly
+(`POST /claims/propose` with `kind: "question"`). Research a Grantmaker
+launches with `max_contributions` submits what it establishes as
+contributions under the mandate: reviewed like anyone's, with the review
+metered to the mandate's budget job, shown as "a funded mandate", and
+earning no one reputation or owls.
 
 ### Formal statements and machine-checked arguments
 

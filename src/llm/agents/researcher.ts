@@ -75,6 +75,45 @@ import {
 import { createPangramTools } from "../tools/pangram-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
+import { submitMandateContribution } from "../../services/contribution-service.js";
+
+export const MANDATE_CONTRIBUTION_TYPES = [
+  "challenge",
+  "support",
+  "add_instance",
+  "add_estimate",
+  "propose_argument",
+  "propose_answer",
+  "propose_request",
+  "answer_request",
+] as const;
+
+/** For research a mandate funds: submit a finding the graph should hold, as a contribution under the mandate. */
+export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
+  name: "submit_contribution",
+  description:
+    "Submit something you found that the graph should hold, as a contribution on one node, under the " +
+    "mandate (shown as \"a funded mandate\"). It is reviewed like anyone's, at the mandate's expense, " +
+    "and the node's Steward decides what it changes; nothing you submit goes onto the page directly. " +
+    "Submit only what you established, with its evidence, and only what bears on the node you name; " +
+    "everything else belongs in your report.",
+  input_schema: {
+    type: "object",
+    properties: {
+      claim_id: { type: "string", description: "The node the contribution bears on." },
+      contribution_type: { type: "string", enum: [...MANDATE_CONTRIBUTION_TYPES] },
+      content: {
+        type: "string",
+        description:
+          "The contribution, written for the Reviewer and the node's Steward: what you found, with the " +
+          "locator and the words or numbers it rests on. For answer_request, name the request id.",
+      },
+      evidence_urls: { type: "array", items: { type: "string" } },
+    },
+    required: ["claim_id", "contribution_type", "content"],
+    additionalProperties: false,
+  },
+};
 
 /** The one request tool a run that takes up a request carries. */
 const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t) => t.name === "file_request")!;
@@ -252,7 +291,13 @@ export interface ResearcherInput {
   run: Pick<
     ResearchRunRow,
     "id" | "claim_id" | "grant_id" | "requested_by" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
-  >;
+  > & { job_id?: string | null };
+  /**
+   * For research a mandate funds: how many contributions it may submit, each
+   * reviewed like anyone's at the mandate's expense (Part VIII). 0 or absent
+   * offers no submit_contribution tool.
+   */
+  contributionAllowance?: number;
   claim: { id: string; text: string; domains: string[] } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
@@ -327,6 +372,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
   const takesUpRequest = run.requested_by === "request";
+  let contributionsLeft =
+    run.requested_by === "grantmaker" && run.grant_id ? Math.max(0, Math.floor(input.contributionAllowance ?? 0)) : 0;
 
   const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
@@ -340,6 +387,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // A run that takes up a request reports its outcome, and may file the
     // further request its work shows is needed.
     ...(takesUpRequest ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL] : [RESEARCH_REPORT_TOOL]),
+    // Research a mandate funds submits what the graph should hold as
+    // contributions, up to the allowance its Grantmaker delegated.
+    ...(contributionsLeft > 0 ? [SUBMIT_CONTRIBUTION_TOOL] : []),
     webSearch.tool,
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
@@ -355,6 +405,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskInput = {
     task: run.task,
     requestedBy: run.requested_by,
+    contributionAllowance: contributionsLeft,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
@@ -450,6 +501,18 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
     if (name === FILE_REQUEST_TOOL.name) {
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
+    }
+    if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
+      if (contributionsLeft <= 0) {
+        return JSON.stringify({ success: false, message: "This run's contribution allowance is spent. Put the rest in your report." });
+      }
+      const submitted = await submitMandateContribution({
+        grantId: run.grant_id!,
+        jobId: run.job_id ?? null,
+        input: toolInput,
+      });
+      if (submitted.success) contributionsLeft--;
+      return JSON.stringify({ ...submitted, contributions_left: contributionsLeft });
     }
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);
