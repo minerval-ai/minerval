@@ -5,6 +5,10 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 // email over SES. The destination and sender live in env, never in the client
 // bundle; the page never shows a raw address. Spam protection is deliberately
 // light per the issue: a honeypot field and a per-IP rate limit, no CAPTCHA.
+//
+// Credentials come from CONTACT_AWS_* rather than the standard AWS_* names:
+// Vercel reserves those, and its runtime fills them with its own credentials,
+// which cannot send through our SES identity (infra/lib/contact-stack.ts).
 
 export const runtime = "nodejs";
 
@@ -32,9 +36,9 @@ function rateLimited(ip: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const to = process.env.CONTACT_TO_EMAIL;
+  const to = process.env.CONTACT_TO_EMAIL || "hello@minerval.ai";
   const from = process.env.CONTACT_FROM_EMAIL;
-  if (!to || !from) {
+  if (!from) {
     return NextResponse.json(
       { error: "The contact form is not configured on this deployment." },
       { status: 503 },
@@ -74,7 +78,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ses = new SESv2Client({});
+  const accessKeyId = process.env.CONTACT_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.CONTACT_AWS_SECRET_ACCESS_KEY;
+  const ses = new SESv2Client({
+    region: process.env.CONTACT_AWS_REGION || "us-east-1",
+    ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
+  });
   try {
     await ses.send(
       new SendEmailCommand({

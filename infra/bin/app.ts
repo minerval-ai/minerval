@@ -8,6 +8,7 @@ import { SecretsStack } from "../lib/secrets-stack";
 import { ApiStack } from "../lib/api-stack";
 import { LeanCheckerStack } from "../lib/lean-checker-stack";
 import { SolverStack } from "../lib/solver-stack";
+import { ContactStack } from "../lib/contact-stack";
 
 const app = new cdk.App();
 
@@ -91,3 +92,7 @@ new SolverStack(app, "EpistemeSolver", {
   solverEnabled: app.node.tryGetContext("solverEnabled"),
   solverModel: app.node.tryGetContext("solverModel"),
 });
+
+// SES sending for the website's contact form (issue #81); the Vercel app holds
+// the sender user's key. DKIM records go into Cloudflare by hand.
+new ContactStack(app, "MinervalContact", { env, domain: "minerval.ai" });

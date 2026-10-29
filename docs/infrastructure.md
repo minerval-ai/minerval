@@ -115,6 +115,25 @@ Cloudflare (Cloudflare Registrar requires it), so it's purely additive:
 The store's privacy questionnaire will ask about data handling — the extension sends page
 text to the API on user action, so answer accordingly and link the site's privacy policy.
 
+### Contact form delivery (SES)
+
+The `/about` contact form posts to `web/app/api/contact/route.ts`, which sends
+through SES to `hello@minerval.ai` (override with `CONTACT_TO_EMAIL`). The
+`MinervalContact` stack (`infra/lib/contact-stack.ts`) owns the SES domain
+identity for `minerval.ai` and a `minerval-contact-sender` IAM user that may only
+send from it. One-time setup:
+
+1. `cdk deploy MinervalContact`.
+2. In Cloudflare, add the three CNAMEs from the stack's `DkimRecord1..3` outputs
+   (DNS only). The identity verifies within minutes. Because `hello@minerval.ai`
+   is on the verified domain, the form works even while the account is in the
+   SES sandbox.
+3. In Vercel (Production), set `CONTACT_FROM_EMAIL` (e.g.
+   `Minerval <contact@minerval.ai>`), plus `CONTACT_AWS_ACCESS_KEY_ID` and
+   `CONTACT_AWS_SECRET_ACCESS_KEY` from the `minerval/contact-sender` secret, then
+   redeploy. Vercel reserves the standard `AWS_*` names, hence the prefix.
+4. `hello@minerval.ai` must exist in Google Workspace (a user, alias or group).
+
 ## Request flow
 
 ```
