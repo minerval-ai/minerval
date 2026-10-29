@@ -274,6 +274,102 @@ storage past about 5 GB, or a second region.
 - A payout provider's key arrives only with cash payouts, in its own entry,
   never a widening of the Stripe Checkout key.
 
+## Deploy credentials
+
+`.github/workflows/deploy.yml` reaches AWS through GitHub's OIDC provider:
+each run gets a session of about an hour for the role in the repository
+secret `AWS_DEPLOY_ROLE_ARN`, and no AWS key is stored in GitHub. The role
+trusts only workflow runs on this repository's `main` branch, and its one
+permission is assuming the CDK bootstrap roles, which do the deploy itself.
+A package that runs in a CI job, or a stolen copy of the repository's
+secrets, gets nothing usable in AWS.
+
+The repository uses GitHub's immutable OIDC subject, which names the owner
+and repository by ID as well as by name, so a renamed or re-created
+repository can't take over the role. The trust policy's `sub` must match it
+exactly; `gh api repos/minerval-ai/minerval/actions/oidc/customization/sub`
+shows the prefix.
+
+One-time setup, as an AWS admin (`702111526219`, `us-east-1`):
+
+```bash
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com
+
+cat > trust.json <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Federated": "arn:aws:iam::702111526219:oidc-provider/token.actions.githubusercontent.com" },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": "repo:minerval-ai@257872689/minerval@1140703112:ref:refs/heads/main"
+      }
+    }
+  }]
+}
+JSON
+
+cat > permissions.json <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["sts:AssumeRole", "sts:TagSession"],
+    "Resource": "arn:aws:iam::702111526219:role/cdk-hnb659fds-*-702111526219-us-east-1"
+  }]
+}
+JSON
+
+aws iam create-role --role-name github-deploy \
+  --assume-role-policy-document file://trust.json --max-session-duration 3600
+aws iam put-role-policy --role-name github-deploy \
+  --policy-name assume-cdk-bootstrap-roles --policy-document file://permissions.json
+```
+
+Then set the repository secret `AWS_DEPLOY_ROLE_ARN` to
+`arn:aws:iam::702111526219:role/github-deploy`, run Deploy once from the
+Actions tab to confirm it, and only then delete the `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` secrets and deactivate that access key in IAM. If
+the old key belonged to a person's IAM user, that user's other keys are
+worth a look too.
+
+## Dependabot security auto-merge
+
+`.github/workflows/dependabot-security.yml` turns on auto-merge for a
+Dependabot security update with CVSS 7.0 or higher, provided it is a patch or
+minor bump with no maintainer change, in `/`, `/infra`, `/web` or
+`/extension`. Once the required checks pass it merges, then dispatches
+Deploy (a merge by the built-in token doesn't fire Deploy's push trigger).
+The Vercel deploy of `web/` follows from the merge on its own. Everything
+else, version updates and lower-severity alerts included, waits for a
+person or the weekly review. Version updates also wait out the 7-day
+cooldown in `.github/dependabot.yml`; security updates skip it, which is why
+the bar for merging them automatically is a high score and no maintainer
+change.
+
+Three settings make it work, and the workflow refuses to act without the
+third:
+
+- the repository secret `DEPENDABOT_ALERTS_TOKEN`, a fine-grained personal
+  access token for `minerval-ai/minerval` only, with **Dependabot alerts:
+  Read-only** and no other permission (the built-in token cannot read
+  alerts). Until it is set, the workflow's job fails on every Dependabot
+  PR;
+- Settings → General → **Allow auto-merge**;
+- a ruleset on `main` (Settings → Rules → Rulesets, not classic branch
+  protection, since the workflow reads the ruleset API) that requires the
+  status checks `check`, `db-tests`, `web` and `extension`.
+
+What it doesn't cover: a malicious release is not a vulnerability, and
+upgrading fast doesn't help with it. The defense there is the cooldown, and
+if a poisoned version did reach CI or production, the response is rotating
+every credential that machine could read, not merging anything.
+
 ## Runbooks
 
 **Pin advance and statement migration.** Follow "Advancing the pin" in

@@ -25,7 +25,7 @@ export default defineConfig({
     icons,
     action: { default_icon: icons },
   },
-  // TSX through Vite's own esbuild transform; no React plugin needed.
-  vite: () => ({ esbuild: { jsx: "automatic" } }),
+  // TSX through Vite's own Oxc transform; no React plugin needed.
+  vite: () => ({ oxc: { jsx: { runtime: "automatic" } } }),
   zip: { artifactTemplate: "{{browser}}-{{manifestVersion}}-prod.zip" },
 });

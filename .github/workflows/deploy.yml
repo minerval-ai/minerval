@@ -1,8 +1,19 @@
 name: Deploy
 
+# Also dispatchable: the Dependabot security workflow dispatches it after an
+# auto-merge, whose push doesn't fire this trigger.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+# AWS access is a short-lived OIDC session, not a stored key: the role in
+# AWS_DEPLOY_ROLE_ARN trusts only this repository's main branch and may only
+# assume the CDK bootstrap roles (docs/infrastructure.md, "Deploy
+# credentials"). Nothing else in this workflow needs to write.
+permissions:
+  contents: read
+  id-token: write
 
 # CloudFormation refuses concurrent updates, so parallel deploys fail with
 # UPDATE_IN_PROGRESS (a burst of merges loses every deploy but the first).
@@ -35,8 +46,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: CDK deploy
