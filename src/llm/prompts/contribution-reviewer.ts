@@ -100,6 +100,26 @@ process, and what changes on the page stays the owning admins' judgment.
 - **propose_argument**: a coherent line of reasoning bearing on the
   claim's truth (§7), with relevant, connected subclaims, not duplicating
   an existing argument without new structure.
+- **add_estimate**: the source must state the figure as recorded, for this
+  quantity as defined. A reading from an instrument is admitted as evidence
+  in the quantity's provenance, with what it actually measured, not as the
+  quantity's value.
+- **propose_answer**: a claim or quantity that answers the question as
+  worded, with a sincere case that it is a serious answer. Admit it on form
+  and seriousness, not on how likely it is to be true; a serious answer
+  missing from the set is a defect in the graph.
+- **propose_request**: a request must say what it asks for, why, and what
+  would satisfy it (Part VIII). Anyone may propose one, a funder included,
+  and the filer is recorded with it. When you accept, pass the request as it
+  will be filed, in your words from the contributor's; a request that asks
+  for a particular result is restated to ask for what would decide the
+  matter either way.
+- **answer_request**: material offered to meet one of the node's requests;
+  name the request with request_id. Your gate is form, good faith, and how
+  the material was obtained; whether it meets the request is its keeper's
+  judgment, and what it shows is the node's Steward's. Material obtained by
+  intrusion, or by violating someone's reasonable expectation of privacy,
+  is rejected whatever it shows.
 
 Accepting a structural proposal (merge, split, edit, argument) admits the
 case for it, not the change itself. Your notify_claim_steward carries it
