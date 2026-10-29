@@ -62,6 +62,29 @@ export interface UsageContext {
    * insert. The field keeps its historical name.
    */
   meter?: { billedMicroUsd: number };
+  /**
+   * What the enclosing pass may spend, as the lane that funds it set it
+   * (withPassBudget): the allocations covering a ledger action, a buyer's
+   * quoted cap, a job's or a mandate's remaining budget. `meter` measures
+   * the pass's own spend, so what is left is `microUsd - meter.billedMicroUsd`.
+   * An agent that pays for work out of its pass (a Steward launching the
+   * researcher) is held to it and shown it.
+   */
+  passBudget?: PassBudget;
+}
+
+export interface PassBudget {
+  microUsd: number;
+  /** Where the money comes from, in words the agent is shown. */
+  source: string;
+  meter: { billedMicroUsd: number };
+}
+
+/** What the enclosing pass has left to spend, or null when no lane set a budget. */
+export function passBudgetLeftMicroUsd(ctx: UsageContext = getUsageContext()): number | null {
+  const budget = ctx.passBudget;
+  if (!budget) return null;
+  return Math.max(0, budget.microUsd - budget.meter.billedMicroUsd);
 }
 
 const storage = new AsyncLocalStorage<UsageContext>();
@@ -157,5 +180,22 @@ export async function withCostMeter<T>(
 ): Promise<{ value: T; billedMicroUsd: number }> {
   const meter = { billedMicroUsd: 0 };
   const value = await runWithUsageContext({ meter }, fn);
+  return { value, billedMicroUsd: meter.billedMicroUsd };
+}
+
+/**
+ * withCostMeter for a pass with a budget: the same fresh meter, and the
+ * budget the lane funding the pass sets, read against that meter. A null
+ * budget meters the pass and sets none.
+ */
+export async function withPassBudget<T>(
+  budget: { microUsd: number; source: string } | null,
+  fn: () => Promise<T>
+): Promise<{ value: T; billedMicroUsd: number }> {
+  const meter = { billedMicroUsd: 0 };
+  const value = await runWithUsageContext(
+    { meter, passBudget: budget ? { microUsd: Math.max(0, Math.round(budget.microUsd)), source: budget.source, meter } : undefined },
+    fn
+  );
   return { value, billedMicroUsd: meter.billedMicroUsd };
 }

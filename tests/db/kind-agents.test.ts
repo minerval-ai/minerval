@@ -306,7 +306,7 @@ describe("fund_request", () => {
       filer: { kind: "admin", agent: "claim_steward" },
     });
     const funder = await seedUser("funder");
-    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 0 });
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000 });
     let briefSeen = "";
     const tools = createResearchTools({
       requestedBy: "grantmaker",

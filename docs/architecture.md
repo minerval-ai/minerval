@@ -1071,15 +1071,30 @@ examination tools from any run whose launcher is not a Claim Steward
 (`launcherWritesGraph`, `src/services/research-run-service.ts`).
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
-(at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter before
-every turn on both loops, a wrap-up notice at 85 percent of it, a wall cap
+from its own budget, read from the usage meter before every turn on both
+loops, a wrap-up notice at 85 percent of it, a wall cap
 (`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
-then stopped. A launcher may start at most
+then stopped. What a run may be given is the launcher's own money, and
+the launcher is shown it in the tool description, in a refusal and in each
+result. A Steward pays from its pass's budget: every lane that runs a
+Steward sets one on the usage context (`withPassBudget` in
+`src/llm/usage-context.ts`), namely the allocations covering a ledger
+action, what is left of the background daily budget on the fallback lane,
+the cap a buyer was quoted for a paid order, the remaining budget of the
+job funding a money trigger or a deep decomposition, and a mandate's
+uncommitted budget. What is left is that budget less the pass's metered
+spend, the research it already launched included; a pass with no budget is
+not offered `delegate_research`. A Grantmaker pays from its mandate's
+uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
+which covers a run's `budget_usd` and any `contribution_budget_usd`; there
+is no deployment cap on either. A launcher may start at most
 `RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
-it; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+it for research no funder pays for (a pass with neither a user nor a job
+on its usage context), as the LLM budget tracker's limits apply only to
+unattributed calls; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
 the solver is, and while off no launcher is offered `delegate_research`;
 production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.

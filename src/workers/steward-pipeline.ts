@@ -52,7 +52,10 @@ import {
   releaseAction,
   type RunnableAction,
 } from "../services/action-service.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+
+/** The budget a lane sets on a Steward pass, or none. */
+type PassBudgetInput = { microUsd: number; source: string } | null;
 import {
   STEWARD_LEASE_STALE_MINUTES,
   stewardReleaseSet,
@@ -175,10 +178,13 @@ export async function processNextStewardTask(
     return { status: pending > 0 ? "budget" : "empty" };
   }
   const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
+  // The pass may spend what is left of the day's background budget.
+  let passBudget: PassBudgetInput = null;
   if (dailyBudgetOwls > 0) {
     const spent = await unattributedSpentTodayMicroUsd();
     const budgetMicro = dailyBudgetOwls * (config.owlCostMicroUsd ?? 1_000_000);
     if (spent >= budgetMicro) return { status: "budget" };
+    passBudget = { microUsd: budgetMicro - spent, source: "what is left of today's background budget" };
   }
   const rows = await rawQuery<StewardTaskRow>(
     `UPDATE claims
@@ -201,6 +207,7 @@ export async function processNextStewardTask(
   if (rows.length === 0) return { status: "empty" };
   return runStewardOnClaim(rows[0]!, {
     model: opts.model ?? config.stewardModel,
+    passBudget,
   });
 }
 
@@ -269,7 +276,9 @@ async function runCoveredAction(
   // Attribution: the largest funder — a mandate's budget job (which also
   // stamps the funding disclosure) or a person.
   const usageCtx = await largestActionFunder(action.id).catch(() => ({}));
-  return runStewardOnClaim(rows[0]!, { model, usageCtx, action });
+  // The pass spends what the allocations covering its action hold.
+  const passBudget = { microUsd: Number(action.coverage_micro_usd), source: "the allocations funding this pass" };
+  return runStewardOnClaim(rows[0]!, { model, usageCtx, action, passBudget });
 }
 
 /**
@@ -283,6 +292,7 @@ async function runStewardOnClaim(
     model: string;
     usageCtx?: { jobId?: string; userId?: string };
     action?: RunnableAction;
+    passBudget?: PassBudgetInput;
   }
 ): Promise<StewardProcessResult> {
   const trigger = task.steward_trigger ?? "structure_and_assess";
@@ -294,7 +304,7 @@ async function runStewardOnClaim(
       { claimId: task.id, ...(action ? { actionId: action.id } : {}) },
       () =>
         runWithUsageContext(input.usageCtx ?? {}, () =>
-          withCostMeter(() =>
+          withPassBudget(input.passBudget ?? null, () =>
             runClaimSteward({
               trigger,
               claimId: task.id,

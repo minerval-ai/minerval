@@ -23,7 +23,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
@@ -207,8 +207,10 @@ export async function processNextOrderTask(
       { claimId: order.claim_id },
       () =>
         runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
-          withCostMeter(() =>
-            runClaimSteward({ trigger, claimId: order.claim_id, context, model })
+          // The pass spends up to the cap the buyer was quoted.
+          withPassBudget(
+            { microUsd: Number(order.price_micro_usd), source: "the cap the buyer of this assessment was quoted" },
+            () => runClaimSteward({ trigger, claimId: order.claim_id, context, model })
           )
         )
     );

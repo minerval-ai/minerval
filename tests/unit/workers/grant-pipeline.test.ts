@@ -132,6 +132,10 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
     state.usageContexts.push(ctx);
     return fn();
   },
+  withPassBudget: async (budget: unknown, fn: () => Promise<unknown>) => {
+    state.usageContexts.push({ passBudget: budget });
+    return { value: await fn(), billedMicroUsd: 0 };
+  },
 }));
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
@@ -218,6 +222,10 @@ describe("processNextGrantTask", () => {
     expect(state.usageContexts[0]).toMatchObject({
       userId: "funder-1",
       jobId: "gjob-1",
+    });
+    // The pass spends from the mandate's headroom: budget less committed.
+    expect(state.usageContexts[1]).toEqual({
+      passBudget: { microUsd: 40_000_000 - state.spent, source: "the funded mandate's uncommitted budget" },
     });
   });
 
