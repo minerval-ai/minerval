@@ -124,6 +124,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /billing/ledger": { name: "get_owl_ledger" },
   "GET /api-keys": { name: "list_api_keys" },
 
+  // ---- requests: work that would improve what the graph knows ----
+  "GET /requests": { name: "list_requests" },
+  "GET /requests/:request_id": { name: "get_request" },
+
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
   "GET /findings": { name: "list_findings" },

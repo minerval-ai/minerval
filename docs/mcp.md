@@ -255,6 +255,7 @@ each tool's description is its route's summary plus the route it runs.
   `list_contributors`, `get_contributor`.
 - **Your account:** `get_account` (balance, entitlement, the cap list),
   `get_usage`, `list_owl_packs`, `get_owl_ledger`, `list_api_keys`.
+- **Requests:** `list_requests`, `get_request`.
 - **Tags, findings, platform health:** `get_tag`, `list_findings`,
   `get_finding`, `get_consistency_record`, `get_queue`, `list_monitors`,
   `get_monitor`.
