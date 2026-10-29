@@ -172,10 +172,10 @@
 }
 
 /* ---- claims that cut the quantity --------------------------------------- */
-.cuts { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 0.8rem; }
-.cuts td { padding: 0.5rem 0.5rem 0.5rem 0; border-top: 1px solid var(--rule); vertical-align: baseline; }
-.cuts td:first-child { font-family: var(--serif); font-size: 0.92rem; }
-.cutsWrap { overflow-x: auto; }
+.cuts { list-style: none; margin: 0; padding: 0; font-family: var(--sans); font-size: 0.8rem; }
+.cuts li { padding: 0.55rem 0; border-top: 1px solid var(--rule); }
+.cutText { font-family: var(--serif); font-size: 0.92rem; }
+.cutMeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.75rem; margin-top: 0.3rem; }
 .implied { color: var(--muted); white-space: nowrap; }
 .drift { color: var(--st-inconclusive); font-weight: 600; }
 

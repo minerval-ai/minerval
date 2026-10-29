@@ -61,7 +61,10 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
   const isQuantity = claim.kind === "quantity" && !!detail.quantity;
   const assessment =
     !isQuantity && detail.assessment && isStatus(detail.assessment.status) ? detail.assessment : null;
-  const qAssessment = isQuantity && detail.assessment?.summary ? detail.assessment : null;
+  const assessed = isQuantity ? detail.quantity?.assessed : null;
+  const qAssessment = assessed?.summary
+    ? { summary: assessed.summary, reasoning_trace: assessed.work, assessed_at: assessed.assessed_at, model: assessed.model ?? null }
+    : null;
   const anyAssessment = assessment ?? qAssessment;
   // Steward-seeded prior (#285): the parent claim's Steward's preliminary
   // credence and note. The API only serves it while the claim is unassessed;

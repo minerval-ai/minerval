@@ -1,6 +1,7 @@
 import {
   apiConfigured, fetchAttempt, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
-  fetchList, fetchOpenPrizes, fetchSearch, fetchSourcePage, fetchTag, fetchTags,
+  fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
+  fetchTag, fetchTags,
 } from "./api";
 import { getSourcePageFixture } from "./fixtures-source";
 import { REQUESTS, getRequest } from "./fixtures-kinds";
@@ -49,17 +50,22 @@ export async function loadClaim(
   }
 }
 
-// Requests (Part VIII). The API does not serve them yet, so a live
-// deployment shows none rather than the design fixtures; offline, the
-// fixtures stand in so the pages can be seen.
+// Requests (Part VIII). Offline, the fixtures stand in so the pages can be
+// seen. Live, a failure shows none rather than the design fixtures, which
+// would read as real requests.
 export async function loadRequests(): Promise<{ requests: RequestItem[]; source: DataSource }> {
   if (!apiConfigured()) return { requests: REQUESTS, source: "fixture" };
-  return { requests: [], source: "live" };
+  try {
+    return { requests: await fetchRequests(), source: "live" };
+  } catch (err) {
+    console.error("[minerval] live requests fetch failed:", err);
+    return { requests: [], source: "live" };
+  }
 }
 
 export async function loadRequest(id: string): Promise<{ request: RequestItem | null; source: DataSource }> {
   if (!apiConfigured()) return { request: getRequest(id), source: "fixture" };
-  return { request: null, source: "live" };
+  return { request: await fetchRequest(id), source: "live" };
 }
 
 // The unified per-claim history (#175). A null result with a non-null claim

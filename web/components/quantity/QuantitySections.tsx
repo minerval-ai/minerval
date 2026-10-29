@@ -233,33 +233,29 @@ export function QuantityCuts({ detail }: { detail: ClaimDetail }) {
         nodes of their own, because other claims rely on them directly. Each one&apos;s credence
         has to agree with the estimate; the figure the estimate implies is shown beside it.
       </p>
-      <div className={styles.cutsWrap}>
-        <table className={styles.cuts}>
-          <tbody>
-            {q.cuts.map((c) => {
-              const pa = q.estimate ? probAbove(q.estimate, c.value) : null;
-              const implied = pa ? (c.direction === "above" ? pa.p : 1 - pa.p) : null;
-              const drift = implied != null && c.credence != null && Math.abs(implied - c.credence) > 0.1;
-              return (
-                <tr key={c.id}>
-                  <td><Link href={`/claims/${c.id}`}>{c.text}</Link></td>
-                  <td>{c.status ? <StatusBadge status={c.status} /> : <Unassessed />}</td>
-                  <td className="mono">{c.credence != null ? `credence ${c.credence.toFixed(2)}` : ""}</td>
-                  <td className={styles.implied}>
-                    {implied != null && (
-                      <>
-                        estimate implies {pa?.tail ? (pa.tail === "below" && c.direction === "above" ? "< " : "> ") : "≈ "}
-                        {implied.toFixed(2)}
-                        {drift && <span className={styles.drift}> · out of step</span>}
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <ul className={styles.cuts}>
+        {q.cuts.map((c) => {
+          const pa = q.estimate ? probAbove(q.estimate, c.value) : null;
+          const implied = pa ? (c.direction === "above" ? pa.p : 1 - pa.p) : null;
+          const drift = implied != null && c.credence != null && Math.abs(implied - c.credence) > 0.1;
+          return (
+            <li key={c.id}>
+              <Link href={`/claims/${c.id}`} className={styles.cutText}>{c.text}</Link>
+              <div className={styles.cutMeta}>
+                {c.status ? <StatusBadge status={c.status} /> : <Unassessed />}
+                {c.credence != null && <span className="mono">credence {c.credence.toFixed(2)}</span>}
+                {implied != null && (
+                  <span className={styles.implied}>
+                    estimate implies {pa?.tail ? (pa.tail === "below" && c.direction === "above" ? "< " : "> ") : "≈ "}
+                    {implied.toFixed(2)}
+                    {drift && <span className={styles.drift}> · out of step</span>}
+                  </span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

@@ -96,7 +96,7 @@ function Answers({ q }: { q: QuestionDetail }) {
 export function QuestionView({ detail }: { detail: ClaimDetail }) {
   const { claim } = detail;
   const q = detail.question!;
-  const a = detail.assessment?.summary ? detail.assessment : null;
+  const a = q.assessment?.summary ? { ...q.assessment, summary: q.assessment.summary } : null;
   const texts = buildClaimTextMap(detail.tree);
   const standing = isStanding(q.standing) ? q.standing : null;
   const asks = q.instances.filter((i) => i.role === "asks");

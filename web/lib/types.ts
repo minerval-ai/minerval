@@ -593,9 +593,20 @@ export interface QuantityCut {
   credence: number | null;
 }
 
+/** Who estimated a quantity, when, and why: the record behind its estimate. */
+export interface QuantityAssessed {
+  summary: string | null;
+  work: string;
+  model?: string | null;
+  assessed_at: string;
+}
+
 export interface QuantityDetail {
   definition: QuantityDefinition;
   estimate: QuantityEstimate | null;
+  // Null until the quantity has been estimated. A quantity has no verdict, so
+  // the claim detail's top-level `assessment` is null for it.
+  assessed?: QuantityAssessed | null;
   estimates: EstimateInstance[];
   readings: QuantityReading[];
   cuts: QuantityCut[];
@@ -658,8 +669,21 @@ export interface QuestionInstance {
   answer_id?: string | null;
 }
 
+/** A question's current assessment: its standing, the Steward's account, and the answers it favors. */
+export interface QuestionAssessment {
+  standing: QuestionStanding;
+  summary: string | null;
+  reasoning_trace: string;
+  model?: string | null;
+  assessed_at: string;
+  favored_ids: string[];
+}
+
 export interface QuestionDetail {
   standing: QuestionStanding | null;
+  // Null until the question has been assessed; the claim detail's top-level
+  // `assessment` is null for a question.
+  assessment?: QuestionAssessment | null;
   presuppositions: QuestionNodeRef[];
   subquestions: QuestionNodeRef[];
   answers: QuestionAnswer[];
@@ -701,6 +725,8 @@ export interface RequestItem {
   // Null when open to anyone.
   addressed_to: string | null;
   bears_on: { id: string; text: string; kind: NodeKind }[];
+  // Sources it bears on: a document's full text, a corrected table.
+  bears_on_sources?: { id: string; title: string; url?: string | null }[];
   // What it bears on that the graph does not yet hold, in words.
   bears_on_text?: string | null;
   filed_by: { kind: "admin" | "contributor" | "mandate"; label: string };

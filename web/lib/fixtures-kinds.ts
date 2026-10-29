@@ -158,24 +158,15 @@ export const FLU_DEATHS: ClaimDetail = {
   },
   subclaim_count: 5,
   formalization: null, verification: null, bounty: null, attempts: [], prize_claims: [], research_runs: [],
-  assessment: {
-    id: "a-flu",
-    // A quantity's status column is not shown; its estimate is its judgment.
-    status: "unknown",
-    confidence: 0.7,
-    claim_credence: null,
-    summary: FLU_ASSESSMENT_SUMMARY,
-    reasoning_trace: FLU_WORK,
-    subclaim_summary: {},
-    assessed_at: ASSESSED,
-    model: "claude-opus-5-5",
-  },
+  // A quantity has no verdict; the record behind its estimate is quantity.assessed.
+  assessment: null,
   arguments: [
     { id: A_EXTRAP.id, name: A_EXTRAP.name, stance: "neutral", content: A_EXTRAP.content, evidence_urls: [SPREEUWENBERG.url], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_EXTRAP.evaluation, shows: A_EXTRAP.shows },
     { id: A_COMPILE.id, name: A_COMPILE.name, stance: "neutral", content: A_COMPILE.content, evidence_urls: [JOHNSON_MUELLER.url], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_COMPILE.evaluation, shows: A_COMPILE.shows },
     { id: A_LIMITS.id, name: A_LIMITS.name, stance: "neutral", content: A_LIMITS.content, evidence_urls: [], created_by: "claim_steward", created_at: CREATED, verdict: "likely", evaluation: A_LIMITS.evaluation, shows: A_LIMITS.shows },
   ],
   quantity: {
+    assessed: { summary: FLU_ASSESSMENT_SUMMARY, work: FLU_WORK, model: "claude-opus-5-5", assessed_at: ASSESSED },
     definition: FLU_DEFINITION,
     estimate: FLU_ESTIMATE,
     estimates: [
@@ -360,20 +351,19 @@ export const FLU_ORIGIN: ClaimDetail = {
   },
   subclaim_count: 7,
   formalization: null, verification: null, bounty: null, attempts: [], prize_claims: [], research_runs: [],
-  assessment: {
-    id: "a-flu-origin",
-    status: "inconclusive",
-    confidence: 0.6,
-    claim_credence: null,
-    summary:
-      "Open. Three places of origin have serious advocates, and the evidence leaves them level: [[claim:flu-origin-kansas|rural Kansas in early 1918]], [[claim:flu-origin-france|British army camps in northern France in 1916–1917]], and [[claim:flu-origin-china|northern China, carried to Europe by the Chinese Labour Corps]]. Each rests on reports of severe respiratory outbreaks before the pandemic's recognized spread, and [[claim:flu-earliest-outbreaks|none of those outbreaks has been shown to be the pandemic virus]]. The question also presupposes [[claim:flu-single-origin|a single place of origin]], which is itself unsettled; if [[claim:flu-origin-diffuse|the virus emerged gradually in several places]], the question has no one answer.",
-    reasoning_trace:
-      "The answers rule each other out, so at most one is right, and the question can lean only when the evidence separates them. What would separate them is [[claim:flu-earliest-outbreaks|the identity of the virus in the pre-1918 outbreaks]] and [[claim:flu-spring-wave-same|whether the spring 1918 wave was the same virus as the autumn's]]; the first is unknown and the second leans yes, which does not favor any one place.",
-    subclaim_summary: {},
-    assessed_at: ASSESSED,
-    model: "claude-opus-5-5",
-  },
+  // A question has no verdict; its assessment is question.assessment.
+  assessment: null,
   question: {
+    assessment: {
+      standing: "open",
+      summary:
+        "Open. Three places of origin have serious advocates, and the evidence leaves them level: [[claim:flu-origin-kansas|rural Kansas in early 1918]], [[claim:flu-origin-france|British army camps in northern France in 1916–1917]], and [[claim:flu-origin-china|northern China, carried to Europe by the Chinese Labour Corps]]. Each rests on reports of severe respiratory outbreaks before the pandemic's recognized spread, and [[claim:flu-earliest-outbreaks|none of those outbreaks has been shown to be the pandemic virus]]. The question also presupposes [[claim:flu-single-origin|a single place of origin]], which is itself unsettled; if [[claim:flu-origin-diffuse|the virus emerged gradually in several places]], the question has no one answer.",
+      reasoning_trace:
+        "The answers rule each other out, so at most one is right, and the question can lean only when the evidence separates them. What would separate them is [[claim:flu-earliest-outbreaks|the identity of the virus in the pre-1918 outbreaks]] and [[claim:flu-spring-wave-same|whether the spring 1918 wave was the same virus as the autumn's]]; the first is unknown and the second leans yes, which does not favor any one place.",
+      model: "claude-opus-5-5",
+      assessed_at: ASSESSED,
+      favored_ids: [],
+    },
     standing: "open",
     presuppositions: [
       { id: "flu-single-origin", text: "The 1918 influenza pandemic spread from a single place of origin.", status: "inconclusive" },

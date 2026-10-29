@@ -97,6 +97,16 @@ export function RequestView({ r }: { r: RequestItem }) {
               ))}
             </ul>
           ) : null}
+          {r.bears_on_sources && r.bears_on_sources.length > 0 && (
+            <ul className={styles.bears}>
+              {r.bears_on_sources.map((s) => (
+                <li key={s.id}>
+                  <span className={styles.kind}>source</span>
+                  <Link href={`/sources/${s.id}`}>{s.title}</Link>
+                </li>
+              ))}
+            </ul>
+          )}
           {r.bears_on_text && <p className={styles.bearsText}>{r.bears_on_text}</p>}
         </dd>
         <dt>Kept by</dt>
