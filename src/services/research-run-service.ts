@@ -67,6 +67,7 @@ export interface ResearchRunRow {
   status: ResearchRunStatus;
   tools: string[];
   ceiling_micro_usd: number;
+  contribution_budget_micro_usd: number;
   spent_micro_usd: number;
   turns: number;
   served_models: string[] | null;
@@ -80,12 +81,14 @@ export interface ResearchRunRow {
 const COLUMNS = `id, claim_id, grant_id, requested_by, requester_run_id, run_id, job_id, task,
   model, model_tier, effort, include_constitution, status, tools,
   ceiling_micro_usd::bigint AS ceiling_micro_usd, spent_micro_usd::bigint AS spent_micro_usd,
+  contribution_budget_micro_usd::bigint AS contribution_budget_micro_usd,
   turns, served_models, report, notebook, started_at, finished_at, error`;
 
 function normalize(row: ResearchRunRow): ResearchRunRow {
   return {
     ...row,
     ceiling_micro_usd: Number(row.ceiling_micro_usd),
+    contribution_budget_micro_usd: Number(row.contribution_budget_micro_usd ?? 0),
     spent_micro_usd: Number(row.spent_micro_usd),
     turns: Number(row.turns),
     tools: Array.isArray(row.tools) ? row.tools : [],
@@ -107,12 +110,14 @@ export async function openResearchRun(input: {
   ceilingMicroUsd: number;
   /** The request the run takes up, when a mandate funded one (Part VIII). */
   requestId?: string | null;
+  /** For a mandate's research: the delegated budget for reviewing its contributions. */
+  contributionBudgetMicroUsd?: number;
 }): Promise<ResearchRunRow> {
   const rows = await rawQuery<ResearchRunRow>(
     `INSERT INTO research_runs
        (claim_id, grant_id, requested_by, requester_run_id, job_id, task, model, model_tier,
-        effort, include_constitution, ceiling_micro_usd, request_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${COLUMNS}`,
     [
       input.claimId,
@@ -127,6 +132,7 @@ export async function openResearchRun(input: {
       input.includeConstitution,
       Math.max(1, Math.round(input.ceilingMicroUsd)),
       input.requestId ?? null,
+      Math.max(0, Math.round(input.contributionBudgetMicroUsd ?? 0)),
     ]
   );
   return normalize(rows[0]!);

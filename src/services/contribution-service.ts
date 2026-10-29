@@ -2,7 +2,8 @@
  * Contribution service -- DB operations for contributions, reviews, appeals.
  */
 import { eq, sql, desc, inArray } from "drizzle-orm";
-import { getDb, rawQuery } from "../db/client.js";
+import { getDb, rawQuery, withTransaction } from "../db/client.js";
+import { loadConfig } from "../config.js";
 import { enqueueContribution } from "./queue-service.js";
 import {
   contributions,
@@ -14,16 +15,56 @@ import {
 } from "../db/schema.js";
 
 /**
+ * The review cost a submission reserves against its run's budget until its
+ * review has run: the average real cost of recent reviews, or the
+ * configured estimate while there are none to average.
+ */
+export async function reviewCostEstimateMicroUsd(): Promise<number> {
+  const [row] = await rawQuery<{ avg: string | null }>(
+    `SELECT avg(review_cost_micro_usd)::bigint AS avg FROM (
+       SELECT review_cost_micro_usd FROM contributions
+        WHERE review_cost_micro_usd > 0
+        ORDER BY submitted_at DESC LIMIT 50) recent`
+  );
+  const avg = row?.avg == null ? 0 : Number(row.avg);
+  return avg > 0 ? avg : Math.round(loadConfig().contributionReviewEstimateUsd * 1_000_000);
+}
+
+export interface MandateContributionBudget {
+  budgetMicroUsd: number;
+  /** Real review costs of the run's reviewed contributions plus the estimate reserved for each one not yet reviewed. */
+  committedMicroUsd: number;
+}
+
+/** Where a run's delegated contribution budget stands, unreviewed submissions reserved at `estimate`. */
+export async function mandateContributionBudget(
+  researchRunId: string,
+  estimate: number,
+  run: { query: <T>(q: string, p?: unknown[]) => Promise<T[]> } = { query: rawQuery }
+): Promise<MandateContributionBudget> {
+  const [row] = await run.query<{ budget: string; committed: string }>(
+    `SELECT r.contribution_budget_micro_usd::bigint AS budget,
+            COALESCE((SELECT SUM(COALESCE(c.review_cost_micro_usd, $2::bigint))
+                        FROM contributions c WHERE c.research_run_id = r.id), 0)::bigint AS committed
+       FROM research_runs r WHERE r.id = $1`,
+    [researchRunId, estimate]
+  );
+  return { budgetMicroUsd: Number(row?.budget ?? 0), committedMicroUsd: Number(row?.committed ?? 0) };
+}
+
+/**
  * A contribution submitted by research a mandate funds (Part VIII): filed
  * under the mandate's funder account but shown as "a funded mandate", its
- * review metered to the mandate's budget job, and queued for review like
- * anyone's. Refusals come back as a message the researcher can act on.
+ * review metered to the mandate's budget job and paid from the review
+ * budget the run's Grantmaker delegated. A submission reserves the
+ * estimated cost of its review and is refused when that would exceed the
+ * budget; once reviewed, its real cost replaces the estimate. Refusals come
+ * back as a message the researcher can act on.
  */
 export async function submitMandateContribution(input: {
-  grantId: string;
-  jobId: string | null;
+  researchRunId: string;
   input: Record<string, unknown>;
-}): Promise<{ success: boolean; message: string; contribution_id?: string }> {
+}): Promise<{ success: boolean; message: string; contribution_id?: string; budget_left_usd?: number }> {
   const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const claimId = text(input.input.claim_id);
   const type = text(input.input.contribution_type);
@@ -33,25 +74,53 @@ export async function submitMandateContribution(input: {
   if (content.length < 40) return { success: false, message: "content must say what you found and what it rests on." };
   const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
   if (!node) return { success: false, message: `No active node ${claimId}.` };
-  const [grant] = await rawQuery<{ funder_user_id: string }>(`SELECT funder_user_id FROM grants WHERE id = $1`, [input.grantId]);
-  if (!grant) return { success: false, message: "The mandate behind this run no longer exists." };
   const urls = Array.isArray(input.input.evidence_urls)
     ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
     : [];
-  const contribution = await createContribution({
-    claimId,
-    contributorId: grant.funder_user_id,
-    contributionType: type,
-    content: content.slice(0, 10_000),
-    evidenceUrls: urls,
-    grantId: input.grantId,
-    fundedByJobId: input.jobId,
+  const estimate = await reviewCostEstimateMicroUsd();
+  const usd = (micro: number) => Math.round(micro / 10_000) / 100;
+
+  const outcome = await withTransaction(async (tx) => {
+    // The run row is the lock: two submissions from one run cannot both
+    // reserve the budget's last dollars.
+    const [run] = await tx.query<{ grant_id: string | null; job_id: string | null; requested_by: string }>(
+      `SELECT grant_id, job_id, requested_by FROM research_runs WHERE id = $1 FOR UPDATE`,
+      [input.researchRunId]
+    );
+    if (!run || run.requested_by !== "grantmaker" || !run.grant_id) {
+      return { success: false as const, message: "Only research a mandate funds submits contributions." };
+    }
+    const [grant] = await tx.query<{ funder_user_id: string }>(`SELECT funder_user_id FROM grants WHERE id = $1`, [run.grant_id]);
+    if (!grant) return { success: false as const, message: "The mandate behind this run no longer exists." };
+    const budget = await mandateContributionBudget(input.researchRunId, estimate, tx);
+    if (budget.committedMicroUsd + estimate > budget.budgetMicroUsd) {
+      return {
+        success: false as const,
+        message:
+          `The review budget delegated to this run is spent: $${usd(budget.committedMicroUsd)} of ` +
+          `$${usd(budget.budgetMicroUsd)} is committed, and a review is estimated at $${usd(estimate)}. ` +
+          `Put the rest of what you found in your report.`,
+      };
+    }
+    const [row] = await tx.query<{ id: string }>(
+      `INSERT INTO contributions
+         (claim_id, contributor_id, contribution_type, content, evidence_urls, grant_id, funded_by_job_id, research_run_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [claimId, grant.funder_user_id, type, content.slice(0, 10_000), urls, run.grant_id, run.job_id, input.researchRunId]
+    );
+    return {
+      success: true as const,
+      id: row!.id,
+      left: budget.budgetMicroUsd - budget.committedMicroUsd - estimate,
+    };
   });
-  await enqueueContribution({ contributionId: contribution.id });
+  if (!outcome.success) return outcome;
+  await enqueueContribution({ contributionId: outcome.id });
   return {
     success: true,
-    message: `Contribution ${contribution.id} submitted for review under the mandate.`,
-    contribution_id: contribution.id,
+    message: `Contribution ${outcome.id} submitted for review under the mandate.`,
+    contribution_id: outcome.id,
+    budget_left_usd: usd(Math.max(0, outcome.left)),
   };
 }
 

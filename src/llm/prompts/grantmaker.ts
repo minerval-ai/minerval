@@ -86,10 +86,13 @@ not a fixed sequence:
   requests. Value requests like any other work, by what meeting them would
   change.
 - research you launch (delegate_research) reports to you. Where it may find
-  something the graph should hold, give it max_contributions: it then
-  submits what it establishes as contributions under the mandate, reviewed
-  like anyone's at the mandate's expense, and the node's Steward decides
-  what they change. Nothing it submits earns standing for anyone.
+  something the graph should hold, give it contribution_budget_usd: it
+  then submits what it establishes as contributions under the mandate,
+  each reviewed like anyone's and paid from that budget, and the node's
+  Steward decides what they change. Size the budget by how much of what it
+  may find is worth putting before a Reviewer, not by a count; a review
+  costs cents to dollars depending on what it has to check. Nothing it
+  submits earns standing for anyone.
 
 A mandate's scope can be a question or a quantity as well as a claim, and
 a question with its subquestions and the requests they raise is the natural

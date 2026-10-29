@@ -291,13 +291,15 @@ export interface ResearcherInput {
   run: Pick<
     ResearchRunRow,
     "id" | "claim_id" | "grant_id" | "requested_by" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
-  > & { job_id?: string | null };
-  /**
-   * For research a mandate funds: how many contributions it may submit, each
-   * reviewed like anyone's at the mandate's expense (Part VIII). 0 or absent
-   * offers no submit_contribution tool.
-   */
-  contributionAllowance?: number;
+  > & {
+    job_id?: string | null;
+    /**
+     * For research a mandate funds: USD (micro) its Grantmaker delegated for
+     * reviewing what it submits (Part VIII). 0 or absent offers no
+     * submit_contribution tool.
+     */
+    contribution_budget_micro_usd?: number;
+  };
   claim: { id: string; text: string; domains: string[] } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
@@ -372,8 +374,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
   const takesUpRequest = run.requested_by === "request";
-  let contributionsLeft =
-    run.requested_by === "grantmaker" && run.grant_id ? Math.max(0, Math.floor(input.contributionAllowance ?? 0)) : 0;
+  const submitsContributions =
+    run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
   const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
@@ -388,8 +390,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     // further request its work shows is needed.
     ...(takesUpRequest ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL] : [RESEARCH_REPORT_TOOL]),
     // Research a mandate funds submits what the graph should hold as
-    // contributions, up to the allowance its Grantmaker delegated.
-    ...(contributionsLeft > 0 ? [SUBMIT_CONTRIBUTION_TOOL] : []),
+    // contributions, their reviews paid from the budget its Grantmaker
+    // delegated.
+    ...(submitsContributions ? [SUBMIT_CONTRIBUTION_TOOL] : []),
     webSearch.tool,
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
@@ -405,7 +408,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskInput = {
     task: run.task,
     requestedBy: run.requested_by,
-    contributionAllowance: contributionsLeft,
+    contributionBudgetUsd: submitsContributions ? (run.contribution_budget_micro_usd ?? 0) / 1_000_000 : 0,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
@@ -503,16 +506,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
     }
     if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
-      if (contributionsLeft <= 0) {
-        return JSON.stringify({ success: false, message: "This run's contribution allowance is spent. Put the rest in your report." });
-      }
-      const submitted = await submitMandateContribution({
-        grantId: run.grant_id!,
-        jobId: run.job_id ?? null,
-        input: toolInput,
-      });
-      if (submitted.success) contributionsLeft--;
-      return JSON.stringify({ ...submitted, contributions_left: contributionsLeft });
+      return JSON.stringify(await submitMandateContribution({ researchRunId: run.id, input: toolInput }));
     }
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);

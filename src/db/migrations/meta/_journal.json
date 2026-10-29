@@ -533,6 +533,13 @@
       "when": 1793294673364,
       "tag": "0075_kind_followups",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793297687253,
+      "tag": "0076_mandate_contribution_budget",
+      "breakpoints": true
     }
   ]
 }
