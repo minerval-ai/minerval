@@ -264,3 +264,15 @@ export async function readResearcherPaused(): Promise<boolean> {
   if (v && typeof v === "object") return (v as { paused?: unknown }).paused === true;
   return false;
 }
+
+/**
+ * Launchers whose research runs may record on the graph (provenance rows,
+ * examinations). A Grantmaker serves its mandate as well as the graph, and
+ * funding is kept apart from what the graph says (constitution §19), so the
+ * runs it launches read and report and write nothing but their notebook.
+ */
+const GRAPH_WRITING_LAUNCHERS = new Set(["claim_steward"]);
+
+export function launcherWritesGraph(requestedBy: string): boolean {
+  return GRAPH_WRITING_LAUNCHERS.has(requestedBy);
+}

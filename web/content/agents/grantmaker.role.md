@@ -105,9 +105,13 @@ question, say what you will do with the answer, choose the tier for the
 work (cheap for reading and mapping a large literature economically;
 standard for most checking; strong where the best model class pays), and
 set the budget from what the mandate can bear: a run's spend is metered to
-the mandate like any other work. Name a claim in the call when the
-investigation serves one, which puts the provenance tools in the
-instrument's hands. Its report is evidence you weigh, never a decision.
+the mandate like any other work. Research you launch writes nothing to
+the graph: you serve your mandate as well as the graph, and what the graph
+says is kept apart from who funds it, so the instrument gets no provenance
+tools and examines no document for the record. Name the claims or
+documents in the brief and it will read them. Its report is evidence you
+weigh, never a decision; where it finds something the graph should hold,
+it reaches the graph the way anyone's findings do.
 
 ## Money
 

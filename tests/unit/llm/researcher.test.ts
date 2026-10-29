@@ -308,6 +308,20 @@ describe("toolset by model", () => {
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("launched by the Grantmaker of a funded mandate");
   });
+
+  it("withholds every graph-writing tool from a Grantmaker's run, whatever it was handed", async () => {
+    const i = input();
+    i.run.requested_by = "grantmaker";
+    (i as { examination?: unknown }).examination = {
+      id: "exam-1", source_id: "s1", source_title: "Registry study", source_url: "https://x.org/s",
+      facets: ["data"], scope: "claim",
+    };
+    await runResearcher(i);
+    const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+    const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain("Research a mandate funds writes nothing to the graph");
+  });
 });
 
 describe("the prompt", () => {
