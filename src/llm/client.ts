@@ -457,23 +457,18 @@ export async function toolUseLoop(options: {
       continue;
     }
 
-    // A turn truncated at max_tokens can leave a server tool use (web search)
-    // half-emitted. Resubmitting that turn triggers the same 400, which would
-    // crash the whole agent run and lose its work. Stop gracefully with the
-    // best-effort result instead — the caller (e.g. the Steward) has already
-    // been told to record its conclusion before the budget runs out.
+    // A turn truncated at max_tokens is recoverable: a model that reasons in
+    // its output (GLM 5.3 Flash) hit the cap on most Steward turns and a
+    // majority of Matcher turns in the corpus run, and every one of those runs
+    // ended with no assessment or decision. Tell it what happened and let it
+    // finish, at most twice per loop; the assistant turn is replayed only when
+    // it has content (an empty one the Anthropic API rejects). A server tool
+    // use the cutoff left without its result is already gone from rawContent
+    // (providers/anthropic.ts, replayableContent), so the replay is valid with
+    // server tools in the toolset too.
     if (result.stopReason === "max_tokens") {
-      // Without server tools there is nothing half-emitted to strand, and a
-      // cutoff is recoverable: a model that reasons in its output (GLM 5.3
-      // Flash) hit the cap on most Steward turns and a majority of Matcher
-      // turns in the corpus run, and every one of those runs ended with no
-      // assessment or decision. Tell it what happened and let it finish, at
-      // most twice per loop; the assistant turn is replayed only when it has
-      // content (an empty one the Anthropic API rejects).
-      const hasServerTools = options.tools.some((t) => !("input_schema" in t));
       const provider = resolveProvider(options.model ?? DEFAULT_MODEL);
       const canResume =
-        !hasServerTools &&
         maxTokensRecoveries < 2 &&
         i < maxIter - 1 &&
         (result.rawContent.length > 0 || provider !== "anthropic");

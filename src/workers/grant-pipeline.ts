@@ -28,7 +28,11 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
-import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
+import {
+  stewardFailureSet,
+  stewardReleaseSet,
+  withStewardLease,
+} from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -362,8 +366,8 @@ export async function processNextGrantTask(
     return { status: "processed", grantId: grant.id, claimId: target.id, ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await releaseClaim(target.id, target.prior_state);
     if (err instanceof LlmBudgetExceededError || isTransientApiError(err)) {
+      await releaseClaim(target.id, target.prior_state);
       return {
         status: err instanceof LlmBudgetExceededError ? "budget" : "transient",
         grantId: grant.id,
@@ -371,9 +375,18 @@ export async function processNextGrantTask(
         error: msg,
       };
     }
-    // Genuine failure on one target: record it and let the grant continue
-    // with the next target next tick (poison claims stay the background
-    // drain's attempt accounting's problem).
+    // Genuine failure on one target: count it against the claim and let the
+    // grant continue next tick. The deepen selector re-picks the most
+    // important pending claim, which is this one again, so without the count
+    // a claim that fails every pass spent the mandate one failed pass at a
+    // time; at the cap it parks as 'error', out of the selector.
+    await rawQuery(
+      `UPDATE claims
+          SET ${stewardFailureSet("$2", "$3")},
+              updated_at = now()
+        WHERE id = $1`,
+      [target.id, target.prior_state, msg]
+    );
     await rawQuery(
       `UPDATE budget_jobs SET error = $2, updated_at = now() WHERE id = $1`,
       [grant.budget_job_id, msg]

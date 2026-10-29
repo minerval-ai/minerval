@@ -378,18 +378,57 @@ function servedModelFields(
   return { servedModel: served, fallbackRan: !served.startsWith(model) };
 }
 
+/**
+ * A turn's content as it can be sent back in the history. A server tool's
+ * use and its result arrive together in one turn, and the API rejects a
+ * history turn holding a use without its result ("`code_execution` tool use
+ * … was found without a corresponding `code_execution_tool_result` block").
+ * A turn can still come back with one: the refusal fallback keeps the
+ * declined model's output ahead of the `fallback` block, cut off wherever
+ * the classifier stopped it, and a max_tokens cutoff can end a turn
+ * mid-tool. `web_search_20260209` runs inside `code_execution`, so any agent
+ * with web search on a fallback-gated model can hit either.
+ *
+ * Such a use is dropped; everything else, the `fallback` block included,
+ * is kept in place. A cut-off use is the last block of its model's output,
+ * so dropping it never joins two thinking runs. A paused turn is left
+ * whole: its pending use is what the continuation resumes.
+ */
+export function replayableContent(
+  content: ContentBlock[],
+  stopReason: string | null
+): ContentBlock[] {
+  if (stopReason === "pause_turn") return content;
+  const answered = new Set<string>();
+  for (const block of content) {
+    const id = (block as { tool_use_id?: unknown }).tool_use_id;
+    if (block.type !== "server_tool_use" && typeof id === "string") answered.add(id);
+  }
+  const dangling = content.filter(
+    (block) => block.type === "server_tool_use" && !answered.has(block.id)
+  );
+  if (dangling.length === 0) return content;
+  console.warn(
+    `[anthropic] dropped ${dangling.length} server tool use(s) with no result ` +
+      `(stop_reason ${stopReason ?? "unknown"}): ` +
+      dangling.map((b) => `${(b as { name?: string }).name ?? "?"} ${(b as { id: string }).id}`).join(", ")
+  );
+  return content.filter((block) => !dangling.includes(block));
+}
+
 function toolCompletionResult(
   response: Anthropic.Message,
   model: string,
   usage: ProviderUsage
 ): ToolCompletionResult {
+  const content = replayableContent(response.content, response.stop_reason);
   return {
-    content: textOf(response.content),
+    content: textOf(content),
     model,
     usage: tokenUsage(usage),
     stopReason: response.stop_reason,
-    toolUses: toolUsesOf(response.content),
-    rawContent: response.content,
+    toolUses: toolUsesOf(content),
+    rawContent: content,
     container: response.container?.id ?? null,
     ...servedModelFields(response, model),
   };

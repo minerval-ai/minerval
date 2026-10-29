@@ -25,6 +25,8 @@ const { state, stewardRuns, grantorRuns, completions } = vi.hoisted(() => ({
     }>,
     specificTargets: {} as Record<string, boolean>,
     grantUpdates: [] as Array<{ sql: string; params: unknown[] }>,
+    claimUpdates: [] as Array<{ sql: string; params: unknown[] }>,
+    stewardError: null as Error | null,
     jobUpdates: [] as Array<{ sql: string; params: unknown[] }>,
     stakes: [] as unknown[],
     refunds: [] as unknown[],
@@ -64,6 +66,10 @@ vi.mock("../../../src/db/client.js", () => ({
       const id = state.openAssessRows[params[0] as string];
       return id ? [{ id }] : [];
     }
+    if (q.trimStart().startsWith("UPDATE claims") && !q.includes("WITH RECURSIVE")) {
+      state.claimUpdates.push({ sql: q, params });
+      return [];
+    }
     if (q.includes("INSERT INTO claim_stakes")) {
       state.stakes.push(params);
       return [];
@@ -84,6 +90,7 @@ vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
   runClaimSteward: vi.fn(
     async (input: { claimId: string; trigger: string }) => {
       stewardRuns.push({ claimId: input.claimId, trigger: input.trigger });
+      if (state.stewardError) throw state.stewardError;
     }
   ),
 }));
@@ -184,6 +191,8 @@ beforeEach(() => {
   state.targets = [];
   state.specificTargets = {};
   state.grantUpdates = [];
+  state.claimUpdates = [];
+  state.stewardError = null;
   state.jobUpdates = [];
   state.stakes = [];
   state.refunds = [];
@@ -231,6 +240,46 @@ describe("processNextGrantTask", () => {
     expect(state.usageContexts[1]).toEqual({
       passBudget: { microUsd: 40_000_000 - state.spent, source: "the funded mandate's uncommitted budget" },
     });
+  });
+
+  it("counts a genuine failure against the claim, parking it at the cap, and records it on the job", async () => {
+    state.grant = grant();
+    state.targets = [
+      {
+        id: "c-1",
+        prior_state: "pending",
+        decomposition_status: "pending",
+        steward_trigger: null,
+        steward_context: null,
+      },
+    ];
+    state.stewardError = Object.assign(new Error("400 invalid_request_error"), { status: 400 });
+    const r = await processNextGrantTask();
+    expect(r).toMatchObject({ status: "processed", ok: false, claimId: "c-1" });
+    const release = state.claimUpdates.at(-1)!;
+    expect(release.sql).toContain("steward_attempts = steward_attempts + 1");
+    expect(release.sql).toContain("THEN 'error'");
+    expect(release.params).toEqual(["c-1", "pending", "400 invalid_request_error"]);
+    expect(state.jobUpdates.some((u) => u.params[1] === "400 invalid_request_error")).toBe(true);
+  });
+
+  it("puts a transiently failed claim back as found, uncounted", async () => {
+    state.grant = grant();
+    state.targets = [
+      {
+        id: "c-1",
+        prior_state: "pending",
+        decomposition_status: "pending",
+        steward_trigger: null,
+        steward_context: null,
+      },
+    ];
+    state.stewardError = Object.assign(new Error("overloaded"), { status: 529 });
+    const r = await processNextGrantTask();
+    expect(r).toMatchObject({ status: "transient", claimId: "c-1" });
+    const release = state.claimUpdates.at(-1)!;
+    expect(release.sql).not.toContain("steward_attempts");
+    expect(release.params).toEqual(["c-1", "pending"]);
   });
 
   it("executes an approved agent plan item and advances the cursor", async () => {

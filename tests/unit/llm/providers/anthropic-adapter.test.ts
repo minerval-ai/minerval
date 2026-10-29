@@ -41,6 +41,7 @@ import {
   LONG_RUN_MAX_OUTPUT_TOKENS,
   TASK_BUDGETS_BETA,
   anthropicAdapter,
+  replayableContent,
   resetAnthropicClient,
 } from "../../../../src/llm/providers/anthropic.js";
 
@@ -305,6 +306,54 @@ describe("usage and served model", () => {
     });
     expect(result).not.toHaveProperty("servedModel");
     expect(result).not.toHaveProperty("fallbackRan");
+  });
+});
+
+describe("replayable content", () => {
+  const search = { type: "server_tool_use", id: "srvtoolu_1", name: "code_execution", input: {} };
+  const result = { type: "code_execution_tool_result", tool_use_id: "srvtoolu_1", content: {} };
+  const fallback = {
+    type: "fallback",
+    from: { model: MODELS.strong },
+    to: { model: MODELS.opus },
+    trigger: { type: "refusal", category: "frontier_llm" },
+  };
+  const blocks = (xs: unknown[]) => xs as Anthropic.ContentBlock[];
+
+  it("drops a declined model's server tool use left without its result, keeping the fallback block in place", async () => {
+    const declined = blocks([
+      { type: "thinking", thinking: "t", signature: "s" },
+      search,
+      fallback,
+      { type: "text", text: "The fallback's answer" },
+      { type: "tool_use", id: "t1", name: "record", input: {} },
+    ]);
+    mocks.betaCreate.mockResolvedValue(
+      response({ model: MODELS.opus, content: declined, stop_reason: "tool_use" })
+    );
+    const turn = await anthropicAdapter.completeWithTools({
+      messages,
+      tools: [TOOL],
+      model: MODELS.strong,
+      maxTokens: 64,
+    });
+    expect(turn.rawContent).toEqual([declined[0], fallback, declined[3], declined[4]]);
+    expect(turn.toolUses.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("keeps a server tool use that has its result", () => {
+    const whole = blocks([search, result, { type: "text", text: "found" }]);
+    expect(replayableContent(whole, "end_turn")).toBe(whole);
+  });
+
+  it("drops one cut off at max_tokens", () => {
+    const cut = blocks([{ type: "text", text: "a" }, search]);
+    expect(replayableContent(cut, "max_tokens")).toEqual([cut[0]]);
+  });
+
+  it("leaves a paused turn whole: the continuation resumes its pending use", () => {
+    const paused = blocks([{ type: "text", text: "a" }, search]);
+    expect(replayableContent(paused, "pause_turn")).toBe(paused);
   });
 });
 
