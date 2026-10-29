@@ -408,11 +408,20 @@ async function getClaim(claimId: string) {
   const kindRecord: Record<string, unknown> = {};
   if (claim.kind === "quantity") {
     const q = await getQuantityDetail(claimId);
+    // Figures that ingestion linked here but whose value nobody has recorded
+    // yet: get_claim_instances shows them; record_estimate with instance_id
+    // records each one's figure.
+    const [unrecorded] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM claim_instances
+        WHERE claim_id = $1 AND stance = 'states' AND stated_estimate IS NULL AND detached_at IS NULL`,
+      [claimId]
+    );
     kindRecord.quantity = {
       definition: q.definition,
       current_estimate: q.estimate,
       estimated: q.assessed,
       stated_estimates: q.estimates.length,
+      figures_not_yet_recorded: unrecorded?.n ?? 0,
       readings: q.readings,
       cuts: q.cuts,
     };

@@ -974,8 +974,8 @@ export async function figureAndAnswerChecks(
 ): Promise<{ cuts: CutCheck[]; answers: AnswerCheck[] }> {
   const minGap = opts.minGap ?? 0.15;
   const inScope = `(($1::uuid IS NULL AND $2::uuid[] IS NULL)
-      OR EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim' AND tg.subject_id = X AND tg.tag_id = $1::uuid)
-      OR X = ANY(COALESCE($2::uuid[], '{}')))`;
+      OR EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim' AND tg.subject_id = {{node}} AND tg.tag_id = $1::uuid)
+      OR {{node}} = ANY(COALESCE($2::uuid[], '{}')))`;
   const params = [scope.tagId ?? null, scope.claimIds ?? null];
   const cutRows = await rawQuery<{
     claim_id: string;
@@ -994,7 +994,7 @@ export async function figureAndAnswerChecks(
        JOIN claims q ON q.id = qc.quantity_id AND q.state = 'active'
        JOIN assessments a ON a.claim_id = qc.claim_id AND a.is_current = true AND a.claim_credence IS NOT NULL
        JOIN quantity_estimates qe ON qe.claim_id = qc.quantity_id AND qe.is_current = true
-      WHERE ${inScope.replaceAll("X", "qc.claim_id")} OR ${inScope.replaceAll("X", "qc.quantity_id")}`,
+      WHERE ${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")}`,
     params
   );
   const cuts: CutCheck[] = [];
@@ -1029,7 +1029,7 @@ export async function figureAndAnswerChecks(
        JOIN claim_relationships r ON r.parent_claim_id = q.id AND r.relation_type = 'answers'
        JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
-      WHERE q.kind = 'question' AND q.state = 'active' AND ${inScope.replaceAll("X", "q.id")}`,
+      WHERE q.kind = 'question' AND q.state = 'active' AND ${inScope.replaceAll("{{node}}", "q.id")}`,
     params
   );
   const answers: AnswerCheck[] = [];
