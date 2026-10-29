@@ -198,7 +198,9 @@ const LAUNCHER_NAMES: Record<string, string> = {
 /** The user message: who launched the run, the brief, the claim, the budget, and the toolset. */
 export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
   const launcher = LAUNCHER_NAMES[input.requestedBy] ?? "an administrator of the graph";
-  const claimLine = input.claim
+  const claimLine = input.requestedBy === "grantmaker"
+    ? "This investigation serves a mandate. Research a mandate funds writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, and reaches the graph the way anyone's findings do."
+    : input.claim
     ? `The claim this investigation serves, as the graph states it:\n"${input.claim.text}"\n(claim id ${input.claim.id}; read its record with get_claim and get_decomposition.)`
     : input.examination
       ? "This investigation serves a mandate rather than one claim, so the provenance tools that record on a claim are not in your toolset; provenance_read_source is, for reading the document."

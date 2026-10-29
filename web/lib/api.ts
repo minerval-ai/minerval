@@ -18,6 +18,7 @@ import type {
   TagSummary,
   TrajectoryPoint,
   ProvenanceStory,
+  RequestItem,
   SourceFacts,
   SourceDocument,
   Examination,
@@ -78,6 +79,7 @@ function withMathDefaults(raw: RawDetail): ClaimDetail {
     prize_claims: Array.isArray(raw.prize_claims) ? raw.prize_claims : [],
     research_runs: Array.isArray(raw.research_runs) ? raw.research_runs : [],
     tags: Array.isArray(raw.tags) ? raw.tags : [],
+    requests: Array.isArray(raw.requests) ? raw.requests : [],
   };
 }
 
@@ -117,6 +119,23 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
     ...(record ? { record: record.record } : {}),
     findings,
   };
+}
+
+// Requests (Part VIII): the index and one request with its work. The index
+// shows the ones still open to work first; a request with no node of its own
+// appears only here.
+export async function fetchRequests(limit = 100): Promise<RequestItem[]> {
+  const res = await apiGet<{ requests: RequestItem[] }>(`/requests?limit=${limit}`);
+  return res.requests;
+}
+
+export async function fetchRequest(id: string): Promise<RequestItem | null> {
+  try {
+    return await apiGet<RequestItem>(`/requests/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 400)) return null;
+    throw err;
+  }
 }
 
 // A source page (#507): the facts, the document as annotated text, and the

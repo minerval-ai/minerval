@@ -3,6 +3,7 @@ import type {
   SearchResultItem,
 } from "./types";
 import { INFLATION_PROVENANCE } from "./fixtures-provenance";
+import { KIND_CLAIMS } from "./fixtures-kinds";
 
 // Fixture data for design iteration before the API is wired in. A worked
 // example built to the constitution's structural rules: "inflation was high"
@@ -1256,6 +1257,9 @@ const CLAIMS: Record<string, ClaimDetail> = {
   [FLAGSHIP.claim.id]: FLAGSHIP,
   [LEGENDRE.claim.id]: LEGENDRE,
   [BERTRAND.claim.id]: BERTRAND,
+  // A quantity, a claim about where its value lies, and a question
+  // (constitution §2, §7a).
+  ...Object.fromEntries(KIND_CLAIMS.map((c) => [c.claim.id, c])),
 };
 
 const EVENTS: Record<string, ClaimEventsPage> = {
