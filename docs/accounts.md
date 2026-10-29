@@ -265,7 +265,8 @@ whichever entitlement read sees the user first.
 `requireAgenticQuota(op)`:
 
 - a per-caller rate limit (`AGENTIC_RATE_LIMIT_PER_HOUR`, default 30/h,
-  in-memory) as a runaway backstop;
+  in-memory) on unpriced traffic only (service calls with no acting user);
+  a user's calls are bounded by their owl balance instead;
 - an affordability **check** (balance ≥ the operation's cap) before any
   work — otherwise `402 INSUFFICIENT_OWLS` with the cap, balance, cap
   list, and packs in the body;

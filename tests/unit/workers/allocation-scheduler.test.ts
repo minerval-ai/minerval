@@ -17,7 +17,6 @@ const { state } = vi.hoisted(() => ({
     config: {
       allocationSweepIntervalHours: 6,
       stalenessBaseDays: 60,
-      stalenessMaxPerSweep: 5,
     },
   },
 }));
@@ -25,8 +24,9 @@ const { state } = vi.hoisted(() => ({
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     if (q.includes("make_interval")) {
-      const limit = params[1] as number;
-      return state.dueClaims.slice(0, limit);
+      // No LIMIT: every claim past its interval is due.
+      expect(params).toHaveLength(1);
+      return state.dueClaims;
     }
     return [];
   }),
@@ -91,7 +91,6 @@ beforeEach(() => {
   state.config = {
     allocationSweepIntervalHours: 6,
     stalenessBaseDays: 60,
-    stalenessMaxPerSweep: 5,
   };
 });
 
@@ -119,15 +118,14 @@ describe("allocationSchedulerTick", () => {
     ]);
   });
 
-  it("bounds the reassessment inflow to stalenessMaxPerSweep", async () => {
-    state.config.stalenessMaxPerSweep = 2;
+  it("re-enqueues every claim past its interval: the ledger decides which run", async () => {
     state.dueClaims = [
       { id: "c-1", days_old: 100 },
       { id: "c-2", days_old: 90 },
       { id: "c-3", days_old: 80 },
     ];
     const result = await allocationSchedulerTick(1_000_000);
-    expect(result.stalenessEnqueued).toBe(2);
+    expect(result.stalenessEnqueued).toBe(3);
   });
 
   it("runs at most once per interval", async () => {

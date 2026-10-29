@@ -28,12 +28,11 @@ import {
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
 import {
-  elicitEnabledForImportance,
   getElicitToolDefinitions,
   executeElicitTool,
   isElicitTool,
 } from "../tools/elicit-tools.js";
-import { createPangramTools, pangramEnabledForImportance } from "../tools/pangram-tools.js";
+import { createPangramTools } from "../tools/pangram-tools.js";
 import {
   executeSkillTool,
   getActiveSkillToolDefinitions,
@@ -50,7 +49,8 @@ import {
 import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
-import { withAgent, runWithUsageContext, withSkills } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills, budgetRefusal } from "../usage-context.js";
+import { runBudgetSentence } from "../prompts/turn-budget.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
@@ -240,7 +240,7 @@ async function runClaimStewardImpl(input: {
   // external evidence to assess any claim, atomic or compound (#30). The
   // server runs it on an Anthropic model; elsewhere the loop executes it
   // (tools/web-search-tool.ts).
-  const webSearch = createWebSearch(model, 5);
+  const webSearch = createWebSearch(model);
 
   // Same read/navigation set the Curator gets (#69): the Steward owns a claim's
   // structure, so it must be able to read parents, subclaims, and neighbors.
@@ -252,41 +252,26 @@ async function runClaimStewardImpl(input: {
   const claimContextTools = getClaimContextToolDefinitions();
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
-  // Elicit domain tools (#299), gated on the claim's recorded importance:
-  // scholarly search is overkill for most claims, so only the highest-
-  // importance ones (stewardElicitMinImportance, §19) even see the tools.
-  // The importance read here is the pre-run value — the Extractor's prior or
-  // a previous pass's considered score; a claim whose importance this run
-  // RAISES past the gate gets the tools on its next pass, which is the
-  // conservative direction for a real-money connector. Discovery failure
-  // degrades to no tools, never a failed run (§20).
+  // Elicit domain tools (#299): offered whenever configured, priced per
+  // call against the run's budget. Discovery failure degrades to no tools,
+  // never a failed run (§20).
   const claimRow = await getClaimById(input.claimId);
   // The node's kind decides the role (a question has a Steward of its own,
   // §7a), the tools, and what the pass must leave on the record.
   const kind = (claimRow?.kind ?? "claim") as NodeKind;
   const assessmentTool = ASSESSMENT_TOOL[kind];
   const kindRole = kind === "question" ? "question_steward" : "claim_steward";
-  const elicitTools = elicitEnabledForImportance(
-    claimRow?.importance ?? 0.5,
-    config
-  )
-    ? await getElicitToolDefinitions(config)
-    : [];
-  // Pangram (AI-writing detection, original-source search), gated the same
-  // way on the pre-run importance and capped per run inside the bundle.
-  const pangramTools = createPangramTools({
-    maxCalls: config.stewardPangramMaxCallsPerRun,
-    enabled: pangramEnabledForImportance(claimRow?.importance ?? 0.5, config),
-    config,
-  });
+  const elicitTools = await getElicitToolDefinitions(config);
+  // Pangram (AI-writing detection, original-source search), priced per
+  // word against the run's budget inside the bundle.
+  const pangramTools = createPangramTools({ config });
 
   // Domain skills (docs/mathematics.md §3.4): selected by the claim's
   // recorded domains, never by who funds the run. Their tools sit in a fixed
   // position after the Elicit tools and before web_search, so the cache
   // breakpoint on the last tool is deterministic per skill variant. There is
   // no importance gate on them: the skill text carries the judgment about
-  // when a check is worth its cost, and the per-run caps below are the
-  // backstop.
+  // when a check is worth its cost, and the run's budget prices it.
   const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
   const skills = skillsForDomains(claimDomains, "claim-steward");
   // The Lean tools are present exactly when the skill is active AND a
@@ -340,38 +325,24 @@ ${noun} already has structure; change it where what you find warrants, rather
 than starting again.`;
 
   const iterationBudget = config.stewardMaxIterations;
-  let newClaimsThisRun = 0;
-  let instancesRecordedThisRun = 0;
-  let elicitCallsThisRun = 0;
-  let leanSearchesThisRun = 0;
-  let leanElaborationsThisRun = 0;
-  let leanChecksThisRun = 0;
 
   const elicitNote =
     elicitTools.length > 0
       ? `
 
-This claim's importance clears the bar for Elicit scholarly search: the
-elicit_* tools are in your toolset (up to ${
-          config.stewardElicitMaxCallsPerRun > 0
-            ? config.stewardElicitMaxCallsPerRun
-            : "unlimited"
-        } calls this run). They are
-likely overkill even here: reach for them only if ordinary web_search proves
-insufficient for a verdict that turns on the scientific literature.`
+The elicit_* tools (scholarly search over papers and trials) are in your
+toolset, at $${config.elicitUsdPerCall.toFixed(2)} a call against this run's
+budget. For most claims web_search is enough; reach for Elicit when the
+verdict turns on the scientific literature and the claim warrants the cost.`
       : "";
 
   const pangramNote =
     pangramTools.definitions.length > 0
       ? `
 
-The Pangram tools are in your toolset (up to ${
-          config.stewardPangramMaxCallsPerRun > 0
-            ? config.stewardPangramMaxCallsPerRun
-            : "unlimited"
-        } calls this run, each billed per word): pangram_check_ai detects
-AI-generated writing, and pangram_find_sources finds web content matching a
-text.`
+The Pangram tools are in your toolset, each call billed per word against
+this run's budget: pangram_check_ai detects AI-generated writing, and
+pangram_find_sources finds web content matching a text.`
       : "";
 
 
@@ -410,13 +381,13 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 Context: ${input.context}
 
-Budget: you have up to ${iterationBudget} tool-use iterations for this stewardship.
-That is a generous backstop, not a target: use as few or as many as the claim's
-importance warrants. But it is a hard limit: make sure you have recorded an
-assessment (${assessmentTool}) and logged your decision
-(log_stewardship_decision) before you approach it, so your work is never lost
-mid-task. If you are warned that few iterations remain, stop exploring and record
-your conclusion immediately.
+Budget: ${runBudgetSentence() || "this run has no budget of its own."} Separately,
+you have up to ${iterationBudget} tool-use iterations, a backstop against a
+stuck loop, not a target. Make sure you have recorded an assessment
+(${assessmentTool}) and logged your decision (log_stewardship_decision) before
+either runs out, so your work is never lost mid-task. If you are warned that
+little budget or few iterations remain, stop exploring and record your
+conclusion immediately.
 
 ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsNote}`;
 
@@ -426,60 +397,6 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
     kind === "question"
       ? getQuestionStewardSystemPromptBlocks({ skills })
       : getClaimStewardSystemPromptBlocks({ skills });
-
-  // Per-run backstops on the Lean tools (docs/mathematics.md §6.2), beside
-  // the Elicit cap: each refusal tells the agent what to do instead.
-  const wasNotSubmitted = (result: string): boolean => {
-    try {
-      const parsed = JSON.parse(result) as { not_submitted?: unknown };
-      return parsed.not_submitted === true;
-    } catch {
-      return false;
-    }
-  };
-  const leanCapRefusal = (name: string): string | null => {
-    if (name === "lean_search") {
-      const cap = config.stewardLeanMaxSearchesPerRun;
-      if (cap > 0 && leanSearchesThisRun >= cap) {
-        return JSON.stringify({
-          success: false,
-          message:
-            `This run has already made ${leanSearchesThisRun} Mathlib searches, ` +
-            `the per-run backstop (${cap}). Work with the declarations you have ` +
-            `found, confirm the ones you intend to use with lean_elaborate, and ` +
-            `record what you could not find in your reasoning.`,
-        });
-      }
-      leanSearchesThisRun++;
-    } else if (name === "lean_elaborate") {
-      const cap = config.stewardLeanMaxElaborationsPerRun;
-      if (cap > 0 && leanElaborationsThisRun >= cap) {
-        return JSON.stringify({
-          success: false,
-          message:
-            `This run has already elaborated ${leanElaborationsThisRun} drafts, ` +
-            `the per-run backstop (${cap}). Do not draft further in this pass: ` +
-            `record the best draft and its errors in your reasoning, assess on ` +
-            `the informal evidence, and leave the formal statement to a later pass.`,
-        });
-      }
-      leanElaborationsThisRun++;
-    } else if (name === "lean_check") {
-      const cap = config.stewardLeanMaxChecksPerRun;
-      if (cap > 0 && leanChecksThisRun + 1 > cap) {
-        return JSON.stringify({
-          success: false,
-          message:
-            `This run has used ${leanChecksThisRun} of its ${cap} proof checks. ` +
-            `Do not check further in this pass: ` +
-            `assess on the checks already recorded and the informal evidence, ` +
-            `say so in your reasoning, and set marginal_yield honestly.`,
-        });
-      }
-      leanChecksThisRun += 1;
-    }
-    return null;
-  };
 
   // A run that ends its turn with no assessment recorded — GLM 5.3 Flash
   // has returned an empty end_turn after seventeen steps of structuring —
@@ -512,7 +429,7 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
     maxTokens: 16384,
     // A pure runaway backstop — judgment, not the iteration count, decides when
     // to stop. The Steward now decomposes AND assesses in one loop, so this is
-    // set high; real spend is bounded by stewardMaxRuns + the LLM budget tracker.
+    // set high; what bounds a run is its budget, shown after every turn.
     maxIterations: iterationBudget,
     iterationBudgetNotice: {
       warnWithin: 3,
@@ -538,72 +455,22 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
         return executeMatcherTool(name, toolInput, { domains: claimDomains });
       }
       // Skill tools (docs/mathematics.md §3.5): present exactly when the
-      // skill is active for this claim, capped per run beside the Elicit cap.
+      // skill is active for this claim. A proof check is billed from the
+      // checker's time, so it waits for budget like any paid tool.
       if (isSkillTool(name)) {
-        const refusal = leanCapRefusal(name);
-        if (refusal) return refusal;
-        const result = await executeSkillTool(name, toolInput, {
+        if (name === "lean_check") {
+          const refusal = budgetRefusal("A proof check", 0);
+          if (refusal) return refusal;
+        }
+        return executeSkillTool(name, toolInput, {
           role: "claim-steward",
           claimId: input.claimId,
           run: { trigger: input.trigger, context: input.context, model },
         });
-        // A submission the executor turned away for breaking the convention
-        // never reached the checker, so it is not one of the run's checks (#453).
-        if (name === "lean_check" && leanChecksThisRun > 0 && wasNotSubmitted(result)) {
-          leanChecksThisRun -= 1;
-        }
-        return result;
       }
-      // Elicit calls cost real money, not just tokens (#299/#300): a per-run
-      // backstop mirrors web_search's max_uses. The judgment about whether
-      // to call at all stays with the Steward.
-      if (isElicitTool(name)) {
-        const cap = config.stewardElicitMaxCallsPerRun;
-        if (cap > 0 && elicitCallsThisRun >= cap) {
-          return JSON.stringify({
-            success: false,
-            message:
-              `This run has already made ${elicitCallsThisRun} Elicit call(s), ` +
-              `the per-run backstop (${cap}). Work with what those searches ` +
-              `returned plus web_search, and record your assessment.`,
-          });
-        }
-        elicitCallsThisRun++;
-        return executeElicitTool(name, toolInput, config);
-      }
-      // The kinds' tools (quantities, questions, requests), under the same
-      // per-run backstops as the claim tools they parallel: a new node
-      // minted for a question counts against the new-claim cap, and a
-      // recorded figure or question instance against the instance cap.
-      if (name === "record_estimate" || name === "record_question_instance") {
-        const cap = config.stewardMaxInstancesPerRun;
-        if (cap > 0 && instancesRecordedThisRun >= cap) {
-          return JSON.stringify({
-            success: false,
-            message:
-              `This run has already recorded ${instancesRecordedThisRun} instances, the per-run ` +
-              `backstop (${cap}). Note any remaining ones in your reasoning and proceed to your assessment.`,
-          });
-        }
-        instancesRecordedThisRun++;
-      }
-      if (
-        (name === "add_answer" || name === "add_subquestion" || name === "add_presupposition") &&
-        typeof toolInput.new_text === "string" &&
-        toolInput.new_text.trim()
-      ) {
-        const cap = config.stewardMaxNewSubclaimsPerRun;
-        if (cap > 0 && newClaimsThisRun >= cap) {
-          return JSON.stringify({
-            success: false,
-            message:
-              `This run has already minted ${newClaimsThisRun} new nodes, the per-run backstop ` +
-              `(${cap}). Link existing nodes by id, note the rest in your reasoning, and proceed ` +
-              `to your assessment.`,
-          });
-        }
-        newClaimsThisRun++;
-      }
+      // Elicit calls cost real money, not just tokens (#299/#300); the
+      // executor declines a call the run's budget cannot cover.
+      if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
       const kindOutput = await executeKindTool(name, toolInput, {
         role: kindRole,
         claimId: input.claimId,
@@ -629,54 +496,6 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
       }
       const page = await executeReadPage(name, toolInput);
       if (page !== null) return page;
-      // Blast-radius backstop (#157 phase 3): cap the NEW claims one run may
-      // mint, in either direction (a subclaim below or a parent above, #428).
-      // Like the iteration cap this is a runaway guard, not a target — the
-      // judgment about how far to decompose stays with the Steward (and the
-      // importance brake bounds recursion). Linking or proposing edges to
-      // existing claims (add_relationship_edge, propose_parent_edge) is never
-      // capped.
-      if (name === "add_decomposition_edge" || name === "add_parent_claim") {
-        const cap = config.stewardMaxNewSubclaimsPerRun;
-        if (cap > 0 && newClaimsThisRun >= cap) {
-          return JSON.stringify({
-            success: false,
-            message:
-              `This run has already minted ${newClaimsThisRun} new claims, the ` +
-              `per-run backstop (${cap}). Do not create more in this pass: link any ` +
-              `remaining dependencies that already exist with add_relationship_edge ` +
-              `(or propose_parent_edge for a parent), note the rest in your ` +
-              `reasoning_trace, and proceed to your assessment. A future ` +
-              `stewardship pass can continue the decomposition.`,
-          });
-        }
-        newClaimsThisRun++;
-      }
-      // Same runaway-guard shape for instance recording (#278): capturing
-      // sightings is a cheap side effect of evidence reading, and this cap
-      // only stops a loop from farming instances instead of assessing.
-      // Corrections (#420), detaching and reattaching share the counter: one
-      // budget for touching the instance set, however it is touched. Setting
-      // the order is one call over the whole set and is not counted.
-      if (
-        name === "record_claim_instance" ||
-        name === "update_claim_instance" ||
-        name === "detach_claim_instance" ||
-        name === "reattach_claim_instance"
-      ) {
-        const cap = config.stewardMaxInstancesPerRun;
-        if (cap > 0 && instancesRecordedThisRun >= cap) {
-          return JSON.stringify({
-            success: false,
-            message:
-              `This run has already recorded, corrected or detached ` +
-              `${instancesRecordedThisRun} instances, the per-run backstop (${cap}). ` +
-              `Do not change more in this pass: note any remaining sightings or ` +
-              `corrections in your reasoning_trace and proceed to your assessment.`,
-          });
-        }
-        instancesRecordedThisRun++;
-      }
       const output = await executeStewardTool(name, toolInput, {
         trigger: input.trigger,
         context: input.context,

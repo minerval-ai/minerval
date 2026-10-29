@@ -34,7 +34,7 @@ import {
 } from "../../services/contribution-service.js";
 import { rawQuery } from "../../db/client.js";
 import { LlmBudgetExceededError } from "../errors.js";
-import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withCostMeter } from "../usage-context.js";
+import { getUsageContext, passBudgetLeftMicroUsd, runWithUsageContext, withPassBudget } from "../usage-context.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
 import {
   RESEARCH_MODEL_TIERS,
@@ -95,6 +95,7 @@ export interface ResearchToolsOptions {
  * how the work is done or what it finds.
  */
 export function getFundRequestToolDefinition(): Tool {
+  const config = loadConfig();
   return {
     name: FUND_REQUEST_TOOL_NAME,
     description:
@@ -104,7 +105,8 @@ export function getFundRequestToolDefinition(): Tool {
       "is a complete one and paid for alike: met, partly met, a negative result, cannot be met, " +
       "declined, or a recommendation to revise the request. The outcome is recorded as work on " +
       "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, paid " +
-      "from the mandate's uncommitted budget and at most what that holds. The call blocks until the work reports.",
+      "from the mandate's uncommitted budget and at most what that holds. The call blocks until the work reports " +
+      `(a wall-clock cap of ${config.researcherMaxWallMinutes} minutes applies).`,
     input_schema: {
       type: "object",
       properties: {
@@ -135,7 +137,6 @@ export function getResearchToolDefinitions(
       ? "Research is paid from this pass's own budget, and a run's budget_usd may be at most what the pass has left. "
       : "Research is paid from the mandate's uncommitted budget, and a run's budget_usd (with any " +
         "contribution_budget_usd) may be at most what that holds. ");
-  const maxRuns = config.researcherMaxRunsPerLauncherRun;
   return [
     {
       name: DELEGATE_RESEARCH_TOOL_NAME,
@@ -167,8 +168,8 @@ export function getResearchToolDefinitions(
         "Budget is in USD of metered work. " +
         funding +
         "Each result says what is left after the run. " +
-        `You may launch at most ${maxRuns} runs in this pass. The call blocks until the researcher reports (a wall ` +
-        `cap of ${config.researcherMaxWallMinutes} minutes applies). Its findings are evidence ` +
+        "The call blocks until the researcher reports (a wall-clock cap of " +
+        `${config.researcherMaxWallMinutes} minutes applies, because your run waits on it). Its findings are evidence ` +
         "you weigh, never a verdict: read the report against its sources, and record what " +
         "you conclude in your own reasoning.",
       input_schema: {
@@ -216,7 +217,7 @@ export function getResearchToolDefinitions(
             items: { type: "string" },
             description:
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", " +
-              "\"method\", \"attribution\"), at most eight.",
+              "\"method\", \"attribution\"). Each facet shares the run's budget.",
           } } : {}),
           ...(!graphWrites
             ? {
@@ -395,15 +396,17 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     let result: ResearcherResult | null = null;
     let billed = 0;
     let failure: unknown = null;
-    // The researcher runs under its own meter, so its ceiling reads only its
-    // own spend; that meter shadows the launcher's, so what it billed is
-    // added back to the launcher's below, where the launcher's action and
-    // allocation accounting read it.
+    // The researcher runs under its own meter and its own budget (its
+    // ceiling), so its ceiling and its paid tools read only its own spend;
+    // that meter shadows the launcher's, so what it billed is added back to
+    // the launcher's below, where the launcher's action and allocation
+    // accounting read it.
     const launcherMeter = ctx.meter;
     try {
       // A Grantmaker that names a claim attributes the spend to it, as the
       // Steward's context already does.
-      const metered = await runWithUsageContext(claim ? { claimId: claim.id } : {}, () => withCostMeter(() =>
+      const budget = { microUsd: Number(row.ceiling_micro_usd), source: "this research run's ceiling" };
+      const metered = await runWithUsageContext(claim ? { claimId: claim.id } : {}, () => withPassBudget(budget, () =>
         run({
           run: {
             id: row.id,
@@ -480,12 +483,6 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const effortRaw = str(input.effort);
     const effort = (EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high";
     const includeConstitution = input.include_constitution !== false;
-    const cap = config.researcherMaxRunsPerLauncherRun;
-    if (cap > 0 && launched >= cap) {
-      return refuse(
-        `This pass has already launched ${launched} research run(s), the per-run backstop (${cap}). Work with the reports you have and record what you would have delegated in your reasoning.`
-      );
-    }
     if (await readResearcherPaused()) {
       return refuse("The operator has paused the researcher. Do the work inline or leave it for a later pass.");
     }
@@ -617,10 +614,6 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
     const budgetUsd = Number(input.budget_usd);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
     const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
-    const cap = config.researcherMaxRunsPerLauncherRun;
-    if (cap > 0 && launched >= cap) {
-      return refuse(`This pass has already launched ${launched} research run(s), the per-run backstop (${cap}).`);
-    }
     if (await readResearcherPaused()) return refuse("The operator has paused the researcher.");
     const short = (await unaffordable(ceilingMicroUsd)) ?? (await checkUnfundedDailyCap(ceilingMicroUsd));
     if (short) return short;

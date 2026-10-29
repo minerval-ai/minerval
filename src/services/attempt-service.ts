@@ -435,10 +435,6 @@ export async function setSolverPaused(paused: boolean): Promise<void> {
   );
 }
 
-/** Per-section and per-notebook bounds; the notebook is a working record, not a dump. */
-export const NOTEBOOK_MAX_SECTION_CHARS = 40_000;
-export const NOTEBOOK_MAX_SECTIONS = 200;
-
 export async function writeNotebookSection(
   attemptId: string,
   section: string,

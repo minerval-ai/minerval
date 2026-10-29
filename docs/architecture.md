@@ -1089,8 +1089,9 @@ spend, the research it already launched included; a pass with no budget is
 not offered `delegate_research`. A Grantmaker pays from its mandate's
 uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
 which covers a run's `budget_usd` and any `contribution_budget_usd`; there
-is no deployment cap on either. A launcher may start at most
-`RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
+is no deployment cap on either, and no count of runs per pass; a run's
+wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
+launcher waits on it, and the launcher is told so. A durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
 it for research no funder pays for (a pass with neither a user nor a job
 on its usage context), as the LLM budget tracker's limits apply only to

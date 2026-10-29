@@ -26,7 +26,7 @@ import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
-import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -77,7 +77,7 @@ async function runAuditImpl(input: {
           : ".")
       : "";
 
-  const AUDIT_MAX_TURNS = 10;
+  const AUDIT_MAX_TURNS = RUN_TURN_GUARD;
   const userMessage = `You have been triggered to perform an audit.
 
 Audit Type: ${input.auditType}

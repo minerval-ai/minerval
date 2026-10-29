@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // No network: fetch is stubbed per test, the page reader and the meter are
-// mocked. What we verify is the gating, the per-run cap, the word cap and
+// mocked. What we verify is the gating, the budget check, the word cap and
 // metering, the result shaping, and the graceful-degradation contract (§20).
 const { mockMeterExternal, mockReadPage } = vi.hoisted(() => ({
   mockMeterExternal: vi.fn(async () => undefined),
@@ -19,12 +19,12 @@ import {
   createPangramTools,
   isPangramTool,
   pangramConfigured,
-  pangramEnabledForImportance,
   truncateToWords,
   PANGRAM_CHECK_AI_TOOL_NAME,
   PANGRAM_FIND_SOURCES_TOOL_NAME,
 } from "../../../../src/llm/tools/pangram-tools.js";
 import type { Config } from "../../../../src/config.js";
+import { withCostMeter, withPassBudget } from "../../../../src/llm/usage-context.js";
 
 const baseConfig = {
   pangramApiKey: "test-key",
@@ -34,7 +34,6 @@ const baseConfig = {
   pangramAiUsdPerWord: 0.0005,
   pangramPlagiarismUsdPerWord: 0.001,
   pangramMaxWords: 5,
-  stewardPangramMinImportance: 0.6,
 } as Config;
 const disabledConfig = { ...baseConfig, pangramApiKey: "" } as Config;
 
@@ -75,29 +74,23 @@ afterEach(() => {
 describe("pangram gating", () => {
   it("is off entirely without an API key", () => {
     expect(pangramConfigured(disabledConfig)).toBe(false);
-    expect(pangramEnabledForImportance(0.95, disabledConfig)).toBe(false);
-    expect(createPangramTools({ maxCalls: 2, config: disabledConfig }).definitions).toEqual([]);
-  });
-
-  it("enables for the Steward only at or above the importance threshold", () => {
-    expect(pangramEnabledForImportance(0.6, baseConfig)).toBe(true);
-    expect(pangramEnabledForImportance(0.59, baseConfig)).toBe(false);
+    expect(createPangramTools({ config: disabledConfig }).definitions).toEqual([]);
   });
 
   it("offers both tools when configured and enabled, none when disabled", () => {
-    const names = createPangramTools({ maxCalls: 2, config: baseConfig }).definitions.map((t) => t.name);
+    const names = createPangramTools({ config: baseConfig }).definitions.map((t) => t.name);
     expect(names).toEqual([PANGRAM_CHECK_AI_TOOL_NAME, PANGRAM_FIND_SOURCES_TOOL_NAME]);
-    const [ai, sources] = createPangramTools({ maxCalls: 2, config: baseConfig }).definitions;
+    const [ai, sources] = createPangramTools({ config: baseConfig }).definitions;
     // The price comes from config: $0.0005/word is 5¢ per 100 words.
     expect(ai!.description).toContain("Billed 5¢ per 100 words. Only the first 5 words are sent.");
     expect(sources!.description).toContain("Billed 10¢ per 100 words.");
-    expect(createPangramTools({ maxCalls: 2, enabled: false, config: baseConfig }).definitions).toEqual([]);
+    expect(createPangramTools({ enabled: false, config: baseConfig }).definitions).toEqual([]);
   });
 
   it("delegates other names with null, refuses its own names when disabled", async () => {
     expect(isPangramTool("pangram_check_ai")).toBe(true);
     expect(isPangramTool("web_search")).toBe(false);
-    const tools = createPangramTools({ maxCalls: 2, enabled: false, config: baseConfig });
+    const tools = createPangramTools({ enabled: false, config: baseConfig });
     expect(await tools.execute("web_search", {})).toBeNull();
     const out = JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "x" }))!);
     expect(out.success).toBe(false);
@@ -120,7 +113,7 @@ describe("pangram_check_ai", () => {
       .mockResolvedValueOnce(json({ task_id: "t-1" }))
       .mockResolvedValueOnce(json({ stage: "STAGE_PROCESSING" }))
       .mockResolvedValueOnce(json(aiResult));
-    const tools = createPangramTools({ maxCalls: 2, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     const out = JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "one two three four five six seven" }))!);
 
     const [submitUrl, submitInit] = fetchMock.mock.calls[0]!;
@@ -149,7 +142,7 @@ describe("pangram_check_ai", () => {
   it("reads a url instead of pasted text", async () => {
     mockReadPage.mockResolvedValue({ ok: true, text: "page words here", chars: 15 });
     fetchMock.mockResolvedValueOnce(json({ task_id: "t-2" })).mockResolvedValueOnce(json(aiResult));
-    const tools = createPangramTools({ maxCalls: 2, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     const out = JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { url: "https://x.org/a" }))!);
     expect(mockReadPage).toHaveBeenCalledWith("https://x.org/a");
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body).text).toBe("page words here");
@@ -157,7 +150,7 @@ describe("pangram_check_ai", () => {
   });
 
   it("refuses bad input without spending a call", async () => {
-    const tools = createPangramTools({ maxCalls: 1, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     expect(JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, {}))!).success).toBe(false);
     expect(JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "a", url: "https://x.org" }))!).success).toBe(false);
     mockReadPage.mockResolvedValue({ ok: false, problem: "404" });
@@ -168,7 +161,7 @@ describe("pangram_check_ai", () => {
 
   it("degrades a provider error to a tool result and meters nothing it did not accept", async () => {
     fetchMock.mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
-    const tools = createPangramTools({ maxCalls: 2, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     const out = JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "some text" }))!);
     expect(out.success).toBe(false);
     expect(out.message).toContain("401");
@@ -179,21 +172,22 @@ describe("pangram_check_ai", () => {
     fetchMock
       .mockResolvedValueOnce(json({ task_id: "t-3" }))
       .mockResolvedValueOnce(json({ stage: "STAGE_FAILED", headline: "Text too short" }));
-    const tools = createPangramTools({ maxCalls: 2, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     const out = JSON.parse((await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "hi" }))!);
     expect(out.success).toBe(false);
     expect(out.message).toContain("Text too short");
     expect(mockMeterExternal).toHaveBeenCalledTimes(1);
   });
 
-  it("caps calls per run across both tools", async () => {
-    fetchMock.mockResolvedValueOnce(json({ task_id: "t-4" })).mockResolvedValueOnce(json(aiResult));
-    const tools = createPangramTools({ maxCalls: 1, config: baseConfig, wait: noWait });
-    await tools.execute(PANGRAM_CHECK_AI_TOOL_NAME, { text: "one" });
-    const out = JSON.parse((await tools.execute(PANGRAM_FIND_SOURCES_TOOL_NAME, { text: "two" }))!);
+  it("prices a call by its words and declines one the run's budget cannot cover", async () => {
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
+    // Five words at $0.001 a word is half a cent; the run has a tenth of one.
+    const { value } = await withPassBudget({ microUsd: 1_000, source: "the test" }, () => tools.execute(PANGRAM_FIND_SOURCES_TOOL_NAME, { text: "one two three four five" }));
+    const out = JSON.parse(value!);
     expect(out.success).toBe(false);
-    expect(out.message).toContain("cap (1)");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(out.message).toContain("$0.01");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockMeterExternal).not.toHaveBeenCalled();
   });
 });
 
@@ -213,7 +207,7 @@ describe("pangram_find_sources", () => {
         })),
       })
     );
-    const tools = createPangramTools({ maxCalls: 2, config: baseConfig, wait: noWait });
+    const tools = createPangramTools({ config: baseConfig, wait: noWait });
     const out = JSON.parse((await tools.execute(PANGRAM_FIND_SOURCES_TOOL_NAME, { text: "a b c" }))!);
 
     const [url, init] = fetchMock.mock.calls[0]!;

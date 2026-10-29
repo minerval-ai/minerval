@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // The delegation tools (#298) over a mocked run service and a scripted
 // researcher: the brief is validated, the tier resolves to a model, the
 // ceiling is paid from the launcher's own budget (a Steward's pass, a
-// Grantmaker's mandate), the per-pass count, the daily cap on unfunded
+// Grantmaker's mandate) with no count of runs, the daily cap on unfunded
 // research and the pause flag refuse a launch, the run row is opened and
 // closed around the run, and the report comes back as the tool result.
 
@@ -23,7 +23,6 @@ const mocks = vi.hoisted(() => ({
     researcherStrongModel: "claude-opus-5-5",
     researcherStandardModel: "claude-sonnet-5-5",
     researcherCheapModel: "openai/gpt-6-luna",
-    researcherMaxRunsPerLauncherRun: 2,
     researcherMaxWallMinutes: 20,
     researcherMaxTurns: 60,
     owlCostMicroUsd: 1_000_000,
@@ -121,14 +120,15 @@ beforeEach(() => {
 });
 
 describe("definitions", () => {
-  it("names the tiers, where the budget comes from, and the per-pass cap, and offers claim_id only off a claim", () => {
+  it("names the tiers, where the budget comes from, and the wall cap, and offers claim_id only off a claim", () => {
     const [delegate, get] = getResearchToolDefinitions({ claimScoped: true });
     expect(delegate!.name).toBe("delegate_research");
     expect(get!.name).toBe("get_research_run");
     expect(delegate!.description).toMatch(/'strong'.*'standard'.*'cheap'/s);
     expect(delegate!.description).toContain("paid from this pass's own budget");
     expect(delegate!.description).not.toMatch(/at most \d+ per run/);
-    expect(delegate!.description).toContain("at most 2 runs");
+    expect(delegate!.description).not.toMatch(/at most \d+ runs/);
+    expect(delegate!.description).toContain("wall-clock cap of 20 minutes");
     const props = (delegate!.input_schema as { properties: Record<string, unknown> }).properties;
     expect(Object.keys(props)).toEqual([
       "task", "model_tier", "budget_usd", "effort", "include_constitution", "examine_source_id", "facets",
@@ -270,15 +270,12 @@ describe("delegate_research", () => {
     );
   }));
 
-  it("refuses past the per-pass cap, when paused, over the daily cap on unfunded research, and when disabled", () => funded(async () => {
+  it("launches without a count, and refuses when paused, over the daily cap on unfunded research, and when disabled", () => funded(async () => {
     const runResearcher = vi.fn(async () => okResult());
     const tools = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     const call = () => tools.execute("delegate_research", { task: BRIEF, model_tier: "cheap", budget_usd: 1 });
-    expect(JSON.parse((await call())!).success).toBe(true);
-    expect(JSON.parse((await call())!).success).toBe(true);
-    const third = JSON.parse((await call())!);
-    expect(third.success).toBe(false);
-    expect(third.message).toMatch(/already launched 2 research run\(s\)/);
+    // No count of launches: three in one pass are fine while the pass can pay.
+    for (let i = 0; i < 3; i++) expect(JSON.parse((await call())!).success).toBe(true);
 
     const fresh = createResearchTools({ requestedBy: "claim_steward", claimId: CLAIM, runResearcher });
     mocks.readResearcherPaused.mockResolvedValueOnce(true);

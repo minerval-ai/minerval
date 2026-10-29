@@ -1218,6 +1218,18 @@ export interface RunnableAction {
 }
 
 /**
+ * The budget a run of `action` works within: what its funders covered, or
+ * its expected cost when that is more (a covered action has met its
+ * estimate; the fallback lane's rows carry no coverage at all).
+ */
+export function actionBudgetMicroUsd(action: {
+  cost_est_micro_usd: number | string;
+  coverage_micro_usd: number | string;
+}): number {
+  return Math.max(Number(action.cost_est_micro_usd) || 0, Number(action.coverage_micro_usd) || 0);
+}
+
+/**
  * The next action the mechanism says to run, for the given kinds: among
  * covered open actions, resolve each exclusion group to its winner (most
  * backing, tie → cheapest), then take the winner with the most backing

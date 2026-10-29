@@ -72,6 +72,12 @@ export interface DirectStewardInput {
   userId?: string;
   /** Test and harness override; production ignores it unless it is the strong model. */
   model?: string;
+  /**
+   * The pass's budget when the caller knows it better than the funding
+   * job does (an action's own allocations); defaults to the job's
+   * remaining budget.
+   */
+  passBudget?: { microUsd: number; source: string };
 }
 
 export interface DirectStewardResult {
@@ -136,10 +142,13 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
   }
   const model = moneyTriggerModel(input.trigger, input.model);
   await assertTriggerToolsActive(input.trigger, input.claimId);
-  // The pass spends from the funding job's remaining budget.
-  const passBudget = input.jobId
-    ? { microUsd: await getJobRemainingMicroUsd(input.jobId), source: "the remaining budget of the job funding this run" }
-    : null;
+  // The pass spends from what its caller set, else from the funding job's
+  // remaining budget.
+  const passBudget =
+    input.passBudget ??
+    (input.jobId
+      ? { microUsd: await getJobRemainingMicroUsd(input.jobId), source: "the remaining budget of the job funding this run" }
+      : null);
   const restore = await acquireStewardLock(input.claimId);
   try {
     const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>

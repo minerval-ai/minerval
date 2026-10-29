@@ -103,6 +103,8 @@ vi.mock("../../../src/services/budget-job-service.js", () => ({
 }));
 
 vi.mock("../../../src/services/action-service.js", () => ({
+  actionBudgetMicroUsd: (a: { cost_est_micro_usd: number | string; coverage_micro_usd: number | string }) =>
+    Math.max(Number(a.cost_est_micro_usd) || 0, Number(a.coverage_micro_usd) || 0),
   ASSESS_GROUP: (claimId: string) => `assess:${claimId}`,
   completeAction: vi.fn(
     async (actionId: string, metered: number, opts: { meteredJobId?: string | null } = {}) => {
@@ -128,6 +130,8 @@ vi.mock("../../../src/services/priority-service.js", () => ({
 }));
 
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   runWithUsageContext: (ctx: unknown, fn: () => unknown) => {
     state.usageContexts.push(ctx);
     return fn();

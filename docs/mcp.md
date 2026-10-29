@@ -323,10 +323,12 @@ remote MCP server as a client, via the adapter in
   `elicit_search_trials`); the long-running report / systematic-review tools
   are deliberately excluded — that tier belongs to the researcher subagent
   (#298) if it is ever warranted.
-- Availability is gated on claim importance (§19): Elicit is likely overkill
-  for most claims, and the Steward is instructed to reach for it only when
-  ordinary `web_search` proves insufficient. Only claims at or above
-  `STEWARD_ELICIT_MIN_IMPORTANCE` (default `0.75`) are offered the tools.
+- The tools are offered whenever the connector is configured, with their
+  per-call price in each definition. Elicit is likely overkill for most
+  claims, and the Steward is instructed to reach for it only when ordinary
+  `web_search` proves insufficient and the claim warrants the cost; a call
+  the run's budget cannot cover is declined before it is sent
+  (docs/allocation.md, "Agents work to a budget they can see").
 - Provider failures degrade gracefully (§20): discovery failure omits the
   tools, a failed call returns a structured error the Steward routes around.
 
@@ -339,10 +341,8 @@ Configuration:
   `https://elicit.com/api/mcp`).
 - `ELICIT_USD_PER_CALL` — what one Elicit search costs, metered per call
   into `llm_usage` (provider `elicit`) so the caller's cost meter, its
-  ceiling, and the daily caps see it. Default `2`.
-- `STEWARD_ELICIT_MIN_IMPORTANCE` — importance gate, default `0.75`
-  (between §19's Major ≈0.6 and Central ≈0.9 anchors).
-- `STEWARD_ELICIT_MAX_CALLS_PER_RUN` — per-run backstop, default `3`.
+  ceiling, and the daily caps see it, and the price the tool states and
+  the run's budget must cover. Default `2`.
 
 In production the key comes from Secrets Manager
 (`episteme/elicit-api-key`, wired through the CDK stacks like the other

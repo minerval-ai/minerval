@@ -31,6 +31,8 @@ vi.mock("../../../src/services/search-service.js", () => ({
   findSimilarClaims: vi.fn(async () => RETRIEVED),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
+  runBudget: () => null,
+  budgetRefusal: () => null,
   withAgent: (_: string, fn: () => unknown) => fn(),
   withSkills: (_: string[], fn: () => unknown) => fn(),
 }));

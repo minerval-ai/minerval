@@ -143,8 +143,6 @@ vi.mock("../../../src/services/trace-service.js", () => ({
 const config = vi.hoisted(() => ({
   env: "test",
   solverModel: "claude-opus-5-5",
-  solverLeanMaxChecks: 60,
-  solverLeanMaxElaborations: 200,
   attemptOverageFraction: 0.25,
   leanCpuHourCostMicroUsd: 200_000,
   leanCheckOverheadMicroUsd: 20_000,
@@ -255,8 +253,6 @@ beforeEach(() => {
   svc.stamped = [];
   svc.seq = 0;
   svc.metered = [];
-  config.solverLeanMaxChecks = 60;
-  config.solverLeanMaxElaborations = 200;
 });
 
 describe("runMathSolver: the run shape", () => {
@@ -511,9 +507,7 @@ describe("runMathSolver: tools", () => {
     });
   });
 
-  it("refuses checks and elaborations past the per-attempt caps", async () => {
-    config.solverLeanMaxChecks = 1;
-    config.solverLeanMaxElaborations = 1;
+  it("runs checks and elaborations with no count: the attempt's ceiling bounds them", async () => {
     script.turns = [
       {
         tools: [
@@ -526,11 +520,7 @@ describe("runMathSolver: tools", () => {
       { tools: [report()] },
     ];
     await run();
-    expect(JSON.parse(script.outputs[0]!).success).toBe(true);
-    expect(JSON.parse(script.outputs[1]!)).toMatchObject({ success: false });
-    expect(JSON.parse(script.outputs[1]!).message).toMatch(/1 of its 1 proof checks/);
-    expect(JSON.parse(script.outputs[2]!)).toMatchObject({ success: true, ok: true });
-    expect(JSON.parse(script.outputs[3]!).message).toMatch(/cap \(1\)/);
+    for (const out of script.outputs.slice(0, 4)) expect(JSON.parse(out!).success).toBe(true);
   });
 
   it("answers a checker outage as a structured result, never a thrown error", async () => {

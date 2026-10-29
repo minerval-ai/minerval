@@ -67,8 +67,9 @@ export interface UsageContext {
    * (withPassBudget): the allocations covering a ledger action, a buyer's
    * quoted cap, a job's or a mandate's remaining budget. `meter` measures
    * the pass's own spend, so what is left is `microUsd - meter.billedMicroUsd`.
-   * An agent that pays for work out of its pass (a Steward launching the
-   * researcher) is held to it and shown it.
+   * The agent is shown it: in its task message, after every turn of the
+   * tool loop, and in the refusal of a paid tool the remainder cannot
+   * cover (runBudget, budgetRefusal below).
    */
   passBudget?: PassBudget;
 }
@@ -198,4 +199,51 @@ export async function withPassBudget<T>(
     fn
   );
   return { value, billedMicroUsd: meter.billedMicroUsd };
+}
+
+/** The enclosing run's budget and what it has spent so far, in micro-USD. */
+export interface RunBudget {
+  ceilingMicroUsd: number;
+  /** Where the money comes from, in the lane's words. */
+  source: string;
+  spentMicroUsd: number;
+  remainingMicroUsd: number;
+}
+
+/**
+ * The enclosing pass's budget read against its meter, or null when no lane
+ * set one. A lane that set a budget of nothing has set one: its pass's paid
+ * tools decline. Remaining goes negative once a pass overspends.
+ */
+export function runBudget(): RunBudget | null {
+  const budget = getUsageContext().passBudget;
+  if (!budget) return null;
+  const spent = budget.meter.billedMicroUsd;
+  return {
+    ceilingMicroUsd: budget.microUsd,
+    source: budget.source,
+    spentMicroUsd: spent,
+    remainingMicroUsd: budget.microUsd - spent,
+  };
+}
+
+/**
+ * A paid tool's check before it charges: null when the call fits the run's
+ * budget (or the run has none), else the refusal to return to the agent,
+ * saying what the call costs and what is left.
+ */
+export function budgetRefusal(tool: string, priceMicroUsd: number): string | null {
+  const budget = runBudget();
+  if (!budget) return null;
+  const price = Math.max(0, priceMicroUsd);
+  if (budget.remainingMicroUsd > 0 && price <= budget.remainingMicroUsd) return null;
+  const usd = (micro: number) => `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
+  return JSON.stringify({
+    success: false,
+    message:
+      `${tool} would cost about ${usd(price)}, and this run has ${usd(budget.remainingMicroUsd)} ` +
+      `of its ${usd(budget.ceilingMicroUsd)} budget left. Work with what you have and record ` +
+      `your conclusion; if the question needs more, say so in your reasoning, and a ` +
+      `better-funded pass can take it up.`,
+  });
 }

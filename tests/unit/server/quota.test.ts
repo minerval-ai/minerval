@@ -147,8 +147,25 @@ describe("agentic quota guard (owl economy)", () => {
     expect(mocks.checkSpend).not.toHaveBeenCalled();
   });
 
-  it("rate-limits per caller", async () => {
+  it("does not rate-limit a paying user: their balance bounds their spend", async () => {
     const app = await buildTestApp(userAuth, 2);
+    for (let i = 0; i < 3; i++) {
+      expect((await app.inject({ method: "POST", url: "/agentic" })).statusCode).toBe(200);
+    }
+  });
+
+  it("rate-limits unpriced service traffic per caller", async () => {
+    const app = await buildTestApp(
+      {
+        method: "env_key",
+        userId: null,
+        apiKeyId: null,
+        contributorExternalId: null,
+        isService: true,
+        isSession: false,
+      },
+      2
+    );
     expect(
       (await app.inject({ method: "POST", url: "/agentic" })).statusCode
     ).toBe(200);

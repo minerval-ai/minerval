@@ -104,8 +104,6 @@ vi.mock("../../../src/db/client.js", () => ({
 const config = vi.hoisted(() => ({
   env: "test",
   solverModel: "claude-opus-5-5",
-  solverLeanMaxChecks: 60,
-  solverLeanMaxElaborations: 200,
   attemptMaxIterations: 500,
   attemptMaxWallHours: 6,
   attemptOverageFraction: 0.25,

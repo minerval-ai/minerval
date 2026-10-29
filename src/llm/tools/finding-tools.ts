@@ -4,7 +4,7 @@
  *
  * Same shape as report-tools.ts (a factory yielding the definition and a
  * null-delegate executor, so each agent wires it with one spread and one
- * early return) without the counter: there is no per-run cap. The restraint
+ * early return) without the counter. The restraint
  * is the bar in the NOTING_FINDINGS prompt block; a run that notes nothing is
  * the norm, and nothing here nudges toward noting.
  *

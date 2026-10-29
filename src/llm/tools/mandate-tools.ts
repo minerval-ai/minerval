@@ -39,9 +39,6 @@ import {
 import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
 import { microUsdToOwls, capOwls } from "../../services/owl.js";
 
-/** Generous but bounded working memory: ~100KB of the agent's own notes. */
-export const WORKSPACE_MAX_CHARS = 100_000;
-
 export { READ_PAGE_TOOL_NAME };
 export const SURVEY_SCOPE_TOOL_NAME = "survey_scope";
 export const ESTIMATE_COSTS_TOOL_NAME = "estimate_costs";
@@ -179,17 +176,17 @@ export async function estimatePlanCosts(counts: {
   };
 }
 
-/** Rewrite a mandate's workspace, bounded; returns the stored length. */
+/** Rewrite a mandate's workspace; returns the stored length. */
 export async function updateGrantWorkspace(
   grantId: string,
   content: string
 ): Promise<number> {
-  const bounded = String(content ?? "").slice(0, WORKSPACE_MAX_CHARS);
+  const text = String(content ?? "");
   await rawQuery(
     `UPDATE grants SET workspace = $2, updated_at = now() WHERE id = $1`,
-    [grantId, bounded]
+    [grantId, text]
   );
-  return bounded.length;
+  return text.length;
 }
 
 export function createMandateTools(options: MandateToolOptions = {}): MandateTools {

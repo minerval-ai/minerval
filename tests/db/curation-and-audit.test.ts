@@ -126,7 +126,7 @@ describe("curation requests (#363)", () => {
     expect(await curateRow(anchor)).toMatchObject({ status: "open", kind: "curate" });
   });
 
-  it("bounds the live escalations one claim may hold", async () => {
+  it("takes every distinct escalation from one claim: the ledger, not a count, decides what runs", async () => {
     const escalator = await claim("escalator");
     const anchors = await Promise.all([1, 2, 3, 4].map((i) => claim(`bounded ${i}`)));
     const results = [];
@@ -140,8 +140,8 @@ describe("curation requests (#363)", () => {
         })
       );
     }
-    expect(results.map((r) => r.ok)).toEqual([true, true, true, false]);
-    // Repeating a live one is never refused by the bound.
+    expect(results.map((r) => r.ok)).toEqual([true, true, true, true]);
+    // Repeating a live one is a repeat, not a second request.
     const repeat = await requestCuration({
       anchorClaimId: anchors[0]!,
       source: "steward_escalation",

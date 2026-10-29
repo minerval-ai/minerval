@@ -18,18 +18,10 @@ const mocks = vi.hoisted(() => ({
     env: "test",
     stewardModel: "claude-opus-5-5",
     stewardMaxIterations: 50,
-    stewardMaxNewSubclaimsPerRun: 20,
-    stewardMaxInstancesPerRun: 10,
-    stewardElicitMinImportance: 0.75,
-    stewardElicitMaxCallsPerRun: 3,
-    stewardLeanMaxSearchesPerRun: 2,
-    stewardLeanMaxElaborationsPerRun: 1,
-    stewardLeanMaxChecksPerRun: 3,
     elicitApiKey: "",
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
     researcherEnabled: true,
-    researcherMaxRunsPerLauncherRun: 3,
     researcherMaxWallMinutes: 20,
   },
 }));
@@ -275,52 +267,27 @@ describe("Steward toolset with the mathematics tag", () => {
   });
 });
 
-describe("per-run Lean caps", () => {
-  it("refuses lean_search past STEWARD_LEAN_MAX_SEARCHES_PER_RUN", async () => {
-    const opts = await run(["mathematics"]);
-    const first = JSON.parse(await opts.executeTool("lean_search", { query: "a" }));
-    const second = JSON.parse(await opts.executeTool("lean_search", { query: "b" }));
-    const third = JSON.parse(await opts.executeTool("lean_search", { query: "c" }));
-    expect(first.message).toMatch(/stub executor reached/);
-    expect(second.message).toMatch(/stub executor reached/);
-    expect(third.success).toBe(false);
-    expect(third.message).toMatch(/already made 2 Mathlib searches, the per-run backstop \(2\)/);
-  });
-
-  it("refuses lean_elaborate past STEWARD_LEAN_MAX_ELABORATIONS_PER_RUN", async () => {
-    const opts = await run(["mathematics"]);
-    await opts.executeTool("lean_elaborate", { statement: "x" });
-    const refused = JSON.parse(await opts.executeTool("lean_elaborate", { statement: "y" }));
-    expect(refused.success).toBe(false);
-    expect(refused.message).toMatch(/elaborated 1 drafts, the per-run backstop \(1\)/);
-  });
-
-  it("caps lean_check at STEWARD_LEAN_MAX_CHECKS_PER_RUN, one per check", async () => {
+describe("Lean tools under the run's budget", () => {
+  it("has no count on searches, elaborations or checks", async () => {
     const opts = await run(["mathematics"]);
     const base = { formalization_id: "f", kind: "proof" };
-    // Every check costs one: a fresh replay is not in v1, so nothing weighs more.
-    for (let i = 0; i < 3; i++) {
-      const out = JSON.parse(await opts.executeTool("lean_check", base));
-      expect(out.message).toMatch(/stub executor reached/);
+    for (let i = 0; i < 5; i++) {
+      expect(JSON.parse(await opts.executeTool("lean_search", { query: `q${i}` })).message).toMatch(/stub executor reached/);
+      expect(JSON.parse(await opts.executeTool("lean_elaborate", { statement: `s${i}` })).message).toMatch(/stub executor reached/);
+      expect(JSON.parse(await opts.executeTool("lean_check", base)).message).toMatch(/stub executor reached/);
     }
-    const over = JSON.parse(await opts.executeTool("lean_check", base));
-    expect(over.success).toBe(false);
-    expect(over.message).toMatch(/used 3 of its 3 proof checks/);
   });
 
-  it("does not count a lean_check the executor refused before submitting (#453)", async () => {
+  it("declines a proof check once the run's budget is spent", async () => {
     const opts = await run(["mathematics"]);
-    const base = { formalization_id: "f", kind: "proof" };
-    for (let i = 0; i < 3; i++) {
-      const out = JSON.parse(await opts.executeTool("lean_check", { ...base, proof: "not-a-submission" }));
-      expect(out.not_submitted).toBe(true);
-    }
-    for (let i = 0; i < 3; i++) {
-      const out = JSON.parse(await opts.executeTool("lean_check", base));
-      expect(out.message).toMatch(/stub executor reached/);
-    }
-    const over = JSON.parse(await opts.executeTool("lean_check", base));
-    expect(over.message).toMatch(/used 3 of its 3 proof checks/);
+    const { withPassBudget, getUsageContext } = await import("../../../src/llm/usage-context.js");
+    const { value } = await withPassBudget({ microUsd: 1_000_000, source: "the test" }, async () => {
+        getUsageContext().meter!.billedMicroUsd = 1_000_000;
+        return opts.executeTool("lean_check", { formalization_id: "f", kind: "proof" });
+      });
+    const out = JSON.parse(value);
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/A proof check would cost/);
   });
 
   it("leaves publish_formalization uncapped", async () => {

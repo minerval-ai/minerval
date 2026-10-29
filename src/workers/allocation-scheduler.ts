@@ -20,10 +20,11 @@
  *
  *  4. CADENCE (#283): an assessed claim is due a fresh look after an
  *     interval that shrinks as its value grows —
- *     stalenessBaseDays / clamp(value, 0.25, 2) days — re-enqueued at most
- *     stalenessMaxPerSweep per tick: a bounded reassessment inflow, so
- *     cadence can never cascade the candidate set (#295's R<1 holds by
- *     construction). Which of them actually run stays the ledger's call.
+ *     stalenessBaseDays / clamp(value, 0.25, 2) days — and every claim past
+ *     its interval is re-enqueued. Enqueueing only makes it a candidate:
+ *     which reassessments run is the ledger's call, bounded by what the
+ *     mandates' daily rates will fund, so cadence cannot cascade spending
+ *     (#295's R<1 holds where the money is).
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
@@ -125,7 +126,7 @@ export async function allocationSchedulerTick(
 
   // Cadence knobs come from the governing mandate's allocation policy.
   const policy = await getEffectiveAllocationPolicy();
-  if (policy.staleness_base_days > 0 && policy.staleness_max_per_sweep > 0) {
+  if (policy.staleness_base_days > 0) {
     // Most-overdue first, judged against each claim's own cadence.
     const due = await rawQuery<{ id: string; days_old: number }>(
       `SELECT c.id,
@@ -137,9 +138,8 @@ export async function allocationSchedulerTick(
           AND c.steward_state = 'done'
           AND a.assessed_at < now() - make_interval(days =>
                 ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
-        ORDER BY a.assessed_at ASC
-        LIMIT $2`,
-      [policy.staleness_base_days, policy.staleness_max_per_sweep]
+        ORDER BY a.assessed_at ASC`,
+      [policy.staleness_base_days]
     );
     for (const claim of due) {
       await enqueueSteward({

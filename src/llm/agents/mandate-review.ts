@@ -67,7 +67,7 @@ import {
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
 import { getLookoutManagementToolDefinitions } from "../tools/lookout-management-tools.js";
-import { turnBudgetLine } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import {
   listMandateLookoutFlags,
   summarizeLookouts,
@@ -77,8 +77,8 @@ export interface MandateReviewResult {
   note: string;
   valuationsWritten: number;
   planItemsAdded: number;
-  /** The agent judged one pass wasn't enough: run another now (bounded by
-   * the passes-per-day funding cap, not by refusing the request). */
+  /** The agent judged one pass wasn't enough: run another now (funded out
+   * of the mandate's day like the rest of its work). */
   continueRequested: boolean;
 }
 
@@ -128,11 +128,26 @@ async function runMandateReviewImpl(input: {
     id: grant.id,
     budgetJobId: grant.budget_job_id,
   });
+  // Today's draw on the daily rate, so a decision to chain another pass is
+  // made knowing what the day has left for everything else.
+  const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
+    `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS allocated,
+            COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
+       FROM action_allocations al
+       LEFT JOIN actions a ON a.id = al.action_id
+      WHERE al.grant_id = $1
+        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+    [grant.id]
+  ).catch(() => []);
+  const today = {
+    allocatedMicroUsd: Number(todayRow?.allocated ?? 0),
+    reviewPasses: Number(todayRow?.passes ?? 0),
+  };
 
   // Web search on every provider: the server runs it on an Anthropic model,
   // the loop executes it elsewhere (tools/web-search-tool.ts).
   const model = input.model ?? config.grantmakerModel;
-  const webSearch = createWebSearch(model, 5);
+  const webSearch = createWebSearch(model);
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -248,8 +263,7 @@ async function runMandateReviewImpl(input: {
               "Knobs to set: contestation_floor, " +
               "staleness_saturation_days, user_provenance_boost, " +
               "strong_gain_multiplier, est_steward_run_cost_owls, " +
-              "est_steward_run_cost_strong_owls, staleness_base_days, " +
-              "staleness_max_per_sweep.",
+              "est_steward_run_cost_strong_owls, staleness_base_days.",
           },
           note: {
             type: "string",
@@ -371,8 +385,9 @@ async function runMandateReviewImpl(input: {
       name: "continue_review",
       description:
         "Declare this pass finished but the work not: another review pass " +
-        "runs right away (funded from your escrow, bounded by the daily " +
-        "pass cap). Use it when the mission genuinely needs more passes " +
+        "runs right away, funded from your escrow out of today's room under " +
+        "your daily rate, the same room your assessments and lookouts draw " +
+        "on (the briefing says what is left). Use it when the mission genuinely needs more passes " +
         "today — enumerating a large source backlog, a territory survey " +
         "in progress. Update your workspace first so the next pass starts " +
         "where this one stopped.",
@@ -492,7 +507,7 @@ async function runMandateReviewImpl(input: {
       `have learned about allocation itself warrants it ` +
       `(update_allocation_policy)`
     : `revise your valuations over the open ledger`;
-  const REVIEW_PASS_MAX_TURNS = 24;
+  const REVIEW_PASS_MAX_TURNS = RUN_TURN_GUARD;
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -502,7 +517,12 @@ async function runMandateReviewImpl(input: {
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
     `${microUsdToOwls(committed)} committed (metered + allocated + regranted + held in bounties), ` +
     `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
-    `(yours to set). Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
+    `(yours to set)` +
+    (Number(grant.daily_budget_micro_usd) > 0
+      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is allocated so far today ` +
+        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included`
+      : ``) +
+    `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +

@@ -28,6 +28,7 @@
  * mechanism prices and the mandate's allocator funds or not, and its flags
  * are recorded so its precision can be read (lookout-service.ts).
  */
+import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -71,15 +72,6 @@ export interface LookoutRunResult {
   eventsConsumed: number;
 }
 
-/** Tool calls per run: a watch, not a survey. */
-const MAX_ITERATIONS = 16;
-/**
- * A lookout with feeds also has an inbox to work through, so its run gets
- * more turns; what bounds its spending is the run's metered cost, not the
- * number of calls.
- */
-const MAX_ITERATIONS_WITH_FEEDS = 32;
-const WEB_SEARCH_MAX_USES = 6;
 
 export function runLookout(
   input: Parameters<typeof runLookoutImpl>[0]
@@ -112,13 +104,15 @@ async function runLookoutImpl(input: {
   // Model: the lookout's own pin, else the cheap default. Web search comes
   // with either (tools/web-search-tool.ts).
   const model = input.model ?? lookout.model ?? config.lookoutModel;
-  const webSearch = createWebSearch(model, WEB_SEARCH_MAX_USES);
+  const webSearch = createWebSearch(model);
 
   const events = await pendingLookoutEvents(lookout.id);
   const recentFlags = await listLookoutFlags(lookout.id, { limit: 20 });
   const reportTools = createReportTools({ model });
   const feeds = await lookoutFeedSummaries(lookout.id);
-  const maxIterations = feeds.length > 0 ? MAX_ITERATIONS_WITH_FEEDS : MAX_ITERATIONS;
+  // What bounds a run is its metered cost against the budget its action
+  // carries; the turn cap only halts a loop that has stopped spending.
+  const maxIterations = RUN_TURN_GUARD;
 
   let flagsRaised = 0;
   let ingestsProposed = 0;
@@ -346,7 +340,7 @@ async function runLookoutImpl(input: {
     `### Your delegated bounds\n\n` +
     `- A flag's urgency is clamped to ${lookout.max_value}/10 on the mandate's ledger.\n` +
     `- You may propose at most ${lookout.max_ingests_per_run} ingest${lookout.max_ingests_per_run === 1 ? "" : "s"} this run.\n` +
-    `- You have about ${maxIterations} tool turns and ${WEB_SEARCH_MAX_USES} web searches.\n` +
+    `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
     (feeds.length > 0

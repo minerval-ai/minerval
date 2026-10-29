@@ -93,8 +93,9 @@ with a budget and a mission would need:
   ledger;
 - **pace itself** (set_daily_rate) and **chain passes**
   (continue_review): a pass that has more to do runs another immediately,
-  bounded by MANDATE_REVIEW_MAX_PASSES_PER_DAY on the funding side — cost
-  discipline lives in the mechanism, never in narrowed affordances;
+  funded out of the mandate's day like the rest of its work, and the
+  briefing says what the day has left — cost discipline lives in the
+  money the agent can see, never in narrowed affordances;
 - **move money** (regrant, spawn_mandate — below) and **close the
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
@@ -159,10 +160,10 @@ nothing about relevance.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
 waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
-mandate's escrow like a review pass, capped per run
-(`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) and bounded
-per day (`LOOKOUT_MAX_RUNS_PER_DAY`): a burst of events waits for the
-next funded run, which reads them all. The engine executor runs it on
+mandate's escrow out of its day like a review pass, with a budget per run
+(`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) that the
+lookout is shown as it works. There is no count of runs a day: a burst of
+events waits for the next funded run, which reads them all. The engine executor runs it on
 the cheap tier (`LOOKOUT_MODEL`; a lookout may carry its own model). It reads
 its brief, its own workspace, and the queued inputs; then the graph
 (search, open, walk down, walk up, survey_scope, scope_sources), the
@@ -302,6 +303,32 @@ margin sitting in the owl's purchase price, losing on the occasional
 expensive run of a public good is fine. Fixed prices anywhere would
 distort the very agents that must reason in value over cost.
 
+## Agents work to a budget they can see
+
+Every metered run carries a budget on its usage context (`withPassBudget`,
+with a source the agent is shown), set by the lane that funds it: the
+allocations covering a ledger action, what is left of the background
+lane's day, a paid order's quoted cap, the remaining budget of a funding
+job, a mandate's uncommitted budget, or the operation's cap for a reader's
+request (docs/architecture.md describes the Steward lanes). The agent
+is told the figure in its task message, sees what it has spent after every
+turn (the spend line, the same one the instruments use), and gets a notice
+when most of it is gone and another when all of it is. A paid tool (web
+search, Elicit, Pangram, a proof check, a delegated researcher run) states
+its price and declines a call the remainder cannot cover, saying what the
+call would cost and what is left.
+
+That replaces counts. There is no number of searches, Elicit calls, Lean
+checks, new subclaims, reports, flags, plan items, review passes or
+lookout runs per run or per day: an agent spends its budget across its
+tools as the work warrants, and a run that needs more says so for a
+better-funded pass. What stays is short, and each item is told to the
+agent with its reason: a turn guard far above any real run (it halts a
+loop that has stopped spending, not work), the escrow-fraction limits on
+autonomous money moves (they stand against injected text, not cost), the
+researcher's wall-clock cap (its launcher's run waits on it), and the
+operator's daily circuit breakers on solver and researcher spend.
+
 ## Consistency sweeps: reading assessments against each other
 
 Each Steward reads its own claim, its subclaims and its evidence; nobody
@@ -385,8 +412,9 @@ opens or reopens the anchor's row; one funded run reads every live
 request on its anchor, as a lookout run reads its queued events, and
 consumes them when it ends. Three producers, each bounded:
 
-- a Steward's `escalate_to_curator`, at most
-  `CURATION_ESCALATIONS_PER_CLAIM` live requests from one claim;
+- a Steward's `escalate_to_curator`, one live request per concern (a
+  repeat is a repeat), with no count per claim: a request only waits on
+  the ledger until someone values and funds the curation that reads it;
 - the **reconcile-candidate scan**, a scan and not a judgment: SQL over
   embeddings pairs recently created active claims with their nearest
   unlinked neighbour above `reconcile_candidate_min_similarity`, at most
@@ -555,9 +583,10 @@ Outputs of the same estimates, not separate features:
   to do the thing at all". Paid orders always get the strong model — the
   buyer pays for the real thing.
 - **Cadence** (#283): reassess after `stalenessBaseDays / clamp(value,
-  0.25, 2)` days, with at most `STALENESS_MAX_PER_SWEEP` re-enqueued per
-  sweep: a bounded producer, so reassessment inflow can never cascade the
-  candidate set (#295's R < 1 holds structurally).
+  0.25, 2)` days. Every claim past its interval is re-enqueued, which
+  makes it a candidate and nothing more: which reassessments run is the
+  ledger's call, bounded by the mandates' daily rates, so cadence cannot
+  cascade spending (#295's R < 1 holds where the money is).
 
 ## Grantmakers: a conversation, not a form
 
@@ -875,11 +904,14 @@ and legitimate — but the unit economics must stay visible
    refund; budgets pause rather than die; unspent escrow returns.
 4. Every allocation number (caps, estimates, budgets, spend) is
    inspectable by anyone.
-5. Bounded producers everywhere: daily budgets, staleness sweeps, plan
-   sizes, per-run caps, lookout runs per day and flags per run,
-   consistency sweeps per day and flags per sweep, live curation
-   requests per claim and scan candidates per sweep — no
-   mechanism may cascade the candidate set.
+5. Bounded spending everywhere: escrows, daily rates and per-run budgets
+   bound what runs, so a producer may raise candidates freely (flags,
+   curation requests, reassessments, plan items) without cascading
+   spend. Money, not a count, is the bound wherever money can be.
+5a. An agent is told every constraint it works under, before it starts
+   and as it goes: its budget and its spend after every turn, a paid
+   tool's price, and any hard limit that remains with the reason for it.
+   No constraint is enforced on an agent that has not been told it.
 6. The Grantmaker may refuse money. Integrity outranks revenue.
 6a. A lookout raises candidates, never conclusions: it writes no
     assessment, sets no importance, moves no money, and its flags carry
