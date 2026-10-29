@@ -54,6 +54,7 @@ import {
 } from "../services/action-service.js";
 import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
 import {
+  MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
   stewardReleaseSet,
   withStewardLease,
@@ -66,11 +67,6 @@ interface StewardTaskRow {
   steward_attempts: number | null;
   queue_priority: number;
 }
-
-// After this many *genuine* (non-transient) failures a claim parks as 'error'
-// so the drain stops spinning on a truly poison claim. Transient failures
-// (API budget/credit/429/5xx/network) never count toward this — they requeue.
-const MAX_STEWARD_ATTEMPTS = 3;
 
 // If this many claims in a row fail transiently, the API itself is down (e.g. a
 // credit outage): stop the drain instead of hammering it and re-parking work.

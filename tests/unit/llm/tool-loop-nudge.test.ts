@@ -174,16 +174,34 @@ describe("toolUseLoop max_tokens recovery", () => {
     expect(result.stopReason).toBe("max_tokens");
   });
 
-  it("still stops at once when a server tool could be half-emitted", async () => {
-    createMock.mockResolvedValue(cut);
-    const result = await toolUseLoop({
+  it("resumes with server tools in play, replaying the cut turn without its dangling server tool use", async () => {
+    const cutMidSearch = {
+      content: [
+        { type: "text", text: "Searching for the trial" },
+        { type: "server_tool_use", id: "srvtoolu_1", name: "code_execution", input: {} },
+      ],
+      usage: { input_tokens: 10, output_tokens: 4096 },
+      stop_reason: "max_tokens",
+      container: { id: "cont_1" },
+    };
+    createMock.mockResolvedValueOnce(cutMidSearch).mockResolvedValueOnce(decision);
+    let final: unknown = null;
+    await toolUseLoop({
       initialMessages: [{ role: "user", content: "decide" }],
       tools: [...tools, { type: "web_search_20260209", name: "web_search", max_uses: 5 } as never],
       model: MODELS.haiku,
       maxIterations: 4,
       executeTool: async () => "ok",
+      onFinalTool: (name, input) => (name === "submit" ? (final = input) : null),
     });
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(result.stopReason).toBe("max_tokens");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const second = createMock.mock.calls[1]![0];
+    expect(second.container).toBe("cont_1");
+    expect(second.messages.at(-2)).toEqual({
+      role: "assistant",
+      content: [{ type: "text", text: "Searching for the trial" }],
+    });
+    expect(final).toEqual({ is_match: true });
   });
+
 });

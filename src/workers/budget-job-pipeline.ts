@@ -20,7 +20,11 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext } from "../llm/usage-context.js";
-import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
+import {
+  stewardFailureSet,
+  stewardReleaseSet,
+  withStewardLease,
+} from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -261,15 +265,16 @@ export async function processNextBudgetJobTask(
     return { status: "processed", jobId: job.id, claimId: target.id, ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Put the target back exactly as found; classify like the other lanes.
-    await rawQuery(
-      `UPDATE claims
-          SET ${stewardReleaseSet("$2")},
-              updated_at = now()
-        WHERE id = $1`,
-      [target.id, target.prior_state]
-    );
+    // Classify like the other lanes. Not the claim's fault: put the target
+    // back exactly as found.
     if (err instanceof LlmBudgetExceededError || isTransientApiError(err)) {
+      await rawQuery(
+        `UPDATE claims
+            SET ${stewardReleaseSet("$2")},
+                updated_at = now()
+          WHERE id = $1`,
+        [target.id, target.prior_state]
+      );
       return {
         status: err instanceof LlmBudgetExceededError ? "budget" : "transient",
         jobId: job.id,
@@ -278,9 +283,17 @@ export async function processNextBudgetJobTask(
         error: msg,
       };
     }
-    // Genuine failure on one target: skip it this pass (it stays in the
-    // subtree; the background drain's attempt accounting owns poison claims)
-    // and let the job continue with the next target next tick.
+    // Genuine failure on one target: count it against the claim and let the
+    // job continue next tick. The selector would re-pick this same claim, so
+    // at the attempt cap it parks as 'error', out of the selector, rather
+    // than spending the job one failed pass at a time.
+    await rawQuery(
+      `UPDATE claims
+          SET ${stewardFailureSet("$2", "$3")},
+              updated_at = now()
+        WHERE id = $1`,
+      [target.id, target.prior_state, msg]
+    );
     await rawQuery(
       `UPDATE budget_jobs SET updated_at = now(), error = $2 WHERE id = $1`,
       [job.id, msg]

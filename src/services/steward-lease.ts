@@ -37,6 +37,33 @@ export function stewardReleaseSet(state: string): string {
               steward_requeued = false`;
 }
 
+/**
+ * After this many genuine (non-transient) failures a claim parks as 'error',
+ * so no lane keeps paying for a pass that fails the same way every time.
+ * Transient failures (API budget/credit/429/5xx/network) never count.
+ */
+export const MAX_STEWARD_ATTEMPTS = 3;
+
+/**
+ * The SET fragment that ends a genuinely failed run: the attempt counted and
+ * the error recorded (`error`, a SQL expression), and the row back to `state`
+ * (a SQL expression, the lane's state for a retry) until the count reaches
+ * MAX_STEWARD_ATTEMPTS, then 'error'. A message that arrived mid-run still
+ * turns the row 'pending', as on any release; its pass counts as one more
+ * attempt if it fails too. The RHS reads the row's values before the update.
+ */
+export function stewardFailureSet(state: string, error: string): string {
+  return `steward_state = CASE
+                WHEN steward_state <> 'running' THEN steward_state
+                WHEN steward_requeued THEN 'pending'
+                WHEN steward_attempts + 1 >= ${MAX_STEWARD_ATTEMPTS} THEN 'error'
+                ELSE ${state}
+              END,
+              steward_requeued = false,
+              steward_error = ${error},
+              steward_attempts = steward_attempts + 1`;
+}
+
 interface HeldLease {
   claimId: string;
   actionId?: string;
