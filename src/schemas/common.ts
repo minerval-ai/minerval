@@ -80,8 +80,8 @@ export const RELATION_GUIDANCE =
   "the parent is ill-posed or beside the point rather than simply false — a " +
   "framework premise. Whether the framework is fit for the question is often " +
   "the deepest crux, disputed in print or not; when it is in doubt it still " +
-  "enters here, and the argument's evaluation carries the 'contested' " +
-  "verdict (§7). " +
+  "enters here, as a premise whose assessment bears on whether the " +
+  "argument's premises hold (§7). " +
   "'specifies': a narrower or more precise version of part of the parent. " +
   "'defines': fixes the meaning of a term in the parent, only when that " +
   "meaning is itself disputed and load-bearing.";
@@ -139,6 +139,13 @@ export const contributionTypeEnum = z.enum([
   "propose_edit",
   "add_instance",
   "propose_argument",
+  // Kinds and requests (constitution §7a, Part VIII): a source's figure for
+  // a quantity, a candidate answer to a question, a request on the node,
+  // and material offered to meet one of its requests.
+  "add_estimate",
+  "propose_answer",
+  "propose_request",
+  "answer_request",
 ]);
 
 // Intake types (#157): suggestions that would mint NEW graph content. They are
@@ -147,6 +154,10 @@ export const contributionTypeEnum = z.enum([
 // claim_id until review accepts and materializes them.
 export const intakeContributionTypeEnum = z.enum([
   "propose_claim",
+  // A question proposed directly (constitution §7a): materialized like a
+  // claim, through the Matcher, as a question node or as the claim or
+  // quantity it turns out to ask about.
+  "propose_question",
   "propose_source",
 ]);
 

@@ -8,6 +8,7 @@ import {
   stanceEnum,
   claimLinkKindEnum,
 } from "./common.js";
+import { nodeKindEnum } from "./kinds.js";
 
 // ---- Request schemas ----
 
@@ -54,7 +55,10 @@ export const claimDependentsParams = z.object({
 
 export const claimProposeBody = z.object({
   claim: z.string().min(1).max(2000),
+  // For a claim, the argument for it; for a question, why anyone reasoning
+  // about the subject would need to ask it (§7a).
   argument: z.string().min(1).max(5000),
+  kind: z.enum(["claim", "question"]).default("claim"),
 });
 
 export const claimPatchBody = z.object({
@@ -69,6 +73,8 @@ export const claimPatchBody = z.object({
 
 export const claimResponse = z.object({
   id: uuidSchema,
+  // Absent on payloads from before kinds existed, which held claims only.
+  kind: nodeKindEnum.optional(),
   text: z.string(),
   claim_type: claimTypeEnum,
   state: claimStateEnum,
@@ -134,13 +140,23 @@ export const treeNodeResponse: z.ZodType<TreeNode> = z.lazy(() =>
     // The argument's written form (issue #129): brief prose with inline
     // [[claim:<uuid>]] references, stating how the grouped subclaims combine.
     argument_content: z.string().nullable(),
-    // The steward's current evaluation of the argument (issue #173): whether
-    // the inference goes through granting its premises (verdict: holds |
-    // holds_with_caveats | fails | contested) and which premises bear the
-    // weight (prose with inline [[claim:<uuid>]] references). Null until the
-    // steward has evaluated the argument.
+    // The steward's current evaluation of the argument (issues #173, #540):
+    // how far the conclusion follows if the premises hold (verdict: certain |
+    // likely | slight | none), whether the argument is decisive as its
+    // premises now stand, and which premises bear the weight (prose with
+    // inline [[claim:<uuid>]] references). Null until the steward has
+    // evaluated the argument.
     argument_verdict: z.string().nullable(),
+    argument_decisive: z.boolean().nullable().optional(),
     argument_evaluation: z.string().nullable(),
+    // Kinds (constitution §2, §7a): what an argument about a quantity shows
+    // about its value, the node's kind, a quantity's current estimate and
+    // unit, and a question's standing. Optional so older payloads parse.
+    argument_shows: z.unknown().nullable().optional(),
+    node_kind: nodeKindEnum.optional(),
+    estimate: z.unknown().nullable().optional(),
+    unit: z.unknown().nullable().optional(),
+    standing: z.string().nullable().optional(),
     children: z.array(treeNodeResponse),
     // Set (true) only on a repeated occurrence of a shared subclaim: the graph
     // is a DAG, and the node's children are rendered at its first occurrence
@@ -170,7 +186,13 @@ export interface TreeNode {
   argument_stance: string | null;
   argument_content: string | null;
   argument_verdict: string | null;
+  argument_decisive?: boolean | null;
   argument_evaluation: string | null;
+  argument_shows?: unknown | null;
+  node_kind?: "claim" | "quantity" | "question";
+  estimate?: unknown | null;
+  unit?: unknown | null;
+  standing?: string | null;
   children: TreeNode[];
   subtree_collapsed?: boolean;
   children_truncated?: boolean;
@@ -203,8 +225,11 @@ export const claimDetailResponse = z.object({
         evidence_urls: z.array(z.string()),
         created_by: z.string(),
         created_at: z.string(),
-        // Steward evaluation of the inference (issue #173); null until judged.
+        // Steward evaluation of the inference (issues #173, #540): how far
+        // the conclusion follows if the premises hold, and whether the
+        // argument is decisive as its premises now stand. Null until judged.
         verdict: z.string().nullable().optional(),
+        decisive: z.boolean().nullable().optional(),
         evaluation: z.string().nullable().optional(),
       })
     )

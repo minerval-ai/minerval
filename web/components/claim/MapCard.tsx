@@ -46,21 +46,21 @@ export function MapCard({ claimId, tree }: { claimId: string; tree?: TreeNode })
         {/* text-line hints inside the focus card */}
         <line x1={focusX + 9} y1={focusY + 9.5} x2={focusX + focusW - 9} y2={focusY + 9.5} stroke="var(--rule)" strokeWidth="1.6" />
         <line x1={focusX + 9} y1={focusY + 15.5} x2={focusX + focusW - 26} y2={focusY + 15.5} stroke="var(--rule)" strokeWidth="1.6" />
-        {children.map((c) => c.bounty_micro_usd != null ? (
+        {children.map((c, i) => c.bounty_micro_usd != null ? (
           <circle
-            key={`ring-${c.id}`} cx={xs[children.indexOf(c)]} cy={rowY} r={dotR + 3}
+            key={`ring-${c.id}:${i}`} cx={xs[i]} cy={rowY} r={dotR + 3}
             fill="none" stroke="var(--ink-soft)" strokeWidth="1"
           />
         ) : null)}
         {children.map((c, i) =>
           c.assessment_status ? (
             <circle
-              key={c.id} cx={xs[i]} cy={rowY} r={dotR}
+              key={`${c.id}:${i}`} cx={xs[i]} cy={rowY} r={dotR}
               fill={`var(--st-${c.assessment_status})`} opacity="0.85"
             />
           ) : (
             <circle
-              key={c.id} cx={xs[i]} cy={rowY} r={dotR}
+              key={`${c.id}:${i}`} cx={xs[i]} cy={rowY} r={dotR}
               fill="none" stroke="var(--st-unassessed)" strokeDasharray="2 1.6"
             />
           ),

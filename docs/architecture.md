@@ -203,8 +203,10 @@ reasoning. A single claim routinely has several:
   independently by the CMB, stellar evolution, and nucleosynthesis.
 
 Forcing these into one flat set of edges would lose the structure of which
-subclaim belongs to which line of reasoning. An argument has a `stance` (`for`,
-`against`, `neutral`), an optional `name` and `description` (a short label),
+subclaim belongs to which line of reasoning. An argument has a `stance` (`for`
+or `against`: its conclusion is the claim or the claim's denial; older rows may
+carry `neutral`, which Stewards no longer record), an optional `name` and
+`description` (a short label),
 its `content` (the written form, below), any `evidence_urls`, and provenance.
 
 **The written form.** A name is not an argument: the grouping records *which*
@@ -225,13 +227,23 @@ claim texts ("therefore", "because", "given that") lives here and only here.
 **The evaluation.** The written form deliberately withholds judgment; the
 judgment lives in a separate steward-maintained evaluation
 (`argument_evaluations`, one `is_current` row per argument with prior rows
-kept as history). It records a verdict on the inference itself: `holds`,
-`holds_with_caveats`, `fails`, or `contested` (the framework's validity is
-itself live-disputed), plus two to four sentences of reader-facing prose
-saying whether the inference goes through granting its premises and which
-premises, given their current assessments, the argument lives or dies on,
-with those load-bearing premises linked inline exactly as in the written
-form. The evaluation is derived within the claim's assessment process, not
+kept as history). It rates the inference itself (#540): how far the
+conclusion follows if the premises hold, as `certain` (it follows
+necessarily), `likely` (much more likely, not guaranteed), `slight` (the
+premises bear on it only a little) or `none` (no real support even if they
+are true). The rating is worded conditionally on every surface ("certain if
+the premises hold") because it is not a verdict on the conclusion: whether
+the premises hold is read from their own assessments and shown beside it. An
+evaluation may also mark the argument `decisive`: the Steward's judgment that,
+taken alone and with its premises as they are now assessed, it settles its
+conclusion. The mark lapses with its premises, and the claim's status has to
+agree with it. Beside the rating sit two to four sentences of reader-facing
+prose saying how far the inference goes and which premises, given their
+current assessments, the argument lives or dies on, with those load-bearing
+premises linked inline exactly as in the written form. Evaluations written
+under the earlier scale (`holds`, `holds_with_caveats`, `fails`,
+`contested`) were retired as history rather than relabelled, since none of
+those values maps cleanly onto the new ones. The evaluation is derived within the claim's assessment process, not
 as a fire-once verdict: the Steward's `evaluate_argument` tool stamps each
 evaluation with the assessment it was derived under, so an evaluation left
 behind by a later reassessment is detectably stale, and the assessment tool's
@@ -257,9 +269,11 @@ Two design decisions follow:
 
 When the *validity of an argument's framework* is itself disputed in the
 discourse, "this framework is valid" is added as a subclaim within that
-argument, typically with an `assumes` relation, and the evaluation marks
-the verdict `contested`. The meta-dispute itself stays inside the claim
-layer, where decomposition, assessment, and contribution already operate.
+argument, typically with an `assumes` relation. The rating then judges the
+inference within the framework, and the framework's own assessment bears on
+whether the argument's premises hold, like any other premise. The
+meta-dispute itself stays inside the claim layer, where decomposition,
+assessment, and contribution already operate.
 
 ### Decomposition edges
 
@@ -305,6 +319,85 @@ history: exactly one row per claim is flagged `is_current`, enforced by a
 partial unique index, so the timeline of *why* a claim's status changed is
 fully recoverable. The statuses and how they propagate are described under
 [Assessment](#assessment) below.
+
+### Node kinds: quantities and questions
+
+A node in the graph is one of three kinds (constitution §2, §7a), recorded in
+`claims.kind`: a **claim** about a proposition, a **quantity** whose subject
+is a value, or a **question**. Every node written before kinds existed is a
+claim. A fresh claim can become a quantity or a question until it holds an
+assessment or an argument; after that, a quantity or question on the same
+subject is a new node. `assessments` stays a record of verdicts on
+propositions, so a quantity is never "verified" and a question never
+"supported".
+
+A quantity's `quantity_definitions` row says what it measures, in which
+population, under which conditions, and in what unit. The graph's estimate of
+it lives in `quantity_estimates`, append-only with one `is_current` row like
+assessments, as a distribution at the precision the evidence supports
+(a distribution by quantiles, an interval, a bound, an order of magnitude, a
+single figure, or no figure with a reason) and the share of probability that
+lies outside every value. A source's statement of the value is an instance
+with stance `states` and its figure in `stated_estimate`, linked to the
+argument that rests on it. `quantity_readings` records readings of
+instruments taken to indicate the quantity, with what was actually measured
+and how far it bears. An argument about a quantity records what it `shows`
+about the value (a figure, a range, a side of a figure, or words alone) in
+place of a stance. A claim about which side of a figure a quantity lies is
+recorded in `quantity_cuts`, so its credence can be checked against the
+estimate.
+
+A question's candidate answers (claims or quantities) are `answers` edges
+from the question, carrying an `answer_basis` (quality, prominence, or both);
+its subquestions are `part_of` edges; its presuppositions are the ordinary
+`assumes` and `requires` edges. `answer_relations` records, pair by pair,
+whether two answers exclude each other or can both hold. How well answered a
+question is lives in `question_assessments` as a standing (answered, leaning,
+open, ill-posed, unknown) with the answers it favors. A source that asks the
+question is an instance with stance `asks`; one that answers it has stance
+`answers` and names the answer node its answer matches. The vocabularies and
+the JSON shapes are in `src/schemas/kinds.ts`, and the agents' tools do not
+offer them until the tools that write them exist.
+
+### Requests
+
+A **request** (constitution Part VIII) is something someone could do that
+would improve what the graph knows: what is asked, why (what the judgments it
+bears on would become under its outcomes), and what would satisfy it. An
+administrator, a contributor, or a mandate files it; a mandate's request is
+shown as filed by "a funded mandate", never by name. Its keeper is fixed when
+it is filed: the Steward of the one node it bears on, or the Curator when it
+bears on several nodes, a source, or something the graph does not hold yet.
+`request_targets` holds what it bears on and `request_work` the work done on
+it, each with an outcome (met, partly met, negative, cannot be met, declined,
+revise); a negative result or a refusal is a complete outcome. The keeper
+decides when the request is met, and a closed request (met, declined,
+withdrawn, moot) stays closed.
+
+A mandate's Grantmaker can fund the Researcher to take up an open request
+(`fund_request`): the request is the brief, the run writes nothing to the
+graph, and its outcome is recorded as work on the request, after which the
+keeper is asked to judge it. Contributors propose requests, answers and
+estimates, and offer material for a request, through the Contribution
+Reviewer like any other contribution, and propose a question directly
+(`POST /claims/propose` with `kind: "question"`). Research a Grantmaker
+launches with `contribution_budget_usd` submits what it establishes as
+contributions under the mandate: reviewed like anyone's, with the review
+metered to the mandate's budget job, shown as "a funded mandate", and
+earning no one reputation or owls. The budget is a dollar amount of the
+mandate's budget that the Grantmaker delegates for those reviews
+(`research_runs.contribution_budget_micro_usd`). Each submission reserves
+an estimate of its review's cost (the average of recent reviews, or
+`CONTRIBUTION_REVIEW_ESTIMATE_USD` before there are any) and is refused
+when the run's committed review costs plus that estimate would exceed the
+budget; once reviewed, the real cost (`contributions.review_cost_micro_usd`)
+replaces the estimate. The budget is visible to both agents: the
+Researcher sees what is committed, what is left and what a review is
+expected to cost in its task message, after every turn and in each
+submission's result, and the Grantmaker sees the same in the
+`delegate_research` and `get_research_run` results. A review that costs
+more than estimated can carry a run somewhat past its budget.
+
 ### Formal statements and machine-checked arguments
 
 A mathematical claim may carry a **formal statement**: the graph's own
@@ -609,7 +702,17 @@ These act through tools over the life of a claim and the graph:
   adversarial second pass, minor settled ones a light touch. Decomposition
   terminates without a depth cap because shared ancestors get linked, not
   re-created; recursion is bounded economically by the importance brake, and a
-  per-run cap on newly minted subclaims backstops a single runaway pass.
+  per-run cap on newly minted subclaims backstops a single runaway pass. On a
+  quantity the same Steward keeps the definition, records the figures sources
+  state and the readings of instruments, and sets the estimate
+  (`update_quantity_estimate`) in place of a status. Any Steward may file a
+  request, and keeps the requests that bear on its node alone.
+- **Question Steward** owns a question the way a Claim Steward owns a claim,
+  in the same runner (the node's kind selects the role and tools): it keeps
+  the wording and the presuppositions, gathers the candidate answers and
+  subquestions, records where sources ask or answer the question, and gives
+  the best answer it can with the question's standing
+  (`update_question_assessment`).
 - **Curator** is the graph-level counterpart: it owns the connective tissue
   *between* claims, merging duplicates and counterparts the Matcher missed,
   splitting conflated claims (§5), and suggesting cross-claim edges for the
@@ -619,7 +722,10 @@ These act through tools over the life of a claim and the graph:
   request on an anchor claim, a mandate values and funds the row, and one
   run reads every concern waiting on the anchor. Every structural
   operation lands in an append-only reconciliation log with enough payload to
-  reverse it, and the Curator never overrides a Steward's verdict.
+  reverse it, and the Curator never overrides a Steward's verdict. It also
+  corrects a node created as the wrong kind (`change_node_kind`, reversible),
+  merges a claim that only states a value into its quantity, and keeps the
+  requests that bear on several nodes or on none.
 - **Contribution Reviewer** evaluates each incoming contribution against policy
   (accept, reject, or escalate), including `propose_argument` contributions,
   and flags suspected bad faith. It is also the graph's **admission gate**:
@@ -937,7 +1043,8 @@ the right choice for reading and mapping a large literature economically.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere) and `read_page`, the graph's read tools
 (`search_claims`, `get_claim`, `get_decomposition`, `get_dependents`), the
-Elicit search tools where configured, a notebook, and, on a claim-scoped
+Elicit search tools and the Pangram tools (`pangram_check_ai`,
+`pangram_find_sources`) where configured, a notebook, and, on a claim-scoped
 task, the Provenance skill's tools except `provenance_write_map`; on a
 mathematical claim with a checker configured it also has `lean_search` and
 `lean_elaborate`. The task message names the toolset, so the researcher
@@ -955,18 +1062,39 @@ holds the line. Its report is the instrument's narrative and is data: the
 launcher reads it against the sources it names and records what it
 concludes in its own reasoning (§9, §11). Provenance rows it recorded are
 reviewed by the Steward with `provenance_get_map`, and the map's reader-
-facing summary stays the Steward's to write.
+facing summary stays the Steward's to write. A run a Grantmaker launched
+writes only its notebook: a Grantmaker serves its mandate as well as the
+graph, and funding is kept apart from what the graph says (§19), so
+`delegate_research` from a mandate takes no `claim_id` and no
+`examine_source_id`, and the researcher withholds the provenance and
+examination tools from any run whose launcher is not a Claim Steward
+(`launcherWritesGraph`, `src/services/research-run-service.ts`).
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
-(at most `RESEARCHER_MAX_CEILING_OWLS`) read from the usage meter before
-every turn on both loops, a wrap-up notice at 85 percent of it, a wall cap
+from its own budget, read from the usage meter before every turn on both
+loops, a wrap-up notice at 85 percent of it, a wall cap
 (`RESEARCHER_MAX_WALL_MINUTES`) and a turn cap (`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
-then stopped. A launcher may start at most
+then stopped. What a run may be given is the launcher's own money, and
+the launcher is shown it in the tool description, in a refusal and in each
+result. A Steward pays from its pass's budget: every lane that runs a
+Steward sets one on the usage context (`withPassBudget` in
+`src/llm/usage-context.ts`), namely the allocations covering a ledger
+action, what is left of the background daily budget on the fallback lane,
+the cap a buyer was quoted for a paid order, the remaining budget of the
+job funding a money trigger or a deep decomposition, and a mandate's
+uncommitted budget. What is left is that budget less the pass's metered
+spend, the research it already launched included; a pass with no budget is
+not offered `delegate_research`. A Grantmaker pays from its mandate's
+uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
+which covers a run's `budget_usd` and any `contribution_budget_usd`; there
+is no deployment cap on either. A launcher may start at most
 `RESEARCHER_MAX_RUNS_PER_LAUNCHER_RUN` runs in one pass; a durable daily
 cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
-it; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+it for research no funder pays for (a pass with neither a user nor a job
+on its usage context), as the LLM budget tracker's limits apply only to
+unattributed calls; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
 the solver is, and while off no launcher is offered `delegate_research`;
 production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.
@@ -1271,6 +1399,12 @@ claims ──< claim_relationships >── claims     (parent / child adjacency)
   ├──< claim_links >── claims          (lateral see-also: related, rival
   │                                     explanation, counterpart; never walked)
   ├──▶ assessments        (verdict history; one is_current per claim)
+  ├──▶ quantity_definitions, quantity_estimates, quantity_readings, quantity_cuts
+  │                       (a quantity's definition and estimate history)
+  ├──▶ question_assessments, answer_relations
+  │                       (a question's standing history; how answers bear on each other)
+  ├──< request_targets >── requests ──▶ request_work
+  │                       (what someone could do; its keeper; work and outcomes)
   ├──▶ claim_instances ──▶ sources   (provenance: quote + context + stance)
   │        ├──▶ claim_instance_readings         (does the source bear its own assertion)
   │        └──▶ claim_provenance_edges ──▶ sources   (what the assertion draws on)
@@ -1347,8 +1481,10 @@ tag as a filter.
 
 A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
-contributor profiles, the topic vocabulary, and the findings feed
-(`GET /findings`, filterable by claim, tag, and importance). Anything that writes or spends model tokens
+contributor profiles, the topic vocabulary, the findings feed
+(`GET /findings`, filterable by claim, tag, and importance), and requests
+(`GET /requests`, filterable by node and state). A claim's detail carries its
+`kind`, and a quantity's or question's detail its `quantity` or `question`. Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
 graph directly: proposed claims and submitted sources become pending intake

@@ -16,7 +16,7 @@
  * presented so the transcript can be served to a service caller.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { isDirectService } from "../server/plugins/auth.js";
+import { isDirectService, presentsCredentials } from "../server/plugins/auth.js";
 import { loadAttemptExtras } from "../services/attempt-extras.js";
 import { cancelAttempt, getAttempt, getAttemptPublic } from "../services/attempt-service.js";
 import { ATTEMPT_STATS_TTL_MS, getAttemptStats } from "../services/attempt-stats-service.js";
@@ -27,7 +27,7 @@ export async function attemptsRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
   // reads stay open.
   const optionalAuth = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.headers["x-api-key"] || request.headers.authorization) {
+    if (presentsCredentials(request)) {
       await app.authenticate(request, reply);
     }
   };

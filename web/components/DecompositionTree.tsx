@@ -4,14 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
 import {
-  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta,
+  RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta, showsMark,
+  DECISIVE, premiseSummary,
   DEFINED_IN, STEWARD_SOURCE, BASIS,
   groupByArgument, topLevelEffects, type ArgumentGroup,
   seedVerity, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap, hasClaimLinks } from "@/lib/claim-links";
 import { ArgumentText } from "./ArgumentText";
-import { Swatch } from "./Assessment";
+import { Swatch, StandingBadge } from "./Assessment";
+import { describeEstimate } from "@/lib/quantity";
 import { Term } from "./Term";
 import { fmtDate } from "@/lib/format";
 
@@ -22,11 +24,10 @@ function argKey(group: ArgumentGroup): string {
   return group.id ?? "basis";
 }
 
-// The steward's verdict on the inference (issue #173), beside the stance.
-// Boxed like every verdict on the site (cf. the claim's assessment badge), so
-// the bare small-caps stance and the verdict read as two tokens, not one
-// phrase ("For Inference Holds") (#250). Nothing renders until the argument
-// has been evaluated.
+// The steward's rating of the inference (issues #173, #540). Boxed like every
+// verdict on the site (cf. the claim's assessment badge), so it reads as a
+// judgment rather than a structural label (#250). Nothing renders until the
+// argument has been evaluated.
 function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
   const meta = argumentVerdictMeta(verdict);
   if (!meta) return null;
@@ -34,6 +35,43 @@ function ArgumentVerdictTag({ verdict }: { verdict: string | null }) {
     <Term gloss={meta.gloss} href={DEFINED_IN.argument} className={`badge arg-verdict ${meta.cls}`}>
       {meta.label}
     </Term>
+  );
+}
+
+// The decisive mark (§7, #540), in the argument's head: the one label on an
+// argument that speaks to whether its conclusion is true.
+function DecisiveTag({ decisive }: { decisive: boolean }) {
+  if (!decisive) return null;
+  return (
+    <Term gloss={DECISIVE.gloss} href={DEFINED_IN.argument} className="badge arg-verdict arg-decisive st-verified">
+      {DECISIVE.label}
+    </Term>
+  );
+}
+
+// Two questions side by side, so the rating of the step never appears alone
+// (#540): "Does it follow?" is the steward's rating, which is conditional on
+// the premises; "Do the premises hold?" counts the argument's own premises by
+// their current status. Readers take "a strong argument" to mean a probably
+// true conclusion, and the second row is what stops that misreading.
+function ArgumentCheck({ group }: { group: ArgumentGroup }) {
+  if (!argumentVerdictMeta(group.verdict)) return null;
+  const premises = premiseSummary(group.nodes.map((s) => s.node));
+  return (
+    <dl className="argcheck">
+      <dt>Does it follow?</dt>
+      <dd><ArgumentVerdictTag verdict={group.verdict} /></dd>
+      {premises.length > 0 && (
+        <>
+          <dt>Do the premises hold?</dt>
+          <dd>
+            {premises.map((p) => (
+              <span className={`premise-count ${p.cls}`} key={p.key}>{p.label}</span>
+            ))}
+          </dd>
+        </>
+      )}
+    </dl>
   );
 }
 
@@ -76,7 +114,13 @@ function BasisNode({ node }: { node: TreeNode }) {
   return (
     <li className="basis-item">
       <div className="basis-row">
-        {node.assessment_status ? <Swatch status={node.assessment_status} /> : <SeedSwatch node={node} />}{" "}
+        {node.node_kind === "quantity" && node.estimate && node.unit ? (
+          <span className="qty-chip" title="This premise is a quantity; its estimate stands where a status would.">
+            {describeEstimate(node.estimate, node.unit).lead}
+          </span>
+        ) : node.node_kind === "question" ? (
+          <StandingBadge standing={node.standing ?? null} />
+        ) : node.assessment_status ? <Swatch status={node.assessment_status} /> : <SeedSwatch node={node} />}{" "}
         {rel && (
           <Term
             gloss={rel.gloss}
@@ -169,7 +213,13 @@ function ArgumentBlock({
           <span className="sc">argument</span>
           <span className="argname">{group.name}</span>
           {group.stance && <StanceTag stance={group.stance} />}
-          <ArgumentVerdictTag verdict={group.verdict} />
+          <DecisiveTag decisive={group.decisive} />
+          {group.shows && (
+            <span className="arg-shows" title="What this argument shows about the quantity's value (constitution §7).">
+              <span className="sc">shows</span>
+              <span className="arg-shows-mark" aria-hidden>{showsMark(group.shows)?.glyph}</span> {group.shows.text}
+            </span>
+          )}
         </div>
       )}
       {isBasis && <p className="basis-note">{BASIS.gloss}</p>}
@@ -179,6 +229,7 @@ function ArgumentBlock({
           <p className="argform">
             <ArgumentText content={written} texts={texts} />
           </p>
+          <ArgumentCheck group={group} />
           {group.evaluation && (
             <p className="argeval">
               <ArgumentText content={group.evaluation} texts={texts} />

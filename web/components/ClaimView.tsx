@@ -24,6 +24,9 @@ import { AttemptLog } from "./claim/AttemptLog";
 import { ResearchLog } from "./claim/ResearchLog";
 import { SourceMapNote, InstanceReadingLine, ProvenanceRecord } from "./claim/SourceMap";
 import { ProvenanceMap } from "./claim/ProvenanceMap";
+import {
+  QuantityHead, QuantityEstimates, QuantityReadings, QuantityCuts, ThresholdPanel,
+} from "./quantity/QuantitySections";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -52,8 +55,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
   );
   // Live data can be mid-pipeline: an assessment row may exist with a null
   // status. Only treat it as a real assessment when the status is on-enum.
+  // A quantity is judged by an estimate, not a status (§2, §10): its
+  // assessment is the Steward's account of the estimate and the work behind
+  // it, and stands whatever the status column holds.
+  const isQuantity = claim.kind === "quantity" && !!detail.quantity;
   const assessment =
-    detail.assessment && isStatus(detail.assessment.status) ? detail.assessment : null;
+    !isQuantity && detail.assessment && isStatus(detail.assessment.status) ? detail.assessment : null;
+  const assessed = isQuantity ? detail.quantity?.assessed : null;
+  const qAssessment = assessed?.summary
+    ? { summary: assessed.summary, reasoning_trace: assessed.work, assessed_at: assessed.assessed_at, model: assessed.model ?? null }
+    : null;
+  const anyAssessment = assessment ?? qAssessment;
   // Steward-seeded prior (#285): the parent claim's Steward's preliminary
   // credence and note. The API only serves it while the claim is unassessed;
   // the gate here keeps the invariant even against a stale cache — a seed
@@ -72,7 +84,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
     <article className="col">
       {/* eyebrow: type + state */}
       <div className="claim-eyebrow">
-        <span className="sc">Claim</span>
+        <span className="sc">{isQuantity ? "Quantity" : "Claim"}</span>
         {claimType ? (
           <Term gloss={claimType.gloss} href={DEFINED_IN.claimType} className="tag kind">
             {claimType.label}
@@ -101,7 +113,13 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {/* hero: the canonical claim */}
       <h1 className="claim-hero">{claim.text}</h1>
 
-      {!assessment && (
+      {/* A quantity's definition and the graph's estimate lead its page, where
+          a claim's status would (§3, §10). */}
+      {isQuantity && <QuantityHead detail={detail} aside={<Dispute value={claim.contestation} />} />}
+
+      {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
+
+      {!isQuantity && !assessment && (
         <>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
             Not yet assessed. Attention goes where its expected value is
@@ -141,6 +159,17 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           )}
           {seed.note && <p className="seed-prelim-note">{seed.note}</p>}
         </aside>
+      )}
+
+      {/* a quantity's band: how disputed it is and when it was last
+          estimated; the estimate itself sits in the head above */}
+      {qAssessment && (
+        <div className="claim-assess">
+          <span className="assess-when">
+            last estimated {fmtDate(qAssessment.assessed_at)}
+            {qAssessment.model ? ` · ${modelDisplayName(qAssessment.model)}` : ""}
+          </span>
+        </div>
       )}
 
       {/* assessment band */}
@@ -183,12 +212,24 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         </div>
       )}
 
+      {/* A claim about which side of a figure a quantity lies: where the
+          quantity's estimate puts the value, against this claim's credence. */}
+      {detail.threshold_of && (
+        <ThresholdPanel
+          t={detail.threshold_of}
+          credence={assessment?.claim_credence ?? null}
+          status={assessment?.status ?? null}
+        />
+      )}
+
       {/* reasoning trace */}
-      {assessment && (
+      {anyAssessment && (
         <section>
           <h2>Assessment</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            {statusMeta(assessment.status).def}
+            {assessment
+              ? statusMeta(assessment.status).def
+              : "The graph's estimate, all things considered: the figures and arguments it rests on, and how they were combined."}
           </p>
           {/* Reader-facing assessment — the primary content, styled as lead prose
               rather than an inset box. The fuller reasoning trace stays accessible
@@ -197,14 +238,18 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
               returns the trace as the summary); only show the separate reasoning
               disclosure when it actually differs. */}
           <div className="assessment-body">
-            <AssessmentText content={assessment.summary} texts={linkTexts} />
+            <AssessmentText content={anyAssessment.summary} texts={linkTexts} />
           </div>
-          {assessment.reasoning_trace &&
-            assessment.reasoning_trace !== assessment.summary && (
+          {anyAssessment.reasoning_trace &&
+            anyAssessment.reasoning_trace !== anyAssessment.summary && (
               <details className="reasoning-detail">
-                <summary>Full reasoning: the evidence and decisions behind this verdict</summary>
+                <summary>
+                  {assessment
+                    ? "Full reasoning: the evidence and decisions behind this verdict"
+                    : "The work: which figures, how they were combined, and the arithmetic"}
+                </summary>
                 <div className="reasoning">
-                  <AssessmentText content={assessment.reasoning_trace} texts={linkTexts} />
+                  <AssessmentText content={anyAssessment.reasoning_trace} texts={linkTexts} />
                 </div>
               </details>
             )}
@@ -212,6 +257,11 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
           <OrderAssessment claimId={claim.id} variant="reassess" />
         </section>
       )}
+
+      {/* A quantity's estimates, and the rare claims about where its value
+          lies that have nodes of their own. */}
+      {isQuantity && <QuantityEstimates detail={detail} />}
+      {isQuantity && <QuantityCuts detail={detail} />}
 
       {/* findings (#394): what an administrator found on this claim that
           people who hold the question would be better for knowing, published
@@ -248,7 +298,9 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
         {hasTree ? (
           <>
             <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-              {tree!.children.some((c) => c.argument_name)
+              {isQuantity
+                ? "The arguments the estimate rests on, each stated as it runs, with what it shows about the value and its premises linked inline. ↗\uFE0E opens a premise; the map shows how they fit together."
+                : tree!.children.some((c) => c.argument_name)
                 ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
                 : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
             </p>
@@ -274,19 +326,22 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       </section>
 
       {/* provenance */}
-      {instances && instances.length > 0 && (
+      {((instances && instances.length > 0) || (detail.quantity?.readings.length ?? 0) > 0) && (
         <section>
           <h2>Provenance</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            Where this claim has been said, linked to its canonical form.
+            {isQuantity
+              ? "Where this quantity's evidence comes from. The figures sources state are under Estimates above."
+              : "Where this claim has been said, linked to its canonical form."}
           </p>
+          <QuantityReadings detail={detail} />
           {/* What the support rests on (#286): the Steward's account, shown
               only when it judged the structure of the support material. */}
           <SourceMapNote map={detail.source_map} />
           {/* Origins first (#507): the sources as the claim's story, above
               the appearances themselves. Renders nothing without a story. */}
           <ProvenanceMap story={detail.provenance_story} />
-          {instances.map((inst) => (
+          {(instances ?? []).map((inst) => (
             <div className="instance" key={inst.id}>
               <blockquote>{inst.verbatim_text}</blockquote>
               <div className="instance-cite">
@@ -321,7 +376,7 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
             </div>
           ))}
           <ProvenanceRecord
-            instances={instances}
+            instances={instances ?? []}
             edges={detail.provenance_edges}
             relationships={detail.source_relationships}
           />

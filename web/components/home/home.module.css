@@ -69,7 +69,7 @@
 .mapbox {
   border: 1px solid var(--rule); border-radius: 5px; overflow: hidden;
   background: var(--paper);
-  box-shadow: 0 10px 34px -20px rgba(26, 24, 19, 0.18);
+  box-shadow: 0 10px 34px -20px rgb(var(--shadow) / 0.18);
 }
 .mapbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -87,9 +87,9 @@
   animation: pulse 2.4s ease-out infinite;
 }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(79, 125, 74, 0.5); }
-  70% { box-shadow: 0 0 0 6px rgba(79, 125, 74, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(79, 125, 74, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-supported) 50%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 .mapLinks { margin: 0.8rem 0 0; text-align: right; }
@@ -97,7 +97,7 @@
 /* ----- extension panel: the annotated browser demo ----- */
 .browser {
   background: var(--paper-card); border: 1px solid var(--rule); border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(26, 24, 19, 0.04), 0 10px 34px -18px rgba(26, 24, 19, 0.14);
+  box-shadow: 0 1px 2px rgb(var(--shadow) / 0.04), 0 10px 34px -18px rgb(var(--shadow) / 0.14);
   overflow: hidden;
 }
 .chrome {
@@ -294,52 +294,3 @@
   .panelLink + .panelLink { padding-left: 0; }
   .panelLink:last-child { border-bottom: none; }
 }
-
-/* ----- guided tour (#251) -----
-   Opt-in from a "tour" entry only (masthead above 640px, footer below). A
-   ring around the anchored element (its box-shadow doubles as the page dim,
-   so the page stays clickable) and a small card in the Term-popover
-   register. */
-.tourDismiss {
-  appearance: none; background: none; border: none; cursor: pointer;
-  font-family: var(--sans); font-size: 0.72rem; color: var(--faint);
-  padding: 0 0.2rem; margin-left: 0.55rem;
-}
-.tourDismiss:hover { color: var(--ink); }
-
-.tourRing {
-  position: absolute; z-index: 70; pointer-events: none;
-  border: 1px solid var(--ink-soft); border-radius: 6px;
-  box-shadow: 0 0 0 200vmax rgba(26, 24, 19, 0.2);
-}
-.tourCard {
-  position: absolute; z-index: 71; width: 21rem;
-  max-width: calc(100vw - 2rem);
-  background: var(--paper-card); border: 1px solid var(--rule); border-radius: 3px;
-  box-shadow: 0 2px 10px rgba(26, 24, 19, 0.12);
-  padding: 0.6rem 0.8rem 0.55rem;
-  outline: none;
-}
-.tourCardDocked {
-  position: fixed; left: 50%; bottom: 1.1rem; top: auto;
-  transform: translateX(-50%);
-}
-.tourHead {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 0.35rem;
-}
-.tourHead .sc { font-size: 0.62rem; color: var(--faint); }
-.tourTitle {
-  font-family: var(--serif); font-size: 0.98rem; font-weight: 600;
-  margin: 0 0 0.3rem; color: var(--ink);
-}
-.tourBody {
-  font-family: var(--sans); font-size: 0.78rem; line-height: 1.5;
-  color: var(--ink-soft); margin: 0 0 0.55rem;
-}
-.tourFoot { display: flex; justify-content: space-between; align-items: center; }
-.tourNav {
-  appearance: none; background: none; border: none; cursor: pointer; padding: 0;
-  font-family: var(--sans); font-size: 0.76rem; font-weight: 500; color: var(--link);
-}
-.tourNav:hover { text-decoration: underline; text-underline-offset: 2px; }

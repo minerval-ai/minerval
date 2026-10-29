@@ -14,6 +14,7 @@ import { claims } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { loadConfig } from "../config.js";
 import { insertRelationshipEdge } from "./relationship-service.js";
+import { quantityDefinitionSchema, type QuantityDefinitionInput } from "../schemas/kinds.js";
 import {
   linkClaims as insertClaimLink,
   unlinkClaims as deleteClaimLinks,
@@ -51,6 +52,165 @@ const FLIP_INSTANCE_STANCE = `CASE WHEN $3::boolean
 const FLIP_ARGUMENT_STANCE = `CASE WHEN $3::boolean
   THEN (CASE stance WHEN 'for' THEN 'against' WHEN 'against' THEN 'for' ELSE stance END)
   ELSE stance END`;
+
+/**
+ * Merges across kinds (constitution §2, §7a): a claim that only states a
+ * value folds into the quantity, and a question that asks whether X is so,
+ * or for a value, folds into the claim X or the quantity. Each pair maps
+ * the moved instances' stances into the survivor's vocabulary; every other
+ * pair of different kinds is refused, so the Curator changes a node's kind
+ * first (changeNodeKind) and merges like with like.
+ */
+const CROSS_KIND_MERGES: Record<string, Record<string, string>> = {
+  "claim>quantity": { affirms: "states", denies: "poses", poses: "poses" },
+  "question>claim": { asks: "poses", answers: "poses" },
+  "question>quantity": { asks: "poses", answers: "poses" },
+};
+
+/** The instance stances a node of each kind carries, for a kind change. */
+const KIND_STANCE_MAP: Record<string, Record<string, string>> = {
+  quantity: { affirms: "states", denies: "poses", poses: "poses", asks: "poses", answers: "poses" },
+  question: { affirms: "asks", denies: "asks", poses: "asks", states: "asks" },
+  claim: { states: "affirms", asks: "poses", answers: "poses" },
+};
+
+interface StanceRef {
+  id: string;
+  stance: string;
+}
+
+/** Rewrite instance stances through a map; returns the rows it changed, with their prior stance. */
+async function remapStances(instanceIds: string[], map: Record<string, string>): Promise<StanceRef[]> {
+  if (instanceIds.length === 0) return [];
+  const prior = await rawQuery<StanceRef>(
+    `SELECT id, stance FROM claim_instances WHERE id = ANY($1::uuid[])`,
+    [instanceIds]
+  );
+  const changed = prior.filter((r) => map[r.stance] && map[r.stance] !== r.stance);
+  for (const r of changed) {
+    await rawQuery(`UPDATE claim_instances SET stance = $2 WHERE id = $1`, [r.id, map[r.stance]]);
+  }
+  return changed;
+}
+
+async function restoreStances(refs: StanceRef[]): Promise<void> {
+  for (const r of refs) {
+    await rawQuery(`UPDATE claim_instances SET stance = $2 WHERE id = $1`, [r.id, r.stance]);
+  }
+}
+
+/**
+ * Rows of the kinds' tables that point at the loser, moved onto the survivor
+ * in a merge, by id, so the reversal can move exactly these back.
+ */
+interface KindRefsMoved {
+  reading_ids: string[];
+  cut_claim_ids: string[];
+  loser_cut_moved: boolean;
+  answer_relation_ids: string[];
+  answer_instance_ids: string[];
+  request_target_ids: string[];
+  dropped_request_targets: { request_id: string }[];
+  keeper_request_ids: string[];
+}
+
+async function moveKindRefs(survivorId: string, loserId: string): Promise<KindRefsMoved> {
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+  const reading_ids = ids(
+    await rawQuery<{ id: string }>(
+      `UPDATE quantity_readings SET claim_id = $1 WHERE claim_id = $2 RETURNING id`,
+      [survivorId, loserId]
+    )
+  );
+  const cut_claim_ids = (
+    await rawQuery<{ claim_id: string }>(
+      `UPDATE quantity_cuts SET quantity_id = $1 WHERE quantity_id = $2 AND claim_id != $1 RETURNING claim_id`,
+      [survivorId, loserId]
+    )
+  ).map((r) => r.claim_id);
+  // A cut claim merged into another: its cut moves only when the survivor
+  // has none of its own.
+  const loserCut = await rawQuery<{ claim_id: string }>(
+    `UPDATE quantity_cuts SET claim_id = $1
+      WHERE claim_id = $2 AND quantity_id != $1
+        AND NOT EXISTS (SELECT 1 FROM quantity_cuts WHERE claim_id = $1)
+      RETURNING claim_id`,
+    [survivorId, loserId]
+  );
+  const answer_relation_ids = ids(
+    await rawQuery<{ id: string }>(
+      `UPDATE answer_relations ar SET question_id = $1
+        WHERE ar.question_id = $2
+          AND NOT EXISTS (SELECT 1 FROM answer_relations o
+                           WHERE o.question_id = $1 AND o.claim_a_id = ar.claim_a_id AND o.claim_b_id = ar.claim_b_id)
+        RETURNING ar.id`,
+      [survivorId, loserId]
+    )
+  );
+  const answer_instance_ids = ids(
+    await rawQuery<{ id: string }>(
+      `UPDATE claim_instances SET answer_claim_id = $1 WHERE answer_claim_id = $2 RETURNING id`,
+      [survivorId, loserId]
+    )
+  );
+  // A request that already bears on the survivor keeps one target.
+  const dropped_request_targets = await rawQuery<{ request_id: string }>(
+    `DELETE FROM request_targets t
+      WHERE t.claim_id = $2
+        AND EXISTS (SELECT 1 FROM request_targets o WHERE o.request_id = t.request_id AND o.claim_id = $1)
+      RETURNING t.request_id`,
+    [survivorId, loserId]
+  );
+  const request_target_ids = ids(
+    await rawQuery<{ id: string }>(
+      `UPDATE request_targets SET claim_id = $1 WHERE claim_id = $2 RETURNING id`,
+      [survivorId, loserId]
+    )
+  );
+  const keeper_request_ids = ids(
+    await rawQuery<{ id: string }>(
+      `UPDATE requests SET keeper_claim_id = $1, updated_at = now() WHERE keeper_claim_id = $2 RETURNING id`,
+      [survivorId, loserId]
+    )
+  );
+  return {
+    reading_ids,
+    cut_claim_ids,
+    loser_cut_moved: loserCut.length > 0,
+    answer_relation_ids,
+    answer_instance_ids,
+    request_target_ids,
+    dropped_request_targets,
+    keeper_request_ids,
+  };
+}
+
+async function restoreKindRefs(loserId: string, survivorId: string, m: Partial<KindRefsMoved>): Promise<void> {
+  if (m.reading_ids?.length) {
+    await rawQuery(`UPDATE quantity_readings SET claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.reading_ids]);
+  }
+  if (m.cut_claim_ids?.length) {
+    await rawQuery(`UPDATE quantity_cuts SET quantity_id = $1 WHERE claim_id = ANY($2::uuid[])`, [loserId, m.cut_claim_ids]);
+  }
+  if (m.loser_cut_moved) {
+    await rawQuery(`UPDATE quantity_cuts SET claim_id = $1 WHERE claim_id = $2`, [loserId, survivorId]);
+  }
+  if (m.answer_relation_ids?.length) {
+    await rawQuery(`UPDATE answer_relations SET question_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.answer_relation_ids]);
+  }
+  if (m.answer_instance_ids?.length) {
+    await rawQuery(`UPDATE claim_instances SET answer_claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.answer_instance_ids]);
+  }
+  if (m.request_target_ids?.length) {
+    await rawQuery(`UPDATE request_targets SET claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.request_target_ids]);
+  }
+  for (const t of m.dropped_request_targets ?? []) {
+    await rawQuery(`INSERT INTO request_targets (request_id, claim_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [t.request_id, loserId]);
+  }
+  if (m.keeper_request_ids?.length) {
+    await rawQuery(`UPDATE requests SET keeper_claim_id = $1 WHERE id = ANY($2::uuid[])`, [loserId, m.keeper_request_ids]);
+  }
+}
 
 async function logEvent(
   operation: string,
@@ -168,11 +328,26 @@ export async function mergeClaims(input: {
   const opposed = stanceRelation === "opposed";
 
   // Capture the loser's prior state so a reversal can restore it.
-  const [loserRow] = await rawQuery<{ state: string }>(
-    `SELECT state FROM claims WHERE id = $1`,
+  const [loserRow] = await rawQuery<{ state: string; kind: string }>(
+    `SELECT state, kind FROM claims WHERE id = $1`,
     [loserId]
   );
   const loserPrevState = loserRow?.state ?? "active";
+  const [survivorRow] = await rawQuery<{ kind: string }>(`SELECT kind FROM claims WHERE id = $1`, [survivorId]);
+  const loserKind = loserRow?.kind ?? "claim";
+  const survivorKind = survivorRow?.kind ?? "claim";
+  const crossKind = loserKind !== survivorKind;
+  const stanceMap = crossKind ? CROSS_KIND_MERGES[`${loserKind}>${survivorKind}`] : undefined;
+  if (crossKind && !stanceMap) {
+    throw new Error(
+      `Cannot merge a ${loserKind} into a ${survivorKind}. Change one node's kind first ` +
+        `(change_node_kind), or merge a claim that only states a value into the quantity, ` +
+        `or a question into the claim or quantity it asks about.`
+    );
+  }
+  if (crossKind && opposed) {
+    throw new Error("A merge across kinds has no opposed reading: use stance_relation \"same\".");
+  }
 
   // 1. Instances onto the survivor (flip if opposed).
   const movedInstances = await rawQuery<{ id: string }>(
@@ -181,12 +356,29 @@ export async function mergeClaims(input: {
     [survivorId, loserId, opposed]
   );
 
-  // 2. Arguments onto the survivor (flip if opposed).
-  const movedArguments = await rawQuery<{ id: string }>(
-    `UPDATE arguments SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
-      WHERE claim_id = $2 RETURNING id`,
+  // 1b. Across kinds, the moved instances take the survivor's stances.
+  const remappedStances = stanceMap ? await remapStances(movedInstances.map((r) => r.id), stanceMap) : [];
+
+  // 2. Arguments onto the survivor (flip if opposed). An argument about a
+  //    quantity has no for or against (§7): it shows something about the value.
+  const movedArguments = await rawQuery<{ id: string; stance: string }>(
+    `UPDATE arguments a SET claim_id = $1, stance = ${FLIP_ARGUMENT_STANCE}
+      FROM (SELECT id, stance AS prior_stance FROM arguments WHERE claim_id = $2) p
+      WHERE a.id = p.id RETURNING a.id, p.prior_stance AS stance`,
     [survivorId, loserId, opposed]
   );
+  const neutralizedArguments =
+    crossKind && survivorKind === "quantity" ? movedArguments.filter((a) => a.stance !== "neutral") : [];
+  if (neutralizedArguments.length > 0) {
+    await rawQuery(`UPDATE arguments SET stance = 'neutral' WHERE id = ANY($1::uuid[])`, [
+      neutralizedArguments.map((a) => a.id),
+    ]);
+  }
+
+  // 2b. The kinds' rows that point at the loser: a quantity's readings and
+  //     cuts, a question's answer relations, the answers sources gave, and
+  //     the requests that bear on it.
+  const kindRefs = await moveKindRefs(survivorId, loserId);
 
   // 3. Edges where the loser is the CHILD: drop self/duplicate edges (captured,
   //    with their argument memberships, so they can be restored; a duplicate's
@@ -291,9 +483,100 @@ export async function mergeClaims(input: {
     ],
     moved_links: movedLinks,
     merged_link_ids: mergedLinkIds,
+    remapped_stances: remappedStances,
+    neutralized_arguments: neutralizedArguments,
+    kind_refs: kindRefs,
   });
 
   return { merged: true, survivorId, loserId, eventId };
+}
+
+/**
+ * Change a node's kind (constitution §2, §7a): a node created as the wrong
+ * kind keeps its identity and moves what can move. The records that belong
+ * to the old kind (a proposition's verdict, a quantity's estimate, a
+ * question's standing) are retired to history rather than carried over,
+ * since none of them means anything for the new kind; instance stances are
+ * mapped into the new kind's vocabulary; an argument about a quantity
+ * loses its for or against. A quantity needs its definition. Logs a
+ * reversible `change_kind` event.
+ */
+export async function changeNodeKind(input: {
+  claimId: string;
+  to: "claim" | "quantity" | "question";
+  definition?: QuantityDefinitionInput | null;
+  reasoning: string;
+}): Promise<{ changed: boolean; from: string; eventId?: string }> {
+  const { claimId, to, reasoning } = input;
+  const [row] = await rawQuery<{ kind: string; state: string }>(
+    `SELECT kind, state FROM claims WHERE id = $1`,
+    [claimId]
+  );
+  if (!row) throw new Error(`Node ${claimId} not found`);
+  if (row.state !== "active") throw new Error(`Node ${claimId} is ${row.state}, not active`);
+  const from = row.kind;
+  if (from === to) return { changed: false, from };
+  const definition = to === "quantity" ? quantityDefinitionSchema.parse(input.definition ?? undefined) : null;
+
+  const retire = async (table: string): Promise<string[]> =>
+    (
+      await rawQuery<{ id: string }>(
+        `UPDATE ${table} SET is_current = false WHERE claim_id = $1 AND is_current = true RETURNING id`,
+        [claimId]
+      )
+    ).map((r) => r.id);
+  const retired = {
+    assessments: await retire("assessments"),
+    quantity_estimates: await retire("quantity_estimates"),
+    question_assessments: await retire("question_assessments"),
+  };
+
+  const instanceIds = (
+    await rawQuery<{ id: string }>(`SELECT id FROM claim_instances WHERE claim_id = $1`, [claimId])
+  ).map((r) => r.id);
+  const remappedStances = await remapStances(instanceIds, KIND_STANCE_MAP[to] ?? {});
+  const neutralizedArguments =
+    to === "quantity"
+      ? await rawQuery<StanceRef>(
+          `UPDATE arguments a SET stance = 'neutral'
+             FROM (SELECT id, stance AS prior FROM arguments WHERE claim_id = $1 AND stance != 'neutral') p
+            WHERE a.id = p.id RETURNING a.id, p.prior AS stance`,
+          [claimId]
+        )
+      : [];
+
+  const [priorDefinition] = await rawQuery<Record<string, unknown>>(
+    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions WHERE claim_id = $1`,
+    [claimId]
+  );
+  if (definition) {
+    await rawQuery(
+      `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'curator')
+       ON CONFLICT (claim_id) DO UPDATE
+         SET measures = EXCLUDED.measures, population = EXCLUDED.population,
+             conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()`,
+      [
+        claimId,
+        definition.measures,
+        definition.population ?? null,
+        definition.conditions ?? null,
+        JSON.stringify(definition.unit),
+      ]
+    );
+  }
+  await rawQuery(`UPDATE claims SET kind = $2, updated_at = now() WHERE id = $1`, [claimId, to]);
+
+  const eventId = await logEvent("change_kind", reasoning, {
+    claim_id: claimId,
+    from,
+    to,
+    retired,
+    remapped_stances: remappedStances,
+    neutralized_arguments: neutralizedArguments,
+    prior_definition: priorDefinition ?? null,
+  });
+  return { changed: true, from, eventId };
 }
 
 /** Create a new claim node (embedded). Logs a reversible `create_claim` event. */
@@ -508,6 +791,12 @@ export async function reverseReconciliation(
           [loserId, movedArguments, opposed, survivorId]
         );
       }
+      // A merge across kinds: the stances it rewrote, and its kinds' rows.
+      await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
+      for (const a of (p.neutralized_arguments as StanceRef[]) ?? []) {
+        await rawQuery(`UPDATE arguments SET stance = $2 WHERE id = $1`, [a.id, a.stance]);
+      }
+      await restoreKindRefs(loserId, survivorId, (p.kind_refs as Partial<KindRefsMoved>) ?? {});
       // Repoint the survivor-side edges back to the loser.
       if (repointedChild.length) {
         await rawQuery(
@@ -547,6 +836,35 @@ export async function reverseReconciliation(
         `UPDATE claims SET merged_into = NULL, state = $2, updated_at = now() WHERE id = $1`,
         [loserId, (p.loser_prev_state as string) ?? "active"]
       );
+      break;
+    }
+
+    case "change_kind": {
+      const claimId = p.claim_id as string;
+      const retired = (p.retired as Record<string, string[]>) ?? {};
+      // The new kind's records are retired; the old kind's come back.
+      for (const table of ["assessments", "quantity_estimates", "question_assessments"]) {
+        await rawQuery(`UPDATE ${table} SET is_current = false WHERE claim_id = $1 AND is_current = true`, [claimId]);
+        const ids = retired[table] ?? [];
+        if (ids.length) {
+          await rawQuery(`UPDATE ${table} SET is_current = true WHERE id = ANY($1::uuid[])`, [ids]);
+        }
+      }
+      await restoreStances((p.remapped_stances as StanceRef[]) ?? []);
+      for (const a of (p.neutralized_arguments as StanceRef[]) ?? []) {
+        await rawQuery(`UPDATE arguments SET stance = $2 WHERE id = $1`, [a.id, a.stance]);
+      }
+      const prior = p.prior_definition as Record<string, unknown> | null;
+      if (prior) {
+        await rawQuery(
+          `UPDATE quantity_definitions SET measures = $2, population = $3, conditions = $4, unit = $5, updated_at = now()
+            WHERE claim_id = $1`,
+          [claimId, prior.measures, prior.population ?? null, prior.conditions ?? null, JSON.stringify(prior.unit)]
+        );
+      } else if (p.to === "quantity") {
+        await rawQuery(`DELETE FROM quantity_definitions WHERE claim_id = $1`, [claimId]);
+      }
+      await rawQuery(`UPDATE claims SET kind = $2, updated_at = now() WHERE id = $1`, [claimId, p.from as string]);
       break;
     }
 

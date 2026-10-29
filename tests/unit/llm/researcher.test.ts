@@ -308,6 +308,20 @@ describe("toolset by model", () => {
     const task = (mocks.toolLoopCalls[0]!.initialMessages as Array<{ content: string }>)[0]!.content;
     expect(task).toContain("launched by the Grantmaker of a funded mandate");
   });
+
+  it("withholds every graph-writing tool from a Grantmaker's run, whatever it was handed", async () => {
+    const i = input();
+    i.run.requested_by = "grantmaker";
+    (i as { examination?: unknown }).examination = {
+      id: "exam-1", source_id: "s1", source_title: "Registry study", source_url: "https://x.org/s",
+      facets: ["data"], scope: "claim",
+    };
+    await runResearcher(i);
+    const names = (mocks.toolLoopCalls.at(-1)!.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("provenance_") || n.startsWith("examination_"))).toEqual([]);
+    const task = (mocks.toolLoopCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+    expect(task).toContain("Research a mandate funds writes nothing to the graph");
+  });
 });
 
 describe("the prompt", () => {
@@ -452,5 +466,34 @@ describe("the budget guide", () => {
       toolNames: ["elicit_search_papers", "report"], sandbox: false, notebook: {},
     });
     expect(guide).toContain("each elicit_ search costs $2.00, and they are capped at 5 calls this run");
+  });
+
+  it("states Pangram's per-call ceiling and cap when the Pangram tools are in the toolset", async () => {
+    const { budgetGuide } = await import("../../../src/llm/prompts/researcher.js");
+    const guide = budgetGuide({
+      task: "t", requestedBy: "claim_steward", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
+      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      pangramMaxCalls: 3, pangramMaxUsdPerCall: 0.75,
+      toolNames: ["pangram_check_ai", "pangram_find_sources", "report"], sandbox: false, notebook: {},
+    });
+    expect(guide).toContain("each pangram_ analysis is billed per word, up to $0.75 a call, and they are capped at 3 calls this run");
+  });
+
+  it("shows a mandate's research the review budget it submits contributions under", async () => {
+    const { buildResearcherTaskMessage } = await import("../../../src/llm/prompts/researcher.js");
+    const { contributionBudgetLine } = await import("../../../src/services/contribution-service.js");
+    const line = contributionBudgetLine({ budgetMicroUsd: 2_000_000, committedMicroUsd: 500_000, submitted: 2 }, 250_000);
+    expect(line).toBe(
+      "Contribution reviews: $0.50 of $2.00 committed across 2 submissions, $1.50 left. A review is estimated at " +
+        "$0.25 (the average of recent reviews), so about 6 more submissions fit. Reviews not yet run count at the " +
+        "estimate until their real cost is known."
+    );
+    const base = {
+      task: "t", requestedBy: "grantmaker", claim: null, budgetUsd: 3, model: "claude-sonnet-5-5",
+      estimate: null, maxTurns: 60, elicitMaxCalls: 5, elicitUsdPerCall: 2,
+      toolNames: ["report"], sandbox: false, notebook: {},
+    };
+    expect(buildResearcherTaskMessage({ ...base, contributionBudget: line })).toContain(line);
+    expect(buildResearcherTaskMessage({ ...base, contributionBudget: null })).not.toContain("submit_contribution");
   });
 });

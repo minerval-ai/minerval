@@ -22,13 +22,18 @@ export type Stance = "for" | "against" | "neutral";
 
 export type RelationType =
   | "requires" | "supports" | "contradicts"
-  | "specifies" | "defines" | "assumes";
+  | "specifies" | "defines" | "assumes"
+  // Across kinds (constitution §2, §7a): a claim about which side of a figure
+  // a quantity lies cuts that quantity (rare: most such statements are
+  // estimates on the quantity itself); an answer answers a question; a
+  // subquestion is part of a question.
+  | "cuts" | "answers" | "part_of";
 
-// Steward verdict on a named argument's inference (issue #173): does it go
-// through granting its premises? "contested" means the framework's validity
-// is itself live-disputed.
-export type ArgumentVerdict =
-  | "holds" | "holds_with_caveats" | "fails" | "contested";
+// Steward rating of a named argument's inference (issues #173, #540).
+// How far does the conclusion follow IF the premises hold (#540)? A rating of
+// the step, never of the conclusion: whether the premises hold is read from
+// their own assessments.
+export type ArgumentVerdict = "certain" | "likely" | "slight" | "none";
 
 // Mirrors the backend sourceTypeEnum (src/schemas/common.ts).
 export type SourceType =
@@ -69,11 +74,24 @@ export interface TreeNode {
   // the written form. Null until the steward has evaluated the argument;
   // optional while API deploys race the frontend.
   argument_verdict?: ArgumentVerdict | string | null;
+  // The Steward's decisive mark (§7, #540): the argument settles its
+  // conclusion as its premises now stand. Optional while API deploys race
+  // the frontend.
+  argument_decisive?: boolean | null;
   argument_evaluation?: string | null;
   // The checker record behind a machine-checked argument (mathematics): the
   // argument's evidence is a lean_checks row the checker accepted. Threaded
   // onto each of the argument's edges like the other argument_* fields.
   argument_lean_check?: LeanCheckSummary | null;
+  // Kinds (constitution §2, §7a). A quantity node carries its estimate and
+  // unit for the map's chip, a question its standing; an argument about a
+  // quantity carries what it shows about the value in place of a for/against
+  // stance.
+  node_kind?: NodeKind;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+  standing?: QuestionStanding | null;
+  argument_shows?: ValueShown | null;
   // Mathematics, for the map and the tree (docs/mathematics.md §8.3): the
   // amount of a live bounty on this claim, whether a machine-checked proof or
   // disproof of its published statement exists, and whether a published
@@ -126,6 +144,10 @@ export interface Assessment {
 
 export interface ClaimCore {
   id: string;
+  // A claim about a proposition, a claim about a quantity's value, or a
+  // question (constitution §2, §7a). Absent means "claim": every node an API
+  // served before kinds existed was a proposition.
+  kind?: NodeKind;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -161,7 +183,10 @@ export interface ArgumentItem {
   created_at: string;
   // Steward evaluation of the inference (issue #173); null until judged.
   verdict?: ArgumentVerdict | string | null;
+  decisive?: boolean | null;
   evaluation?: string | null;
+  // What an argument about a quantity shows about its value (§7).
+  shows?: ValueShown | null;
   // The checker record when this argument is a machine-checked proof or
   // disproof (docs/mathematics.md §2.3); null or absent otherwise.
   lean_check?: LeanCheckSummary | null;
@@ -317,6 +342,9 @@ export interface DependentClaim {
   bounty_micro_usd?: number | null;
   checked?: CheckKind | null;
   formal?: boolean;
+  // Kinds: a dependent that cuts this quantity says where (relation "cuts").
+  node_kind?: NodeKind;
+  cut?: { direction: "above" | "below"; value: number } | null;
 }
 
 // --- contribution record (#171) ---------------------------------------------
@@ -427,6 +455,288 @@ export interface ClaimDetail {
   research_runs?: ResearchRunSummary[];
   /** The claim's provenance read from its origins down (#507); absent until the API serves it. */
   provenance_story?: ProvenanceStory | null;
+  // --- kinds (constitution §2, §7a) -----------------------------------------
+  /** A quantity's definition, the graph's estimate, the estimates sources state, and the readings that bear on it. */
+  quantity?: QuantityDetail | null;
+  /** A claim about which side of a figure a quantity lies: the quantity, and where. Its credence must agree with that estimate. */
+  threshold_of?: ThresholdOf | null;
+  /** A question's standing, presuppositions, subquestions, answers and instances. */
+  question?: QuestionDetail | null;
+  /** Requests that bear on this node (Part VIII, Requests). */
+  requests?: RequestItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Node kinds: quantities and questions (constitution §2, §3, §4, §7a, §10)
+// ---------------------------------------------------------------------------
+
+export type NodeKind = "claim" | "quantity" | "question";
+
+// What a quantity's value is measured in. `kind` drives formatting and the
+// default scale; `scale` is the Steward's choice when it has made one.
+export type QuantityUnitKind =
+  | "proportion"   // 0..1, shown as a percentage
+  | "count"        // people, deaths, stars: compact words ("17 million")
+  | "currency"     // money, with `currency`
+  | "temperature"  // signed, with `symbol` ("°C")
+  | "year"         // a calendar year: a date on a time axis
+  | "duration"     // a length of time, with `symbol` ("years")
+  | "rate"         // events per `per`; rare ones read as "1 in N"
+  | "measure";     // anything else with a `symbol`, possibly signed
+
+export interface QuantityUnit {
+  kind: QuantityUnitKind;
+  symbol?: string | null;
+  // The counted thing, for counts and rates: "deaths", "stars", "impacts".
+  noun?: string | null;
+  currency?: string | null;
+  // For rates: "per year".
+  per?: string | null;
+  scale?: "linear" | "log" | null;
+  // The value's natural bounds, when it has them (0 for counts, 0 and 1 for
+  // proportions); axes never run past them.
+  min?: number | null;
+  max?: number | null;
+}
+
+export interface QuantityDefinition {
+  measures: string;
+  population?: string | null;
+  conditions?: string | null;
+  unit: QuantityUnit;
+}
+
+/** A point of the distribution: P(value <= v) = p. */
+export interface Quantile { p: number; v: number }
+
+// The precision the evidence supports (§10): a distribution, an interval, a
+// bound, an order of magnitude, a single figure, or no figure with a reason.
+export type EstimateForm = "distribution" | "interval" | "bound" | "magnitude" | "point" | "none";
+
+export interface QuantityEstimate {
+  form: EstimateForm;
+  quantiles?: Quantile[];
+  low?: number | null;
+  high?: number | null;
+  // The interval's coverage (0.9 for a 90% interval); absent for a range a
+  // source states without one.
+  level?: number | null;
+  central?: number | null;
+  bound?: { side: "above" | "below"; value: number } | null;
+  // A power of ten, for an order-of-magnitude estimate.
+  magnitude?: number | null;
+  shape?: string | null;
+  reason?: string | null;
+  // The share of probability that lies outside every value (§10), and what
+  // it stands for: "the event does not happen", "the quantity proves
+  // undefined".
+  outside?: { share: number; meaning: string } | null;
+}
+
+/**
+ * A place on a value's axis: a figure ("at", or "about" it), a range
+ * ("between"), or a side of a figure ("above", "below"; `inclusive` reads
+ * "at least" or "at most"). A figure or a lower bound sits in `low`, an
+ * upper bound in `high`.
+ */
+export interface ValueRange {
+  side: "at" | "about" | "between" | "above" | "below";
+  low?: number | null;
+  high?: number | null;
+  inclusive?: boolean | null;
+}
+
+// What an argument about a quantity shows about its value (§7). Most argue
+// for a value or a range; some argue that the value is higher or lower than
+// something; some argue that the quantity is ill defined or cannot be known,
+// and have no place on the axis. The words are the Steward's.
+export interface ValueShown {
+  text: string;
+  range?: ValueRange | null;
+}
+
+/** A source's statement of a quantity's value: an instance of the quantity (§4). */
+export interface EstimateInstance {
+  id: string;
+  argument_id: string | null;
+  source_title: string;
+  source_url?: string | null;
+  source_type?: string | null;
+  source_date?: string | null;
+  // The figure as the source states it, and in its words where a sentence
+  // states it (a figure read from a table has none).
+  stated: QuantityEstimate;
+  verbatim_text: string | null;
+}
+
+// A reading of an instrument (a survey, a test, a register, a model) taken
+// to indicate the quantity: evidence about it, recorded in its provenance with
+// what was actually measured (§3). How far it speaks to the quantity is the
+// Steward's judgment, and a claim when disputed or load-bearing.
+export interface QuantityReading {
+  id: string;
+  source_title: string;
+  source_url?: string | null;
+  measured: string;
+  figure: string;
+  bearing: string;
+  claim?: { id: string; text: string; status: AssessmentStatus | null } | null;
+}
+
+/** A claim about which side of a figure the quantity lies, where one has a node of its own. */
+export interface QuantityCut {
+  id: string;
+  text: string;
+  direction: "above" | "below";
+  value: number;
+  status: AssessmentStatus | null;
+  credence: number | null;
+}
+
+/** Who estimated a quantity, when, and why: the record behind its estimate. */
+export interface QuantityAssessed {
+  summary: string | null;
+  work: string;
+  model?: string | null;
+  assessed_at: string;
+}
+
+export interface QuantityDetail {
+  definition: QuantityDefinition;
+  estimate: QuantityEstimate | null;
+  // Null until the quantity has been estimated. A quantity has no verdict, so
+  // the claim detail's top-level `assessment` is null for it.
+  assessed?: QuantityAssessed | null;
+  estimates: EstimateInstance[];
+  readings: QuantityReading[];
+  cuts: QuantityCut[];
+}
+
+export interface ThresholdOf {
+  quantity_id: string;
+  quantity_text: string;
+  definition: QuantityDefinition;
+  estimate: QuantityEstimate | null;
+  direction: "above" | "below";
+  value: number;
+}
+
+// How well answered a question is (§10). Like a claim's status, it describes
+// the evidence, not the debate: "open" means examined and level, "unknown"
+// that too little is known to say.
+export type QuestionStanding = "answered" | "leaning" | "open" | "ill_posed" | "unknown";
+
+/** A candidate answer: a claim or a quantity (§7a). */
+export interface QuestionAnswer {
+  id: string;
+  text: string;
+  kind: NodeKind;
+  status: AssessmentStatus | null;
+  credence?: number | null;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+  // Whether the question's assessment favors this answer.
+  favored?: boolean;
+  // Why the answer is in the set: its quality, its prominence, or both (§7).
+  basis?: "quality" | "prominence" | "both" | null;
+}
+
+/** How two answers bear on each other, recorded pair by pair (§7a). */
+export interface AnswerRelation {
+  a: string;
+  b: string;
+  relation: "excludes" | "compatible";
+}
+
+export interface QuestionNodeRef {
+  id: string;
+  text: string;
+  status?: AssessmentStatus | null;
+  standing?: QuestionStanding | null;
+}
+
+/** Where a source asks the question or answers it (§4, §7a). */
+export interface QuestionInstance {
+  id: string;
+  role: "asks" | "answers";
+  // The source's words, where a sentence (or a title) states the question
+  // or the answer; null where the answer is the argument of a whole work.
+  verbatim_text: string | null;
+  source_title: string;
+  source_url?: string | null;
+  source_type?: string | null;
+  // For a source that answers: the answer node its answer matches.
+  answer_id?: string | null;
+}
+
+/** A question's current assessment: its standing, the Steward's account, and the answers it favors. */
+export interface QuestionAssessment {
+  standing: QuestionStanding;
+  summary: string | null;
+  reasoning_trace: string;
+  model?: string | null;
+  assessed_at: string;
+  favored_ids: string[];
+}
+
+export interface QuestionDetail {
+  standing: QuestionStanding | null;
+  // Null until the question has been assessed; the claim detail's top-level
+  // `assessment` is null for a question.
+  assessment?: QuestionAssessment | null;
+  presuppositions: QuestionNodeRef[];
+  subquestions: QuestionNodeRef[];
+  answers: QuestionAnswer[];
+  relations: AnswerRelation[];
+  // Claims elsewhere that depend on how this question is answered.
+  depended_on_by?: QuestionNodeRef[];
+  instances: QuestionInstance[];
+  // The Steward's note when it judges the set of answers incomplete.
+  incomplete?: string | null;
+}
+
+// A request's life (Part VIII, Requests). "Addressed" means asked of a
+// particular party; "in progress" that someone has taken it up.
+export type RequestState =
+  | "open" | "addressed" | "in_progress" | "met" | "declined" | "withdrawn" | "moot";
+
+// What came back from work on a request. Each is a complete outcome,
+// paid for alike (Researcher role).
+export type RequestOutcome =
+  | "met" | "partly_met" | "negative" | "cannot_be_met" | "declined" | "revise";
+
+export interface RequestWork {
+  by: string;
+  outcome: RequestOutcome | null;
+  summary: string;
+  at: string;
+  funded_by?: string | null;
+}
+
+/** Something someone could do that would improve what the graph knows (Part VIII, Requests). */
+export interface RequestItem {
+  id: string;
+  ask: string;
+  // What the judgments it bears on would become under its possible outcomes.
+  why: string;
+  satisfied_by: string;
+  // Who could do it and what it would take, where known.
+  who_could?: string | null;
+  // Null when open to anyone.
+  addressed_to: string | null;
+  bears_on: { id: string; text: string; kind: NodeKind }[];
+  // Sources it bears on: a document's full text, a corrected table.
+  bears_on_sources?: { id: string; title: string; url?: string | null }[];
+  // What it bears on that the graph does not yet hold, in words.
+  bears_on_text?: string | null;
+  filed_by: { kind: "admin" | "contributor" | "mandate"; label: string };
+  // The keeper decides when it is met: the Steward of the one node it bears
+  // on, or the Curator for any other.
+  keeper: { kind: "steward" | "curator"; label: string };
+  state: RequestState;
+  state_note?: string | null;
+  filed_at: string;
+  work?: RequestWork[];
 }
 
 export interface SearchResultItem {

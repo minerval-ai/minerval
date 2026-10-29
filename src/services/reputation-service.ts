@@ -160,14 +160,19 @@ export async function applyReviewOutcome(
   const [contribution] = await rawQuery<{
     contributor_id: string;
     importance: number;
+    grant_id: string | null;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
     [input.contributionId]
   );
   if (!contribution) return null;
+  // A contribution a mandate's research submitted is the mandate's work,
+  // paid for by its budget: it builds no one's reputation or standing and
+  // earns no owls (money buys attention, never standing, §19).
+  if (contribution.grant_id) return null;
 
   const [contributor] = await rawQuery<{
     reputation_score: number;
@@ -327,14 +332,19 @@ export async function applyArbitrationOutcome(input: {
   const [contribution] = await rawQuery<{
     contributor_id: string;
     importance: number;
+    grant_id: string | null;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
     [input.contributionId]
   );
   if (!contribution) return null;
+  // A contribution a mandate's research submitted is the mandate's work,
+  // paid for by its budget: it builds no one's reputation or standing and
+  // earns no owls (money buys attention, never standing, §19).
+  if (contribution.grant_id) return null;
 
   const [contributor] = await rawQuery<{
     reputation_score: number;
@@ -485,14 +495,19 @@ export async function reverseReviewOutcome(input: {
   const [contribution] = await rawQuery<{
     contributor_id: string;
     importance: number;
+    grant_id: string | null;
   }>(
-    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance
+    `SELECT c.contributor_id, COALESCE(cl.importance, 0) AS importance, c.grant_id
      FROM contributions c
      LEFT JOIN claims cl ON cl.id = c.claim_id
      WHERE c.id = $1`,
     [input.contributionId]
   );
   if (!contribution) return null;
+  // A contribution a mandate's research submitted is the mandate's work,
+  // paid for by its budget: it builds no one's reputation or standing and
+  // earns no owls (money buys attention, never standing, §19).
+  if (contribution.grant_id) return null;
 
   const allEvents = await rawQuery<{ delta: number; reason: string }>(
     `SELECT delta, reason FROM reputation_events

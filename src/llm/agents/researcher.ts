@@ -16,7 +16,9 @@
  * and turn caps, and a terminal `report` tool. What the researcher may
  * write: its notebook, the provenance tables through the Provenance skill's
  * tools, and the stored copy of a source it fetched. Nothing else; a unit
- * test holds that line.
+ * test holds that line. A run a Grantmaker launched writes only its
+ * notebook: the provenance and examination tools are withheld from it
+ * whatever it was given (research-run-service.ts says why).
  *
  * The toolset follows the model. Every tier has web_search and read_page
  * (tools/web-search-tool.ts serves the search on any provider). A
@@ -70,6 +72,56 @@ import {
   getElicitToolDefinitions,
   isElicitTool,
 } from "../tools/elicit-tools.js";
+import { createPangramTools } from "../tools/pangram-tools.js";
+import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
+import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
+import {
+  contributionBudgetLine,
+  mandateContributionBudget,
+  reviewCostEstimateMicroUsd,
+  submitMandateContribution,
+} from "../../services/contribution-service.js";
+
+export const MANDATE_CONTRIBUTION_TYPES = [
+  "challenge",
+  "support",
+  "add_instance",
+  "add_estimate",
+  "propose_argument",
+  "propose_answer",
+  "propose_request",
+  "answer_request",
+] as const;
+
+/** For research a mandate funds: submit a finding the graph should hold, as a contribution under the mandate. */
+export const SUBMIT_CONTRIBUTION_TOOL: Tool = {
+  name: "submit_contribution",
+  description:
+    "Submit something you found that the graph should hold, as a contribution on one node, under the " +
+    "mandate (shown as \"a funded mandate\"). It is reviewed like anyone's, at the mandate's expense, " +
+    "and the node's Steward decides what it changes; nothing you submit goes onto the page directly. " +
+    "Submit only what you established, with its evidence, and only what bears on the node you name; " +
+    "everything else belongs in your report.",
+  input_schema: {
+    type: "object",
+    properties: {
+      claim_id: { type: "string", description: "The node the contribution bears on." },
+      contribution_type: { type: "string", enum: [...MANDATE_CONTRIBUTION_TYPES] },
+      content: {
+        type: "string",
+        description:
+          "The contribution, written for the Reviewer and the node's Steward: what you found, with the " +
+          "locator and the words or numbers it rests on. For answer_request, name the request id.",
+      },
+      evidence_urls: { type: "array", items: { type: "string" } },
+    },
+    required: ["claim_id", "contribution_type", "content"],
+    additionalProperties: false,
+  },
+};
+
+/** The one request tool a run that takes up a request carries. */
+const FILE_REQUEST_TOOL: Tool = getRequestToolDefinitions("researcher").find((t) => t.name === "file_request")!;
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -79,6 +131,7 @@ import {
   NOTEBOOK_MAX_SECTIONS,
   NOTEBOOK_MAX_SECTION_CHARS,
   RESEARCHER_AGENT,
+  launcherWritesGraph,
   readResearcherPaused,
   stampResearchRun,
   updateResearchProgress,
@@ -190,6 +243,32 @@ export const RESEARCH_REPORT_TOOL: Tool = {
   },
 };
 
+/**
+ * The report a run that takes up a request ends with: the ordinary report,
+ * plus the request's outcome (Part VIII). Every outcome is a complete one.
+ */
+export const REQUEST_REPORT_TOOL: Tool = {
+  ...RESEARCH_REPORT_TOOL,
+  description:
+    RESEARCH_REPORT_TOOL.description +
+    " This run takes up a request: request_outcome says what came of it, for its keeper to judge.",
+  input_schema: {
+    ...RESEARCH_REPORT_TOOL.input_schema,
+    properties: {
+      ...(RESEARCH_REPORT_TOOL.input_schema.properties as Record<string, unknown>),
+      request_outcome: {
+        type: "string",
+        enum: [...REQUEST_OUTCOMES],
+        description:
+          "met, partly_met (say which parts in answer), negative (you looked properly and the evidence is " +
+          "not there or points the other way), cannot_be_met (with the reason), declined (the request is " +
+          "flawed, moot, or could be met only by intrusion), or revise (say how in answer).",
+      },
+    },
+    required: [...((RESEARCH_REPORT_TOOL.input_schema.required as string[]) ?? []), "request_outcome"],
+  },
+};
+
 const NOTEBOOK_WRITE_TOOL: Tool = {
   name: "notebook_write",
   description:
@@ -217,7 +296,15 @@ export interface ResearcherInput {
   run: Pick<
     ResearchRunRow,
     "id" | "claim_id" | "grant_id" | "requested_by" | "task" | "model" | "model_tier" | "effort" | "include_constitution" | "ceiling_micro_usd" | "notebook"
-  >;
+  > & {
+    job_id?: string | null;
+    /**
+     * For research a mandate funds: USD (micro) its Grantmaker delegated for
+     * reviewing what it submits (Part VIII). 0 or absent offers no
+     * submit_contribution tool.
+     */
+    contribution_budget_micro_usd?: number;
+  };
   claim: { id: string; text: string; domains: string[] } | null;
   /** The document examination this run carries out, when launched as one (#507). */
   examination?: { id: string; source_id: string; source_title: string; source_url: string | null; facets: string[]; scope: string } | null;
@@ -278,26 +365,50 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   // examination needs provenance_read_source to read its document; the
   // examination tools only on a run launched as an examination.
   const examination = input.examination ?? null;
+  const graphWrites = launcherWritesGraph(run.requested_by);
   const skillTools = getActiveSkillToolDefinitions(skills, "researcher").filter(
     (t) =>
+      (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
       (checker || !isLeanTool(t.name)) &&
       (!t.name.startsWith(PROVENANCE_PREFIX) || !!input.claim || (!!examination && t.name === "provenance_read_source")) &&
       (!t.name.startsWith(EXAMINATION_PREFIX) || !!examination)
   );
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
+  const pangramTools = createPangramTools({ maxCalls: config.researcherPangramMaxCalls, config });
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
+  const takesUpRequest = run.requested_by === "request";
+  const submitsContributions =
+    run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
+
+  // The review budget a Grantmaker delegated, as the researcher sees it: in
+  // the task message, after every turn (reviews settle while it works, so
+  // committed spend moves from estimates to real costs), and in each
+  // submission's result.
+  let contributionBudgetNote = "";
+  const readContributionBudget = async (): Promise<string> => {
+    const estimate = await reviewCostEstimateMicroUsd();
+    contributionBudgetNote = contributionBudgetLine(await mandateContributionBudget(run.id, estimate), estimate);
+    return contributionBudgetNote;
+  };
 
   const webSearch = createWebSearch(model, Math.max(1, config.researcherWebSearchMaxUses));
   const tools: ToolUnion[] = [
     ...graphReadTools,
     getReadPageToolDefinition(),
     ...elicitTools,
+    ...pangramTools.definitions,
     ...skillTools,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
-    RESEARCH_REPORT_TOOL,
+    // A run that takes up a request reports its outcome, and may file the
+    // further request its work shows is needed.
+    ...(takesUpRequest ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL] : [RESEARCH_REPORT_TOOL]),
+    // Research a mandate funds submits what the graph should hold as
+    // contributions, their reviews paid from the budget its Grantmaker
+    // delegated.
+    ...(submitsContributions ? [SUBMIT_CONTRIBUTION_TOOL] : []),
     webSearch.tool,
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
@@ -313,6 +424,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskInput = {
     task: run.task,
     requestedBy: run.requested_by,
+    contributionBudget: submitsContributions ? await readContributionBudget() : null,
     claim: input.claim ? { id: input.claim.id, text: input.claim.text } : null,
     examination: examination
       ? { sourceTitle: examination.source_title, sourceUrl: examination.source_url, facets: examination.facets, scope: examination.scope }
@@ -323,6 +435,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     maxTurns,
     elicitMaxCalls: config.researcherElicitMaxCalls,
     elicitUsdPerCall: config.elicitUsdPerCall,
+    pangramMaxCalls: config.researcherPangramMaxCalls,
+    pangramMaxUsdPerCall:
+      config.pangramMaxWords * Math.max(config.pangramAiUsdPerWord, config.pangramPlagiarismUsdPerWord),
     toolNames,
     sandbox,
     notebook,
@@ -349,7 +464,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
    */
   const turnNote = (): string => {
     const spent = meterMicroUsd();
-    const line = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    const spend = spendLine({ spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: spent - meterAtLastTurn });
+    const line = contributionBudgetNote ? `${spend}\n${contributionBudgetNote}` : spend;
     meterAtLastTurn = spent;
     if (!reminded && !halted && spent >= REMINDER_FRACTION * ceiling) {
       reminded = true;
@@ -403,6 +519,14 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     }
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
     if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
+    if (name === FILE_REQUEST_TOOL.name) {
+      return (await executeKindTool(name, toolInput, { role: "researcher", model }))!;
+    }
+    if (name === SUBMIT_CONTRIBUTION_TOOL.name) {
+      const submitted = await submitMandateContribution({ researchRunId: run.id, input: toolInput });
+      if (submitted.budget) contributionBudgetNote = submitted.budget;
+      return JSON.stringify(submitted);
+    }
     if (graphReadNames.has(name)) {
       const out = await executeGraphReadTool(name, toolInput);
       if (out !== null) return out;
@@ -418,6 +542,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
       elicitCalls++;
       return executeElicitTool(name, toolInput, config);
     }
+    const pangram = await pangramTools.execute(name, toolInput);
+    if (pangram !== null) return pangram;
     if (isSkillTool(name)) {
       // Provenance records land on the run's claim and no other: a claim_id
       // in the input that names a different one is refused, not honoured.
@@ -489,6 +615,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
           await meterCodeExecution((endedAt - lastTurnEndedAt) / 1000);
         }
         lastTurnEndedAt = endedAt;
+        if (submitsContributions) await readContributionBudget();
         await progress(state.turn);
       };
       const loop = await longRunToolLoop({
@@ -533,6 +660,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         lastTurn = true;
       }
       turns = turn + 1;
+      if (submitsContributions) await readContributionBudget();
       await progress(turns);
     };
     let stopped: HarnessStop | null = null;

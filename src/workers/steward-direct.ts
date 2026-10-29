@@ -26,7 +26,8 @@ import { loadConfig } from "../config.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
-import { runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { getJobRemainingMicroUsd } from "../services/budget-job-service.js";
 import {
   acquireStewardLock,
   releaseStewardLock,
@@ -135,6 +136,10 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
   }
   const model = moneyTriggerModel(input.trigger, input.model);
   await assertTriggerToolsActive(input.trigger, input.claimId);
+  // The pass spends from the funding job's remaining budget.
+  const passBudget = input.jobId
+    ? { microUsd: await getJobRemainingMicroUsd(input.jobId), source: "the remaining budget of the job funding this run" }
+    : null;
   const restore = await acquireStewardLock(input.claimId);
   try {
     const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
@@ -145,7 +150,7 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
           claimId: input.claimId,
         },
         () =>
-          withCostMeter(() =>
+          withPassBudget(passBudget, () =>
             runClaimSteward({
               trigger: input.trigger,
               claimId: input.claimId,

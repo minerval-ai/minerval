@@ -52,6 +52,8 @@ import {
 import { getUsageContext } from "../usage-context.js";
 import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
+import { setArgumentShows } from "../../services/quantity-service.js";
+import { NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
 import {
   ClaimInstanceError,
   detachClaimInstance,
@@ -85,6 +87,31 @@ const RETIRED_STATUSES: Record<string, string> = {
     "and none was found, the absence is a reason for doubt: 'doubtful'. If " +
     "such evidence would not be expected, the claim is 'unknown'.",
 };
+
+/**
+ * A verdict on a proposition (update_claim_assessment) refused for a node
+ * of another kind, pointing at the tool that records its judgment (§10).
+ */
+async function wrongKindForAssessment(claimId: string): Promise<string | null> {
+  const [row] = await rawQuery<{ kind: string }>(`SELECT kind FROM claims WHERE id = $1`, [claimId]);
+  if (row?.kind === "quantity") {
+    return JSON.stringify({
+      success: false,
+      message:
+        `Node ${claimId} is a quantity: its assessment is an estimate, recorded with ` +
+        `update_quantity_estimate, not a status.`,
+    });
+  }
+  if (row?.kind === "question") {
+    return JSON.stringify({
+      success: false,
+      message:
+        `Node ${claimId} is a question: its assessment is recorded with ` +
+        `update_question_assessment.`,
+    });
+  }
+  return null;
+}
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
 function clampUnit(value: unknown): number | undefined {
@@ -310,6 +337,13 @@ export function getStewardToolDefinitions(): Tool[] {
               "of THIS claim (not a near-miss proposition or a passing " +
               "mention). Defaults to 1.",
           },
+          stated_probability: {
+            type: "number",
+            description:
+              "When the source itself states a probability for the claim " +
+              "(a forecast, \"a 30% chance\"), that probability, 0..1: what " +
+              "the source said, never your own credence.",
+          },
         },
         required: ["claim_id", "url", "verbatim_text", "stance"],
       },
@@ -528,14 +562,19 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "add_argument",
       description:
-        "Create a named argument (a line of reasoning) on a claim: a grouping " +
-        "that subclaims attach to. Use when distinct for/against lines of reasoning " +
-        "exist; pass the returned argument_id to add_relationship_edge / " +
-        "add_decomposition_edge to group subclaims under it. The description is a " +
-        "label for the line of reasoning, not itself a proposition. An argument is " +
-        "NOT finished at creation: once its subclaim edges are attached, you MUST " +
-        "give it a written form with write_argument, and when you record the " +
-        "claim's assessment you evaluate it with evaluate_argument.",
+        "Create a named argument on a claim: a line of reasoning, for or " +
+        "against, that subclaims attach to. Arguments are canonical, " +
+        "like claims, and may be ones you supply yourself (§7). Before " +
+        "creating one, check the claim's existing arguments: one that " +
+        "reaches the claim through the same inference is the same " +
+        "argument, however worded. Name it by its reasoning (\"the " +
+        "argument from the unlinked early cases\"). A conventional name " +
+        "is fine where the discourse uses one (\"Pascal's wager\"). Pass " +
+        "the returned argument_id to add_relationship_edge / " +
+        "add_decomposition_edge to group subclaims under it. Once its " +
+        "edges are attached, give it a written form with write_argument. " +
+        "When you record the claim's assessment, evaluate it with " +
+        "evaluate_argument.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -549,32 +588,61 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           stance: {
             type: "string",
-            enum: ["for", "against", "neutral"],
-            description: "Whether this argument supports, opposes, or is neutral",
+            enum: ["for", "against"],
+            description:
+              "'for': the argument's conclusion is the claim. 'against': " +
+              "its conclusion is the claim's denial. Omit for a quantity, " +
+              "whose arguments pass shows instead.",
           },
           description: {
             type: "string",
             description: "Brief label for this line of reasoning (not a proposition)",
           },
+          shows: {
+            type: "object",
+            description:
+              "For an argument about a quantity, in place of stance (§7): " +
+              "what it shows about the value, as {text, range}. range.side " +
+              "is at, about, between, above or below (a figure or lower " +
+              "bound in low, an upper bound in high; inclusive for 'at " +
+              "least' or 'at most'); omit range for an argument that the " +
+              "value is ill defined or cannot be known.",
+            properties: {
+              text: { type: "string" },
+              range: {
+                type: "object",
+                properties: {
+                  side: { type: "string", enum: ["at", "about", "between", "above", "below"] },
+                  low: { type: "number" },
+                  high: { type: "number" },
+                  inclusive: { type: "boolean" },
+                },
+                required: ["side"],
+              },
+            },
+            required: ["text"],
+          },
         },
-        required: ["claim_id", "name", "stance", "description"],
+        required: ["claim_id", "name", "description"],
       },
     },
     {
       name: "write_argument",
       description:
-        "Write (or revise) an argument's written form: a brief, logically " +
-        "straightforward prose statement of HOW its subclaims combine to bear on " +
-        "the claim, the inferential step the grouping alone leaves implicit. " +
-        "1–3 sentences, e.g. 'Because [[claim:<uuid>]] and [[claim:<uuid>]], and " +
-        "given [[claim:<uuid>]], the claim follows.' Reference EVERY subclaim in " +
-        "the argument inline as [[claim:<uuid>]] (or [[claim:<uuid>|inline " +
-        "phrasing]] when grammar needs it); links resolve to the claims' " +
-        "canonical text at render time. The written form is structural, not " +
-        "epistemic: state the inference, never a verdict on whether it holds; " +
-        "your judgment of the inference belongs in evaluate_argument. " +
-        "Call this after attaching the argument's subclaim edges; call it again " +
-        "whenever the argument's subclaims change (and then re-evaluate).",
+        "Write or revise an argument's written form: one to three " +
+        "sentences stating plainly how its premises combine to reach its " +
+        "conclusion, e.g. 'Because [[claim:<uuid>]] and " +
+        "[[claim:<uuid>]], and given [[claim:<uuid>]], the claim " +
+        "follows.' Reference every attached subclaim inline as " +
+        "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]). State " +
+        "the argument faithfully, as its proponents would recognize it, " +
+        "at its most plausible intended reading, without weakening or " +
+        "repairing it. Use no rhetoric. Include every premise the " +
+        "conclusion depends on, including unspoken ones, stated as " +
+        "propositions about the world rather than as conditionals that " +
+        "restate the inference. The form states the inference without " +
+        "judging it; your judgment goes in evaluate_argument. Call again " +
+        "whenever the subclaims change, then re-evaluate.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -595,14 +663,19 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "evaluate_argument",
       description:
-        "Record (or revise) your evaluation of a named argument: does the " +
-        "inference go through granting its premises, and which premises does " +
-        "the argument currently live or die on? This is the epistemic " +
-        "counterpart of the written form (which states the inference without " +
-        "judging it), derived as part of assessing the claim — call it for " +
-        "each named argument when you record an assessment, and again when a " +
-        "premise's standing changes. It is reader-facing prose in the same " +
-        "register as an assessment, not a discussion surface: contributor " +
+        "Record or revise your evaluation of a named argument: how far " +
+        "its conclusion follows if its premises hold as the written form " +
+        "states them, which premises it currently lives or dies on, and " +
+        "whether it is decisive. For an argument against the claim, the " +
+        "conclusion is the claim's denial. Rate the inference, not the " +
+        "truth of the premises or the claim: whether the premises hold " +
+        "is shown beside your rating from their own assessments, and how " +
+        "much the argument moves the claim belongs in the claim's " +
+        "assessment. Call it for each named argument when you record an " +
+        "assessment. Change the rating when the argument's structure or " +
+        "your reading of the inference changes; update the prose and " +
+        "reconsider the decisive mark when a premise's standing does. " +
+        "Reader-facing, in the register of an assessment; contributor " +
         "exchanges stay in the contribution record.",
       input_schema: {
         type: "object" as const,
@@ -615,26 +688,46 @@ export function getStewardToolDefinitions(): Tool[] {
             type: "string",
             enum: [...ARGUMENT_VERDICTS],
             description:
-              "Whether the inference goes through granting its premises. " +
-              "'holds': the conclusion follows if the premises hold. " +
-              "'holds_with_caveats': it goes through, but only under stated " +
-              "qualifications. 'fails': the conclusion does not follow even " +
-              "granting the premises. 'contested': the validity of the " +
-              "argument's framework is itself live-disputed (it should then " +
-              "also carry an assumes subclaim, §7).",
+              "How far the conclusion follows if the premises hold. " +
+              "'certain': it follows necessarily. 'likely': the premises " +
+              "make it much more likely, without guaranteeing it (most " +
+              "good inductive, statistical and explanatory arguments). " +
+              "'slight': the premises bear on it, but only a little. " +
+              "'none': even if true, the premises give it no real " +
+              "support; name the flaw in the evaluation. A circular " +
+              "argument gives no support. If the argument is slight only " +
+              "because a premise is unstated, state that premise and " +
+              "attach it before rating. This rates the step, not the " +
+              "conclusion.",
           },
           evaluation: {
             type: "string",
             description:
-              "Two to four sentences, reader-facing (§12 voice): whether the " +
-              "inference goes through, and which premises, given their current " +
-              "assessments, bear the argument's weight — reference those " +
-              "load-bearing premises inline as [[claim:<uuid>]] (or " +
-              "[[claim:<uuid>|inline phrasing]]), the same syntax as the " +
-              "written form. E.g. 'The inference is valid; the argument " +
-              "stands or falls with [[claim:<uuid>]], which remains " +
-              "contested.' No tool names, no UUID prose, no verdict-label " +
-              "restating.",
+              "Two to four sentences, reader-facing (§12): how far the " +
+              "inference goes, phrased conditionally ('granting its " +
+              "premises, ...'), and, for a rating of none, the flaw in " +
+              "plain words; then which premises bear the weight, given " +
+              "their current assessments, referenced inline as " +
+              "[[claim:<uuid>]] (or [[claim:<uuid>|inline phrasing]]); " +
+              "for a decisive argument, what makes it decisive. E.g. " +
+              "'Granting its premises the conclusion follows, so the " +
+              "argument stands or falls with [[claim:<uuid>]], which the " +
+              "evidence currently leaves unsettled.' No tool names, no " +
+              "ids in prose, no restating the rating label.",
+          },
+          decisive: {
+            type: "boolean",
+            description:
+              "True when this argument, taken alone and with its " +
+              "premises as they are now assessed, settles its " +
+              "conclusion: the inference leaves no real room for doubt, " +
+              "and the premises it rests on are established (a settled " +
+              "premise left unassessed counts when the evaluation says " +
+              "why it is settled). Most arguments are not decisive, and " +
+              "false is the ordinary case. When you set it, the " +
+              "evaluation says what makes the argument decisive, and the " +
+              "claim's status agrees with it. The mark lapses with its " +
+              "premises: reconsider it when one of them is reassessed.",
           },
         },
         required: ["argument_id", "verdict", "evaluation"],
@@ -813,6 +906,24 @@ export function getStewardToolDefinitions(): Tool[] {
               "pass it when the subclaim is of another kind, as when a " +
               "mathematical proposition rests on an empirical_derived claim " +
               "about a proof or a dataset.",
+          },
+          kind: {
+            type: "string",
+            enum: [...NODE_KINDS],
+            description:
+              "The new node's kind (§2, §7a): claim (the default), quantity " +
+              "when the premise is about a value (link the quantity itself, " +
+              "never a claim that it lies above or below a figure), or " +
+              "question when what your claim asserts turns on how a question " +
+              "is answered.",
+          },
+          definition: {
+            type: "object",
+            description:
+              "For a new quantity: {measures, population, conditions, unit}, " +
+              "where unit is {kind: proportion|count|currency|temperature|" +
+              "year|duration|rate|measure, symbol, noun, currency, per, " +
+              "scale, min, max}. child_text is the definition in words.",
           },
         },
         required: ["parent_id", "child_text", "relation", "reasoning"],
@@ -1173,6 +1284,9 @@ export async function executeStewardTool(
           }
         }
 
+        const kindRefusal = await wrongKindForAssessment(claimId);
+        if (kindRefusal) return kindRefusal;
+
         const db = getDb();
 
         // Carry over the current assessment's subclaim breakdown: a steward
@@ -1303,14 +1417,40 @@ export async function executeStewardTool(
 
         // A hallucinated claim id would otherwise surface as an opaque FK
         // error from the insert.
-        const claimRows = await rawQuery<{ id: string }>(
-          `SELECT id FROM claims WHERE id = $1`,
+        const claimRows = await rawQuery<{ id: string; kind: string }>(
+          `SELECT id, kind FROM claims WHERE id = $1`,
           [claimId]
         );
         if (claimRows.length === 0) {
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}`,
+          });
+        }
+        // A figure is an instance of its quantity, and a question is asked or
+        // answered (§4, §7a): each has its own tool.
+        if (claimRows[0]!.kind === "quantity") {
+          return JSON.stringify({
+            success: false,
+            message: `Node ${claimId} is a quantity: record a source's figure with record_estimate.`,
+          });
+        }
+        if (claimRows[0]!.kind === "question") {
+          return JSON.stringify({
+            success: false,
+            message: `Node ${claimId} is a question: record where a source asks or answers it with record_question_instance.`,
+          });
+        }
+        // A probability the source itself states for the claim (§4): what
+        // the source said, kept with its instance.
+        const statedProbability =
+          input.stated_probability === undefined || input.stated_probability === null
+            ? null
+            : Number(input.stated_probability);
+        if (statedProbability !== null && !(statedProbability >= 0 && statedProbability <= 1)) {
+          return JSON.stringify({
+            success: false,
+            message: "stated_probability must be between 0 and 1, as the source states it.",
           });
         }
 
@@ -1412,6 +1552,7 @@ export async function executeStewardTool(
             publication: optText(input.publication),
             sourceDate: optText(input.source_date),
             link: optText(input.link),
+            statedProbability,
             createdBy: "claim_steward",
           })
           .returning();
@@ -1788,8 +1929,61 @@ export async function executeStewardTool(
       case "add_argument": {
         const claimId = input.claim_id as string;
         const name = input.name as string;
-        const stance = input.stance as "for" | "against" | "neutral";
+        const stance = input.stance as "for" | "against";
         const description = input.description as string;
+        // An argument about a quantity has no for or against (§7): it shows
+        // something about the value, recorded as `shows`.
+        const [node] = await rawQuery<{ kind: string }>(`SELECT kind FROM claims WHERE id = $1`, [claimId]);
+        if (node?.kind === "question") {
+          return JSON.stringify({
+            success: false,
+            message:
+              "A question has no arguments of its own: its answers carry them. " +
+              "Add the answer with add_answer and argue on its page.",
+          });
+        }
+        if (node?.kind === "quantity") {
+          const parsed = valueShownSchema.safeParse(input.shows);
+          if (!parsed.success) {
+            return JSON.stringify({
+              success: false,
+              message:
+                "An argument about a quantity records what it shows about the value " +
+                "in place of a stance: pass shows as {text, range}. " +
+                parsed.error.issues.map((i) => i.message).join("; "),
+            });
+          }
+          const argument = await addArgument({
+            claimId,
+            stance: "neutral",
+            content: description,
+            name,
+            description,
+            createdBy: "claim_steward",
+          });
+          await setArgumentShows({ argumentId: argument.id, shows: parsed.data });
+          return JSON.stringify({
+            success: true,
+            message:
+              `Created argument "${name}" on quantity ${claimId}, showing ${parsed.data.text}. ` +
+              `Attach its premises and the figures it rests on (record_estimate with ` +
+              `argument_id), give it a written form with write_argument, and evaluate ` +
+              `how strongly it shows that when you record the estimate.`,
+            argument_id: argument.id,
+          });
+        }
+        // An argument's conclusion is the claim or its denial (§7); a
+        // "neutral" line has no conclusion for its evaluation to rate.
+        if (stance !== "for" && stance !== "against") {
+          return JSON.stringify({
+            success: false,
+            message:
+              `stance must be "for" or "against". If a line of reasoning ` +
+              `bears for the claim on one reading and against it on another, ` +
+              `the claim is probably too vague to rate against: propose a ` +
+              `split rather than recording a neutral argument.`,
+          });
+        }
 
         const argument = await addArgument({
           claimId,
@@ -1894,13 +2088,15 @@ export async function executeStewardTool(
         const argumentId = input.argument_id as string;
         const verdict = String(input.verdict).toLowerCase();
         const content = ((input.evaluation as string) ?? "").trim();
+        const decisive = input.decisive === true;
 
         if (!isArgumentVerdict(verdict)) {
           return JSON.stringify({
             success: false,
             message:
-              `Unknown verdict "${verdict}". Use one of: ` +
-              `${ARGUMENT_VERDICTS.join(", ")}.`,
+              `Unknown rating "${verdict}". Use one of: ` +
+              `${ARGUMENT_VERDICTS.join(", ")} (how far the conclusion ` +
+              `follows if the premises hold).`,
           });
         }
 
@@ -1923,7 +2119,7 @@ export async function executeStewardTool(
         if (content.length === 0) {
           return JSON.stringify({
             success: false,
-            message: "The evaluation prose is required; a bare verdict is a label, not a judgment.",
+            message: "The evaluation prose is required; a bare rating is a label, not a judgment.",
           });
         }
         // Same brevity budget as the written form: links cost ~46 chars each,
@@ -1982,7 +2178,13 @@ export async function executeStewardTool(
         // Provenance: stamp the claim assessment this evaluation was derived
         // under, so an evaluation left behind by a later reassessment is
         // detectably stale. Call evaluate_argument AFTER update_claim_assessment
-        // so the stamp lands on the fresh assessment.
+        // so the stamp lands on the fresh assessment. A quantity has no
+        // assessment: its evaluations are stamped with the current estimate.
+        const [currentEstimate] = await rawQuery<{ id: string }>(
+          `SELECT qe.id FROM quantity_estimates qe JOIN claims c ON c.id = qe.claim_id
+            WHERE qe.claim_id = $1 AND qe.is_current = true AND c.kind = 'quantity'`,
+          [argument.claimId]
+        );
         const db = getDb();
         const [currentAssessment] = await db
           .select({ id: assessments.id })
@@ -1999,14 +2201,17 @@ export async function executeStewardTool(
           argumentId,
           verdict,
           content,
+          decisive,
           assessmentId: currentAssessment?.id ?? null,
+          estimateId: currentEstimate?.id ?? null,
           createdBy: "claim_steward",
         });
 
         return JSON.stringify({
           success: true,
           message:
-            `Evaluation recorded for argument "${argument.name}": ${verdict}.` +
+            `Evaluation recorded for argument "${argument.name}": ${verdict}` +
+            (decisive ? ", decisive." : ".") +
             (currentAssessment
               ? ""
               : ` Note: the claim has no current assessment yet; record one ` +
@@ -2257,6 +2462,26 @@ export async function executeStewardTool(
           }
         }
 
+        // The new node's kind (§2, §7a), and a quantity's definition, checked
+        // before anything is written.
+        const childKind = typeof input.kind === "string" && input.kind.trim() ? input.kind.trim().toLowerCase() : "claim";
+        if (!(NODE_KINDS as readonly string[]).includes(childKind)) {
+          return JSON.stringify({ success: false, message: `Unknown kind "${childKind}". Use one of: ${NODE_KINDS.join(", ")}.` });
+        }
+        let childDefinition: ReturnType<typeof quantityDefinitionSchema.parse> | null = null;
+        if (childKind === "quantity") {
+          const parsed = quantityDefinitionSchema.safeParse(input.definition);
+          if (!parsed.success) {
+            return JSON.stringify({
+              success: false,
+              message:
+                "A new quantity needs its definition: " +
+                parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`).join("; "),
+            });
+          }
+          childDefinition = parsed.data;
+        }
+
         // Create the subclaim
         let embedding: number[] | undefined;
         try {
@@ -2308,10 +2533,24 @@ export async function executeStewardTool(
                 : {}),
               ...(gated ? { stewardState: "deferred" } : {}),
               ...(domainsSource !== null ? { domains, domainsSource } : {}),
+              kind: childKind,
               pipelineEpoch,
               createdBy: "claim_steward",
             })
             .returning();
+          if (childDefinition) {
+            await tx.query(
+              `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
+               VALUES ($1, $2, $3, $4, $5, 'claim_steward')`,
+              [
+                created!.id,
+                childDefinition.measures,
+                childDefinition.population ?? null,
+                childDefinition.conditions ?? null,
+                JSON.stringify(childDefinition.unit),
+              ]
+            );
+          }
 
           // The child is brand new, so the edge cannot collide.
           const edge = await insertRelationshipEdge(
@@ -2349,7 +2588,7 @@ export async function executeStewardTool(
         return JSON.stringify({
           success: true,
           message:
-            `Added subclaim to ${parentId}: "${childText}" (${relation})` +
+            `Added ${childKind === "claim" ? "subclaim" : `a ${childKind}`} to ${parentId}: "${childText}" (${relation})` +
             (seedCredence !== undefined
               ? `; seeded with prior credence ${seedCredence}` +
                 (seedNote ? " and a preliminary note" : "")

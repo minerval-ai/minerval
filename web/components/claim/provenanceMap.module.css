@@ -8,15 +8,15 @@
 
 .map {
   /* edge colours, the claim map's palette: colour only where it means something */
-  --pm-plain: #c9c2b1;
-  --pm-faithful: #8a8378;
-  --pm-strengthened: #9a6d12;
-  --pm-weakened: #2a5078;
-  --pm-distorted: #8f3a2c;
-  --pm-misattributed: #8f3a2c;
-  --pm-unclear: #9b9484;
-  --pm-response: #756f60;
-  --pm-diverge-ink: #7a2f23;
+  --pm-plain: var(--rule-strong);
+  --pm-faithful: var(--st-unknown);
+  --pm-strengthened: var(--st-inconclusive);
+  --pm-weakened: var(--link);
+  --pm-distorted: var(--st-contradicted);
+  --pm-misattributed: var(--st-contradicted);
+  --pm-unclear: var(--faint);
+  --pm-response: var(--muted);
+  --pm-diverge-ink: color-mix(in srgb, var(--st-contradicted) 85%, var(--ink));
 
   --drop: 52px;
   --stem: 14px;
@@ -225,7 +225,7 @@
 .card {
   position: relative;
   background: var(--paper-card);
-  border: 1px solid #c9c2b1;
+  border: 1px solid var(--rule-strong);
   border-radius: 3px;
   text-align: left;
   overflow: hidden;
@@ -280,7 +280,7 @@
   line-height: 1.3;
   color: var(--ink);
   text-decoration: underline;
-  text-decoration-color: #c9c2b1;
+  text-decoration-color: var(--rule-strong);
   text-underline-offset: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -348,9 +348,9 @@
 /* several like siblings, one card: a second edge behind it */
 .stack {
   overflow: visible;
-  box-shadow: 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 #c9c2b1;
+  box-shadow: 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 var(--rule-strong);
 }
-.stack.divergent { box-shadow: inset 3px 0 0 var(--pm-distorted), 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 #c9c2b1; }
+.stack.divergent { box-shadow: inset 3px 0 0 var(--pm-distorted), 3px 3px 0 -1px var(--paper-card), 3px 3px 0 0 var(--rule-strong); }
 
 /* ----- folds and overflow ------------------------------------------------------ */
 .fold {
@@ -372,7 +372,7 @@
 .foldCaption { font-size: 11.5px; font-weight: 600; color: var(--link); line-height: 1.3; }
 .foldNote { font-size: 10.5px; color: var(--pm-diverge-ink); }
 .squares { display: flex; flex-wrap: wrap; gap: 2px; }
-.squares i { width: 7px; height: 7px; border-radius: 1px; background: #b3ac9c; }
+.squares i { width: 7px; height: 7px; border-radius: 1px; background: var(--rule-heavy); }
 .squares i[data-div] { background: var(--pm-distorted); }
 
 .more {
@@ -483,7 +483,7 @@
 .legendRule { width: 1px; height: 14px; background: var(--rule); }
 .legendBox {
   width: 16px; height: 11px; display: inline-block;
-  border: 1px solid #c9c2b1; border-radius: 2px; background: var(--paper-card);
+  border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--paper-card);
 }
 .legendBox.origin { border-top-width: 3px; }
 

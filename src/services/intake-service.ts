@@ -35,6 +35,7 @@ import { getOrCreateSource } from "./source-service.js";
 import { loadConfig } from "../config.js";
 import { createOrder } from "./order-service.js";
 import { rawQuery } from "../db/client.js";
+import type { NodeKind } from "../schemas/kinds.js";
 
 /**
  * An accepted claim proposal was PAID for (the claim_proposal owl at
@@ -68,7 +69,7 @@ async function createProposalFundedOrder(
   }
 }
 
-export type IntakeContributionType = "propose_claim" | "propose_source";
+export type IntakeContributionType = "propose_claim" | "propose_question" | "propose_source";
 
 export function isIntakeContributionType(
   type: string
@@ -86,6 +87,8 @@ export async function createClaimProposal(input: {
   claimText: string;
   argumentText: string;
   contributorId: string;
+  /** A question proposed directly is a propose_question (§7a). */
+  kind?: "claim" | "question";
 }) {
   const db = getDb();
   const [contribution] = await db
@@ -93,7 +96,7 @@ export async function createClaimProposal(input: {
     .values({
       claimId: null,
       contributorId: input.contributorId,
-      contributionType: "propose_claim",
+      contributionType: input.kind === "question" ? "propose_question" : "propose_claim",
       // The argument is the contribution's substance; the proposed claim text
       // rides in proposed_canonical_form, same as a propose_edit.
       content: input.argumentText,
@@ -177,7 +180,7 @@ export async function materializeAcceptedIntake(
     );
   }
 
-  if (contribution.contributionType === "propose_claim") {
+  if (contribution.contributionType === "propose_claim" || contribution.contributionType === "propose_question") {
     return materializeProposedClaim(contribution);
   }
 
@@ -196,9 +199,15 @@ async function materializeProposedClaim(contribution: {
   id: string;
   claimId: string | null;
   contributorId: string;
+  contributionType: string;
   content: string;
   proposedCanonicalForm: string | null;
 }): Promise<IntakeMaterializationResult> {
+  // A question proposed directly enters as a question unless the Matcher
+  // finds it asks whether something is so, or for a value (§7a); its
+  // content says why the question matters, and is never stored as an
+  // argument for anything.
+  const proposedKind: NodeKind = contribution.contributionType === "propose_question" ? "question" : "claim";
   if (contribution.claimId) {
     return { action: "already_materialized", claimId: contribution.claimId };
   }
@@ -221,6 +230,7 @@ async function materializeProposedClaim(contribution: {
     extractedText: claimText,
     proposedCanonical: claimText,
     domains,
+    kind: proposedKind,
   });
 
   // No verdict (#419): neither link nor mint. The call is idempotent and runs
@@ -245,12 +255,13 @@ async function materializeProposedClaim(contribution: {
       claimId: match.matched_claim_id,
       trigger: "contribution_accepted",
       context:
-        `An accepted propose_claim contribution matched this claim` +
+        `An accepted ${contribution.contributionType} contribution matched this node` +
         (match.instance_stance === "denies"
           ? " (the proposal asserts its negation)"
           : "") +
-        `. Proposed wording: "${claimText}". Supporting argument from the ` +
-        `contributor: ${contribution.content}`,
+        `. Proposed wording: "${claimText}". ` +
+        (proposedKind === "question" ? `Why the contributor asks it: ` : `Supporting argument from the contributor: `) +
+        contribution.content,
     });
 
     // The proposal was paid for: run that steward pass on the express lane.
@@ -275,10 +286,12 @@ async function materializeProposedClaim(contribution: {
   }
 
   const { pipelineEpoch, proposedClaimImportancePrior } = loadConfig();
+  const kind: NodeKind = match.kind ?? proposedKind;
   const [claim] = await db
     .insert(claims)
     .values({
       text: canonicalText,
+      kind,
       createdBy: "user",
       embedding,
       importance: proposedClaimImportancePrior,
@@ -296,12 +309,16 @@ async function materializeProposedClaim(contribution: {
     })
     .returning();
 
-  await db.insert(arguments_).values({
-    claimId: claim!.id,
-    stance: "for",
-    content: contribution.content,
-    createdBy: "user",
-  });
+  // A proposed claim's argument is an argument for it; a proposed
+  // question's reason for asking is not, whatever kind it became.
+  if (proposedKind === "claim" && kind === "claim") {
+    await db.insert(arguments_).values({
+      claimId: claim!.id,
+      stance: "for",
+      content: contribution.content,
+      createdBy: "user",
+    });
+  }
 
   await db
     .update(contributions)

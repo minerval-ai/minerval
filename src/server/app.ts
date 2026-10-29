@@ -7,6 +7,7 @@ import { registerCors } from "./plugins/cors.js";
 import { registerAuth } from "./plugins/auth.js";
 import { registerQuota } from "./plugins/quota.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
+import { registerRouteCatalog } from "./plugins/route-catalog.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
 import { formalizationsRoutes } from "../routes/formalizations.js";
@@ -36,6 +37,7 @@ import { platformMandateRoutes } from "../routes/platform-mandates.js";
 import { reportRoutes } from "../routes/reports.js";
 import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
+import { requestRoutes } from "../routes/requests.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -63,6 +65,8 @@ export async function buildApp() {
   await registerAuth(app);
   await registerQuota(app);
   await registerErrorHandler(app);
+  // Before any route: MCP builds its route tools from the catalog.
+  await registerRouteCatalog(app);
 
   // Routes
   await app.register(healthRoutes);
@@ -93,6 +97,7 @@ export async function buildApp() {
   await app.register(reportRoutes, { prefix: "/reports" });
   await app.register(findingRoutes, { prefix: "/findings" });
   await app.register(tagRoutes, { prefix: "/tags" });
+  await app.register(requestRoutes, { prefix: "/requests" });
   await app.register(mcpRoutes, { prefix: "/mcp" });
   // The mathematics surfaces span /claims/:id/..., /attempts, /prizes,
   // /prize-claims, /bounties, /lean-checks, and /attachments,

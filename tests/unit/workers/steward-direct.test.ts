@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../src/llm/agents/claim-steward.js", () => ({ runClaimSteward: mocks.runClaimSteward }));
 vi.mock("../../../src/config.js", () => ({ loadConfig: () => mocks.config }));
+vi.mock("../../../src/services/budget-job-service.js", () => ({ getJobRemainingMicroUsd: vi.fn(async () => 4_000_000) }));
 // The claim's lock (#482) is exercised against real SQL in
 // tests/db/steward-lock.test.ts; here it always comes free.
 vi.mock("../../../src/services/steward-lease.js", () => ({
@@ -77,6 +78,8 @@ describe("invokeStewardDirect", () => {
     expect(out.model).toBe("strong-model");
     expect(mocks.runClaimSteward).toHaveBeenCalledWith({ trigger: "prize_claim", claimId: "c1", context: "prize claim pc1", model: "strong-model" });
     expect(seen).toMatchObject({ jobId: "job1", claimId: "c1" });
+    // The pass spends from what the funding job has left, and is shown where that comes from.
+    expect(seen!.passBudget).toMatchObject({ microUsd: 4_000_000, source: expect.stringContaining("job funding this run") });
   });
 
   it("refuses a non-money trigger", async () => {

@@ -8,6 +8,10 @@ import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
+import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
+import { getQuestionDetail } from "../services/question-service.js";
+import { listRequests } from "../services/request-service.js";
+import { REQUEST_SCHEMA } from "./requests.js";
 import { getClaimById, listClaims, proposeClaim } from "../services/claim-service.js";
 import { getClaimSourceMap } from "../services/source-map-service.js";
 import { getProvenanceStory } from "../services/provenance-story-service.js";
@@ -114,6 +118,8 @@ export const claimSchema = {
   type: "object",
   properties: {
     id: { type: "string", format: "uuid" },
+    // claim | quantity | question (constitution §2, §7a).
+    kind: { type: "string" },
     text: { type: "string" },
     claim_type: { type: "string" },
     state: { type: "string" },
@@ -386,6 +392,21 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               // Research runs (#298): the investigations the Steward
               // delegated, disclosed with their brief, model, and cost.
               research_runs: looseArray,
+              // Kinds (constitution §2, §7a), served at every depth. A
+              // quantity's definition, estimate (with `assessed`, the record
+              // of who estimated it and why), the estimates sources state,
+              // readings and cuts; for a claim about which side of a figure a
+              // quantity lies, that quantity and where; a question's
+              // standing (with `assessment`), presuppositions, subquestions,
+              // answers, answer relations and instances. Null when the node
+              // is not that kind. A quantity's or question's `assessment`
+              // above is null: `assessments` holds verdicts on propositions.
+              quantity: looseObject,
+              threshold_of: looseObject,
+              question: looseObject,
+              // Requests that bear on this node (Part VIII), live ones and
+              // closed ones alike, newest first.
+              requests: { type: "array", items: REQUEST_SCHEMA },
               // Topic tags (#272), each with the provenance of its tagging:
               // who attached it (tagger, steward, operator…) and how sure.
               tags: {
@@ -438,11 +459,28 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
+        const [quantity, thresholdOf, question, nodeRequests] = await Promise.all([
+          claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
+          claim.kind === "claim" ? getThresholdOf(claim_id) : null,
+          claim.kind === "question" ? getQuestionDetail(claim_id) : null,
+          // Requests degrade to none rather than failing the page, as tags do.
+          listRequests({ claimId: claim_id, limit: 20 }).catch((err) => {
+            console.error(
+              `[claims] requests failed for ${claim_id}: ${err instanceof Error ? err.message : err}`
+            );
+            return { items: [], total: 0 };
+          }),
+        ]);
+
         const response: Record<string, unknown> = {
           claim: formatClaim(claim),
           assessment: assessment ? formatAssessment(assessment) : null,
           subclaim_count: subclaimCount,
           ...extras,
+          quantity,
+          threshold_of: thresholdOf,
+          question,
+          requests: nodeRequests.items,
           tags: claimTags.map((t) => ({
             id: t.id,
             slug: t.slug,
@@ -534,7 +572,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             created_by: a.createdBy,
             created_at: a.createdAt.toISOString(),
             verdict: evalByArgument.get(a.id)?.verdict ?? null,
+            decisive: evalByArgument.get(a.id)?.decisive ?? null,
             evaluation: evalByArgument.get(a.id)?.content ?? null,
+            shows: a.shows ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
           }));
 
@@ -766,6 +806,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     id: { type: "string", format: "uuid" },
                     text: { type: "string" },
                     claim_type: { type: "string" },
+                    // claim | quantity | question (constitution §2, §7a).
+                    node_kind: { type: "string" },
                     relation_type: { type: "string" },
                     reasoning: { type: "string" },
                     importance: { type: "number" },
@@ -875,7 +917,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                         contributor: {
                           type: "object",
                           properties: {
-                            id: { type: "string", format: "uuid" },
+                            id: { type: "string", format: "uuid", nullable: true },
                             display_name: { type: "string" },
                           },
                         },
@@ -960,7 +1002,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             contribution: {
               id: entry.contribution.id,
               contributor: {
-                id: entry.contribution.contributorId,
+                // A mandate's contribution does not link to its funder's profile.
+                id: entry.contribution.grantId ? null : entry.contribution.contributorId,
                 display_name: entry.contributorDisplayName,
               },
               contribution_type: entry.contribution.contributionType,
@@ -1016,13 +1059,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim with an initial argument (user proposals enter the review queue)",
+        "Propose a new claim with an initial argument, or a question with why it needs asking (user proposals enter the review queue)",
       body: {
         type: "object",
         required: ["claim", "argument"],
         properties: {
           claim: { type: "string", minLength: 1, maxLength: 2000 },
           argument: { type: "string", minLength: 1, maxLength: 5000 },
+          // claim (default) or question (§7a).
+          kind: { type: "string", enum: ["claim", "question"], default: "claim" },
         },
       },
       response: {
@@ -1032,6 +1077,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             claim: claimSchema,
             argument: {
               type: "object",
+              nullable: true,
               properties: {
                 id: { type: "string", format: "uuid" },
                 stance: { type: "string" },
@@ -1079,6 +1125,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const result = await proposeClaim({
           claim: body.claim,
           argument: body.argument,
+          kind: body.kind,
           // Provenance: after #157, created_by='user' means "user-proposed,
           // review-approved" — the unreviewed fast path is service seeding
           // and says so.
@@ -1091,13 +1138,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         return reply.code(201).send({
           claim: formatClaim(result.claim),
-          argument: {
-            id: result.argument.id,
-            stance: result.argument.stance,
-            content: result.argument.content,
-            created_by: result.argument.createdBy,
-            created_at: result.argument.createdAt.toISOString(),
-          },
+          argument: result.argument
+            ? {
+                id: result.argument.id,
+                stance: result.argument.stance,
+                content: result.argument.content,
+                created_by: result.argument.createdBy,
+                created_at: result.argument.createdAt.toISOString(),
+              }
+            : null,
           job_id: result.jobId,
         });
       }
@@ -1122,6 +1171,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           claimText: body.claim,
           argumentText: body.argument,
           contributorId: contributor.id,
+          kind: body.kind,
         });
         if (charge.entryId) {
           await attachChargeContribution(charge.entryId, contribution.id);
@@ -1623,9 +1673,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-function formatClaim(claim: { id: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
+function formatClaim(claim: { id: string; kind?: string; text: string; claimType: string; state: string; decompositionStatus: string; importance: number; contestation?: number | null; stewardState: string; createdBy: string; createdAt: Date; updatedAt: Date }) {
   return {
     id: claim.id,
+    kind: claim.kind ?? "claim",
     text: claim.text,
     claim_type: claim.claimType,
     state: claim.state,

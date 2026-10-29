@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Mark } from "./Mark";
+import { THEME_SCRIPT } from "./theme";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,27 +13,30 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // data-theme is set by THEME_SCRIPT before React hydrates
+    <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>
         <header className="masthead">
           <div className="masthead-inner">
             <Link href="/" className="wordmark plain">
               <span className="glyph" aria-hidden><Mark size="0.82em" /></span>Minerval
             </Link>
-            {/* Four routes carry the phone masthead; `tour` and `about` are marked
-                wide-only and drop out below 640px, where the footer nav carries
-                both (#367). Anything added here should be weighed the same way:
+            {/* Four routes carry the phone masthead; `findings` and `about` are
+                marked wide-only and drop out below 640px, where the footer nav
+                carries both (#367). Anything added here should be weighed the same way:
                 the phone row is one line, and it stays one line. */}
             <nav>
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
-              {/* reopens the home walkthrough (#251) */}
               <Link className="wide-only" href="/findings">findings</Link>
-              <Link className="wide-only" href="/?tour=1">tour</Link>
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
             </nav>
+            <ThemeToggle />
           </div>
         </header>
         <main className="frame">{children}</main>
@@ -46,9 +51,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/claims">claims</Link>
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
-              {/* the walkthrough's entry point on phones, where the masthead
-                  drops its wide-only entries (#367) */}
-              <Link href="/?tour=1">tour</Link>
               <Link href="/about">about</Link>
               {/* the findings feed (#394): the record of what the
                   administrators found worth telling people */}
@@ -57,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>
               <Link href="/privacy">privacy</Link>
+              <a href="https://blog.minerval.ai">blog</a>
               <a href="https://github.com/minerval-ai/minerval">source</a>
             </nav>
           </div>

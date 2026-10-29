@@ -114,15 +114,18 @@ export async function setArgumentContent(argumentId: string, content: string) {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the inference goes through granting its premises. "contested" is
- * for a framework whose validity is itself live-disputed (constitution §7's
- * ASSUMES case).
+ * How far the conclusion follows if the premises hold (constitution §7,
+ * #540). The rating is of the inference, never of the conclusion: whether
+ * the premises do hold is read from their own assessments. "certain": it
+ * follows necessarily; "likely": much more likely, not guaranteed; "slight":
+ * the premises bear on it only a little; "none": no real support even if
+ * they are true.
  */
 export const ARGUMENT_VERDICTS = [
-  "holds",
-  "holds_with_caveats",
-  "fails",
-  "contested",
+  "certain",
+  "likely",
+  "slight",
+  "none",
 ] as const;
 export type ArgumentVerdict = (typeof ARGUMENT_VERDICTS)[number];
 
@@ -155,7 +158,11 @@ export async function setArgumentEvaluation(input: {
   argumentId: string;
   verdict: ArgumentVerdict;
   content: string;
+  /** The argument settles its conclusion as its premises now stand (§7). */
+  decisive?: boolean;
   assessmentId?: string | null;
+  /** On a quantity: the estimate the evaluation was made under. */
+  estimateId?: string | null;
   createdBy?: string;
 }) {
   const db = getDb();
@@ -169,7 +176,9 @@ export async function setArgumentEvaluation(input: {
       argumentId: input.argumentId,
       verdict: input.verdict,
       content: input.content,
+      decisive: input.decisive ?? false,
       assessmentId: input.assessmentId ?? null,
+      estimateId: input.estimateId ?? null,
       isCurrent: true,
       createdBy: input.createdBy ?? "claim_steward",
     })
@@ -177,10 +186,20 @@ export async function setArgumentEvaluation(input: {
   return evaluation!;
 }
 
+/**
+ * Whether an evaluation (alias `ae`) predates its claim's current judgment:
+ * the current assessment (alias `ca`) for a proposition, the current
+ * estimate (alias `cq`) for a quantity (§10). The claim row is alias `c`.
+ */
+export const EVALUATION_STALE_SQL = `(CASE WHEN c.kind = 'quantity'
+    THEN (cq.id IS NULL OR ae.estimate_id IS DISTINCT FROM cq.id)
+    ELSE (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id) END)`;
+
 export interface ArgumentEvaluationState {
   argument_id: string;
   argument_name: string | null;
   verdict: string | null;
+  decisive: boolean | null;
   content: string | null;
   /** True when the evaluation predates the claim's current assessment. */
   stale: boolean;
@@ -197,13 +216,16 @@ export async function getEvaluationStateForClaim(
 ): Promise<ArgumentEvaluationState[]> {
   return rawQuery<ArgumentEvaluationState>(
     `SELECT a.id AS argument_id, a.name AS argument_name,
-            ae.verdict, ae.content,
-            (ae.id IS NOT NULL AND (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id)) AS stale
+            ae.verdict, ae.decisive, ae.content,
+            (ae.id IS NOT NULL AND ${EVALUATION_STALE_SQL}) AS stale
        FROM arguments a
+       JOIN claims c ON c.id = a.claim_id
        LEFT JOIN argument_evaluations ae
               ON ae.argument_id = a.id AND ae.is_current = true
        LEFT JOIN assessments ca
               ON ca.claim_id = a.claim_id AND ca.is_current = true
+       LEFT JOIN quantity_estimates cq
+              ON cq.claim_id = a.claim_id AND cq.is_current = true
       WHERE a.claim_id = $1
         AND a.name IS NOT NULL
       ORDER BY a.created_at`,

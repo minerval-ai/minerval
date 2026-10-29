@@ -13,8 +13,11 @@ import {
   claimTypeMeta, decompositionNote, statusMeta,
   nodeStatusMeta, UNASSESSED_META, VERDICT_CONFIDENCE_GLOSS, CREDENCE_GLOSS,
   DEFINED_IN, STEWARD_SOURCE, RULES_SOURCE, isAssumesRelation,
-  seedVerity, SEED_PRELIM_GLOSS,
+  seedVerity, SEED_PRELIM_GLOSS, QUESTION_STANDING, isStanding, showsMark,
 } from "@/lib/ontology";
+import { describeEstimate, makeScale, valuesOf } from "@/lib/quantity";
+import { EstimateStrip, ValueAxis } from "@/components/quantity/EstimateStrip";
+import { StandingBadge } from "@/components/Assessment";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { formatOwls } from "@/lib/format";
 import { liveBountyMicro } from "@/lib/prizes";
@@ -134,7 +137,40 @@ const MAP_KEY = {
   argument: "A pill is an argument: one line of reasoning stating how the claims beneath it combine to bear on the claim above it, for or against. Arguments are not destinations; click their claims to explore.",
   prize: "A double ring marks a claim with a live prize: an amount in owls offered for a machine-checked proof or disproof of its published formal statement. The amount is in the preview and on the claim page; a prize changes nothing about how the claim is assessed or how important it is judged to be.",
   checked: "⊢ marks a claim whose published formal statement has a machine-checked proof or disproof. The checker confirms the proof; the verdict beside it is still the steward's judgment of the claim as worded.",
+  quantity: "A box with a rule beneath its text is a quantity: a value the graph estimates rather than a proposition it affirms or denies. Its estimate stands where a claim's status would.",
+  question: "A rounded box is a question: answered rather than affirmed or denied, with its candidate answers, subquestions and presuppositions beneath it. Its mark says how well answered it is.",
 } as const;
+
+// The head of a node's chip: a claim's status glyph, a quantity's estimate,
+// or a question's standing glyph (constitution §2, §7a, §10).
+function KindHead({ bits, size }: { bits: ClaimBits; size?: string }) {
+  if (bits.kind === "quantity") {
+    return bits.estimate && bits.unit
+      ? <span className={styles.qtyLead}>{describeEstimate(bits.estimate, bits.unit).lead}</span>
+      : <span className={styles.qtyLead}>not yet estimated</span>;
+  }
+  if (bits.kind === "question") {
+    const s = isStanding(bits.standing) ? QUESTION_STANDING[bits.standing] : null;
+    return (
+      <span className={styles.standingGlyph} style={{ fontSize: size }} title={s ? s.label : "unassessed"} aria-hidden>
+        {s ? s.glyph : "◌"}
+      </span>
+    );
+  }
+  return <Glyph status={bits.status} size={size} seedCredence={bits.seedCredence} />;
+}
+
+// A quantity's estimate drawn small along a chip's foot: the shape of the
+// uncertainty at a glance, without an axis.
+function QtyRule({ bits }: { bits: ClaimBits }) {
+  if (bits.kind !== "quantity" || !bits.estimate || !bits.unit || bits.estimate.form === "none") return null;
+  const scale = makeScale(bits.unit, valuesOf(bits.estimate), bits.estimate.form === "magnitude" ? "log" : undefined);
+  return (
+    <div className={styles.qtyRule}>
+      <EstimateStrip scale={scale} estimate={bits.estimate} tone="graph" label={describeEstimate(bits.estimate, bits.unit).words} />
+    </div>
+  );
+}
 
 // Which status-colour family an unassessed node borrows when the parent
 // Steward seeded it with a confident prior credence (#285): greenish when the
@@ -170,7 +206,7 @@ function edgePath(e: LEdge, ox: number, oy: number): string {
 }
 
 const BED_CLS: Record<string, string> = {
-  fact: styles.bedFact, open: styles.bedOpen, value: styles.bedValue, theorem: styles.bedTheorem,
+  fact: styles.bedFact, unsettled: styles.bedOpen, value: styles.bedValue, theorem: styles.bedTheorem,
 };
 
 // The two mathematics marks after a chip's status glyph (docs/mathematics.md
@@ -620,13 +656,44 @@ export function GraphView({
                 align="start"
                 className="sc"
               >
-                claim{d.claim.claim_type ? ` · ${CLAIM_TYPE_LABEL[d.claim.claim_type as ClaimType]}` : ""}
+                {d.claim.kind === "quantity" ? "quantity" : d.claim.kind === "question" ? "question" : "claim"}
+                {d.claim.kind !== "question" && d.claim.claim_type ? ` · ${CLAIM_TYPE_LABEL[d.claim.claim_type as ClaimType]}` : ""}
               </Term>
-              <Link className={styles.pageLink} href={`/claims/${d.claim.id}`} title="Open the claim page: provenance, discourse, assessment">
-                claim page ↗&#xFE0E;
+              <Link className={styles.pageLink} href={`/claims/${d.claim.id}`} title="Open the page: provenance, discourse, assessment">
+                {d.claim.kind === "quantity" ? "quantity" : d.claim.kind === "question" ? "question" : "claim"} page ↗&#xFE0E;
               </Link>
             </div>
             <div className={styles.heroText}>{d.claim.text}</div>
+            {d.claim.kind === "quantity" && d.quantity ? (
+              <div className={styles.focusBand} style={{ display: "block" }}>
+                {d.quantity.estimate ? (() => {
+                  const est = d.quantity!.estimate!;
+                  const unit = d.quantity!.definition.unit;
+                  const sc = makeScale(unit, valuesOf(est), est.form === "magnitude" ? "log" : undefined);
+                  const w = describeEstimate(est, unit);
+                  return (
+                    <>
+                      <div className={styles.focusQty}>
+                        <span className={styles.focusQtyLead}>{w.lead}</span>
+                        {/* the lead already gives the central figure; the
+                            words add the interval and any share outside it */}
+                        <span className={styles.focusQtyWords} title={w.words}>{w.words.split("; ").slice(1).join("; ") || w.words}</span>
+                      </div>
+                      <EstimateStrip scale={sc} estimate={est} tone="graph" label={w.words} />
+                      <ValueAxis scale={sc} caption={sc.kind === "log" ? "log scale" : undefined} />
+                    </>
+                  );
+                })() : <span className={styles.focusQtyWords}>not yet estimated</span>}
+              </div>
+            ) : d.claim.kind === "question" && d.question ? (
+              <div className={styles.focusBand}>
+                <StandingBadge standing={d.question.standing} />
+                <span className={styles.focusQtyWords}>
+                  {d.question.answers.length} answer{d.question.answers.length === 1 ? "" : "s"}
+                  {d.question.subquestions.length > 0 && ` · ${d.question.subquestions.length} subquestion${d.question.subquestions.length === 1 ? "" : "s"}`}
+                </span>
+              </div>
+            ) : (
             <div className={styles.focusBand}>
               {d.assessment ? (
                 <Term gloss={focusMeta.def} href={DEFINED_IN.status} align="start" className={`badge ${focusMeta.cls}`}>
@@ -671,6 +738,7 @@ export function GraphView({
                 </span>
               )}
             </div>
+            )}
           </>
         );
       case "t1": {
@@ -678,10 +746,11 @@ export function GraphView({
         return (
           <>
             <div className={styles.chipHead}>
-              <Glyph status={c.status} seedCredence={c.seedCredence} />
+              <KindHead bits={c} />
               <Marks bits={c} />
             </div>
             <div className={styles.t1Text}>{c.text}</div>
+            <QtyRule bits={c} />
             <div className={styles.chipFoot}>
               {/* Zero children here is only "atomic" when nothing was elided:
                   a shared subclaim's repeat occurrence and a cap-truncated
@@ -701,7 +770,7 @@ export function GraphView({
                 <span className={styles.atomicTag}>shared · shown elsewhere</span>
               ) : c.truncated ? (
                 <span className={styles.atomicTag}>more on its map</span>
-              ) : c.bedrock ? null : (
+              ) : c.bedrock || c.underQuestion || (c.kind ?? "claim") !== "claim" ? null : (
                 <span className={styles.atomicTag}>atomic</span>
               )}
             </div>
@@ -715,7 +784,7 @@ export function GraphView({
         return (
           <>
             <div className={styles.chipHead}>
-              <Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} />
+              <KindHead bits={c} size="0.56rem" />
               <Marks bits={c} />
             </div>
             <div className={styles.t2Text}>{c.text}</div>
@@ -724,15 +793,17 @@ export function GraphView({
         );
       }
       case "mini":
-        return nodeStatusMeta(n.claim!.status).glyph;
+        return n.claim!.kind === "quantity" ? "≈"
+          : n.claim!.kind === "question" ? (isStanding(n.claim!.standing) ? QUESTION_STANDING[n.claim!.standing].glyph : "◌")
+          : nodeStatusMeta(n.claim!.status).glyph;
       case "side": {
         const c = n.claim!;
         return (
           <>
             <div className={styles.chipHead}>
-              <Glyph status={c.status} size="0.56rem" seedCredence={c.seedCredence} />
+              <KindHead bits={c} size="0.56rem" />
               <Marks bits={c} />
-              <span className={styles.atomicTag}>assumed</span>
+              <span className={styles.atomicTag}>{d.claim.kind === "question" ? "presupposed" : "assumed"}</span>
             </div>
             <div className={styles.sideText}>{c.text}</div>
             <BedStrip bed={c.bedrock} />
@@ -745,7 +816,7 @@ export function GraphView({
         return (
           <>
             <div className={styles.chipHead}>
-              <Glyph status={c.status} size="0.58rem" />
+              <KindHead bits={c} size="0.58rem" />
               <Marks bits={c} />
             </div>
             <div className={styles.depText}>{c.text}</div>
@@ -755,8 +826,12 @@ export function GraphView({
       case "pill":
         return (
           <>
+            {/* on a quantity, an argument places the value rather than
+                arguing for or against: =, > or < for where it puts the
+                value, ? where it bears on whether the value can be known (§7) */}
+            {n.pill!.shows && <span className={styles.pillStance} title={showsMark(n.pill!.shows)?.label} aria-hidden>{showsMark(n.pill!.shows)?.glyph} </span>}
             <span>{n.pill!.name}</span>
-            <span className={styles.pillStance}>· {n.pill!.stance}</span>
+            {!n.pill!.shows && !n.pill!.question && <span className={styles.pillStance}>· {n.pill!.stance}</span>}
           </>
         );
       case "more":
@@ -871,6 +946,10 @@ export function GraphView({
                     // the focus, distinct from the nudge ring and from every
                     // status colour (§8.3)
                     n.claim?.prizeMicroUsd != null ? styles.prized : "",
+                    // the grammar of kinds: a question's box is rounded, a
+                    // quantity's carries a rule beneath its text
+                    n.claim?.kind === "question" ? styles.kindQuestion : "",
+                    n.claim?.kind === "quantity" ? styles.kindQuantity : "",
                   ].join(" ").trim()}
                   data-enter={fresh ? "1" : undefined}
                   style={{
@@ -1021,11 +1100,23 @@ export function GraphView({
                   <>
                     <div className={styles.previewHead}>
                       <span className="sc">
-                        claim{c.claimType ? ` · ${CLAIM_TYPE_LABEL[c.claimType]}` : ""}
+                        {c.kind === "quantity" ? "quantity" : c.kind === "question" ? "question" : "claim"}
+                        {c.kind !== "question" && c.claimType ? ` · ${CLAIM_TYPE_LABEL[c.claimType]}` : ""}
                       </span>
                       <button type="button" className={styles.previewClose} onClick={() => setPreview(null)} aria-label="Close preview">✕</button>
                     </div>
                     <p className={styles.previewText}>{c.text}</p>
+                    {c.kind === "quantity" ? (
+                      <div className={styles.previewRow}>
+                        <span className={styles.previewQty}>
+                          {c.estimate && c.unit ? describeEstimate(c.estimate, c.unit).words : "not yet estimated"}
+                        </span>
+                      </div>
+                    ) : c.kind === "question" ? (
+                      <div className={styles.previewRow}>
+                        <StandingBadge standing={c.standing ?? null} />
+                      </div>
+                    ) : (
                     <div className={styles.previewRow}>
                       {/* the dashed unassessed badge, not a status-coloured one:
                           no verdict exists for this claim yet (#160) */}
@@ -1057,6 +1148,7 @@ export function GraphView({
                           popover would be cut */}
                       {c.checked && <MachineChecked kind={c.checked} size="sm" plain />}
                     </div>
+                    )}
                     {c.prizeMicroUsd != null && (
                       <div className={styles.previewPrize} title={MAP_KEY.prize}>
                         Prize: {formatOwls(c.prizeMicroUsd)} · open
@@ -1123,12 +1215,18 @@ export function GraphView({
       </div>
 
       {/* legend — a figure caption, not app chrome */}
-      <div className={styles.legend} data-tour="legend">
+      <div className={styles.legend}>
         {/* the map's grammar first (#253): what the shapes are, before what
             their colours and edges say */}
         <span className={styles.legendGroup}>
           <Term gloss={MAP_KEY.claim} href={DEFINED_IN.claim} align="start" className={styles.legendItem}>
             <span className={styles.legendClaim} aria-hidden />claim
+          </Term>
+          <Term gloss={MAP_KEY.quantity} href={DEFINED_IN.quantity} align="start" className={styles.legendItem}>
+            <span className={`${styles.legendClaim} ${styles.legendQuantity}`} aria-hidden />quantity
+          </Term>
+          <Term gloss={MAP_KEY.question} href={DEFINED_IN.question} align="start" className={styles.legendItem}>
+            <span className={`${styles.legendClaim} ${styles.legendQuestion}`} aria-hidden />question
           </Term>
           <Term gloss={MAP_KEY.argument} href={DEFINED_IN.argument} align="start" className={styles.legendItem}>
             <span className={styles.legendPill} aria-hidden />argument
@@ -1151,7 +1249,7 @@ export function GraphView({
         <span className={styles.legendRule} />
         <span className={styles.legendGroup}>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedFact}`} />verified fact</span>
-          <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedOpen}`} />open question</span>
+          <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedOpen}`} />unsettled</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedValue}`} />value premise</span>
           <span className={styles.legendItem}><span className={`${styles.legendBed} ${styles.bedTheorem}`} />theorem</span>
         </span>
@@ -1168,16 +1266,19 @@ export function GraphView({
         <span className={styles.legendRule} />
         <span className={styles.legendGroup}>
           <Term gloss={RELATION.supports.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={styles.legendEdge} style={{ borderColor: "rgba(79,125,74,.7)" }} /><span className="rel-supports">supports</span>
+            <span className={styles.legendEdge} style={{ borderColor: "color-mix(in srgb, var(--st-supported) 70%, transparent)" }} /><span className="rel-supports">supports</span>
           </Term>
           <Term gloss={RELATION.contradicts.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendEdge} ${styles.dashed}`} style={{ borderColor: "rgba(143,58,44,.7)" }} /><span className="rel-contradicts">contradicts</span>
+            <span className={`${styles.legendEdge} ${styles.dashed}`} style={{ borderColor: "color-mix(in srgb, var(--st-contradicted) 70%, transparent)" }} /><span className="rel-contradicts">contradicts</span>
           </Term>
           <Term gloss={RELATION.assumes.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
-            <span className={`${styles.legendEdge} ${styles.dotted}`} style={{ borderColor: "rgba(154,109,18,.8)" }} /><span className="rel-assumes">assumes</span>
+            <span className={`${styles.legendEdge} ${styles.dotted}`} style={{ borderColor: "color-mix(in srgb, var(--st-inconclusive) 80%, transparent)" }} /><span className="rel-assumes">assumes</span>
           </Term>
           <Term gloss={RELATION.requires.gloss} href={DEFINED_IN.relation} source={STEWARD_SOURCE} className={styles.legendItem}>
             <span className={styles.legendEdge} style={{ borderColor: "var(--rule)" }} />requires
+          </Term>
+          <Term gloss={RELATION.answers.gloss} href={DEFINED_IN.question} className={styles.legendItem}>
+            <span className={`${styles.legendEdge} ${styles.double}`} style={{ borderColor: "var(--ink-soft)" }} /><span className="rel-answers">answers</span>
           </Term>
         </span>
         <span className={styles.legendCaption}>

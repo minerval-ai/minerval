@@ -70,8 +70,10 @@ export default async function ConsentPage({
         <strong>{session!.user?.name ?? session!.externalId}</strong>.
       </p>
       <p>
-        It will be able to search and read the claim graph, run analyses that
-        spend owls from your balance, and submit contributions in your name.
+        It will be able to do what your account can do through the API: search
+        and read the claim graph; propose claims, submit sources, contributions
+        and appeals in your name; and spend owls from your balance on analyses,
+        assessments, and grants. It cannot buy owls or manage your API keys.
         Its access lasts until you disconnect it in that application. After
         you approve, you&apos;ll be sent back to{" "}
         <code>{request.client.redirect_host}</code>.

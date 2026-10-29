@@ -41,7 +41,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
               properties: {
                 id: { type: "string", format: "uuid" },
                 claim_id: { type: "string", format: "uuid", nullable: true },
-                contributor_id: { type: "string", format: "uuid" },
+                contributor_id: { type: "string", format: "uuid", nullable: true },
                 contribution_type: { type: "string" },
                 content: { type: "string" },
                 evidence_urls: { type: "array", items: { type: "string" } },
@@ -165,7 +165,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
                 properties: {
                   id: { type: "string", format: "uuid" },
                   claim_id: { type: "string", format: "uuid", nullable: true },
-                  contributor_id: { type: "string", format: "uuid" },
+                  contributor_id: { type: "string", format: "uuid", nullable: true },
                   contribution_type: { type: "string" },
                   content: { type: "string" },
                   evidence_urls: { type: "array", items: { type: "string" } },
@@ -272,11 +272,13 @@ function formatContribution(c: {
   reviewStatus: string;
   mergeTargetClaimId: string | null;
   proposedCanonicalForm: string | null;
+  grantId?: string | null;
 }) {
   return {
     id: c.id,
     claim_id: c.claimId,
-    contributor_id: c.contributorId,
+    // A mandate's contribution does not name its funder (§12/§19).
+    contributor_id: c.grantId ? null : c.contributorId,
     contribution_type: c.contributionType,
     content: c.content,
     evidence_urls: c.evidenceUrls,

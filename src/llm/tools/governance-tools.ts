@@ -34,6 +34,10 @@ import { getClaimDependents as fetchClaimDependents } from "../../services/tree-
 import { listFindings } from "../../services/finding-service.js";
 import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
 import { listRelatedClaims } from "../../services/claim-link-service.js";
+import { getQuantityDetail, getThresholdOf } from "../../services/quantity-service.js";
+import { getQuestionDetail } from "../../services/question-service.js";
+import { listRequests } from "../../services/request-service.js";
+import { EVALUATION_STALE_SQL } from "../../services/argument-service.js";
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
@@ -310,14 +314,20 @@ async function getClaim(claimId: string) {
     child_confidence: number | null;
     argument_id: string | null;
     argument_name: string | null;
+    child_kind: string;
+    child_estimate: unknown | null;
+    child_standing: string | null;
   }>(
     `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
-            am.argument_id, arg.name AS argument_name
+            am.argument_id, arg.name AS argument_name,
+            c.kind AS child_kind, qe.estimate AS child_estimate, qa.standing AS child_standing
      FROM claim_relationships cr
      JOIN claims c ON c.id = cr.child_claim_id
      LEFT JOIN assessments a ON a.claim_id = cr.child_claim_id AND a.is_current = true
+     LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+     LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
      LEFT JOIN argument_subclaims am ON am.relationship_id = cr.id
      LEFT JOIN arguments arg ON arg.id = am.argument_id
      WHERE cr.parent_claim_id = $1
@@ -338,14 +348,17 @@ async function getClaim(claimId: string) {
   const evaluations = await rawQuery<{
     argument_id: string;
     verdict: string;
+    decisive: boolean;
     content: string;
     stale: boolean;
   }>(
-    `SELECT ae.argument_id, ae.verdict, ae.content,
-            (ca.id IS NULL OR ae.assessment_id IS DISTINCT FROM ca.id) AS stale
+    `SELECT ae.argument_id, ae.verdict, ae.decisive, ae.content,
+            ${EVALUATION_STALE_SQL} AS stale
        FROM argument_evaluations ae
        JOIN arguments a ON a.id = ae.argument_id
+       JOIN claims c ON c.id = a.claim_id
        LEFT JOIN assessments ca ON ca.claim_id = a.claim_id AND ca.is_current = true
+       LEFT JOIN quantity_estimates cq ON cq.claim_id = a.claim_id AND cq.is_current = true
       WHERE a.claim_id = $1
         AND ae.is_current = true`,
     [claimId]
@@ -391,9 +404,53 @@ async function getClaim(claimId: string) {
   // with the reason. Not dependencies; they never enter the assessment.
   const relatedClaims = await listRelatedClaims(claimId);
 
+  // Kinds (constitution §2, §7a): a quantity's definition, estimate,
+  // readings and cuts; a question's standing and structure; for a claim
+  // about which side of a figure a quantity lies, that quantity; and the
+  // requests that bear on the node.
+  const kindRecord: Record<string, unknown> = {};
+  if (claim.kind === "quantity") {
+    const q = await getQuantityDetail(claimId);
+    // Figures that ingestion linked here but whose value nobody has recorded
+    // yet: get_claim_instances shows them; record_estimate with instance_id
+    // records each one's figure.
+    const [unrecorded] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM claim_instances
+        WHERE claim_id = $1 AND stance = 'states' AND stated_estimate IS NULL AND detached_at IS NULL`,
+      [claimId]
+    );
+    kindRecord.quantity = {
+      definition: q.definition,
+      current_estimate: q.estimate,
+      estimated: q.assessed,
+      stated_estimates: q.estimates.length,
+      figures_not_yet_recorded: unrecorded?.n ?? 0,
+      readings: q.readings,
+      cuts: q.cuts,
+    };
+  } else if (claim.kind === "question") {
+    kindRecord.question = await getQuestionDetail(claimId);
+  } else {
+    const threshold = await getThresholdOf(claimId);
+    if (threshold) kindRecord.threshold_of = threshold;
+  }
+  const requests = await listRequests({ claimId, limit: 20 }).catch(() => ({ items: [], total: 0 }));
+  if (requests.items.length > 0) {
+    kindRecord.requests = requests.items.map((r) => ({
+      id: r.id,
+      ask: r.ask,
+      state: r.state,
+      // The Steward of the one node a request bears on keeps it.
+      kept_by_this_node: r.keeper.kind === "steward" && r.bears_on.length === 1 && r.bears_on[0]!.id === claimId,
+      filed_by: r.filed_by.label,
+      work: r.work.map((w) => ({ by: w.by, outcome: w.outcome, summary: w.summary })),
+    }));
+  }
+
   return {
     claim: {
       id: claim.id,
+      kind: claim.kind,
       text: claim.text,
       claim_type: claim.claimType,
       state: claim.state,
@@ -435,6 +492,7 @@ async function getClaim(claimId: string) {
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    ...kindRecord,
     ...formalizationRecord,
     findings_noted: findingsNoted.map((f) => ({
       id: f.id,
@@ -463,6 +521,9 @@ async function getClaim(claimId: string) {
       assessment_confidence: sc.child_confidence,
       argument_id: sc.argument_id,
       argument_name: sc.argument_name,
+      ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),
+      ...(sc.child_kind === "quantity" ? { estimate: sc.child_estimate } : {}),
+      ...(sc.child_kind === "question" ? { standing: sc.child_standing } : {}),
     })),
     // The claim's source map (#286): null until a Steward has written one.
     // Refresh it with provenance_write_map when the instances have changed.
@@ -476,6 +537,7 @@ async function getClaim(claimId: string) {
         id: a.id,
         name: a.name,
         stance: a.stance,
+        ...(a.shows ? { shows: a.shows } : {}),
         content: a.content,
         // False when content is still just the creation-time label — the steward
         // owes this argument a write_argument call (issue #129).
@@ -486,6 +548,7 @@ async function getClaim(claimId: string) {
         evaluation: evaluation
           ? {
               verdict: evaluation.verdict,
+              decisive: evaluation.decisive,
               content: evaluation.content,
               stale: evaluation.stale,
             }

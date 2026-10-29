@@ -82,12 +82,17 @@
   stroke: var(--rule);
   stroke-width: 1.1;
 }
-.edges path[data-rel="supports"]     { stroke: rgba(79, 125, 74, 0.55); }
-.edges path[data-rel="contradicts"]  { stroke: rgba(143, 58, 44, 0.6); stroke-dasharray: 5 3; }
+.edges path[data-rel="supports"]     { stroke: color-mix(in srgb, var(--st-supported) 55%, transparent); }
+.edges path[data-rel="contradicts"]  { stroke: color-mix(in srgb, var(--st-contradicted) 60%, transparent); stroke-dasharray: 5 3; }
 .edges path[data-rel="assumes"],
-.edges path[data-rel="presupposes"]  { stroke: rgba(154, 109, 18, 0.55); stroke-dasharray: 1.5 3; } /* presupposes: legacy alias, #205 */
-.edges path[data-rel="defines"]      { stroke: rgba(42, 80, 120, 0.5); }
+.edges path[data-rel="presupposes"]  { stroke: color-mix(in srgb, var(--st-inconclusive) 55%, transparent); stroke-dasharray: 1.5 3; } /* presupposes: legacy alias, #205 */
+.edges path[data-rel="defines"]      { stroke: color-mix(in srgb, var(--link) 50%, transparent); }
 .edges path[data-rel="spine"]        { stroke: var(--faint); }
+/* across kinds (§7a): an answer to a question, a subquestion, and the rare
+   claim about which side of a figure a quantity lies */
+.edges path[data-rel="answers"]      { stroke: color-mix(in srgb, var(--ink-soft) 55%, transparent); stroke-width: 1.4; }
+.edges path[data-rel="part_of"]      { stroke: var(--rule); stroke-dasharray: 6 3; }
+.edges path[data-rel="cuts"]         { stroke: var(--rule); stroke-dasharray: 2 2; }
 .edges path.miniEdge                 { stroke: var(--rule-soft); }
 .edges path.hl                       { stroke: var(--ink-soft) !important; stroke-width: 1.5; }
 
@@ -286,6 +291,7 @@
   position: absolute;
   z-index: 4;
   transform: translate(-50%, -50%);
+  white-space: nowrap;
   font-size: 0.52rem;
   background: var(--paper);
   padding: 0 4px;
@@ -346,14 +352,14 @@
 /* bedrock hatching — engineering ground marks; shape, never colour alone */
 .bed { height: 7px; border-radius: 1px; margin-top: 4px; }
 .bedLg { height: 9px; }
-.bedFact  { background: repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px); }
-.bedOpen  { background: repeating-linear-gradient(45deg, rgba(154, 109, 18, 0.6) 0 1px, transparent 1px 7px); }
-.bedValue { background-image: radial-gradient(circle, rgba(90, 74, 120, 0.65) 1px, transparent 1.4px); background-size: 6px 5px; }
+.bedFact  { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px); }
+.bedOpen  { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-inconclusive) 60%, transparent) 0 1px, transparent 1px 7px); }
+.bedValue { background-image: radial-gradient(circle, color-mix(in srgb, var(--link-visited) 65%, transparent) 1px, transparent 1.4px); background-size: 6px 5px; }
 /* a machine-checked theorem (§8.3): the fact hatch crossed, proven ground */
 .bedTheorem {
   background:
-    repeating-linear-gradient(45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(-45deg, rgba(31, 107, 70, 0.55) 0 1px, transparent 1px 4px);
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--st-verified) 55%, transparent) 0 1px, transparent 1px 4px);
 }
 .bedNone  { border-top: 1px dashed var(--faint); height: 0; }
 .bedTag {
@@ -376,7 +382,7 @@
   max-height: calc(100% - 28px);
   overflow-y: auto;
   z-index: 30;
-  background: rgba(254, 253, 251, 0.97);
+  background: color-mix(in srgb, var(--paper-card) 97%, transparent);
   border: 1px solid var(--rule);
   border-radius: 3px;
   padding: 12px 14px;
@@ -489,7 +495,7 @@
     width: auto;
     border-radius: 6px 6px 0 0;
     border-bottom: none;
-    box-shadow: 0 -4px 18px rgba(26, 24, 19, 0.08);
+    box-shadow: 0 -4px 18px rgb(var(--shadow) / 0.08);
     max-height: 42vh;
     overflow-y: auto;
     z-index: 60;
@@ -497,3 +503,21 @@
   .legendCaption { display: none; }
   .toolbar .hint { display: none; }
 }
+
+/* ----- kinds (constitution §2, §7a) ----------------------------------------- */
+/* a question: the box rounds, and its mark is its standing, in ink */
+.kindQuestion { border-radius: 12px !important; }
+.mini.kindQuestion { border-radius: 999px !important; color: var(--ink-soft) !important; background: var(--paper-card) !important; border-color: var(--rule-strong) !important; }
+.standingGlyph { font-family: var(--sans); font-weight: 600; font-size: 0.66rem; line-height: 1; color: var(--ink-soft); }
+/* a quantity: its estimate where a status would be, and a rule beneath */
+.kindQuantity { border-bottom-width: 2px !important; border-bottom-color: var(--ink-soft) !important; }
+.mini.kindQuantity { color: var(--ink-soft) !important; background: var(--paper-card) !important; border-color: var(--rule-strong) !important; }
+.qtyLead { font-family: var(--sans); font-size: 0.6rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.qtyRule { margin-top: 4px; transform: scaleY(0.75); transform-origin: top; }
+.focusQty { display: flex; align-items: baseline; gap: 10px; margin-bottom: 2px; min-width: 0; }
+.focusQtyLead { white-space: nowrap; flex: none; font-family: var(--serif); font-size: 1.15rem; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.focusQtyWords { font-family: var(--sans); font-size: 0.66rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.previewQty { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.legendQuantity { border-bottom: 2px solid var(--ink-soft); }
+.legendQuestion { border-radius: 5px; }
+.double { border-top-width: 2px; }

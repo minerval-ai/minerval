@@ -69,6 +69,12 @@ const mocks = vi.hoisted(() => ({
   chargeOwls: vi.fn(async () => ({ charged: true, entryId: "entry-1" })),
   refundOwls: vi.fn(async () => {}),
   raiseIssue: vi.fn(),
+  getQuantityDetail: vi.fn(async () => null as unknown),
+  getThresholdOf: vi.fn(async () => null as unknown),
+  getCurrentEstimate: vi.fn(async () => null as unknown),
+  getQuestionDetail: vi.fn(async () => null as unknown),
+  getCurrentStanding: vi.fn(async () => null as unknown),
+  listRequests: vi.fn(async () => ({ items: [] as unknown[], total: 0 })),
   usageContexts: [] as unknown[],
 }));
 
@@ -119,6 +125,18 @@ vi.mock("../../../src/services/contributor-service.js", () => ({
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueContribution: mocks.enqueueContribution,
+}));
+vi.mock("../../../src/services/quantity-service.js", () => ({
+  getQuantityDetail: mocks.getQuantityDetail,
+  getThresholdOf: mocks.getThresholdOf,
+  getCurrentEstimate: mocks.getCurrentEstimate,
+}));
+vi.mock("../../../src/services/question-service.js", () => ({
+  getQuestionDetail: mocks.getQuestionDetail,
+  getCurrentStanding: mocks.getCurrentStanding,
+}));
+vi.mock("../../../src/services/request-service.js", () => ({
+  listRequests: mocks.listRequests,
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
@@ -1068,6 +1086,177 @@ describe("MCP tools", () => {
     );
     expect(body.claim).toMatchObject({ id: CLAIM_ID });
     expect(body.assessment).toMatchObject({ status: "well_supported" });
+    await client.close();
+  });
+});
+
+describe("MCP tools on quantities and questions (§7a)", () => {
+  const QUANTITY_ID = "44444444-4444-4444-8444-444444444444";
+  const QUESTION_ID = "55555555-5555-4555-8555-555555555555";
+  const QUANTITY_ROW = {
+    ...CLAIM_ROW,
+    id: QUANTITY_ID,
+    kind: "quantity",
+    text: "US CPI inflation in 2022, percent",
+  };
+  const QUESTION_ROW = {
+    ...CLAIM_ROW,
+    id: QUESTION_ID,
+    kind: "question",
+    text: "What drove US inflation in 2022?",
+  };
+  const ESTIMATE = {
+    estimate: { kind: "point", value: 8 },
+    assessed: {
+      summary: null,
+      work: "BLS annual average.",
+      model: null,
+      assessed_at: new Date("2026-02-01T00:00:00Z"),
+    },
+  };
+  let client: Client;
+
+  beforeEach(async () => {
+    mocks.getClaimById.mockImplementation(async (id: string) =>
+      id === CLAIM_ID
+        ? CLAIM_ROW
+        : id === QUANTITY_ID
+          ? QUANTITY_ROW
+          : id === QUESTION_ID
+            ? QUESTION_ROW
+            : null
+    );
+    mocks.getCurrentAssessment.mockReset().mockResolvedValue(null);
+    mocks.getCurrentEstimate.mockReset().mockResolvedValue(ESTIMATE);
+    mocks.getCurrentStanding.mockReset().mockResolvedValue("leaning");
+    mocks.getQuantityDetail.mockReset().mockResolvedValue({
+      definition: { measures: "CPI-U, annual average change", population: null, conditions: null, unit: { symbol: "%" } },
+      estimate: ESTIMATE.estimate,
+      assessed: ESTIMATE.assessed,
+      estimates: [],
+      readings: [],
+      cuts: [],
+    });
+    mocks.listRequests.mockReset().mockResolvedValue({
+      items: [{ id: "req-1", ask: "A second source for the 2022 figure" }],
+      total: 1,
+    });
+    client = await connect({ "x-api-key": "boundkey" });
+  });
+
+  it("get_claim serves a quantity's kind, record, and requests, as GET /claims/:id does", async () => {
+    const result = await client.callTool({
+      name: "get_claim",
+      arguments: { claim_id: QUANTITY_ID },
+    });
+    const payload = parseText(result);
+    expect(payload.claim).toMatchObject({ id: QUANTITY_ID, kind: "quantity" });
+    expect(payload.quantity).toMatchObject({ estimate: { kind: "point", value: 8 } });
+    expect(payload.question).toBeNull();
+    expect(payload.threshold_of).toBeNull();
+    expect(payload.requests).toEqual([{ id: "req-1", ask: "A second source for the 2022 figure" }]);
+    expect(mocks.getQuestionDetail).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("match_claim passes the kind to the Matcher and returns a quantity's estimate", async () => {
+    mocks.matchClaim.mockResolvedValueOnce({
+      is_match: true,
+      matched_claim_id: QUANTITY_ID,
+      new_canonical_form: null,
+      instance_stance: "states",
+      confidence: 0.9,
+      reasoning: "A value of the quantity.",
+      alternative_matches: [],
+      relationship_notes: null,
+    });
+    const result = await client.callTool({
+      name: "match_claim",
+      arguments: { assertion: "Inflation was 8% in 2022", kind: "quantity" },
+    });
+    expect(mocks.matchClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "quantity" })
+    );
+    const payload = parseText(result);
+    expect(payload.claim).toMatchObject({ id: QUANTITY_ID, kind: "quantity" });
+    expect(payload.estimate).toMatchObject({ kind: "point", value: 8 });
+    expect(payload.assessment).toBeNull();
+    expect(payload.standing).toBeNull();
+    await client.close();
+  });
+
+  it("match_claim reports the kind the Matcher gives a new node", async () => {
+    mocks.matchClaim.mockResolvedValueOnce({
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: "Number of US recessions since 1945",
+      instance_stance: "affirms",
+      kind: "quantity",
+      confidence: 0.8,
+      reasoning: "Asks how many.",
+      alternative_matches: [],
+      relationship_notes: null,
+    });
+    const result = await client.callTool({
+      name: "match_claim",
+      arguments: { assertion: "How many recessions has the US had since 1945?", kind: "question" },
+    });
+    expect(parseText(result)).toMatchObject({
+      matched: false,
+      proposed_kind: "quantity",
+    });
+    await client.close();
+  });
+
+  it("assess_text judges a figure by its quantity's estimate and a question by its standing", async () => {
+    mocks.extractClaims.mockResolvedValueOnce([
+      {
+        verbatim_text: "Inflation hit 8% in 2022",
+        context: null,
+        proposed_canonical_form: QUANTITY_ROW.text,
+        claim_type: "empirical_verifiable",
+        kind: "quantity",
+        confidence: 0.9,
+        importance: 0.8,
+        source_location: null,
+      },
+      {
+        verbatim_text: "What drove inflation in 2022?",
+        context: null,
+        proposed_canonical_form: QUESTION_ROW.text,
+        claim_type: "causal",
+        kind: "question",
+        confidence: 0.9,
+        importance: 0.8,
+        source_location: null,
+      },
+    ]);
+    const matchTo = (id: string, stance: string) => async () => ({
+      is_match: true,
+      matched_claim_id: id,
+      new_canonical_form: null,
+      instance_stance: stance,
+      confidence: 0.9,
+      reasoning: "Same node.",
+      alternative_matches: [],
+      relationship_notes: null,
+    });
+    mocks.matchClaim
+      .mockImplementationOnce(matchTo(QUANTITY_ID, "states"))
+      .mockImplementationOnce(matchTo(QUESTION_ID, "asks"));
+    const result = await client.callTool({
+      name: "assess_text",
+      arguments: { text: "Inflation hit 8% in 2022. What drove it?" },
+    });
+    const { judgments } = parseText(result) as {
+      judgments: Array<Record<string, unknown>>;
+    };
+    expect(mocks.matchClaim.mock.calls.map((c) => (c[0] as { kind: string }).kind)).toEqual([
+      "quantity",
+      "question",
+    ]);
+    expect(judgments[0]).toMatchObject({ kind: "quantity", verdict: "estimated" });
+    expect(judgments[1]).toMatchObject({ kind: "question", verdict: "leaning" });
     await client.close();
   });
 });

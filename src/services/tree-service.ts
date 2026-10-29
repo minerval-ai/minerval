@@ -25,13 +25,30 @@ export interface TreeNodeMathFields {
 
 export type MathTreeNode = TreeNode & TreeNodeMathFields;
 
+/**
+ * The kinds' fields every node carries (constitution §2, §7a): what kind of
+ * node it is, a quantity's current estimate and unit for the map's chip, and
+ * a question's standing. Null where they do not apply.
+ */
+interface KindRowFields {
+  node_kind: "claim" | "quantity" | "question";
+  estimate: unknown | null;
+  unit: unknown | null;
+  standing: string | null;
+}
+
+const NODE_KIND_SELECT_SQL = `c.kind AS node_kind, qe.estimate, qd.unit, qa.standing`;
+const NODE_KIND_JOIN_SQL = `LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+         LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
+
 interface MathRowFields {
   bounty_micro_usd?: number | string | null;
   checked?: string | null;
   formal?: boolean | null;
 }
 
-interface TreeRootRow extends MathRowFields {
+interface TreeRootRow extends MathRowFields, KindRowFields {
   id: string;
   text: string;
   claim_type: string;
@@ -45,7 +62,7 @@ interface TreeRootRow extends MathRowFields {
   seed_credence: number | null;
 }
 
-interface TreeEdgeRow extends MathRowFields {
+interface TreeEdgeRow extends MathRowFields, KindRowFields {
   parent_id: string;
   id: string;
   text: string;
@@ -59,7 +76,10 @@ interface TreeEdgeRow extends MathRowFields {
   argument_stance: string | null;
   argument_content: string | null;
   argument_verdict: string | null;
+  argument_decisive: boolean | null;
   argument_evaluation: string | null;
+  // What the argument shows about a quantity's value (§7), in place of a stance.
+  argument_shows: unknown | null;
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
@@ -88,6 +108,24 @@ function mathFields(row: MathRowFields): Omit<TreeNodeMathFields, "argument_lean
     checked: row.checked === "proof" || row.checked === "disproof" ? row.checked : null,
     formal: row.formal === true,
   };
+}
+
+/**
+ * The kinds' fields, present only where they apply: agents read trees and
+ * pay for every field in context, and a node without `node_kind` is a claim.
+ */
+function kindFields(node: KindRowFields, edge: TreeEdgeRow | null): Partial<TreeNode> {
+  const out: Partial<TreeNode> = {};
+  if (edge?.argument_shows != null) out.argument_shows = edge.argument_shows;
+  if (node.node_kind === "quantity") {
+    out.node_kind = "quantity";
+    out.estimate = node.estimate;
+    out.unit = node.unit;
+  } else if (node.node_kind === "question") {
+    out.node_kind = "question";
+    out.standing = node.standing;
+  }
+  return out;
 }
 
 /**
@@ -138,10 +176,12 @@ export async function getClaimTree(
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
             CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
-            ${NODE_MATH_SELECT_SQL}
+            ${NODE_MATH_SELECT_SQL},
+            ${NODE_KIND_SELECT_SQL}
        FROM claims c
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
        ${NODE_MATH_JOIN_SQL}
+       ${NODE_KIND_JOIN_SQL}
       WHERE c.id = $1`,
     [claimId]
   );
@@ -167,11 +207,13 @@ export async function getClaimTree(
               am.argument_id,
               arg.name AS argument_name, arg.stance AS argument_stance,
               arg.content AS argument_content,
-              ae.verdict AS argument_verdict, ae.content AS argument_evaluation,
+              ae.verdict AS argument_verdict, ae.decisive AS argument_decisive,
+              ae.content AS argument_evaluation, arg.shows AS argument_shows,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
               a.claim_credence AS assessment_credence,
               CASE WHEN a.id IS NULL THEN c.seed_credence END AS seed_credence,
               ${NODE_MATH_SELECT_SQL},
+              ${NODE_KIND_SELECT_SQL},
               alc.lean_check_id, alc.lean_check_kind, alc.lean_check_verdict,
               alc.lean_check_at, alc.lean_check_pin_id, alc.lean_check_sha256,
               alc.lean_check_submitted_by
@@ -184,6 +226,7 @@ export async function getClaimTree(
                 ON ae.argument_id = am.argument_id AND ae.is_current = true
          LEFT JOIN LATERAL ${argumentLeanCheckLateralSql("arg")} alc ON true
          ${NODE_MATH_JOIN_SQL}
+         ${NODE_KIND_JOIN_SQL}
         WHERE cr.parent_claim_id = ANY($1)
           AND c.state = 'active'
         ORDER BY cr.created_at, cr.id, am.created_at, am.argument_id`,
@@ -217,6 +260,9 @@ export interface DependentClaim {
   id: string;
   text: string;
   claim_type: string;
+  // The dependent's kind (constitution §2, §7a): a question depends on its
+  // answers ('answers') and subquestions ('part_of') too.
+  node_kind: "claim" | "quantity" | "question";
   relation_type: string;
   // Why the dependent leans on this claim, per the edge (issue #199).
   reasoning: string;
@@ -245,7 +291,7 @@ function dependentRow<T extends MathRowFields>(row: T): T & Omit<TreeNodeMathFie
  */
 export async function getClaimDependents(claimId: string): Promise<DependentClaim[]> {
   const rows = await rawQuery<DependentClaim>(
-    `SELECT cr.parent_claim_id AS id, c.text, c.claim_type,
+    `SELECT cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
             cr.relation_type, cr.reasoning, c.importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
@@ -299,7 +345,7 @@ export async function getTransitiveDependents(
   for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
     const rows = await rawQuery<DependentClaim>(
       `SELECT DISTINCT ON (cr.parent_claim_id)
-              cr.parent_claim_id AS id, c.text, c.claim_type,
+              cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
               cr.relation_type, cr.reasoning, c.importance,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
               a.claim_credence AS assessment_credence,
@@ -352,7 +398,7 @@ export async function listClaimDependents(
   const limit = opts.limit ?? 50;
   const offset = opts.offset ?? 0;
   const rows = await rawQuery<DependentClaim & { total: string }>(
-    `SELECT cr.parent_claim_id AS id, c.text, c.claim_type,
+    `SELECT cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
             cr.relation_type, cr.reasoning, c.importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
@@ -440,7 +486,9 @@ function assembleTree(
       argument_stance: edge?.argument_stance ?? null,
       argument_content: edge?.argument_content ?? null,
       argument_verdict: edge?.argument_verdict ?? null,
+      argument_decisive: edge?.argument_decisive ?? null,
       argument_evaluation: edge?.argument_evaluation ?? null,
+      ...kindFields(node, edge),
       ...mathFields(node),
       argument_lean_check: edge ? leanCheckSummaryFromLateral(edge) : null,
       children: first ? edges.map((e) => render(e, e, depth + 1)) : [],

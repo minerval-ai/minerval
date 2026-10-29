@@ -48,6 +48,54 @@
 
   --measure: 38rem;
   --frame:   62rem;   /* text column + room for the sidenote margin */
+
+  /* — heavier hairlines (map connectors, timeline spines), the wordmark, and
+       the shadow ink as bare channels for rgb(var(--shadow) / alpha) — */
+  --rule-strong: #c9c2b1;
+  --rule-heavy:  #b6af9f;
+  --owl-ink:     #063f1d;
+  --shadow:      26 24 19;
+
+  color-scheme: light;
+}
+
+/* ----- dark ("Ink"): neutral near-black, off-white ink. Every status keeps
+   its hue, lifted in lightness so it reads on the dark ground; tints become
+   deep washes of the same hue. The attribute is set before first paint by the
+   script in app/layout.tsx: from the reader's choice when they made one, else
+   from the system preference. ----- */
+:root[data-theme="dark"] {
+  --paper:      #121314;
+  --paper-sunk: #1b1c1e;
+  --paper-card: #17181a;
+  --ink:        #e9e9e6;
+  --ink-soft:   #c6c7c3;
+  --muted:      #93958f;
+  --faint:      #6f716c;
+  --rule:       #2b2d30;
+  --rule-soft:  #222426;
+  --rule-strong:#3d4043;
+  --rule-heavy: #4a4d50;
+
+  --link:       #84b4ea;
+  --link-visited:#b3a2dc;
+
+  --st-verified:      #62c08a;  --st-verified-tint:    #15261c;
+  --st-supported:     #98c27e;  --st-supported-tint:   #1b2318;
+  --st-inconclusive:  #e0b14f;  --st-inconclusive-tint:#2a2313;
+  --st-doubtful:      #dd9d80;  --st-doubtful-tint:    #2b1f19;
+  --st-contradicted:  #ef8571;  --st-contradicted-tint:#2f1b17;
+  --st-unknown:       #a6a8a2;  --st-unknown-tint:     #212224;
+  --st-unassessed:    #7d7f7a;  --st-unassessed-tint:  #1b1c1e;
+
+  --stance-for:     #98c27e;
+  --stance-against: #ef8571;
+  --stance-neutral: #93958f;
+
+  --owl-ink:  #62c08a;
+  --shadow:   0 0 0;
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -134,6 +182,20 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 }
 .masthead nav a:hover { color: var(--link); text-decoration: none; }
 
+/* light/dark switch (components/ThemeToggle.tsx): an icon button at the far
+   end of the masthead, showing the theme it switches to */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.6rem; height: 1.6rem; padding: 0; align-self: center;
+  border: 1px solid var(--rule); border-radius: 3px;
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+}
+.theme-toggle:hover { color: var(--link); border-color: var(--faint); }
+.theme-toggle svg { width: 0.9rem; height: 0.9rem; }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+:root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+
 /* on narrow screens the masthead wraps: wordmark on its own line, the nav
    beneath it spanning the full width and wrapping as needed — never an
    off-screen horizontal scroll */
@@ -153,11 +215,14 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   /* six entries no longer fit one phone line (#367), and a nav that wraps to
      a two-item second line reads as broken. The phone masthead keeps the four
      routes you navigate to — claims, mandates, docs, account — and drops the
-     two soft entries: `tour` only reopens the home walkthrough, `about` is a
-     footer route as well, and the footer nav carries both. Four labels plus
+     two soft entries, `findings` and `about`, which the footer nav carries. Four labels plus
      the tightened gap fit on one line down to 320px, with room for the next
      entry rather than a wrap the next word would bring straight back. */
   .masthead nav a.wide-only { display: none; }
+  /* the switch rides the wordmark's line, at its right end, so the nav keeps
+     its one full-width line beneath */
+  .theme-toggle { order: 1; margin-left: auto; }
+  .masthead nav { order: 2; }
 }
 
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
@@ -192,7 +257,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
    faint tint and a hairline underline, the note is a small paper card in the
    margin, and hovering either one lights up the pair */
 .annot {
-  background: rgba(62, 98, 138, 0.07);
+  background: color-mix(in srgb, var(--link) 8%, transparent);
   border-bottom: 1px solid var(--link);
   border-radius: 1px;
   transition: background 0.15s;
@@ -209,9 +274,9 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .annot-note .sc { color: var(--link); }
-.annot:hover, .annot:has(+ .annot-note:hover) { background: rgba(62, 98, 138, 0.15); }
+.annot:hover, .annot:has(+ .annot-note:hover) { background: color-mix(in srgb, var(--link) 16%, transparent); }
 .annot:hover + .annot-note, .annot-note:hover {
-  border-color: var(--link); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-color: var(--link); box-shadow: 0 2px 8px rgb(var(--shadow) / 0.08);
 }
 @media (max-width: 1000px) {
   .sidenote.annot-note { border-left: 2px solid var(--link); padding-left: 0.8rem; }
@@ -229,6 +294,8 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   border: 1px solid currentColor;
 }
 .badge .badge-glyph { font-size: 0.82rem; line-height: 1; }
+/* a full-strength outline glows on the dark ground; soften it there */
+:root[data-theme="dark"] .badge { border-color: color-mix(in srgb, currentColor 60%, transparent); }
 .badge.lg { font-size: 0.82rem; padding: 0.32rem 0.7rem; }
 
 .swatch {
@@ -289,6 +356,12 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .badge.st-contradicted{ background: var(--st-contradicted-tint); }
 .badge.st-unknown     { background: var(--st-unknown-tint); }
 
+/* a question's standing (§7a, §10): round and in ink, never a status colour */
+.badge.standing { border-radius: 999px; color: var(--ink-soft); background: var(--paper-card); }
+.badge.standing.standing-answered { color: var(--ink); }
+.badge.standing.standing-ill_posed { border-style: dashed; }
+.badge.standing.unassessed { border-style: dashed; color: var(--muted); }
+
 /* credence meter — the Steward's probability that the claim is true. Neutral
    ink, not status-coloured, so the bar never reads as a restatement of the
    verdict badge beside it. */
@@ -334,7 +407,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   color: var(--ink-soft);
   border: 1px solid var(--rule);
   border-radius: 3px;
-  box-shadow: 0 2px 10px rgba(26, 24, 19, 0.08);
+  box-shadow: 0 2px 10px rgb(var(--shadow) / 0.08);
   font-family: var(--sans);
   font-size: 0.72rem;
   font-weight: 400;
@@ -362,7 +435,7 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .term-pop.pop-end { left: auto; right: 0; transform: none; }
 .term-src {
   display: block; margin-top: 0.35rem;
-  font-size: 0.68rem; font-variant: small-caps; letter-spacing: 0.03em;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
 }
 
 /* ----- type / state tags ----- */
@@ -372,7 +445,11 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
   padding: 0.1rem 0.42rem; border: 1px solid var(--rule); border-radius: 2px;
   background: var(--paper-card); white-space: nowrap;
 }
-.tag.kind { font-variant: small-caps; text-transform: none; letter-spacing: 0.02em; }
+/* Capitals at a reduced size rather than font-variant: small-caps. Inter 4
+   ships small-cap forms for only some letters, so where it is installed the
+   OpenType feature leaves b, d and p as lowercase among small capitals;
+   uppercase renders the same in every face. */
+.tag.kind { text-transform: uppercase; font-size: 0.58rem; letter-spacing: 0.06em; }
 
 /* topic tags (#272): what a claim is about. A chip is a link into the
    filtered list, so it reads as ink rather than as the muted type/state
@@ -447,8 +524,8 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
    Never a meter: every meter and number in this UI measures belief, so an
    unlabelled row of pips beside a claim read as P(claim true). */
 .imp-label {
-  font-family: var(--sans); font-size: 0.66rem; color: var(--muted);
-  font-variant: small-caps; letter-spacing: 0.02em; white-space: nowrap;
+  font-family: var(--sans); color: var(--muted);
+  font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
 }
 
 /* relation label on a decomposition edge */
@@ -463,6 +540,19 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 .rel-defines     { color: var(--link); }
 .rel-assumes,
 .rel-presupposes { color: var(--st-inconclusive); } /* .rel-presupposes: legacy alias, #205 */
+.rel-cuts        { color: var(--muted); }
+/* a quantity premise shows its estimate where a claim shows its status */
+.qty-chip {
+  display: inline-block; font-family: var(--sans); font-size: 0.7rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink); padding: 0 0.3rem;
+  border: 1px solid var(--rule-strong); border-radius: 2px; background: var(--paper-card);
+}
+/* what an argument about a quantity shows about its value (§7) */
+.arg-shows { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.arg-shows .sc { font-size: 0.58rem; color: var(--muted); margin-right: 0.25rem; }
+.arg-shows-mark { font-weight: 700; color: var(--ink); }
+.rel-answers     { color: var(--ink-soft); }
+.rel-part-of     { color: var(--muted); }
 
 /* ==========================================================================
    Claim view
@@ -586,7 +676,7 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 /* The steward's evaluation of a named argument (issue #173): whether the
    inference goes through granting its premises, and which premises bear the
    weight. Epistemic where the written form is structural, so it is set off
-   with a quiet left rule; the verdict renders as a tag in the arghead. */
+   with a quiet left rule; the rating renders in .argcheck above it. */
 .argeval {
   margin: 0 0 0.8rem;
   padding-left: 0.7rem;
@@ -608,6 +698,25 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
   padding: 0.12rem 0.42rem 0.1rem;
   /* the swatch precedent: at this scale a full-strength border overwhelms */
   border-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+/* "Does it follow?" beside "Do the premises hold?" (#540): the rating of the
+   step is conditional on the premises, so it is never shown alone. The
+   rating keeps the badge's border and tint but drops the small caps, since it
+   is a phrase ("certain if the premises hold") rather than a status word. */
+.argcheck {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 0.8rem; align-items: baseline;
+  margin: 0 0 0.7rem; font-family: var(--sans); font-size: 0.78rem;
+}
+.argcheck dt { color: var(--muted); }
+.argcheck dd { margin: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.7rem; }
+.argcheck .arg-verdict { text-transform: none; letter-spacing: 0.01em; font-size: 0.72rem; }
+.premise-count { font-weight: 600; white-space: nowrap; }
+.arg-decisive { margin-left: 0.1rem; }
+@media (max-width: 480px) {
+  .argcheck { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+  .argcheck dd { margin-bottom: 0.35rem; }
 }
 
 /* The basis (#204): the default decomposition — a claim's direct subclaims that

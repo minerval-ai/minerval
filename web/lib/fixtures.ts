@@ -3,6 +3,7 @@ import type {
   SearchResultItem,
 } from "./types";
 import { INFLATION_PROVENANCE } from "./fixtures-provenance";
+import { KIND_CLAIMS } from "./fixtures-kinds";
 
 // Fixture data for design iteration before the API is wired in. A worked
 // example built to the constitution's structural rules: "inflation was high"
@@ -109,7 +110,7 @@ const FLAGSHIP: ClaimDetail = {
       created_by: "claim_steward",
       created_at: "2024-11-02T14:25:00Z",
       // Steward evaluation (issue #173), maintained with the assessment.
-      verdict: "holds",
+      verdict: "certain",
       evaluation: ARG_DIRECT_EVALUATION,
     },
   ],
@@ -338,7 +339,7 @@ const FLAGSHIP: ClaimDetail = {
         assessment_credence: 0.99,
         argument_id: "arg-direct", argument_name: "Direct measurement", argument_stance: "for",
         argument_content: ARG_DIRECT_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_DIRECT_EVALUATION,
+        argument_verdict: "certain", argument_evaluation: ARG_DIRECT_EVALUATION,
         children: [],
       },
       {
@@ -356,7 +357,7 @@ const FLAGSHIP: ClaimDetail = {
         assessment_status: "inconclusive", assessment_confidence: 0.8,
         argument_id: "arg-direct", argument_name: "Direct measurement", argument_stance: "for",
         argument_content: ARG_DIRECT_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_DIRECT_EVALUATION,
+        argument_verdict: "certain", argument_evaluation: ARG_DIRECT_EVALUATION,
         // The threshold claim's own basis (#204): direct dependencies not
         // gathered under a named argument, so no argument fields on the edges.
         children: [
@@ -915,7 +916,8 @@ const LEGENDRE: ClaimDetail = {
       evidence_urls: ["https://arxiv.org/abs/1309.6122"],
       created_by: "claim_steward",
       created_at: "2026-01-14T10:30:00Z",
-      verdict: "holds",
+      verdict: "likely",
+      decisive: false,
       evaluation: ARG_PARTIAL_EVALUATION,
       lean_check: null,
     },
@@ -987,7 +989,7 @@ const LEGENDRE: ClaimDetail = {
         assessment_credence: 1,
         argument_id: "arg-partial", argument_name: "Partial results", argument_stance: "for",
         argument_content: ARG_PARTIAL_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_PARTIAL_EVALUATION,
+        argument_verdict: "likely", argument_evaluation: ARG_PARTIAL_EVALUATION,
         // Verified by computation against published tables, not by a Lean
         // proof: no ⊢ mark, no theorem bedrock.
         bounty_micro_usd: null, checked: null, formal: false,
@@ -1002,7 +1004,7 @@ const LEGENDRE: ClaimDetail = {
         confidence: 0.9, assessment_status: "verified", assessment_confidence: 0.98,
         argument_id: "arg-partial", argument_name: "Partial results", argument_stance: "for",
         argument_content: ARG_PARTIAL_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_PARTIAL_EVALUATION,
+        argument_verdict: "likely", argument_evaluation: ARG_PARTIAL_EVALUATION,
         bounty_micro_usd: null, checked: "proof", formal: true,
         children: [
           {
@@ -1014,7 +1016,7 @@ const LEGENDRE: ClaimDetail = {
             confidence: 0.95, assessment_status: "verified", assessment_confidence: 0.98,
             argument_id: "arg-chebyshev", argument_name: "Chebyshev's bound (machine-checked)", argument_stance: "for",
             argument_content: ARG_CHEBYSHEV_WRITTEN,
-            argument_verdict: "holds", argument_evaluation: ARG_CHEBYSHEV_EVALUATION,
+            argument_verdict: "certain", argument_decisive: true, argument_evaluation: ARG_CHEBYSHEV_EVALUATION,
             argument_lean_check: BERTRAND_CHECK,
             // A machine-checked leaf: theorem bedrock on the map.
             bounty_micro_usd: null, checked: "proof", formal: true,
@@ -1031,7 +1033,7 @@ const LEGENDRE: ClaimDetail = {
         confidence: 0.9, assessment_status: "verified", assessment_confidence: 0.94,
         argument_id: "arg-partial", argument_name: "Partial results", argument_stance: "for",
         argument_content: ARG_PARTIAL_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_PARTIAL_EVALUATION,
+        argument_verdict: "likely", argument_evaluation: ARG_PARTIAL_EVALUATION,
         bounty_micro_usd: null, checked: null, formal: false,
         children: [],
       },
@@ -1103,7 +1105,8 @@ const BERTRAND: ClaimDetail = {
       evidence_urls: [],
       created_by: "claim_steward",
       created_at: "2026-02-11T09:00:00Z",
-      verdict: "holds",
+      verdict: "certain",
+      decisive: true,
       evaluation: ARG_CHEBYSHEV_EVALUATION,
       lean_check: BERTRAND_CHECK,
     },
@@ -1145,7 +1148,7 @@ const BERTRAND: ClaimDetail = {
         confidence: 0.95, assessment_status: "verified", assessment_confidence: 0.98,
         argument_id: "arg-chebyshev", argument_name: "Chebyshev's bound (machine-checked)", argument_stance: "for",
         argument_content: ARG_CHEBYSHEV_WRITTEN,
-        argument_verdict: "holds", argument_evaluation: ARG_CHEBYSHEV_EVALUATION,
+        argument_verdict: "certain", argument_decisive: true, argument_evaluation: ARG_CHEBYSHEV_EVALUATION,
         argument_lean_check: BERTRAND_CHECK,
         bounty_micro_usd: null, checked: "proof", formal: true,
         children: [],
@@ -1254,6 +1257,9 @@ const CLAIMS: Record<string, ClaimDetail> = {
   [FLAGSHIP.claim.id]: FLAGSHIP,
   [LEGENDRE.claim.id]: LEGENDRE,
   [BERTRAND.claim.id]: BERTRAND,
+  // A quantity, a claim about where its value lies, and a question
+  // (constitution §2, §7a).
+  ...Object.fromEntries(KIND_CLAIMS.map((c) => [c.claim.id, c])),
 };
 
 const EVENTS: Record<string, ClaimEventsPage> = {

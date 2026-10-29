@@ -36,6 +36,7 @@ import { getArbitratorToolDefinitions } from "./arbitrator-tools.js";
 import { getAuditToolDefinitions } from "./audit-tools.js";
 import { getGraphReadToolDefinitions } from "./graph-read-tools.js";
 import { ELICIT_TOOL_PREFIX } from "./elicit-tools.js";
+import { PANGRAM_TOOL_PREFIX } from "./pangram-tools.js";
 import { registerLeanTools } from "./lean-tools.js";
 import { registerAttemptTools } from "./attempt-tools.js";
 import { registerPrizeTools } from "./prize-tools.js";
@@ -221,10 +222,12 @@ export function assertSkillToolsRegistered(
           `skill "${skill.name}" declares tool "${tool.name}", which is not a lowercase snake_case name`
         );
       }
-      if (tool.name.startsWith(ELICIT_TOOL_PREFIX)) {
-        problems.push(
-          `skill "${skill.name}" declares tool "${tool.name}" under the reserved ${ELICIT_TOOL_PREFIX} prefix`
-        );
+      for (const prefix of [ELICIT_TOOL_PREFIX, PANGRAM_TOOL_PREFIX]) {
+        if (tool.name.startsWith(prefix)) {
+          problems.push(
+            `skill "${skill.name}" declares tool "${tool.name}" under the reserved ${prefix} prefix`
+          );
+        }
       }
       if (existing.has(tool.name)) {
         problems.push(

@@ -238,7 +238,7 @@ posts. See [docs/allocation.md](docs/allocation.md).
   claim by what the graph knows about it, with a chat grounded in the graph.
   Available on the
   [Chrome Web Store](https://chromewebstore.google.com/detail/minerval/ojpdkgmlbffliefddfendfakpiiopkci);
-  built with Plasmo in [extension/](extension/).
+  built with WXT in [extension/](extension/).
 - **MCP server.** Remote MCP over streamable HTTP at `POST /mcp`, with OAuth
   2.1 so hosted clients (such as Claude.ai) can connect. Tools for searching
   and reading the graph, running the pipeline's judgments, and contributing.
@@ -253,7 +253,7 @@ posts. See [docs/allocation.md](docs/allocation.md).
 |------|----------|
 | [`src/`](src/) | The API (Fastify), the agent pipeline (`llm/`, `workers/`), services, the MCP server, and the Drizzle schema (`db/`) |
 | [`web/`](web/) | The Next.js web app deployed at minerval.ai |
-| [`extension/`](extension/) | The Plasmo browser extension |
+| [`extension/`](extension/) | The browser extension (WXT) |
 | [`plugin/`](plugin/) | The Claude Code / Cowork plugin |
 | [`lean-checker/`](lean-checker/) | The Lean checker service for formal mathematical statements |
 | [`skills/`](skills/) | Skills the agents load for particular domains |

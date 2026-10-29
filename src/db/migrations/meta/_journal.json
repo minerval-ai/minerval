@@ -505,6 +505,41 @@
       "when": 1792779899949,
       "tag": "0071_scoped_ingest",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793204771144,
+      "tag": "0072_argument_inference_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793289247784,
+      "tag": "0073_node_kinds_and_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793292698488,
+      "tag": "0074_kind_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793294673364,
+      "tag": "0075_kind_followups",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793297687253,
+      "tag": "0076_mandate_contribution_budget",
+      "breakpoints": true
     }
   ]
 }
