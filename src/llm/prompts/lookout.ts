@@ -2,9 +2,7 @@ import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Lookout
@@ -145,19 +143,17 @@ proposing even when the post itself is not.
 
 ${RAISING_ISSUES}
 
-${domainSkillsSection("lookout")}`;
+${skillsSection("lookout")}`;
 
 export function getLookoutSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (the lookout's view of each), in that order.
- * A lookout carries its funding mandate's skills, as the review pass does.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getLookoutSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "lookout"));
+export function getLookoutSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

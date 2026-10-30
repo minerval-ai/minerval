@@ -737,7 +737,7 @@ function newMaterializeContext(): MaterializeContext {
   };
 }
 
-/** How far the Steward's publishing tool is from a claim: the formalize gate. */
+/** Whether the claim is one a formal statement is for: the formalize gate. */
 async function formalizeToolGap(claimId: string): Promise<string | null> {
   // Lazy: steward-direct pulls the LLM tool registry in, which this
   // mechanism module must not load at import time (queue-service imports
@@ -746,9 +746,9 @@ async function formalizeToolGap(claimId: string): Promise<string | null> {
   const { skills, missing } = await missingTriggerTools("formalize", claimId);
   if (missing.length === 0) return null;
   return (
-    `the claim's recorded domains activate ${
+    `the claim's recorded domains point to ${
       skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"
-    }, none of which carries ${missing.join(", ")} for the Steward; a formalize ` +
+    }, none of which declares ${missing.join(", ")} for the Steward; a formalize ` +
     "run would be refused. Tag the claim with the domain whose skill declares " +
     "the tool (mathematics; a Steward pass with set_claim_domains) or drop the item"
   );

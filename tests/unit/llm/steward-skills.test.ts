@@ -142,18 +142,22 @@ const PROVENANCE_TOOLS = [
 ];
 
 describe("Steward toolset without a domain tag", () => {
-  it("carries only the Provenance method skill: its block and its tools, and no domain skill", async () => {
+  it("offers every skill's tools and load_skill, splices no skill, and points to none", async () => {
     const opts = await run([]);
     const names = opts.tools.map((t) => t.name);
-    expect(names.filter((n) => n.startsWith("lean_"))).toEqual([]);
-    expect(names).not.toContain("publish_formalization");
-    // The method skill's tools sit where skill tools sit: after match_claim,
-    // before raise_issue and web_search.
-    const first = names.indexOf("provenance_get_map");
+    // Skill tools are offered whether or not a skill is loaded, so the
+    // Mathematics tools are here on an untagged claim too.
+    expect(names).toContain("lean_search");
+    expect(names).toContain("publish_formalization");
+    // load_skill, then the skills' tools in skill order, sit after
+    // match_claim and before the delegation channel.
+    const first = names.indexOf("load_skill");
     expect(names.indexOf("match_claim")).toBe(first - 1);
-    expect(names.slice(first, first + PROVENANCE_TOOLS.length)).toEqual(PROVENANCE_TOOLS);
-    // The delegation channel (#298) sits after the skill tools, before the
-    // report and finding channels and web_search.
+    const skillTools = [
+      ...getSkill("mathematics").tools.map((t) => t.name),
+      ...PROVENANCE_TOOLS,
+    ];
+    expect(names.slice(first + 1, first + 1 + skillTools.length)).toEqual(skillTools);
     expect(names.slice(-8)).toEqual([
       "delegate_research",
       "get_research_run",
@@ -164,18 +168,30 @@ describe("Steward toolset without a domain tag", () => {
       "note_finding",
       "web_search",
     ]);
-    // Two blocks: the constitution and role, then the method skill's view.
-    expect(opts.system).toHaveLength(3);
-    expect(opts.system[0]).not.toContain("# Domain skill:");
-    expect(opts.system[1]!.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
-    expect(opts.system[1]).toContain("## For the Claim Steward");
-    expect(opts.system[2]!.startsWith("# Method skill: Search (version 1)")).toBe(true);
-    expect(opts.system[2]).toContain("## For every administrator");
-    // The role prompt still lists the skills that exist.
-    expect(opts.system[0]).toContain("## Domain skills");
-    expect(opts.system[0]).toContain("Skills that exist: mathematics");
-    expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance (version 1)");
-    expect(mocks.loopSkills).toEqual([["provenance", "search"]]);
+    // One block: the constitution and role, with the catalog of skills to load.
+    expect(opts.system).toHaveLength(1);
+    expect(opts.system[0]).not.toContain("# Method skill:");
+    expect(opts.system[0]).toContain("## Skills");
+    expect(opts.system[0]).toContain("- provenance (version 1, a method skill");
+    expect(opts.initialMessages[0]!.content).not.toContain("Skills that cover this run's subject");
+    // The run opens with nothing loaded.
+    expect(mocks.loopSkills).toEqual([[]]);
+  });
+
+  it("returns a skill's Steward view on load_skill and records the load", async () => {
+    const opts = await run([]);
+    const { runWithUsageContext, getUsageContext } = await import("../../../src/llm/usage-context.js");
+    const skills: string[] = [];
+    const { view, recorded } = await runWithUsageContext({ skills }, async () => ({
+      view: await opts.executeTool("load_skill", { name: "provenance" }),
+      recorded: [...(getUsageContext().skills ?? [])],
+    }));
+    expect(view.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
+    expect(view).toContain("## For the Claim Steward");
+    expect(recorded).toEqual(["provenance"]);
+    const unknown = JSON.parse(await opts.executeTool("load_skill", { name: "alchemy" }));
+    expect(unknown.success).toBe(false);
+    expect(unknown.message).toContain("mathematics, provenance");
   });
 
   it("passes no domains to the Matcher", async () => {
@@ -190,65 +206,23 @@ describe("Steward toolset without a domain tag", () => {
 });
 
 describe("Steward toolset with the mathematics tag", () => {
-  it("splices the skill block after the role and the Lean tools before web_search", async () => {
+  it("points the task to the Mathematics skill without loading it", async () => {
     const opts = await run(["mathematics"]);
-    const names = opts.tools.map((t) => t.name);
-    // The skill's tools sit as one block after match_claim (and the Elicit
-    // tools, absent here) and before the issue tools, note_finding, and
-    // web_search, the Lean four first.
-    const first = names.indexOf("lean_search");
-    expect(names.indexOf("match_claim")).toBe(first - 1);
-    expect(names.slice(first, first + 4)).toEqual([
-      "lean_search",
-      "lean_elaborate",
-      "lean_check",
-      "publish_formalization",
-    ]);
-    // The delegation channel (#298) sits after the skill tools, before the
-    // report and finding channels and web_search.
-    expect(names.slice(-8)).toEqual([
-      "delegate_research",
-      "get_research_run",
-      "raise_issue",
-      "update_issue",
-      "search_issues",
-      "get_issue",
-      "note_finding",
-      "web_search",
-    ]);
-    // The skills' tools, in skill order: mathematics then provenance.
-    const skillTools = [
-      ...getSkill("mathematics").tools.map((t) => t.name),
-      ...PROVENANCE_TOOLS,
-    ];
-    expect(names.slice(first, -8)).toEqual(skillTools);
-
-    // Three cached blocks: the constitution-plus-role block, unchanged, then
-    // each skill's Steward view as its own block, in skill order.
-    expect(opts.system).toHaveLength(4);
-    expect(opts.system[0]).toContain("# Your Specific Role");
+    expect(opts.system).toHaveLength(1);
     expect(opts.system[0]).not.toContain("# Domain skill:");
-    const skill = opts.system[1]!;
-    expect(skill.startsWith("# Domain skill: Mathematics (version 1)")).toBe(true);
-    expect(skill).toContain("## For the Claim Steward");
-    expect(skill).not.toContain("## For the solver");
-    expect(skill).not.toContain("## Failure modes");
-    expect(opts.system[2]!.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
-    expect(opts.system[3]!.startsWith("# Method skill: Search (version 1)")).toBe(true);
-
-    expect(opts.initialMessages[0]!.content).toContain(
-      "Skills active for this run: mathematics (version 1), provenance (version 1)"
-    );
-    expect(mocks.loopSkills).toEqual([["mathematics", "provenance", "search"]]);
+    const task = opts.initialMessages[0]!.content;
+    expect(task).toContain("Skills that cover this run's subject: the Mathematics skill (mathematics).");
+    expect(task).toContain("Load one with load_skill if the work calls for it.");
+    expect(mocks.loopSkills).toEqual([[]]);
+    // The toolset is the same as on an untagged claim.
+    const untagged = (await run([])).tools.map((t) => t.name);
+    expect(opts.tools.map((t) => t.name)).toEqual(untagged);
   });
 
   it("ignores tags that name no skill", async () => {
     const opts = await run(["economics"]);
-    expect(opts.tools.map((t) => t.name)).not.toContain("lean_search");
-    // Only the method skill's block follows the role.
-    expect(opts.system).toHaveLength(3);
-    expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
-    expect(opts.system[2]!.startsWith("# Method skill: Search")).toBe(true);
+    expect(opts.system).toHaveLength(1);
+    expect(opts.initialMessages[0]!.content).not.toContain("Skills that cover this run's subject");
   });
 
   it("passes the claim's domains to the Matcher", async () => {
@@ -316,20 +290,16 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     }
   };
 
-  it("keeps the skill block but withholds the Lean tools, and says so in the task", async () => {
+  it("withholds the Lean tools and, on a claim pointed to Mathematics, says so in the task", async () => {
     const opts = await withoutChecker(["mathematics"]);
     const names = opts.tools.map((t) => t.name);
     expect(names.filter((n) => n.startsWith("lean_"))).toEqual([]);
     expect(names).not.toContain("publish_formalization");
     expect(names.at(-1)).toBe("web_search");
-    // The skill itself is still active: its block and its name in the task.
-    expect(opts.system).toHaveLength(4);
-    expect(opts.system[1]!.startsWith("# Domain skill: Mathematics")).toBe(true);
     const task = opts.initialMessages[0]!.content;
-    expect(task).toContain("Skills active for this run: mathematics (version 1), provenance (version 1)");
+    expect(task).toContain("the Mathematics skill (mathematics)");
     expect(task).toContain("formal tools are unavailable this run");
     expect(task).toContain("formal verification was unavailable");
-    expect(mocks.loopSkills).toEqual([["mathematics", "provenance", "search"]]);
   });
 
   it("says nothing about formal tools on a claim outside the domain", async () => {

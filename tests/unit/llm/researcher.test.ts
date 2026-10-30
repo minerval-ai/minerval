@@ -323,19 +323,31 @@ describe("toolset by model", () => {
 });
 
 describe("the prompt", () => {
-  it("prepends the constitution by default and splices the Provenance skill's researcher view", async () => {
+  it("prepends the constitution by default and lists the skills it can load, splicing none", async () => {
     await runResearcher(input());
     const system = mocks.toolLoopCalls[0]!.system as string[];
-    expect(system).toHaveLength(3);
+    expect(system).toHaveLength(1);
     expect(system[0]).toContain(getConstitution().slice(0, 200));
     expect(system[0]).toContain("# Your Specific Role");
     expect(system[0]).toContain("You are the researcher");
-    expect(system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
-    expect(system[1]).toContain("## For the researcher");
-    expect(system[1]).not.toContain("## For the Claim Steward");
-    expect(system[2]!.startsWith("# Method skill: Search")).toBe(true);
-    expect(system[2]).toContain("## For the researcher");
-    expect(system[2]).not.toContain("## For the Claim Steward");
+    expect(system[0]).toContain("## Skills");
+    expect(system[0]).toContain("- provenance (version 1, a method skill");
+    expect(system[0]).not.toContain("# Method skill:");
+  });
+
+  it("loads the Provenance skill with the Steward's procedure as well as its own section", async () => {
+    await runResearcher(input());
+    const call = mocks.toolLoopCalls[0] as unknown as {
+      tools: Array<{ name: string }>;
+      executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+    };
+    expect(call.tools.map((t) => t.name)).toContain("load_skill");
+    const view = await call.executeTool("load_skill", { name: "provenance" });
+    expect(view.startsWith("# Method skill: Provenance")).toBe(true);
+    expect(view).toContain("## For every administrator");
+    expect(view).toContain("## For the Claim Steward");
+    expect(view).toContain("## For the researcher");
+    expect(view).not.toContain("## For the Audit Agent");
   });
 
   it("carries only the role when the launcher dropped the constitution", async () => {

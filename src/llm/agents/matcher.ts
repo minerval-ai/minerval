@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matcher.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims } from "../../services/search-service.js";
 import { loadConfig } from "../../config.js";
@@ -111,8 +111,9 @@ async function matchClaimImpl(input: {
   excludeClaimId?: string;
   /**
    * The domain tags the caller knows (the Steward's or Curator's claim, the
-   * Extractor's prior at ingestion). The matching skills' "For the Matcher"
-   * view is spliced in: identity is judged differently in some domains.
+   * Extractor's prior at ingestion). They point to the domain skills whose
+   * "For the Matcher" view the run can load: identity is judged differently
+   * in some domains.
    */
   domains?: readonly string[];
   /** The kind of node proposed (§2, §7a); claim when absent. */
@@ -120,15 +121,15 @@ async function matchClaimImpl(input: {
   model?: string;
 }): Promise<MatchDecision> {
   const config = loadConfig();
-  const skills = skillsForDomains(input.domains, "matcher");
+  const skillLoader = createSkillLoadTools("matcher", { domains: input.domains });
+  const skills = skillLoader.pointed;
   const userPrompt = getMatchingPrompt(input.extractedText, input.proposedCanonical, {
     kind: input.kind ?? "claim",
     domains: input.domains ?? [],
     skills,
     turnBudget: MATCHER_TURN_BUDGET,
   });
-  // One cached block for the constitution and role, plus one per active skill.
-  const system = getMatcherSystemPromptBlocks({ skills });
+  const system = getMatcherSystemPromptBlocks();
 
   const searchTool: Tool = {
     name: "search_similar_claims",
@@ -269,7 +270,7 @@ async function matchClaimImpl(input: {
           : userPrompt,
       },
     ],
-    tools: [searchTool, submitTool, ...reportTools.definitions],
+    tools: [searchTool, submitTool, ...skillLoader.definitions, ...reportTools.definitions],
     system,
     model,
     // A cap, not a target: the decision itself is a few hundred tokens. But a
@@ -300,6 +301,8 @@ async function matchClaimImpl(input: {
         "true, instance_stance, confidence, reasoning).",
     },
     executeTool: async (name, toolInput) => {
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -357,7 +360,7 @@ async function matchClaimImpl(input: {
     },
   });
 
-  await withSkills(skills.map((s) => s.name), async () => {
+  await withSkills([], async () => {
     await runLoop({ maxIterations: MATCHER_TURN_BUDGET });
     if (finalResult) return;
     // One bounded retry (#419): most timeouts are a Matcher mid-search, not

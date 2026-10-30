@@ -99,8 +99,13 @@ export function moneyTriggerModel(trigger: MoneyTrigger, override?: string): str
 }
 
 /**
- * The skill tools the claim's recorded domains activate for the Steward,
- * and the trigger's required tools that are missing from them.
+ * The skills the claim's recorded domains point to, the tools those skills
+ * declare for the Steward, and the trigger's required tools none of them
+ * declares. The Steward is offered every skill's tools on every run, so
+ * this is not a question of what the run can call; it is whether the claim
+ * is the kind of claim the trigger is for. A formal statement, a proof
+ * attempt or a prize decision on a claim no mathematics skill covers is a
+ * planning mistake that would spend two strong passes on nothing.
  */
 export async function missingTriggerTools(
   trigger: MoneyTrigger,
@@ -113,17 +118,18 @@ export async function missingTriggerTools(
 }
 
 /**
- * Refuse a money trigger whose tools the claim's skills do not carry. The
- * error names the claim, the trigger, the recorded skills, and the remedy.
+ * Refuse a money trigger on a claim whose recorded domains point to no
+ * skill that declares the trigger's tools. The error names the claim, the
+ * trigger, the skills the domains point to, and the remedy.
  */
 export async function assertTriggerToolsActive(trigger: MoneyTrigger, claimId: string): Promise<void> {
   const { skills, missing } = await missingTriggerTools(trigger, claimId);
   if (missing.length === 0) return;
   const message =
-    `refusing the ${trigger} trigger on claim ${claimId}: its recorded domains activate ` +
-    `${skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"}, which carry none of ` +
-    `${missing.join(", ")} for the Steward; the run would decide nothing. Tag the claim with the ` +
-    "domain whose skill declares the tool (set_claim_domains) and the next invocation carries it " +
+    `refusing the ${trigger} trigger on claim ${claimId}: its recorded domains point to ` +
+    `${skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"}, none of which declares ` +
+    `${missing.join(", ")} for the Steward, so the claim is not one this trigger is for. Tag the ` +
+    "claim with the domain whose skill declares the tool (set_claim_domains) if it is " +
     "(docs/mathematics.md §3.4, §6.4)";
   console.error(`[steward-direct] ${message}`);
   throw new Error(message);

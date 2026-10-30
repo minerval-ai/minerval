@@ -554,10 +554,10 @@ to ask, is proposed as a question, in neutral wording.
   position reference), when the format makes that meaningful; the browser
   extension uses it to anchor claims back onto the page.
 - **domains**: the claim's domain tags, from the closed list of domains that
-  have a skill (the Domain skills section below names them and says what
-  belongs in each); an empty list when none applies. A prior: the Steward
-  confirms or corrects it, and it selects which skills the claim's
-  administrators carry.
+  have a skill (the Skills section below names them and says what belongs
+  in each); an empty list when none applies. A prior: the Steward confirms
+  or corrects it, and it points the claim's administrators to the skills
+  that cover its subject.
 
 ## The importance and contestation priors
 
@@ -583,18 +583,13 @@ separately visible.
 Emit only claims that pass the bar. A short list is the expected result; do
 not pad.
 
-## Domain skills
+## Skills
 
-One or more skill blocks may follow this role. A domain skill governs how the
-constitution and your role apply in one domain; a method skill governs one
-kind of work any claim can call for. A skill never outranks either the
-constitution or your role: it may sharpen your obligations and add
-procedures and tools, never loosen them. Which domain skills a run carries
-is decided by the claim's recorded domains, never by who funds the work; a
-method skill is carried on every run. A claim with no recorded domains
-activates no domain skill, and a run on such a claim carries no domain
-skill block; that is a state to work in, not a delivery fault. The catalog
-below says which skills exist, the change each current version made, and
-what you would receive from each when it is active; check a claim that a
-skill "now says" something against it rather than taking it on trust.
-Skills that exist: mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For the Extractor); provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For the Extractor); search (version 1, as first written; a method skill, carried on every run; you receive none of its sections).
+Every skill's section for the Extractor follows this role as its own block.
+A skill never outranks the constitution or your role: it may sharpen your
+obligations and add procedures, never loosen them. The domains you tag a
+claim with are drawn from the domain skills below; the claim's
+administrators are pointed to those skills when they work on it.
+- mathematics (version 1, a domain skill, for claims tagged mathematics). How the constitution applies to propositions of mathematics: what a mathematical claim is, how proofs are arguments, how the six statuses and credence read for theorems and conjectures, what a machine-checked proof is as evidence, how formal statements are published and checked in Lean 4 against a pinned Mathlib, how the platform's solver and prize program work, and what money may never touch. Applies to claims tagged mathematics and to contributions on them. Does not apply to claims that merely use a number or a model.
+- provenance (version 1, a method skill). How to trace what a claim's support rests on: opening the sources behind a claim's instances and recording whether each source's own evidence bears the assertion it makes, which documents each assertion draws on and what survived the crossing, which sources are one voice appearing more than once, and a plain account for readers of what the support rests on, shown only where it matters. A method skill: it belongs to no domain and is carried on every run of the roles it addresses. It produces structure and figures for the Steward to reason about; the verdict stays the Steward's.
+- search (version 1, a method skill). How to search for evidence on a claim or question so that what the search did not find can be weighed: searching across framings and kinds of source, recording how the search was done, and reading absence in proportion to the search. A method skill; the verdict stays the Steward's.

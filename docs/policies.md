@@ -27,18 +27,18 @@ Every admin agent's prompt follows this structure:
 │ - Carries the role's operating standards,   │
 │   citing the constitution by section        │
 │ - Ends with the shared raise_issue guidance │
-│   and the catalog of domain skills          │
+│   and the catalog of skills it can load     │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│ LAYER 3: Domain Skills (cached, per skill)  │
-│ - One block per skill active for the run    │
-│ - The role's sections of skills/<name>/     │
-│   SKILL.md, spliced by the loader           │
-│ - Selected by the claim's recorded domains  │
-│   (the mandate's, for the Grantmaker)       │
-│ - Brings the domain's tools                 │
+│ LAYER 3: Skills (loaded on demand)          │
+│ - load_skill returns the role's sections of │
+│   skills/<name>/SKILL.md as a tool result   │
+│ - The agent decides what its work calls for;│
+│   every load is recorded with the run       │
+│ - A claim's domains (a mandate's skills)    │
+│   point to the skills covering its subject  │
 └─────────────────────────────────────────────┘
                     │
                     ▼
@@ -50,7 +50,7 @@ Every admin agent's prompt follows this structure:
 └─────────────────────────────────────────────┘
 ```
 
-The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The constitution-plus-role prompt is sent as one cached block, plus one cached block per active domain skill, so the constitution is paid for once per cache window rather than once per call and a skilled run leaves the shared block's cache entry untouched.
+The constitution is read from `admin_constitution.md` at load time and the process fails loudly if the file is missing; there is no fallback summary, because a prompt silently missing its first layer would be worse than a crash. The constitution-plus-role prompt is sent as one cached block, so the constitution is paid for once per cache window rather than once per call. Skills are not in it: a run reads the ones its work calls for with `load_skill`.
 
 Authority runs in layer order: the constitution, then the role and the operating standards its prompt carries, then the skill. A skill may sharpen how a role's obligations apply and add procedures and tools; it never loosens an obligation.
 
@@ -117,17 +117,17 @@ One shared block, **Raising Issues**, goes to every agent that carries the issue
 
 A domain skill is the layer between a role and its task: how the constitution's standards apply in one domain, what the domain's characteristic objects are in the claim schema, what counts as evidence of which grade there, and what tools and procedures the domain brings. It is distinct from the constitution (domain-neutral, always wins), from the role prompt and the operating standards it carries (per role, domain-neutral), and from the task context (per run).
 
-A **method skill** is the same layer for a kind of work rather than a subject: how the constitution's standards apply to a procedure any claim can call for, with the tools that procedure brings. It claims no domain (`metadata.minerval.kind: method`), never appears in the domain list the Extractor tags from, and is carried on every run of each role it has a section for, so the Steward carries it on every claim and the Matcher, which it does not address, never does. The first is Provenance (`skills/provenance/SKILL.md`): tracing what a claim's support rests on.
+A **method skill** is the same layer for a kind of work rather than a subject: how the constitution's standards apply to a procedure any claim can call for, with the tools that procedure brings. It claims no domain (`metadata.minerval.kind: method`) and never appears in the domain list the Extractor tags from. The first is Provenance (`skills/provenance/SKILL.md`): tracing what a claim's support rests on.
 
-One document per domain, `skills/<name>/SKILL.md`, serves every role, in sections addressed to each ("For every administrator", "For the Claim Steward", "For the Matcher", and so on). The loader in `src/llm/prompts/skills.ts` splices each role's sections into a block headed `# Domain skill: <Name> (version N)` that follows the role in the system prompt. The [skills](/docs/skills) pages show every skill verbatim, the composition table, and the exact block each role receives. `skills/<name>/tools.json` declares the tools a skill brings (the Mathematics skill's Lean tools); they join a run's toolset exactly when the skill is active, and their executors live in code with a startup check that every declared tool has one.
+One document per skill, `skills/<name>/SKILL.md`, serves every role, in sections addressed to each ("For every administrator", "For the Claim Steward", "For the Matcher", and so on). Skills load on demand, as the Agent Skills format intends: a role's prompt carries the catalog of skills it can load (name, description, latest change, the sections loading gives it), and the agent reads one with the `load_skill` tool, which returns the role's sections under a heading `# Domain skill: <Name> (version N)` or `# Method skill: <Name> (version N)`. The [skills](/docs/skills) pages show every skill verbatim, the composition table, and the exact view each role loads. `skills/<name>/tools.json` declares the tools a skill brings (the Mathematics skill's Lean tools, the Provenance skill's recording tools); they are in a role's toolset whether or not the run loads the skill (the Lean tools only where a checker is configured), and their executors live in code with a startup check that every declared tool has one.
 
-**Selection** is a recorded judgment, not a filter:
+**Loading is the agent's judgment, and it is recorded.** Which skills a run loads is recorded on the run and on any assessment it writes after the load, so the standards applied to a verdict are a query, and the Audit Agent can ask why a run did not load a skill its work called for. What points a run to a skill:
 
-- Claim-scoped runs (Steward, Curator, Reviewer, Arbitrator, Audit) read the claim's `domains`: the Extractor emits a prior, a new subclaim inherits its parent's tags, and the Steward's `set_claim_domains` is the authoritative call. The Reviewer and Arbitrator reach the claim through the contribution; Audit takes the union over the claims in the decisions under review. The Matcher receives the domains its caller knows, and the Extractor always carries every skill's Extractor section so it can tag.
-- Mandate-scoped runs (the Grantmaker's conversation and review passes) read the mandate's `skills`. A mandate's skills select the Grantmaker's view and nothing else: funding never selects a prompt for any agent that writes to the graph (§19).
-- Method skills are not selected at all: every claim-scoped run carries each one whose composition table gives the role a section.
+- Claim-scoped runs (Steward, Curator, Reviewer, Arbitrator, Audit, Matcher, researcher) are pointed by the claim's `domains`: the Extractor emits a prior, a new subclaim inherits its parent's tags, and the Steward's `set_claim_domains` is the authoritative call. The Reviewer and Arbitrator reach the claim through the contribution; Audit takes the union over the claims in the decisions under review. The task message names the skills the domains point to; it does not load them.
+- Mandate-scoped runs (the Grantmaker's conversation, planner and review passes, and its lookouts) are pointed by the mandate's `skills`. Funding never points an agent that writes to the graph to a skill (§19).
+- The Extractor is the exception: it makes one structured call with no tools, so it has no turn in which to load anything, and every skill's Extractor section is spliced into its prompt so it can tag.
 
-**Precedence** follows the rule stated above for role prompts: where a skill appears to diverge from the constitution or the role, the constitution wins, the role wins, and the skill is defective. A skill may refine how a role's obligations apply and may add procedures and tools; it may never remove an obligation. Two skills active at once are both spliced, in alphabetical order, and a conflict between them is a defect to fix in the texts. Assessments and agent runs record the skills they were made under, so the standards applied to any verdict are a query.
+**Precedence** follows the rule stated above for role prompts: where a skill appears to diverge from the constitution or the role, the constitution wins, the role wins, and the skill is defective. A skill may refine how a role's obligations apply and may add procedures and tools; it may never remove an obligation. A conflict between two skills a run loads is a defect to fix in the texts.
 
 ---
 

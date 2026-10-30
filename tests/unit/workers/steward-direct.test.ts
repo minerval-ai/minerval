@@ -121,7 +121,7 @@ describe("the trigger's tools must come from the claim's skills (§3.4)", () => 
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     for (const trigger of MONEY_TRIGGERS) {
       await expect(invokeStewardDirect({ trigger, claimId: "c-untagged", context: "x" })).rejects.toThrow(
-        new RegExp(`refusing the ${trigger} trigger on claim c-untagged: its recorded domains activate no skill`)
+        new RegExp(`refusing the ${trigger} trigger on claim c-untagged: its recorded domains point to no skill`)
       );
     }
     expect(mocks.runClaimSteward).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe("the trigger's tools must come from the claim's skills (§3.4)", () => 
     expect(missing).toEqual({ skills: ["mathematics"], active: ["lean_search", "get_prize_claim"], missing: ["decide_prize_claim"] });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(invokeStewardDirect({ trigger: "prize_claim", claimId: "c1", context: "x" })).rejects.toThrow(
-      /the skill\(s\) mathematics, which carry none of decide_prize_claim/
+      /the skill\(s\) mathematics, none of which declares decide_prize_claim/
     );
     error.mockRestore();
     expect(mocks.runClaimSteward).not.toHaveBeenCalled();

@@ -31,6 +31,7 @@ const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
 import { skillsForGrant } from "./skill-selection.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -145,10 +146,11 @@ const MANDATE_SCHEMA = {
       type: "array",
       items: { type: "string" },
       description:
-        "Optional: the domain skills you will carry on this mandate's review " +
-        "passes, from the closed list in your Domain skills section. Only " +
-        "your own view changes; the claims' administrators take their skills " +
-        "from each claim's recorded domains, never from the mandate.",
+        "Optional: the skills this mandate's review passes and lookouts are " +
+        "pointed to, from the catalog in your Skills section; each pass loads " +
+        "them as its work needs. Only the mandate's own runs are pointed; the " +
+        "claims' administrators are pointed by each claim's recorded domains, " +
+        "never by the mandate.",
     },
   },
   required: ["title", "objective", "plan", "expected_cost_owls"],
@@ -521,11 +523,16 @@ async function runGrantmakerTurnImpl(input: {
       : [proposeTool, declineTool]),
   ];
 
-  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): a
-  // funded mandate's Grantmaker carries its skills; a conversation with no
-  // mandate yet carries none (load_skill, the fallback, is deferred).
-  const skills = input.grantId ? await skillsForGrant(input.grantId) : [];
-  const blocks = getGrantmakerSystemPromptBlocks({ skills });
+  // Skills load on demand. A funded mandate's grants.skills points the
+  // Grantmaker to the skills its work needs; a conversation with no mandate
+  // yet has nothing to point to. The conversation has no task message, so
+  // the pointer rides on the role block.
+  const pointedSkills = input.grantId ? await skillsForGrant(input.grantId) : [];
+  const skillLoader = createSkillLoadTools("grantmaker", {
+    names: pointedSkills.map((s) => s.name),
+  });
+  const blocks = getGrantmakerSystemPromptBlocks();
+  if (skillLoader.pointerNote) blocks[0] = blocks[0] + skillLoader.pointerNote;
   if (managed) {
     blocks[0] =
       blocks[0] +
@@ -544,21 +551,23 @@ async function runGrantmakerTurnImpl(input: {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
   }
   // One cached block for the constitution and role (management mode appended
-  // to it), plus one per skill the mandate carries.
+  // to it).
   const system = blocks;
 
-  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  const result = await withSkills([], () => toolUseLoop({
     initialMessages: input.transcript.map((m) => ({
       role: m.role,
       content: m.content,
     })),
-    tools: [webSearch.tool, ...tools],
+    tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
     system,
     model,
     maxTokens: 4096,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

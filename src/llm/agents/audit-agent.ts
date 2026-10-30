@@ -7,7 +7,8 @@
  */
 import { toolUseLoop } from "../client.js";
 import { getAuditAgentSystemPromptBlocks } from "../prompts/audit-agent.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { listSkills } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { domainsForAuditContext } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
@@ -46,15 +47,18 @@ async function runAuditImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.auditModel;
 
-  // Domain skills: the union over the claims in the decisions under review
-  // (docs/mathematics.md §3.4), found through the claims and contributions
-  // the context names. A pattern analysis names none and runs unskilled.
-  const skills = skillsForDomains(await domainsForAuditContext(input.context), "audit-agent");
-  // The tools a skill declares for this role (§3.5): the Mathematics skill
-  // brings get_prize_claim and get_proof_attempt, so an audit of a prize
-  // acceptance reads the same record the Steward decided on. The Audit's
-  // own get_prize_claim_record and record_prize_audit_outcome stay.
-  const skillTools = getActiveSkillToolDefinitions(skills, "audit-agent");
+  // Skills load on demand; the domains of the claims in the decisions under
+  // review, found through the claims and contributions the context names,
+  // point to the domain skills that cover them. A pattern analysis names none.
+  const skillLoader = createSkillLoadTools("audit-agent", {
+    domains: await domainsForAuditContext(input.context),
+  });
+  // The tools every skill declares for this role (§3.5), loaded or not: the
+  // Mathematics skill brings get_prize_claim and get_proof_attempt, so an
+  // audit of a prize acceptance reads the same record the Steward decided
+  // on. The Audit's own get_prize_claim_record and record_prize_audit_outcome
+  // stay.
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "audit-agent");
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
@@ -63,19 +67,12 @@ async function runAuditImpl(input: {
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getAuditToolDefinitions(),
+    ...skillLoader.definitions,
     ...skillTools,
     ...reportTools.definitions, ...findingTools.definitions,
   ];
-  // One cached block for the constitution and role, plus one per active skill.
-  const system = getAuditAgentSystemPromptBlocks({ skills });
-
-  const skillsNote =
-    skills.length > 0
-      ? `\n\nSkills active for this run: ${skills.map((s) => s.name).join(", ")}` +
-        (skillTools.length > 0
-          ? `; the tools they bring (${skillTools.map((t) => t.name).join(", ")}) are in your toolset.`
-          : ".")
-      : "";
+  const system = getAuditAgentSystemPromptBlocks();
+  const skillsNote = skillLoader.pointerNote;
 
   const AUDIT_MAX_TURNS = RUN_TURN_GUARD;
   const userMessage = `You have been triggered to perform an audit.
@@ -90,7 +87,7 @@ when the decisions under review hold up.${skillsNote}
 
 ${turnBudgetLine(AUDIT_MAX_TURNS)}`;
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
@@ -103,6 +100,8 @@ ${turnBudgetLine(AUDIT_MAX_TURNS)}`;
     maxTokens: 16384,
     maxIterations: AUDIT_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -112,8 +111,7 @@ ${turnBudgetLine(AUDIT_MAX_TURNS)}`;
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      // Skill tools (docs/mathematics.md §3.5): present exactly when a
-      // skill is active for the decisions under review.
+      // Skill tools (docs/mathematics.md §3.5), loaded or not.
       if (isSkillTool(name)) {
         return executeSkillTool(name, toolInput, {
           role: "audit-agent",

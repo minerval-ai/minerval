@@ -110,9 +110,8 @@ export default function DocsPage() {
         </div>
         <ul>
           <li>
-            <Link href="/docs/skills">The skills</Link>: how the constitution applies in a
-            given domain, spliced into an agent&rsquo;s prompt for claims carrying that
-            domain&rsquo;s tag.
+            <Link href="/docs/skills">The skills</Link>: how the constitution applies to a
+            subject or a kind of work, which an agent loads when its work calls for it.
           </li>
           <li>
             <Link href="/docs/evals">The evals</Link>: twelve public tests of the agents,

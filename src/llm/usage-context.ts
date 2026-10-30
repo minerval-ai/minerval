@@ -39,9 +39,10 @@ export interface UsageContext {
    *  when tracing is enabled; absent = don't record steps. */
   trace?: AgentTrace;
   /**
-   * The domain skills active for the enclosing run (skill names), set by
-   * withSkills once the agent has resolved them. Read by the writes that
-   * stamp provenance (assessments.skills), never by the agent itself.
+   * The skills the enclosing run has in hand (skill names): set by
+   * withSkills when the run opens and extended by noteSkillLoaded as it
+   * loads more. Read by the writes that stamp provenance
+   * (assessments.skills), never by the agent itself.
    */
   skills?: string[];
   /**
@@ -142,16 +143,32 @@ export function withAgent<T>(agent: string, fn: () => T): T {
 }
 
 /**
- * Run `fn` with the given domain skills recorded as active: on the usage
- * context (so update_claim_assessment stamps assessments.skills) and on the
- * enclosing agent_runs row when tracing is on. Called by each agent once it
- * has resolved its skills from the claim, contribution, or mandate.
+ * Run `fn` with the given skills recorded on the usage context (so
+ * update_claim_assessment stamps assessments.skills) and on the enclosing
+ * agent_runs row when tracing is on. Each agent opens its run with the
+ * skills already in its prompt, usually none; the ones it loads with
+ * load_skill are added by noteSkillLoaded as it loads them.
  */
 export function withSkills<T>(skills: readonly string[], fn: () => T): T {
   const names = [...new Set(skills)].sort();
   const trace = getUsageContext().trace;
   if (trace) recordAgentRunSkills(trace, names);
   return runWithUsageContext({ skills: names }, fn);
+}
+
+/**
+ * Record that the run loaded `skill` with load_skill. The name joins the
+ * list withSkills opened, in place, so a write that stamps provenance after
+ * the load (assessments.skills) names it, and the agent_runs row is updated.
+ * Outside withSkills there is no list to join and nothing is recorded.
+ */
+export function noteSkillLoaded(skill: string): void {
+  const context = getUsageContext();
+  const skills = context.skills;
+  if (!skills || skills.includes(skill)) return;
+  skills.push(skill);
+  skills.sort();
+  if (context.trace) recordAgentRunSkills(context.trace, skills);
 }
 
 /**

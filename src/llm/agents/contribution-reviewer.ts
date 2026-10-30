@@ -6,7 +6,7 @@
  */
 import { toolUseLoop } from "../client.js";
 import { getContributionReviewerSystemPromptBlocks } from "../prompts/contribution-reviewer.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { domainsForContribution } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
@@ -42,17 +42,20 @@ async function runContributionReviewImpl(input: {
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
 
+  // Skills load on demand; the contribution's target claim points to the
+  // domain skills that cover its subject (an intake proposal has none).
+  const skillLoader = createSkillLoadTools("contribution-reviewer", {
+    domains: await domainsForContribution(input.contributionId),
+  });
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
+    ...skillLoader.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
-  // Domain skills come from the contribution's target claim (docs/
-  // mathematics.md §3.4); an intake proposal with no claim yet carries none.
-  const skills = skillsForDomains(await domainsForContribution(input.contributionId), "contribution-reviewer");
-  // One cached block for the constitution and role, plus one per active skill.
-  const system = getContributionReviewerSystemPromptBlocks({ skills });
+  const system = getContributionReviewerSystemPromptBlocks();
 
   const REVIEW_MAX_TURNS = 8;
   const userMessage = `A new contribution has been submitted for review.
@@ -68,7 +71,7 @@ Please review this contribution:
 6. If you accept a contribution on an existing claim, use notify_claim_steward so the steward can integrate the change. Accepted intake contributions are materialized automatically by record_review_decision (matching/canonicalization, then claim creation or extraction); do not call notify_claim_steward for those; the result is reported back to you in the tool result.
 7. If you escalate, use escalate_to_arbitrator with your reasoning.
 
-${turnBudgetLine(REVIEW_MAX_TURNS)}`;
+${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
 
   // A review that ends without record_review_decision leaves the contribution
   // claimed-and-pending until the reclaim window passes (two of ten in the
@@ -76,7 +79,7 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}`;
   // while no decision has been recorded.
   let decisionRecorded = false;
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
@@ -91,6 +94,8 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}`;
         "record_review_decision now (accept, reject, or escalate) with your reasoning.",
     },
     executeTool: async (name, toolInput) => {
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

@@ -75,44 +75,17 @@ beforeEach(() => {
 });
 
 describe("Audit toolset without a domain", () => {
-  it("carries the Audit's own prize tools, the Provenance method skill's reads, and no domain skill tools", async () => {
+  it("carries the Audit's own prize tools and every skill's audit-agent reads, loaded or not", async () => {
     const opts = await run([]);
     const names = opts.tools.map((t) => t.name);
     expect(names).toContain("get_prize_claim_record");
     expect(names).toContain("record_prize_audit_outcome");
     expect(names).toContain("withdraw_bounty_after_audit");
-    expect(names).not.toContain("get_prize_claim");
-    expect(names).not.toContain("get_proof_attempt");
-    // The method skill (#286) brings Audit its two read tools and, of its
-    // writes, only the attributed note on an examination's finding (#507).
-    expect(names.slice(-8)).toEqual([
-      "provenance_get_map",
-      "provenance_read_source",
-      "examination_note_finding",
-      "raise_issue",
-      "update_issue",
-      "search_issues",
-      "get_issue",
-      "note_finding",
-    ]);
-    expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
-    expect(opts.system).toHaveLength(3);
-    expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
-    expect(opts.system[1]).toContain("## For the Audit Agent");
-    expect(opts.system[2]!.startsWith("# Method skill: Search")).toBe(true);
-    expect(opts.system[2]).toContain("## For every administrator");
-    expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance");
-  });
-});
-
-describe("Audit toolset with the mathematics domain", () => {
-  it("adds exactly the skill's audit-agent tools after the Audit's own, and says so", async () => {
-    const opts = await run(["mathematics"]);
-    const names = opts.tools.map((t) => t.name);
-    const own = names.indexOf("record_prize_audit_outcome");
-    // The skills' tools follow the Audit's own, in skill order; the report
-    // channel (#366) and the finding channel (#394) close the toolset.
-    expect(names.slice(-10)).toEqual([
+    // Every skill's audit-agent tools are offered, loaded or not: the
+    // Mathematics reads and the Provenance reads, with the attributed note
+    // on an examination's finding (#507).
+    expect(names.slice(-11)).toEqual([
+      "load_skill",
       "get_proof_attempt",
       "get_prize_claim",
       "provenance_get_map",
@@ -124,18 +97,28 @@ describe("Audit toolset with the mathematics domain", () => {
       "get_issue",
       "note_finding",
     ]);
+    expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
+    // No skill is spliced, and none is pointed to.
+    expect(opts.system).toHaveLength(1);
+    expect(opts.system[0]).toContain("## Skills");
+    expect(opts.initialMessages[0]!.content).not.toContain("Skills that cover this run's subject");
+  });
+});
+
+describe("Audit toolset with the mathematics domain", () => {
+  it("points to the Mathematics skill, keeps the Audit's own tools first, and leaks no Steward-only tool", async () => {
+    const opts = await run(["mathematics"]);
+    const names = opts.tools.map((t) => t.name);
+    const own = names.indexOf("record_prize_audit_outcome");
     expect(own).toBeGreaterThan(-1);
     expect(own).toBeLessThan(names.indexOf("get_prize_claim"));
-    // No Steward-only tool leaks in.
     for (const n of ["decide_prize_claim", "publish_formalization", "lean_check", "mark_problem_solved_by_platform"]) {
       expect(names).not.toContain(n);
     }
-    expect(opts.system).toHaveLength(4);
-    expect(opts.system[1]).toContain("# Domain skill:");
-    expect(opts.system[2]).toContain("# Method skill:");
-    expect(opts.system[3]).toContain("# Method skill:");
-    expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: mathematics, provenance");
-    expect(opts.initialMessages[0]!.content).toContain("get_proof_attempt, get_prize_claim");
+    expect(opts.system).toHaveLength(1);
+    expect(opts.initialMessages[0]!.content).toContain(
+      "Skills that cover this run's subject: the Mathematics skill (mathematics)."
+    );
   });
 
   it("dispatches a skill tool through the skill executor as audit-agent, and its own tools through the audit executor", async () => {

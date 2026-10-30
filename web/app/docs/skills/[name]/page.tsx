@@ -71,18 +71,19 @@ export default async function SkillPage({ params }: { params: Promise<{ name: st
           <h1>{skill.displayName}</h1>
           <p className="lede">{skill.description}</p>
           <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)" }}>
-            <strong style={{ color: "var(--ink-soft)" }}>Activated by:</strong>{" "}
+            <strong style={{ color: "var(--ink-soft)" }}>Loaded:</strong>{" "}
             {skill.kind === "method" ? (
-              <>every run of the roles it addresses; it claims no domain</>
+              <>on demand, by any role it addresses; it claims no domain</>
             ) : (
               <>
-                a claim whose recorded domains include{" "}
+                on demand; claims whose recorded domains include{" "}
                 {skill.domains.map((d, i) => (
                   <span key={d}>
                     {i > 0 ? ", " : ""}
                     <code>{d}</code>
                   </span>
                 ))}
+                {" "}point their administrators to it
               </>
             )}
             . Source: <code>skills/{skill.name}/SKILL.md</code>.
@@ -126,9 +127,9 @@ export default async function SkillPage({ params }: { params: Promise<{ name: st
 
           <h2 id="what-each-role-receives">What each role receives</h2>
           <p>
-            The exact block spliced into each role&rsquo;s system prompt when this skill is
-            active: the heading the agent can cite, one sentence of standing, and the
-            role&rsquo;s sections verbatim.
+            The exact view each role receives when it loads this skill with load_skill (the
+            Extractor&rsquo;s is spliced into its prompt): the heading the agent can cite, one
+            sentence of standing, and the role&rsquo;s sections verbatim.
           </p>
           {Object.keys(roleView).map((key) => {
             const view = getSkillView(skill.name, key);
