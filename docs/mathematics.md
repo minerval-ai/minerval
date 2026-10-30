@@ -476,7 +476,8 @@ under 600 lines; only recognized H2s; no em-dashes; no time-sensitive text.
 > run and on any assessment written after it. A claim's domains and a
 > mandate's skills point to a skill in the task message rather than load
 > it. A skill's tools are in the role's toolset whether or not it is
-> loaded, so the money triggers no longer depend on the claim's tags. The
+> loaded. The money triggers still run only on a claim whose domains point
+> to a skill declaring their tools, a check on what the claim is about. The
 > Extractor, which makes one structured call with no tools, still has its
 > sections spliced. `skills/README.md` is the current account.
 
