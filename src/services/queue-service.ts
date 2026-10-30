@@ -67,8 +67,9 @@ export interface StewardMessage {
     | "staleness_check"
     // A mandate's plan asked for a pass on this claim (an assess, reassess
     // or deepen item, materialized by the reconcile sweep or by the
-    // Grantmaker's extend_plan in the same turn, #416). The context carries
-    // the item's rationale, never the mandate's name or its funder.
+    // Grantmaker's extend_plan in the same turn, #416). The context names
+    // only the kind of pass: never the mandate, its funder, or the item's
+    // rationale.
     | "mandate_plan"
     // A mandate's lookout (docs/allocation.md, "Lookouts") reports a
     // development bearing on this claim — a retraction, a new result, a

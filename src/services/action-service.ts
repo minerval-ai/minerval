@@ -1095,11 +1095,14 @@ async function materializePlanItem(
       await enqueueSteward({
         claimId: claim.id,
         trigger: "mandate_plan",
-        // Nameless, like the lookout's flag: a Steward serves the graph, so
-        // which mandate paid, and who stands behind it, never reaches it.
+        // The kind of pass and nothing else: a Steward serves the graph, so
+        // neither which mandate paid nor the Grantmaker's reasons reach it.
+        // What a mandate's agents find goes in as a contribution (§19).
         context:
-          `A funded mandate scheduled a ${kind} pass on this claim: ` +
-          `${String(item.rationale ?? "").trim() || "no rationale given"}`,
+          `A funded mandate scheduled a ${kind} pass on this claim.` +
+          (kind === "deepen"
+            ? " Its deferred subclaims were released into the queue."
+            : ""),
       });
     }
     await ensureAssessActions(claim.id);
