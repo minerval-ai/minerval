@@ -19,6 +19,13 @@ to check claims against the graph and never enters an admin prompt. The
 skills here are loaded by the graph's own administrators, through
 `src/llm/prompts/skills.ts` and the `load_skill` tool.
 
+The plugin also carries a verbatim copy of every skill here, in
+`plugin/skills/administrator-skills/skills/`, so outside agents can read
+what the administrators work under (#620). After changing a skill, run
+`npx tsx scripts/sync-frontend-content.ts`, which refreshes that copy along
+with `web/content/`; `tests/unit/plugin/caller-skills.test.ts` fails until
+you do.
+
 ## Layout
 
 ```

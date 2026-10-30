@@ -306,6 +306,67 @@ claim page's form (`/claims/:id/prize/claim`) is where one is filed.
 - `claim://{claim_id}` — a canonical claim with assessment + decomposition
   tree, attachable as context.
 - `claims://recent` — most recently updated claims.
+- `minerval://constitution` — the constitution, verbatim.
+- `minerval://skills/{name}` — the caller skills (below), listed with their
+  descriptions.
+
+## Principles for callers (#620)
+
+An agent using the graph should come away working by its principles, not
+only with access to its tools. The administrators get this from the
+constitution and the skills in `skills/`; callers get it, as advice rather
+than governance, from the **caller skills** in `plugin/skills/`:
+
+- `claim-checking`: which tool to use, and how to report what the graph
+  says: its judgment kept apart from the caller's, uncertainty not rounded,
+  the crux found through decomposition, provenance read, silence treated
+  as a gap to contribute to, the graph quoted accurately even in writing
+  that takes a side.
+- `commissioning-research`: funding work in good faith: what kinds of
+  mandate are appropriate and which the Grantmaker declines, how to hold
+  the granting conversation, what is public, and what money buys.
+- `minerval-constitution`: a reader's guide to the constitution, with the
+  constitution itself bundled as `constitution.md`.
+- `administrator-skills`: the administrators' own skills and role prompts,
+  verbatim, with a generated catalog, so a caller can read exactly what the
+  Grantmaker or the Contribution Reviewer works under.
+
+They reach callers three ways, from one set of files:
+
+- **As Agent Skills**, in the Claude Code / Cowork plugin.
+- **As resources** (`minerval://skills/{name}`, `minerval://constitution`),
+  for clients that load resources but not skills.
+- **In the initialize instructions** (`MCP_INSTRUCTIONS` in
+  `src/mcp/caller-skills.ts`), the shortest form of the principles, which
+  every client is shown, with pointers to the resources.
+
+The personal assistant (#646) is a caller too, able to do nothing a user's
+own agent over MCP could not, and is meant to read the same files.
+
+### Keeping them current
+
+The skills describe things that change: the constitution, tool names, the
+administrators' skills and prompts. Three checks in
+`tests/unit/plugin/caller-skills.test.ts` keep them from drifting:
+
+- **Vendored copies.** The constitution and the administrators' skills and
+  role prompts are copied into `plugin/skills/` (a plugin ships only its own
+  directory) by `npx tsx scripts/sync-frontend-content.ts`, the same script
+  that vendors them into `web/content/`. The test regenerates them into a
+  temporary directory and fails on any difference. So changing the
+  constitution, a skill in `skills/`, or a role prompt means re-running the
+  script in the same change.
+- **Tool names.** Every tool a caller skill or the instructions name (a
+  backticked `verb_noun`) must be a registered native tool or in
+  `ROUTE_TOOLS`. Renaming a route tool fails here until the skills follow.
+- **Constitution sections.** Every `§N` a caller skill cites must be a
+  section of the constitution. Renumbering fails here until the skills
+  follow.
+
+What no test catches is a skill that still names the right things but
+describes them wrongly. When you change how a tool behaves, how the
+Grantmaker decides, or what a status means, read the caller skills that
+mention it and update them in the same pull request.
 
 ## Prompts
 
