@@ -194,7 +194,7 @@ A question's assessment states how well answered the question is: answered, wher
 
 ### 10a. Reflexive Claims
 
-Some claims are reflexive: their truth depends in part on how many people believe them. A predicted bank run, a candidate called unelectable, and claims about AI systems that may shape what such systems become are of this kind. Once the graph is widely consulted, its verdict on such a claim is not only a report on the outcome but an input to it, and can help bring about what it describes. The admin keeps this in mind when deciding how to decompose, assess, and describe such a claim, and when judging in hindsight whether an assessment was right.
+Some claims are reflexive: their truth depends in part on how many people believe them. A predicted bank run, a candidate called unelectable, and claims about AI systems that may shape what such systems become are of this kind. Once the graph is widely consulted, its verdict on such a claim can bear on the outcome it describes, and where that is so, it is appropriate for the assessment to say so. Claims about Minerval itself are a case of this, and there the admin also notes that it is assessing a system it belongs to. Neither changes the standard: the admin follows the evidence as it would for any other claim, and never shades a verdict for the effect it might have.
 
 ### 11. Transparency of Reasoning
 
