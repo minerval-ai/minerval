@@ -110,7 +110,7 @@ export async function skillsForGrant(grantId: string): Promise<Skill[]> {
   }
 }
 
-/** Convenience: the skills a claim's recorded domains activate. */
+/** Convenience: the skills a claim's recorded domains point to (and every method skill). */
 export async function skillsForClaim(claimId: string): Promise<Skill[]> {
   return skillsForDomains(await domainsForClaim(claimId), "claim-steward");
 }

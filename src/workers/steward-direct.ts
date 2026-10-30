@@ -25,7 +25,6 @@
 import { loadConfig } from "../config.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
-import { listSkills } from "../llm/prompts/skills.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { getJobRemainingMicroUsd } from "../services/budget-job-service.js";
@@ -100,33 +99,38 @@ export function moneyTriggerModel(trigger: MoneyTrigger, override?: string): str
 }
 
 /**
- * The skill tools the Steward is offered (every skill's tools for the role,
- * whether or not the run loads the skill), the skills whose recorded
- * domains cover the claim, and the trigger's required tools that no skill
- * declares for the Steward.
+ * The skills the claim's recorded domains point to, the tools those skills
+ * declare for the Steward, and the trigger's required tools none of them
+ * declares. The Steward is offered every skill's tools on every run, so
+ * this is not a question of what the run can call; it is whether the claim
+ * is the kind of claim the trigger is for. A formal statement, a proof
+ * attempt or a prize decision on a claim no mathematics skill covers is a
+ * planning mistake that would spend two strong passes on nothing.
  */
 export async function missingTriggerTools(
   trigger: MoneyTrigger,
   claimId: string
 ): Promise<{ skills: string[]; active: string[]; missing: string[] }> {
   const skills = await skillsForClaim(claimId);
-  const active = getActiveSkillToolDefinitions(listSkills(), "claim-steward").map((t) => t.name);
+  const active = getActiveSkillToolDefinitions(skills, "claim-steward").map((t) => t.name);
   const missing = REQUIRED_TOOLS_BY_TRIGGER[trigger].filter((name) => !active.includes(name));
   return { skills: skills.map((s) => s.name), active, missing };
 }
 
 /**
- * Refuse a money trigger whose tools no skill declares for the Steward: a
- * deployment fault, since the run would decide nothing. The error names the
- * claim, the trigger, and the missing tools.
+ * Refuse a money trigger on a claim whose recorded domains point to no
+ * skill that declares the trigger's tools. The error names the claim, the
+ * trigger, the skills the domains point to, and the remedy.
  */
 export async function assertTriggerToolsActive(trigger: MoneyTrigger, claimId: string): Promise<void> {
-  const { missing } = await missingTriggerTools(trigger, claimId);
+  const { skills, missing } = await missingTriggerTools(trigger, claimId);
   if (missing.length === 0) return;
   const message =
-    `refusing the ${trigger} trigger on claim ${claimId}: no skill declares ` +
-    `${missing.join(", ")} for the Steward, so the run would decide nothing. Restore the ` +
-    "tool in the skill's tools.json (docs/mathematics.md §3.5, §6.4)";
+    `refusing the ${trigger} trigger on claim ${claimId}: its recorded domains point to ` +
+    `${skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"}, none of which declares ` +
+    `${missing.join(", ")} for the Steward, so the claim is not one this trigger is for. Tag the ` +
+    "claim with the domain whose skill declares the tool (set_claim_domains) if it is " +
+    "(docs/mathematics.md §3.4, §6.4)";
   console.error(`[steward-direct] ${message}`);
   throw new Error(message);
 }
