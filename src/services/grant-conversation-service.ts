@@ -55,6 +55,13 @@ export type ConverseResult =
         | "EMPTY_MESSAGE"
         | "RATE_LIMITED";
       message: string;
+    }
+  | {
+      ok: false;
+      code: "AGENT_FAILED";
+      message: string;
+      /** The conversation with the funder's message saved and no reply. */
+      conversation: GrantConversation;
     };
 
 // userId → turn timestamps (ms) within the last hour. In-memory sliding
@@ -93,6 +100,34 @@ function checkTurnRateLimit(userId: string): boolean {
   return true;
 }
 
+/** Give back the allowance a turn took when the agent failed to run it. */
+function releaseTurn(userId: string): void {
+  turnWindows.get(userId)?.pop();
+}
+
+/** Run a turn, turning an agent failure into a result the route can serve. */
+async function converse(
+  convo: GrantConversation,
+  message: string
+): Promise<ConverseResult> {
+  try {
+    return { ok: true, conversation: await runTurn(convo, message) };
+  } catch (err) {
+    if (!(err instanceof GrantmakerTurnError)) throw err;
+    releaseTurn(convo.userId);
+    console.error(`[grantmaker] turn failed on conversation ${convo.id}:`, err.cause);
+    return {
+      ok: false,
+      code: "AGENT_FAILED",
+      message:
+        "Your message was saved, but the Grantmaker failed before replying " +
+        "(this turn did not count toward your hourly limit). Do not resend " +
+        "it: send a short follow-up such as \"please reply to my last message\".",
+      conversation: err.conversation,
+    };
+  }
+}
+
 const rateLimited = (): ConverseResult => ({
   ok: false,
   code: "RATE_LIMITED",
@@ -108,6 +143,19 @@ function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
   return messages.map((m) => ({ role: m.role, content: m.content }));
 }
 
+/**
+ * The agent's turn failed after the funder's message was saved. The message
+ * stays in the transcript; the funder asks again rather than resending it.
+ */
+export class GrantmakerTurnError extends Error {
+  constructor(
+    readonly conversation: GrantConversation,
+    readonly cause: unknown
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
 async function runTurn(
   convo: GrantConversation,
   userMessage: string
@@ -118,6 +166,15 @@ async function runTurn(
     ...((convo.messages ?? []) as ConversationMessage[]),
     { role: "user" as const, content: userMessage, at: now },
   ];
+
+  // The funder's message is saved before the agent runs: a turn that fails
+  // (a provider error, a timeout) must not lose what they said, and a caller
+  // can then tell from the transcript whether a retry would duplicate it.
+  const [saved] = await db
+    .update(grantConversations)
+    .set({ messages, updatedAt: new Date() })
+    .where(eq(grantConversations.id, convo.id))
+    .returning();
 
   // A funded conversation manages its live grant: the turn runs in
   // management mode, with the analytics and plan-adjustment tools scoped
@@ -134,18 +191,23 @@ async function runTurn(
     : undefined;
 
   const platform = await isPlatformAccount(convo.userId);
-  const turn = await runWithUsageContext(
-    { userId: convo.userId, ...(jobId ? { jobId } : {}) },
-    () =>
-      runGrantmakerTurn({
-        transcript: [
-          ...transcriptOf(convo),
-          { role: "user", content: userMessage },
-        ],
-        ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
-        ...(platform ? { funder: "platform" as const } : {}),
-      })
-  );
+  let turn: Awaited<ReturnType<typeof runGrantmakerTurn>>;
+  try {
+    turn = await runWithUsageContext(
+      { userId: convo.userId, ...(jobId ? { jobId } : {}) },
+      () =>
+        runGrantmakerTurn({
+          transcript: [
+            ...transcriptOf(convo),
+            { role: "user", content: userMessage },
+          ],
+          ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
+          ...(platform ? { funder: "platform" as const } : {}),
+        })
+    );
+  } catch (err) {
+    throw new GrantmakerTurnError(saved ?? convo, err);
+  }
 
   messages.push({
     role: "assistant",
@@ -196,8 +258,7 @@ export async function startConversation(input: {
     .insert(grantConversations)
     .values({ userId: input.userId })
     .returning();
-  const updated = await runTurn(convo!, input.message.trim());
-  return { ok: true, conversation: updated };
+  return converse(convo!, input.message.trim());
 }
 
 /** Continue a conversation. Funded conversations are closed. */
@@ -226,8 +287,7 @@ export async function addMessage(input: {
     };
   }
   if (!checkTurnRateLimit(input.userId)) return rateLimited();
-  const updated = await runTurn(convo, input.message.trim());
-  return { ok: true, conversation: updated };
+  return converse(convo, input.message.trim());
 }
 
 export type FundResult =

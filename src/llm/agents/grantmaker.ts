@@ -562,7 +562,12 @@ async function runGrantmakerTurnImpl(input: {
     tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
     system,
     model,
-    maxTokens: 4096,
+    // Not a spending limit: conversation turns are rate-limited and funded
+    // turns meter to the escrow. A drafted mandate is one propose_mandate
+    // call carrying the whole plan, and thinking draws on the same allowance,
+    // so this leaves room for a full plan. The ceiling that does bind is the
+    // non-streaming request timeout (LLM_REQUEST_TIMEOUT_MS), not this.
+    maxTokens: 16384,
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
