@@ -18,9 +18,9 @@ are effectively pinned to the account that creates them.
   ```
   Read the web with the claim graph switched on.
 
-  Minerval maintains an open repository of the world's claims: what is
-  asserted, what each assertion rests on, and how much the evidence supports
-  it. This extension reads the page you're reading against that graph.
+  Minerval maintains an open repository of the world's claims and questions:
+  what is asserted and asked, what each rests on, and how much the evidence
+  supports it. This extension reads the page you're reading against that graph.
 
   WHAT IT DOES
 

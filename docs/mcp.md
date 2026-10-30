@@ -2,8 +2,8 @@
 
 Minerval exposes the claim graph as a **remote MCP server** (Model Context
 Protocol over streamable HTTP), so any MCP client — Claude Code, Claude.ai /
-Cowork, Cursor, ChatGPT — can query claims, inspect decompositions and
-assessments, fact-check text, and submit contributions from an agentic
+Cowork, Cursor, ChatGPT — can query claims, quantities, and questions,
+inspect decompositions and assessments, fact-check text, and submit contributions from an agentic
 workflow (issue #73). It keeps **parity with the REST API**: anything an
 account can do through the API, it can do over MCP, unless a stated reason
 says otherwise (see [Parity with the REST API](#parity-with-the-rest-api)).

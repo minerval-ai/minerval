@@ -1,6 +1,6 @@
 # Minerval plugin for Claude Code / Cowork
 
-Claim lookup and graph-grounded fact-checking inside the agent's everyday
+Claim and question lookup and graph-grounded fact-checking inside the agent's everyday
 workflow. The plugin is thin packaging over Minerval's
 [remote MCP server](../docs/mcp.md): it connects the server, and adds slash
 commands, a fact-checker subagent, an auto-triggering skill, and an opt-in
