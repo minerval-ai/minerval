@@ -9,7 +9,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 10422,
-    "fullChars": 89912,
+    "fullChars": 89774,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 13111,
-    "fullChars": 92601,
+    "fullChars": 92463,
     "skills": [
       {
         "name": "mathematics",
@@ -55,7 +55,7 @@
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
     "roleChars": 22662,
-    "fullChars": 102152,
+    "fullChars": 102014,
     "skills": [
       {
         "name": "mathematics",
@@ -87,8 +87,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 54653,
-    "fullChars": 134143,
+    "roleChars": 54081,
+    "fullChars": 133433,
     "skills": [
       {
         "name": "mathematics",
@@ -116,10 +116,7 @@
       {
         "name": "search",
         "sections": [
-          "For every administrator",
-          "For the Claim Steward",
-          "For the Grantmaker",
-          "For the Audit Agent"
+          "For every administrator"
         ]
       }
     ]
@@ -133,8 +130,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 30837,
-    "fullChars": 110327,
+    "roleChars": 30594,
+    "fullChars": 109946,
     "skills": []
   },
   {
@@ -147,7 +144,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 17614,
-    "fullChars": 97104,
+    "fullChars": 96966,
     "skills": [
       {
         "name": "mathematics",
@@ -182,7 +179,7 @@
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "roleChars": 18328,
-    "fullChars": 97818,
+    "fullChars": 97680,
     "skills": [
       {
         "name": "mathematics",
@@ -214,8 +211,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19780,
-    "fullChars": 99270,
+    "roleChars": 19693,
+    "fullChars": 99045,
     "skills": [
       {
         "name": "mathematics",
@@ -245,11 +242,7 @@
       {
         "name": "search",
         "sections": [
-          "For every administrator",
-          "For the Claim Steward",
-          "For the Grantmaker",
-          "For the Audit Agent",
-          "Standards for judging"
+          "For every administrator"
         ]
       }
     ]
@@ -263,8 +256,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 21651,
-    "fullChars": 101141,
+    "roleChars": 21631,
+    "fullChars": 100983,
     "skills": [
       {
         "name": "mathematics",
@@ -282,8 +275,7 @@
       {
         "name": "search",
         "sections": [
-          "For every administrator",
-          "For the Grantmaker"
+          "For every administrator"
         ]
       }
     ]
@@ -298,7 +290,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 12682,
-    "fullChars": 92172,
+    "fullChars": 92034,
     "skills": [
       {
         "name": "mathematics",
@@ -330,7 +322,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11395,
-    "fullChars": 90885,
+    "fullChars": 90747,
     "skills": []
   },
   {
@@ -355,8 +347,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 9695,
-    "fullChars": 89185,
+    "roleChars": 9468,
+    "fullChars": 88820,
     "skills": [
       {
         "name": "provenance",

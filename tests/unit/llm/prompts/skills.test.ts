@@ -296,7 +296,7 @@ describe("views", () => {
   it("lists the skills in the catalog with the role's sections", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog).toMatch(
-      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\); search \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Grantmaker\)\.$/
+      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\); search \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
     );
     expect(getSkillCatalog("claim-steward")).toContain(
       "provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"

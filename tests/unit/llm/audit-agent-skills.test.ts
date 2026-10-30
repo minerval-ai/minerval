@@ -100,7 +100,7 @@ describe("Audit toolset without a domain", () => {
     expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
     expect(opts.system[1]).toContain("## For the Audit Agent");
     expect(opts.system[2]!.startsWith("# Method skill: Search")).toBe(true);
-    expect(opts.system[2]).toContain("## For the Audit Agent");
+    expect(opts.system[2]).toContain("## For every administrator");
     expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance");
   });
 });

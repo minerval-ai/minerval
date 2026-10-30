@@ -170,7 +170,7 @@ describe("Steward toolset without a domain tag", () => {
     expect(opts.system[1]!.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
     expect(opts.system[1]).toContain("## For the Claim Steward");
     expect(opts.system[2]!.startsWith("# Method skill: Search (version 1)")).toBe(true);
-    expect(opts.system[2]).toContain("## For the Claim Steward");
+    expect(opts.system[2]).toContain("## For every administrator");
     // The role prompt still lists the skills that exist.
     expect(opts.system[0]).toContain("## Domain skills");
     expect(opts.system[0]).toContain("Skills that exist: mathematics");
