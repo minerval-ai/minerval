@@ -11,7 +11,7 @@ description: >-
 metadata:
   minerval:
     version: 1
-    since_epoch: 2026-09-domain-skills
+    since_epoch: 2026-10-assessment-as-thinking
     kind: method
 ---
 
