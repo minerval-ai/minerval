@@ -139,8 +139,11 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
 // Requests (Part VIII): the index and one request with its work. The index
 // shows the ones still open to work first; a request with no node of its own
 // appears only here.
-export async function fetchRequests(limit = 100): Promise<RequestItem[]> {
-  const res = await apiGet<{ requests: RequestItem[] }>(`/requests?limit=${limit}`);
+// With `q`, a search by meaning and keyword, ranked by meaning.
+export async function fetchRequests(limit = 100, q?: string): Promise<RequestItem[]> {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (q) p.set("q", q);
+  const res = await apiGet<{ requests: RequestItem[] }>(`/requests?${p.toString()}`);
   return res.requests;
 }
 
@@ -210,6 +213,7 @@ function filterParams(filters?: ClaimFilters): URLSearchParams {
   if (filters?.withPrizes) p.set("with_prizes", "true");
   if (filters?.claimType) p.set("claim_type", filters.claimType);
   if (filters?.tag) p.set("tag", filters.tag);
+  if (filters?.kind) p.set("kind", filters.kind);
   return p;
 }
 

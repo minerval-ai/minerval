@@ -4531,9 +4531,23 @@ export const requests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // Search over what a request asks (the /requests search box and
+    // list_requests' `q`), the same hybrid as claims: the embedding of its
+    // ask and why for meaning, and a keyword vector for exact terms, weighted
+    // so a match in the ask outranks one in its reasons (ask A, why B, what
+    // would satisfy it and what it bears on C). The embedding is written on
+    // filing and on revision, and is NULL when the embedder was down.
+    embedding: vector("embedding"),
+    textSearch: tsvector("text_search").generatedAlwaysAs(
+      (): SQL => sql`setweight(to_tsvector('english', ${requests.ask}), 'A')
+        || setweight(to_tsvector('english', ${requests.why}), 'B')
+        || setweight(to_tsvector('english', ${requests.satisfiedBy}), 'C')
+        || setweight(to_tsvector('english', coalesce(${requests.bearsOnText}, '')), 'C')`
+    ),
   },
   (table) => [
     index("idx_requests_state").on(table.state, table.createdAt),
+    index("idx_requests_text_search").using("gin", table.textSearch),
     index("idx_requests_keeper").on(table.keeperClaimId),
     check("ck_requests_filer_kind", sql`${table.filerKind} IN ('admin', 'contributor', 'mandate')`),
     check("ck_requests_keeper_kind", sql`${table.keeperKind} IN ('steward', 'curator')`),

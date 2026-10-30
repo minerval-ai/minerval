@@ -149,10 +149,13 @@ and the tool description says what a call spends.
 
 ## Tools
 
-- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?}` — hybrid
-  vector + keyword search over canonical claims. Each result carries its
-  current assessment status/confidence, its topic `tags`, and a
-  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic.
+- **`search_claims`** `{query, limit?, assessed?, min_importance?, tag?, kind?}` — hybrid
+  vector + keyword search over canonical claims, quantities and questions
+  (all three live in `claims`). Each result carries its `kind`, its
+  current assessment status/confidence (a question's `standing`, a
+  quantity's `estimate` and `unit`), its topic `tags`, and a
+  `minerval.ai` page link; `tag` (a slug) narrows the search to one topic
+  and `kind` to one kind. `assessed` judges each kind by its own verdict.
 - **`list_tags`** `{query?, limit?}` — the topic vocabulary (#272): the tags
   claims carry, with how many claims carry each; with `query`, ranked by
   meaning. A tag says what a claim is about, never whether it holds.

@@ -1,5 +1,6 @@
 import { rawQuery } from "../db/client.js";
 import { generateEmbedding } from "./embedding-service.js";
+import type { NodeKind } from "../schemas/kinds.js";
 import {
   checkedKindSql,
   liveBountySql,
@@ -13,6 +14,9 @@ import {
 
 export interface SearchResult {
   id: string;
+  // A claim about a proposition, a quantity, or a question (constitution §2,
+  // §7a): every kind lives in `claims`, so search reaches all three.
+  kind: NodeKind;
   text: string;
   claim_type: string;
   state: string;
@@ -25,11 +29,18 @@ export interface SearchResult {
   // published statement exists. Null when there is none.
   prize_micro_usd?: number | null;
   checked?: "proof" | "disproof" | null;
+  // What stands where a claim's status would: a question's current standing,
+  // a quantity's current estimate and its unit. Present only on that kind.
+  standing?: string | null;
+  estimate?: unknown | null;
+  unit?: unknown | null;
 }
 
-// Filter on whether a claim carries a current assessment. "unassessed" matches
+// Filter on whether a node carries a current assessment. "unassessed" matches
 // the rule the UI badges use: a NULL current status (no row, or a mid-pipeline
 // row whose status hasn't landed yet) reads as unassessed, not as a verdict.
+// A question's verdict is its standing and a quantity's its estimate; neither
+// ever gets an `assessments` row, so each kind is judged by its own table.
 export type AssessedFilter = "all" | "assessed" | "unassessed";
 
 export interface SearchFilters {
@@ -41,6 +52,8 @@ export interface SearchFilters {
   claimType?: string;
   /** Only claims carrying this tag (#272), by tag id — resolve a slug first. */
   tagId?: string;
+  /** Only nodes of this kind: claims, quantities or questions. */
+  kind?: NodeKind;
 }
 
 // The live bounty joined per claim (at most one, by the partial unique
@@ -48,13 +61,23 @@ export interface SearchFilters {
 const PRIZE_JOIN_SQL = `LEFT JOIN bounties pb ON pb.claim_id = c.id AND ${liveBountySql("pb")}`;
 const PRIZE_SELECT_SQL = `pb.amount_micro_usd AS prize_micro_usd, ${checkedKindSql("c.id")} AS checked`;
 
+// The kinds' verdicts (constitution §2, §7a), joined as the tree joins them:
+// at most one current estimate and one current standing per node, by their
+// partial unique indexes, and one definition per quantity.
+const KIND_JOIN_SQL = `LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+    LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+    LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true`;
+const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit`;
+const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
+      WHEN 'quantity' THEN qe.id IS NOT NULL ELSE a.status IS NOT NULL END)`;
+
 // Build the extra WHERE clauses for the assessment/importance filters, appending
 // any bound params to `params` and referencing them by position. The assessment
 // predicate keys off `a.status` (NULL ⇒ unassessed) so it agrees with the badges.
 function filterClauses(filters: SearchFilters, params: unknown[]): string {
   let sql = "";
-  if (filters.assessed === "assessed") sql += "\n      AND a.status IS NOT NULL";
-  else if (filters.assessed === "unassessed") sql += "\n      AND a.status IS NULL";
+  if (filters.assessed === "assessed") sql += `\n      AND ${ASSESSED_SQL}`;
+  else if (filters.assessed === "unassessed") sql += `\n      AND NOT ${ASSESSED_SQL}`;
   if (filters.minImportance && filters.minImportance > 0) {
     params.push(filters.minImportance);
     sql += `\n      AND c.importance >= $${params.length}`;
@@ -69,7 +92,27 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
     sql += `\n      AND EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
                        AND tg.subject_id = c.id AND tg.tag_id = $${params.length})`;
   }
+  if (filters.kind) {
+    params.push(filters.kind);
+    sql += `\n      AND c.kind = $${params.length}`;
+  }
   return sql;
+}
+
+interface KindRow {
+  kind: string;
+  standing?: string | null;
+  estimate?: unknown;
+  unit?: unknown;
+}
+
+/** The kind, and the verdict fields of that kind only (a claim carries none). */
+export function kindFields(r: KindRow): Pick<SearchResult, "kind" | "standing" | "estimate" | "unit"> {
+  if (r.kind === "question") return { kind: "question", standing: r.standing ?? null };
+  if (r.kind === "quantity") {
+    return { kind: "quantity", estimate: r.estimate ?? null, unit: r.unit ?? null };
+  }
+  return { kind: "claim" };
 }
 
 function prizeFields(r: { prize_micro_usd?: unknown; checked?: unknown }): {
@@ -104,8 +147,9 @@ export async function hybridSearch(
     withPrizes = false,
     claimType,
     tagId,
+    kind,
   } = options;
-  const filters: SearchFilters = { assessed, minImportance, withPrizes, claimType, tagId };
+  const filters: SearchFilters = { assessed, minImportance, withPrizes, claimType, tagId, kind };
 
   let embedding: number[] | null = null;
   try {
@@ -152,10 +196,11 @@ async function hybridSearchWithEmbedding(
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       1 - (c.embedding <=> $2::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
-      ${PRIZE_SELECT_SQL}
+      ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
     FROM claims c
     LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
     ${PRIZE_JOIN_SQL}
+    ${KIND_JOIN_SQL}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND (c.text_search @@ websearch_to_tsquery('english', $1)
            OR 1 - (c.embedding <=> $2::vector) > $3)${filterSql}
@@ -168,6 +213,7 @@ async function hybridSearchWithEmbedding(
 
   const results = rows.map((r) => ({
     id: r.id,
+    ...kindFields(r),
     text: r.text,
     claim_type: r.claim_type,
     state: r.state,
@@ -196,10 +242,11 @@ async function keywordSearch(
     SELECT c.id, c.text, c.claim_type, c.state, c.importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
-      ${PRIZE_SELECT_SQL}
+      ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
     FROM claims c
     LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
     ${PRIZE_JOIN_SQL}
+    ${KIND_JOIN_SQL}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)${filterSql}
     ORDER BY text_rank DESC
@@ -210,6 +257,7 @@ async function keywordSearch(
 
   const results = rows.map((r) => ({
     id: r.id,
+    ...kindFields(r),
     text: r.text,
     claim_type: r.claim_type,
     state: r.state,
@@ -242,7 +290,7 @@ export async function findSimilarClaims(
 
   const rows = await rawQuery<SearchResult & { semantic_score: number }>(
     `
-    SELECT c.id, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
       1 - (c.embedding <=> $1::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence
     FROM claims c
@@ -258,6 +306,7 @@ export async function findSimilarClaims(
 
   return rows.map((r) => ({
     id: r.id,
+    kind: r.kind,
     text: r.text,
     claim_type: r.claim_type,
     state: r.state,

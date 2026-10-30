@@ -32,9 +32,12 @@ export type GrantPolicy = (typeof GRANT_POLICIES)[number];
 
 export interface PlanItem {
   /**
-   * assess        — one Steward pass on a claim (first assessment).
-   * reassess      — a fresh pass on an already-assessed claim.
-   * deepen        — the claim plus its pending/deferred subtree.
+   * assess        — one Steward pass on a node (first assessment). Any
+   *                 kind: a claim's verdict, a quantity's estimate, a
+   *                 question's standing.
+   * reassess      — a fresh pass on an already-assessed node.
+   * deepen        — the node plus its pending/deferred subtree (a
+   *                 question's subquestions and answers included).
    * ingest        — extract + match one source URL into the graph, metered
    *                 to the grant's escrow (the ingestion-pipeline primitive).
    * formalize     — write and publish the claim's formal statement
@@ -85,12 +88,16 @@ export const PLAN_KIND_RULES =
   "What each kind needs to become a priced ledger row (the tool result " +
   "and grant_overview report each item's standing as open, running, " +
   "done, cancelled, waiting, or blocked, with the reason): " +
-  "assess/reassess/deepen: an active claim; the item queues the claim for " +
+  "assess/reassess/deepen: an active node of any kind (claim, quantity, " +
+  "or question; claim_id is the node's id); the item queues the node for " +
   "its Steward and opens (or keeps) its assess group, once per item " +
   "(a finished pass stays finished, whichever lane ran it; add another " +
-  "item for another pass). assess on a claim that already carries an " +
-  "assessment reads done: reassess is the ask for a fresh pass. " +
-  "deepen also releases the claim's deferred subclaims into the queue. " +
+  "item for another pass). The pass records the kind's assessment: a " +
+  "claim's verdict, a quantity's estimate, a question's standing and best " +
+  "answer. assess on a node that already carries one reads done: reassess " +
+  "is the ask for a fresh pass. deepen also releases the node's deferred " +
+  "children into the queue: a claim's subclaims, a question's " +
+  "subquestions, candidate answers and presuppositions. " +
   "ingest: an http(s) url; executes in plan order from your escrow. An " +
   "optional focus scopes it: the extractor reads the whole document but " +
   "proposes only the claims bearing on the focus (premises those claims " +

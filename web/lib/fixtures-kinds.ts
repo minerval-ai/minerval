@@ -1,5 +1,5 @@
 import type {
-  ClaimDetail, QuantityDefinition, QuantityEstimate, RequestItem, TreeNode,
+  ClaimDetail, QuantityDefinition, QuantityEstimate, RequestItem, SearchResultItem, TreeNode,
 } from "./types";
 
 // Fixtures for the kinds of node beyond the proposition (constitution §2,
@@ -578,3 +578,20 @@ FLU_DEATHS.requests = requestsFor(FLU_DEATHS_ID);
 FLU_ORIGIN.requests = requestsFor(FLU_ORIGIN_ID);
 
 export const KIND_CLAIMS: ClaimDetail[] = [FLU_DEATHS, FLU_OVER_50M, FLU_ORIGIN];
+
+// The quantity and the question as the browse list and search serve them,
+// so the offline /claims shows every kind (the cut claim is a plain claim).
+export const KIND_INDEX: SearchResultItem[] = [
+  {
+    id: FLU_DEATHS_ID, kind: "quantity", text: FLU_DEATHS.claim.text, claim_type: "empirical_derived",
+    state: "active", similarity_score: 0.48, importance: FLU_DEATHS.claim.importance,
+    assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
+    estimate: FLU_ESTIMATE, unit: FLU_DEFINITION.unit,
+  },
+  {
+    id: FLU_ORIGIN_ID, kind: "question", text: FLU_ORIGIN.claim.text, claim_type: "empirical_derived",
+    state: "active", similarity_score: 0.46, importance: FLU_ORIGIN.claim.importance,
+    assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
+    standing: "open",
+  },
+];

@@ -102,7 +102,10 @@ const MANDATE_SCHEMA = {
     },
     scope_claim_id: {
       type: "string",
-      description: "Optional subtree root the mandate is scoped to.",
+      description:
+        "Optional subtree root the mandate is scoped to: the id of a claim, " +
+        "a quantity, or a question (a question with its subquestions is the " +
+        "natural root of a programme of research).",
     },
     scope_query: {
       type: "string",

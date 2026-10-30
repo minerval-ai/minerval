@@ -3,7 +3,7 @@ import type {
   SearchResultItem,
 } from "./types";
 import { INFLATION_PROVENANCE } from "./fixtures-provenance";
-import { KIND_CLAIMS } from "./fixtures-kinds";
+import { KIND_CLAIMS, KIND_INDEX } from "./fixtures-kinds";
 
 // Fixture data for design iteration before the API is wired in. A worked
 // example built to the constitution's structural rules: "inflation was high"
@@ -1277,7 +1277,7 @@ export function getClaimEvents(id: string): ClaimEventsPage | null {
 }
 
 export function listClaims(): SearchResultItem[] {
-  return [...INDEX, ...MATH_INDEX];
+  return [...INDEX, ...MATH_INDEX, ...KIND_INDEX];
 }
 
 // Open bounties, largest first: the sample theorem's one.

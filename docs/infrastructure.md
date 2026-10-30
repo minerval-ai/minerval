@@ -338,39 +338,51 @@ Actions tab to confirm it, and only then delete the `AWS_ACCESS_KEY_ID` and
 the old key belonged to a person's IAM user, that user's other keys are
 worth a look too.
 
-## Dependabot security auto-merge
+## Security upkeep
 
-`.github/workflows/dependabot-security.yml` turns on auto-merge for a
-Dependabot security update with CVSS 7.0 or higher, provided it is a patch or
-minor bump with no maintainer change, in `/`, `/infra`, `/web` or
-`/extension`. Once the required checks pass it merges, then dispatches
-Deploy (a merge by the built-in token doesn't fire Deploy's push trigger).
-The Vercel deploy of `web/` follows from the merge on its own. Everything
-else, version updates and lower-severity alerts included, waits for a
-person or the weekly review. Version updates also wait out the 7-day
-cooldown in `.github/dependabot.yml`; security updates skip it, which is why
-the bar for merging them automatically is a high score and no maintainer
-change.
+No one on the project works on security full time, so upkeep is automated
+in three layers, using what GitHub provides rather than anything bespoke.
 
-Four settings make it work, and the workflow refuses to act without the
-last:
+**GitHub's scanners**, all free on a public repository and all on
+(Settings → Code security):
 
-- Settings → Code security → **Dependabot alerts** and **Dependabot
-  security updates**, both on. Without them Dependabot opens only the weekly
-  version updates, so no security PR ever reaches the workflow. From the
-  command line: `gh api -X PUT repos/minerval-ai/minerval/vulnerability-alerts`
-  and `gh api -X PUT repos/minerval-ai/minerval/automated-security-fixes`;
-- the repository secret `DEPENDABOT_ALERTS_TOKEN`, a fine-grained personal
-  access token for `minerval-ai/minerval` only, with **Dependabot alerts:
-  Read-only** and no other permission (the built-in token cannot read
-  alerts). Until it is set, the workflow's job fails on every Dependabot
-  PR;
-- Settings → General → **Allow auto-merge**;
-- a ruleset on `main` (Settings → Rules → Rulesets, not classic branch
-  protection, since the workflow reads the ruleset API) that requires the
-  status checks `check`, `db-tests`, `web` and `extension`.
+- **Dependabot alerts** flag a dependency with a published vulnerability,
+  and **Dependabot security updates** open a PR that fixes it, without the
+  cooldown. From the command line:
+  `gh api -X PUT repos/minerval-ai/minerval/vulnerability-alerts` and
+  `gh api -X PUT repos/minerval-ai/minerval/automated-security-fixes`.
+- **Secret scanning** flags credentials committed to the repository, and
+  **push protection** rejects a push that contains one. A flagged secret is
+  already public: rotate it at its provider; deleting the commit doesn't
+  help.
+- **Code scanning** (CodeQL default setup) reviews our own code for
+  vulnerabilities on every PR and weekly.
 
-What it doesn't cover: a malicious release is not a vulnerability, and
+**Dependabot auto-merge.** `.github/dependabot.yml` asks for weekly version
+updates; each waits out a 7-day cooldown, since a hijacked release is
+usually pulled within days. `.github/workflows/dependabot-auto-merge.yml`
+then turns on auto-merge for any Dependabot PR, security fix or version
+update, that is a patch or minor bump with no maintainer change, in `/`,
+`/infra`, `/web` or `/extension`. Once the required checks pass it merges,
+then dispatches Deploy (a merge by the built-in token doesn't fire Deploy's
+push trigger). The Vercel deploy of `web/` follows from the merge on its
+own. This is the pattern GitHub documents for Dependabot; the
+maintainer-change refusal is ours, because security updates skip the
+cooldown. It needs Settings → General → **Allow auto-merge** and a ruleset
+on `main` (Settings → Rules → Rulesets, not classic branch protection,
+since the workflow reads the ruleset API) requiring the status checks
+`check`, `db-tests`, `web` and `extension`; the workflow refuses to act
+without the ruleset.
+
+**The weekly maintenance pass** takes what the workflow leaves: major
+bumps, maintainer changes (check the release's npm provenance:
+`npm view <pkg>@<version> _npmUser dist.attestations`, then the attestation's
+source repository and tag), `lean-checker/server` (CI doesn't build it, and
+a merged bump takes effect at the next image build), and any open code
+scanning or secret scanning alert. It merges what checks out, opens a PR
+for anything that needs a code change, and closes what shouldn't land.
+
+What none of this covers: a malicious release is not a vulnerability, and
 upgrading fast doesn't help with it. The defense there is the cooldown, and
 if a poisoned version did reach CI or production, the response is rotating
 every credential that machine could read, not merging anything.

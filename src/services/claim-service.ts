@@ -5,6 +5,9 @@ import {
   assessments,
   arguments_,
   bounties,
+  quantityDefinitions,
+  quantityEstimates,
+  questionAssessments,
   type NewClaim,
 } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -13,6 +16,8 @@ import { enqueueClaimPipeline } from "./queue-service.js";
 import { loadConfig } from "../config.js";
 import { LIVE_BOUNTY_STATUSES, checkedKindSql } from "./formalization-service.js";
 import { listOrderedClaimInstances } from "./claim-instance-service.js";
+import { kindFields } from "./search-service.js";
+import type { NodeKind } from "../schemas/kinds.js";
 
 /**
  * Create a new claim with an initial argument, generate embedding, and enqueue for processing.
@@ -105,8 +110,9 @@ export async function listClaims(opts: {
   limit: number;
   cursor?: string;
   state?: string;
-  // "assessed" ⇒ has a current assessment status; "unassessed" ⇒ none yet (matches
-  // the badge rule — a NULL status reads as unassessed, not as a verdict).
+  // "assessed" ⇒ has a current verdict of its kind (a claim's status, a
+  // question's standing, a quantity's estimate); "unassessed" ⇒ none yet
+  // (matches the badge rule — a NULL status reads as unassessed).
   assessed?: "all" | "assessed" | "unassessed";
   minImportance?: number;
   // Mathematics (docs/mathematics.md §8.3): only claims with a live bounty,
@@ -115,6 +121,8 @@ export async function listClaims(opts: {
   claimType?: string;
   // Only claims carrying this tag (#272), by tag id (resolve a slug first).
   tagId?: string;
+  // Only nodes of this kind: claims, quantities or questions.
+  kind?: NodeKind;
 }) {
   const db = getDb();
 
@@ -123,13 +131,17 @@ export async function listClaims(opts: {
   // still works — that is how the archive remains browsable on request.
   const filters = [isNull(claims.mergedInto)];
   filters.push(eq(claims.state, opts.state ?? "active"));
-  if (opts.assessed === "assessed") filters.push(isNotNull(assessments.status));
-  else if (opts.assessed === "unassessed") filters.push(isNull(assessments.status));
+  // Same predicate as search's ASSESSED_SQL: each kind by its own table.
+  const hasVerdict = sql`(CASE ${claims.kind} WHEN 'question' THEN ${questionAssessments.id} IS NOT NULL
+    WHEN 'quantity' THEN ${quantityEstimates.id} IS NOT NULL ELSE ${assessments.status} IS NOT NULL END)`;
+  if (opts.assessed === "assessed") filters.push(hasVerdict);
+  else if (opts.assessed === "unassessed") filters.push(sql`NOT ${hasVerdict}`);
   if (opts.minImportance && opts.minImportance > 0) {
     filters.push(gte(claims.importance, opts.minImportance));
   }
   if (opts.withPrizes) filters.push(isNotNull(bounties.id));
   if (opts.claimType) filters.push(eq(claims.claimType, opts.claimType));
+  if (opts.kind) filters.push(eq(claims.kind, opts.kind));
   if (opts.tagId) {
     filters.push(
       sql`EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
@@ -150,11 +162,15 @@ export async function listClaims(opts: {
   const rows = await db
     .select({
       id: claims.id,
+      kind: claims.kind,
       text: claims.text,
       claim_type: claims.claimType,
       state: claims.state,
       importance: claims.importance,
       updated_at: claims.updatedAt,
+      standing: questionAssessments.standing,
+      estimate: quantityEstimates.estimate,
+      unit: quantityDefinitions.unit,
       assessment_status: assessments.status,
       assessment_confidence: assessments.confidence,
       prize_micro_usd: bounties.amountMicroUsd,
@@ -170,16 +186,29 @@ export async function listClaims(opts: {
       bounties,
       and(eq(bounties.claimId, claims.id), inArray(bounties.status, [...LIVE_BOUNTY_STATUSES]))
     )
+    // The kinds' verdicts, at most one current row each by partial unique index.
+    .leftJoin(
+      quantityEstimates,
+      and(eq(quantityEstimates.claimId, claims.id), eq(quantityEstimates.isCurrent, true))
+    )
+    .leftJoin(quantityDefinitions, eq(quantityDefinitions.claimId, claims.id))
+    .leftJoin(
+      questionAssessments,
+      and(eq(questionAssessments.claimId, claims.id), eq(questionAssessments.isCurrent, true))
+    )
     .where(and(...filters))
     .orderBy(desc(claims.updatedAt), desc(claims.id))
     .limit(opts.limit + 1);
 
   const hasMore = rows.length > opts.limit;
-  const results = (hasMore ? rows.slice(0, opts.limit) : rows).map((r) => ({
-    ...r,
-    prize_micro_usd: r.prize_micro_usd === null || r.prize_micro_usd === undefined ? null : Number(r.prize_micro_usd),
-    checked: r.checked === "proof" || r.checked === "disproof" ? r.checked : null,
-  }));
+  const results = (hasMore ? rows.slice(0, opts.limit) : rows).map(
+    ({ kind, standing, estimate, unit, ...r }) => ({
+      ...r,
+      ...kindFields({ kind, standing, estimate, unit }),
+      prize_micro_usd: r.prize_micro_usd === null || r.prize_micro_usd === undefined ? null : Number(r.prize_micro_usd),
+      checked: r.checked === "proof" || r.checked === "disproof" ? r.checked : null,
+    })
+  );
   const last = results[results.length - 1];
   const next_cursor =
     hasMore && last ? encodeCursor(last.updated_at, last.id) : null;

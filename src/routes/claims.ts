@@ -6,6 +6,7 @@ import { claimSearchParams, claimListParams, claimGetParams, claimDependentsPara
 import { getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
+import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
@@ -92,6 +93,22 @@ const tagItemProperties = {
 const tagFilterProperties = {
   tag: { type: "string", description: "Only claims carrying this tag (slug)" },
 } as const;
+// Kinds (constitution §2, §7a): every list/search item says whether it is a
+// claim, a quantity or a question, and carries what stands where a claim's
+// status would — a question's standing, a quantity's estimate and unit.
+const kindItemProperties = {
+  kind: { type: "string", enum: [...NODE_KINDS] },
+  standing: { type: "string", nullable: true },
+  estimate: looseObject,
+  unit: looseObject,
+} as const;
+const kindFilterProperties = {
+  kind: { type: "string", enum: [...NODE_KINDS], description: "Only nodes of this kind" },
+} as const;
+function kindForFilter(raw: unknown): NodeKind | undefined {
+  return (NODE_KINDS as readonly unknown[]).includes(raw) ? (raw as NodeKind) : undefined;
+}
+
 const NO_SUCH_TAG = "00000000-0000-0000-0000-000000000000";
 async function tagIdForFilter(raw: unknown): Promise<string | undefined> {
   if (typeof raw !== "string" || !raw.trim()) return undefined;
@@ -198,6 +215,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
             ...prizeFilterProperties,
             ...tagFilterProperties,
+            ...kindFilterProperties,
           },
         },
         response: {
@@ -218,6 +236,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_confidence: { type: "number", nullable: true },
                     ...prizeItemProperties,
                     ...tagItemProperties,
+                    ...kindItemProperties,
                   },
                 },
               },
@@ -238,6 +257,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           withPrizes: parseWithPrizes(query.with_prizes),
           claimType: typeof query.claim_type === "string" ? query.claim_type : undefined,
           tagId: await tagIdForFilter(query.tag),
+          kind: kindForFilter(query.kind),
         });
         return reply.send({ results: await attachClaimTags(results), next_cursor });
       },
@@ -266,6 +286,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             min_importance: { type: "number", minimum: 0, maximum: 1, default: 0 },
             ...prizeFilterProperties,
             ...tagFilterProperties,
+            ...kindFilterProperties,
           },
         },
         response: {
@@ -287,6 +308,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_confidence: { type: "number", nullable: true },
                     ...prizeItemProperties,
                     ...tagItemProperties,
+                    ...kindItemProperties,
                   },
                 },
               },
@@ -308,6 +330,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           withPrizes: parseWithPrizes(raw.with_prizes),
           claimType: typeof raw.claim_type === "string" ? raw.claim_type : undefined,
           tagId: await tagIdForFilter(raw.tag),
+          kind: kindForFilter(raw.kind),
         });
 
         return reply.send({ results: await attachClaimTags(results), total });
