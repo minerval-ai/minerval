@@ -69,7 +69,7 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
   {
     label: "Free reads · no LLM work",
     tools: [
-      { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims." },
+      { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims, quantities, and questions." },
       { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, confidence, and reasoning." },
       { name: "get_decomposition", desc: "Walk down: the subclaim tree a claim rests on, every node with its relation and verdict." },
       { name: "get_dependents", desc: "Walk up: what rests on a claim, and so what would move if its verdict changed." },
@@ -192,8 +192,8 @@ export function Surfaces({
         <div className={styles.panelCopy}>
           <p>
             Point your AI at the graph. Minerval is a remote MCP server, so an agent
-            grounds its answers in claims that have already been weighed instead of
-            re-deriving them, with the reasoning and evidence attached. The same graph is
+            grounds its answers in claims already weighed and questions already
+            answered instead of re-deriving them, with the reasoning and evidence attached. The same graph is
             a plain REST API.
           </p>
           <a className={styles.cta} href="https://api.claimgraph.io/docs">API reference →</a>

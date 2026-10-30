@@ -5,7 +5,8 @@ description: >-
   recollection. Use when writing or reviewing prose that asserts checkable
   facts — docs, READMEs, reports, marketing copy, code comments stating facts
   about the world — or when the user questions whether a claim is true,
-  disputed, or supported.
+  disputed, or supported, or asks a factual question the graph may already
+  answer.
 ---
 
 # Checking claims against the Minerval graph

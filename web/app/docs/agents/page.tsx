@@ -22,8 +22,8 @@ export default function AgentsIndex() {
 
       <h2>Processing · building the graph</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".82rem", marginTop: "-.3rem" }}>
-        A claim is extracted from a source, matched against what already exists, decomposed
-        into subclaims, and assessed.
+        A claim, quantity, or question is extracted from a source, matched against what
+        already exists, decomposed into what it rests on, and assessed or answered.
       </p>
       <AgentList agents={processing} />
 
