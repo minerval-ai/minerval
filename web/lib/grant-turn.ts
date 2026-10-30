@@ -1,14 +1,19 @@
 // The Grantmaker replies in the background: sending a message returns the
 // conversation at once with turn.state "replying", and the reply lands in
 // the transcript when the turn finishes (a drafting turn can take minutes).
-// The chats read the conversation until the turn is done.
+// The chats read the conversation until the turn is done, showing the
+// reply as it forms (turn.partial).
 
 export interface GrantTurn {
   state: "replying" | "idle" | "failed";
   error: string | null;
+  /** The reply so far while the Grantmaker writes it. */
+  partial?: string | null;
 }
 
-const POLL_MS = 4_000;
+// The server saves the reply-so-far about once a second; reading at this
+// pace shows it forming without a request per token.
+const POLL_MS = 1_500;
 
 /**
  * Read the conversation until its turn is no longer replying, handing each

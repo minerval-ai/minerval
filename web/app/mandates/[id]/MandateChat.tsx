@@ -78,7 +78,7 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [convo?.messages.length, busy]);
+  }, [convo?.messages.length, convo?.turn?.partial, busy]);
 
   const send = async () => {
     const message = draft.trim();
@@ -154,9 +154,14 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
           {busy && (
             <div className="convo-msg convo-agent">
               <span className="sc convo-who">grantmaker</span>
-              <div className="convo-body convo-thinking">
-                looking at the numbers…
-              </div>
+              {convo?.turn?.partial ? (
+                // The reply as the Grantmaker writes it.
+                <div className="convo-body">{convo.turn.partial}</div>
+              ) : (
+                <div className="convo-body convo-thinking">
+                  looking at the numbers…
+                </div>
+              )}
             </div>
           )}
           <div ref={endRef} />

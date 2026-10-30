@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * toolUseLoop's `stream` option: on a model the long-run path serves, each
- * turn goes over the streaming endpoint with the model's full output
- * allowance and the refusal fallback the non-streaming path would give it;
- * any other model runs non-streaming as before.
+ * toolUseLoop's `stream` option: each turn goes over the streaming endpoint
+ * with the refusal fallback the non-streaming path would give its model; a
+ * model the long-run path serves gets its full output allowance, any other
+ * its usual one. `onText` sees the reply as it forms.
  */
 
 const createMock = vi.fn();
@@ -56,7 +56,7 @@ const run = (model: string) =>
 
 describe("toolUseLoop stream", () => {
   it("streams on the strong tier, with the full output allowance and its refusal fallback", async () => {
-    streamMock.mockReturnValue({ finalMessage: async () => decision });
+    streamMock.mockReturnValue({ on: () => undefined, finalMessage: async () => decision });
     const result = await run(MODELS.strong);
     expect(result.toolUses[0]!.name).toBe("submit");
     expect(streamMock).toHaveBeenCalledTimes(1);
@@ -67,10 +67,58 @@ describe("toolUseLoop stream", () => {
     expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
   });
 
-  it("runs non-streaming on a model the long-run path does not serve", async () => {
-    createMock.mockResolvedValue(decision);
-    await run(MODELS.haiku);
+  it("streams a mid-tier model within its usual output allowance, passing text as it forms", async () => {
+    // A stream whose text handler fires before the final message resolves,
+    // as the SDK's does.
+    streamMock.mockImplementation(() => {
+      let onText: ((delta: string) => void) | null = null;
+      return {
+        on: (event: string, fn: (delta: string) => void) => {
+          if (event === "text") onText = fn;
+        },
+        finalMessage: async () => {
+          onText?.("Draft");
+          onText?.("ing now.");
+          return decision;
+        },
+      };
+    });
+    const seen: Array<[string, number]> = [];
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "draft" }],
+      tools,
+      model: MODELS.haiku,
+      stream: true,
+      maxIterations: 2,
+      onText: (delta, turn) => seen.push([delta, turn]),
+      executeTool: async () => "ok",
+      onFinalTool: (name) => (name === "submit" ? true : null),
+    });
+    const params = streamMock.mock.calls[0]![0];
+    expect(params.max_tokens).toBe(8192);
+    expect(params.fallbacks).toBeUndefined();
+    expect(seen).toEqual([
+      ["Draft", 0],
+      ["ing now.", 0],
+    ]);
+  });
+
+  it("hands a non-streamed turn's whole text to onText", async () => {
+    createMock.mockResolvedValue({
+      ...decision,
+      content: [{ type: "text", text: "All at once." }, ...decision.content],
+    });
+    const seen: string[] = [];
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "draft" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 2,
+      onText: (text) => seen.push(text),
+      executeTool: async () => "ok",
+      onFinalTool: (name) => (name === "submit" ? true : null),
+    });
     expect(streamMock).not.toHaveBeenCalled();
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(["All at once."]);
   });
 });

@@ -442,6 +442,7 @@ function toolCompletionResult(
 function longRunBetas(req: LongRunRequest): string[] {
   const betas: string[] = [];
   if (req.fallbacks === "server") betas.push(SERVER_SIDE_FALLBACK_BETA);
+  if (req.fallbacks === "default") betas.push(SERVER_SIDE_FALLBACK_DEFAULT_BETA);
   if (req.taskBudgetTokens !== undefined) betas.push(TASK_BUDGETS_BETA);
   for (const beta of req.betas ?? []) {
     if (!betas.includes(beta)) betas.push(beta);
@@ -574,10 +575,15 @@ export const anthropicAdapter: ProviderAdapter = {
       ...(base as unknown as BetaStreamParams),
       ...(Object.keys(output).length > 0 ? { output_config: output } : {}),
       ...(req.fallbacks === "server" ? { fallbacks: [{ model: MODELS.opus }] } : {}),
+      // The scalar form, as createMessage sends it; the installed SDK types
+      // only the array form.
+      ...(req.fallbacks === "default" ? ({ fallbacks: "default" } as unknown as object) : {}),
       ...(betas.length > 0 ? { betas } : {}),
     };
 
-    const final = await getLongRunClient().beta.messages.stream(params).finalMessage();
+    const stream = getLongRunClient().beta.messages.stream(params);
+    if (req.onText) stream.on("text", (delta) => req.onText!(delta));
+    const final = await stream.finalMessage();
     const response = final as unknown as Anthropic.Message;
     checkRefusal(response, req.model);
     const usage = meter(response, req.model);

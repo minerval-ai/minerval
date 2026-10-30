@@ -1,5 +1,5 @@
 {
-  "id": "399defb7-1962-4160-af99-66c1bc7fffe8",
+  "id": "be0f9eef-1f6c-41f7-8864-2e5c250ad189",
   "prevId": "e7632d9c-b507-49e9-96b0-ba76a8531eba",
   "version": "7",
   "dialect": "postgresql",
@@ -7446,6 +7446,12 @@
         },
         "turn_error": {
           "name": "turn_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_partial": {
+          "name": "turn_partial",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -131,11 +131,18 @@ export interface LongRunRequest extends ToolCompleteRequest {
   /**
    * "server" opts into the server-side refusal fallback (the request is
    * re-served on the Opus tier inside the same call when the model's safety
-   * classifiers decline); "none" lets a refusal surface as LlmRefusalError.
+   * classifiers decline); "default" is the same fallback in the scalar form
+   * the Sonnet 5.5 family takes; "none" lets a refusal surface as
+   * LlmRefusalError.
    */
-  fallbacks: "none" | "server";
+  fallbacks: "none" | "server" | "default";
   /** Extra `anthropic-beta` ids to send verbatim. */
   betas?: string[];
+  /**
+   * Called with each text delta as the model writes it, for a caller showing
+   * the reply while it forms. Tool-call inputs and thinking are not passed.
+   */
+  onText?: (delta: string) => void;
 }
 
 /**

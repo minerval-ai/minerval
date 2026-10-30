@@ -2778,6 +2778,10 @@ export const grantConversations = pgTable(
     turnHeartbeatAt: timestamp("turn_heartbeat_at", { withTimezone: true }),
     // Why the last turn failed; cleared when the next turn starts.
     turnError: text("turn_error"),
+    // The running turn's reply as the Grantmaker writes it, saved about once
+    // a second so whoever is reading the conversation sees it form. Cleared
+    // when the turn ends: the finished reply is in messages.
+    turnPartial: text("turn_partial"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

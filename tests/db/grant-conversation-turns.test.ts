@@ -17,8 +17,13 @@ const agent = vi.hoisted(() => ({
 }));
 
 vi.mock("../../src/llm/agents/grantmaker.js", () => ({
-  runGrantmakerTurn: vi.fn(async (input: { transcript: unknown[] }) => {
+  runGrantmakerTurn: vi.fn(async (input: {
+    transcript: unknown[];
+    onText?: (delta: string, turn: number) => void;
+  }) => {
     agent.transcripts.push(input.transcript);
+    input.onText?.("Here is ", 0);
+    input.onText?.("my rep", 0);
     const gate = agent.gates.shift();
     if (gate) await gate.promise;
     if (agent.fail) throw agent.fail;
@@ -84,6 +89,25 @@ describe("granting-conversation turns", () => {
     ]);
     expect(serializeTurn(done).state).toBe("idle");
     expect(done.turnStartedAt).toBeNull();
+  });
+
+  it("shows the reply as it forms, and clears it when the turn ends", async () => {
+    const userId = await seedUser("turn-partial");
+    const release = hold();
+    const started = await startConversation({ userId, message: "Draft it." });
+    if (!started.ok) throw new Error(started.message);
+    const id = started.conversation.id;
+
+    // The partial reply is saved about once a second while it changes.
+    await new Promise((r) => setTimeout(r, 1_400));
+    const mid = (await getConversation(id, userId))!;
+    expect(serializeTurn(mid)).toMatchObject({ state: "replying", partial: "Here is my rep" });
+
+    release();
+    await settleGrantConversationTurns();
+    const done = (await getConversation(id, userId))!;
+    expect(done.turnPartial).toBeNull();
+    expect(serializeTurn(done).partial).toBeNull();
   });
 
   it("refuses a second message while a turn runs, without saving it", async () => {

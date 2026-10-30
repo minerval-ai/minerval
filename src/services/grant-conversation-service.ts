@@ -66,6 +66,8 @@ export type ConverseResult =
 
 /** How often a running turn refreshes its heartbeat. */
 const HEARTBEAT_MS = 30_000;
+/** How often the reply-so-far is saved while the Grantmaker writes it. */
+const PARTIAL_FLUSH_MS = 1_000;
 /**
  * A turn whose heartbeat is older than this has lost its process (a deploy,
  * a crash) and reads as failed. A liveness check, not a limit on the turn:
@@ -130,7 +132,10 @@ function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
 }
 
 /** True while a turn holds the conversation and its process is alive. */
-type TurnFields = Pick<GrantConversation, "turnStartedAt" | "turnHeartbeatAt" | "turnError">;
+type TurnFields = Pick<
+  GrantConversation,
+  "turnStartedAt" | "turnHeartbeatAt" | "turnError" | "turnPartial"
+>;
 
 function turnRunning(convo: TurnFields, now = Date.now()): boolean {
   return (
@@ -171,6 +176,7 @@ async function claimTurn(
       turnStartedAt: startedAt,
       turnHeartbeatAt: startedAt,
       turnError: null,
+      turnPartial: null,
       updatedAt: startedAt,
     })
     .where(
@@ -211,6 +217,31 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
 
+  // The reply as it forms: the current model turn's text, saved about once a
+  // second while it changes. A new model turn (after a tool call) starts it
+  // over, so what shows is what the Grantmaker is writing now.
+  let partial = "";
+  let partialTurn = -1;
+  let flushed = "";
+  const flush = () => {
+    if (partial === flushed) return;
+    flushed = partial;
+    void db
+      .update(grantConversations)
+      .set({ turnPartial: partial })
+      .where(holdsTurn)
+      .catch((err) => console.error(`[grantmaker] saving the partial reply on ${convo.id} failed:`, err));
+  };
+  const partialTimer = setInterval(flush, PARTIAL_FLUSH_MS);
+  partialTimer.unref?.();
+  const onText = (delta: string, turn: number) => {
+    if (turn !== partialTurn) {
+      partialTurn = turn;
+      partial = "";
+    }
+    partial += delta;
+  };
+
   try {
     // A funded conversation manages its live grant: the turn runs in
     // management mode, with the analytics and plan-adjustment tools scoped
@@ -235,8 +266,10 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
           transcript: transcriptOf(convo),
           ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
           ...(platform ? { funder: "platform" as const } : {}),
+          onText,
         })
     );
+    clearInterval(partialTimer);
 
     const reply: ConversationMessage = {
       role: "assistant",
@@ -261,6 +294,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
         ...(turn.mandate ? { mandate: turn.mandate } : {}),
         turnStartedAt: null,
         turnHeartbeatAt: null,
+        turnPartial: null,
         updatedAt: new Date(),
       })
       .where(holdsTurn);
@@ -274,6 +308,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
       .set({
         turnStartedAt: null,
         turnHeartbeatAt: null,
+        turnPartial: null,
         turnError: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
         updatedAt: new Date(),
       })
@@ -281,6 +316,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
       .catch((e) => console.error(`[grantmaker] recording the failure on ${convo.id} failed:`, e));
   } finally {
     clearInterval(heartbeat);
+    clearInterval(partialTimer);
   }
 }
 
@@ -563,7 +599,8 @@ export async function listConversations(
 
 /**
  * The Grantmaker's turn, for a caller waiting on a reply: "replying" while
- * it runs (read the conversation again shortly), "idle" when the last
+ * it runs (read the conversation again shortly; `partial` is the reply so
+ * far, for showing it as it forms), "idle" when the last
  * message is its reply, "failed" when it ended without one (the funder's
  * message is saved; send a short follow-up to ask again).
  */
@@ -574,6 +611,9 @@ export function serializeTurn(convo: TurnFields, now = Date.now()) {
         state: "replying" as const,
         started_at: convo.turnStartedAt.toISOString(),
         error: null,
+        // What the Grantmaker has written of its reply so far; null until
+        // it starts writing.
+        partial: convo.turnPartial || null,
       };
     }
     return {
@@ -582,11 +622,12 @@ export function serializeTurn(convo: TurnFields, now = Date.now()) {
       error:
         "The Grantmaker's turn was interrupted (the server restarted) " +
         "before it replied",
+      partial: null,
     };
   }
   return convo.turnError
-    ? { state: "failed" as const, started_at: null, error: convo.turnError }
-    : { state: "idle" as const, started_at: null, error: null };
+    ? { state: "failed" as const, started_at: null, error: convo.turnError, partial: null }
+    : { state: "idle" as const, started_at: null, error: null, partial: null };
 }
 
 export function serializeConversation(convo: GrantConversation) {

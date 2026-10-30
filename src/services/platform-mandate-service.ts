@@ -223,11 +223,12 @@ export async function getPublicPlatformConversation(conversationId: string) {
     turn_started_at: Date | null;
     turn_heartbeat_at: Date | null;
     turn_error: string | null;
+    turn_partial: string | null;
     created_at: Date;
     updated_at: Date;
   }>(
     `SELECT gc.id, gc.status, gc.messages, gc.mandate, gc.grant_id,
-            gc.turn_started_at, gc.turn_heartbeat_at, gc.turn_error,
+            gc.turn_started_at, gc.turn_heartbeat_at, gc.turn_error, gc.turn_partial,
             gc.created_at, gc.updated_at
        FROM grant_conversations gc
        JOIN contributors c ON c.id = gc.user_id
@@ -247,6 +248,7 @@ export async function getPublicPlatformConversation(conversationId: string) {
       turnStartedAt: row.turn_started_at,
       turnHeartbeatAt: row.turn_heartbeat_at,
       turnError: row.turn_error,
+      turnPartial: row.turn_partial,
     }),
     grant_id: row.grant_id,
     created_at: row.created_at.toISOString(),

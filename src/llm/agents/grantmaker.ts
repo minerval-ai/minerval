@@ -240,6 +240,8 @@ async function runGrantmakerTurnImpl(input: {
    * platform's confirmations are the operator key's.
    */
   funder?: "platform";
+  /** The reply's text as it is written, with the model turn it belongs to. */
+  onText?: (delta: string, turn: number) => void;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -568,11 +570,12 @@ async function runGrantmakerTurnImpl(input: {
     // model's full output: nothing here is a spending limit (conversation
     // turns are rate-limited, funded turns meter to the escrow), and the
     // turn runs in the background, so no caller is waiting on a request. A
-    // model the streaming path does not serve runs non-streaming, where the
-    // request timeout (LLM_REQUEST_TIMEOUT_MS) is what binds; 16384 is about
-    // what fits inside it.
+    // model below the long-run tier keeps 16384, inside its own output limit
+    // and, on a provider with no streaming path, inside the request timeout
+    // (LLM_REQUEST_TIMEOUT_MS).
     stream: true,
     ...(modelSupportsLongRun(model) ? {} : { maxTokens: 16384 }),
+    ...(input.onText ? { onText: input.onText } : {}),
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
