@@ -1,6 +1,6 @@
 # Minerval plugin for Claude Code / Cowork
 
-Claim lookup and graph-grounded fact-checking inside the agent's everyday
+Claim and question lookup and graph-grounded fact-checking inside the agent's everyday
 workflow. The plugin is thin packaging over Minerval's
 [remote MCP server](../docs/mcp.md): it connects the server, and adds slash
 commands, a fact-checker subagent, an auto-triggering skill, and an opt-in
@@ -60,11 +60,29 @@ structured, worst-first verdict list grounded in the graph's assessments,
 never model recollection. Same rubric as the browser extension's overlay
 agent (stance inversion, misleading-as-written, silence-is-a-finding).
 
-### Skill
+### Skills
 
-`claim-checking` — background guidance that triggers when the agent writes or
-reviews prose asserting disputable facts, steering it to the right Minerval
-tool (and away from answering from recollection).
+Guidance that carries Minerval's principles to the agent, not only its
+tools (#620). Each triggers on its own description:
+
+- `claim-checking` — when the agent writes or reviews prose asserting
+  disputable facts: the right Minerval tool, and how to report what the
+  graph says (its judgment kept apart from the agent's, uncertainty not
+  rounded, gaps turned into contributions, the graph quoted accurately).
+- `commissioning-research` — when the user wants to fund work on the graph:
+  acting in good faith, which mandates are appropriate, the Grantmaker
+  conversation, what is public, what money buys.
+- `minerval-constitution` — the constitution every administrator works
+  under, bundled in full, with a guide to reading it from outside.
+- `administrator-skills` — the administrators' own skills and role prompts,
+  verbatim, so the agent can read what the Grantmaker or the Contribution
+  Reviewer works under before dealing with it.
+
+The same files are served by the MCP server as resources, for clients that
+don't load skills. The constitution and administrator files are vendored
+copies, refreshed by `npx tsx scripts/sync-frontend-content.ts`; a test
+fails when they drift (see [docs/mcp.md](../docs/mcp.md), "Keeping them
+current").
 
 ### Hook (opt-in, off by default)
 

@@ -1,7 +1,7 @@
 # Minerval
 
 Minerval is an open source project to build a database of claims about the
-world, figure out what the important ones are, and ask LLMs to assess their
+world and the questions they answer, figure out what the important ones are, and ask LLMs to assess their
 epistemic statuses.[^claims] Its claim pages
 ([example](https://minerval.ai/claims/0d59fb15-7dc1-49b1-b9d9-9462f17d2d21/map))
 are intended to be the place that one links to or consults for the canonical,
@@ -18,8 +18,8 @@ article? The Wikipedia page for an adjacent topic? A link to your conversation
 with Claude where you controlled the framing of the question? None of these
 things is likely to satisfy the objector.
 
-Minerval decomposes every claim to its bedrock, weighs it against the
-evidence, and keeps the verdict current as the world changes. The graph is
+Minerval decomposes every claim to its bedrock and every question into what
+it presupposes, weighs both against the evidence, and keeps the verdict current as the world changes. The graph is
 maintained by LLM administrators operating under a public
 [constitution](admin_constitution.md); every judgment carries a reasoning
 trace, and every decision is open to challenge. Like Wikipedia, the graph is a

@@ -21,6 +21,9 @@ COPY admin_constitution.md* ./
 # Without them the process throws before it serves anything, so this COPY is
 # load-bearing, not packaging.
 COPY skills/ ./skills/
+# The caller skills and the constitution's copy (#620): src/mcp/caller-skills.ts
+# serves them as MCP resources from ../../plugin/skills, i.e. /app/plugin/skills.
+COPY plugin/skills/ ./plugin/skills/
 # The operational scripts (seeds, backfills) and the TypeScript they import.
 # They run under tsx and import `../src/...`, not the compiled dist, so src/
 # has to be here for scripts/ to be anything other than dead weight in the

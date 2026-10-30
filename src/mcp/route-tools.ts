@@ -44,6 +44,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /claims/:claim_id/provenance": { name: "get_claim_provenance" },
   "GET /claims/:claim_id/nanopub": { name: "export_claim_nanopub" },
   "GET /claims/:claim_id/scasp": { name: "export_claim_scasp" },
+  "GET /claims/:claim_id/mira": { name: "export_claim_mira" },
   "GET /claims/:claim_id/record": { name: "get_claim_record" },
   "GET /claims/:claim_id/assessments": { name: "get_assessment_history" },
   "GET /claims/:claim_id/assessments/trajectory": {

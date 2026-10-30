@@ -16,10 +16,11 @@ for each agent.
 
 ## System Overview
 
-Minerval turns documents into a queryable graph of claims. Ingestion is the
-expensive, write-side work: an LLM pipeline reads a source, pulls out atomic
-claims, decides whether each is new, decomposes it into its supporting
-structure, and assesses its validity. Serving is the cheap, read-side work: the
+Minerval turns documents into a queryable graph of claims, quantities, and
+questions. Ingestion is the expensive, write-side work: an LLM pipeline reads a
+source, pulls out the atomic claims it makes, the quantities it states, and the
+questions it asks, decides whether each is new, decomposes it into its
+supporting structure, and assesses it. Serving is the cheap, read-side work: the
 graph is queried directly, with no LLM in the read path. The few surfaces that
 invoke agents on demand (submitting a source, the browser extension's page
 analysis, the MCP assessment tools) are authenticated, rate-limited, and
