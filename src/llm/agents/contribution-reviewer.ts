@@ -7,6 +7,12 @@
 import { toolUseLoop } from "../client.js";
 import { getContributionReviewerSystemPromptBlocks } from "../prompts/contribution-reviewer.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import { listSkills } from "../prompts/skills.js";
+import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
 import { domainsForContribution } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
@@ -52,6 +58,9 @@ async function runContributionReviewImpl(input: {
     ...getGovernanceToolDefinitions(),
     ...getReviewerToolDefinitions(),
     ...skillLoader.definitions,
+    // The tools the skills declare for this role (a price list, say), in
+    // the toolset whether or not the run loads the skill.
+    ...getActiveSkillToolDefinitions(listSkills(), "contribution-reviewer"),
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
@@ -96,6 +105,7 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
     executeTool: async (name, toolInput) => {
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
+      if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "contribution-reviewer" });
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

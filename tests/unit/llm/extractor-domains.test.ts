@@ -46,7 +46,12 @@ describe("extracted-claim schema", () => {
 describe("extractor prompt", () => {
   it("names the domains field and carries every skill's Extractor section", () => {
     const blocks = getExtractorSystemPromptBlocks({ skills: listSkills() });
-    expect(blocks).toHaveLength(1 + listSkills().length);
+    // A skill with nothing for the Extractor (a method skill like Costing)
+    // has no block.
+    const withSection = listSkills().filter((s) =>
+      s.sections.some((x) => x.heading === "For the Extractor")
+    );
+    expect(blocks).toHaveLength(1 + withSection.length);
     expect(blocks[0]).toContain("**domains**");
     // The one role whose skills are spliced: it makes one structured call
     // with no tools, so it has no turn in which to load a skill.

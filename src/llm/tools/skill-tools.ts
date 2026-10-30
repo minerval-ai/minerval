@@ -41,6 +41,7 @@ import { registerLeanTools } from "./lean-tools.js";
 import { registerAttemptTools } from "./attempt-tools.js";
 import { registerPrizeTools } from "./prize-tools.js";
 import { registerProvenanceTools } from "./provenance-tools.js";
+import { registerCostingTools } from "./costing-tools.js";
 import { getResearchToolDefinitions } from "./research-tools.js";
 
 type Tool = Anthropic.Tool;
@@ -91,6 +92,8 @@ registerAttemptTools(registerSkillTool);
 registerPrizeTools(registerSkillTool);
 // The Provenance skill's tools (#286).
 registerProvenanceTools(registerSkillTool);
+// The Costing skill's price list.
+registerCostingTools(registerSkillTool);
 
 /** Every tool name declared by any skill's tools.json. */
 export function declaredSkillToolNames(): Set<string> {

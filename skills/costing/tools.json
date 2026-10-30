@@ -1,0 +1,17 @@
+[
+  {
+    "name": "cost_sheet",
+    "description": "The live price list for pricing work: what a research run has cost on each model tier, a Steward pass on each tier, a request's scoping pass, and the paid tools' per-call and per-word charges, from the metered costs the platform recorded (falling back to priors where too few runs exist). Each line gives a typical figure and the higher figure a ceiling should use. All figures are USD of metered spend, one owl each. It prices steps; it does not say what work is worth doing.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "roles": [
+      "claim-steward",
+      "curator",
+      "researcher",
+      "contribution-reviewer"
+    ]
+  }
+]

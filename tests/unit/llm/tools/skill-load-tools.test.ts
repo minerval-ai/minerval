@@ -14,7 +14,7 @@ describe("createSkillLoadTools", () => {
     const schema = steward.definitions[0]!.input_schema as {
       properties: { name: { enum: string[] } };
     };
-    expect(schema.properties.name.enum).toEqual(["mathematics", "provenance"]);
+    expect(schema.properties.name.enum).toEqual(["costing", "mathematics", "provenance"]);
     // The Matcher can load Mathematics (it has a Matcher section), not Provenance.
     const matcher = createSkillLoadTools("matcher");
     expect(
