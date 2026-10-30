@@ -53,7 +53,7 @@
     "worker:solver": "tsx src/workers/solver-executor.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.111.0",
+    "@anthropic-ai/sdk": "^1.2.0",
     "@aws-sdk/client-sqs": "^3.1156.0",
     "@fastify/cors": "^11.3.1",
     "@fastify/formbody": "^9.0.1",
