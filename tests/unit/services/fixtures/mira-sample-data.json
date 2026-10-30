@@ -1,0 +1,141 @@
+{
+  "@context": ["https://purl.org/mira-science/mira.jsonld"],
+  "@graph": [
+    {
+      "@id": "some:account",
+      "accountName": "Some One",
+      "@type": "UserAccount"
+    },
+    {
+      "@id": "sdata:131157",
+      "@type": "NodeSchema",
+      "modified": "2026-01-24T15:38:14.553Z",
+      "created": "2026-01-24T15:38:14.553Z",
+      "subClassOf": ["Claim"],
+      "label": "Claim",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:254918",
+      "@type": ["sdata:131157", "Claim"],
+      "modified": "2026-05-26T00:39:03.077Z",
+      "created": "2025-12-04T15:47:51.694Z",
+      "title": "CLM - Some base claim",
+      "description": {
+        "@type": "Item",
+        "format": "text/html",
+        "content": "<hr />\n<p>nodeTypeId: node<em>OHkZtsR6jkJIVaNmMY</em>GB\nnodeInstanceId: c1f02ff4-f116-452f-a490-3e0309667145</p>\n<h2 id=\"publishedtogroups\">publishedToGroups:</h2>\n<p>That file was empty</p>"
+      },
+      "creator": "some:account"
+    },
+    {
+      "@id": "https://example.com/some_document.html",
+      "format": "text/html",
+      "@type": "sioc:Item"
+    },
+    {
+      "@id": "https://example.com/some_document.html#someClaim",
+      "@type": "sioc:Item",
+      "format": "text/plain",
+      "isContainedBy": "https://example.com/some_document.html",
+      "content": "Some claim contained in a broader document"
+    },
+    {
+      "@id": "sdata:261134",
+      "@type": ["sdata:131157", "Claim"],
+      "modified": "2026-05-26T00:39:03.077Z",
+      "created": "2025-12-04T15:47:51.694Z",
+      "title": "CLM - Some supporting claim",
+      "creator": "some:account",
+      "description": "https://example.com/some_document.html#someClaim"
+    },
+    {
+      "@id": "sdata:131164",
+      "@type": "AbstractRelationDef",
+      "modified": "2026-01-24T15:38:14.553Z",
+      "created": "2026-01-24T15:38:14.553Z",
+      "subClassOf": [
+        "supports",
+        {
+          "@type": "owl:Restriction",
+          "onProperty": "rdf:predicate",
+          "hasValue": "sdata:131164"
+        }
+      ],
+      "label": "supports",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:131169",
+      "@type": "RelationDef",
+      "modified": "2026-01-24T15:38:14.553Z",
+      "created": "2026-01-24T15:38:14.553Z",
+      "domain": "sdata:131157",
+      "range": "sdata:131157",
+      "subClassOf": ["sdata:131164", "RelationInstance"],
+      "label": "supports",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:261148",
+      "@type": ["Evidence"],
+      "modified": "2026-06-03T10:13:09.101Z",
+      "created": "2026-06-03T10:13:09.101Z",
+      "title": "[[EVD - The image shows some evidence]]",
+      "sourceDocument": {"@id":"http://example.com/a_document", "@type":"SourceDocument"},
+      "observationBase": { "@id": "http://example.com/a_document/image1.png" , "@type":"Entity"},
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:261147",
+      "@type": ["sdata:131164", "supports"],
+      "modified": "2026-06-03T10:13:09.101Z",
+      "created": "2026-06-03T10:13:09.101Z",
+      "source": "sdata:261134",
+      "destination": "sdata:254918",
+      "title": "[[CLM - Some supporting claim]] -supports-> [[CLM - Some base claim]]",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:261170",
+      "@type": "Claim",
+      "title": "CLM - Some further supporting claim",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:261171",
+      "@type": ["RelationInstance", "supports"],
+      "source": "sdata:261170",
+      "destination": "sdata:254918",
+      "title": "[[CLM - Some further supporting claim]] -supports-> [[CLM - Some base claim]]",
+      "creator": "some:account"
+    },
+    {
+      "@id": "https://example.com/some_paper",
+      "@type": "SourceDocument",
+      "title": "Some paper reporting the observation"
+    },
+    {
+      "@id": "https://example.com/some_paper#figure1",
+      "@type": "prov:Entity"
+    },
+    {
+      "@id": "sdata:261180",
+      "@type": "Evidence",
+      "title": "EVD - Some observation reported in figure 1",
+      "observationStatement": "sdata:261170",
+      "observationBase": "https://example.com/some_paper#figure1",
+      "observationOriginActivity": "sdata:261190",
+      "sourceDocument": "https://example.com/some_paper",
+      "supports": "sdata:261170",
+      "creator": "some:account"
+    },
+    {
+      "@id": "sdata:261190",
+      "@type": "Study",
+      "title": "STU - Some experiment",
+      "grounds": "sdata:261180",
+      "creator": "some:account"
+    }
+  ]
+}

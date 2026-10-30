@@ -788,20 +788,19 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /claims/:claim_id/mira — the MIRA export (#515): the node (a claim,
-  // or a question) as MIRA records with the evidence, sources, neighbouring
-  // claims and questions, and requests around it, in the provisional profile
-  // docs/mira.md pins. The same evidence record as /nanopub, so the same
-  // rules: credence omitted where the graph omits it (§10), [[claim:...]]
-  // resolved in prose (§12), CC0 stated. No response schema, as for
-  // /nanopub: the profile's JSON Schema is docs/mira/, and a Fastify response
-  // schema would strip the open `extensions.mv` objects.
+  // or a question) and the evidence, sources, neighbouring nodes and requests
+  // around it, as a MIRA graph in JSON-LD (docs/mira.md). The same evidence
+  // record as /nanopub, so the same rules: credence omitted where the graph
+  // omits it (§10), [[claim:...]] resolved in prose (§12), CC0 stated. No
+  // response schema, as for /nanopub: JSON-LD is an opaque serialization,
+  // checked against MIRA's SHACL shapes in the tests.
   app.get<{ Params: { claim_id: string } }>(
     "/:claim_id/mira",
     {
       schema: {
         tags: ["claims"],
         summary:
-          "Export the claim or question, with its evidence, sources, and requests, as MIRA records",
+          "Export the claim or question, with its evidence, sources, and requests, as a MIRA graph (JSON-LD)",
         params: {
           type: "object",
           properties: {
@@ -820,7 +819,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             },
           });
         }
-        return reply.type("application/json; charset=utf-8").send(JSON.stringify(bundle, null, 2));
+        return reply
+          .type("application/ld+json; charset=utf-8")
+          .send(JSON.stringify(bundle, null, 2));
       },
     }
   );

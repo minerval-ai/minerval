@@ -225,11 +225,11 @@ and adds slash commands, a fact-checker subagent, a skill, and an opt-in
 hook; it is packaging over the MCP server and is governed as one.
 
 3.6 **Exports and citations.** Any claim can be exported as a
-nanopublication in TriG or JSON-LD, or as MIRA records (the claim or
-question with its evidence, sources, and requests, in JSON), and cited by a
+nanopublication in TriG or JSON-LD, or as a MIRA graph in JSON-LD (the
+claim or question with its evidence, sources, and requests), and cited by a
 persistent w3id.org URL that resolves to its page. Every export records the
 CC0 dedication: a nanopublication in its publication-info graph, a MIRA
-bundle in its `license` field (src/services/mira-service.ts).
+graph on its export node (src/services/mira-service.ts).
 
 3.7 **What needs what.** As of the effective date the Services divide as
 follows. Current caps and grants are shown on your account page and in the

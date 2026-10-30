@@ -218,18 +218,17 @@ describe("GET /claims/:claim_id/mira (#515)", () => {
     expect(res.json().error.code).toBe("NOT_FOUND");
   });
 
-  it("serves the bundle as JSON, extensions intact", async () => {
-    const bundle = {
-      mira_profile: "https://w3id.org/minerval/mira/0.1",
-      root: `https://w3id.org/minerval/claim/${CLAIM_ID}`,
-      records: [{ type: "claim", extensions: { mv: { status: "supported" } } }],
+  it("serves the graph as JSON-LD", async () => {
+    const doc = {
+      "@context": ["https://purl.org/mira-science/mira.jsonld"],
+      "@graph": [{ "@id": `https://w3id.org/minerval/claim/${CLAIM_ID}`, "@type": "Claim" }],
     };
-    mocks.assembleClaimMira.mockResolvedValue(bundle);
+    mocks.assembleClaimMira.mockResolvedValue(doc);
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/mira` });
     expect(res.statusCode).toBe(200);
-    expect(res.headers["content-type"]).toContain("application/json");
-    expect(res.json()).toEqual(bundle);
+    expect(res.headers["content-type"]).toContain("application/ld+json");
+    expect(res.json()).toEqual(doc);
     expect(mocks.assembleClaimMira).toHaveBeenCalledWith(CLAIM_ID);
   });
 });

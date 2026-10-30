@@ -11,10 +11,5 @@ RewriteRule ^claim/(.+)$ https://minerval.ai/claims/$1 [R=302,L]
 # (used by the nanopublication export's mv: namespace)
 RewriteRule ^vocab$ https://github.com/minerval-ai/minerval/blob/main/docs/vocab.md [R=302,L]
 
-# https://w3id.org/minerval/mira/<version> -> the MIRA export profile, and
-# .../schema.json -> its JSON Schema (used by GET /claims/:id/mira)
-RewriteRule ^mira/([0-9.]+)/schema\.json$ https://raw.githubusercontent.com/minerval-ai/minerval/main/docs/mira/minerval-mira-$1.schema.json [R=302,L]
-RewriteRule ^mira/([0-9.]+)$ https://github.com/minerval-ai/minerval/blob/main/docs/mira.md [R=302,L]
-
 # Namespace root
 RewriteRule ^$ https://minerval.ai/ [R=302,L]

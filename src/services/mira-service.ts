@@ -6,150 +6,45 @@ import {
   citationUrl,
   type EvidenceRecord,
 } from "./citation-service.js";
-import { CONTENT_LICENSE_IRI, resolveClaimLinks } from "./nanopub-service.js";
+import {
+  CONTENT_LICENSE_IRI,
+  MINERVAL_VOCAB,
+  resolveClaimLinks,
+} from "./nanopub-service.js";
 import { getQuestionDetail, type QuestionDetailView } from "./question-service.js";
 import { listRequests, type RequestView } from "./request-service.js";
 
-// MIRA export (#515): a claim, or a question, and the structure around it,
-// serialized as MIRA records (Modular Interoperable Research Attribution,
-// https://www.mira.science/): questions, claims, evidence, sources, and
-// requests, each with its attribution. Shares the evidence-record assembly
-// with "Cite this claim" (#290) and the nanopublication export (#292), and
-// renders existing state only.
+// MIRA export (#515): a claim, or a question, and the structure around it, as
+// a MIRA graph in JSON-LD (Modular Interoperable Research Attribution,
+// https://github.com/MIRA-science/schema): Question, Claim, Evidence,
+// SourceDocument and Request nodes, linked by MIRA's own relations
+// (supports, opposes, addresses, observationStatement, sourceDocument,
+// request_target), each with its dct:creator. Shares the evidence-record
+// assembly with "Cite this claim" (#290) and the nanopublication export
+// (#292), and renders existing state only.
 //
-// MIRA has not published a formal schema we could pin, so the records follow
-// the provisional profile in docs/mira.md, whose JSON Schema
-// (docs/mira/minerval-mira-0.1.schema.json) the tests hold every bundle to.
-// What MIRA has no word for (the six-status assessment, named arguments, a
-// question's standing) travels under `extensions.mv`, in the same terms as
-// the mv: vocabulary (docs/vocab.md). The export rules are the nanopub's:
-// credence is omitted where the graph omits it (§10), [[claim:...]]
-// machinery resolves to canonical text (§12), and the CC0 dedication is
-// stated. Records are attributed but not signed; see docs/mira.md.
+// MIRA's SHACL shapes are closed: a Claim may carry only MIRA's properties.
+// So what MIRA has no word for (the six-status assessment, credence, a
+// question's standing, arguments, the kind of each decomposition edge, a
+// request's terms and state) is said on separate mv: nodes that point at the
+// MIRA nodes they describe (docs/mira.md, docs/vocab.md). A MIRA consumer
+// reads a valid MIRA graph and can ignore them; one that reads mv: loses
+// nothing. The export rules are the nanopub's: credence is omitted where the
+// graph omits it (§10), [[claim:...]] machinery resolves to canonical text
+// (§12), and the CC0 dedication is stated.
 
-export const MIRA_PROFILE_VERSION = "0.1";
-/** The profile document; the schema sits beside it (infra/w3id/.htaccess). */
-export const MIRA_PROFILE_IRI = `https://w3id.org/minerval/mira/${MIRA_PROFILE_VERSION}`;
+/** MIRA's published JSON-LD context (the schema README's transport format). */
+export const MIRA_CONTEXT_URL = "https://purl.org/mira-science/mira.jsonld";
+/** The schema version targeted: mira.ttl's owl:versionInfo at the pinned
+ *  commit, whose shapes the tests validate against (docs/mira/). */
+export const MIRA_SCHEMA_VERSION = "0.1 (tentative)";
+export const MIRA_SCHEMA_COMMIT = "365d40403498da5c3c6698f21680696b25f1c2c8";
 
-// The decomposition relations as MIRA claim → claim link types. Anything the
-// enum grows to that isn't mapped yet degrades to related_to, as the nanopub
-// export degrades to mv:relatedTo.
-const RELATION_LINKS: Record<string, MiraLinkRel> = {
-  requires: "requires",
-  assumes: "assumes",
-  supports: "supported_by",
-  contradicts: "contradicted_by",
-  specifies: "specified_by",
-  defines: "defined_by",
-};
+export type JsonLdNode = Record<string, unknown>;
 
-// A source's stance toward the node, as an evidence relation; the same
-// reading as the nanopub's CiTO mapping, plus the kinds' stances: a source
-// asks or answers a question, or states a quantity's value.
-const STANCE_RELATIONS: Record<string, MiraEvidenceRelation> = {
-  affirms: "supports",
-  denies: "disputes",
-  poses: "discusses",
-  asks: "asks",
-  answers: "answers",
-  states: "states",
-};
-
-export type MiraLinkRel =
-  | "requires"
-  | "assumes"
-  | "supported_by"
-  | "contradicted_by"
-  | "specified_by"
-  | "defined_by"
-  | "related_to"
-  | "answers"
-  | "answered_by"
-  | "has_part"
-  | "presupposes"
-  | "excludes"
-  | "compatible_with";
-
-export type MiraEvidenceRelation =
-  | "supports"
-  | "disputes"
-  | "discusses"
-  | "asks"
-  | "answers"
-  | "states";
-
-export interface MiraAttribution {
-  name: string;
-  /** organization: Minerval itself; agent: one of its administrator roles or
-   *  a model; contributor: a person, by display name; mandate: a funded
-   *  arrangement, which names no party (§12/§19). */
-  kind: "organization" | "agent" | "contributor" | "mandate";
-  role: "publisher" | "assessor" | "filer";
-  at?: string;
-}
-
-export interface MiraLink {
-  rel: MiraLinkRel;
-  target: string;
-}
-
-interface MiraRecordBase {
-  id: string;
-  attribution: MiraAttribution[];
-  extensions?: { mv: Record<string, unknown> };
-}
-
-export interface MiraQuestion extends MiraRecordBase {
-  type: "question";
-  text: string;
-  links: MiraLink[];
-}
-
-export interface MiraClaim extends MiraRecordBase {
-  type: "claim";
-  text: string;
-  links: MiraLink[];
-}
-
-export interface MiraEvidence extends MiraRecordBase {
-  type: "evidence";
-  quote: string | null;
-  relation: MiraEvidenceRelation;
-  target: string;
-  source: string;
-  context?: string;
-  /** On an answering instance: the answer its answer matches. */
-  answer?: string;
-}
-
-export interface MiraSource extends MiraRecordBase {
-  type: "source";
-  title: string;
-  url: string | null;
-  source_type: string | null;
-}
-
-export interface MiraRequest extends MiraRecordBase {
-  type: "request";
-  ask: string;
-  why: string;
-  satisfied_by: string;
-  addressed_to: string | null;
-  state: string;
-  bears_on: string[];
-  filed_at: string;
-}
-
-export type MiraRecord = MiraQuestion | MiraClaim | MiraEvidence | MiraSource | MiraRequest;
-
-export interface MiraBundle {
-  mira_profile: string;
-  profile_version: string;
-  generated_at: string;
-  license: string;
-  publisher: { name: string; url: string };
-  root: string;
-  records: MiraRecord[];
+export interface MiraDocument {
+  "@context": unknown[];
+  "@graph": JsonLdNode[];
 }
 
 /** A question this node is an answer to, one hop up. */
@@ -175,21 +70,29 @@ export interface MiraOpts {
   claimUri: (id: string) => string;
 }
 
-const iso = (d: Date | string) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
+// An instance's stance as MIRA's argument relation from its Evidence to the
+// claim it states. Posing, and stating a quantity's value, take no side.
+const STANCE_RELATION: Record<string, "supports" | "opposes" | null> = {
+  affirms: "supports",
+  denies: "opposes",
+  answers: "supports",
+  poses: null,
+  states: null,
+};
 
-export function buildMiraBundle(input: MiraInput, opts: MiraOpts): MiraBundle {
+const ref = (iri: string) => ({ "@id": iri });
+const iso = (d: Date | string) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
+const decimal = (n: number) => ({ "@value": String(n), "@type": "xsd:decimal" });
+const dateTime = (d: Date | string) => ({ "@value": iso(d), "@type": "xsd:dateTime" });
+
+export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocument {
   const { record, question } = input;
   const web = opts.webBaseUrl.replace(/\/$/, "");
   const nodeUri = opts.claimUri;
   const rootUri = nodeUri(record.claim.id);
-  const publisher: MiraAttribution = {
-    name: CITATION_AUTHOR,
-    kind: "organization",
-    role: "publisher",
-  };
 
   // Canonical texts for resolving [[claim:...]] references in prose (§12):
-  // every node the bundle names.
+  // every node the export names.
   const textById = new Map<string, string>([[record.claim.id, record.claim.text]]);
   for (const a of record.arguments) for (const s of a.subclaims) textById.set(s.id, s.text);
   if (question) {
@@ -201,232 +104,265 @@ export function buildMiraBundle(input: MiraInput, opts: MiraOpts): MiraBundle {
   for (const r of input.requests) for (const n of r.bears_on) textById.set(n.id, n.text);
   const prose = (text: string) => resolveClaimLinks(text, textById);
 
-  // Records keyed by id, so a node reached twice (a premise of two
-  // arguments, an answer that is also a request's target) appears once.
-  const records = new Map<string, MiraRecord>();
-  const put = (r: MiraRecord) => {
-    if (!records.has(r.id)) records.set(r.id, r);
+  // Nodes by id, so a node reached twice (a premise of two arguments, an
+  // answer that is also a request's target) is one node whose relations
+  // accumulate.
+  const graph = new Map<string, JsonLdNode>();
+  const node = (id: string, init: JsonLdNode): JsonLdNode => {
+    const existing = graph.get(id);
+    if (existing) return existing;
+    const n = { "@id": id, ...init };
+    graph.set(id, n);
+    return n;
   };
-  // A neighbouring node: its text and standing only. It is a record of its
-  // own in its own export; here it is what the root's links point at.
-  const stub = (
+  const add = (n: JsonLdNode, prop: string, value: unknown) => {
+    const same = (x: unknown) => JSON.stringify(x) === JSON.stringify(value);
+    const cur = n[prop];
+    if (cur === undefined) n[prop] = value;
+    else if (Array.isArray(cur)) {
+      if (!cur.some(same)) cur.push(value);
+    } else if (!same(cur)) n[prop] = [cur, value];
+  };
+
+  // Who made what (dct:creator ranges over sioc:UserAccount in MIRA). Every
+  // node is Minerval's publication; a request also names its filer.
+  const minervalAccount = `${web}/#minerval`;
+  node(minervalAccount, { "@type": "UserAccount", accountName: CITATION_AUTHOR });
+
+  // The graph's nodes: a question, or a claim (a quantity is a claim to
+  // MIRA; its kind is on its mv:NodeRecord). The text is the dct:title, as in
+  // MIRA's own sample data.
+  const graphNode = (id: string, text: string, kind: string) =>
+    node(nodeUri(id), {
+      "@type": kind === "question" ? "Question" : "Claim",
+      title: text,
+      creator: minervalAccount,
+    });
+  // What Minerval holds about a node, beside it.
+  const nodeRecord = (id: string, kind: string): JsonLdNode =>
+    node(`${nodeUri(id)}#record`, {
+      "@type": "mv:NodeRecord",
+      "mv:describes": ref(nodeUri(id)),
+      "mv:kind": kind,
+    });
+  // A Minerval edge, with the relation MIRA has no property for.
+  const edge = (from: string, to: string, relation: string, extra: JsonLdNode = {}) =>
+    node(`${nodeUri(from)}#edge-${relation}-${to}`, {
+      "@type": "mv:Edge",
+      "mv:from": ref(nodeUri(from)),
+      "mv:to": ref(nodeUri(to)),
+      "mv:relation": relation,
+      ...extra,
+    });
+  const neighbour = (
     id: string,
     text: string,
     kind: string,
     standing: { status?: string | null; standing?: string | null }
-  ): MiraRecord => {
-    const mv: Record<string, unknown> = { kind, stub: true };
-    if (standing.status) mv.status = standing.status;
-    if (standing.standing) mv.standing = standing.standing;
-    return kind === "question"
-      ? { id: nodeUri(id), type: "question", text, links: [], attribution: [publisher], extensions: { mv } }
-      : { id: nodeUri(id), type: "claim", text, links: [], attribution: [publisher], extensions: { mv } };
+  ): JsonLdNode => {
+    const n = graphNode(id, text, kind);
+    const rec = nodeRecord(id, kind);
+    if (standing.status) rec["mv:status"] = standing.status;
+    if (standing.standing) rec["mv:standing"] = standing.standing;
+    return n;
   };
 
-  // --- the root node, first in the bundle; its links fill in below ---
-  const rootLinks: MiraLink[] = [];
-  const rootMv: Record<string, unknown> = {
-    kind: record.claim.kind,
-    claim_id: record.claim.id,
-    claim_type: record.claim.claim_type,
-    page: opts.pageUrl,
-  };
-  const rootAttribution: MiraAttribution[] = [publisher];
-  put({
-    id: rootUri,
-    type: question ? "question" : "claim",
-    text: record.claim.text,
-    links: rootLinks,
-    attribution: rootAttribution,
-    extensions: { mv: rootMv },
+  // --- the export itself: what, when, under which terms ---
+  node(`${rootUri}#mira`, {
+    "@type": "mv:MiraExport",
+    "mv:root": ref(rootUri),
+    "mv:miraSchemaVersion": MIRA_SCHEMA_VERSION,
+    "mv:miraSchemaCommit": MIRA_SCHEMA_COMMIT,
+    "dct:license": ref(CONTENT_LICENSE_IRI),
+    "dct:source": ref(opts.pageUrl),
+    "dct:publisher": ref(minervalAccount),
+    "prov:generatedAtTime": dateTime(opts.generatedAt),
   });
+
+  // --- the root node ---
+  const root = graphNode(record.claim.id, record.claim.text, record.claim.kind);
+  root.created = record.claim.created_at;
+  root.modified = record.claim.updated_at;
+  const rootRecord = nodeRecord(record.claim.id, record.claim.kind);
+  rootRecord["mv:claimId"] = record.claim.id;
+  rootRecord["mv:claimType"] = record.claim.claim_type;
+  rootRecord["dct:source"] = ref(opts.pageUrl);
+
+  if (record.assessment) {
+    const a = record.assessment;
+    rootRecord["mv:status"] = a.status;
+    rootRecord["mv:confidence"] = decimal(a.confidence);
+    // Credence: absent exactly where the graph declines to state one (§10).
+    if (a.claim_credence != null) rootRecord["mv:credence"] = decimal(a.claim_credence);
+    rootRecord["rdfs:comment"] = prose(a.summary);
+    rootRecord["mv:reasoningTrace"] = prose(a.reasoning_trace);
+    rootRecord["mv:assessmentId"] = a.id;
+    rootRecord["mv:assessmentVersion"] = { "@value": String(a.version), "@type": "xsd:integer" };
+    rootRecord["mv:assessedAt"] = dateTime(a.assessed_at);
+    if (a.model) rootRecord["mv:assessmentModel"] = a.model;
+  }
 
   if (question) {
     const qa = question.assessment;
     if (qa) {
-      rootMv.standing = qa.standing;
-      rootMv.favored_answers = qa.favored_ids.map(nodeUri);
-      if (qa.summary) rootMv.summary = prose(qa.summary);
-      rootMv.reasoning_trace = prose(qa.reasoning_trace);
-      rootMv.assessed_at = iso(qa.assessed_at);
-      if (question.incomplete) rootMv.incomplete = prose(question.incomplete);
-      rootAttribution.push({
-        name: qa.model ?? "Question Steward",
-        kind: "agent",
-        role: "assessor",
-        at: iso(qa.assessed_at),
+      rootRecord["mv:standing"] = qa.standing;
+      for (const id of qa.favored_ids) add(rootRecord, "mv:favors", ref(nodeUri(id)));
+      if (qa.summary) rootRecord["rdfs:comment"] = prose(qa.summary);
+      rootRecord["mv:reasoningTrace"] = prose(qa.reasoning_trace);
+      rootRecord["mv:assessedAt"] = dateTime(qa.assessed_at);
+      if (qa.model) rootRecord["mv:assessmentModel"] = qa.model;
+      if (question.incomplete) rootRecord["mv:incomplete"] = prose(question.incomplete);
+    }
+    // An answer addresses its question, in MIRA's own relation; why it is in
+    // the set rides on the edge.
+    for (const a of question.answers) {
+      add(neighbour(a.id, a.text, a.kind, { status: a.status }), "addresses", rootUri);
+      if (a.credence != null) nodeRecord(a.id, a.kind)["mv:credence"] = decimal(a.credence);
+      edge(record.claim.id, a.id, "answers", a.basis ? { "mv:answerBasis": a.basis } : {});
+    }
+    for (const rel of question.relations) {
+      node(`${rootUri}#answers-${rel.a}-${rel.b}`, {
+        "@type": "mv:AnswerRelation",
+        "mv:question": ref(rootUri),
+        "mv:answer": [ref(nodeUri(rel.a)), ref(nodeUri(rel.b))],
+        "mv:relation": rel.relation,
       });
     }
-    // Answers: the answer stubs carry how they bear on each other.
-    const answerLinks = new Map<string, MiraLink[]>();
-    for (const rel of question.relations) {
-      const kind: MiraLinkRel = rel.relation === "excludes" ? "excludes" : "compatible_with";
-      answerLinks.set(rel.a, [...(answerLinks.get(rel.a) ?? []), { rel: kind, target: nodeUri(rel.b) }]);
-      answerLinks.set(rel.b, [...(answerLinks.get(rel.b) ?? []), { rel: kind, target: nodeUri(rel.a) }]);
-    }
-    for (const a of question.answers) {
-      rootLinks.push({ rel: "answered_by", target: nodeUri(a.id) });
-      const s = stub(a.id, a.text, a.kind, { status: a.status }) as MiraClaim;
-      s.links.push({ rel: "answers", target: rootUri }, ...(answerLinks.get(a.id) ?? []));
-      const mv = s.extensions!.mv;
-      // Credence only where the graph states one (§10).
-      if (a.credence != null) mv.credence = a.credence;
-      if (a.basis) mv.answer_basis = a.basis;
-      put(s);
-    }
     for (const q of question.subquestions) {
-      rootLinks.push({ rel: "has_part", target: nodeUri(q.id) });
-      put(stub(q.id, q.text, q.kind, q));
+      neighbour(q.id, q.text, q.kind, q);
+      edge(record.claim.id, q.id, "part_of");
     }
     for (const p of question.presuppositions) {
-      rootLinks.push({ rel: "presupposes", target: nodeUri(p.id) });
-      put(stub(p.id, p.text, p.kind, p));
+      neighbour(p.id, p.text, p.kind, p);
+      edge(record.claim.id, p.id, "presupposes");
     }
   }
 
-  if (record.assessment) {
-    const a = record.assessment;
-    rootMv.status = a.status;
-    rootMv.confidence = a.confidence;
-    // Credence: absent exactly where the graph declines to state one (§10).
-    if (a.claim_credence != null) rootMv.credence = a.claim_credence;
-    rootMv.summary = prose(a.summary);
-    rootMv.reasoning_trace = prose(a.reasoning_trace);
-    rootMv.assessment_id = a.id;
-    rootMv.assessment_version = a.version;
-    rootMv.assessed_at = a.assessed_at;
-    rootAttribution.push({
-      name: a.model ?? "Claim Steward",
-      kind: "agent",
-      role: "assessor",
-      at: a.assessed_at,
+  // Decomposition: a premise of an argument for the claim supports it, one
+  // of an argument against opposes it (MIRA's Argument relations); the
+  // argument itself, and the kind of each edge, are Minerval's.
+  record.arguments.forEach((arg, i) => {
+    const argNode = node(`${rootUri}#argument-${i + 1}`, {
+      "@type": "mv:Argument",
+      "mv:argues": ref(rootUri),
+      "mv:stance": arg.stance,
+      "rdfs:comment": prose(arg.content),
     });
-  }
-
-  // Decomposition: one link per premise edge, and the arguments that group
-  // them, which MIRA has no record for, under the extension.
-  if (record.arguments.length > 0) {
-    rootMv.arguments = record.arguments.map((arg) => {
-      const out: Record<string, unknown> = {
-        stance: arg.stance,
-        content: prose(arg.content),
-        premises: arg.subclaims.map((s) => nodeUri(s.id)),
-      };
-      if (arg.name) out.name = arg.name;
-      if (arg.verdict) out.verdict = arg.verdict;
-      // Only a recorded mark: an unevaluated argument says nothing about
-      // decisiveness.
-      if (arg.verdict && arg.decisive !== null) out.decisive = arg.decisive;
-      if (arg.evaluation) out.evaluation = prose(arg.evaluation);
-      return out;
-    });
-  }
-  const seenEdges = new Set<string>();
-  for (const arg of record.arguments) {
+    if (arg.name) argNode["rdfs:label"] = arg.name;
+    if (arg.verdict) argNode["mv:verdict"] = arg.verdict;
+    // Only a recorded mark: an unevaluated argument says nothing about
+    // decisiveness.
+    if (arg.verdict && arg.decisive !== null) {
+      argNode["mv:decisive"] = { "@value": String(arg.decisive), "@type": "xsd:boolean" };
+    }
+    if (arg.evaluation) argNode["mv:evaluation"] = prose(arg.evaluation);
+    const relation = arg.stance === "against" ? "opposes" : "supports";
     for (const s of arg.subclaims) {
-      const rel = RELATION_LINKS[s.relation] ?? "related_to";
-      const key = `${rel} ${s.id}`;
-      if (!seenEdges.has(key)) {
-        seenEdges.add(key);
-        rootLinks.push({ rel, target: nodeUri(s.id) });
-      }
-      put(stub(s.id, s.text, "claim", { status: s.status }));
+      add(argNode, "mv:hasPremise", ref(nodeUri(s.id)));
+      add(neighbour(s.id, s.text, "claim", { status: s.status }), relation, rootUri);
+      edge(record.claim.id, s.id, s.relation);
     }
-  }
+  });
 
   for (const q of input.answers_questions) {
-    rootLinks.push({ rel: "answers", target: nodeUri(q.id) });
-    put(stub(q.id, q.text, "question", { standing: q.standing }));
+    neighbour(q.id, q.text, "question", { standing: q.standing });
+    add(root, "addresses", nodeUri(q.id));
   }
 
-  // --- evidence and sources ---
-  const sourceUri = (id: string) => `${web}/sources/${id}`;
-  const putSource = (id: string, title: string, url: string | null, sourceType: string | null) =>
-    put({
-      id: sourceUri(id),
-      type: "source",
-      title,
-      url,
-      source_type: sourceType,
-      attribution: [publisher],
-    });
-
-  // A question's answering instances name the answer their answer matches.
+  // --- instances ---
+  // An instance is a source's statement of a claim: MIRA Evidence whose
+  // observationStatement is the claim stated and whose sourceDocument is the
+  // source. A source that asks a question, or answers it without matching an
+  // answer, states no claim, and is recorded on its mv:Instance alone.
   const answerByInstance = new Map(
     (question?.instances ?? [])
       .filter((i) => i.answer_id)
       .map((i) => [i.id, i.answer_id!] as const)
   );
+  const sourceNode = (id: string, title: string, url: string | null): string => {
+    // Named by its document URL where it has one, as MIRA's sample data
+    // names sources; otherwise by its page here.
+    const iri = url ?? `${web}/sources/${id}`;
+    node(iri, { "@type": "SourceDocument", title, creator: minervalAccount });
+    return iri;
+  };
   for (const inst of record.instances) {
-    const ev: MiraEvidence = {
-      id: `${rootUri}#evidence-${inst.id}`,
-      type: "evidence",
-      // A figure read from a table has no sentence (schema.ts).
-      quote: inst.quote === "" ? null : inst.quote,
-      relation: STANCE_RELATIONS[inst.stance] ?? "discusses",
-      target: rootUri,
-      source: sourceUri(inst.source.id),
-      attribution: [publisher],
-    };
-    if (inst.context) ev.context = inst.context;
+    const sourceIri = sourceNode(inst.source.id, inst.source.title, inst.source.url);
+    const instNode = node(`${rootUri}#instance-${inst.id}`, {
+      "@type": "mv:Instance",
+      "mv:stance": inst.stance,
+      "prov:wasQuotedFrom": ref(sourceIri),
+    });
+    // A figure read from a table has no sentence (schema.ts).
+    if (inst.quote) instNode["mv:quote"] = inst.quote;
+
     const answer = answerByInstance.get(inst.id);
-    if (answer) ev.answer = nodeUri(answer);
-    putSource(inst.source.id, inst.source.title, inst.source.url, inst.source.source_type);
-    put(ev);
+    const statement = question ? (answer ? nodeUri(answer) : null) : rootUri;
+    if (!statement) continue;
+    const evidenceIri = `${rootUri}#evidence-${inst.id}`;
+    const evidence = node(evidenceIri, {
+      "@type": "Evidence",
+      observationStatement: statement,
+      sourceDocument: sourceIri,
+      creator: minervalAccount,
+    });
+    if (inst.quote) evidence.content = inst.quote;
+    if (inst.context) evidence.description = { "@type": "Item", content: inst.context };
+    const relation = STANCE_RELATION[inst.stance];
+    if (relation) evidence[relation] = statement;
+    instNode["mv:evidence"] = ref(evidenceIri);
   }
 
   // --- requests that bear on the node ---
+  // MIRA's request_target ranges over claims; a question or a source a
+  // request bears on is named on its mv:RequestRecord, with the terms MIRA
+  // has no property for.
   for (const r of input.requests) {
-    const filer: MiraAttribution = {
-      name: r.filed_by.label,
-      kind:
-        r.filed_by.kind === "admin"
-          ? "agent"
-          : r.filed_by.kind === "contributor"
-            ? "contributor"
-            : "mandate",
-      role: "filer",
-      at: iso(r.filed_at),
-    };
-    const mv: Record<string, unknown> = {
-      keeper: r.keeper.label,
-      work: r.work.map((w) => ({
-        by: w.by,
-        outcome: w.outcome,
-        summary: prose(w.summary),
-        at: iso(w.at),
-      })),
-    };
-    if (r.who_could) mv.who_could = prose(r.who_could);
-    if (r.bears_on_text) mv.bears_on_text = prose(r.bears_on_text);
-    if (r.state_note) mv.state_note = prose(r.state_note);
-    for (const s of r.bears_on_sources) putSource(s.id, s.title, s.url, null);
-    put({
-      id: `${web}/requests/${r.id}`,
-      type: "request",
-      ask: prose(r.ask),
-      why: prose(r.why),
-      satisfied_by: prose(r.satisfied_by),
-      addressed_to: r.addressed_to,
-      state: r.state,
-      bears_on: [
-        ...r.bears_on.map((n) => nodeUri(n.id)),
-        ...r.bears_on_sources.map((s) => sourceUri(s.id)),
-      ],
-      filed_at: iso(r.filed_at),
-      attribution: [filer, publisher],
-      extensions: { mv },
+    const reqIri = `${web}/requests/${r.id}`;
+    const req = node(reqIri, {
+      "@type": "Request",
+      title: prose(r.ask),
+      description: { "@type": "Item", content: prose(r.why) },
+      created: iso(r.filed_at),
+      // §12/§19: a mandate's request names no party; its filer label is the
+      // arrangement ("a funded mandate").
+      creator: [{ "@type": "UserAccount", accountName: r.filed_by.label }, minervalAccount],
+    });
+    const rec = node(`${reqIri}#record`, {
+      "@type": "mv:RequestRecord",
+      "mv:request": ref(reqIri),
+      "mv:satisfiedBy": prose(r.satisfied_by),
+      "mv:state": r.state,
+      "mv:filerKind": r.filed_by.kind,
+      "mv:keeper": r.keeper.label,
+    });
+    if (r.addressed_to) rec["mv:addressedTo"] = r.addressed_to;
+    if (r.who_could) rec["mv:whoCould"] = prose(r.who_could);
+    if (r.bears_on_text) rec["mv:bearsOnText"] = prose(r.bears_on_text);
+    if (r.state_note) rec["mv:stateNote"] = prose(r.state_note);
+    for (const n of r.bears_on) {
+      if (n.id !== record.claim.id) neighbour(n.id, n.text, n.kind, {});
+      if (n.kind !== "question") add(req, "request_target", nodeUri(n.id));
+      add(rec, "mv:bearsOn", ref(nodeUri(n.id)));
+    }
+    for (const s of r.bears_on_sources) {
+      add(rec, "mv:bearsOn", ref(sourceNode(s.id, s.title, s.url)));
+    }
+    r.work.forEach((w, i) => {
+      node(`${reqIri}#work-${i + 1}`, {
+        "@type": "mv:RequestWork",
+        "mv:request": ref(reqIri),
+        "mv:by": w.by,
+        ...(w.outcome ? { "mv:outcome": w.outcome } : {}),
+        "rdfs:comment": prose(w.summary),
+        "prov:generatedAtTime": dateTime(w.at),
+      });
     });
   }
 
   return {
-    mira_profile: MIRA_PROFILE_IRI,
-    profile_version: MIRA_PROFILE_VERSION,
-    generated_at: opts.generatedAt.toISOString(),
-    license: CONTENT_LICENSE_IRI,
-    publisher: { name: CITATION_AUTHOR, url: web },
-    root: rootUri,
-    records: [...records.values()],
+    "@context": [MIRA_CONTEXT_URL, { mv: MINERVAL_VOCAB, xsd: "http://www.w3.org/2001/XMLSchema#" }],
+    "@graph": [...graph.values()],
   };
 }
 
@@ -437,7 +373,7 @@ export function buildMiraBundle(input: MiraInput, opts: MiraOpts): MiraBundle {
 export async function assembleClaimMira(
   claimId: string,
   generatedAt: Date = new Date()
-): Promise<MiraBundle | null> {
+): Promise<MiraDocument | null> {
   const record = await assembleEvidenceRecord(claimId);
   if (!record) return null;
 
@@ -457,7 +393,7 @@ export async function assembleClaimMira(
 
   const config = loadConfig();
   const web = config.publicWebBaseUrl.replace(/\/$/, "");
-  return buildMiraBundle(
+  return buildMiraDocument(
     { record, question, answers_questions: answersQuestions, requests: requests.items },
     {
       webBaseUrl: web,

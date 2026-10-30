@@ -1,37 +1,30 @@
 /**
- * MIRA export (#515): a node and the structure around it as MIRA records.
- * Every bundle is held to the pinned profile schema
- * (docs/mira/minerval-mira-0.1.schema.json). The disciplines under test are
- * the nanopub's: credence omitted where the graph omits it (§10), no
+ * MIRA export (#515): a node and the structure around it as a MIRA graph in
+ * JSON-LD. Every export is validated against MIRA's own SHACL shapes
+ * (docs/mira/, pinned from MIRA-science/schema). The disciplines under test
+ * are the nanopub's: credence omitted where the graph omits it (§10), no
  * [[claim:...]] machinery in exported prose (§12), CC0 stated; and a
  * mandate's request names no party (§12/§19).
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
-import { Ajv } from "ajv";
-import addFormatsModule from "ajv-formats";
 
-import { buildMiraBundle, type MiraInput } from "../../../src/services/mira-service.js";
+import {
+  buildMiraDocument,
+  type JsonLdNode,
+  type MiraDocument,
+  type MiraInput,
+} from "../../../src/services/mira-service.js";
 import type { EvidenceRecord } from "../../../src/services/citation-service.js";
 import type { QuestionDetailView } from "../../../src/services/question-service.js";
 import type { RequestView } from "../../../src/services/request-service.js";
+import { miraToNQuads, validateMira } from "../../mira-shacl.js";
 
-const schema = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../../docs/mira/minerval-mira-0.1.schema.json", import.meta.url)),
-    "utf8"
-  )
-);
-const ajv = new Ajv({ allErrors: true, strict: true });
-const addFormats = addFormatsModule as unknown as (a: Ajv) => Ajv;
-addFormats(ajv);
-const validate = ajv.compile(schema);
-
-function expectValid(bundle: unknown) {
-  const ok = validate(bundle);
-  expect(validate.errors ?? []).toEqual([]);
-  expect(ok).toBe(true);
+async function expectValid(doc: unknown) {
+  const report = await validateMira(doc);
+  expect(report.messages).toEqual([]);
+  expect(report.conforms).toBe(true);
 }
 
 const CLAIM_ID = "11111111-2222-3333-4444-555555555555";
@@ -41,6 +34,7 @@ const Q_ID = "99999999-1111-2222-3333-444444444444";
 const ANS_ID = "88888888-1111-2222-3333-444444444444";
 const ANS2_ID = "77777777-1111-2222-3333-444444444444";
 const SRC_ID = "ffffffff-1111-2222-3333-444444444444";
+const SRC2_ID = "ffffffff-2222-3333-4444-555555555555";
 const REQ_ID = "66666666-1111-2222-3333-444444444444";
 
 const WEB = "https://minerval.ai";
@@ -87,7 +81,6 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
         evaluation: null,
         subclaims: [
           { id: SUB_ID, text: "Supply chains drove the 2022 price rise.", relation: "requires", status: "supported" },
-          { id: SUB2_ID, text: "Some future relation.", relation: "entangles", status: null },
         ],
       },
       {
@@ -100,7 +93,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
         decisive: null,
         evaluation: null,
         subclaims: [
-          { id: SUB_ID, text: "Supply chains drove the 2022 price rise.", relation: "requires", status: "supported" },
+          { id: SUB2_ID, text: "Wages kept rising into 2023.", relation: "entangles", status: null },
         ],
       },
     ],
@@ -117,7 +110,7 @@ function record(overrides: Partial<EvidenceRecord> = {}): EvidenceRecord {
         quote: "Plainly transitory.",
         context: null,
         stance: "affirms",
-        source: { id: SRC_ID, title: "A skeptical column", url: "https://example.com/column", source_type: "news" },
+        source: { id: SRC2_ID, title: "An offline pamphlet", url: null, source_type: "unknown" },
       },
     ],
     disagreement: {
@@ -139,15 +132,18 @@ function request(overrides: Partial<RequestView> = {}): RequestView {
     satisfied_by: "A copy of the report with table 3.",
     who_could: null,
     addressed_to: null,
-    bears_on: [{ id: CLAIM_ID, text: 'Inflation in 2022 was "transitory".', kind: "claim" }],
+    bears_on: [
+      { id: CLAIM_ID, text: 'Inflation in 2022 was "transitory".', kind: "claim" },
+      { id: Q_ID, text: "What drove 2022 inflation?", kind: "question" },
+    ],
     bears_on_sources: [{ id: SRC_ID, title: "A skeptical column", url: "https://example.com/column" }],
     bears_on_text: null,
     filed_by: { kind: "mandate", label: "a funded mandate" },
-    keeper: { kind: "steward", label: "the claim's Steward" },
-    state: "open",
+    keeper: { kind: "curator", label: "the Curator" },
+    state: "in_progress",
     state_note: null,
     filed_at: new Date("2026-10-01T00:00:00.000Z"),
-    work: [],
+    work: [{ by: "Researcher", outcome: null, summary: "Writing to the authors.", at: new Date("2026-10-02T00:00:00.000Z"), funded_by: null }],
     ...overrides,
   };
 }
@@ -156,106 +152,131 @@ function input(overrides: Partial<MiraInput> = {}): MiraInput {
   return { record: record(), question: null, answers_questions: [], requests: [], ...overrides };
 }
 
-describe("buildMiraBundle: a claim", () => {
-  it("validates against the pinned profile schema", () => {
-    expectValid(buildMiraBundle(input({ requests: [request()] }), opts));
-  });
+const byId = (doc: MiraDocument, id: string) => doc["@graph"].find((n) => n["@id"] === id) as JsonLdNode;
+const ofType = (doc: MiraDocument, type: string) => doc["@graph"].filter((n) => n["@type"] === type);
 
-  it("puts the root first and names each record once", () => {
-    const bundle = buildMiraBundle(input(), opts);
-    expect(bundle.root).toBe(uri(CLAIM_ID));
-    expect(bundle.records[0]).toMatchObject({ id: uri(CLAIM_ID), type: "claim" });
-    const ids = bundle.records.map((r) => r.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    // One source record, though two instances cite it.
-    expect(bundle.records.filter((r) => r.type === "source")).toHaveLength(1);
-    expect(bundle.license).toBe("https://creativecommons.org/publicdomain/zero/1.0/");
-  });
-
-  it("omits credence where the graph omits it (§10), and states it where it is stated", () => {
-    const without = buildMiraBundle(input(), opts);
-    expect(without.records[0]!.extensions!.mv).not.toHaveProperty("credence");
-
-    const r = record();
-    r.assessment!.claim_credence = 0.62;
-    const withIt = buildMiraBundle(input({ record: r }), opts);
-    expect(withIt.records[0]!.extensions!.mv.credence).toBe(0.62);
-  });
-
-  it("resolves [[claim:...]] machinery in every piece of prose (§12)", () => {
-    const json = JSON.stringify(buildMiraBundle(input({ requests: [request()] }), opts));
-    expect(json).not.toContain("[[claim:");
-    const mv = buildMiraBundle(input(), opts).records[0]!.extensions!.mv;
-    expect(mv.summary).toBe("The dispute turns on Supply chains drove the 2022 price rise..");
-    expect(mv.reasoning_trace).toBe("Weighed the supply-chain premise against the data.");
-  });
-
-  it("maps decomposition edges to links once each, degrading unknown relations", () => {
-    const root = buildMiraBundle(input(), opts).records[0] as { links: { rel: string; target: string }[] };
-    expect(root.links).toEqual([
-      { rel: "requires", target: uri(SUB_ID) },
-      { rel: "related_to", target: uri(SUB2_ID) },
-    ]);
-  });
-
-  it("keeps arguments under the extension and exports decisiveness only once evaluated", () => {
-    const args = buildMiraBundle(input(), opts).records[0]!.extensions!.mv.arguments as Record<string, unknown>[];
-    expect(args[0]).toMatchObject({ name: "The supply-chain argument", verdict: "likely", decisive: false });
-    expect(args[1]).not.toHaveProperty("decisive");
-    expect(args[1]).not.toHaveProperty("name");
-  });
-
-  it("maps stances to evidence relations", () => {
-    const evidence = buildMiraBundle(input(), opts).records.filter((r) => r.type === "evidence");
-    expect(evidence.map((e) => (e as { relation: string }).relation)).toEqual(["disputes", "supports"]);
-    expect(evidence[0]).toMatchObject({ source: `${WEB}/sources/${SRC_ID}`, context: "From the opening paragraph." });
-  });
-
-  it("links a claim to the questions it answers", () => {
-    const bundle = buildMiraBundle(
-      input({ answers_questions: [{ id: Q_ID, text: "What drove 2022 inflation?", standing: "leaning" }] }),
-      opts
+describe("the validator", () => {
+  it("accepts MIRA's own sample data", async () => {
+    const sample = JSON.parse(
+      readFileSync(fileURLToPath(new URL("./fixtures/mira-sample-data.json", import.meta.url)), "utf8")
     );
-    expectValid(bundle);
-    expect((bundle.records[0] as { links: unknown[] }).links).toContainEqual({ rel: "answers", target: uri(Q_ID) });
-    expect(bundle.records.find((r) => r.id === uri(Q_ID))).toMatchObject({
-      type: "question",
-      extensions: { mv: { stub: true, standing: "leaning" } },
-    });
+    await expectValid(sample);
   });
 
-  it("attributes a mandate's request without naming a party (§12/§19)", () => {
-    const bundle = buildMiraBundle(input({ requests: [request()] }), opts);
-    const req = bundle.records.find((r) => r.type === "request")!;
-    expect(req.attribution[0]).toEqual({
-      name: "a funded mandate",
-      kind: "mandate",
-      role: "filer",
-      at: "2026-10-01T00:00:00.000Z",
-    });
-    expect(req).toMatchObject({
-      bears_on: [uri(CLAIM_ID), `${WEB}/sources/${SRC_ID}`],
-      ask: "The full text of the source behind Supply chains drove the 2022 price rise..",
-    });
-  });
-
-  it("is held to the schema: an unmapped field or relation fails it", () => {
-    const bundle = JSON.parse(JSON.stringify(buildMiraBundle(input(), opts)));
-    bundle.records.find((r: { type: string }) => r.type === "evidence").relation = "affirms";
-    expect(validate(bundle)).toBe(false);
-    const extra = JSON.parse(JSON.stringify(buildMiraBundle(input(), opts)));
-    extra.records[0].importance = 0.8;
-    expect(validate(extra)).toBe(false);
-  });
-
-  it("validates an unassessed claim with no evidence", () => {
-    expectValid(
-      buildMiraBundle(input({ record: record({ assessment: null, arguments: [], instances: [] }) }), opts)
-    );
+  it("rejects a property MIRA's closed shapes do not allow", async () => {
+    const doc = buildMiraDocument(input(), opts);
+    byId(doc, uri(CLAIM_ID))["mv:status"] = "supported";
+    const report = await validateMira(doc);
+    expect(report.conforms).toBe(false);
+    expect(report.messages.join("\n")).toContain("closed shape");
   });
 });
 
-describe("buildMiraBundle: a question", () => {
+describe("buildMiraDocument: a claim", () => {
+  it("conforms to MIRA's shapes", async () => {
+    await expectValid(buildMiraDocument(input({ requests: [request()] }), opts));
+  });
+
+  it("uses MIRA's context and states the export's terms", () => {
+    const doc = buildMiraDocument(input(), opts);
+    expect(doc["@context"][0]).toBe("https://purl.org/mira-science/mira.jsonld");
+    expect(byId(doc, `${uri(CLAIM_ID)}#mira`)).toMatchObject({
+      "@type": "mv:MiraExport",
+      "mv:root": { "@id": uri(CLAIM_ID) },
+      "dct:license": { "@id": "https://creativecommons.org/publicdomain/zero/1.0/" },
+    });
+    expect(byId(doc, uri(CLAIM_ID))).toMatchObject({
+      "@type": "Claim",
+      title: 'Inflation in 2022 was "transitory".',
+      creator: `${WEB}/#minerval`,
+    });
+  });
+
+  it("keeps the assessment beside the claim, and omits credence where the graph omits it (§10)", () => {
+    const rec = byId(buildMiraDocument(input(), opts), `${uri(CLAIM_ID)}#record`);
+    expect(rec).toMatchObject({
+      "mv:describes": { "@id": uri(CLAIM_ID) },
+      "mv:status": "inconclusive",
+      "mv:confidence": { "@value": "0.85", "@type": "xsd:decimal" },
+    });
+    expect(rec).not.toHaveProperty("mv:credence");
+
+    const r = record();
+    r.assessment!.claim_credence = 0.62;
+    expect(byId(buildMiraDocument(input({ record: r }), opts), `${uri(CLAIM_ID)}#record`)["mv:credence"]).toEqual({
+      "@value": "0.62",
+      "@type": "xsd:decimal",
+    });
+  });
+
+  it("resolves [[claim:...]] machinery in every piece of prose (§12)", async () => {
+    const doc = buildMiraDocument(input({ requests: [request()] }), opts);
+    expect(JSON.stringify(doc)).not.toContain("[[claim:");
+    expect(await miraToNQuads(doc)).not.toContain("[[claim:");
+    expect(byId(doc, `${uri(CLAIM_ID)}#record`)["mv:reasoningTrace"]).toBe(
+      "Weighed the supply-chain premise against the data."
+    );
+  });
+
+  it("maps premises to MIRA's supports and opposes by the argument's stance, keeping each edge's kind", () => {
+    const doc = buildMiraDocument(input(), opts);
+    expect(byId(doc, uri(SUB_ID))).toMatchObject({ "@type": "Claim", supports: uri(CLAIM_ID) });
+    expect(byId(doc, uri(SUB2_ID))).toMatchObject({ "@type": "Claim", opposes: uri(CLAIM_ID) });
+    expect(ofType(doc, "mv:Edge").map((e) => e["mv:relation"])).toEqual(["requires", "entangles"]);
+    const [first, second] = ofType(doc, "mv:Argument");
+    expect(first).toMatchObject({ "rdfs:label": "The supply-chain argument", "mv:verdict": "likely" });
+    expect(first).toHaveProperty("mv:decisive");
+    expect(second).not.toHaveProperty("mv:decisive");
+  });
+
+  it("records instances as Evidence from their sources", () => {
+    const doc = buildMiraDocument(input(), opts);
+    const evidence = ofType(doc, "Evidence");
+    expect(evidence[0]).toMatchObject({
+      observationStatement: uri(CLAIM_ID),
+      opposes: uri(CLAIM_ID),
+      sourceDocument: "https://example.com/column",
+      content: 'They said it was "transitory".',
+      description: { "@type": "Item", content: "From the opening paragraph." },
+    });
+    expect(evidence[1]).toMatchObject({ supports: uri(CLAIM_ID), sourceDocument: `${WEB}/sources/${SRC2_ID}` });
+    expect(byId(doc, `${WEB}/sources/${SRC2_ID}`)).toMatchObject({ "@type": "SourceDocument", title: "An offline pamphlet" });
+    expect(ofType(doc, "mv:Instance").map((i) => i["mv:stance"])).toEqual(["denies", "affirms"]);
+  });
+
+  it("links a claim to the questions it answers with MIRA's addresses", async () => {
+    const doc = buildMiraDocument(
+      input({ answers_questions: [{ id: Q_ID, text: "What drove 2022 inflation?", standing: "leaning" }] }),
+      opts
+    );
+    await expectValid(doc);
+    expect(byId(doc, uri(CLAIM_ID)).addresses).toBe(uri(Q_ID));
+    expect(byId(doc, uri(Q_ID))).toMatchObject({ "@type": "Question" });
+    expect(byId(doc, `${uri(Q_ID)}#record`)).toMatchObject({ "mv:standing": "leaning" });
+  });
+
+  it("exports requests: claims as request_target, everything else on the record, a mandate unnamed (§12/§19)", () => {
+    const doc = buildMiraDocument(input({ requests: [request()] }), opts);
+    const req = byId(doc, `${WEB}/requests/${REQ_ID}`);
+    expect(req).toMatchObject({
+      "@type": "Request",
+      title: "The full text of the source behind Supply chains drove the 2022 price rise..",
+      request_target: uri(CLAIM_ID),
+      creator: [{ "@type": "UserAccount", accountName: "a funded mandate" }, `${WEB}/#minerval`],
+    });
+    expect(byId(doc, `${WEB}/requests/${REQ_ID}#record`)).toMatchObject({
+      "mv:state": "in_progress",
+      "mv:bearsOn": [{ "@id": uri(CLAIM_ID) }, { "@id": uri(Q_ID) }, { "@id": "https://example.com/column" }],
+    });
+    expect(ofType(doc, "mv:RequestWork")).toHaveLength(1);
+  });
+
+  it("conforms with no assessment and no evidence", async () => {
+    await expectValid(buildMiraDocument(input({ record: record({ assessment: null, arguments: [], instances: [] }) }), opts));
+  });
+});
+
+describe("buildMiraDocument: a question", () => {
   function question(): QuestionDetailView {
     return {
       standing: "leaning",
@@ -278,66 +299,58 @@ describe("buildMiraBundle: a question", () => {
       depended_on_by: [],
       instances: [
         { id: "eeeeeeee-3333-3333-4444-555555555555", role: "answers", verbatim_text: "Supply shocks did it.", source_title: "A paper", source_url: null, source_type: "paper", answer_id: ANS_ID },
+        { id: "eeeeeeee-4444-3333-4444-555555555555", role: "asks", verbatim_text: "What drove it?", source_title: "A paper", source_url: null, source_type: "paper", answer_id: null },
       ],
     };
   }
 
   function questionInput(): MiraInput {
+    const source = { id: SRC_ID, title: "A paper", url: null, source_type: "paper" };
     return input({
       record: record({
         claim: { ...record().claim, id: Q_ID, kind: "question", text: "What drove 2022 inflation?" },
         assessment: null,
         arguments: [],
         instances: [
-          {
-            id: "eeeeeeee-3333-3333-4444-555555555555",
-            quote: "Supply shocks did it.",
-            context: null,
-            stance: "answers",
-            source: { id: SRC_ID, title: "A paper", url: null, source_type: "paper" },
-          },
+          { id: "eeeeeeee-3333-3333-4444-555555555555", quote: "Supply shocks did it.", context: null, stance: "answers", source },
+          { id: "eeeeeeee-4444-3333-4444-555555555555", quote: "What drove it?", context: null, stance: "asks", source },
         ],
       }),
       question: question(),
     });
   }
 
-  it("validates against the pinned profile schema", () => {
-    expectValid(buildMiraBundle(questionInput(), opts));
+  it("conforms to MIRA's shapes", async () => {
+    await expectValid(buildMiraDocument(questionInput(), opts));
   });
 
-  it("exports the root as a question linked to its answers and presuppositions", () => {
-    const bundle = buildMiraBundle(questionInput(), opts);
-    const root = bundle.records[0] as { type: string; links: unknown[]; extensions: { mv: Record<string, unknown> } };
-    expect(root.type).toBe("question");
-    expect(root.links).toEqual([
-      { rel: "answered_by", target: uri(ANS_ID) },
-      { rel: "answered_by", target: uri(ANS2_ID) },
-      { rel: "presupposes", target: uri(SUB_ID) },
-    ]);
-    expect(root.extensions.mv).toMatchObject({
-      standing: "leaning",
-      favored_answers: [uri(ANS_ID)],
-      summary: "Leaning toward Supply shocks..",
+  it("exports the root as a Question its answers address, with its standing beside it", () => {
+    const doc = buildMiraDocument(questionInput(), opts);
+    expect(byId(doc, uri(Q_ID))["@type"]).toBe("Question");
+    expect(byId(doc, uri(ANS_ID))).toMatchObject({ "@type": "Claim", addresses: uri(Q_ID) });
+    expect(byId(doc, uri(ANS2_ID))).toMatchObject({ addresses: uri(Q_ID) });
+    expect(byId(doc, `${uri(Q_ID)}#record`)).toMatchObject({
+      "mv:standing": "leaning",
+      "mv:favors": { "@id": uri(ANS_ID) },
+      "rdfs:comment": "Leaning toward Supply shocks..",
     });
-    expect(root.extensions.mv).not.toHaveProperty("status");
-  });
-
-  it("carries answer relations both ways and credence only where stated", () => {
-    const bundle = buildMiraBundle(questionInput(), opts);
-    const ans = bundle.records.find((r) => r.id === uri(ANS_ID)) as { links: unknown[]; extensions: { mv: Record<string, unknown> } };
-    const ans2 = bundle.records.find((r) => r.id === uri(ANS2_ID)) as { links: unknown[]; extensions: { mv: Record<string, unknown> } };
-    expect(ans.links).toEqual([
-      { rel: "answers", target: uri(Q_ID) },
-      { rel: "compatible_with", target: uri(ANS2_ID) },
+    expect(byId(doc, `${uri(ANS_ID)}#record`)["mv:credence"]).toEqual({ "@value": "0.7", "@type": "xsd:decimal" });
+    expect(byId(doc, `${uri(ANS2_ID)}#record`)).not.toHaveProperty("mv:credence");
+    expect(ofType(doc, "mv:AnswerRelation")[0]).toMatchObject({ "mv:relation": "compatible" });
+    expect(ofType(doc, "mv:Edge").map((e) => [e["mv:relation"], e["mv:answerBasis"]])).toEqual([
+      ["answers", "quality"],
+      ["answers", "prominence"],
+      ["presupposes", undefined],
     ]);
-    expect(ans2.links).toContainEqual({ rel: "compatible_with", target: uri(ANS_ID) });
-    expect(ans.extensions.mv.credence).toBe(0.7);
-    expect(ans2.extensions.mv).not.toHaveProperty("credence");
   });
 
-  it("names the matched answer on an answering instance", () => {
-    const ev = buildMiraBundle(questionInput(), opts).records.find((r) => r.type === "evidence");
-    expect(ev).toMatchObject({ relation: "answers", target: uri(Q_ID), answer: uri(ANS_ID) });
+  it("records an answering source as Evidence for its answer, and an asking source on its instance alone", () => {
+    const doc = buildMiraDocument(questionInput(), opts);
+    const evidence = ofType(doc, "Evidence");
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({ observationStatement: uri(ANS_ID), supports: uri(ANS_ID) });
+    const instances = ofType(doc, "mv:Instance");
+    expect(instances.map((i) => i["mv:stance"])).toEqual(["answers", "asks"]);
+    expect(instances[1]).not.toHaveProperty("mv:evidence");
   });
 });
