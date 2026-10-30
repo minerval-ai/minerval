@@ -10,12 +10,12 @@
     "test": "tsx test/lean-checker-stack.test.ts"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.239.0",
+    "aws-cdk-lib": "^2.274.0",
     "constructs": "^10.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "aws-cdk": "^2.1106.1",
+    "aws-cdk": "^2.1146.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
