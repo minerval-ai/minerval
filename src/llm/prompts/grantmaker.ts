@@ -3,9 +3,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Grantmaker
@@ -189,18 +187,17 @@ ${RAISING_ISSUES}
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("grantmaker")}`;
+${skillsSection("grantmaker")}`;
 
 export function getGrantmakerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (grantmaker's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getGrantmakerSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "grantmaker"));
+export function getGrantmakerSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

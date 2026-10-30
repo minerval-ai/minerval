@@ -1,7 +1,7 @@
 import { buildAdminPrompt } from "./constitution.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
+  skillsSection,
   getSkillViews,
   type Skill,
 } from "./skills.js";
@@ -141,10 +141,10 @@ to ask, is proposed as a question, in neutral wording.
   position reference), when the format makes that meaningful; the browser
   extension uses it to anchor claims back onto the page.
 - **domains**: the claim's domain tags, from the closed list of domains that
-  have a skill (the Domain skills section below names them and says what
-  belongs in each); an empty list when none applies. A prior: the Steward
-  confirms or corrects it, and it selects which skills the claim's
-  administrators carry.
+  have a skill (the Skills section below names them and says what belongs
+  in each); an empty list when none applies. A prior: the Steward confirms
+  or corrects it, and it points the claim's administrators to the skills
+  that cover its subject.
 
 ## The importance and contestation priors
 
@@ -170,7 +170,7 @@ separately visible.
 Emit only claims that pass the bar. A short list is the expected result; do
 not pad.
 
-${domainSkillsSection("extractor")}`;
+${skillsSection("extractor")}`;
 
 export function getExtractorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
@@ -178,7 +178,8 @@ export function getExtractorSystemPrompt(): string {
 
 /**
  * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (extractor's view of each), in that order.
+ * block per skill (the Extractor's view of each), in that order. The
+ * Extractor is the one role whose skills are spliced rather than loaded.
  */
 export function getExtractorSystemPromptBlocks(
   opts: { skills?: readonly Skill[] } = {}

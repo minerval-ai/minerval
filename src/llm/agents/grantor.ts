@@ -41,7 +41,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
-import { skillsByName } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import type { GrantMandate } from "./grantmaker.js";
 import {
@@ -117,10 +117,10 @@ async function runGrantorImpl(input: {
   if (!grant) throw new Error(`mandate ${input.grantId} not found or not in planning`);
 
   const budgetOwls = microUsdToOwls(Number(grant.budget_micro_usd));
-  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): one
-  // cached block for the constitution and role, plus one per skill.
-  const skills = skillsByName(grant.skills ?? []);
-  const system = getGrantmakerSystemPromptBlocks({ skills });
+  // Skills load on demand; the mandate's grants.skills points to the ones
+  // its work needs (docs/mathematics.md §3.4).
+  const skillLoader = createSkillLoadTools("grantmaker", { names: grant.skills ?? [] });
+  const system = getGrantmakerSystemPromptBlocks();
   system[0] =
     system[0] +
     `\n\n## Planning mode\n\n` +
@@ -210,15 +210,17 @@ async function runGrantorImpl(input: {
 
   let plan: GrantorPlan | null = null;
 
-  await withSkills(skills.map((s) => s.name), () =>
+  await withSkills([], () =>
     toolUseLoop({
-      initialMessages: [{ role: "user", content: briefing }],
-      tools: [webSearch.tool, ...tools],
+      initialMessages: [{ role: "user", content: briefing + skillLoader.pointerNote }],
+      tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
       system,
       model,
       maxTokens: 8192,
       maxIterations: PLANNING_MAX_TURNS,
       executeTool: async (name, toolInput) => {
+        const loaded = await skillLoader.execute(name, toolInput);
+        if (loaded !== null) return loaded;
         if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) {
           return webSearch.execute(toolInput);
         }

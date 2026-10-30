@@ -48,6 +48,8 @@
       "For the Extractor"
     ],
     "researcher": [
+      "For every administrator",
+      "For the Claim Steward",
       "For the researcher"
     ]
   },
@@ -135,6 +137,13 @@
           "key": "extractor",
           "sections": [
             "For the Extractor"
+          ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For every administrator",
+            "For the Claim Steward"
           ]
         }
       ],
@@ -495,6 +504,8 @@
         {
           "key": "researcher",
           "sections": [
+            "For every administrator",
+            "For the Claim Steward",
             "For the researcher"
           ]
         }

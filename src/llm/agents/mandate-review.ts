@@ -35,7 +35,7 @@ import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
-import { skillsByName } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -119,10 +119,10 @@ async function runMandateReviewImpl(input: {
   );
   if (!grant) throw new Error(`mandate ${input.grantId} not found or not active`);
 
-  // Mandate-scoped runs read grants.skills (docs/mathematics.md §3.4): one
-  // cached block for the constitution and role, plus one per skill.
-  const skills = skillsByName(grant.skills ?? []);
-  const system = getGrantmakerSystemPromptBlocks({ skills });
+  // Skills load on demand; the mandate's grants.skills points to the ones
+  // its work needs (docs/mathematics.md §3.4).
+  const skillLoader = createSkillLoadTools("grantmaker", { names: grant.skills ?? [] });
+  const system = getGrantmakerSystemPromptBlocks();
 
   const committed = await grantCommittedMicroUsd({
     id: grant.id,
@@ -596,17 +596,19 @@ async function runMandateReviewImpl(input: {
       : t.name !== "update_allocation_policy"
   );
 
-  const result = await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  const result = await withSkills([], () => toolUseLoop({
     initialMessages: [
-      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}` },
+      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}${skillLoader.pointerNote}` },
     ],
-    tools: [webSearch.tool, ...availableTools],
+    tools: [webSearch.tool, ...availableTools, ...skillLoader.definitions],
     system,
     model,
     maxTokens: 4096,
     maxIterations: REVIEW_PASS_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

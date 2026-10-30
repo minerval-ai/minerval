@@ -29,7 +29,7 @@ vi.mock("../../../src/llm/agents/skill-selection.js", () => ({
 }));
 vi.mock("../../../src/llm/tools/skill-tools.js", () => ({
   getActiveSkillToolDefinitions: vi.fn((skills: Array<{ name: string }>, role: "claim-steward") =>
-    skills.length > 0 ? mocks.toolsByRole[role].map((name) => ({ name, description: "", input_schema: {} })) : []
+    mocks.toolsByRole[role].map((name) => ({ name, description: "", input_schema: {} }))
   ),
 }));
 
@@ -96,7 +96,7 @@ describe("invokeStewardDirect", () => {
   });
 });
 
-describe("the trigger's tools must come from the claim's skills (§3.4)", () => {
+describe("the trigger's tools must be declared for the Steward (§3.5)", () => {
   beforeEach(() => {
     mocks.runClaimSteward.mockClear();
     mocks.config.stewardStrongModel = "strong-model";
@@ -116,29 +116,22 @@ describe("the trigger's tools must come from the claim's skills (§3.4)", () => 
     });
   });
 
-  it("refuses every money trigger on an untagged claim, loudly, and never runs the model", async () => {
+  it("runs a money trigger on an untagged claim: skill tools are offered whether or not a skill is loaded", async () => {
     mocks.skills = [];
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    for (const trigger of MONEY_TRIGGERS) {
-      await expect(invokeStewardDirect({ trigger, claimId: "c-untagged", context: "x" })).rejects.toThrow(
-        new RegExp(`refusing the ${trigger} trigger on claim c-untagged: its recorded domains activate no skill`)
-      );
-    }
-    expect(mocks.runClaimSteward).not.toHaveBeenCalled();
-    expect(error).toHaveBeenCalledTimes(MONEY_TRIGGERS.length);
-    expect(String(error.mock.calls[0]![0])).toMatch(/\[steward-direct\] refusing the formalize trigger .*\(set_claim_domains\)/);
-    error.mockRestore();
+    await invokeStewardDirect({ trigger: "prize_claim", claimId: "c-untagged", context: "x" });
+    expect(mocks.runClaimSteward).toHaveBeenCalledTimes(1);
   });
 
-  it("names the skills that are active and the tools they lack", async () => {
+  it("refuses a trigger whose tools no skill declares for the Steward, loudly, and never runs the model", async () => {
     mocks.skills = [{ name: "mathematics" }];
     mocks.toolsByRole["claim-steward"] = ["lean_search", "get_prize_claim"];
     const missing = await missingTriggerTools("prize_claim", "c1");
     expect(missing).toEqual({ skills: ["mathematics"], active: ["lean_search", "get_prize_claim"], missing: ["decide_prize_claim"] });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(invokeStewardDirect({ trigger: "prize_claim", claimId: "c1", context: "x" })).rejects.toThrow(
-      /the skill\(s\) mathematics, which carry none of decide_prize_claim/
+      /refusing the prize_claim trigger on claim c1: no skill declares decide_prize_claim for the Steward/
     );
+    expect(String(error.mock.calls[0]![0])).toMatch(/\[steward-direct\] refusing the prize_claim trigger/);
     error.mockRestore();
     expect(mocks.runClaimSteward).not.toHaveBeenCalled();
   });

@@ -25,7 +25,9 @@ vi.mock("../../../src/llm/prompts/matcher.js", () => ({
   getMatcherSystemPromptBlocks: () => ["system"],
   getMatchingPrompt: () => "prompt",
 }));
-vi.mock("../../../src/llm/prompts/skills.js", () => ({ skillsForDomains: () => [] }));
+vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
+  createSkillLoadTools: () => ({ definitions: [], execute: async () => null, pointed: [], pointerNote: "" }),
+}));
 vi.mock("../../../src/services/embedding-service.js", () => ({ generateEmbedding: vi.fn() }));
 vi.mock("../../../src/services/search-service.js", () => ({
   findSimilarClaims: vi.fn(async () => RETRIEVED),

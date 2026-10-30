@@ -466,6 +466,21 @@ under 600 lines; only recognized H2s; no em-dashes; no time-sensitive text.
 
 ### 3.3 The loader and prompt composition
 
+> **Superseded: skills now load on demand.** Sections 3.3 to 3.5 describe
+> the first design, in which a skill's view was spliced into the system
+> prompt whenever the claim's domains (or the mandate's skills) activated
+> it, and `load_skill` was a deferred fallback. Skills now load on demand,
+> as the Agent Skills format intends: each role's prompt carries the
+> catalog, the agent reads a skill with `load_skill`
+> (`src/llm/tools/skill-load-tools.ts`), and every load is recorded on the
+> run and on any assessment written after it. A claim's domains and a
+> mandate's skills point to a skill in the task message rather than load
+> it. A skill's tools are in the role's toolset whether or not it is
+> loaded, so the money triggers no longer depend on the claim's tags. The
+> Extractor, which makes one structured call with no tools, still has its
+> sections spliced. `skills/README.md` is the current account.
+
+
 `src/llm/prompts/skills.ts` loads `skills/<name>/SKILL.md` the way
 `constitution.ts:9-23` loads the constitution: resolved relative to the
 module, read once per process, failing loudly if a referenced skill is

@@ -10,7 +10,8 @@
  */
 import { toolUseLoop } from "../client.js";
 import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { listSkills } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
   getGraphToolDefinitions,
   executeGraphTool,
@@ -168,7 +169,8 @@ Proceed:
    lean_elaborate until it type-checks. Where hypotheses could be vacuous,
    include a witness \`example\`.
 3. Read the elaborated statement as an adversary would, against the vacuity
-   checklist in the Mathematics skill. Where a community formalization
+   checklist in the Mathematics skill (load it with load_skill if you have
+   not). Where a community formalization
    exists, start from it and cite it in your review notes.
 4. Record it once with publish_formalization (statement_source,
    correspondence in the graph's voice, review_notes for the audit). The
@@ -266,24 +268,29 @@ async function runClaimStewardImpl(input: {
   // word against the run's budget inside the bundle.
   const pangramTools = createPangramTools({ config });
 
-  // Domain skills (docs/mathematics.md §3.4): selected by the claim's
-  // recorded domains, never by who funds the run. Their tools sit in a fixed
+  // Skills load on demand (load_skill): the prompt carries the catalog,
+  // and the claim's recorded domains point the task at the domain skills
+  // that cover its subject. The tools every skill declares for the Steward
+  // are in the toolset whether or not the run loads the skill, in a fixed
   // position after the Elicit tools and before web_search, so the cache
-  // breakpoint on the last tool is deterministic per skill variant. There is
-  // no importance gate on them: the skill text carries the judgment about
-  // when a check is worth its cost, and the run's budget prices it.
+  // breakpoint on the last tool is stable. No importance gate: the skill
+  // text carries the judgment about when a check is worth its cost, and the
+  // run's budget prices it.
   const claimDomains = sanitizeDomains(claimRow?.domains ?? []);
-  const skills = skillsForDomains(claimDomains, "claim-steward");
-  // The Lean tools are present exactly when the skill is active AND a
-  // checker is configured (docs/mathematics.md §6.2); without a checker the
-  // run is told the formal tools are unavailable and assesses on the
-  // informal evidence. The skill's other tools are not gated on the checker.
+  const skillLoader = createSkillLoadTools("claim-steward", { domains: claimDomains });
+  // The Lean tools are present only when a checker is configured
+  // (docs/mathematics.md §6.2); without one the run is told the formal
+  // tools are unavailable and assesses on the informal evidence.
   const checkerConfigured = leanCheckerConfigured(config);
-  const allSkillTools = getActiveSkillToolDefinitions(skills, "claim-steward");
+  const allSkillTools = getActiveSkillToolDefinitions(listSkills(), "claim-steward");
   const skillTools = checkerConfigured
     ? allSkillTools
     : allSkillTools.filter((t) => !isLeanTool(t.name));
-  const leanToolsWithheld = allSkillTools.some((t) => isLeanTool(t.name)) && !checkerConfigured;
+  // Said only where it bears: on a claim whose domains point to a skill
+  // that brings the formal tools.
+  const leanToolsWithheld =
+    !checkerConfigured &&
+    skillLoader.pointed.some((sk) => sk.tools.some((t) => isLeanTool(t.name)));
 
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -308,6 +315,7 @@ async function runClaimStewardImpl(input: {
     getMatcherToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
+    ...skillLoader.definitions,
     ...skillTools,
     ...researchTools.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
@@ -346,22 +354,11 @@ pangram_find_sources finds web content matching a text.`
       : "";
 
 
-  const skillsNote =
-    skills.length > 0
-      ? `
-
-Skills active for this run: ${skills
-          .map((s) => `${s.name} (version ${s.version})`)
-          .join(", ")}. Each follows your role in the system prompt as its own block${
-          skillTools.length > 0
-            ? `, and the tools it brings (${skillTools.map((t) => t.name).join(", ")}) are in your toolset`
-            : ""
-        }.${
-          leanToolsWithheld
-            ? ` The formal tools are unavailable this run: no Lean checker is configured, so the lean_* tools and publish_formalization are absent. Assess on the informal evidence, and record in your reasoning trace that formal verification was unavailable.`
-            : ""
-        }`
-      : "";
+  const skillsNote = `${skillLoader.pointerNote}${
+    leanToolsWithheld
+      ? `\n\nThe formal tools are unavailable this run: no Lean checker is configured, so the lean_* tools and publish_formalization are absent. Assess on the informal evidence, and record in your reasoning trace that formal verification was unavailable.`
+      : ""
+  }`;
 
   const formalTask = await formalizationTask(
     input.trigger,
@@ -391,19 +388,19 @@ conclusion immediately.
 
 ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsNote}`;
 
-  // One cached block for the constitution and role, plus one per active skill,
-  // so the shared block's cache entry is the same for skilled and unskilled runs.
+  // One cached block for the constitution and role; skills arrive as tool
+  // results when the run loads them.
   const system =
     kind === "question"
-      ? getQuestionStewardSystemPromptBlocks({ skills })
-      : getClaimStewardSystemPromptBlocks({ skills });
+      ? getQuestionStewardSystemPromptBlocks()
+      : getClaimStewardSystemPromptBlocks();
 
   // A run that ends its turn with no assessment recorded — GLM 5.3 Flash
   // has returned an empty end_turn after seventeen steps of structuring —
   // loses the whole pass. One nudge, only while nothing was recorded.
   let assessmentRecorded = false;
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
@@ -441,6 +438,8 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
     },
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
@@ -454,8 +453,8 @@ ${formalTask ?? defaultTask(passNote, kind)}${elicitNote}${pangramNote}${skillsN
         // The Matcher receives the domains its caller knows.
         return executeMatcherTool(name, toolInput, { domains: claimDomains });
       }
-      // Skill tools (docs/mathematics.md §3.5): present exactly when the
-      // skill is active for this claim. A proof check is billed from the
+      // Skill tools (docs/mathematics.md §3.5): in the toolset whether or
+      // not the skill is loaded. A proof check is billed from the
       // checker's time, so it waits for budget like any paid tool.
       if (isSkillTool(name)) {
         if (name === "lean_check") {

@@ -3,9 +3,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 import {
   BOUNDARIES,
@@ -132,7 +130,7 @@ const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSME
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("claim-steward")}`;
+${skillsSection("claim-steward")}`;
 
 export function getQuestionStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
@@ -140,12 +138,9 @@ export function getQuestionStewardSystemPrompt(): string {
 
 /**
  * The prompt as system blocks, as for the Claim Steward: the
- * constitution-plus-role block, then one block per active domain skill. A
- * question carries the domain skills its tags select, read in the Claim
- * Steward's view.
+ * constitution-plus-role block. A question's Steward loads skills in the
+ * Claim Steward's view.
  */
-export function getQuestionStewardSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "claim-steward"));
+export function getQuestionStewardSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

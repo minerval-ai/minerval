@@ -468,10 +468,11 @@ export const assessments = pgTable(
     // from the usage context (never by the agent), so "who funded this
     // verdict" is always answerable. NULL = ordinary system work.
     fundedByJobId: uuid("funded_by_job_id"),
-    // The domain skills the writing run carried (skill names), stamped from
-    // the usage context by update_claim_assessment, so "which assessments
-    // were made under the Mathematics skill" is a query. NULL = legacy rows
-    // from before skills existed; [] = an unskilled run.
+    // The skills the writing run had loaded when it wrote this (skill
+    // names), stamped from the usage context by update_claim_assessment, so
+    // "which assessments were made under the Mathematics skill" is a query.
+    // NULL = legacy rows from before skills existed; [] = a run that had
+    // loaded none.
     skills: text("skills").array(),
     isCurrent: boolean("is_current").notNull().default(true),
     subclaimSummary: jsonb("subclaim_summary").notNull().default({}),
@@ -1532,8 +1533,9 @@ export const agentRuns = pgTable(
     // Step count at finish — a cheap completeness check against agent_steps
     // (fire-and-forget step inserts can individually fail).
     steps: integer("steps").notNull().default(0),
-    // The domain skills the run carried (skill names), recorded once the
-    // agent has resolved them; NULL until then or for runs that carry none.
+    // The skills the run had in hand (skill names): those in its prompt when
+    // it opened (usually none) and each it loaded with load_skill, updated
+    // at every load; NULL for runs that never opened a skills list.
     skills: text("skills").array(),
   },
   (table) => [

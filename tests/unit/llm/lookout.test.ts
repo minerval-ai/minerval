@@ -59,8 +59,8 @@ vi.mock("../../../src/llm/usage-context.js", () => ({
 vi.mock("../../../src/llm/prompts/lookout.js", () => ({
   getLookoutSystemPromptBlocks: () => ["SYSTEM"],
 }));
-vi.mock("../../../src/llm/prompts/skills.js", () => ({
-  skillsByName: () => [],
+vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
+  createSkillLoadTools: () => ({ definitions: [], execute: async () => null, pointed: [], pointerNote: "" }),
 }));
 vi.mock("../../../src/llm/tools/report-tools.js", () => ({
   createReportTools: () => ({

@@ -4,9 +4,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Dispute Arbitrator
@@ -145,18 +143,17 @@ ${RAISING_ISSUES}
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("dispute-arbitrator")}`;
+${skillsSection("dispute-arbitrator")}`;
 
 export function getDisputeArbitratorSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (dispute-arbitrator's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getDisputeArbitratorSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "dispute-arbitrator"));
+export function getDisputeArbitratorSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

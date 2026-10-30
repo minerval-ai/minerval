@@ -3,9 +3,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Audit Agent
@@ -168,18 +166,17 @@ ${RAISING_ISSUES}
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("audit-agent")}`;
+${skillsSection("audit-agent")}`;
 
 export function getAuditAgentSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (audit-agent's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getAuditAgentSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "audit-agent"));
+export function getAuditAgentSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

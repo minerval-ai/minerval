@@ -25,6 +25,7 @@
 import { loadConfig } from "../config.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
+import { listSkills } from "../llm/prompts/skills.js";
 import { getActiveSkillToolDefinitions } from "../llm/tools/skill-tools.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { getJobRemainingMicroUsd } from "../services/budget-job-service.js";
@@ -99,32 +100,33 @@ export function moneyTriggerModel(trigger: MoneyTrigger, override?: string): str
 }
 
 /**
- * The skill tools the claim's recorded domains activate for the Steward,
- * and the trigger's required tools that are missing from them.
+ * The skill tools the Steward is offered (every skill's tools for the role,
+ * whether or not the run loads the skill), the skills whose recorded
+ * domains cover the claim, and the trigger's required tools that no skill
+ * declares for the Steward.
  */
 export async function missingTriggerTools(
   trigger: MoneyTrigger,
   claimId: string
 ): Promise<{ skills: string[]; active: string[]; missing: string[] }> {
   const skills = await skillsForClaim(claimId);
-  const active = getActiveSkillToolDefinitions(skills, "claim-steward").map((t) => t.name);
+  const active = getActiveSkillToolDefinitions(listSkills(), "claim-steward").map((t) => t.name);
   const missing = REQUIRED_TOOLS_BY_TRIGGER[trigger].filter((name) => !active.includes(name));
   return { skills: skills.map((s) => s.name), active, missing };
 }
 
 /**
- * Refuse a money trigger whose tools the claim's skills do not carry. The
- * error names the claim, the trigger, the recorded skills, and the remedy.
+ * Refuse a money trigger whose tools no skill declares for the Steward: a
+ * deployment fault, since the run would decide nothing. The error names the
+ * claim, the trigger, and the missing tools.
  */
 export async function assertTriggerToolsActive(trigger: MoneyTrigger, claimId: string): Promise<void> {
-  const { skills, missing } = await missingTriggerTools(trigger, claimId);
+  const { missing } = await missingTriggerTools(trigger, claimId);
   if (missing.length === 0) return;
   const message =
-    `refusing the ${trigger} trigger on claim ${claimId}: its recorded domains activate ` +
-    `${skills.length > 0 ? `the skill(s) ${skills.join(", ")}` : "no skill"}, which carry none of ` +
-    `${missing.join(", ")} for the Steward; the run would decide nothing. Tag the claim with the ` +
-    "domain whose skill declares the tool (set_claim_domains) and the next invocation carries it " +
-    "(docs/mathematics.md §3.4, §6.4)";
+    `refusing the ${trigger} trigger on claim ${claimId}: no skill declares ` +
+    `${missing.join(", ")} for the Steward, so the run would decide nothing. Restore the ` +
+    "tool in the skill's tools.json (docs/mathematics.md §3.5, §6.4)";
   console.error(`[steward-direct] ${message}`);
   throw new Error(message);
 }

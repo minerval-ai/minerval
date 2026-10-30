@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 10312,
-    "fullChars": 89532,
+    "roleChars": 10753,
+    "fullChars": 89973,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 13001,
-    "fullChars": 92221,
+    "roleChars": 13433,
+    "fullChars": 92653,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 22535,
-    "fullChars": 101755,
+    "roleChars": 23641,
+    "fullChars": 102861,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 53822,
-    "fullChars": 133042,
+    "roleChars": 54928,
+    "fullChars": 134148,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 30335,
-    "fullChars": 109555,
+    "roleChars": 31441,
+    "fullChars": 110661,
     "skills": []
   },
   {
@@ -131,8 +131,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17487,
-    "fullChars": 96707,
+    "roleChars": 18593,
+    "fullChars": 97813,
     "skills": [
       {
         "name": "mathematics",
@@ -160,8 +160,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 18201,
-    "fullChars": 97421,
+    "roleChars": 19307,
+    "fullChars": 98527,
     "skills": [
       {
         "name": "mathematics",
@@ -187,8 +187,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19566,
-    "fullChars": 98786,
+    "roleChars": 20672,
+    "fullChars": 99892,
     "skills": [
       {
         "name": "mathematics",
@@ -226,8 +226,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 21504,
-    "fullChars": 100724,
+    "roleChars": 22610,
+    "fullChars": 101830,
     "skills": [
       {
         "name": "mathematics",
@@ -253,8 +253,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 12555,
-    "fullChars": 91775,
+    "roleChars": 13661,
+    "fullChars": 92881,
     "skills": [
       {
         "name": "mathematics",
@@ -305,12 +305,21 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 9468,
-    "fullChars": 88688,
+    "roleChars": 11846,
+    "fullChars": 91066,
     "skills": [
+      {
+        "name": "mathematics",
+        "sections": [
+          "For every administrator",
+          "For the Claim Steward"
+        ]
+      },
       {
         "name": "provenance",
         "sections": [
+          "For every administrator",
+          "For the Claim Steward",
           "For the researcher"
         ]
       }

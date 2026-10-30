@@ -49,15 +49,15 @@ export default async function AgentPage({ params }: { params: Promise<{ key: str
           <Link href="/docs/constitution">Constitution</Link> (identical for all agents),{" "}
           <strong>(2)</strong> the role-specific instructions below, which carry this
           agent&rsquo;s operating standards, <strong>(3)</strong> the{" "}
-          <Link href="/docs/skills">domain skills</Link> active for the run, one block each
-          after the role, and <strong>(4)</strong> the task context, supplied at runtime.
+          <Link href="/docs/skills">skills</Link> the agent loads with load_skill when its
+          work calls for them, and <strong>(4)</strong> the task context, supplied at runtime.
           Authority runs in that order: a skill may sharpen a role&rsquo;s obligations and
           never loosen them. What follows is layer 2, verbatim.
         </p>
         <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--muted)", maxWidth: "34rem" }}>
-          <strong style={{ color: "var(--ink-soft)" }}>Domain skills:</strong>{" "}
+          <strong style={{ color: "var(--ink-soft)" }}>Skills:</strong>{" "}
           {agent.skills.length === 0 ? (
-            <>none can be spliced into this agent.</>
+            <>this agent can load none.</>
           ) : (
             <>
               {agent.skills.map((s, i) => (
@@ -66,13 +66,12 @@ export default async function AgentPage({ params }: { params: Promise<{ key: str
                   <Link href={`/docs/skills/${s.name}`}>{s.name}</Link> ({s.sections.join(", ")})
                 </span>
               ))}
-              . A skill is spliced in when the claim the run serves carries its domain tag
-              {agent.key === "grantmaker"
-                ? " (for the Grantmaker, when its mandate names the skill)"
-                : agent.key === "extractor"
-                  ? " (the Extractor always carries its section, since it tags claims)"
-                  : ""}
-              ; funding never selects it.
+              {agent.key === "extractor"
+                ? ". The Extractor carries these sections in its prompt, since it tags claims and makes one call with no tools"
+                : ". The agent loads a skill when its work calls for it; a claim's domain tags" +
+                  (agent.key === "grantmaker" ? " (for the Grantmaker, its mandate's skills)" : "") +
+                  " point it to the skills that cover the subject, and funding never does"}
+              .
             </>
           )}
         </p>

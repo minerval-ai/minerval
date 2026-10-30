@@ -89,8 +89,7 @@ for (const name of ["lean_search", "lean_elaborate", "lean_check", "publish_form
 registerLeanTools(registerSkillTool);
 registerAttemptTools(registerSkillTool);
 registerPrizeTools(registerSkillTool);
-// The Provenance skill's tools (#286): a method skill, so every Steward run
-// carries them.
+// The Provenance skill's tools (#286).
 registerProvenanceTools(registerSkillTool);
 
 /** Every tool name declared by any skill's tools.json. */
@@ -102,7 +101,11 @@ export function isSkillTool(name: string): boolean {
   return declaredSkillToolNames().has(name);
 }
 
-/** The tool definitions the active skills bring to `role`, in skill order. */
+/**
+ * The tool definitions `skills` declare for `role`, in skill order. Agents
+ * pass every skill (listSkills()): a skill's tools are in the toolset
+ * whether or not the run loads its text.
+ */
 export function getActiveSkillToolDefinitions(
   skills: readonly Skill[],
   role: SkillRole
@@ -179,6 +182,7 @@ const AGENT_INLINE_TOOL_NAMES = [
   "ingestion_report",
   "submit_plan",
   "read_page",
+  "load_skill",
 ];
 
 /** Every tool name the existing families define, plus the inline ones above. */
