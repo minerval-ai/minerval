@@ -1131,6 +1131,33 @@ describe("MCP tools", () => {
     await client.close();
   });
 
+  it("serves the principles for callers: instructions, constitution, skills", async () => {
+    expect(client.getInstructions()).toContain("minerval://constitution");
+    const constitution = await client.readResource({
+      uri: "minerval://constitution",
+    });
+    expect((constitution.contents[0] as { text: string }).text).toContain(
+      "# The Epistemic Graph Administrator Constitution"
+    );
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri)).toEqual(
+      expect.arrayContaining([
+        "minerval://constitution",
+        "minerval://skills/administrator-skills",
+        "minerval://skills/claim-checking",
+        "minerval://skills/commissioning-research",
+        "minerval://skills/minerval-constitution",
+      ])
+    );
+    const skill = await client.readResource({
+      uri: "minerval://skills/commissioning-research",
+    });
+    expect((skill.contents[0] as { text: string }).text).toContain(
+      "name: commissioning-research"
+    );
+    await client.close();
+  });
+
   it("reads the claim:// resource", async () => {
     const resource = await client.readResource({
       uri: `claim://${CLAIM_ID}`,

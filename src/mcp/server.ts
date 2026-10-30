@@ -30,6 +30,12 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig } from "../config.js";
+import { getConstitution } from "../llm/prompts/constitution.js";
+import {
+  getCallerSkill,
+  listCallerSkills,
+  MCP_INSTRUCTIONS,
+} from "./caller-skills.js";
 import type { RequestAuth } from "../server/plugins/auth.js";
 import {
   checkAgenticQuota,
@@ -346,10 +352,14 @@ async function matchAssertion(
 // ---- server -----------------------------------------------------------------
 
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
-  const server = new McpServer({
-    name: "minerval",
-    version: "0.1.0",
-  });
+  const server = new McpServer(
+    {
+      name: "minerval",
+      version: "0.1.0",
+    },
+    // The principles for callers, for clients that load no skills (#620).
+    { instructions: MCP_INSTRUCTIONS }
+  );
 
   // ---- free read tools ----
 
@@ -1224,6 +1234,59 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
               2
             ),
           },
+        ],
+      };
+    }
+  );
+
+  // The constitution and the caller skills (#620): the same files the plugin
+  // ships, for clients that load resources but not skills.
+  server.registerResource(
+    "constitution",
+    "minerval://constitution",
+    {
+      title: "The Minerval constitution",
+      description:
+        "The constitution every Minerval administrator works under, " +
+        "verbatim: what a claim is, how claims are assessed, what each " +
+        "status means, how contributions are judged, and what funding can " +
+        "and cannot buy. Read it before contributing or funding work.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [
+        { uri: uri.href, mimeType: "text/markdown", text: getConstitution() },
+      ],
+    })
+  );
+
+  server.registerResource(
+    "caller-skill",
+    new ResourceTemplate("minerval://skills/{name}", {
+      list: async () => ({
+        resources: listCallerSkills().map((s) => ({
+          uri: `minerval://skills/${s.name}`,
+          name: s.name,
+          description: s.description,
+          mimeType: "text/markdown",
+        })),
+      }),
+    }),
+    {
+      title: "Skills for using Minerval",
+      description:
+        "Agent Skills for callers of this server: checking and citing " +
+        "claims, commissioning research in good faith, and a reader's " +
+        "guide to the constitution (whose full text is " +
+        "minerval://constitution).",
+      mimeType: "text/markdown",
+    },
+    async (uri, { name }) => {
+      const skill = getCallerSkill(String(name));
+      if (!skill) throw new Error(`Skill not found: ${String(name)}`);
+      return {
+        contents: [
+          { uri: uri.href, mimeType: "text/markdown", text: skill.text },
         ],
       };
     }

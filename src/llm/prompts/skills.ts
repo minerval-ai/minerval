@@ -170,7 +170,7 @@ type YamlValue = string | string[] | { [key: string]: YamlValue };
  * scalars, folded (`>-`, `>`) and literal (`|`) block strings, and inline
  * lists (`[a, b]`). Anything else is a defect in the skill file.
  */
-function parseYamlSubset(text: string, path: string): { [key: string]: YamlValue } {
+export function parseYamlSubset(text: string, path: string): { [key: string]: YamlValue } {
   const lines = text
     .split("\n")
     .map((line, index) => ({ index, raw: line }))
@@ -246,7 +246,7 @@ function parseYamlSubset(text: string, path: string): { [key: string]: YamlValue
   return parseBlock(0);
 }
 
-function splitFrontmatter(raw: string, path: string): { frontmatter: string; body: string } {
+export function splitFrontmatter(raw: string, path: string): { frontmatter: string; body: string } {
   if (!raw.startsWith("---\n")) {
     throw new Error(`${path}: SKILL.md must open with YAML frontmatter (---)`);
   }
