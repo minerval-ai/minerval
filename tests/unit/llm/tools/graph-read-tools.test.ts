@@ -28,6 +28,12 @@ vi.mock("../../../../src/services/tag-service.js", () => ({
 vi.mock("../../../../src/services/formalization-service.js", () => ({
   getClaimFormalizationRecord: vi.fn(),
 }));
+vi.mock("../../../../src/services/quantity-service.js", () => ({
+  getQuantityDetail: vi.fn(),
+}));
+vi.mock("../../../../src/services/question-service.js", () => ({
+  getQuestionDetail: vi.fn(),
+}));
 
 import {
   executeGraphReadTool,
@@ -43,6 +49,8 @@ import {
   getSubclaimCount,
 } from "../../../../src/services/tree-service.js";
 import { getClaimFormalizationRecord } from "../../../../src/services/formalization-service.js";
+import { getQuantityDetail } from "../../../../src/services/quantity-service.js";
+import { getQuestionDetail } from "../../../../src/services/question-service.js";
 
 const mockHybrid = vi.mocked(hybridSearch);
 const mockRawQuery = vi.mocked(rawQuery);
@@ -116,6 +124,27 @@ describe("graph-read-tools", () => {
         steward_state: "pending",
         days_since_assessed: 40,
       });
+    });
+
+    // #628: a quantity's estimate and a question's standing live outside
+    // `assessments`; the hit says which kind it is and reads recency there.
+    it("carries each hit's kind and reads recency from the kind's own table", async () => {
+      mockHybrid.mockResolvedValue({
+        results: [{ id: "q1", text: "How large is X?", importance: 0.5 }],
+        total: 1,
+      } as never);
+      mockRawQuery.mockResolvedValue([
+        { id: "q1", kind: "quantity", contestation: 0.2, steward_state: "done", days_since_assessed: 3 },
+      ] as never);
+
+      const out = JSON.parse(
+        (await executeGraphReadTool("search_claims", { query: "x" }))!
+      );
+
+      expect(out.claims[0]).toMatchObject({ id: "q1", kind: "quantity", days_since_assessed: 3 });
+      const sql = String(mockRawQuery.mock.calls[0]![0]);
+      expect(sql).toContain("quantity_estimates");
+      expect(sql).toContain("question_assessments");
     });
 
     it("skips the signals query when nothing matched", async () => {
@@ -220,6 +249,40 @@ describe("graph-read-tools", () => {
       expect(out.assessment.reasoning_trace).toBe("The audit trail");
       expect(out.assessment.claim_credence).toBeNull();
       expect(out.subclaim_count).toBe(3);
+    });
+
+    it("carries a quantity's estimate and a question's structure, which are their assessment (#628)", async () => {
+      const base = {
+        text: "node",
+        claimType: "empirical_derived",
+        state: "active",
+        decompositionStatus: "done",
+        importance: 0.5,
+      };
+      mockSubclaimCount.mockResolvedValue(0 as never);
+      mockAssessment.mockResolvedValue(null as never);
+      vi.mocked(getQuantityDetail).mockResolvedValue({
+        definition: { measures: "m", population: null, conditions: null, unit: null },
+        estimate: { form: "point", central: 4 },
+        assessed: { summary: "s", work: "w", model: "m", assessed_at: "2026-01-01" },
+        estimates: [{}, {}],
+        readings: [],
+        cuts: [],
+      } as never);
+      vi.mocked(getQuestionDetail).mockResolvedValue({ standing: "open", answers: [] } as never);
+
+      mockGetClaim.mockResolvedValueOnce({ id: "q1", kind: "quantity", ...base } as never);
+      const qty = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "q1" }))!);
+      expect(qty.claim.kind).toBe("quantity");
+      expect(qty.quantity.current_estimate).toEqual({ form: "point", central: 4 });
+      expect(qty.quantity.stated_estimates).toBe(2);
+      expect(qty.question).toBeUndefined();
+
+      mockGetClaim.mockResolvedValueOnce({ id: "k1", kind: "question", ...base } as never);
+      const qn = JSON.parse((await executeGraphReadTool("get_claim", { claim_id: "k1" }))!);
+      expect(qn.claim.kind).toBe("question");
+      expect(qn.question).toEqual({ standing: "open", answers: [] });
+      expect(qn.quantity).toBeUndefined();
     });
 
     // #435: a Grantmaker valuing attempt_proof must read the published

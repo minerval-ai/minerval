@@ -277,6 +277,41 @@ describe("plan-to-ledger materialization (#416)", () => {
     expect(detail!.plan_items.map((i) => i.state)).toEqual(["done", "queued"]);
   });
 
+  // #628: a quantity's estimate and a question's standing are their
+  // assessment, kept in their own tables, so the standing must read them.
+  it("reads an assess item on an estimated quantity or an assessed question as done (#628)", async () => {
+    const funder = await seedUser("plan-funder-kinds");
+    await creditOwls(funder, 100 * OWL);
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
+    const quantity = await seedClaim("an estimated quantity");
+    const question = await seedClaim("an assessed question");
+    await rawQuery(`UPDATE claims SET kind = 'quantity', steward_state = 'done' WHERE id = $1`, [quantity]);
+    await rawQuery(`UPDATE claims SET kind = 'question', steward_state = 'done' WHERE id = $1`, [question]);
+    await rawQuery(
+      `INSERT INTO quantity_estimates (claim_id, estimate, work, assessed_at)
+       VALUES ($1, '{"form":"point","central":1}', 'db test', now() - interval '1 minute')`,
+      [quantity]
+    );
+    await rawQuery(
+      `INSERT INTO question_assessments (claim_id, standing, reasoning_trace, assessed_at)
+       VALUES ($1, 'open', 'db test', now() - interval '1 minute')`,
+      [question]
+    );
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb WHERE id = $1`, [
+      grantId,
+      JSON.stringify({
+        strategy: "s",
+        items: [
+          { action: "assess", claim_id: quantity, rationale: "first estimate" },
+          { action: "assess", claim_id: question, rationale: "first standing" },
+        ],
+      }),
+    ]);
+    const [q, qn] = await materializePlanItems(grantId);
+    expect(q!.ledger.status).toBe("done");
+    expect(qn!.ledger.status).toBe("done");
+  });
+
   it("reads a stewarding item as done when its pass ran on another lane while the row sat open (#427)", async () => {
     const funder = await seedUser("plan-funder-6");
     await creditOwls(funder, 100 * OWL);
