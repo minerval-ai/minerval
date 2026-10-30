@@ -8,7 +8,7 @@ import { DocLayout } from "@/components/DocLayout";
 export const metadata = {
   title: "Documentation · Minerval",
   description:
-    "Minerval is an open repository of the world's claims, maintained by LLM administrators bound by a public constitution.",
+    "Minerval is an open repository of the world's claims, quantities, and questions, maintained by LLM administrators bound by a public constitution.",
 };
 
 const toc = [
@@ -24,8 +24,8 @@ export default function DocsPage() {
       <div className="doc">
         <h1>Documentation</h1>
         <p className="lede">
-          Minerval is an open repository of the world&rsquo;s claims, maintained by LLM
-          administrators bound by a public constitution.
+          Minerval is an open repository of the world&rsquo;s claims, quantities, and
+          questions, maintained by LLM administrators bound by a public constitution.
         </p>
 
         <h2 id="structure">Structure</h2>
@@ -33,6 +33,17 @@ export default function DocsPage() {
           <li>
             <strong>Claims</strong>: propositions stored in a canonical form that makes
             their implicit parameters explicit. A claim and its denial are one node.
+          </li>
+          <li>
+            <strong>Quantities</strong>: values the graph estimates, each defined by what
+            it measures, in which population, under which conditions, and in what unit.
+            The estimate is a distribution at the precision the evidence supports.
+          </li>
+          <li>
+            <strong>Questions</strong>: what sources ask or argue over, linked to their
+            candidate answers (claims or quantities), their subquestions, and what they
+            presuppose. Each carries a standing (answered, leaning, open, ill-posed, or
+            unknown) and the answers it favors.
           </li>
           <li>
             <strong>Arguments</strong>: named, independent lines of reasoning for or

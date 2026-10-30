@@ -9,7 +9,7 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
       info: {
         title: "Minerval API",
         description:
-          "Knowledge graph of claims with transparent provenance and validity assessment",
+          "Knowledge graph of claims, quantities, and questions with transparent provenance and assessment",
         version: "0.1.0",
       },
       tags: [

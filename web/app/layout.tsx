@@ -8,7 +8,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Minerval · an open repository of claims",
   description:
-    "A knowledge graph of claims with transparent provenance, decomposition, and validity assessment.",
+    "A knowledge graph of claims, quantities, and questions, with transparent provenance, decomposition, and assessment.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -43,8 +43,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="site">
           <div className="inner">
             <p style={{ margin: "0 0 .7rem" }}>
-              Minerval is infrastructure for thought: a shared map of claims, evidence, and
-              argument, maintained by LLM administrators under a public constitution.
+              Minerval is infrastructure for thought: a shared map of claims, questions,
+              evidence, and argument, maintained by LLM administrators under a public constitution.
               Assessments are based on evidence and reasoning, open to inspection and correction.
             </p>
             <nav style={{ display: "flex", gap: "1.1rem", flexWrap: "wrap" }}>
