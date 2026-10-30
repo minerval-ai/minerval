@@ -52,6 +52,7 @@ const LEDGER_REASONS: Record<string, string> = {
   refund: "refunded",
   escrow_hold: "escrowed for funded work",
   claim_contribution: "put toward a claim's assessment",
+  request_contribution: "put toward the work on a request",
   escrow_refund: "unspent escrow returned",
   admin_adjust: "adjustment",
 };

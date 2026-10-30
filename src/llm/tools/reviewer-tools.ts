@@ -101,13 +101,16 @@ export function getReviewerToolDefinitions(): Tool[] {
               "words from the contributor's (Part VIII). ask, why (what the judgments it bears " +
               "on would become under its outcomes), satisfied_by; who_could and addressed_to " +
               "where known. A request that asks for a particular result is restated to ask for " +
-              "what would decide the matter either way.",
+              "what would decide the matter either way. budget_usd: what doing it should cost, " +
+              "when the contributor stated one you judge plausible for the work (the costing skill " +
+              "says how to check one); omit it otherwise, and a scoping pass will quote it.",
             properties: {
               ask: { type: "string" },
               why: { type: "string" },
               satisfied_by: { type: "string" },
               who_could: { type: "string" },
               addressed_to: { type: "string" },
+              budget_usd: { type: "number" },
             },
             required: ["ask", "why", "satisfied_by"],
           },
@@ -335,6 +338,7 @@ export async function executeReviewerTool(
             ask: text(r.ask),
             why: text(r.why),
             satisfiedBy: text(r.satisfied_by),
+            budgetUsd: typeof r.budget_usd === "number" && r.budget_usd > 0 ? r.budget_usd : null,
             whoCould: text(r.who_could) || null,
             addressedTo: text(r.addressed_to) || null,
             claimIds: reviewed.claimId ? [reviewed.claimId] : [],

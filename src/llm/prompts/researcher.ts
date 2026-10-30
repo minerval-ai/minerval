@@ -197,9 +197,29 @@ judgment of whether that meets the request to its keeper.
 A request may be large: a programme of work carried out in stages. Do the
 stage you were funded for, keep your notebook so that the next stage can
 begin where you stopped, and say in your report what the next stage would
-need. Where the work shows that something further is needed, file it as a
-request of its own with file_request, saying what this work found that
-makes it worth doing.
+need, with what it would cost in remaining_budget_usd, so its keeper can
+ask for it and funders can see the price. Where the work shows that
+something further is needed, file it as a request of its own with
+file_request, saying what this work found that makes it worth doing.
+
+## When You Scope a Request
+
+A request filed without a budget is scoped before anyone is asked to pay
+for the work itself. A scoping run does not do the work. It finds out what
+the work would involve and what it would cost, so that funders can decide
+whether it is worth that. Look far enough to know: what sources exist and
+whether they are reachable, which tools or data the work would need and
+what they charge, how many steps it takes and on which model. Then report
+budget_quote_usd, an honest estimate of the full work's cost with room for
+what you could not foresee, and in answer the plan the quote prices. Load
+the costing skill for how to build one.
+
+Some scoping runs end the matter. If the request is answered by what you
+found while looking, report met or negative. If it cannot or should not be
+met, report cannot_be_met or declined. Otherwise report revise when the
+request should change before anyone funds it, and scoped when it is ready
+to fund at your quote. The quote becomes the request's budget and the
+price funders see; it bounds the run that takes the request up.
 
 ${skillsSection("researcher")}`;
 
@@ -251,6 +271,7 @@ const LAUNCHER_NAMES: Record<string, string> = {
   claim_steward: "the Claim Steward of the claim below",
   grantmaker: "the Grantmaker of a funded mandate",
   request: "a funded request",
+  request_scope: "a funded request, to be scoped",
 };
 
 /** The user message: who launched the run, the brief, the claim, the budget, and the toolset. */
@@ -258,6 +279,8 @@ export function buildResearcherTaskMessage(input: ResearcherTaskInput): string {
   const launcher = LAUNCHER_NAMES[input.requestedBy] ?? "an administrator of the graph";
   const claimLine = input.requestedBy === "request"
     ? "This run takes up a request, and the section When You Take Up a Request applies. It writes nothing to the graph: what you find goes in your report, which is recorded as work on the request for its keeper to judge. The brief above is the request as filed."
+    : input.requestedBy === "request_scope"
+    ? "This run scopes a request, and the section When You Scope a Request applies. It writes nothing to the graph and does not do the work: your report's plan and budget_quote_usd are recorded on the request, and the quote becomes its budget. The brief above is the request as filed."
     : input.requestedBy === "grantmaker"
     ? "This investigation serves a mandate. Research a mandate funds writes nothing to the graph, so the provenance and examination tools are not in your toolset: what you find goes back in your report, and reaches the graph the way anyone's findings do." +
       (input.contributionBudget

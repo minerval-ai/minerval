@@ -127,6 +127,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- requests: work that would improve what the graph knows ----
   "GET /requests": { name: "list_requests" },
   "GET /requests/:request_id": { name: "get_request" },
+  "POST /requests/:request_id/contribute": { name: "fund_request_work", note: ESCROWS_OWLS },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },

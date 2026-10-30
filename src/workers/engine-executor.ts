@@ -37,6 +37,11 @@
  *    target_ref, under its funder (a Governance mandate, or the bounty's
  *    prize-review reserve for a prize audit). The run row records its
  *    completion and findings count.
+ *  - request (Part VIII): one Researcher run on the request named in
+ *    target_ref, its ceiling the row's funding, under the largest funder.
+ *    A `scope` row's run returns a quote, which becomes the request's
+ *    budget and opens its `full` row; a `full` row's run records its
+ *    outcome as work for the request's keeper to judge.
  *
  * The unfunded fallback lane: with BACKGROUND_FALLBACK_LANE_ENABLED and no
  * mandate that could fund the kind (no active General mandate for curate,
@@ -73,10 +78,27 @@ import { loadConfig } from "../config.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
+import { runResearcher } from "../llm/agents/researcher.js";
+import {
+  closeResearchRun,
+  modelForTier,
+  openResearchRun,
+  readResearcherPaused,
+} from "../services/research-run-service.js";
+import {
+  getRequest,
+  notifyRequestKeeper,
+  recordWork,
+  requestBrief,
+  setRequestBudget,
+} from "../services/request-service.js";
+import { REQUEST_OUTCOMES, type RequestOutcome } from "../schemas/kinds.js";
 import {
   claimAction,
   completeAction,
+  closeRequestActions,
   ensureCurateAction,
+  ensureRequestActions,
   largestActionFunder,
   nextRunnableAction,
   releaseAction,
@@ -123,6 +145,10 @@ export async function processNextEngineAction(
   }
   await fundGrantSelfActions().catch(() => 0);
 
+  // Request rows wait, funded, while the operator has the researcher off
+  // or paused: the run that would take them up is the Researcher's.
+  const researcherOn =
+    loadConfig().researcherEnabled && !(await readResearcherPaused().catch(() => true));
   const action =
     (await nextRunnableAction([
       "grant_planning",
@@ -133,6 +159,7 @@ export async function processNextEngineAction(
       "audit",
       "ingest",
       "formalize",
+      ...(researcherOn ? (["request"] as const) : []),
     ])) ?? (await nextFallbackAction());
   if (!action || !(await claimAction(action.id))) return { status: "empty" };
 
@@ -142,6 +169,7 @@ export async function processNextEngineAction(
   if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
   if (action.kind === "curate") return runCurateAction(action);
   if (action.kind === "audit") return runAuditAction(action);
+  if (action.kind === "request") return runRequestAction(action);
   return runGrantAgentAction(action, opts);
 }
 
@@ -305,6 +333,193 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
       error: msg,
     };
   }
+}
+
+/**
+ * request (Part VIII): one Researcher run on the request in target_ref.
+ * The brief is the request as filed; the ceiling is what the row's funders
+ * put behind it; the run is metered to the largest of them. A scoping
+ * pass (variant `scope`, standard tier) returns a quote that becomes the
+ * request's budget, which opens the full work for funding; the full work
+ * (variant `full`, strong tier) records its outcome on the request and
+ * tells the keeper. Neither the brief nor what the keeper reads names a
+ * funder. A request closed while its row waited is cancelled, its money
+ * returned.
+ */
+async function runRequestAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const requestId = action.target_ref ?? "";
+  const request = requestId ? await getRequest(requestId) : null;
+  if (!request || ["met", "declined", "withdrawn", "moot"].includes(request.state)) {
+    await cancelGroup(action.exclusion_group);
+    if (requestId) await closeRequestActions(requestId).catch(() => {});
+    return { status: "empty" };
+  }
+  const scoping = action.variant === "scope";
+  const funder = await funderContext(action);
+  const ceiling = actionBudgetMicroUsd(action);
+  const tier = scoping ? "standard" : "strong";
+  const run = await openResearchRun({
+    claimId: null,
+    grantId: funder.grantId ?? null,
+    requestedBy: scoping ? "request_scope" : "request",
+    requesterRunId: null,
+    jobId: funder.jobId,
+    task: requestBrief(request),
+    model: modelForTier(tier),
+    modelTier: tier,
+    effort: scoping ? null : "high",
+    includeConstitution: true,
+    ceilingMicroUsd: ceiling,
+    requestId,
+  });
+  await recordWork({
+    requestId,
+    byLabel: "Researcher",
+    researchRunId: run.id,
+    outcome: null,
+    summary: scoping ? "Being scoped by the Researcher." : "Taken up by the Researcher.",
+    fundedByJobId: funder.jobId,
+  }).catch(() => null);
+
+  let billedMicroUsd = 0;
+  let result: Awaited<ReturnType<typeof runResearcher>> | null = null;
+  let failure: unknown = null;
+  try {
+    const metered = await runWithUsageContext(
+      { userId: funder.userId, jobId: funder.jobId },
+      () =>
+        withPassBudget({ microUsd: ceiling, source: "the allocations funding this request" }, () =>
+          runResearcher({
+            run: {
+              id: run.id,
+              claim_id: null,
+              grant_id: run.grant_id,
+              requested_by: run.requested_by,
+              task: run.task,
+              model: run.model,
+              model_tier: run.model_tier,
+              effort: run.effort,
+              include_constitution: run.include_constitution,
+              ceiling_micro_usd: run.ceiling_micro_usd,
+              notebook: run.notebook,
+              job_id: run.job_id,
+            },
+            claim: null,
+          })
+        )
+    );
+    result = metered.value;
+    billedMicroUsd = metered.billedMicroUsd;
+  } catch (err) {
+    failure = err;
+  }
+
+  await closeResearchRun(run.id, {
+    status: failure || !result ? "failed" : result.status,
+    report: result?.report ?? null,
+    spentMicroUsd: billedMicroUsd,
+    turns: result?.turns,
+    servedModels: result?.servedModels,
+    error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+  }).catch(() => null);
+
+  if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
+    // Nothing ran and it was not the request's fault: the row goes back to
+    // waiting on its funding.
+    await releaseAction(action.id).catch(() => {});
+    return {
+      status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
+      actionId: action.id,
+      kind: "request",
+      grantId: funder.grantId,
+      error: failure instanceof Error ? failure.message : String(failure),
+    };
+  }
+
+  // Settle first: completing the row supersedes its siblings, so the full
+  // row a quote opens must come after.
+  await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
+    console.error(
+      `[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`
+    )
+  );
+
+  const report = result?.report ?? null;
+  const answer = typeof report?.answer === "string" ? report.answer.trim() : "";
+  const outcomeRaw = typeof report?.request_outcome === "string" ? report.request_outcome : null;
+  const usd = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+  const ended = failure ? "failed" : (result?.status ?? "no report");
+
+  if (scoping) {
+    const quote = usd(report?.budget_quote_usd);
+    const terminal = outcomeRaw && outcomeRaw !== "scoped" && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw)
+      ? (outcomeRaw as RequestOutcome)
+      : null;
+    if (terminal) {
+      await recordWork({
+        requestId,
+        byLabel: "Researcher",
+        researchRunId: run.id,
+        outcome: terminal,
+        summary: (answer || `Scoping returned ${terminal}.`).slice(0, 4000),
+        fundedByJobId: funder.jobId,
+      }).catch(() => null);
+      await notifyRequestKeeper(requestId, `scoping it returned ${terminal}: ${answer.slice(0, 600)}`).catch(() => false);
+    } else if (quote) {
+      await recordWork({
+        requestId,
+        byLabel: "Researcher",
+        researchRunId: run.id,
+        outcome: null,
+        summary: `Scoped at about $${quote.toFixed(2)}. ${answer}`.slice(0, 4000),
+        fundedByJobId: funder.jobId,
+      }).catch(() => null);
+      // The quote is the request's budget: the full work opens at that price.
+      await setRequestBudget({ requestId, budgetUsd: quote }).catch((err) =>
+        console.error(`[engine] setting request ${requestId}'s budget failed: ${err instanceof Error ? err.message : err}`)
+      );
+    } else {
+      await recordWork({
+        requestId,
+        byLabel: "Researcher",
+        researchRunId: run.id,
+        outcome: null,
+        summary: `The scoping run ended without a quote (${ended}); the request is open to be scoped again.`,
+        fundedByJobId: funder.jobId,
+      }).catch(() => null);
+      await ensureRequestActions(requestId).catch(() => null);
+    }
+  } else {
+    const outcome = outcomeRaw && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw)
+      ? (outcomeRaw as RequestOutcome)
+      : null;
+    const remaining = usd(report?.remaining_budget_usd);
+    const summary = outcome
+      ? (answer || `Returned ${outcome}.`) + (remaining ? ` The rest would cost about $${remaining.toFixed(2)}.` : "")
+      : `The run ended without a report (${ended}); the request is open to be taken up again.`;
+    await recordWork({
+      requestId,
+      byLabel: "Researcher",
+      researchRunId: run.id,
+      outcome,
+      summary: summary.slice(0, 4000),
+      fundedByJobId: funder.jobId,
+    }).catch(() => null);
+    if (outcome) {
+      await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 600)}`).catch(() => false);
+    } else {
+      await ensureRequestActions(requestId).catch(() => null);
+    }
+  }
+
+  return {
+    status: "processed",
+    actionId: action.id,
+    kind: "request",
+    grantId: funder.grantId,
+    ok: !failure && !!report,
+    ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
+  };
 }
 
 /**

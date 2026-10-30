@@ -547,6 +547,13 @@
       "when": 1793384406969,
       "tag": "0077_request_search",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793395193394,
+      "tag": "0078_request_ledger",
+      "breakpoints": true
     }
   ]
 }

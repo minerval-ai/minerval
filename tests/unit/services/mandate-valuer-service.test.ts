@@ -12,6 +12,8 @@ const { calls, state } = vi.hoisted(() => ({
     /** Action ids of audits whose subject is the valuing mandate. */
     ownAudits: new Set<string>(),
     governance: [] as string[],
+    /** What the request formula's upsert returns. */
+    openRequests: [] as Array<{ action_id: string }>,
   },
 }));
 
@@ -22,10 +24,13 @@ vi.mock("../../../src/db/client.js", () => ({
       return state.ownAudits.has(params[0] as string) ? [{ id: "run" }] : [];
     }
     if (q.includes("INSERT INTO mandate_valuations")) {
-      // The curate and audit formulas (#363): nothing open in these tests
-      // unless a test says otherwise.
+      // The curate, audit and request formulas: nothing open in these
+      // tests unless a test says otherwise.
       if (q.includes("a.kind = 'curate'") || q.includes("a.kind = 'audit'")) {
         return [];
+      }
+      if (q.includes("a.kind = 'request'")) {
+        return state.openRequests;
       }
       if (q.includes("WHERE a.id = $2")) {
         // setMandateValuations single-action upsert: known ids only.
@@ -60,6 +65,10 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
     est_steward_run_cost_strong_owls: 0.9,
     staleness_base_days: 60,
     staleness_max_per_sweep: 5,
+    request_value_weight: 3,
+    request_reviewed_weight: 0.8,
+    request_untargeted_importance: 0.3,
+    request_wait_days: 14,
   })),
 }));
 
@@ -67,6 +76,7 @@ import {
   refreshGeneralValuations,
   refreshFormulaValuations,
   refreshAuditValuations,
+  refreshRequestValuations,
   setMandateValuations,
 } from "../../../src/services/mandate-valuer-service.js";
 
@@ -75,6 +85,7 @@ beforeEach(() => {
   state.knownActionIds = new Set();
   state.ownAudits = new Set();
   state.governance = [];
+  state.openRequests = [];
 });
 
 describe("refreshGeneralValuations", () => {
@@ -229,5 +240,32 @@ describe("setMandateValuations (the agent valuer's pen)", () => {
           c.q.includes("a.status <> 'open'")
       )
     ).toBe(true);
+  });
+});
+
+describe("refreshRequestValuations (Part VIII)", () => {
+  it("values open request rows from the policy's request knobs, never from money", async () => {
+    state.openRequests = [{ action_id: "r-1" }];
+    const n = await refreshRequestValuations("g-1", { scopeClaimId: null, scopeQuery: null });
+    expect(n).toBe(1);
+    const upsert = calls.find(
+      (c) => c.q.includes("INSERT INTO mandate_valuations") && c.q.includes("a.kind = 'request'")
+    )!;
+    // The assessment formula's leading terms for what it bears on, times
+    // the request weight, the filer weight, and the wait.
+    expect(upsert.q).toContain("c.importance");
+    expect(upsert.q).toContain("r.filer_kind = 'admin'");
+    expect(upsert.q).toContain("r.created_at");
+    // A closed request is never valued.
+    expect(upsert.q).toContain("r.state NOT IN ('met', 'declined', 'withdrawn', 'moot')");
+    // The budget is the row's cost, weighed by the allocator: not a term here.
+    expect(upsert.q).not.toContain("budget_micro_usd");
+    expect(upsert.params).toEqual([0.25, 3, 0.8, 0.3, 14, "g-1", null, null, null]);
+  });
+
+  it("counts requests in a formula mandate's refresh", async () => {
+    state.openRequests = [{ action_id: "r-1" }, { action_id: "r-2" }];
+    const n = await refreshGeneralValuations();
+    expect(n).toBe(4);
   });
 });

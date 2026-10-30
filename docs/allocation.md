@@ -489,6 +489,64 @@ database and a corpus run still exercise both agents; `CURATOR_MAX_RUNS`
 caps the lane's Curator runs per process. A deployment with its mandates
 seeded never takes it.
 
+## Requests on the ledger
+
+A request (constitution Part VIII) is work like any other: what meeting it
+would change is its value, and doing it has a cost. So the work on a
+request is a ledger row, valued and funded by the same rule as an
+assessment, and anyone may fund it.
+
+**The cost is the request's own.** Requests differ in size by orders of
+magnitude (a citation checked, a literature synthesized, a dataset
+reanalysed with paid tools), so no kind-wide estimate can price one. A
+request carries a budget (`requests.budget_micro_usd`), stated by whoever
+files it, checked by the Reviewer when a contributor proposes it, and
+revisable by its keeper. Its `full` row costs that budget, and the
+Researcher run that takes it up works under the row's funding as its
+ceiling, delegating within it to paid tools as it needs. A request filed
+without a budget opens a `scope` row instead: a cheap pass (priced at the
+ledger's own p80 of scoping passes, or `est_request_scope_cost_owls`)
+that finds out what the work would involve and returns a quote. The quote
+becomes the budget and opens the full work; a scoping pass that answers
+the request, or finds it cannot or should not be met, records that
+outcome instead. One variant is open at a time.
+
+**The value is each mandate's.** A judgment mandate's Grantmaker values a
+request row like any other, by what its outcome could move in its
+territory. A formula mandate values the requests bearing on its scope as
+`request_value_weight × importance × contested-factor` of the most
+important live claim the request bears on (`request_untargeted_importance`
+when it bears on none), times `request_reviewed_weight` for a request
+filed through review, rising to twice that as it waits
+`request_wait_days`. The weight places a request at a few assessments of
+what it bears on, so the formula funds modest requests by itself; a large
+budget needs a mandate that judges it worth that, or many funders.
+
+**Funding.** A mandate's allocator funds request rows best value per
+dollar first, like everything else. A Grantmaker may also put money on one
+directly (`fund_request`), within its uncommitted escrow. A reader chips in
+with `POST /requests/:id/contribute`, unpinned and clipped to what the open
+row lacks. A large request is funded as its funders join; the row runs the
+moment their allocations cover it, and its metered cost splits pro rata.
+
+**Closing.** A request closed while its row is open cancels the row and
+returns every unspent allocation: a reader's owls to their balance, a
+mandate's placement off its escrow. Work that stopped short reports
+`partly_met` with what the rest would cost (`remaining_budget_usd`); its
+keeper sets the budget to that, which reopens the full row at the new
+price. Each stage is a fresh decision for funders, never a commitment to
+finish what someone began.
+
+**Pricing.** The Costing skill (`skills/costing`) says how to estimate a
+budget from the steps of the work, and its `cost_sheet` tool gives the
+live metered prices of research runs by tier, Steward passes, scoping
+passes and paid tools. Every role that files, scopes or reviews requests
+carries the tool and can load the skill.
+
+Research an agent delegates from its own budget (`delegate_research`) is
+not on the ledger: it is that agent spending what it holds, under the
+ceiling the agent sets.
+
 ## How money reaches actions
 
 1. **Full funding (paid orders).** A user buys an assessment outright; it

@@ -1,14 +1,16 @@
 /**
  * /requests (constitution Part VIII, Requests): what someone could do that
- * would improve what the graph knows, read-only and public. Requests are
- * filed and kept by administrators through their tools; a contributor files
- * one as a contribution. A mandate's request is shown as filed by "a funded
- * mandate", never by name (§12/§19).
+ * would improve what the graph knows, public to read. Requests are filed
+ * and kept by administrators through their tools; a contributor files one
+ * as a contribution. A mandate's request is shown as filed by "a funded
+ * mandate", never by name (§12/§19). The work on a request is a row on the
+ * action ledger, and anyone may put owls toward it (POST /:id/contribute).
  */
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { REQUEST_STATES } from "../schemas/kinds.js";
 import { getRequest, listRequests } from "../services/request-service.js";
+import { allocateToRequest } from "../services/allocation-service.js";
 
 const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
@@ -61,6 +63,18 @@ export const REQUEST_SCHEMA = {
     state: { type: "string" },
     state_note: { type: "string", nullable: true },
     filed_at: { type: "string", format: "date-time" },
+    budget_usd: { type: "number", nullable: true },
+    ledger: {
+      type: "object",
+      nullable: true,
+      properties: {
+        action_id: { type: "string", format: "uuid" },
+        variant: { type: "string", enum: ["scope", "full"] },
+        status: { type: "string", enum: ["open", "running"] },
+        cost_usd: { type: "number" },
+        backing_usd: { type: "number" },
+      },
+    },
     work: {
       type: "array",
       items: {
@@ -154,6 +168,58 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         return reply.send(found);
+      },
+    }
+  );
+
+  // POST /requests/:request_id/contribute — put owls toward the work on a
+  // request: its scoping pass while it has no budget, else the full work.
+  // Allocations accumulate across funders (people and mandates alike); the
+  // moment they cover the row's cost, the Researcher takes it up, and the
+  // metered cost is split pro rata among the funders. Unspent money comes
+  // back when the run settles or the request closes.
+  app.post<{ Params: { request_id: string }; Body: { owls: number } }>(
+    "/:request_id/contribute",
+    {
+      schema: {
+        tags: ["requests"],
+        summary:
+          "Allocate owls toward the work on this request (runs when " +
+          "allocations cover the cost; funders split the cost pro rata)",
+        params: {
+          type: "object",
+          properties: { request_id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["owls"],
+          properties: { owls: { type: "number", exclusiveMinimum: 0 } },
+        },
+      },
+      preHandler: [app.authenticate, app.requireUser],
+      handler: async (request, reply) => {
+        const result = await allocateToRequest({
+          userId: request.auth!.userId!,
+          requestId: request.params.request_id,
+          owls: request.body.owls,
+        });
+        if (!result.ok) {
+          const status =
+            result.code === "REQUEST_NOT_FOUND"
+              ? 404
+              : result.code === "INSUFFICIENT_OWLS"
+                ? 402
+                : result.code === "COVERED" || result.code === "CLOSED"
+                  ? 409
+                  : 400;
+          return reply.code(status).send({ error: result.message, code: result.code });
+        }
+        return reply.send({
+          allocated_owls: result.allocatedOwls,
+          backing_owls: result.backingOwls,
+          variant: result.variant,
+          covered: result.covered,
+        });
       },
     }
   );

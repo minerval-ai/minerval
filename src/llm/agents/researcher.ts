@@ -264,6 +264,44 @@ export const REQUEST_REPORT_TOOL: Tool = {
           "not there or points the other way), cannot_be_met (with the reason), declined (the request is " +
           "flawed, moot, or could be met only by intrusion), or revise (say how in answer).",
       },
+      remaining_budget_usd: {
+        type: "number",
+        description:
+          "When the work stopped short of what the request asks (partly_met, or cannot_be_met for want of " +
+          "budget): your estimate of what the rest would cost, in USD. Omit otherwise.",
+      },
+    },
+    required: [...((RESEARCH_REPORT_TOOL.input_schema.required as string[]) ?? []), "request_outcome"],
+  },
+};
+
+/**
+ * The report a run that scopes a request ends with: the ordinary report,
+ * with the plan in answer, plus the quote for the full work and what came
+ * of the scoping.
+ */
+export const REQUEST_SCOPE_REPORT_TOOL: Tool = {
+  ...RESEARCH_REPORT_TOOL,
+  description:
+    RESEARCH_REPORT_TOOL.description +
+    " This run scopes a request: answer holds the plan for the full work, budget_quote_usd what it would cost.",
+  input_schema: {
+    ...RESEARCH_REPORT_TOOL.input_schema,
+    properties: {
+      ...(RESEARCH_REPORT_TOOL.input_schema.properties as Record<string, unknown>),
+      request_outcome: {
+        type: "string",
+        enum: ["scoped", "met", "negative", "cannot_be_met", "declined", "revise"],
+        description:
+          "scoped (ready to fund at your quote), met or negative (looking answered it), cannot_be_met or " +
+          "declined (with the reason), or revise (the request should change first; say how in answer).",
+      },
+      budget_quote_usd: {
+        type: "number",
+        description:
+          "Your estimate of what the full work would cost, in USD, with room for what you could not " +
+          "foresee. Required when request_outcome is scoped; it becomes the request's budget.",
+      },
     },
     required: [...((RESEARCH_REPORT_TOOL.input_schema.required as string[]) ?? []), "request_outcome"],
   },
@@ -379,6 +417,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const graphReadTools = getGraphReadToolDefinitions();
   const graphReadNames = new Set(graphReadTools.map((t) => t.name));
   const takesUpRequest = run.requested_by === "request";
+  const scopesRequest = run.requested_by === "request_scope";
   const submitsContributions =
     run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
@@ -405,7 +444,11 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
     // further request its work shows is needed.
-    ...(takesUpRequest ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL] : [RESEARCH_REPORT_TOOL]),
+    ...(takesUpRequest
+      ? [REQUEST_REPORT_TOOL, FILE_REQUEST_TOOL]
+      : scopesRequest
+        ? [REQUEST_SCOPE_REPORT_TOOL]
+        : [RESEARCH_REPORT_TOOL]),
     // Research a mandate funds submits what the graph should hold as
     // contributions, their reviews paid from the budget its Grantmaker
     // delegated.

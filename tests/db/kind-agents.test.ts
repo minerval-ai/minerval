@@ -296,7 +296,7 @@ describe("the kinds' tools", () => {
 });
 
 describe("fund_request", () => {
-  it("runs the Researcher on the request, records its outcome as work, and tells the keeper", async () => {
+  it("puts the mandate's money on the request's ledger row, clipped to what the row lacks", async () => {
     const claim = await seedClaim("kept");
     const { id: requestId } = await fileRequest({
       ask: "Recover the regional estimates.",
@@ -307,37 +307,22 @@ describe("fund_request", () => {
     });
     const funder = await seedUser("funder");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000 });
-    let briefSeen = "";
-    const tools = createResearchTools({
-      requestedBy: "grantmaker",
-      grantId,
-      runResearcher: async (input) => {
-        briefSeen = input.run.task;
-        expect(input.run.requested_by).toBe("request");
-        return {
-          status: "completed",
-          report: { outcome: "not_answered", answer: "No regional estimates exist for these years.", request_outcome: "negative" },
-          turns: 3,
-          stopReason: "report",
-          servedModels: [],
-          toolNames: [],
-          error: null,
-        };
-      },
-    });
+    const tools = createResearchTools({ requestedBy: "grantmaker", grantId });
     expect(tools.definitions.map((t) => t.name)).toContain("fund_request");
-    const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, model_tier: "cheap", budget_usd: 1 }))!);
-    expect(out).toMatchObject({ success: true, outcome: "negative" });
-    expect(briefSeen).toContain("Recover the regional estimates.");
-
-    const request = await getRequest(requestId);
-    expect(request!.state).toBe("in_progress");
-    expect(request!.work.map((w) => w.outcome)).toEqual([null, "negative"]);
-    expect(await one(`SELECT request_id, grant_id FROM research_runs WHERE id = $1`, [out.research_run_id])).toEqual({
-      request_id: requestId,
-      grant_id: grantId,
-    });
-    expect(await one(`SELECT steward_trigger FROM claims WHERE id = $1`, [claim])).toEqual({ steward_trigger: "request_returned" });
+    const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, budget_usd: 1 }))!);
+    // No budget yet: the money goes to the scoping pass (0.5 owl prior),
+    // which it covers; the Researcher takes it up on the executor's pass.
+    expect(out).toMatchObject({ success: true, covered: true });
+    expect(out.funded).toContain("scoping pass");
+    expect(
+      await one(
+        `SELECT amount_micro_usd::bigint AS amount FROM action_allocations
+          WHERE exclusion_group = $1 AND grant_id = $2 AND released_at IS NULL`,
+        [`request:${requestId}`, grantId]
+      )
+    ).toEqual({ amount: "500000" });
+    // Nothing ran inline: the request has no work recorded yet.
+    expect((await getRequest(requestId))!.work).toEqual([]);
 
     const steward = createResearchTools({ requestedBy: "claim_steward", claimId: claim });
     expect(steward.definitions.map((t) => t.name)).not.toContain("fund_request");

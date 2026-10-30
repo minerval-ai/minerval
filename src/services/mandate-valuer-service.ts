@@ -138,8 +138,91 @@ export async function refreshFormulaValuations(
     ]
   );
   const curated = await refreshCurateValuations(grantId, scope);
+  const requested = await refreshRequestValuations(grantId, scope);
   await pruneClosedValuations(grantId);
-  return rows.length + curated;
+  return rows.length + curated + requested;
+}
+
+/**
+ * The formula for one open `request` row `a` on request `r` (Part VIII):
+ *
+ *   weight × importance × contested-factor × filer weight × waiting
+ *
+ * A request matters through the judgments its outcome could move, so its
+ * base is the assessment formula's own leading terms for the most
+ * important live claim it bears on (or the policy's untargeted importance
+ * when it bears on none), times the policy's request weight: an outcome
+ * can move several judgments and the work is usually more than one pass.
+ * A request an agent or operator filed counts in full; one filed through
+ * review (a contributor's, a mandate's) at the policy's reviewed weight.
+ * Like an audit, its value rises to twice the base as it waits. The scoping
+ * pass and the full work are valued alike: each is the way the request
+ * gets done from where it stands. Money appears nowhere: the budget is the
+ * row's cost, and the allocator weighs value against it.
+ *
+ * Parameters: $1 contestation floor, $2 request weight, $3 reviewed
+ * weight, $4 untargeted importance, $5 wait days. */
+const REQUEST_VALUE_SQL = `
+  LEAST(10.0,
+    $2::real
+    * COALESCE((SELECT MAX(c.importance
+                           * ($1::real + (1.0 - $1::real) * COALESCE(c.contestation, 0)))
+                  FROM request_targets t JOIN claims c ON c.id = t.claim_id
+                 WHERE t.request_id = r.id AND c.state = 'active'),
+               $4::real)
+    * CASE WHEN r.filer_kind = 'admin' THEN 1.0 ELSE $3::real END
+    * (1.0 + LEAST(1.0, EXTRACT(EPOCH FROM (now() - r.created_at)) / 86400.0
+                        / NULLIF($5::real, 0))))`;
+
+/**
+ * Refresh one formula mandate's valuations over the open `request` rows in
+ * its scope (or one row, when a fresh request wants pricing now). An
+ * unscoped formula mandate values every request; a scoped one values the
+ * requests bearing on a claim inside its scope. Returns the valuation count.
+ */
+export async function refreshRequestValuations(
+  grantId: string,
+  scope: { scopeClaimId: string | null; scopeQuery: string | null },
+  actionId: string | null = null
+): Promise<number> {
+  const policy = await getMandateAllocationPolicy(grantId);
+  const rows = await rawQuery<{ action_id: string }>(
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM claims WHERE id = $7
+       UNION
+       SELECT cr.child_claim_id
+         FROM claim_relationships cr JOIN subtree s ON cr.parent_claim_id = s.id
+     )
+     INSERT INTO mandate_valuations (grant_id, action_id, value_est, updated_at)
+     SELECT $6, a.id, ${REQUEST_VALUE_SQL}, now()
+       FROM actions a
+       JOIN requests r ON r.id::text = a.target_ref
+      WHERE a.status = 'open' AND a.kind = 'request'
+        AND r.state NOT IN ('met', 'declined', 'withdrawn', 'moot')
+        AND ($9::uuid IS NULL OR a.id = $9)
+        AND (($7::uuid IS NULL AND $8::text IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM request_targets t JOIN claims c ON c.id = t.claim_id
+                WHERE t.request_id = r.id AND c.state = 'active'
+                  AND (($7::uuid IS NOT NULL AND c.id IN (SELECT id FROM subtree))
+                       OR ($8::text IS NOT NULL
+                           AND c.text_search @@ websearch_to_tsquery('english', $8)))))
+     ON CONFLICT (grant_id, action_id) DO UPDATE
+        SET value_est = EXCLUDED.value_est, updated_at = now()
+     RETURNING action_id`,
+    [
+      policy.contestation_floor,
+      policy.request_value_weight,
+      policy.request_reviewed_weight,
+      policy.request_untargeted_importance,
+      policy.request_wait_days,
+      grantId,
+      scope.scopeClaimId,
+      scope.scopeQuery,
+      actionId,
+    ]
+  );
+  return rows.length;
 }
 
 /**
