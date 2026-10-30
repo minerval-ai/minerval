@@ -21,6 +21,8 @@ name: Dependabot security auto-merge
 # Dependabot on plain pull_request get a read-only token and no secrets.
 #
 # Setup (docs/infrastructure.md, "Dependabot security auto-merge"):
+#   - Settings → Code security → "Dependabot alerts" and "Dependabot
+#     security updates" both on; without them no security PR is opened;
 #   - the repository secret DEPENDABOT_ALERTS_TOKEN: a fine-grained token
 #     for this repository only, with "Dependabot alerts: Read-only" and
 #     nothing else (the built-in token cannot read alerts);

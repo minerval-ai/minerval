@@ -352,9 +352,14 @@ cooldown in `.github/dependabot.yml`; security updates skip it, which is why
 the bar for merging them automatically is a high score and no maintainer
 change.
 
-Three settings make it work, and the workflow refuses to act without the
-third:
+Four settings make it work, and the workflow refuses to act without the
+last:
 
+- Settings → Code security → **Dependabot alerts** and **Dependabot
+  security updates**, both on. Without them Dependabot opens only the weekly
+  version updates, so no security PR ever reaches the workflow. From the
+  command line: `gh api -X PUT repos/minerval-ai/minerval/vulnerability-alerts`
+  and `gh api -X PUT repos/minerval-ai/minerval/automated-security-fixes`;
 - the repository secret `DEPENDABOT_ALERTS_TOKEN`, a fine-grained personal
   access token for `minerval-ai/minerval` only, with **Dependabot alerts:
   Read-only** and no other permission (the built-in token cannot read
