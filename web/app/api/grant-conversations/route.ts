@@ -41,8 +41,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ conversation }, { status: 201 });
   } catch (err) {
     if (err instanceof AccountApiError) {
+      // A failed Grantmaker turn returns the conversation with the funder's
+      // message already saved; pass it on so the page does not offer a resend.
       return NextResponse.json(
-        { error: err.message, code: err.code },
+        {
+          error: err.message,
+          code: err.code,
+          ...(err.payload?.conversation
+            ? { conversation: err.payload.conversation }
+            : {}),
+        },
         { status: err.status }
       );
     }

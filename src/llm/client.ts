@@ -481,7 +481,24 @@ export async function toolUseLoop(options: {
           "Your previous turn was cut off at the output limit (max_tokens) before " +
           "it finished, and nothing from it was recorded. Do not repeat it. Continue " +
           "from here far more concisely: decide, and make the tool call now.";
-        messages.push({ role: "user", content: [{ type: "text", text: note }] });
+        // A client tool call the cutoff left unfinished (a large input, such
+        // as a drafted mandate's plan) is replayed with the turn, and the API
+        // refuses a tool_use with no tool_result after it. Answer each one as
+        // not run: its input is incomplete.
+        const cutCalls: ToolResultBlockParam[] = result.rawContent
+          .filter((b) => b.type === "tool_use")
+          .map((b) => ({
+            type: "tool_result",
+            tool_use_id: (b as { id: string }).id,
+            is_error: true,
+            content:
+              "Not run: this call was cut off at the output limit before its " +
+              "input was complete. Make it again, more compactly.",
+          }));
+        messages.push({
+          role: "user",
+          content: [...cutCalls, { type: "text", text: note }],
+        });
         if (trace) {
           recordAgentStep(trace, "tool_results", [
             { name: "max_tokens_recovery", input: {}, output: note },

@@ -204,4 +204,50 @@ describe("toolUseLoop max_tokens recovery", () => {
     expect(final).toEqual({ is_match: true });
   });
 
+  it("answers a tool call the cutoff left unfinished, so the replay is a valid request", async () => {
+    // A large tool input (a drafted mandate's plan) cut off mid-call: the
+    // tool_use block is in the content, its input incomplete. Replayed
+    // without a tool_result, the API refuses the next request outright.
+    const cutMidCall = {
+      content: [
+        { type: "text", text: "Drafting the mandate now." },
+        { type: "tool_use", id: "toolu_cut", name: "submit", input: {} },
+      ],
+      usage: { input_tokens: 10, output_tokens: 4096 },
+      stop_reason: "max_tokens",
+      container: null,
+    };
+    createMock.mockResolvedValueOnce(cutMidCall).mockResolvedValueOnce(decision);
+    const executed: string[] = [];
+    let final: unknown = null;
+    await toolUseLoop({
+      initialMessages: [{ role: "user", content: "decide" }],
+      tools,
+      model: MODELS.haiku,
+      maxIterations: 4,
+      executeTool: async (name) => {
+        executed.push(name);
+        return "ok";
+      },
+      onFinalTool: (name, input) => (name === "submit" ? (final = input) : null),
+    });
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const second = createMock.mock.calls[1]![0];
+    expect(second.messages.at(-2).content).toContainEqual(
+      expect.objectContaining({ type: "tool_use", id: "toolu_cut" })
+    );
+    const answer = second.messages.at(-1);
+    expect(answer.role).toBe("user");
+    // The tool_result comes first in the message, as the API requires.
+    expect(answer.content[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "toolu_cut",
+      is_error: true,
+    });
+    expect(JSON.stringify(answer.content)).toContain("cut off at the output limit");
+    // The cut call never ran: its input is incomplete.
+    expect(executed).toEqual([]);
+    expect(final).toEqual({ is_match: true });
+  });
+
 });

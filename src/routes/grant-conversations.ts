@@ -17,7 +17,7 @@
  * agent synchronously, so responses take model latency; the web BFF calls
  * these with a generous timeout.
  */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   startConversation,
   addMessage,
@@ -25,6 +25,7 @@ import {
   getConversation,
   listConversations,
   serializeConversation,
+  type ConverseResult,
 } from "../services/grant-conversation-service.js";
 import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 
@@ -35,6 +36,23 @@ const MESSAGE_BODY = {
     message: { type: "string", minLength: 1, maxLength: 8000 },
   },
 } as const;
+
+/**
+ * The Grantmaker failed after the funder's message was saved: 502 with the
+ * saved conversation, so the caller sees its message is in the transcript
+ * and does not resend it.
+ */
+function agentFailed(
+  reply: FastifyReply,
+  result: Extract<ConverseResult, { code: "AGENT_FAILED" }>
+) {
+  return reply.code(502).send({
+    error: result.message,
+    code: result.code,
+    message_saved: true,
+    conversation: serializeConversation(result.conversation),
+  });
+}
 
 export async function grantConversationRoutes(
   app: FastifyInstance
@@ -54,6 +72,7 @@ export async function grantConversationRoutes(
         message: request.body.message,
       });
       if (!result.ok) {
+        if (result.code === "AGENT_FAILED") return agentFailed(reply, result);
         const status = result.code === "RATE_LIMITED" ? 429 : 400;
         return reply
           .code(status)
@@ -149,6 +168,7 @@ export async function grantConversationRoutes(
           message: request.body.message,
         });
         if (!result.ok) {
+          if (result.code === "AGENT_FAILED") return agentFailed(reply, result);
           const status =
             result.code === "NOT_FOUND"
               ? 404

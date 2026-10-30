@@ -78,7 +78,12 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
         }
       );
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok && data.conversation) {
+        // Saved, but the Grantmaker failed before replying: show the saved
+        // transcript rather than offering the message back for a resend.
+        setError(data.error ?? "Your message was saved, but no reply came back.");
+        setConvo(data.conversation);
+      } else if (!res.ok) {
         setError(data.error ?? "The Grantmaker could not be reached.");
         setDraft(message);
       } else {

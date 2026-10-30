@@ -99,7 +99,13 @@ export function GrantConversation({
             body: JSON.stringify({ message }),
           });
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok && data.conversation) {
+        // The message was saved but the Grantmaker failed before replying:
+        // show the saved transcript and leave the box empty, so it is not
+        // sent twice.
+        setError(data.error ?? "Your message was saved, but no reply came back.");
+        setConvo(data.conversation);
+      } else if (!res.ok) {
         setError(data.error ?? "Something went wrong; your message was not lost.");
         setDraft(message);
         setConvo((c) =>
