@@ -32,6 +32,8 @@ import {
 import { KindError } from "../../src/services/node-kind.js";
 import { getClaimDependents, getClaimTree } from "../../src/services/tree-service.js";
 import { claimRoutes } from "../../src/routes/claims.js";
+import { listClaims } from "../../src/services/claim-service.js";
+import { hybridSearch } from "../../src/services/search-service.js";
 
 const CHECK_VIOLATION = "23514";
 
@@ -423,5 +425,60 @@ describe("GET /claims/:id for the kinds", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+// Browse and search over the kinds: every kind lives in `claims`, so both
+// reach all three, and each kind is "assessed" by its own verdict table — a
+// question's standing, a quantity's estimate — since neither ever gets an
+// `assessments` row.
+describe("listing and search over the kinds", () => {
+  async function seedTrio(word: string) {
+    const question = await seedClaim(`${word} question`);
+    await markQuestion(question);
+    await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "t" });
+    const quantity = await seedQuantity(`${word} quantity`);
+    await recordEstimate({ claimId: quantity, estimate: { form: "point", central: 40e6 }, work: "w" });
+    const bareQuestion = await seedClaim(`${word} bare question`);
+    await markQuestion(bareQuestion);
+    const claim = await seedClaim(`${word} claim`);
+    return { question, quantity, bareQuestion, claim };
+  }
+
+  it("lists each kind with its own verdict, judged assessed by its own table", async () => {
+    const t = await seedTrio("listing");
+    const ids = new Set(Object.values(t));
+    const mine = async (opts: Partial<Parameters<typeof listClaims>[0]>) =>
+      (await listClaims({ limit: 100, ...opts })).results.filter((r) => ids.has(r.id));
+
+    const assessed = await mine({ assessed: "assessed" });
+    expect(assessed.map((r) => r.id).sort()).toEqual([t.question, t.quantity].sort());
+    expect(assessed.find((r) => r.id === t.question)).toMatchObject({ kind: "question", standing: "open" });
+    expect(assessed.find((r) => r.id === t.quantity)).toMatchObject({
+      kind: "quantity",
+      estimate: { form: "point", central: 40e6 },
+      unit: DEATHS.unit,
+    });
+
+    const unassessed = await mine({ assessed: "unassessed" });
+    expect(unassessed.map((r) => r.id).sort()).toEqual([t.bareQuestion, t.claim].sort());
+    expect(unassessed.find((r) => r.id === t.claim)).toEqual(expect.objectContaining({ kind: "claim" }));
+    expect(unassessed.find((r) => r.id === t.claim)).not.toHaveProperty("standing");
+
+    const questions = await mine({ kind: "question" });
+    expect(questions.map((r) => r.id).sort()).toEqual([t.question, t.bareQuestion].sort());
+  });
+
+  it("searches each kind, with the kind filter and kind-aware assessed filter", async () => {
+    const word = `zq${randomUUID().slice(0, 8)}`;
+    const t = await seedTrio(word);
+    // No embedding provider in this suite, so this exercises the keyword path.
+    const { results } = await hybridSearch(word, { limit: 50 });
+    expect(results.map((r) => r.id).sort()).toEqual(Object.values(t).sort());
+
+    const assessedQuestions = await hybridSearch(word, { kind: "question", assessed: "assessed" });
+    expect(assessedQuestions.results).toEqual([
+      expect.objectContaining({ id: t.question, kind: "question", standing: "open" }),
+    ]);
   });
 });
