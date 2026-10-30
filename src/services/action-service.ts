@@ -928,7 +928,7 @@ export async function materializeGrantPlan(
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
-      ledger = await materializePlanItem(g, item, i, {
+      ledger = await materializePlanItem(item, i, {
         ctx,
         cursor,
         active,
@@ -974,7 +974,6 @@ function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
 }
 
 async function materializePlanItem(
-  g: PlanGrantRow,
   item: MaterializablePlanItem,
   index: number,
   o: {
@@ -1096,8 +1095,10 @@ async function materializePlanItem(
       await enqueueSteward({
         claimId: claim.id,
         trigger: "mandate_plan",
+        // Nameless, like the lookout's flag: a Steward serves the graph, so
+        // which mandate paid, and who stands behind it, never reaches it.
         context:
-          `${kind} requested by the mandate "${g.name}": ` +
+          `A funded mandate scheduled a ${kind} pass on this claim: ` +
           `${String(item.rationale ?? "").trim() || "no rationale given"}`,
       });
     }
