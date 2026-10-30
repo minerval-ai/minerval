@@ -2,8 +2,8 @@
 
 Minerval exposes the claim graph as a **remote MCP server** (Model Context
 Protocol over streamable HTTP), so any MCP client — Claude Code, Claude.ai /
-Cowork, Cursor, ChatGPT — can query claims, inspect decompositions and
-assessments, fact-check text, and submit contributions from an agentic
+Cowork, Cursor, ChatGPT — can query claims, quantities, and questions,
+inspect decompositions and assessments, fact-check text, and submit contributions from an agentic
 workflow (issue #73). It keeps **parity with the REST API**: anything an
 account can do through the API, it can do over MCP, unless a stated reason
 says otherwise (see [Parity with the REST API](#parity-with-the-rest-api)).
@@ -262,9 +262,10 @@ Generated from the REST routes (see [Parity](#parity-with-the-rest-api));
 each tool's description is its route's summary plus the route it runs.
 
 - **Claims:** `list_claims`, `cite_claim`, `get_claim_provenance`,
-  `export_claim_nanopub`, `get_claim_record`, `get_assessment_history`,
-  `get_assessment_trajectory`, `get_claim_events`, `propose_claim` (reviewed
-  by the Contribution Reviewer before anything enters the graph).
+  `export_claim_nanopub`, `export_claim_scasp`, `get_claim_record`,
+  `get_assessment_history`, `get_assessment_trajectory`, `get_claim_events`,
+  `propose_claim` (reviewed by the Contribution Reviewer before anything
+  enters the graph).
 - **Funding:** `order_assessment`, `fund_claim_assessment`,
   `fund_deep_decomposition`, `list_orders`, `get_order`, `cancel_order`,
   `list_budget_jobs`, `get_budget_job`, `top_up_budget_job`,

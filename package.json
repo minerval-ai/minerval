@@ -1,7 +1,7 @@
 {
   "name": "minerval",
   "version": "0.1.0",
-  "description": "Knowledge graph of claims with transparent provenance and validity assessment",
+  "description": "Knowledge graph of claims, quantities, and questions with transparent provenance and assessment",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",

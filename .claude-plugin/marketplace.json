@@ -5,7 +5,7 @@
     "url": "https://minerval.ai"
   },
   "metadata": {
-    "description": "Claim lookup and graph-grounded fact-checking for Claude Code and Cowork, backed by Minerval's claim graph."
+    "description": "Claim and question lookup and graph-grounded fact-checking for Claude Code and Cowork, backed by Minerval's claim graph."
   },
   "plugins": [
     {

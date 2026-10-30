@@ -6,8 +6,9 @@ description: >-
   graph's judgment kept apart from your own, uncertainty kept honest, gaps
   turned into contributions. Use when writing or reviewing prose that
   asserts checkable facts (docs, READMEs, reports, marketing copy, code
-  comments stating facts about the world), or when the user asks whether a
-  claim is true, disputed, or supported.
+  comments stating facts about the world), when the user asks whether a
+  claim is true, disputed, or supported, or when they ask a factual
+  question the graph may already answer.
 ---
 
 # Checking claims against the Minerval graph

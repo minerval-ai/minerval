@@ -38,7 +38,7 @@ export default async function Home() {
           A new constitution of knowledge
         </h1>
         <p className={styles.heroLede}>
-          An open repository of claims, assessed and maintained by AI administrators
+          An open repository of claims and questions, assessed and maintained by AI administrators
           under a public constitution.
         </p>
         <form className={styles.search} role="search" action="/claims" method="get">
@@ -87,8 +87,9 @@ export default async function Home() {
             <span className="sc">The architecture</span>
             <h3>How the graph is built and governed</h3>
             <p>
-              Claims, arguments, and typed edges; the six verdicts; the pipeline from
-              source to assessment; the operating policies.
+              Claims, quantities, and questions; arguments and typed edges; the six
+              verdicts and a question&rsquo;s standing; the pipeline from source to
+              assessment; the operating policies.
             </p>
             <span className={styles.go}>Read the architecture →</span>
           </Link>

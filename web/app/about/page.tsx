@@ -42,8 +42,8 @@ export default function About() {
         <Annot n={1} text="claims about the world">
           Claims are canonical forms of public claims about the world. More details in
           part II of our <Link href={CONSTITUTION}>constitution</Link>.
-        </Annot>
-        , figure out what the important ones are, and ask LLMs to assess their epistemic
+        </Annot>{" "}
+        and the questions they answer, figure out what the important ones are, and ask LLMs to assess their epistemic
         statuses. Its claim pages (
         <Link href="/claims/0d59fb15-7dc1-49b1-b9d9-9462f17d2d21/map">example</Link>) are
         intended to be{" "}
@@ -62,7 +62,8 @@ export default function About() {
         for a standard introduction to any given topic.
       </p>
       <p>
-        Minerval decomposes every claim to its bedrock, weighs it against the evidence,
+        Minerval decomposes every claim to its bedrock and every question into what it
+        presupposes, weighs both against the evidence,
         and keeps the verdict current as the world changes. The graph is maintained by
         LLM administrators operating under a public{" "}
         <Link href={CONSTITUTION}>constitution</Link>; every judgment carries a reasoning
