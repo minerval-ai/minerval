@@ -23,7 +23,11 @@ type ToolUnion = Anthropic.Messages.ToolUnion;
 type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 import { checkBudget } from "./budget-tracker.js";
-import { DEFAULT_MODEL } from "./models.js";
+import {
+  DEFAULT_MODEL,
+  modelRefusalFallbackForm,
+  modelSupportsLongRun,
+} from "./models.js";
 import { getUsageContext, runBudget } from "./usage-context.js";
 import { spendLine } from "./budget-line.js";
 import { recordAgentStep } from "../services/trace-service.js";
@@ -49,6 +53,8 @@ export type {
 };
 
 const DEFAULT_MAX_TOKENS = 8192;
+/** The streaming path's output ceiling (providers/anthropic.ts LONG_RUN_MAX_OUTPUT_TOKENS). */
+const LONG_RUN_MAX_TOKENS = 128_000;
 
 export async function complete(options: {
   messages: MessageParam[];
@@ -389,8 +395,31 @@ export async function toolUseLoop(options: {
    * caller catches its own error.
    */
   beforeTurn?: (turn: number) => Promise<void> | void;
+  /**
+   * Run each turn on the adapter's streaming path, where a turn has no
+   * request timeout to beat. On the models the long-run path serves, a turn
+   * may emit up to the model's full output (the long-run client's ceiling):
+   * for a loop that writes one large output, such as the Grantmaker's
+   * drafted mandate, which a non-streaming request cannot hold. A provider
+   * with no streaming path runs non-streaming as before.
+   */
+  stream?: boolean;
+  /**
+   * Called with the reply's text as the model writes it, with the 0-based
+   * turn it belongs to: deltas while a turn streams, or a turn's whole text
+   * once it completes when the turn did not stream. For showing a person the
+   * reply while it forms.
+   */
+  onText?: (delta: string, turn: number) => void;
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
+  const streamModel = options.model ?? DEFAULT_MODEL;
+  const streamAdapter = getAdapter(streamModel);
+  const streaming =
+    options.stream && streamAdapter.completeWithToolsStreaming
+      ? streamAdapter.completeWithToolsStreaming.bind(streamAdapter)
+      : null;
+  const fallbackForm = modelRefusalFallbackForm(streamModel);
   const maxIter = options.maxIterations ?? 5;
   const notice = options.iterationBudgetNotice ?? DEFAULT_ITERATION_BUDGET_NOTICE;
   const turnCounter = options.turnCounter ?? true;
@@ -424,19 +453,41 @@ export async function toolUseLoop(options: {
   for (let i = 0; i < maxIter; i++) {
     if (options.beforeTurn) await options.beforeTurn(i);
     const spentAtTurnStart = runBudget()?.spentMicroUsd ?? 0;
-    const result = await completeWithTools({
-      messages,
-      tools: options.tools,
-      system: options.system,
-      model: options.model,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
-      effort: options.effort,
-      container: containerId,
-    });
+    const turn = i;
+    const result = streaming
+      ? await (() => {
+          checkBudget();
+          return streaming({
+            messages,
+            tools: options.tools,
+            system: options.system,
+            model: streamModel,
+            maxTokens:
+              options.maxTokens ??
+              (modelSupportsLongRun(streamModel) ? LONG_RUN_MAX_TOKENS : DEFAULT_MAX_TOKENS),
+            temperature: options.temperature,
+            effort: options.effort,
+            container: containerId,
+            // The same refusal fallback the non-streaming path gives this model.
+            fallbacks:
+              fallbackForm === "array" ? "server" : fallbackForm === "default" ? "default" : "none",
+            ...(options.onText ? { onText: (delta: string) => options.onText!(delta, turn) } : {}),
+          });
+        })()
+      : await completeWithTools({
+          messages,
+          tools: options.tools,
+          system: options.system,
+          model: options.model,
+          maxTokens: options.maxTokens,
+          temperature: options.temperature,
+          effort: options.effort,
+          container: containerId,
+        });
 
     lastResult = result;
     if (result.container) containerId = result.container;
+    if (!streaming && options.onText && result.content) options.onText(result.content, turn);
 
     // One step per model turn, whatever the loop decides to do with it —
     // pause_turn continuations and max_tokens cutoffs are part of the record.

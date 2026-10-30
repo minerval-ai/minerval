@@ -60,6 +60,7 @@ vi.mock("../../../src/llm/agents/grantmaker.js", () => ({
 import {
   startConversation,
   resetGrantConversationRateLimiter,
+  settleGrantConversationTurns,
 } from "../../../src/services/grant-conversation-service.js";
 
 beforeEach(() => {
@@ -69,8 +70,12 @@ beforeEach(() => {
 });
 
 describe("granting-conversation rate limit", () => {
-  const open = () =>
-    startConversation({ userId: "u-1", message: "Fund work on X." });
+  // Turns run in the background; settle them before counting.
+  const open = async () => {
+    const result = await startConversation({ userId: "u-1", message: "Fund work on X." });
+    await settleGrantConversationTurns();
+    return result;
+  };
 
   it("allows turns up to the hourly limit", async () => {
     for (let i = 0; i < 3; i++) {

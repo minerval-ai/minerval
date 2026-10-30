@@ -58,6 +58,15 @@ export interface ChatResponse {
   citations: ChatCitation[];
 }
 
+/** The port the panel opens to the background worker for a streamed chat. */
+export const CHAT_PORT = "chat";
+
+/** What the background worker sends back over the chat port. */
+export type ChatStreamMessage =
+  | { type: "text"; delta: string; turn: number }
+  | { type: "done"; data: ChatResponse }
+  | { type: "error"; error: string };
+
 /** Markup levels, most→least conservative. Controls which verdicts render. */
 export type MarkupLevel = "off" | "conservative" | "moderate" | "aggressive";
 

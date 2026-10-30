@@ -278,6 +278,8 @@ export interface ChatCitation {
 }
 
 export async function chatAboutPage(input: {
+  /** The reply's text as it is written, with the model turn it belongs to. */
+  onText?: (delta: string, turn: number) => void;
   messages: ChatTurn[];
   page: {
     url: string | null;
@@ -300,6 +302,7 @@ export async function chatAboutPage(input: {
       pageTitle: input.page.title,
       pageClaims: input.page.claims,
       model: config.extensionModel,
+      ...(input.onText ? { onText: input.onText } : {}),
     })
   );
 

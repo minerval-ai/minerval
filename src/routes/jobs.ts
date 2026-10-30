@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { getJobById } from "../services/job-service.js";
+import { isTextAnalysisType } from "../services/text-analysis-service.js";
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   // GET /jobs/:job_id
@@ -34,7 +35,9 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
         const { job_id } = request.params;
         const job = await getJobById(job_id);
 
-        if (!job) {
+        // A text analysis holds what one account asked about; it is read
+        // only by that account, through the MCP get_text_analysis tool.
+        if (!job || isTextAnalysisType(job.type)) {
           return reply.code(404).send({
             error: {
               code: "NOT_FOUND",

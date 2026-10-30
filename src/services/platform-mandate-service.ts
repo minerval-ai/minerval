@@ -34,7 +34,10 @@ import {
   PLATFORM_GRANTMAKING_SCOPE,
   getPlatformAccountId,
 } from "./platform-account.js";
-import type { ConversationMessage } from "./grant-conversation-service.js";
+import {
+  serializeTurn,
+  type ConversationMessage,
+} from "./grant-conversation-service.js";
 
 /** What the operator route records on the grant: the public approval. */
 export interface PlatformApproval {
@@ -217,10 +220,15 @@ export async function getPublicPlatformConversation(conversationId: string) {
     messages: ConversationMessage[] | null;
     mandate: GrantMandate | null;
     grant_id: string | null;
+    turn_started_at: Date | null;
+    turn_heartbeat_at: Date | null;
+    turn_error: string | null;
+    turn_partial: string | null;
     created_at: Date;
     updated_at: Date;
   }>(
     `SELECT gc.id, gc.status, gc.messages, gc.mandate, gc.grant_id,
+            gc.turn_started_at, gc.turn_heartbeat_at, gc.turn_error, gc.turn_partial,
             gc.created_at, gc.updated_at
        FROM grant_conversations gc
        JOIN contributors c ON c.id = gc.user_id
@@ -235,6 +243,13 @@ export async function getPublicPlatformConversation(conversationId: string) {
     messages: row.messages ?? [],
     draft: row.mandate,
     draft_sha256: row.mandate ? mandateDraftHash(row.mandate) : null,
+    // While a turn is replying the draft may still change, and its hash with it.
+    turn: serializeTurn({
+      turnStartedAt: row.turn_started_at,
+      turnHeartbeatAt: row.turn_heartbeat_at,
+      turnError: row.turn_error,
+      turnPartial: row.turn_partial,
+    }),
     grant_id: row.grant_id,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),

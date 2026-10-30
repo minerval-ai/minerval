@@ -7,11 +7,13 @@ import {
   lookupSharedAnalysis,
   proposeClaim,
 } from "~lib/api";
-import type {
-  AnalyzeProgress,
-  BackgroundRequest,
-  PageAnalysis,
-  Result,
+import {
+  CHAT_PORT,
+  type AnalyzeProgress,
+  type BackgroundRequest,
+  type ChatStreamMessage,
+  type PageAnalysis,
+  type Result,
 } from "~lib/types";
 
 /**
@@ -77,6 +79,31 @@ function setBadge(tabId: number | undefined, count: number): void {
  * module without side effects.
  */
 export function startBackground(): void {
+  // A chat streams over a port: the panel connects, sends the request, and
+  // gets the answer's text as it forms, then the finished reply. The open
+  // port also keeps the service worker alive while the answer runs.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== CHAT_PORT) return;
+    let open = true;
+    port.onDisconnect.addListener(() => {
+      open = false;
+    });
+    const post = (message: ChatStreamMessage) => {
+      if (open) port.postMessage(message);
+    };
+    port.onMessage.addListener((message: BackgroundRequest) => {
+      if (message.type !== "chat") return;
+      void (async () => {
+        try {
+          const reply = await chat(message, (delta, turn) => post({ type: "text", delta, turn }));
+          post({ type: "done", data: reply });
+        } catch (err) {
+          post({ type: "error", error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
+    });
+  });
+
   chrome.runtime.onMessage.addListener(
     (message: BackgroundRequest, sender, sendResponse) => {
       const respond = (result: Result<unknown>) => sendResponse(result);

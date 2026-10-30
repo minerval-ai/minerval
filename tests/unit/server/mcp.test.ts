@@ -169,8 +169,61 @@ vi.mock("../../../src/services/owl-ledger-service.js", async (importOriginal) =>
   refundOwls: mocks.refundOwls,
 }));
 
+// Text analyses run in the background against the jobs table; here they
+// run to completion in memory, so a tool's job_id reads back its result.
+const analyses = vi.hoisted(() => new Map<string, { status: string; result?: unknown; error?: string; progress: unknown[] }>());
+vi.mock("../../../src/services/text-analysis-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/text-analysis-service.js")>()),
+  startTextAnalysis: vi.fn(
+    async (
+      _type: string,
+      _params: unknown,
+      _owner: unknown,
+      work: (progress: (p: unknown) => Promise<void>) => Promise<unknown>
+    ) => {
+      const id = `00000000-0000-4000-8000-${String(analyses.size).padStart(12, "0")}`;
+      const entry: { status: string; result?: unknown; error?: string; progress: unknown[] } = {
+        status: "processing",
+        progress: [],
+      };
+      analyses.set(id, entry);
+      try {
+        entry.result = await work(async (p) => {
+          entry.progress.push(structuredClone(p));
+        });
+        entry.status = "complete";
+      } catch (err) {
+        entry.status = "failed";
+        entry.error = (err as Error).message;
+      }
+      return { id };
+    }
+  ),
+  getTextAnalysis: vi.fn(async (jobId: string) => {
+    const entry = analyses.get(jobId);
+    return entry
+      ? { job_id: jobId, status: entry.status, result: entry.result ?? null, error: entry.error ?? null }
+      : null;
+  }),
+}));
+
 let app: FastifyInstance;
 let baseUrl: string;
+
+/** Start a background analysis tool and read its finished result. */
+async function runAnalysis(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const started = parseText(await client.callTool({ name, arguments: args }));
+  expect(started).toMatchObject({ status: "processing", job_id: expect.any(String) });
+  const read = parseText(
+    await client.callTool({ name: "get_text_analysis", arguments: { job_id: started.job_id } })
+  );
+  expect(read.status).toBe("complete");
+  return read.result as Record<string, unknown>;
+}
 
 async function connect(headers: Record<string, string>): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
@@ -402,6 +455,7 @@ describe("MCP tools", () => {
       "get_contribution_status",
       "get_decomposition",
       "get_dependents",
+      "get_text_analysis",
       "list_tags",
       "match_claim",
       "raise_issue",
@@ -667,14 +721,14 @@ describe("MCP tools", () => {
         relationship_notes: null,
       }));
 
-    const result = await client.callTool({
-      name: "assess_text",
-      arguments: { text: "Some passage.", max_claims: 5 },
-    });
-    const payload = parseText(result) as {
-      judgments: Array<Record<string, unknown>>;
-    };
+    const payload = (await runAnalysis(client, "assess_text", {
+      text: "Some passage.",
+      max_claims: 5,
+    })) as { judgments: Array<Record<string, unknown>> };
     expect(payload.judgments).toHaveLength(2);
+    // Each judgment was readable as soon as it was made.
+    const progress = [...analyses.values()].at(-1)!.progress as Array<{ judgments: unknown[] }>;
+    expect(progress.map((p) => p.judgments.length)).toEqual([0, 1, 2]);
     expect(payload.judgments[0]).toMatchObject({ verdict: "well_supported" });
     expect(payload.judgments[1]).toMatchObject({ verdict: "unknown" });
     expect(mocks.extractClaims).toHaveBeenCalledWith(
@@ -1244,13 +1298,9 @@ describe("MCP tools on quantities and questions (§7a)", () => {
     mocks.matchClaim
       .mockImplementationOnce(matchTo(QUANTITY_ID, "states"))
       .mockImplementationOnce(matchTo(QUESTION_ID, "asks"));
-    const result = await client.callTool({
-      name: "assess_text",
-      arguments: { text: "Inflation hit 8% in 2022. What drove it?" },
-    });
-    const { judgments } = parseText(result) as {
-      judgments: Array<Record<string, unknown>>;
-    };
+    const { judgments } = (await runAnalysis(client, "assess_text", {
+      text: "Inflation hit 8% in 2022. What drove it?",
+    })) as { judgments: Array<Record<string, unknown>> };
     expect(mocks.matchClaim.mock.calls.map((c) => (c[0] as { kind: string }).kind)).toEqual([
       "quantity",
       "question",

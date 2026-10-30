@@ -2770,6 +2770,18 @@ export const grantConversations = pgTable(
     grantId: uuid("grant_id").references(() => grants.id, {
       onDelete: "set null",
     }),
+    // The Grantmaker's turn runs in the background after the funder's
+    // message is saved. Set while a turn holds the conversation; the
+    // heartbeat is refreshed while it runs, so a turn whose process died
+    // (a deploy, a crash) reads as lost rather than as running forever.
+    turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
+    turnHeartbeatAt: timestamp("turn_heartbeat_at", { withTimezone: true }),
+    // Why the last turn failed; cleared when the next turn starts.
+    turnError: text("turn_error"),
+    // The running turn's reply as the Grantmaker writes it, saved about once
+    // a second so whoever is reading the conversation sees it form. Cleared
+    // when the turn ends: the finished reply is in messages.
+    turnPartial: text("turn_partial"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

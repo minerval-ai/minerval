@@ -92,6 +92,12 @@ import {
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
 import { registerRouteTools } from "./route-tools.js";
+import {
+  getTextAnalysis,
+  startTextAnalysis,
+  type ReportProgress,
+  type TextAnalysisType,
+} from "../services/text-analysis-service.js";
 import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
 import {
   getCurrentEstimate,
@@ -197,6 +203,63 @@ async function agentic<T>(
   if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
   return { ok: true, value: run.value };
 }
+
+/**
+ * Start an agentic analysis in the background and answer at once with its
+ * job id. The quota is checked before anything starts, so a denial is the
+ * tool's answer; the charge is taken when the work starts, and settled to
+ * the metered cost when it ends, as for a synchronous call.
+ */
+async function startAgentic(
+  ctx: McpRequestContext,
+  op: PricedOp,
+  type: TextAnalysisType,
+  params: Record<string, unknown>,
+  work: (progress: ReportProgress) => Promise<Record<string, unknown>>
+): Promise<CallToolResult> {
+  const decision = await checkAgenticQuota(ctx.auth, op);
+  if (!decision.allowed) {
+    return errorResult(
+      decision.code!,
+      decision.message!,
+      decision.entitlement ? { entitlement: decision.entitlement } : undefined
+    );
+  }
+  const job = await startTextAnalysis(
+    type,
+    params,
+    { userId: ctx.auth.userId ?? null, apiKeyId: ctx.auth.apiKeyId ?? null },
+    async (progress) => {
+      const run = await withAgenticCharge(ctx.auth, op, {}, () =>
+        runWithUsageContext(
+          {
+            userId: ctx.auth.userId,
+            apiKeyId: ctx.auth.apiKeyId,
+            requestId: ctx.requestId,
+          },
+          () => untraced(() => work(progress))
+        )
+      );
+      if (!run.ok) throw new Error(run.denied.message ?? "The charge for this analysis was refused");
+      return run.value;
+    }
+  );
+  return jsonResult({
+    job_id: job.id,
+    status: "processing",
+    next:
+      "The analysis runs in the background. Call get_text_analysis with this " +
+      "job_id every 20-30 seconds until status is \"complete\" (the result is " +
+      "there) or \"failed\" (error says why). Partial results appear as they " +
+      "are ready.",
+  });
+}
+
+/** Said in each background tool's description: how to get the result. */
+const RUNS_IN_BACKGROUND =
+  " Runs in the background: returns a job_id at once; read the result with " +
+  "get_text_analysis (it takes from under a minute to several minutes, " +
+  "growing with the text).";
 
 /**
  * Match one assertion against the graph and shape the shared result.
@@ -708,7 +771,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "form is its definition with its unit), and provisional importance. " +
         "Claims worth minting are scarce " +
         "relative to text, so most sentences yield none. Runs a model: metered to your " +
-        "account and quota-gated.",
+        "account and quota-gated." +
+        RUNS_IN_BACKGROUND,
       inputSchema: {
         text: z.string().min(1).max(100_000).describe("The text to extract from"),
         source_type: z
@@ -719,17 +783,20 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         max_claims: z.number().int().min(1).max(50).default(20),
       },
     },
-    async ({ text, source_type, max_claims }) => {
-      const run = await agentic(ctx, "text_analysis", () =>
-        extractClaims({
-          content: text,
-          sourceType: source_type,
-          maxClaims: max_claims,
+    async ({ text, source_type, max_claims }) =>
+      startAgentic(
+        ctx,
+        "text_analysis",
+        "extract_claims",
+        { text_chars: text.length, source_type: source_type ?? null, max_claims },
+        async () => ({
+          claims: await extractClaims({
+            content: text,
+            sourceType: source_type,
+            maxClaims: max_claims,
+          }),
         })
-      );
-      if (!run.ok) return run.denied;
-      return jsonResult({ claims: run.value });
-    }
+      )
   );
 
   server.registerTool(
@@ -749,7 +816,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "quantity it is a value of ('estimated', with the graph's " +
         "`estimate`) and a question to the question it asks (its standing: " +
         "answered, leaning, open, ill_posed, or unknown). Runs a model: " +
-        "metered to your account and quota-gated.",
+        "metered to your account and quota-gated." +
+        RUNS_IN_BACKGROUND +
+        " While it runs, the result holds the judgments made so far.",
       inputSchema: {
         text: z.string().min(1).max(50_000).describe("The passage to assess"),
         max_claims: z
@@ -761,54 +830,84 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .describe("Cap on how many extracted claims to judge"),
       },
     },
-    async ({ text, max_claims }) => {
-      const run = await agentic(ctx, "text_analysis", async () => {
-        const extracted = await extractClaims({
-          content: text,
-          sourceType: "assess_text",
-          maxClaims: max_claims,
-        });
-        const judgments = [];
-        // Sequential on purpose: each match is its own tool-use loop, and a
-        // passage's claims often overlap — bursting them in parallel just
-        // races the same vector searches while multiplying peak LLM load.
-        for (const c of extracted) {
-          const kind = nodeKindEnum.safeParse(c.kind).data ?? "claim";
-          const match = await matchAssertion(
-            c.verbatim_text,
-            c.context ?? undefined,
-            sanitizeDomains(c.domains),
-            kind
-          );
-          judgments.push({
-            verbatim_text: c.verbatim_text,
-            proposed_canonical_form: c.proposed_canonical_form,
-            claim_type: c.claim_type,
-            kind,
-            // "unknown": the graph has no canonical claim for this assertion.
-            // "undecided": the Matcher reached no verdict (#419).
-            // "unassessed": it exists but has no current judgment yet.
-            // A matched quantity is "estimated" (its `estimate` beside it),
-            // a matched question its standing.
-            verdict:
-              match.matched === null
-                ? "undecided"
-                : !match.matched
-                  ? "unknown"
-                  : match.claim.kind === "quantity"
-                    ? match.estimate
-                      ? "estimated"
-                      : "unassessed"
-                    : match.claim.kind === "question"
-                      ? (match.standing ?? "unassessed")
-                      : (match.assessment?.status ?? "unassessed"),
-            ...match,
+    async ({ text, max_claims }) =>
+      startAgentic(
+        ctx,
+        "text_analysis",
+        "assess_text",
+        { text_chars: text.length, max_claims },
+        async (progress) => {
+          const extracted = await extractClaims({
+            content: text,
+            sourceType: "assess_text",
+            maxClaims: max_claims,
           });
+          await progress({ claims_extracted: extracted.length, judgments: [] });
+          const judgments = [];
+          // Sequential on purpose: each match is its own tool-use loop, and a
+          // passage's claims often overlap — bursting them in parallel just
+          // races the same vector searches while multiplying peak LLM load.
+          for (const c of extracted) {
+            const kind = nodeKindEnum.safeParse(c.kind).data ?? "claim";
+            const match = await matchAssertion(
+              c.verbatim_text,
+              c.context ?? undefined,
+              sanitizeDomains(c.domains),
+              kind
+            );
+            judgments.push({
+              verbatim_text: c.verbatim_text,
+              proposed_canonical_form: c.proposed_canonical_form,
+              claim_type: c.claim_type,
+              kind,
+              // "unknown": the graph has no canonical claim for this assertion.
+              // "undecided": the Matcher reached no verdict (#419).
+              // "unassessed": it exists but has no current judgment yet.
+              // A matched quantity is "estimated" (its `estimate` beside it),
+              // a matched question its standing.
+              verdict:
+                match.matched === null
+                  ? "undecided"
+                  : !match.matched
+                    ? "unknown"
+                    : match.claim.kind === "quantity"
+                      ? match.estimate
+                        ? "estimated"
+                        : "unassessed"
+                      : match.claim.kind === "question"
+                        ? (match.standing ?? "unassessed")
+                        : (match.assessment?.status ?? "unassessed"),
+              ...match,
+            });
+            // Each judgment is readable as soon as it is made.
+            await progress({ claims_extracted: extracted.length, judgments });
+          }
+          return { claims_extracted: extracted.length, judgments };
         }
-        return judgments;
+      )
+  );
+
+  server.registerTool(
+    "get_text_analysis",
+    {
+      title: "Get a text analysis's result",
+      description:
+        "Read an analysis started by extract_claims or assess_text. status is " +
+        "\"processing\" while it runs (result holds what is ready so far: " +
+        "for assess_text, the judgments made so far), \"complete\" with the " +
+        "full result, or \"failed\" with an error. Only the account that " +
+        "started an analysis can read it. Free.",
+      inputSchema: {
+        job_id: z.string().uuid().describe("The job_id the analysis tool returned"),
+      },
+    },
+    async ({ job_id }) => {
+      const view = await getTextAnalysis(job_id, {
+        userId: ctx.auth.userId ?? null,
+        apiKeyId: ctx.auth.apiKeyId ?? null,
       });
-      if (!run.ok) return run.denied;
-      return jsonResult({ judgments: run.value });
+      if (!view) return errorResult("NOT_FOUND", "No analysis of yours has that job_id");
+      return jsonResult(view);
     }
   );
 
