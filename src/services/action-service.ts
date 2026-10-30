@@ -796,8 +796,17 @@ async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
     `SELECT c.id, c.state, c.steward_state,
             EXISTS (SELECT 1 FROM claim_formalizations f
                      WHERE f.claim_id = c.id AND f.status = 'published') AS published,
-            (SELECT MAX(x.assessed_at) FROM assessments x
-              WHERE x.claim_id = c.id AND x.is_current = true) AS assessed_at
+            -- Each kind keeps its current assessment in its own table: a
+            -- proposition's verdict, a quantity's estimate, a question's
+            -- standing. GREATEST skips the NULLs of the other two.
+            GREATEST(
+              (SELECT MAX(x.assessed_at) FROM assessments x
+                WHERE x.claim_id = c.id AND x.is_current = true),
+              (SELECT MAX(q.assessed_at) FROM quantity_estimates q
+                WHERE q.claim_id = c.id AND q.is_current = true),
+              (SELECT MAX(qa.assessed_at) FROM question_assessments qa
+                WHERE qa.claim_id = c.id AND qa.is_current = true)
+            ) AS assessed_at
        FROM claims c WHERE c.id = $1`,
     [claimId]
   );

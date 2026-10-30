@@ -20,6 +20,7 @@ import {
   type RequestOutcome,
   type RequestState,
 } from "../schemas/kinds.js";
+import { generateEmbedding } from "./embedding-service.js";
 import { getFundingLabelForJob } from "./grant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 
@@ -27,6 +28,29 @@ export class RequestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RequestError";
+  }
+}
+
+/** Embedding text: the ask carries the identity, the why what it turns on. */
+export function requestEmbeddingText(ask: string, why: string): string {
+  return `${ask.trim()}\n\n${why.trim()}`.slice(0, 4000);
+}
+
+/**
+ * A request's embedding as a vector literal, or null when the embedder is
+ * down. A failure is not the filer's problem: the request is recorded
+ * without one, keyword search still finds it, and the backfill script
+ * (scripts/backfill-request-embeddings.ts) embeds it later.
+ */
+async function embedRequest(ask: string, why: string): Promise<string | null> {
+  try {
+    return `[${(await generateEmbedding(requestEmbeddingText(ask, why))).join(",")}]`;
+  } catch (err) {
+    console.error(
+      "[requests] embedding failed; recording without one:",
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
   }
 }
 
@@ -58,6 +82,8 @@ export async function fileRequest(input: {
   }
   const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
   const filer = input.filer;
+  // Embedded before the transaction, so no row lock waits on the network.
+  const embedding = await embedRequest(input.ask, input.why);
   return withTransaction(async (tx) => {
     if (claimIds.length > 0) {
       const live = await tx.query<{ id: string }>(
@@ -72,8 +98,8 @@ export async function fileRequest(input: {
       `INSERT INTO requests
          (ask, why, satisfied_by, who_could, addressed_to, bears_on_text,
           filer_kind, filer_agent, filer_contributor_id, filer_grant_id, filer_run_id,
-          keeper_kind, keeper_claim_id, state)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+          keeper_kind, keeper_claim_id, state, embedding)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector) RETURNING id`,
       [
         input.ask.trim(),
         input.why.trim(),
@@ -89,6 +115,7 @@ export async function fileRequest(input: {
         keeperClaimId ? "steward" : "curator",
         keeperClaimId,
         input.addressedTo?.trim() ? "addressed" : "open",
+        embedding,
       ]
     );
     const id = row!.id;
@@ -234,6 +261,21 @@ export async function reviseRequest(input: {
     }
     await tx.query(`UPDATE requests SET ${assignments.join(", ")}, updated_at = now() WHERE id = $1`, params);
   });
+  // New wording, new embedding: re-embedded after the transaction, from the
+  // row as it now stands. A failed embed clears it rather than leave search
+  // ranking the request by words it no longer says.
+  if (set.some(([col]) => col === "ask" || col === "why")) {
+    const [row] = await rawQuery<{ ask: string; why: string }>(
+      `SELECT ask, why FROM requests WHERE id = $1`,
+      [input.requestId]
+    );
+    if (row) {
+      await rawQuery(`UPDATE requests SET embedding = $2::vector WHERE id = $1`, [
+        input.requestId,
+        await embedRequest(row.ask, row.why),
+      ]);
+    }
+  }
 }
 
 /**
@@ -455,10 +497,19 @@ export async function getRequest(id: string): Promise<RequestView | null> {
  * Requests, newest first. `live` keeps the ones still open to work (open,
  * addressed, in progress); `claimId` keeps the ones that bear on that node.
  */
+// The cosine similarity a request needs to match a query by meaning alone,
+// the same floor claim search defaults to (claimSearchParams.min_similarity).
+const REQUEST_MIN_SIMILARITY = 0.3;
+
 export async function listRequests(opts: {
   state?: RequestState;
   live?: boolean;
   claimId?: string;
+  /**
+   * A search over what requests ask and why: by meaning, and by keyword
+   * (web-search syntax) for exact terms, ranked by meaning.
+   */
+  q?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<{ items: RequestView[]; total: number }> {
@@ -474,11 +525,40 @@ export async function listRequests(opts: {
     params.push(opts.claimId);
     where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.claim_id = $${params.length})`);
   }
+  // A search works as claim search does (search-service.ts): keyword OR
+  // semantic match for recall, ranked by cosine similarity to the query,
+  // keyword rank (the ask weighs most; see requests.text_search) and then
+  // recency breaking ties. A request with no embedding ranks after every
+  // scored one. Without an embedding of the query it falls back to keyword
+  // matching, loudly. Without a query the list is simply newest first.
+  let order = "r.created_at DESC, r.id";
+  const q = opts.q?.trim();
+  if (q) {
+    params.push(q);
+    const tsq = `websearch_to_tsquery('english', $${params.length})`;
+    let queryEmbedding: number[] | null = null;
+    try {
+      queryEmbedding = await generateEmbedding(q);
+    } catch (err) {
+      console.warn(
+        `Request search embedding failed; falling back to keyword-only matching: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    if (queryEmbedding) {
+      params.push(`[${queryEmbedding.join(",")}]`, REQUEST_MIN_SIMILARITY);
+      const similarity = `1 - (r.embedding <=> $${params.length - 1}::vector)`;
+      where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
+      order = `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
+    } else {
+      where.push(`r.text_search @@ ${tsq}`);
+      order = `ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
+    }
+  }
   const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [count] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params);
   params.push(opts.limit ?? 50, opts.offset ?? 0);
   const rows = await rawQuery<RequestRowJoined>(
-    `${REQUEST_SELECT} ${clause} ORDER BY r.created_at DESC, r.id LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `${REQUEST_SELECT} ${clause} ORDER BY ${order} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
   return { items: await assemble(rows), total: count?.n ?? 0 };

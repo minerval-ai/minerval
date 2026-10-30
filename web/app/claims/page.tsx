@@ -2,7 +2,7 @@ import Link from "next/link";
 import { loadClaims, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
 import { claimTypeMeta, DEFINED_IN, IMPORTANCE_FLOORS, importanceFloorMin } from "@/lib/ontology";
 import type { ImportanceFloor } from "@/lib/ontology";
-import { StatusBadge, Unassessed, Importance } from "@/components/Assessment";
+import { StatusBadge, StandingBadge, Unassessed, Importance } from "@/components/Assessment";
 import { Term } from "@/components/Term";
 import { ClaimsControls } from "@/components/ClaimsControls";
 import { Territories, RecentClaims, OpenPrizes } from "@/components/Territories";
@@ -10,7 +10,8 @@ import { TopicChips, Topics } from "@/components/Topics";
 import { ProposeClaim } from "@/components/ProposeClaim";
 import { PrizeChip } from "@/components/claim/PrizeChip";
 import { MachineChecked } from "@/components/claim/MachineChecked";
-import type { AssessedFilter, ClaimType } from "@/lib/types";
+import { describeEstimate } from "@/lib/quantity";
+import type { AssessedFilter, ClaimType, NodeKind, SearchResultItem } from "@/lib/types";
 
 // How many newest claims the demoted "recently added" strip shows in the
 // overview. Small on purpose: it is orientation, not the feed.
@@ -21,12 +22,50 @@ const PRIZE_STRIP = 8;
 // whole vocabulary one click away.
 const TOPIC_STRIP = 24;
 
+const NODE_KINDS: readonly NodeKind[] = ["claim", "question", "quantity"];
+
+// The kind tag on a question's or quantity's card (constitution §2, §7a). A
+// claim carries its claim type there instead; a question or quantity has no
+// proposition type to show, so its kind takes that place.
+const KIND_TAG: Record<Exclude<NodeKind, "claim">, { label: string; gloss: string; href: string }> = {
+  question: {
+    label: "Question",
+    gloss: "A question: answered rather than affirmed or denied, with its candidate answers beneath it. Its standing says how well answered it is.",
+    href: DEFINED_IN.question,
+  },
+  quantity: {
+    label: "Quantity",
+    gloss: "A quantity: a value the graph estimates rather than a proposition it affirms or denies. Its estimate stands where a claim's status would.",
+    href: DEFINED_IN.quantity,
+  },
+};
+
+// What stands where a claim's status would: a question's standing, a
+// quantity's estimate, or a claim's verdict.
+function Verdict({ c, href }: { c: SearchResultItem; href: string }) {
+  if (c.kind === "question") return <StandingBadge standing={c.standing ?? null} linkTo={href} />;
+  if (c.kind === "quantity") {
+    return c.estimate && c.unit ? (
+      <span className="qty-chip" title="This is a quantity; its estimate stands where a status would.">
+        {describeEstimate(c.estimate, c.unit).lead}
+      </span>
+    ) : (
+      <Unassessed linkTo={href} />
+    );
+  }
+  return c.assessment_status ? <StatusBadge status={c.assessment_status} linkTo={href} /> : <Unassessed linkTo={href} />;
+}
+
 export default async function ClaimsIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; assessed?: string; imp?: string; prizes?: string; type?: string; tag?: string }>;
+  searchParams: Promise<{
+    q?: string; assessed?: string; imp?: string; prizes?: string; type?: string; tag?: string; kind?: string;
+  }>;
 }) {
-  const { q, assessed: assessedRaw, imp: impRaw, prizes: prizesRaw, type: typeRaw, tag: tagRaw } = await searchParams;
+  const {
+    q, assessed: assessedRaw, imp: impRaw, prizes: prizesRaw, type: typeRaw, tag: tagRaw, kind: kindRaw,
+  } = await searchParams;
 
   // The browse feed defaults to assessed-only (the unassessed long tail is mostly
   // queued stubs). "all" and "unassessed" are opt-in; anything else is the default.
@@ -44,7 +83,10 @@ export default async function ClaimsIndex({
   // A topic-tag restriction (#272): the slug as given; the lever shows the
   // live name when the tag resolves.
   const tagSlug = tagRaw?.trim() || undefined;
-  const filtersActive = assessed !== "assessed" || minImportance > 0 || withPrizes || !!claimType || !!tagSlug;
+  // One kind only (claims, questions, quantities); an unknown kind is ignored.
+  const kind = NODE_KINDS.find((k) => k === kindRaw);
+  const filtersActive =
+    assessed !== "assessed" || minImportance > 0 || withPrizes || !!claimType || !!tagSlug || !!kind;
 
   // Before any search or filter, /claims shows what the graph CONTAINS — a few
   // curated investigations — not a stack of newest claims that reads like search
@@ -104,7 +146,7 @@ export default async function ClaimsIndex({
   }
 
   const [{ results: claims, source }, tagInfo] = await Promise.all([
-    loadClaims(q, { assessed, minImportance, withPrizes, claimType, tag: tagSlug }),
+    loadClaims(q, { assessed, minImportance, withPrizes, claimType, tag: tagSlug, kind }),
     tagSlug ? loadTag(tagSlug) : Promise.resolve(null),
   ]);
   const tagLever = tagSlug
@@ -127,6 +169,7 @@ export default async function ClaimsIndex({
         prizes={withPrizes}
         type={claimType}
         tag={tagLever}
+        kind={kind}
         resultCount={claims.length}
       />
 
@@ -149,15 +192,16 @@ export default async function ClaimsIndex({
           {filtersActive
             ? tagSlug && !tagInfo
               ? "There is no topic by that name. Browse the topics the graph holds."
-              : "No claims match these filters. Try widening the importance band or the assessment filter."
+              : "Nothing matches these filters. Try widening the importance band, the assessment filter or the kind."
             : q
-              ? "No claims match that search. If it is a real claim the graph should hold, propose it below."
+              ? "Nothing matches that search. If it is a real claim the graph should hold, propose it below."
               : "No assessed claims yet."}
         </p>
       ) : (
         <div className="cards">
           {claims.map((c) => {
-            const kind = claimTypeMeta(c.claim_type);
+            const typeMeta = claimTypeMeta(c.claim_type);
+            const kindTag = c.kind && c.kind !== "claim" ? KIND_TAG[c.kind] : null;
             const claimHref = `/claims/${c.id}`;
             return (
               // A div with a stretched link, not a Link: the footer's ontology
@@ -170,10 +214,14 @@ export default async function ClaimsIndex({
                   <div className="card-claim">{c.text}</div>
                 </Link>
                 <div className="card-foot">
-                  {c.assessment_status ? <StatusBadge status={c.assessment_status} linkTo={claimHref} /> : <Unassessed linkTo={claimHref} />}
-                  {kind ? (
-                    <Term gloss={kind.gloss} href={DEFINED_IN.claimType} linkTo={claimHref} className="tag kind">
-                      {kind.label}
+                  <Verdict c={c} href={claimHref} />
+                  {kindTag ? (
+                    <Term gloss={kindTag.gloss} href={kindTag.href} linkTo={claimHref} className="tag kind">
+                      {kindTag.label}
+                    </Term>
+                  ) : typeMeta ? (
+                    <Term gloss={typeMeta.gloss} href={DEFINED_IN.claimType} linkTo={claimHref} className="tag kind">
+                      {typeMeta.label}
                     </Term>
                   ) : (
                     <span className="tag kind">{c.claim_type?.replace(/_/g, " ")}</span>

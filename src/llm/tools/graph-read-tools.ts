@@ -40,6 +40,9 @@ import {
   resolveTagBySlug,
 } from "../../services/tag-service.js";
 import { getClaimFormalizationRecord } from "../../services/formalization-service.js";
+import { getQuantityDetail } from "../../services/quantity-service.js";
+import { getQuestionDetail } from "../../services/question-service.js";
+import type { NodeKind } from "../../schemas/kinds.js";
 
 /** Depth defaults shared with the MCP/REST surfaces: shallow unless asked. */
 const DEFAULT_TREE_DEPTH = 3;
@@ -59,13 +62,17 @@ export function getGraphReadToolDefinitions(): Tool[] {
     {
       name: "search_claims",
       description:
-        "Find claims by meaning. Combined semantic and keyword search over " +
-        "the graph, ranked by similarity to your query — so a claim worded " +
-        "differently from your search still surfaces. Each hit carries the " +
-        "signals allocation turns on: importance, contestation, assessment " +
-        "status, and how many days since it was assessed, plus its topic " +
-        "tags. A search aid, not your scope: your scope is your mandate's " +
-        "words, and you judge what falls under them.",
+        "Find nodes by meaning: claims, quantities and questions alike. " +
+        "Combined semantic and keyword search over the graph, ranked by " +
+        "similarity to your query — so a node worded differently from your " +
+        "search still surfaces. Each hit carries its `kind` and the signals " +
+        "allocation turns on: importance, contestation, assessment status, " +
+        "and how many days since it was assessed, plus its topic tags. " +
+        "`assessment_status` and `assessment_confidence` are verdicts on " +
+        "claims and read null on a quantity or a question; " +
+        "`days_since_assessed` covers every kind (a quantity's estimate, a " +
+        "question's standing). A search aid, not your scope: your scope is " +
+        "your mandate's words, and you judge what falls under them.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -85,7 +92,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
     {
       name: "get_claim",
       description:
-        "Open one claim in full: its canonical wording and its current " +
+        "Open one node (a claim, quantity or question) in full: its canonical wording and its current " +
         "assessment WITH the reasoning behind the verdict, plus — via " +
         "`include` — the named arguments bearing on it, where it was seen in " +
         "the wild (provenance), and the claims that directly depend on it. " +
@@ -99,7 +106,13 @@ export function getGraphReadToolDefinitions(): Tool[] {
         "status, retired ones included; `verification` is the " +
         "machine-checked badge; `lean_checks` are the newest checker " +
         "verdicts on any version. Empty history means formalize has never " +
-        "recorded anything on this claim.",
+        "recorded anything on this claim. Every node carries its `kind`; a " +
+        "quantity also carries `quantity` (its definition, current estimate " +
+        "and when it was set, readings, and the claims that cut it), and a " +
+        "question carries `question` (its standing, presuppositions, " +
+        "subquestions, candidate answers, and what depends on it). On those " +
+        "two kinds `assessment` is null: their assessment is the estimate " +
+        "or the standing.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -205,21 +218,29 @@ function formatAssessment(
 async function allocationSignals(
   ids: string[]
 ): Promise<
-  Map<string, { contestation: number | null; steward_state: string | null; days_since_assessed: number | null }>
+  Map<
+    string,
+    { kind: NodeKind; contestation: number | null; steward_state: string | null; days_since_assessed: number | null }
+  >
 > {
   if (ids.length === 0) return new Map();
+  // A quantity's estimate and a question's standing live in their own
+  // tables (`assessments` holds verdicts on propositions only), so recency
+  // reads whichever one the node's kind keeps.
   const rows = await rawQuery<{
     id: string;
+    kind: NodeKind;
     contestation: number | null;
     steward_state: string | null;
     days_since_assessed: number | null;
   }>(
-    `SELECT c.id, c.contestation, c.steward_state,
-            CASE WHEN a.assessed_at IS NULL THEN NULL
-                 ELSE FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at))
-                            / 86400)::int END AS days_since_assessed
+    `SELECT c.id, c.kind, c.contestation, c.steward_state,
+            FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE(a.assessed_at, qe.assessed_at, qa.assessed_at)))
+                  / 86400)::int AS days_since_assessed
        FROM claims c
        LEFT JOIN assessments a ON a.claim_id = c.id AND a.is_current = true
+       LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true
+       LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true
       WHERE c.id = ANY($1)`,
     [ids]
   );
@@ -288,6 +309,7 @@ async function executeGraphReadToolUnchecked(
     const payload: Record<string, unknown> = {
       claim: {
         id: claim.id,
+        kind: claim.kind,
         canonical_form: claim.text,
         claim_type: claim.claimType,
         state: claim.state,
@@ -304,6 +326,22 @@ async function executeGraphReadToolUnchecked(
       ...(await getClaimFormalizationRecord(claimId)),
       subclaim_count: await getSubclaimCount(claimId),
     };
+    // A quantity's estimate and a question's standing are their assessment
+    // (`assessment` above holds verdicts on propositions only), so an
+    // allocator valuing work on one reads it here.
+    if (claim.kind === "quantity") {
+      const q = await getQuantityDetail(claimId);
+      payload.quantity = {
+        definition: q.definition,
+        current_estimate: q.estimate,
+        estimated: q.assessed,
+        stated_estimates: q.estimates.length,
+        readings: q.readings,
+        cuts: q.cuts,
+      };
+    } else if (claim.kind === "question") {
+      payload.question = await getQuestionDetail(claimId);
+    }
     if (include.includes("arguments")) {
       payload.arguments = (await getArgumentsForClaim(claimId)).map((a) => ({
         id: a.id,

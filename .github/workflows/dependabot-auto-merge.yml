@@ -1,29 +1,33 @@
-name: Dependabot security auto-merge
+name: Dependabot auto-merge
 
-# Merges Dependabot security updates for high and critical advisories
-# without waiting for a person, so a fix for an exploited CVE ships in
-# minutes rather than whenever someone next checks GitHub. It only turns on
-# GitHub's auto-merge: the merge itself waits for the checks that main's
-# ruleset requires, and this workflow refuses to act unless that ruleset
-# requires the CI jobs that build what is being bumped.
+# Merges Dependabot's patch and minor updates, security fixes and routine
+# version updates alike, once CI passes, so dependency upkeep doesn't wait
+# on a person. This is the pattern GitHub documents ("Automating Dependabot
+# with GitHub Actions"), with two extra refusals. It only turns on GitHub's
+# auto-merge: the merge itself waits for the checks main's ruleset
+# requires, and this workflow refuses to act unless that ruleset requires
+# the CI jobs that build what is being bumped.
+#
+# The supply-chain defense for version updates is the 7-day cooldown in
+# .github/dependabot.yml: a hijacked release is usually pulled within days.
+# Security updates skip the cooldown, which is what the maintainer-change
+# refusal below is for.
 #
 # A PR qualifies when all of these hold:
-#   - it is a Dependabot security update for an open alert with CVSS >= 7.0;
 #   - it is a patch or minor bump (a major can need code changes);
 #   - Dependabot reports no maintainer change for the package (a new
-#     maintainer pushing a "fix" is the shape of a takeover);
+#     publisher pushing a release is the shape of a takeover);
 #   - it is in a directory CI builds: /, /infra, /web or /extension.
-# A security PR that misses any of these gets one comment saying why, and
-# waits for a person or the weekly review.
+# A PR that misses any of these gets one comment saying why, and waits for
+# the weekly maintenance pass (docs/infrastructure.md).
 #
 # pull_request_target runs this file from main with a write token; it never
 # checks out or runs the PR's code, so that is safe here. Workflows run by
 # Dependabot on plain pull_request get a read-only token and no secrets.
 #
-# Setup (docs/infrastructure.md, "Dependabot security auto-merge"):
-#   - the repository secret DEPENDABOT_ALERTS_TOKEN: a fine-grained token
-#     for this repository only, with "Dependabot alerts: Read-only" and
-#     nothing else (the built-in token cannot read alerts);
+# Setup (docs/infrastructure.md, "Dependabot auto-merge"):
+#   - Settings → Code security → "Dependabot alerts" and "Dependabot
+#     security updates" both on; without them no security PR is opened;
 #   - Settings → General → "Allow auto-merge";
 #   - a ruleset on main requiring the status checks check, db-tests, web
 #     and extension.
@@ -46,8 +50,7 @@ jobs:
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
-          github-token: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
-          alert-lookup: true
+          github-token: ${{ github.token }}
 
       - name: Decide and enable auto-merge
         env:
@@ -55,22 +58,12 @@ jobs:
           REPO: ${{ github.repository }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           ACTION: ${{ github.event.action }}
-          ALERT_STATE: ${{ steps.meta.outputs.alert-state }}
-          GHSA_ID: ${{ steps.meta.outputs.ghsa-id }}
-          CVSS: ${{ steps.meta.outputs.cvss }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           MAINTAINER_CHANGES: ${{ steps.meta.outputs.maintainer-changes }}
           DIRECTORY: ${{ steps.meta.outputs.directory }}
           DEPENDENCIES: ${{ steps.meta.outputs.dependency-names }}
         run: |
           set -euo pipefail
-
-          # Version updates (no alert) and low-severity alerts are the weekly
-          # review's: they have no clock on them.
-          if [ "$ALERT_STATE" != "OPEN" ] || ! awk -v c="${CVSS:-0}" 'BEGIN { exit !(c >= 7.0) }'; then
-            echo "Not an open high or critical alert (state '$ALERT_STATE', CVSS '$CVSS'); leaving it for the weekly review."
-            exit 0
-          fi
 
           reason=""
           case "$UPDATE_TYPE" in
@@ -90,7 +83,7 @@ jobs:
           if [ -n "$reason" ]; then
             echo "Not auto-merging: $reason."
             if [ "$ACTION" = "opened" ]; then
-              gh pr comment "$PR_URL" --body "Security update for $GHSA_ID (CVSS $CVSS) on $DEPENDENCIES. Not auto-merged because $reason, so this needs a person."
+              gh pr comment "$PR_URL" --body "Not auto-merged because $reason. It waits for the weekly maintenance pass."
             fi
             exit 0
           fi
@@ -106,7 +99,7 @@ jobs:
               *)
                 echo "::error::main's ruleset does not require the '$check' check (required: '$required'); refusing to enable auto-merge."
                 if [ "$ACTION" = "opened" ]; then
-                  gh pr comment "$PR_URL" --body "Security update for $GHSA_ID (CVSS $CVSS) qualifies for auto-merge, but main's ruleset does not require the \`$check\` check, so auto-merge was not enabled. Merge it by hand once CI is green, and see docs/infrastructure.md, \"Dependabot security auto-merge\"."
+                  gh pr comment "$PR_URL" --body "Qualifies for auto-merge, but main's ruleset does not require the \`$check\` check, so auto-merge was not enabled. See docs/infrastructure.md, \"Dependabot auto-merge\"."
                 fi
                 exit 1
                 ;;
@@ -115,11 +108,11 @@ jobs:
 
           gh pr merge "$PR_URL" --auto --squash
           if [ "$ACTION" = "opened" ]; then
-            gh pr comment "$PR_URL" --body "Security update for $GHSA_ID (CVSS $CVSS) on $DEPENDENCIES: auto-merge enabled. It merges once the required checks pass."
+            gh pr comment "$PR_URL" --body "Auto-merge enabled for $DEPENDENCIES. It merges once the required checks pass."
           fi
 
   # A merge made with the built-in token doesn't fire push workflows, so
-  # Deploy would never run for an auto-merged fix. Dispatch it instead; a
+  # Deploy would never run for an auto-merged update. Dispatch it instead; a
   # person's merge fires the push trigger as usual and is skipped here.
   deploy:
     if: >-

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { IMPORTANCE_FLOORS, claimTypeMeta, type ImportanceFloor } from "@/lib/ontology";
-import type { AssessedFilter, ClaimType } from "@/lib/types";
+import type { AssessedFilter, ClaimType, NodeKind } from "@/lib/types";
 import { useSuggestedClaim } from "@/components/useSuggestedClaim";
 
 // Defaults the browse feed lands on: only assessed claims, no importance floor.
@@ -19,10 +19,29 @@ const PRIZE_SEGMENTS: { value: PrizeFilter; label: string; title: string }[] = [
   { value: "with", label: "With a prize", title: "Claims with a live prize for a machine-checked proof or disproof" },
 ];
 
+// Every kind lives in the one graph (constitution §2, §7a), so search reaches
+// all three; this narrows to one. "all" is the default and stays off the URL.
+type KindFilter = "all" | NodeKind;
+
+const KIND_SEGMENTS: { value: KindFilter; label: string; title: string }[] = [
+  { value: "all", label: "All", title: "Claims, questions and quantities" },
+  { value: "claim", label: "Claims", title: "Propositions the graph affirms or denies" },
+  { value: "question", label: "Questions", title: "Questions the graph answers, with their candidate answers" },
+  { value: "quantity", label: "Quantities", title: "Values the graph estimates" },
+];
+
+// The count's noun follows the kind filter; a mixed list is "results".
+const COUNT_NOUN: Record<KindFilter, [string, string]> = {
+  all: ["result", "results"],
+  claim: ["claim", "claims"],
+  question: ["question", "questions"],
+  quantity: ["quantity", "quantities"],
+};
+
 const ASSESSED_SEGMENTS: { value: AssessedFilter; label: string; title: string }[] = [
-  { value: "assessed", label: "Assessed", title: "Claims that carry a current verdict" },
-  { value: "unassessed", label: "Unassessed", title: "Claims that do not yet carry a verdict" },
-  { value: "all", label: "All", title: "Every claim, assessed or not" },
+  { value: "assessed", label: "Assessed", title: "Carries a current verdict: a claim's status, a question's standing, a quantity's estimate" },
+  { value: "unassessed", label: "Unassessed", title: "Does not yet carry a verdict" },
+  { value: "all", label: "All", title: "Everything, assessed or not" },
 ];
 
 function Segmented<T extends string>({
@@ -51,7 +70,7 @@ function Segmented<T extends string>({
 }
 
 export function ClaimsControls({
-  q, assessed, imp, prizes = false, type, tag, resultCount,
+  q, assessed, imp, prizes = false, type, tag, kind, resultCount,
 }: {
   q: string;
   assessed: AssessedFilter;
@@ -65,6 +84,8 @@ export function ClaimsControls({
   // shown as a removable lever while active. `name` is the live tag name,
   // falling back to the slug when the tag is unknown.
   tag?: { slug: string; name: string };
+  // Only nodes of this kind (API kind); omitted means all three.
+  kind?: NodeKind;
   // Omitted on the pre-search overview (#206), where there is no result list to
   // count and a number would misrepresent the territory cards as a feed.
   resultCount?: number;
@@ -78,7 +99,7 @@ export function ClaimsControls({
   // so flipping a filter never discards what's been typed.
   function go(next: Partial<{
     q: string; assessed: AssessedFilter; imp: ImportanceFloor; prizes: boolean; type: ClaimType | null;
-    tag: string | null;
+    tag: string | null; kind: KindFilter;
   }>) {
     const nq = (next.q ?? query).trim();
     const na = next.assessed ?? assessed;
@@ -86,6 +107,7 @@ export function ClaimsControls({
     const np = next.prizes ?? prizes;
     const nt = next.type === undefined ? type : next.type;
     const ng = next.tag === undefined ? tag?.slug : next.tag;
+    const nk = next.kind ?? kind ?? "all";
     const p = new URLSearchParams();
     if (nq) p.set("q", nq);
     if (na !== DEFAULT_ASSESSED) p.set("assessed", na);
@@ -93,11 +115,14 @@ export function ClaimsControls({
     if (np) p.set("prizes", "1");
     if (nt) p.set("type", nt);
     if (ng) p.set("tag", ng);
+    if (nk !== "all") p.set("kind", nk);
     const qs = p.toString();
     router.push(qs ? `/claims?${qs}` : "/claims");
   }
 
-  const isDefault = assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q && !prizes && !type && !tag;
+  const isDefault =
+    assessed === DEFAULT_ASSESSED && imp === DEFAULT_IMP && !q && !prizes && !type && !tag && !kind;
+  const countNoun = COUNT_NOUN[kind ?? "all"];
   const typeMeta = type ? claimTypeMeta(type) : null;
 
   return (
@@ -107,12 +132,22 @@ export function ClaimsControls({
           className="claims-search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search claims: try “${suggestedClaim}”`}
-          aria-label="Search claims"
+          placeholder={`Search claims and questions: try “${suggestedClaim}”`}
+          aria-label="Search claims, questions and quantities"
         />
       </form>
 
       <div className="filter-row">
+        <span className="filter-group">
+          <span className="sc">Kind</span>
+          <Segmented
+            ariaLabel="Filter by kind"
+            value={kind ?? "all"}
+            segments={KIND_SEGMENTS}
+            onPick={(v) => go({ kind: v })}
+          />
+        </span>
+
         <span className="filter-group">
           <span className="sc">Showing</span>
           <Segmented
@@ -166,7 +201,7 @@ export function ClaimsControls({
         <span className="filter-meta">
           {typeof resultCount === "number" && (
             <>
-              {resultCount} {resultCount === 1 ? "claim" : "claims"}
+              {resultCount} {resultCount === 1 ? countNoun[0] : countNoun[1]}
             </>
           )}
           {!isDefault && (
