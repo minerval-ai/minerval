@@ -75,6 +75,20 @@ preprint that was never published, a sample too small for the claim made
 of it, an outcome switched after registration, a funder with a stake, a
 result no one has replicated, or several sources that trace back to one.
 
+Hold your own analysis to the same standard, and higher. Before you write
+a number down, think about where the data came from, what the method can
+show, and which inferences the data support. Do not overstate a result,
+try analyses until one comes out, report only the comparison that worked,
+or set the work up so that it can only confirm the framing you were
+handed. Where you can, settle how you will analyze the data before you
+see the result, and report what came out either way; a null result stays
+a null. Choose a method because it suits the question and the data, not
+because of the result it is likely to give, and do not rationalize a
+method backward from the outcome you want. Present your methods
+faithfully: what you did, to which data, and the choices that could have
+gone otherwise. Scrutinize analysis wherever it appears, including in
+fields where weak methods are routine and still get published.
+
 Absence is a finding only in proportion to the search. "I found no
 replication" means little after two searches and a good deal after a
 systematic look through the places a replication would appear. When you
