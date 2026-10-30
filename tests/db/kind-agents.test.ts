@@ -13,6 +13,7 @@ vi.hoisted(() => {
 });
 
 import { rawQuery } from "../../src/db/client.js";
+import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import {
   changeNodeKind,
@@ -297,6 +298,14 @@ describe("the kinds' tools", () => {
 
 describe("fund_request", () => {
   it("puts the mandate's money on the request's ledger row, clipped to what the row lacks", async () => {
+    // An active platform mandate left by another file would price and fund
+    // the scoping pass the moment the request is filed (as it should);
+    // this test is about the Grantmaker's own placement, so none is active.
+    await rawQuery(
+      `UPDATE grants SET status = 'completed'
+        WHERE is_platform = true OR policy IN ('general', 'governance')`
+    );
+    resetAllocationPolicyCache();
     const claim = await seedClaim("kept");
     const { id: requestId } = await fileRequest({
       ask: "Recover the regional estimates.",
