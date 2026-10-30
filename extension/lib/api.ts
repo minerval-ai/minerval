@@ -27,6 +27,16 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<{ status: number; data: T }> {
+  const res = await send(path, body);
+  return { status: res.status, data: (await res.json()) as T };
+}
+
+/** Make an API call; a non-2xx answer throws ApiError with a readable message. */
+async function send(
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {}
+): Promise<Response> {
   const settings = await getSettings();
   // The localhost carve-out is deliberate: a keyless local API takes the dev
   // bypass (server/plugins/auth.ts), so a developer pointing here shouldn't be
@@ -49,6 +59,7 @@ async function request<T>(
       headers: {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(settings.apiKey ? { "x-api-key": settings.apiKey } : {}),
+        ...headers,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -81,7 +92,7 @@ async function request<T>(
     throw new ApiError(detail, res.status);
   }
 
-  return { status: res.status, data: (await res.json()) as T };
+  return res;
 }
 
 export type AnalyzeApiResult =
@@ -115,14 +126,51 @@ export async function getAnalysisStatus(
   return { status: "ready", analysis: data };
 }
 
+/**
+ * Ask the extension agent about the page. The answer streams: `onText`
+ * gets the reply as it is written, with the model turn it belongs to (a new
+ * turn, after the agent looks something up, starts the text over), and the
+ * promise resolves to the finished reply and its citations. An API that
+ * answers with plain JSON (no stream) resolves the same way, just at once.
+ */
 export async function chat(
-  input: Extract<BackgroundRequest, { type: "chat" }>
+  input: Extract<BackgroundRequest, { type: "chat" }>,
+  onText: (delta: string, turn: number) => void = () => {}
 ): Promise<ChatResponse> {
-  const { data } = await request<ChatResponse>("/extension/chat", {
-    messages: input.messages,
-    page: input.page,
-  });
-  return data;
+  const res = await send(
+    "/extension/chat",
+    { messages: input.messages, page: input.page },
+    { accept: "text/event-stream" }
+  );
+  if (!(res.headers.get("content-type") ?? "").includes("text/event-stream") || !res.body) {
+    return (await res.json()) as ChatResponse;
+  }
+
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    // Events are separated by a blank line; keep any partial one for later.
+    let end: number;
+    while ((end = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      let event = "message";
+      let data = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7);
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (!data) continue;
+      const payload = JSON.parse(data);
+      if (event === "text") onText(payload.delta, payload.turn);
+      else if (event === "done") return payload as ChatResponse;
+      else if (event === "error") throw new ApiError(payload.error ?? "The answer failed.", 502);
+    }
+  }
+  throw new ApiError("The answer stopped before it finished. Please try again.", 502);
 }
 
 /** Free (non-agentic) read used by the click-through panel. */

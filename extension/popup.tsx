@@ -7,17 +7,18 @@ import {
   setSitePolicy,
   resolveSitePolicy,
 } from "~lib/settings";
-import type {
-  ChatCitation,
-  ChatResponse,
-  ChatTurn,
-  Entitlement,
-  PageAnnotation,
-  PageState,
-  Result,
-  Settings,
-  SitePolicy,
-  Submission,
+import {
+  CHAT_PORT,
+  type ChatCitation,
+  type ChatStreamMessage,
+  type ChatTurn,
+  type Entitlement,
+  type PageAnnotation,
+  type PageState,
+  type Result,
+  type Settings,
+  type SitePolicy,
+  type Submission,
 } from "~lib/types";
 
 /**
@@ -442,11 +443,13 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The answer as it is written; null when no answer is streaming.
+  const [streaming, setStreaming] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy]);
+  }, [messages, busy, streaming]);
 
   const send = async () => {
     const question = input.trim();
@@ -456,37 +459,57 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
     const history: Message[] = [...messages, { role: "user", content: question }];
     setMessages(history);
     setBusy(true);
-    try {
-      const result = (await chrome.runtime.sendMessage({
-        type: "chat",
-        messages: history.map(({ role, content }) => ({ role, content })),
-        page: {
-          url: page?.url ?? null,
-          title: page?.title ?? null,
-          claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
-            verbatim_text: a.verbatim_text.slice(0, 2000),
-            verdict: a.verdict,
-            claim_id: a.claim?.id ?? null,
-            canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
-            status: a.claim?.status ?? null,
-          })),
-        },
-      })) as Result<ChatResponse>;
-      if (!result.ok) {
-        setError(result.error);
-      } else {
+    setStreaming("");
+    // The answer streams over a port (background.ts): its text shows as it
+    // is written, then the finished reply with its citations replaces it.
+    const port = chrome.runtime.connect({ name: CHAT_PORT });
+    let streamTurn = -1;
+    const finish = () => {
+      setStreaming(null);
+      setBusy(false);
+      port.disconnect();
+    };
+    port.onMessage.addListener((message: ChatStreamMessage) => {
+      if (message.type === "text") {
+        // A new model turn (after the agent looks something up) starts over.
+        setStreaming((prev) =>
+          message.turn !== streamTurn ? message.delta : (prev ?? "") + message.delta
+        );
+        streamTurn = message.turn;
+      } else if (message.type === "done") {
         setMessages([
           ...history,
           {
             role: "assistant",
-            content: result.data.reply,
-            citations: result.data.citations,
+            content: message.data.reply,
+            citations: message.data.citations,
           },
         ]);
+        finish();
+      } else {
+        setError(message.error);
+        finish();
       }
-    } finally {
+    });
+    port.onDisconnect.addListener(() => {
+      setStreaming(null);
       setBusy(false);
-    }
+    });
+    port.postMessage({
+      type: "chat",
+      messages: history.map(({ role, content }) => ({ role, content })),
+      page: {
+        url: page?.url ?? null,
+        title: page?.title ?? null,
+        claims: (page?.annotations ?? []).slice(0, 50).map((a) => ({
+          verbatim_text: a.verbatim_text.slice(0, 2000),
+          verdict: a.verdict,
+          claim_id: a.claim?.id ?? null,
+          canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
+          status: a.claim?.status ?? null,
+        })),
+      },
+    });
   };
 
   return (
@@ -524,7 +547,14 @@ function Chat({ settings, hook }: { settings: Settings; hook: PageHook }) {
             )}
           </div>
         ))}
-        {busy && <div className="msg assistant muted">Consulting the graph…</div>}
+        {busy &&
+          (streaming ? (
+            <div className="msg assistant">
+              <ReplyText text={streaming} citations={[]} />
+            </div>
+          ) : (
+            <div className="msg assistant muted">Consulting the graph…</div>
+          ))}
         {error && <div className="error">{error}</div>}
         <div ref={bottomRef} />
       </div>
