@@ -14,6 +14,13 @@
  *   default          claims with pipeline_epoch IS NULL (the legacy cohort
  *                    from before epoch stamping existed)
  *   --epoch=<tag>    claims stamped with a specific epoch
+ *   --ids-file=<p>   the claims listed in a cohort file (scripts/cohorts/),
+ *                    for a cohort no epoch tag picks out, e.g. one topic's
+ *                    claims minted before a change that shipped without an
+ *                    epoch bump. The file is JSON: an array of claim ids, or
+ *                    an object whose `ids` is one (its other keys record how
+ *                    the cohort was chosen). Restoring with the same file
+ *                    undoes exactly that archive.
  *
  * Safe by default: prints what it WOULD do and exits. Pass --confirm to write.
  * Take a snapshot first (pg_dump) — the script reminds you, but cannot verify.
@@ -21,7 +28,10 @@
  *   npx tsx scripts/archive-legacy-claims.ts                     # dry run
  *   npx tsx scripts/archive-legacy-claims.ts --confirm           # archive
  *   npx tsx scripts/archive-legacy-claims.ts --restore --confirm # undo
+ *   npx tsx scripts/archive-legacy-claims.ts \
+ *     --ids-file=scripts/cohorts/<name>.json --confirm           # a listed cohort
  */
+import { readFileSync } from "fs";
 import "../src/load-env.js";
 import { rawQuery, closeDb } from "../src/db/client.js";
 
@@ -34,12 +44,31 @@ async function main(): Promise<void> {
   const confirm = process.argv.includes("--confirm");
   const restore = process.argv.includes("--restore");
   const epoch = argValue("epoch");
+  const idsFile = argValue("ids-file");
+  if (epoch && idsFile) {
+    throw new Error("Pass --epoch or --ids-file, not both.");
+  }
 
   // In restore mode we flip archived → active for the same cohort selection.
   const fromState = restore ? "archived" : "active";
   const toState = restore ? "active" : "archived";
-  const epochClause = epoch ? "pipeline_epoch = $1" : "pipeline_epoch IS NULL";
-  const epochParams = epoch ? [epoch] : [];
+  let epochClause = "pipeline_epoch IS NULL";
+  let epochParams: unknown[] = [];
+  let cohortLabel = "legacy (pipeline_epoch IS NULL)";
+  if (epoch) {
+    epochClause = "pipeline_epoch = $1";
+    epochParams = [epoch];
+    cohortLabel = `epoch '${epoch}'`;
+  } else if (idsFile) {
+    const parsed: unknown = JSON.parse(readFileSync(idsFile, "utf8"));
+    const ids = Array.isArray(parsed) ? parsed : (parsed as { ids?: unknown }).ids;
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
+      throw new Error(`${idsFile}: expected an array of claim ids, or an object with one under "ids".`);
+    }
+    epochClause = "id = ANY($1::uuid[])";
+    epochParams = [ids];
+    cohortLabel = `${ids.length} claims listed in ${idsFile}`;
+  }
 
   const cohort = await rawQuery<{
     n: number;
@@ -59,7 +88,6 @@ async function main(): Promise<void> {
   );
   const stats = cohort[0]!;
 
-  const cohortLabel = epoch ? `epoch '${epoch}'` : "legacy (pipeline_epoch IS NULL)";
   console.log(`Cohort: ${cohortLabel}, state='${fromState}'`);
   console.log(`  claims: ${stats.n}`);
   console.log(`  with source instances: ${stats.with_instances}`);
