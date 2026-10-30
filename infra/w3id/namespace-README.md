@@ -12,6 +12,9 @@ Redirects:
 - `https://w3id.org/minerval/vocab` → the documentation of the `mv:` RDF
   vocabulary (`https://w3id.org/minerval/vocab#...`) used by the graph's
   nanopublication export.
+- `https://w3id.org/minerval/mira/<version>` → the documentation of the
+  graph's MIRA export profile, and `.../mira/<version>/schema.json` → that
+  profile's JSON Schema.
 - `https://w3id.org/minerval/` → `https://minerval.ai/`.
 
 Maintainers / contact:

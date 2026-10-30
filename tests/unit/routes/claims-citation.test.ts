@@ -11,6 +11,7 @@ const CLAIM_ID = "11111111-1111-1111-1111-111111111111";
 const mocks = vi.hoisted(() => ({
   assembleClaimCitation: vi.fn(),
   assembleClaimNanopub: vi.fn(),
+  assembleClaimMira: vi.fn(),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
@@ -48,6 +49,9 @@ vi.mock("../../../src/services/citation-service.js", () => ({
 }));
 vi.mock("../../../src/services/nanopub-service.js", () => ({
   assembleClaimNanopub: mocks.assembleClaimNanopub,
+}));
+vi.mock("../../../src/services/mira-service.js", () => ({
+  assembleClaimMira: mocks.assembleClaimMira,
 }));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
@@ -202,5 +206,30 @@ describe("GET /claims/:claim_id/nanopub (#292)", () => {
       url: `/claims/${CLAIM_ID}/nanopub?format=rdfxml`,
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("GET /claims/:claim_id/mira (#515)", () => {
+  it("404s for an unknown claim", async () => {
+    mocks.assembleClaimMira.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/mira` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  it("serves the bundle as JSON, extensions intact", async () => {
+    const bundle = {
+      mira_profile: "https://w3id.org/minerval/mira/0.1",
+      root: `https://w3id.org/minerval/claim/${CLAIM_ID}`,
+      records: [{ type: "claim", extensions: { mv: { status: "supported" } } }],
+    };
+    mocks.assembleClaimMira.mockResolvedValue(bundle);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/mira` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.json()).toEqual(bundle);
+    expect(mocks.assembleClaimMira).toHaveBeenCalledWith(CLAIM_ID);
   });
 });

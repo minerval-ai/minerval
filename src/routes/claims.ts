@@ -26,6 +26,7 @@ import {
 import { createClaimProposal } from "../services/intake-service.js";
 import { assembleClaimCitation } from "../services/citation-service.js";
 import { assembleClaimNanopub } from "../services/nanopub-service.js";
+import { assembleClaimMira } from "../services/mira-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
@@ -782,6 +783,44 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         }
 
         return reply.type(result.contentType).send(result.body);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/mira — the MIRA export (#515): the node (a claim,
+  // or a question) as MIRA records with the evidence, sources, neighbouring
+  // claims and questions, and requests around it, in the provisional profile
+  // docs/mira.md pins. The same evidence record as /nanopub, so the same
+  // rules: credence omitted where the graph omits it (§10), [[claim:...]]
+  // resolved in prose (§12), CC0 stated. No response schema, as for
+  // /nanopub: the profile's JSON Schema is docs/mira/, and a Fastify response
+  // schema would strip the open `extensions.mv` objects.
+  app.get<{ Params: { claim_id: string } }>(
+    "/:claim_id/mira",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Export the claim or question, with its evidence, sources, and requests, as MIRA records",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const bundle = await assembleClaimMira(request.params.claim_id);
+        if (!bundle) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+        return reply.type("application/json; charset=utf-8").send(JSON.stringify(bundle, null, 2));
       },
     }
   );

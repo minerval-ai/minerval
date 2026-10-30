@@ -6,6 +6,8 @@ until that registration merges they are valid, non-resolving IRIs, which
 linked-data practice permits. Used by the nanopublication export (#292):
 `GET /claims/:id/nanopub` serializes a claim's evidence record as
 assertion / provenance / publication-info graphs in TriG or JSON-LD.
+The MIRA export (`GET /claims/:id/mira`, docs/mira.md) carries the same
+terms, under `extensions.mv`, for what MIRA has no field for.
 
 Established ontologies are reused where they fit; `mv:` covers only what is
 ours. PROV-O carries provenance (`prov:wasDerivedFrom`, `prov:wasQuotedFrom`,
