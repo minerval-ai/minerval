@@ -165,15 +165,17 @@ describe("Steward toolset without a domain tag", () => {
       "web_search",
     ]);
     // Two blocks: the constitution and role, then the method skill's view.
-    expect(opts.system).toHaveLength(2);
+    expect(opts.system).toHaveLength(3);
     expect(opts.system[0]).not.toContain("# Domain skill:");
     expect(opts.system[1]!.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
     expect(opts.system[1]).toContain("## For the Claim Steward");
+    expect(opts.system[2]!.startsWith("# Method skill: Search (version 1)")).toBe(true);
+    expect(opts.system[2]).toContain("## For the Claim Steward");
     // The role prompt still lists the skills that exist.
     expect(opts.system[0]).toContain("## Domain skills");
     expect(opts.system[0]).toContain("Skills that exist: mathematics");
     expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance (version 1)");
-    expect(mocks.loopSkills).toEqual([["provenance"]]);
+    expect(mocks.loopSkills).toEqual([["provenance", "search"]]);
   });
 
   it("passes no domains to the Matcher", async () => {
@@ -223,7 +225,7 @@ describe("Steward toolset with the mathematics tag", () => {
 
     // Three cached blocks: the constitution-plus-role block, unchanged, then
     // each skill's Steward view as its own block, in skill order.
-    expect(opts.system).toHaveLength(3);
+    expect(opts.system).toHaveLength(4);
     expect(opts.system[0]).toContain("# Your Specific Role");
     expect(opts.system[0]).not.toContain("# Domain skill:");
     const skill = opts.system[1]!;
@@ -232,19 +234,21 @@ describe("Steward toolset with the mathematics tag", () => {
     expect(skill).not.toContain("## For the solver");
     expect(skill).not.toContain("## Failure modes");
     expect(opts.system[2]!.startsWith("# Method skill: Provenance (version 1)")).toBe(true);
+    expect(opts.system[3]!.startsWith("# Method skill: Search (version 1)")).toBe(true);
 
     expect(opts.initialMessages[0]!.content).toContain(
       "Skills active for this run: mathematics (version 1), provenance (version 1)"
     );
-    expect(mocks.loopSkills).toEqual([["mathematics", "provenance"]]);
+    expect(mocks.loopSkills).toEqual([["mathematics", "provenance", "search"]]);
   });
 
   it("ignores tags that name no skill", async () => {
     const opts = await run(["economics"]);
     expect(opts.tools.map((t) => t.name)).not.toContain("lean_search");
     // Only the method skill's block follows the role.
-    expect(opts.system).toHaveLength(2);
+    expect(opts.system).toHaveLength(3);
     expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
+    expect(opts.system[2]!.startsWith("# Method skill: Search")).toBe(true);
   });
 
   it("passes the claim's domains to the Matcher", async () => {
@@ -319,13 +323,13 @@ describe("Steward toolset with the mathematics tag but no checker", () => {
     expect(names).not.toContain("publish_formalization");
     expect(names.at(-1)).toBe("web_search");
     // The skill itself is still active: its block and its name in the task.
-    expect(opts.system).toHaveLength(3);
+    expect(opts.system).toHaveLength(4);
     expect(opts.system[1]!.startsWith("# Domain skill: Mathematics")).toBe(true);
     const task = opts.initialMessages[0]!.content;
     expect(task).toContain("Skills active for this run: mathematics (version 1), provenance (version 1)");
     expect(task).toContain("formal tools are unavailable this run");
     expect(task).toContain("formal verification was unavailable");
-    expect(mocks.loopSkills).toEqual([["mathematics", "provenance"]]);
+    expect(mocks.loopSkills).toEqual([["mathematics", "provenance", "search"]]);
   });
 
   it("says nothing about formal tools on a claim outside the domain", async () => {

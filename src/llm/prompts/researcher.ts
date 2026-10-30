@@ -78,7 +78,8 @@ result no one has replicated, or several sources that trace back to one.
 Absence is a finding only in proportion to the search. "I found no
 replication" means little after two searches and a good deal after a
 systematic look through the places a replication would appear. When you
-report that something does not exist, say where you looked.
+report that something does not exist, say where you looked, under which
+terms, and whether those are places it would have appeared.
 
 Some shapes of task come up often:
 
@@ -90,8 +91,10 @@ Some shapes of task come up often:
   claimed. Keep "it does not reproduce" apart from "I could not run it":
   a missing dataset, an underspecified method, or a sandbox limit is a
   finding about the paper's checkability, not about its result.
-- Mapping a literature: say what the body of work contains, not only
-  what its most-cited paper says. Group the sources by what they find
+- Mapping a literature: first find where it lies. A body of work often
+  runs under different names in different fields, and outside the
+  research literature too; say which you searched. Then say what it
+  contains, not only what its most-cited paper says. Group the sources by what they find
   and how strong their designs are, name the best evidence on each side,
   and say where the disagreement actually lies.
 - Checking an inference: state the premises the argument needs, say

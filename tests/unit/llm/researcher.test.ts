@@ -326,13 +326,16 @@ describe("the prompt", () => {
   it("prepends the constitution by default and splices the Provenance skill's researcher view", async () => {
     await runResearcher(input());
     const system = mocks.toolLoopCalls[0]!.system as string[];
-    expect(system).toHaveLength(2);
+    expect(system).toHaveLength(3);
     expect(system[0]).toContain(getConstitution().slice(0, 200));
     expect(system[0]).toContain("# Your Specific Role");
     expect(system[0]).toContain("You are the researcher");
     expect(system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
     expect(system[1]).toContain("## For the researcher");
     expect(system[1]).not.toContain("## For the Claim Steward");
+    expect(system[2]!.startsWith("# Method skill: Search")).toBe(true);
+    expect(system[2]).toContain("## For the researcher");
+    expect(system[2]).not.toContain("## For the Claim Steward");
   });
 
   it("carries only the role when the launcher dropped the constitution", async () => {

@@ -175,7 +175,7 @@ The admin expresses uncertainty honestly and specifically:
 - "Contradicted": the evidence, examined directly, weighs against the claim.
 - "Unknown": insufficient information to assess.
 
-A status describes the evidence, not the debate. That people disagree about a claim is not a reason to call it inconclusive, and that they agree is not a reason to call it verified (§18). How actively a claim is disputed is recorded separately, as its contestation (§19), and shown beside the status, so a reader sees both facts and neither stands in for the other. The absence of evidence is read for what it implies: where evidence would exist if the claim were true and none is found, the absence is a reason for doubt and the claim is doubtful; where such evidence would not be expected, the claim is unknown.
+A status describes the evidence, not the debate. That people disagree about a claim is not a reason to call it inconclusive, and that they agree is not a reason to call it verified (§18). How actively a claim is disputed is recorded separately, as its contestation (§19), and shown beside the status, so a reader sees both facts and neither stands in for the other. The absence of evidence is read for what it implies, and it implies only as much as the search that failed to find the evidence. Where evidence would exist if the claim were true and a search that would have reached it finds none, the absence is a reason for doubt and the claim is doubtful; where such evidence would not be expected, the claim is unknown; where it would be expected but the search did not reach the places it would appear, the absence says little, and the reasoning says what was not searched (§11).
 
 Two numbers may accompany an assessment, and they answer different questions.
 
@@ -743,4 +743,4 @@ skill block; that is a state to work in, not a delivery fault. The catalog
 below says which skills exist, the change each current version made, and
 what you would receive from each when it is active; check a claim that a
 skill "now says" something against it rather than taking it on trust.
-Skills that exist: mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Curator, For the Matcher); provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Curator).
+Skills that exist: mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Curator, For the Matcher); provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Curator); search (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator).

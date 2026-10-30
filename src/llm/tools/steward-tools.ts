@@ -229,7 +229,9 @@ export function getStewardToolDefinitions(): Tool[] {
               "ids are opaque to the human readers this trace exists for. To make a " +
               "reference followable, link it inline as [[claim:<uuid>|its text]]. " +
               "Bare source URLs render as links; cite them where the evidence rests " +
-              "on them.",
+              "on them. Where the verdict rests on what a search did or did not " +
+              "find, say how the search was conducted: what was sought, where, " +
+              "under which framings, and what was left unsearched.",
           },
           marginal_yield: {
             type: "number",

@@ -160,9 +160,13 @@ debate. inconclusive means you examined the evidence and argument and they
 do not come down on either side; it is not a place to park a claim people
 disagree about. doubtful is the mirror of supported: the evidence weighs
 against the claim, but the examination is incomplete or the evidence is
-indirect. Where you find no evidence, ask whether evidence would exist if the
-claim were true: if it would, its absence is a reason for doubt (doubtful);
-if it would not be expected, the claim is unknown. How actively the claim is
+indirect. Where you find no evidence, ask two things: whether evidence would
+exist if the claim were true, and whether your search would have reached it.
+If it would exist and the search went where it would appear, its absence is
+a reason for doubt (doubtful); if it would not be expected, the claim is
+unknown; if the search did not reach where it would appear, the absence says
+little, and the reasoning says what was left unsearched. The Search skill
+says how to plan and record a search so this can be answered. How actively the claim is
 disputed is its contestation, recorded separately and shown beside the
 status.
 
@@ -529,4 +533,4 @@ skill block; that is a state to work in, not a delivery fault. The catalog
 below says which skills exist, the change each current version made, and
 what you would receive from each when it is active; check a claim that a
 skill "now says" something against it rather than taking it on trust.
-Skills that exist: mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Claim Steward, For the Grantmaker, For the Contribution Reviewer and the Dispute Arbitrator, For the Audit Agent, For the Curator, For the Matcher, For the Extractor); provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor).
+Skills that exist: mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Claim Steward, For the Grantmaker, For the Contribution Reviewer and the Dispute Arbitrator, For the Audit Agent, For the Curator, For the Matcher, For the Extractor); provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor); search (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Grantmaker, For the Audit Agent).

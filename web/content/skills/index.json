@@ -908,6 +908,75 @@
         }
       ],
       "bodyChars": 18457
+    },
+    {
+      "name": "search",
+      "displayName": "Search",
+      "description": "How to search for evidence on a claim or question so that what the search did not find can be weighed: working out what would bear on it and where that would appear, searching across framings and kinds of source, recording how the search was conducted, and reading absence in proportion to the search. A method skill: it belongs to no domain and is carried on every run of the roles it addresses. It shapes how evidence is gathered and reported; the verdict stays the Steward's.",
+      "version": 1,
+      "sinceEpoch": "2026-09-domain-skills",
+      "kind": "method",
+      "domains": [],
+      "roles": [
+        {
+          "key": "claim-steward",
+          "sections": [
+            "For every administrator",
+            "For the Claim Steward",
+            "For the Grantmaker",
+            "For the Audit Agent"
+          ]
+        },
+        {
+          "key": "audit-agent",
+          "sections": [
+            "For every administrator",
+            "For the Claim Steward",
+            "For the Grantmaker",
+            "For the Audit Agent",
+            "Standards for judging"
+          ]
+        },
+        {
+          "key": "grantmaker",
+          "sections": [
+            "For every administrator",
+            "For the Grantmaker"
+          ]
+        },
+        {
+          "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "contribution-reviewer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "dispute-arbitrator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "curator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For the researcher"
+          ]
+        }
+      ],
+      "tools": [],
+      "bodyChars": 8059
     }
   ]
 }

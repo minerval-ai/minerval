@@ -136,7 +136,7 @@ describe("the Provenance skill", () => {
   it("is a method skill with no domain, carried by the roles it addresses", () => {
     expect(p.kind).toBe("method");
     expect(p.domains).toEqual([]);
-    expect(methodSkills().map((s) => s.name)).toEqual(["provenance"]);
+    expect(methodSkills().map((s) => s.name)).toEqual(["provenance", "search"]);
     expect(p.sections.map((s) => s.heading)).toEqual([
       "For every administrator",
       "For the Claim Steward",
@@ -269,21 +269,22 @@ describe("views", () => {
     expect(skillsForDomains(["mathematics"]).map((s) => s.name)).toEqual([
       "mathematics",
       "provenance",
+      "search",
     ]);
-    expect(skillsForDomains(["economics"]).map((s) => s.name)).toEqual(["provenance"]);
-    expect(skillsForDomains([]).map((s) => s.name)).toEqual(["provenance"]);
-    expect(skillsForDomains(undefined).map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains(["economics"]).map((s) => s.name)).toEqual(["provenance", "search"]);
+    expect(skillsForDomains([]).map((s) => s.name)).toEqual(["provenance", "search"]);
+    expect(skillsForDomains(undefined).map((s) => s.name)).toEqual(["provenance", "search"]);
   });
 
   it("leaves a method skill out of a run whose role it has no section for", () => {
-    expect(skillsForDomains([], "claim-steward").map((s) => s.name)).toEqual(["provenance"]);
-    expect(skillsForDomains([], "audit-agent").map((s) => s.name)).toEqual(["provenance"]);
-    expect(skillsForDomains([], "curator").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "claim-steward").map((s) => s.name)).toEqual(["provenance", "search"]);
+    expect(skillsForDomains([], "audit-agent").map((s) => s.name)).toEqual(["provenance", "search"]);
+    expect(skillsForDomains([], "curator").map((s) => s.name)).toEqual(["provenance", "search"]);
     // The Reviewer, Arbitrator, and Grantmaker receive "For every
     // administrator", so they carry the skill's shared section; the Matcher
     // receives only its own section, which the skill does not have.
-    expect(skillsForDomains([], "contribution-reviewer").map((s) => s.name)).toEqual(["provenance"]);
-    expect(skillsForDomains([], "grantmaker").map((s) => s.name)).toEqual(["provenance"]);
+    expect(skillsForDomains([], "contribution-reviewer").map((s) => s.name)).toEqual(["provenance", "search"]);
+    expect(skillsForDomains([], "grantmaker").map((s) => s.name)).toEqual(["provenance", "search"]);
     expect(skillsForDomains([], "matcher")).toEqual([]);
     expect(skillsForDomains(["mathematics"], "matcher").map((s) => s.name)).toEqual(["mathematics"]);
   });
@@ -295,7 +296,7 @@ describe("views", () => {
   it("lists the skills in the catalog with the role's sections", () => {
     const catalog = getSkillCatalog("grantmaker");
     expect(catalog).toMatch(
-      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
+      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\); search \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Grantmaker\)\.$/
     );
     expect(getSkillCatalog("claim-steward")).toContain(
       "provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"

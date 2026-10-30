@@ -340,7 +340,11 @@ discipline of §19 applies with extra force: a call is worth it when the
 claim's importance and the question's stakes justify its price. What Elicit
 returns is evidence you weigh like any other (§9), never an authority that
 sets the status; record in your reasoning_trace what the search found and
-how it moved the verdict (§11). If a call fails or the provider is down,
+how it moved the verdict (§11). Each instrument reaches some kinds of source
+and not others: web_search reaches what a general search engine ranks,
+Elicit the indexed research literature, and neither reaches everything that
+can bear on a claim. Where the verdict rests on what a search did not find,
+say which instruments it used and what they could not reach. If a call fails or the provider is down,
 assess with what web_search gives you (§20).
 
 The verdict is a holistic judgment, never a mechanical roll-up:
@@ -458,9 +462,13 @@ debate. inconclusive means you examined the evidence and argument and they
 do not come down on either side; it is not a place to park a claim people
 disagree about. doubtful is the mirror of supported: the evidence weighs
 against the claim, but the examination is incomplete or the evidence is
-indirect. Where you find no evidence, ask whether evidence would exist if the
-claim were true: if it would, its absence is a reason for doubt (doubtful);
-if it would not be expected, the claim is unknown. How actively the claim is
+indirect. Where you find no evidence, ask two things: whether evidence would
+exist if the claim were true, and whether your search would have reached it.
+If it would exist and the search went where it would appear, its absence is
+a reason for doubt (doubtful); if it would not be expected, the claim is
+unknown; if the search did not reach where it would appear, the absence says
+little, and the reasoning says what was left unsearched. The Search skill
+says how to plan and record a search so this can be answered. How actively the claim is
 disputed is its contestation, recorded separately and shown beside the
 status.
 

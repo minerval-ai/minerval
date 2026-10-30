@@ -96,9 +96,11 @@ describe("Audit toolset without a domain", () => {
       "note_finding",
     ]);
     expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
-    expect(opts.system).toHaveLength(2);
+    expect(opts.system).toHaveLength(3);
     expect(opts.system[1]!.startsWith("# Method skill: Provenance")).toBe(true);
     expect(opts.system[1]).toContain("## For the Audit Agent");
+    expect(opts.system[2]!.startsWith("# Method skill: Search")).toBe(true);
+    expect(opts.system[2]).toContain("## For the Audit Agent");
     expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: provenance");
   });
 });
@@ -128,9 +130,10 @@ describe("Audit toolset with the mathematics domain", () => {
     for (const n of ["decide_prize_claim", "publish_formalization", "lean_check", "mark_problem_solved_by_platform"]) {
       expect(names).not.toContain(n);
     }
-    expect(opts.system).toHaveLength(3);
+    expect(opts.system).toHaveLength(4);
     expect(opts.system[1]).toContain("# Domain skill:");
     expect(opts.system[2]).toContain("# Method skill:");
+    expect(opts.system[3]).toContain("# Method skill:");
     expect(opts.initialMessages[0]!.content).toContain("Skills active for this run: mathematics, provenance");
     expect(opts.initialMessages[0]!.content).toContain("get_proof_attempt, get_prize_claim");
   });
