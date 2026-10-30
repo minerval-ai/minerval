@@ -3,9 +3,9 @@ import { getAgentIndex, getSkills } from "@/lib/content";
 
 export const metadata = { title: "The skills · Minerval" };
 
-// One card per domain skill: what it is, its version, which agents it can be
-// spliced into, and the tools it brings. The skill's own page shows the text
-// verbatim and the exact block each agent receives.
+// One card per skill: what it is, its version, which agents can load it, and
+// the tools it brings. The skill's own page shows the text verbatim and the
+// exact view each agent loads.
 export default function SkillsIndex() {
   const skills = getSkills();
   const agents = getAgentIndex();
@@ -14,7 +14,7 @@ export default function SkillsIndex() {
 
   return (
     <div className="col-wide">
-      <p className="sc" style={{ marginBottom: ".5rem" }}>Domain skills</p>
+      <p className="sc" style={{ marginBottom: ".5rem" }}>Skills</p>
       <h1>How the constitution applies in a domain</h1>
       <p className="lede" style={{ fontSize: "1.08rem" }}>
         A skill is the third layer of an administrator&rsquo;s prompt, between its role and
@@ -26,11 +26,13 @@ export default function SkillsIndex() {
         the constitution, the constitution wins.
       </p>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".82rem" }}>
-        A skill is active for a run when the claim the run serves carries the skill&rsquo;s
-        domain tag, a judgment recorded by the claim&rsquo;s Steward (the Extractor emits
-        a prior, and a subclaim inherits its parent&rsquo;s tags). The Grantmaker&rsquo;s
-        skills come from its mandate. Funding never selects a skill for any agent that
-        writes to the graph.
+        Skills load on demand. Each agent&rsquo;s prompt lists the skills it can load, and
+        the agent reads one with the load_skill tool when its work calls for it; every load
+        is recorded with the run and with any assessment it writes. A claim&rsquo;s domain
+        tags (recorded by its Steward; the Extractor emits a prior, and a subclaim inherits
+        its parent&rsquo;s tags) point its administrators to the domain skills that cover its
+        subject. A skill&rsquo;s tools are in an agent&rsquo;s toolset whether or not it loads
+        the skill. Funding never points an agent that writes to the graph to a skill.
       </p>
 
       {skills.length === 0 ? (
@@ -49,7 +51,7 @@ export default function SkillsIndex() {
                 {s.description}
               </p>
               <p style={{ fontSize: ".82rem", color: "var(--muted)", fontFamily: "var(--sans)", margin: "0 0 .5rem" }}>
-                <strong style={{ color: "var(--ink-soft)" }}>Spliced into:</strong>{" "}
+                <strong style={{ color: "var(--ink-soft)" }}>Loaded by:</strong>{" "}
                 {s.roles.map((r) => roleName(r.key)).join(", ")}.
                 {s.tools.length > 0 && (
                   <>

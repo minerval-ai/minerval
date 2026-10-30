@@ -4,15 +4,22 @@
  * A skill (`skills/<name>/SKILL.md`, see `skills/README.md`) says how the
  * constitution and a role apply to one body of work, in role-addressed H2
  * sections. Two kinds exist. A DOMAIN skill covers one subject (mathematics)
- * and is activated by a claim's recorded domains. A METHOD skill covers one
- * kind of work every claim can call for (tracing what a claim's sources rest
- * on) and is carried on every run of the roles it addresses; it claims no
- * domain and never appears in the domain list the Extractor tags from.
+ * and is pointed to by a claim's recorded domains. A METHOD skill covers one
+ * kind of work any claim can call for (tracing what a claim's sources rest
+ * on); it claims no domain and never appears in the domain list the
+ * Extractor tags from.
+ *
+ * Skills load on demand, as the Agent Skills format intends: a role's prompt
+ * carries the catalog (skillsSection), and the agent reads a skill with the
+ * load_skill tool (tools/skill-load-tools.ts), which returns the role's view
+ * as the tool result and records the load. A skill's tools are in the
+ * toolset whether or not it is loaded. The Extractor is the exception: it
+ * makes one structured call with no tools, so its views are spliced in as
+ * system blocks after the constitution-plus-role block.
+ *
  * This module loads every skill once per process, the way constitution.ts
  * loads the constitution, and owns ROLE_VIEW: which sections each role
- * receives. Each view is spliced into the prompt as its own system block
- * after the constitution-plus-role block, so the shared block's cache entry
- * is unchanged between skilled and unskilled runs of the same role.
+ * receives.
  *
  * Precedence: constitution, then the role (whose prompt carries its operating
  * standards), then the skill. A skill may sharpen a role's obligations and add
@@ -65,8 +72,7 @@ const ALL_ADMIN_SECTIONS: readonly SkillSection[] = [
  * not an administrator, and its prompt (src/llm/prompts/math-solver.ts)
  * is written without the skill or the constitution. The researcher (#298)
  * is an instrument too, but one an administrator briefs and equips, so it
- * receives exactly the sections addressed to it and the tools a skill
- * declares for it.
+ * can load skills and is offered the tools a skill declares for it.
  */
 export const ROLE_VIEW = {
   "claim-steward": ALL_ADMIN_SECTIONS,
@@ -87,7 +93,11 @@ export const ROLE_VIEW = {
   curator: ["For every administrator", "For the Curator", "For the Matcher"],
   matcher: ["For the Matcher"],
   extractor: ["For the Extractor"],
-  researcher: ["For the researcher"],
+  // The researcher often does a Steward's work on the Steward's behalf (a
+  // provenance map, a literature search), so it reads the sections that
+  // describe that work as well as its own, which says what it leaves to the
+  // Steward.
+  researcher: ["For every administrator", "For the Claim Steward", "For the researcher"],
 } as const satisfies Record<string, readonly SkillSection[]>;
 
 export type SkillRole = keyof typeof ROLE_VIEW;
@@ -139,7 +149,7 @@ export interface Skill {
   path: string;
 }
 
-/** The sentence of standing every spliced domain-skill view opens with. */
+/** The sentence of standing every domain-skill view opens with. */
 export const SKILL_STANDING =
   "This skill says how the constitution and your role apply in this domain. " +
   "It never outranks either.";
@@ -552,11 +562,11 @@ export function methodSkills(): Skill[] {
 }
 
 /**
- * The skills a claim-scoped run carries, alphabetical by name: the domain
- * skills the claim's domains activate, plus every method skill. When `role`
- * is given, a method skill that has no section for that role is left out,
- * so a run never carries an empty block or records a skill that said nothing
- * to it. Two active skills are both spliced.
+ * The skills that bear on a claim's domains, alphabetical by name: the
+ * domain skills the domains name, plus every method skill. When `role` is
+ * given, a method skill that has no section for that role is left out.
+ * Agents do not use this to choose what to read (they load skills with
+ * load_skill); it answers "which skills could this claim's work involve".
  */
 export function skillsForDomains(
   domains: readonly string[] | null | undefined,
@@ -589,8 +599,9 @@ export function sectionsForRole(skill: Skill, role: SkillRole): SkillSection[] {
 }
 
 /**
- * The block spliced into `role`'s prompt for `skill`: a heading the agent can
- * cite, one sentence of standing, then the role's sections verbatim.
+ * `role`'s view of `skill`, as load_skill returns it (and as the Extractor's
+ * prompt splices it): a heading the agent can cite, one sentence of
+ * standing, then the role's sections verbatim.
  */
 export function getSkillView(skill: Skill, role: SkillRole): string {
   const wanted = new Set<string>(ROLE_VIEW[role]);
@@ -611,57 +622,104 @@ export function getSkillViews(skills: readonly Skill[], role: SkillRole): string
   return skills.map((s) => getSkillView(s, role));
 }
 
-/** The one-line catalog of the skills that exist, as `role` sees them. */
-export function getSkillCatalog(role: SkillRole): string {
-  const skills = listSkills();
-  if (skills.length === 0) return "No domain skills exist yet.";
-  const entries = skills.map((s) => {
-    const sections = sectionsForRole(s, role);
-    // "when active": the catalog names what exists, not what this run
-    // carries. A domain skill is spliced only when the claim's recorded
-    // domains activate it, and a run on an untagged claim carries none
-    // (#469); the run's own prompt says which domains it was given.
-    const view =
-      sections.length > 0
-        ? `when active, you receive: ${sections.join(", ")}`
-        : "you receive none of its sections";
-    const activation =
-      s.kind === "method"
-        ? "a method skill, carried on every run"
-        : `activated by domain ${s.domains.join(", ")}`;
-    const latest = s.changelog[0];
-    const history =
-      latest && latest.version === s.version
-        ? `, which changed: ${latest.change}`
-        : s.version === 1
-          ? ", as first written"
-          : "";
-    return `${s.name} (version ${s.version}${history}; ${activation}; ${view})`;
-  });
-  return `Skills that exist: ${entries.join("; ")}.`;
+/**
+ * The skills `role` can load: those with at least one section addressed to
+ * it. A skill with nothing to say to a role is left out of its catalog, so a
+ * load never returns an empty view.
+ */
+export function loadableSkills(role: SkillRole): Skill[] {
+  return listSkills().filter((s) => sectionsForRole(s, role).length > 0);
 }
 
 /**
- * The `## Domain skills` section every role prompt that can receive a skill
- * carries: the forward reference to the blocks that may follow, and the
- * catalog.
+ * The domain skills a run's recorded domains point to, among those `role`
+ * can load. A pointer, never a load: the run's task message names them, and
+ * the agent decides whether the work calls for one.
  */
-export function domainSkillsSection(role: SkillRole): string {
-  return `## Domain skills
+export function skillsPointedTo(
+  domains: readonly string[] | null | undefined,
+  role: SkillRole
+): Skill[] {
+  const wanted = new Set(domains ?? []);
+  return loadableSkills(role).filter(
+    (s) => s.kind === "domain" && s.domains.some((d) => wanted.has(d))
+  );
+}
 
-One or more skill blocks may follow this role. A domain skill governs how the
-constitution and your role apply in one domain; a method skill governs one
-kind of work any claim can call for. A skill never outranks either the
-constitution or your role: it may sharpen your obligations and add
-procedures and tools, never loosen them. Which domain skills a run carries
-is decided by the claim's recorded domains, never by who funds the work; a
-method skill is carried on every run. A claim with no recorded domains
-activates no domain skill, and a run on such a claim carries no domain
-skill block; that is a state to work in, not a delivery fault. The catalog
-below says which skills exist, the change each current version made, and
-what you would receive from each when it is active; check a claim that a
-skill "now says" something against it rather than taking it on trust.
+/** The catalog of the skills `role` can load: one entry per skill, with its description. */
+export function getSkillCatalog(role: SkillRole): string {
+  const skills = loadableSkills(role);
+  if (skills.length === 0) return "No skill has a section for your role.";
+  const entries = skills.map((s) => {
+    const kind =
+      s.kind === "method"
+        ? "a method skill"
+        : `a domain skill, for claims tagged ${s.domains.join(", ")}`;
+    const latest = s.changelog[0];
+    const history =
+      latest && latest.version === s.version
+        ? `; this version changed: ${latest.change}`
+        : s.version === 1
+          ? "; as first written"
+          : "";
+    const description = s.description.replace(/\s+/g, " ").trim();
+    return (
+      `- ${s.name} (version ${s.version}, ${kind}${history}). ${description} ` +
+      `Loading it gives you: ${sectionsForRole(s, role).join(", ")}.`
+    );
+  });
+  return entries.join("\n");
+}
+
+/**
+ * The `## Skills` section every role prompt that can load a skill carries:
+ * what a skill is, how to load one, and the catalog.
+ */
+export function skillsSection(role: SkillRole): string {
+  if (role === "extractor") return extractorSkillsSection();
+  return `## Skills
+
+A skill says how the constitution and your role apply to one kind of work
+(a method skill) or one subject (a domain skill), and may describe tools in
+your toolset. Skills are not in this prompt: load one with load_skill when
+the work in front of you calls for it, and its text returns as the tool
+result, addressed to your role. Read a skill before relying on the tools it
+describes, and load it again if you need to reread it. Which skills you load
+is recorded with the run and with anything it writes. Where a claim's
+recorded domains point to a domain skill, the task says so; that is a
+pointer to a skill that covers the claim's subject, not a requirement. A
+skill never outranks the constitution or your role: it may sharpen your
+obligations and add procedures, never loosen them. Check a claim that a
+skill "now says" something against the catalog rather than taking it on
+trust.
+
+Skills you can load:
 ${getSkillCatalog(role)}`;
+}
+
+/**
+ * The Extractor's skills section. The Extractor is the one role whose
+ * skills are spliced in rather than loaded: it makes a single structured
+ * call with no tools and so no turn in which to load anything, and its
+ * sections (how to tag a claim's domains, how to record a passage) bear on
+ * every extraction.
+ */
+function extractorSkillsSection(): string {
+  const skills = listSkills();
+  const entries = skills.map(
+    (s) =>
+      `- ${s.name} (version ${s.version}, ${
+        s.kind === "method" ? "a method skill" : `a domain skill, for claims tagged ${s.domains.join(", ")}`
+      }). ${s.description.replace(/\s+/g, " ").trim()}`
+  );
+  return `## Skills
+
+Every skill's section for the Extractor follows this role as its own block.
+A skill never outranks the constitution or your role: it may sharpen your
+obligations and add procedures, never loosen them. The domains you tag a
+claim with are drawn from the domain skills below; the claim's
+administrators are pointed to those skills when they work on it.
+${entries.length > 0 ? entries.join("\n") : "No skill exists yet."}`;
 }
 
 /** The tool definitions `skill` brings to `role`'s toolset, in the Anthropic shape. */

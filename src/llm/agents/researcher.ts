@@ -57,7 +57,8 @@ import {
   buildResearcherTaskMessage,
   getResearcherSystemPromptBlocks,
 } from "../prompts/researcher.js";
-import { sectionsForRole, skillsForDomains, type Skill } from "../prompts/skills.js";
+import { listSkills } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { sanitizeDomains } from "./skill-selection.js";
 import {
   executeSkillTool,
@@ -352,12 +353,12 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const maxWallMs = input.maxWallMs ?? config.researcherMaxWallMinutes * 60_000;
   const maxTurns = input.maxTurns ?? RUN_TURN_GUARD;
 
-  // Skills: the method skills that address the researcher, plus the claim's
-  // domain skills for their tools (a domain skill with no researcher section
-  // contributes tools and no block).
+  // Skills load on demand; the claim's recorded domains point to the domain
+  // skills that cover its subject. The tools every skill declares for the
+  // researcher are offered whether or not it loads the skill, subject to
+  // the conditions below.
   const claimDomains = sanitizeDomains(input.claim?.domains ?? []);
-  const skills: Skill[] = skillsForDomains(claimDomains, "researcher");
-  const skillsWithText = skills.filter((s) => sectionsForRole(s, "researcher").length > 0);
+  const skillLoader = createSkillLoadTools("researcher", { domains: claimDomains });
   const checker = leanCheckerConfigured(config);
   // Mathlib tools only with a checker to run them; the provenance tools only
   // on a claim, since they read or record on a claim, except that an
@@ -365,7 +366,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   // examination tools only on a run launched as an examination.
   const examination = input.examination ?? null;
   const graphWrites = launcherWritesGraph(run.requested_by);
-  const skillTools = getActiveSkillToolDefinitions(skills, "researcher").filter(
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "researcher").filter(
     (t) =>
       (graphWrites || (!t.name.startsWith(PROVENANCE_PREFIX) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
       (checker || !isLeanTool(t.name)) &&
@@ -398,6 +399,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     getReadPageToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
+    ...skillLoader.definitions,
     ...skillTools,
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
@@ -418,7 +420,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const notebook: Record<string, string> = { ...(run.notebook ?? {}) };
   const system = getResearcherSystemPromptBlocks({
     includeConstitution: run.include_constitution,
-    skills: skillsWithText,
   });
   const taskInput = {
     task: run.task,
@@ -449,7 +450,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const taskMessage = buildResearcherTaskMessage({
     ...taskInput,
     estimate: estimateBudget({ model, ceilingMicroUsd: ceiling, promptChars, longRun }),
-  });
+  }) + skillLoader.pointerNote;
 
   let reportInput: Record<string, unknown> | null = null;
   let reminded = false;
@@ -497,6 +498,8 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (!offered.has(name)) {
       return JSON.stringify({ success: false, message: `${name} is not in this run's toolset.` });
     }
+    const loaded = await skillLoader.execute(name, toolInput);
+    if (loaded !== null) return loaded;
     if (name === "notebook_write") return executeNotebookWrite(toolInput);
     if (name === "notebook_read") return JSON.stringify({ success: true, notebook });
     if (name === "report") {
@@ -680,10 +683,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   };
   let loop: { turns: number; stopReason: string; hookStop?: string };
   try {
-    loop = await withSkills(
-      skills.map((s) => s.name),
-      () => runLoop()
-    );
+    loop = await withSkills([], () => runLoop());
   } catch (err) {
     if (err instanceof LlmRefusalError) {
       return finish("refused", 0, "refusal", err.message);

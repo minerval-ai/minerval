@@ -48,7 +48,11 @@ describe("extractor prompt", () => {
     const blocks = getExtractorSystemPromptBlocks({ skills: listSkills() });
     expect(blocks).toHaveLength(1 + listSkills().length);
     expect(blocks[0]).toContain("**domains**");
-    expect(blocks[0]).toContain("## Domain skills");
+    // The one role whose skills are spliced: it makes one structured call
+    // with no tools, so it has no turn in which to load a skill.
+    expect(blocks[0]).toContain("## Skills");
+    expect(blocks[0]).toContain("follows this role as its own block");
+    expect(blocks[0]).not.toContain("load_skill");
     const math = blocks[1]!;
     expect(math.startsWith("# Domain skill: Mathematics (version 1)")).toBe(true);
     expect(math.split("\n").filter((l) => l.startsWith("## "))).toEqual(["## For the Extractor"]);

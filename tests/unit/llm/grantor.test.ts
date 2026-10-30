@@ -51,8 +51,8 @@ vi.mock("../../../src/services/owl.js", () => ({
 vi.mock("../../../src/llm/prompts/grantmaker.js", () => ({
   getGrantmakerSystemPromptBlocks: () => ["ROLE"],
 }));
-vi.mock("../../../src/llm/prompts/skills.js", () => ({
-  skillsByName: () => [],
+vi.mock("../../../src/llm/tools/skill-load-tools.js", () => ({
+  createSkillLoadTools: () => ({ definitions: [], execute: async () => null, pointed: [], pointerNote: "" }),
 }));
 vi.mock("../../../src/llm/tools/report-tools.js", () => ({
   createReportTools: () => ({

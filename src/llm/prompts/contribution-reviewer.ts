@@ -4,9 +4,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 const ROLE_PROMPT = `# Your Role: Contribution Reviewer
@@ -212,18 +210,17 @@ ${RAISING_ISSUES}
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("contribution-reviewer")}`;
+${skillsSection("contribution-reviewer")}`;
 
 export function getContributionReviewerSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (contribution-reviewer's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getContributionReviewerSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "contribution-reviewer"));
+export function getContributionReviewerSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

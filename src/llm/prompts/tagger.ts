@@ -63,8 +63,8 @@ export function getTaggingPrompt(input: {
   ];
   if (input.domains.length > 0) {
     lines.push(
-      `Domain skills active on this claim: ${input.domains.join(", ")} ` +
-        `(a closed list used to select agent tooling; not itself a tag, but a hint about the field).`
+      `Domains recorded on this claim: ${input.domains.join(", ")} ` +
+        `(a closed list that points agents to skills; not itself a tag, but a hint about the field).`
     );
   }
   if (input.existing.length > 0) {

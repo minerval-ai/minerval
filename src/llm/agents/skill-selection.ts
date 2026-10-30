@@ -1,13 +1,14 @@
 /**
- * How a run finds its domain skills (docs/mathematics.md §3.4).
+ * What points a run to a skill (skills/README.md, "Loading").
  *
- * Selection is a recorded admin judgment, read from the record, never a
- * filter and never the funding mandate: claim-scoped runs read
- * `claims.domains` (the Reviewer and Arbitrator through the contribution's
- * target claim, Audit as the union over the claims in the decisions under
- * review), mandate-scoped runs read `grants.skills`. A lookup that fails
- * degrades to an unskilled run with a warning rather than a failed run
- * (§20); a Steward's next pass on the claim carries the skill regardless.
+ * The pointer is a recorded admin judgment, read from the record, never the
+ * funding mandate for an agent that writes to the graph: claim-scoped runs
+ * read `claims.domains` (the Reviewer and Arbitrator through the
+ * contribution's target claim, Audit as the union over the claims in the
+ * decisions under review), mandate-scoped runs read `grants.skills`. A
+ * pointer never loads a skill; the run loads what its work calls for with
+ * load_skill. A lookup that fails degrades to a run pointed to nothing, with
+ * a warning, rather than a failed run (§20).
  */
 import { rawQuery } from "../../db/client.js";
 import {
@@ -73,8 +74,8 @@ export async function domainsForContribution(contributionId: string): Promise<st
 /**
  * The union of domains over the claims an audit's context names, directly
  * (claim ids) or through the contributions it names (their target claims).
- * A pattern analysis names no decisions and gets no skill; the load_skill
- * fallback for those runs is deferred.
+ * A pattern analysis names no decisions and is pointed to no skill; it loads
+ * what its work calls for with load_skill.
  */
 export async function domainsForAuditContext(context: string): Promise<string[]> {
   const ids = [...new Set((context.match(UUID_RE) ?? []).map((id) => id.toLowerCase()))];
@@ -109,7 +110,7 @@ export async function skillsForGrant(grantId: string): Promise<Skill[]> {
   }
 }
 
-/** Convenience: the skills a claim's recorded domains activate. */
+/** Convenience: the skills a claim's recorded domains point to (and every method skill). */
 export async function skillsForClaim(claimId: string): Promise<Skill[]> {
   return skillsForDomains(await domainsForClaim(claimId), "claim-steward");
 }

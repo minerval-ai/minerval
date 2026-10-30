@@ -14,13 +14,13 @@
  * standards of evidence that work needs, and asks for a report the
  * launcher can check cheaply; it spends few words on permissions the
  * toolset already enforces, and none on the report's fields, which the
- * report tool's schema describes. Method skills that address the
- * researcher follow as their own blocks. The brief, written by the
+ * report tool's schema describes. The role ends with the catalog of skills
+ * the researcher can load with load_skill. The brief, written by the
  * launcher, is the user message, with a budget guide in the units the
  * model can act on (see budgetGuide).
  */
 import { buildAdminPrompt } from "./constitution.js";
-import { getSkillViews, type Skill } from "./skills.js";
+import { skillsSection } from "./skills.js";
 import { CODE_EXECUTION_USD_PER_HOUR, type BudgetEstimate } from "../instrument-harness.js";
 
 export const RESEARCHER_ROLE_PROMPT = `# Your Role: Researcher
@@ -135,7 +135,8 @@ to quote, and the dead ends.
 You change nothing in the graph except what your tools are built to
 record, and you have no tools for claims, assessments, arguments, or
 edges between claims. When the provenance tools are in your toolset,
-record only what you actually read, by the Provenance skill's rules. You
+record only what you actually read, by the Provenance skill's rules: load
+it before you record anything. You
 address only the administrator: nothing you write is shown to the public
 as the graph's voice.
 
@@ -198,19 +199,19 @@ stage you were funded for, keep your notebook so that the next stage can
 begin where you stopped, and say in your report what the next stage would
 need. Where the work shows that something further is needed, file it as a
 request of its own with file_request, saying what this work found that
-makes it worth doing.`;
+makes it worth doing.
+
+${skillsSection("researcher")}`;
 
 /**
  * The system blocks: the role, with the constitution prepended when the
- * launcher asked for it, then one block per skill view that has something
- * to say to the researcher.
+ * launcher asked for it. Skills arrive as tool results when the run loads
+ * them.
  */
 export function getResearcherSystemPromptBlocks(input: {
   includeConstitution: boolean;
-  skills?: readonly Skill[];
 }): string[] {
-  const views = getSkillViews(input.skills ?? [], "researcher");
-  return [buildAdminPrompt(RESEARCHER_ROLE_PROMPT, input.includeConstitution), ...views];
+  return [buildAdminPrompt(RESEARCHER_ROLE_PROMPT, input.includeConstitution)];
 }
 
 /** The prompt as the site publishes it: the default arrangement, constitution first. */

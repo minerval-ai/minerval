@@ -1081,14 +1081,12 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "set_claim_domains",
       description:
-        "Record the claim's domain tags: which domain skills (and their " +
-        "tools) every administrator's run on this claim carries from now on. " +
-        "This is the authoritative judgment; it supersedes the Extractor's " +
-        "prior, an inherited tag, and the backfill. Tools cannot join a run " +
-        "that has already started, so a tag you set now takes effect on the " +
-        "claim's next pass: assess this pass with what you have and set " +
-        "marginal_yield honestly. Pass an empty list for a claim that belongs " +
-        "to no domain with a skill.",
+        "Record the claim's domain tags: which domain skills every " +
+        "administrator's run on this claim is pointed to from now on. This is " +
+        "the authoritative judgment; it supersedes the Extractor's prior, an " +
+        "inherited tag, and the backfill. A tag does not load anything: to " +
+        "read a skill in this run, load it with load_skill. Pass an empty list " +
+        "for a claim that belongs to no domain with a skill.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -1101,7 +1099,7 @@ export function getStewardToolDefinitions(): Tool[] {
             items: { type: "string" },
             description:
               "The domain tags, from the closed list of domains that have a " +
-              "skill (see the Domain skills section of your role).",
+              "skill (see the Skills section of your role).",
           },
           reasoning: {
             type: "string",

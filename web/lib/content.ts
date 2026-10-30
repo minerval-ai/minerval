@@ -22,7 +22,7 @@ export interface AgentMeta {
   hasConstitution: boolean;
   roleChars: number;
   fullChars: number;
-  /** The skills that can be spliced into this agent's prompt. */
+  /** The skills this agent can load (the Extractor's are spliced into its prompt). */
   skills: AgentSkillRef[];
 }
 
@@ -39,7 +39,7 @@ export interface SkillMeta {
   description: string;
   version: number;
   sinceEpoch: string;
-  /** A domain skill is activated by a claim's domains; a method skill is carried on every run. */
+  /** A domain skill is pointed to by a claim's domains; a method skill claims none. Both load on demand. */
   kind?: "domain" | "method";
   domains: string[];
   /** Every role that receives at least one section, with those sections. */
@@ -99,7 +99,7 @@ export function getSkillBody(name: string): string {
   return readFileSync(resolve(CONTENT, `skills/${name}.md`), "utf-8");
 }
 
-/** The exact block spliced into `roleKey`'s system prompt for this skill. */
+/** The exact view `roleKey` receives when it loads this skill. */
 export function getSkillView(name: string, roleKey: string): string {
   return readFileSync(resolve(CONTENT, `skills/${name}.${roleKey}.md`), "utf-8");
 }

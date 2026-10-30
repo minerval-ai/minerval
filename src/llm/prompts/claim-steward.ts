@@ -3,9 +3,7 @@ import { RAISING_ISSUES } from "./raising-issues.js";
 import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
-  type Skill,
+  skillsSection,
 } from "./skills.js";
 
 // The role is assembled from named sections so the Question Steward
@@ -731,18 +729,17 @@ const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESS
 
 ${NOTING_FINDINGS}
 
-${domainSkillsSection("claim-steward")}`;
+${skillsSection("claim-steward")}`;
 
 export function getClaimStewardSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (claim-steward's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getClaimStewardSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "claim-steward"));
+export function getClaimStewardSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }

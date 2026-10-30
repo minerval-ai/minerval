@@ -2,8 +2,7 @@ import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
 import {
   buildAdminPromptBlocks,
-  domainSkillsSection,
-  getSkillViews,
+  skillsSection,
   type Skill,
 } from "./skills.js";
 
@@ -153,33 +152,32 @@ for the match and dropped from the alternatives.
 
 ${RAISING_ISSUES}
 
-${domainSkillsSection("matcher")}`;
+${skillsSection("matcher")}`;
 
 export function getMatcherSystemPrompt(): string {
   return buildAdminPrompt(ROLE_PROMPT);
 }
 
 /**
- * The prompt as system blocks: the constitution-plus-role block, then one
- * block per active domain skill (matcher's view of each), in that order.
+ * The prompt as system blocks: the constitution-plus-role block. Skills
+ * are not spliced in; the role's Skills section lists what load_skill can
+ * load.
  */
-export function getMatcherSystemPromptBlocks(
-  opts: { skills?: readonly Skill[] } = {}
-): string[] {
-  return buildAdminPromptBlocks(ROLE_PROMPT, getSkillViews(opts.skills ?? [], "matcher"));
+export function getMatcherSystemPromptBlocks(): string[] {
+  return buildAdminPromptBlocks(ROLE_PROMPT);
 }
 
 /**
  * The user turn. `domains` are the recorded domains the caller handed the
- * run and `skills` the domain skills they activated: the prompt names both
- * so the Matcher can tell an untagged claim (no skill block by design) from
- * a delivery fault (#469), since the role's catalog only says what exists.
+ * run and `skills` the domain skills they point to: the prompt names both,
+ * so the Matcher knows which skill covers the claim's subject before it
+ * decides whether to load one (#469).
  */
 export function getMatchingPrompt(
   extractedText: string,
   proposedCanonical: string,
   /**
-   * What this run carries: its recorded domains and spliced skills (#469),
+   * What this run carries: its recorded domains and the skills they point to (#469),
    * and its tool-use turn budget (#467), stated up front so the Matcher can
    * pace its searches instead of learning the limit two turns before the
    * cut. A budget left out means the prompt says nothing about one.
@@ -187,18 +185,18 @@ export function getMatchingPrompt(
   run: { kind?: string; domains?: readonly string[]; skills?: readonly Skill[]; turnBudget?: number } = {}
 ): string {
   const domains = [...new Set(run.domains ?? [])].sort();
-  const spliced = (run.skills ?? []).filter((s) => s.kind === "domain");
+  const pointed = (run.skills ?? []).filter((s) => s.kind === "domain");
   const domainsLine =
     domains.length > 0
       ? `Recorded domains for this run: ${domains.join(", ")}.`
       : "Recorded domains for this run: none.";
   const skillsLine =
-    spliced.length > 0
-      ? `Domain skill blocks spliced after your role: ${spliced
-          .map((s) => `${s.displayName} (version ${s.version})`)
-          .join(", ")}.`
-      : "No domain skill block follows your role on this run; judge under the " +
-        "constitution and your role alone.";
+    pointed.length > 0
+      ? `These domains point to ${pointed
+          .map((s) => `the ${s.displayName} skill (${s.name})`)
+          .join(" and ")}; load it with load_skill if the identity question turns on the subject.`
+      : "No domain skill covers this claim's recorded domains; judge under the " +
+        "constitution and your role.";
   const budget =
     run.turnBudget === undefined
       ? ""

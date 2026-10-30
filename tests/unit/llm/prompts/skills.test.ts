@@ -8,18 +8,20 @@ import {
   SKILL_SECTIONS,
   SKILL_STANDING,
   buildAdminPromptBlocks,
-  domainSkillsSection,
+  skillsSection,
   getSkill,
   getSkillCatalog,
   getSkillToolDefinitions,
   getSkillView,
   knownDomains,
   listSkills,
+  loadableSkills,
   methodSkills,
   METHOD_SKILL_STANDING,
   parseSkill,
   sectionsForRole,
   skillsForDomains,
+  skillsPointedTo,
   systemFromBlocks,
 } from "../../../../src/llm/prompts/skills.js";
 import { buildAdminPrompt } from "../../../../src/llm/prompts/constitution.js";
@@ -213,7 +215,13 @@ describe("ROLE_VIEW", () => {
     ]);
     expect(ROLE_VIEW.matcher).toEqual(["For the Matcher"]);
     expect(ROLE_VIEW.extractor).toEqual(["For the Extractor"]);
-    expect(ROLE_VIEW.researcher).toEqual(["For the researcher"]);
+    // The researcher often does a Steward's work on its behalf, so it reads
+    // the Steward's sections as well as its own.
+    expect(ROLE_VIEW.researcher).toEqual([
+      "For every administrator",
+      "For the Claim Steward",
+      "For the researcher",
+    ]);
     expect(SKILL_ROLES).toEqual([
       "claim-steward",
       "audit-agent",
@@ -292,28 +300,39 @@ describe("views", () => {
     expect(() => getSkill("alchemy")).toThrow(/skill "alchemy" not found/);
   });
 
-  it("lists the skills in the catalog with the role's sections", () => {
+  it("lists the skills a role can load, with descriptions and the sections loading gives", () => {
     const catalog = getSkillCatalog("grantmaker");
-    expect(catalog).toMatch(
-      /^Skills that exist: mathematics \(version 1, as first written; activated by domain mathematics; when active, you receive: For every administrator, For the Grantmaker\); provenance \(version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator\)\.$/
+    expect(catalog.split("\n")).toHaveLength(2);
+    expect(catalog).toContain(
+      "- mathematics (version 1, a domain skill, for claims tagged mathematics; as first written). "
     );
+    expect(catalog).toContain("Loading it gives you: For every administrator, For the Grantmaker.");
+    expect(catalog).toContain("- provenance (version 1, a method skill; as first written). ");
+    expect(catalog).toContain(getSkill("provenance").description.replace(/\s+/g, " ").trim());
     expect(getSkillCatalog("claim-steward")).toContain(
-      "provenance (version 1, as first written; a method skill, carried on every run; when active, you receive: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor)"
+      "Loading it gives you: For every administrator, For the Claim Steward, For the Audit Agent, For the Curator, For the Extractor."
     );
-    const section = domainSkillsSection("claim-steward");
-    expect(section.startsWith("## Domain skills\n")).toBe(true);
-    expect(section).toContain("never outranks either");
+    const section = skillsSection("claim-steward");
+    expect(section.startsWith("## Skills\n")).toBe(true);
+    expect(section).toContain("load one with load_skill");
+    expect(section).toContain("never outranks the constitution or your role");
     expect(section).toContain(getSkillCatalog("claim-steward"));
-    // A run on an untagged claim carries no domain skill block by design,
-    // and the role prompt says so, so the agent does not report a delivery
-    // fault (#469).
-    expect(section).toContain("activates no domain skill");
-    expect(getSkillCatalog("matcher")).toContain(
-      "mathematics (version 1, as first written; activated by domain mathematics; when active, you receive: For the Matcher)"
-    );
-    expect(getSkillCatalog("matcher")).toContain(
-      "provenance (version 1, as first written; a method skill, carried on every run; you receive none of its sections)"
-    );
+    // A skill with nothing for the role is not in its catalog: the Matcher
+    // can load Mathematics, not Provenance.
+    expect(getSkillCatalog("matcher")).toContain("- mathematics (");
+    expect(getSkillCatalog("matcher")).not.toContain("- provenance (");
+    // The Extractor cannot load anything: its section says its skills follow.
+    expect(skillsSection("extractor")).toContain("follows this role as its own block");
+    expect(skillsSection("extractor")).not.toContain("load_skill");
+  });
+
+  it("points to the domain skills a run's domains name, never to a method skill", () => {
+    expect(loadableSkills("matcher").map((s) => s.name)).toEqual(["mathematics"]);
+    expect(skillsPointedTo(["mathematics"], "claim-steward").map((s) => s.name)).toEqual([
+      "mathematics",
+    ]);
+    expect(skillsPointedTo([], "claim-steward")).toEqual([]);
+    expect(skillsPointedTo(["economics"], "claim-steward")).toEqual([]);
   });
 
   it("hands each role only the tools declared for it, in the Anthropic shape", () => {

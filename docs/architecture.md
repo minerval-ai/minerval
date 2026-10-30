@@ -503,8 +503,9 @@ goes stale across a merge, and the Curator's notification says so.
 
 The work is the Claim Steward's, under the **Provenance** skill
 (`skills/provenance/SKILL.md`), the first *method* skill: a skill that
-belongs to no domain and is carried on every run of the roles it addresses
-(see [Skills](policies.md#skills)). Its tools are in every Steward run:
+belongs to no domain, which a run loads with `load_skill` when its work
+calls for it (see [Skills](policies.md#skills)). Its tools are in every
+Steward run whether or not it is loaded:
 `provenance_get_map` (the instances with their ids, readings, and edges),
 `provenance_read_source` (a source's text, windowed; a document the graph
 holds no copy of is fetched through the guarded ingestion path and stored,

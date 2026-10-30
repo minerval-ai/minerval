@@ -8,7 +8,7 @@
  */
 import { toolUseLoop } from "../client.js";
 import { getCuratorSystemPromptBlocks } from "../prompts/curator.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { domainsForClaim } from "./skill-selection.js";
 import {
   getGraphToolDefinitions,
@@ -67,6 +67,11 @@ async function runCuratorImpl(input: {
   const graphNames = new Set(graphTools.map((t) => t.name));
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
+  // Skills load on demand; the anchor claim's recorded domains point to the
+  // domain skills that cover its subject.
+  const claimDomains = await domainsForClaim(input.claimId);
+  const skillLoader = createSkillLoadTools("curator", { domains: claimDomains });
+
   const tools = [
     ...graphTools,
     ...claimContextTools,
@@ -76,15 +81,11 @@ async function runCuratorImpl(input: {
     // keeping the requests that bear on several nodes or on none.
     getChangeKindToolDefinition(),
     ...getRequestToolDefinitions("curator"),
+    ...skillLoader.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
-  // Domain skills come from the anchor claim's recorded domains (docs/
-  // mathematics.md §3.4).
-  const claimDomains = await domainsForClaim(input.claimId);
-  const skills = skillsForDomains(claimDomains, "curator");
-  // One cached block for the constitution and role, plus one per active skill.
-  const system = getCuratorSystemPromptBlocks({ skills });
+  const system = getCuratorSystemPromptBlocks();
 
   const CURATOR_MAX_TURNS = RUN_TURN_GUARD;
   const userMessage = `You have been triggered to curate the graph around a claim.
@@ -107,9 +108,9 @@ Proceed:
 4. Be conservative: act only when the structure is clearly wrong. Doing
    nothing is a fine outcome.
 
-${turnBudgetLine(CURATOR_MAX_TURNS)}`;
+${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
@@ -124,6 +125,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}`;
     // is bounded by curatorMaxRuns + the LLM budget tracker.
     maxIterations: CURATOR_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

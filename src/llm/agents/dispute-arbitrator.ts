@@ -6,7 +6,7 @@
  */
 import { toolUseLoop } from "../client.js";
 import { getDisputeArbitratorSystemPromptBlocks } from "../prompts/dispute-arbitrator.js";
-import { skillsForDomains } from "../prompts/skills.js";
+import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { domainsForContribution } from "./skill-selection.js";
 import {
   getGovernanceToolDefinitions,
@@ -47,17 +47,20 @@ async function runArbitrationImpl(input: {
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
 
+  // Skills load on demand; the contribution's target claim points to the
+  // domain skills that cover its subject (an intake proposal has none).
+  const skillLoader = createSkillLoadTools("dispute-arbitrator", {
+    domains: await domainsForContribution(input.contributionId),
+  });
+
   const tools = [
     ...getGovernanceToolDefinitions(),
     ...getArbitratorToolDefinitions(),
+    ...skillLoader.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
-  // Domain skills come from the contribution's target claim (docs/
-  // mathematics.md §3.4); an intake proposal with no claim yet carries none.
-  const skills = skillsForDomains(await domainsForContribution(input.contributionId), "dispute-arbitrator");
-  // One cached block for the constitution and role, plus one per active skill.
-  const system = getDisputeArbitratorSystemPromptBlocks({ skills });
+  const system = getDisputeArbitratorSystemPromptBlocks();
 
   const ARBITRATION_MAX_TURNS = 12;
   let userMessage = `You have been called to arbitrate a dispute.
@@ -81,9 +84,9 @@ Please:
 7. Use notify_claim_steward if the outcome affects the claim.
 8. Use flag_for_human_review if the situation exceeds automated capacity.
 
-${turnBudgetLine(ARBITRATION_MAX_TURNS)}`;
+${turnBudgetLine(ARBITRATION_MAX_TURNS)}${skillLoader.pointerNote}`;
 
-  await withSkills(skills.map((s) => s.name), () => toolUseLoop({
+  await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
     system,
@@ -96,6 +99,8 @@ ${turnBudgetLine(ARBITRATION_MAX_TURNS)}`;
     maxTokens: 16384,
     maxIterations: ARBITRATION_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      const loaded = await skillLoader.execute(name, toolInput);
+      if (loaded !== null) return loaded;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

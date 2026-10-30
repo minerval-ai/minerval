@@ -5,10 +5,9 @@ the constitution's standards apply in one domain, what the domain's
 characteristic objects are in the claim schema, what counts as evidence of
 which grade there, and what tools and procedures the domain brings. A method
 skill is the same layer for a kind of work rather than a subject (tracing
-what a claim's support rests on), carried on every run of the roles it
-addresses. Every admin prompt is assembled in four layers, in order of
-authority: the constitution, the role (whose prompt carries its own operating
-standards), the skills active for the run, and the task. A skill may sharpen
+what a claim's support rests on). Authority runs in four layers: the
+constitution, the role (whose prompt carries its own operating standards),
+the skills the run loads, and the task. A skill may sharpen
 how a role's obligations apply and may add procedures and tools; it never
 removes an obligation, and where it appears to diverge from the constitution,
 the constitution wins and the skill is defective.
@@ -17,8 +16,8 @@ This directory is not `plugin/skills/`. That directory holds the Agent Skill
 for external Claude Code users of the MCP server
 (`plugin/skills/claim-checking/SKILL.md`), which teaches an outside agent how
 to check claims against the graph and never enters an admin prompt. The
-skills here are spliced into the system prompts of the graph's own
-administrators by `src/llm/prompts/skills.ts`.
+skills here are loaded by the graph's own administrators, through
+`src/llm/prompts/skills.ts` and the `load_skill` tool.
 
 ## Layout
 
@@ -38,16 +37,43 @@ The format is the Agent Skills standard (agentskills.io): a directory named
 for the skill, a `SKILL.md` with YAML frontmatter (`name`, `description`,
 optional `metadata`) and a Markdown body, and any bundled files beside it.
 A standard skill loader could read these files as they are, and the
-`plugin/skills/` directory shows the same format serving Claude Code. What
-is Minerval's own is small and deliberate: the body's H2 sections are
-addressed to roles so one document serves every administrator, and
-`src/llm/prompts/skills.ts` splices a role's view into the system prompt as
-a cached block rather than letting an agent load the file on demand, because
-an administrator's prompt is public and versioned and must not vary with
-what the agent chose to read. The standard's progressive disclosure (a
-skill's longer references loaded only when needed) is not built; a skill
-that outgrows one file would add a reference directory and a read tool, and
-the loader would leave the prompt block as it is.
+`plugin/skills/` directory shows the same format serving Claude Code.
+
+## Loading
+
+Skills load on demand, as the standard intends. A role's prompt carries a
+catalog of the skills it can load: each skill's name, description, latest
+change, and the sections loading it gives that role. The agent reads a
+skill with the `load_skill` tool (`src/llm/tools/skill-load-tools.ts`),
+which returns the role's view as the tool result. Deciding which skills the
+work calls for is the agent's judgment, like deciding which tools to call.
+
+Every load is recorded: on the run's `agent_runs.skills`, and on the usage
+context, so an assessment written after the load names it in
+`claim_assessments.skills`. The record of which skills a run read is what
+makes its prompt auditable; the Audit Agent can ask why a run did not load
+a skill its work called for.
+
+A skill's tools are not gated on the load. Every tool a skill declares for
+a role is in that role's toolset (the Lean tools only where a checker is
+configured), as tools are in the standard; the skill is the procedure for
+using them well.
+
+A claim's recorded domains, and a mandate's `grants.skills`, point to the
+skills that cover the subject: the task message names them. A pointer, not
+a load.
+
+The Extractor is the one exception. It makes a single structured call with
+no tools, so it has no turn in which to load anything, and its sections
+(how to tag a claim's domains, how to record a passage) bear on every
+extraction; its views are spliced into its prompt.
+
+What is Minerval's own is small and deliberate: the body's H2 sections are
+addressed to roles, so one document serves every administrator and
+`load_skill` returns the sections addressed to the caller. The standard's
+third tier (a skill's longer reference files, read only when needed) is not
+built; a skill that outgrows one file would add a reference directory and a
+read tool.
 
 ## SKILL.md
 
@@ -68,12 +94,11 @@ The file opens with YAML frontmatter:
   skill's line in every role's catalog, so an agent told that a skill "now
   covers" a case can check the claim instead of trusting it (#493).
 - `metadata.minerval.kind`: `domain` (the default) or `method`. A domain
-  skill covers one subject and is activated by a claim's recorded domains.
+  skill covers one subject and is pointed to by a claim's recorded domains.
   A method skill covers one kind of work any claim can call for; it claims
-  no domain, never appears in the domain list the Extractor tags from, and
-  is carried on every run of each role it has a section for.
+  no domain and never appears in the domain list the Extractor tags from.
 - `metadata.minerval.domains`: for a domain skill, the `claims.domains`
-  values that activate it, normally just the skill's name. A method skill
+  values that point to it, normally just the skill's name. A method skill
   omits it.
 
 The body is Markdown addressed to the agents in the second person, as the
@@ -92,14 +117,16 @@ else is allowed at that level:
 - `Standards for judging`
 - `Failure modes`
 
-Which role receives which sections is the `ROLE_VIEW` table in
+Which sections a role's load returns is the `ROLE_VIEW` table in
 `src/llm/prompts/skills.ts`, shown on the site under `/docs/skills`. Every
 view is wrapped with a heading the agent can cite, `# Domain skill: <Name>
 (version N)` or `# Method skill: <Name> (version N)`, and one sentence of
 standing. The solver receives no skill: it is an instrument, and its prompt
 is written without one. The researcher, the instrument an administrator
-briefs and launches, receives only `For the researcher` and the tools a
-skill declares for the `researcher` role.
+briefs and launches, often does a Steward's work on its behalf (a
+provenance map, a literature search), so its load returns `For every
+administrator` and `For the Claim Steward` as well as `For the researcher`,
+which says what it leaves to the Steward.
 
 Rules enforced by `tests/unit/llm/prompts/skills.test.ts`: the file is under
 600 lines; only the headings above appear as H2s; the text contains no
@@ -110,7 +137,7 @@ em-dash character; and it contains no time-sensitive text (dates, "currently",
 
 An array of tool definitions in the Anthropic `Tool` shape (`name`,
 `description`, `input_schema`) plus a `roles` list naming the roles whose
-toolset the tool joins. Names carry a domain prefix (`lean_`), the way the
+toolset the tool joins, whether or not the run loads the skill. Names carry a domain prefix (`lean_`), the way the
 Elicit connector's tools carry `elicit_`. The definitions are declarative;
 executors live in code, in the registry in `src/llm/tools/skill-tools.ts`,
 which fails at startup if a declared tool has no executor or if a name
