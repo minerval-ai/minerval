@@ -210,6 +210,7 @@ function filterParams(filters?: ClaimFilters): URLSearchParams {
   if (filters?.withPrizes) p.set("with_prizes", "true");
   if (filters?.claimType) p.set("claim_type", filters.claimType);
   if (filters?.tag) p.set("tag", filters.tag);
+  if (filters?.kind) p.set("kind", filters.kind);
   return p;
 }
 

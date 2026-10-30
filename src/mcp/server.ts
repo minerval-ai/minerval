@@ -298,9 +298,13 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Search Minerval's claim graph. A claim is a single reusable " +
         "proposition about the world, assessable with evidence and reasons; " +
         "each is stored once, under a neutral canonical " +
-        "wording shared by the claim and its denial. Combined semantic and " +
+        "wording shared by the claim and its denial. The graph also holds " +
+        "quantities (values it estimates) and questions (which it answers); " +
+        "search reaches all three, each result says its `kind`, and `kind` " +
+        "narrows to one. Combined semantic and " +
         "keyword search, ranked by similarity; each result carries its " +
-        "current assessment status, the amount of any live prize offered " +
+        "current assessment status (for a question its `standing`, for a " +
+        "quantity its `estimate` and `unit`), the amount of any live prize offered " +
         "for a machine-checked proof or disproof of its formal statement " +
         "(prize_micro_usd), whether such a check exists (checked), its " +
         "topic tags, and a link to its minerval.ai page. Narrow to one " +
@@ -325,9 +329,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .max(100)
           .optional()
           .describe("Only claims carrying this topic tag (slug); an unknown tag matches nothing"),
+        kind: nodeKindEnum
+          .optional()
+          .describe("Only nodes of this kind: claims, quantities, or questions"),
       },
     },
-    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag }) => {
+    async ({ query, limit, assessed, min_importance, with_prizes, claim_type, tag, kind }) => {
       let tagId: string | undefined;
       if (tag?.trim()) {
         const resolved = await resolveTagBySlug(tag);
@@ -341,11 +348,13 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         withPrizes: with_prizes,
         claimType: claim_type,
         tagId,
+        kind,
       });
       const tagged = await attachClaimTags(results);
       return jsonResult({
         results: tagged.map((r) => ({
           id: r.id,
+          kind: r.kind,
           canonical_form: r.text,
           claim_type: r.claim_type,
           state: r.state,
@@ -355,6 +364,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           assessment_confidence: r.assessment_confidence,
           prize_micro_usd: r.prize_micro_usd ?? null,
           checked: r.checked ?? null,
+          ...(r.kind === "question" ? { standing: r.standing ?? null } : {}),
+          ...(r.kind === "quantity" ? { estimate: r.estimate ?? null, unit: r.unit ?? null } : {}),
           tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
           page_url: claimPageUrl(r.id),
         })),

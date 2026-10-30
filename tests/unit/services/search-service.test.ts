@@ -113,7 +113,7 @@ describe("search-service", () => {
       mockRawQuery.mockResolvedValueOnce([]);
       await hybridSearch("q", { assessed: "unassessed" });
       const [sql, params] = mockRawQuery.mock.calls[0]!;
-      expect(sql).toContain("a.status IS NULL");
+      expect(sql).toContain("AND NOT (CASE c.kind");
       // query, embedding, minSimilarity, limit — the predicate binds no param.
       expect(params).toHaveLength(4);
       expect(sql).toContain("LIMIT $4");
@@ -124,6 +124,30 @@ describe("search-service", () => {
       mockRawQuery.mockResolvedValueOnce([]);
       await hybridSearch("q", { assessed: "assessed" });
       expect(mockRawQuery.mock.calls[0]![0]).toContain("a.status IS NOT NULL");
+    });
+
+    // A question's verdict is its standing and a quantity's its estimate;
+    // neither ever gets an `assessments` row, so keying "assessed" off
+    // a.status alone hid every question and quantity from the default view.
+    it("judges each kind by its own verdict table", async () => {
+      mockGenerateEmbedding.mockResolvedValueOnce(embedding());
+      mockRawQuery.mockResolvedValueOnce([]);
+      await hybridSearch("q", { assessed: "assessed" });
+      const sql = mockRawQuery.mock.calls[0]![0] as string;
+      expect(sql).toContain("WHEN 'question' THEN qa.id IS NOT NULL");
+      expect(sql).toContain("WHEN 'quantity' THEN qe.id IS NOT NULL");
+      expect(sql).toContain("LEFT JOIN question_assessments qa ON qa.claim_id = c.id AND qa.is_current = true");
+      expect(sql).toContain("LEFT JOIN quantity_estimates qe ON qe.claim_id = c.id AND qe.is_current = true");
+    });
+
+    it("binds a kind filter", async () => {
+      mockGenerateEmbedding.mockResolvedValueOnce(embedding());
+      mockRawQuery.mockResolvedValueOnce([]);
+      await hybridSearch("q", { kind: "question" });
+      const [sql, params] = mockRawQuery.mock.calls[0]!;
+      expect(sql).toContain("AND c.kind = $4");
+      expect(sql).toContain("LIMIT $5");
+      expect(params![3]).toBe("question");
     });
 
     it("binds min_importance and shifts the LIMIT placeholder", async () => {
@@ -153,11 +177,54 @@ describe("search-service", () => {
       mockRawQuery.mockResolvedValueOnce([]);
       await hybridSearch("q", { assessed: "unassessed", minImportance: 0.45 });
       const [sql, params] = mockRawQuery.mock.calls[0]!;
-      expect(sql).toContain("a.status IS NULL");
+      expect(sql).toContain("AND NOT (CASE c.kind");
       expect(sql).toContain("c.importance >= $2");
       expect(sql).toContain("LIMIT $3");
       // query, minImportance, limit
       expect(params).toHaveLength(3);
+    });
+  });
+
+  describe("kinds", () => {
+    it("serves each result's kind and only that kind's verdict fields", async () => {
+      mockGenerateEmbedding.mockResolvedValueOnce(new Array(1536).fill(0.1));
+      const base = {
+        claim_type: "empirical_derived",
+        state: "active",
+        text_rank: 0.1,
+        semantic_score: 0.8,
+        assessment_status: null,
+        assessment_confidence: null,
+        standing: null,
+        estimate: null,
+        unit: null,
+      };
+      mockRawQuery.mockResolvedValueOnce([
+        { ...base, id: "c", kind: "claim", text: "A claim", assessment_status: "verified" },
+        { ...base, id: "q", kind: "question", text: "Why?", standing: "leaning" },
+        {
+          ...base,
+          id: "n",
+          kind: "quantity",
+          text: "How many?",
+          estimate: { form: "point", value: 3 },
+          unit: { kind: "count" },
+        },
+      ]);
+
+      const { results } = await hybridSearch("q");
+      const [claim, question, quantity] = results;
+      expect(claim).toMatchObject({ kind: "claim" });
+      expect(claim).not.toHaveProperty("standing");
+      expect(claim).not.toHaveProperty("estimate");
+      expect(question).toMatchObject({ kind: "question", standing: "leaning" });
+      expect(question).not.toHaveProperty("estimate");
+      expect(quantity).toMatchObject({
+        kind: "quantity",
+        estimate: { form: "point", value: 3 },
+        unit: { kind: "count" },
+      });
+      expect(quantity).not.toHaveProperty("standing");
     });
   });
 

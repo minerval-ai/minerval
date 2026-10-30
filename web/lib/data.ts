@@ -16,14 +16,23 @@ import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
 } from "./territories";
 
+// Whether a node carries a current verdict of its kind: a claim's status, a
+// question's standing, a quantity's estimate (the backend's ASSESSED_SQL).
+function hasVerdict(c: SearchResultItem): boolean {
+  if (c.kind === "question") return !!c.standing;
+  if (c.kind === "quantity") return !!c.estimate;
+  return !!c.assessment_status;
+}
+
 // The same filter predicate the API applies, used for the fixture fallback so
 // the controls behave identically offline. "unassessed" keys off a missing
-// status, matching the badge rule and the backend's `a.status IS NULL`.
+// verdict, matching the badge rule and the backend.
 function applyFilters(items: SearchResultItem[], filters?: ClaimFilters): SearchResultItem[] {
   if (!filters) return items;
   return items.filter((c) => {
-    if (filters.assessed === "assessed" && !c.assessment_status) return false;
-    if (filters.assessed === "unassessed" && c.assessment_status) return false;
+    if (filters.assessed === "assessed" && !hasVerdict(c)) return false;
+    if (filters.assessed === "unassessed" && hasVerdict(c)) return false;
+    if (filters.kind && (c.kind ?? "claim") !== filters.kind) return false;
     if (filters.minImportance && (c.importance ?? 0) < filters.minImportance) return false;
     if (filters.withPrizes && c.prize_micro_usd == null) return false;
     if (filters.claimType && c.claim_type !== filters.claimType) return false;

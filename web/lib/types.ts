@@ -741,6 +741,9 @@ export interface RequestItem {
 
 export interface SearchResultItem {
   id: string;
+  // A claim, a quantity or a question (constitution §2, §7a); absent from an
+  // API older than kinds, which listed claims only.
+  kind?: NodeKind;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -755,6 +758,11 @@ export interface SearchResultItem {
   checked: CheckKind | null;
   // Topic tags (#272); empty when the API omits them.
   tags?: TagRef[];
+  // What stands where a claim's status would: a question's standing, a
+  // quantity's estimate and unit. Present only on that kind.
+  standing?: QuestionStanding | null;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
 }
 
 export type AssessedFilter = "all" | "assessed" | "unassessed";
@@ -831,6 +839,8 @@ export interface ClaimFilters {
   claimType?: ClaimType;
   // Only claims carrying this topic tag, by slug (API: tag).
   tag?: string;
+  // Only nodes of this kind: claims, quantities or questions (API: kind).
+  kind?: NodeKind;
 }
 
 // --- claim event history (#175) ----------------------------------------------
