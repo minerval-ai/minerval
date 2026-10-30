@@ -919,6 +919,68 @@
         }
       ],
       "bodyChars": 18457
+    },
+    {
+      "name": "search",
+      "displayName": "Search",
+      "description": "How to search for evidence on a claim or question so that what the search did not find can be weighed: searching across framings and kinds of source, recording how the search was done, and reading absence in proportion to the search. A method skill; the verdict stays the Steward's.",
+      "version": 1,
+      "sinceEpoch": "2026-10-assessment-as-thinking",
+      "kind": "method",
+      "domains": [],
+      "roles": [
+        {
+          "key": "claim-steward",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "audit-agent",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "grantmaker",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "contribution-reviewer",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "dispute-arbitrator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "curator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For every administrator",
+            "For the researcher"
+          ]
+        }
+      ],
+      "tools": [],
+      "bodyChars": 1552
     }
   ]
 }

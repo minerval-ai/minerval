@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 10753,
-    "fullChars": 89973,
+    "roleChars": 11074,
+    "fullChars": 90432,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 13433,
-    "fullChars": 92653,
+    "fullChars": 92791,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 23641,
-    "fullChars": 102861,
+    "roleChars": 24027,
+    "fullChars": 103385,
     "skills": [
       {
         "name": "mathematics",
@@ -66,6 +66,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -81,8 +87,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 54928,
-    "fullChars": 134148,
+    "roleChars": 55446,
+    "fullChars": 134804,
     "skills": [
       {
         "name": "mathematics",
@@ -106,6 +112,12 @@
           "For the Curator",
           "For the Extractor"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -118,8 +130,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 31441,
-    "fullChars": 110661,
+    "roleChars": 31959,
+    "fullChars": 111317,
     "skills": []
   },
   {
@@ -131,8 +143,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 18593,
-    "fullChars": 97813,
+    "roleChars": 18979,
+    "fullChars": 98337,
     "skills": [
       {
         "name": "mathematics",
@@ -148,6 +160,12 @@
           "For every administrator",
           "For the Curator"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -160,8 +178,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19307,
-    "fullChars": 98527,
+    "roleChars": 19693,
+    "fullChars": 99051,
     "skills": [
       {
         "name": "mathematics",
@@ -172,6 +190,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -187,8 +211,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20672,
-    "fullChars": 99892,
+    "roleChars": 21058,
+    "fullChars": 100416,
     "skills": [
       {
         "name": "mathematics",
@@ -214,6 +238,12 @@
           "For the Extractor",
           "Standards for judging"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -226,8 +256,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 24476,
-    "fullChars": 103696,
+    "roleChars": 24862,
+    "fullChars": 104220,
     "skills": [
       {
         "name": "mathematics",
@@ -238,6 +268,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -253,8 +289,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 13661,
-    "fullChars": 92881,
+    "roleChars": 14047,
+    "fullChars": 93405,
     "skills": [
       {
         "name": "mathematics",
@@ -264,6 +300,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -280,7 +322,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11395,
-    "fullChars": 90615,
+    "fullChars": 90753,
     "skills": []
   },
   {
@@ -305,8 +347,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 11846,
-    "fullChars": 91066,
+    "roleChars": 12252,
+    "fullChars": 91610,
     "skills": [
       {
         "name": "mathematics",
@@ -320,6 +362,13 @@
         "sections": [
           "For every administrator",
           "For the Claim Steward",
+          "For the researcher"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator",
           "For the researcher"
         ]
       }
