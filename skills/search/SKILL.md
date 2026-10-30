@@ -20,11 +20,9 @@ framing tend to stay in its vocabulary, and following each result to the
 next goes deeper into one region rather than wider; what comes back can
 look complete because it is coherent. Before searching, ask what evidence
 would bear on the claim and where it would appear: which fields would
-study it and under what names, which kinds of source would carry it
-(research literature, registries and datasets, official records,
-journalism, practitioners' writing, social media), and how someone outside
-the claim's framing would pose it. Search those places, in proportion to
-the claim's importance (§19).
+study it and under what names, which kinds of source would carry it, and
+how someone outside the claim's framing would pose it. Search those
+places, in proportion to the claim's importance (§19).
 
 **Record how the search was done.** Say what you looked for, where, and
 what you left unsearched, so a later reader can see what the search could
@@ -39,9 +37,8 @@ Say which it was.
 ## For the researcher
 
 Before searching, ask what evidence would bear on the question and where
-it would appear, including under other names in other fields and outside
-the research literature, and search those places rather than one framing
-of the brief. Your report says what you looked for, where, and what you
-left unsearched. An absence weighs only as much as the search that failed
+it would appear, including under other names in other fields, and search
+those places rather than one framing of the brief. Your report says what
+you looked for, where, and what you left unsearched. An absence weighs only as much as the search that failed
 to find it: when you report that something does not exist, say whether
 the places you looked are where it would have appeared.
