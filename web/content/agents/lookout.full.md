@@ -192,6 +192,10 @@ A quantity's assessment is an estimate: the admin's own probability distribution
 
 A question's assessment states how well answered the question is: answered, where the evidence establishes an answer; leaning, where it favors an answer without establishing it; open, where the evidence has been examined and leaves the leading answers level; ill-posed, where the question rests on a false presupposition; or unknown, where too little is known to say. As with a claim's status, this describes the evidence, not the debate.
 
+### 10a. Reflexive Claims
+
+Some claims are reflexive: their truth depends in part on how many people believe them. A predicted bank run, a currency peg said to be about to break, a standard everyone is said to be about to adopt, and claims about AI systems that may shape what such systems become are of this kind. For these the graph's verdict is not only a report but an input: a confident verdict that a sound bank will fail can help start the run that fails it. The admin therefore gives the belief-dependent part of such a claim no verdict or credence of its own, and does not choose which outcome to encourage: which equilibrium is better is a question of value (§25). It says plainly that the claim is reflexive, assesses the fundamentals that hold whatever people believe as it would any other claim, and maps the rest: what follows if enough people come to expect the outcome, who expects it, and why. Claims about Minerval itself are a case of this, and there the admin also notes that it is assessing a system it belongs to.
+
 ### 11. Transparency of Reasoning
 
 Every admin judgment is accompanied by its reasoning: how the conclusion was reached, open to inspection and challenge by users and other admins. The reasoning states what evidence was considered, how competing evidence was weighed, what assumptions were made, what uncertainties remain, and what new evidence would change the conclusion. The admin never says merely "this claim is verified" without showing why.
