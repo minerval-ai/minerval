@@ -53,10 +53,20 @@ export async function loadClaim(
 // Requests (Part VIII). Offline, the fixtures stand in so the pages can be
 // seen. Live, a failure shows none rather than the design fixtures, which
 // would read as real requests.
-export async function loadRequests(): Promise<{ requests: RequestItem[]; source: DataSource }> {
-  if (!apiConfigured()) return { requests: REQUESTS, source: "fixture" };
+// Offline stand-in for the API's keyword search: every word of the query
+// somewhere in what the request asks, why, or what would satisfy it.
+function matchesRequest(r: RequestItem, q: string): boolean {
+  const hay = [r.ask, r.why, r.satisfied_by, r.bears_on_text ?? ""].join(" ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+}
+
+export async function loadRequests(q?: string): Promise<{ requests: RequestItem[]; source: DataSource }> {
+  const query = q?.trim() || undefined;
+  if (!apiConfigured()) {
+    return { requests: query ? REQUESTS.filter((r) => matchesRequest(r, query)) : REQUESTS, source: "fixture" };
+  }
   try {
-    return { requests: await fetchRequests(), source: "live" };
+    return { requests: await fetchRequests(100, query), source: "live" };
   } catch (err) {
     console.error("[minerval] live requests fetch failed:", err);
     return { requests: [], source: "live" };

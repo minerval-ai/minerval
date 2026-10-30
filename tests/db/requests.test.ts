@@ -160,4 +160,37 @@ describe("listing and routes", () => {
       await app.close();
     }
   });
+
+  // Keyword search over requests.text_search: a match in the ask outranks
+  // one only in the reasons, and search composes with the other filters.
+  it("searches what a request asks and why, ranking the ask first", async () => {
+    const word = `zr${randomUUID().slice(0, 8)}`;
+    const claim = await seedClaim();
+    const filer = { kind: "admin" as const, agent: "claim_steward" };
+    const inWhy = await fileRequest({ ...BASE, why: `${BASE.why} See ${word}.`, claimIds: [claim], filer });
+    const inAsk = await fileRequest({ ...BASE, ask: `Find the ${word} registers.`, claimIds: [claim], filer });
+    const inSatisfied = await fileRequest({
+      ...BASE, satisfiedBy: `A ${word} table.`, claimIds: [await seedClaim()], filer,
+    });
+    await setRequestState({ requestId: inSatisfied.id, state: "met" });
+    await fileRequest({ ...BASE, claimIds: [claim], filer });
+
+    const all = await listRequests({ q: word });
+    expect(all.total).toBe(3);
+    expect(all.items.map((r) => r.id)).toEqual([inAsk.id, inWhy.id, inSatisfied.id]);
+    expect((await listRequests({ q: word, live: true })).items.map((r) => r.id)).toEqual([inAsk.id, inWhy.id]);
+    expect((await listRequests({ q: word, claimId: claim })).total).toBe(2);
+    expect((await listRequests({ q: `${word}nothing` })).total).toBe(0);
+
+    const app = Fastify();
+    await app.register(requestRoutes, { prefix: "/requests" });
+    await app.ready();
+    try {
+      const res = await app.inject({ method: "GET", url: `/requests?q=${encodeURIComponent(word)}&state=live` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ total: 2, requests: [{ id: inAsk.id }, { id: inWhy.id }] });
+    } finally {
+      await app.close();
+    }
+  });
 });

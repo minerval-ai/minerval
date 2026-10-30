@@ -14,6 +14,7 @@ const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
   state: z.enum([...REQUEST_STATES, "live"]).optional(),
   claim_id: z.guid().optional(),
+  q: z.string().max(500).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -98,6 +99,11 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             state: { type: "string", enum: [...REQUEST_STATES, "live"] },
             claim_id: { type: "string", format: "uuid" },
+            q: {
+              type: "string",
+              maxLength: 500,
+              description: "Words to look for in what a request asks, why, and what would satisfy it; ranks by match",
+            },
             limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
             offset: { type: "integer", minimum: 0, default: 0 },
           },
@@ -118,6 +124,7 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
           state: params.state === "live" ? undefined : params.state,
           live: params.state === "live",
           claimId: params.claim_id,
+          q: params.q,
           limit: params.limit,
           offset: params.offset,
         });

@@ -154,7 +154,10 @@ export function RequestView({ r }: { r: RequestItem }) {
 }
 
 /** The index: every request, including those that bear on nothing the graph holds yet. */
-export function RequestIndex({ requests }: { requests: RequestItem[] }) {
+// A search over what requests ask and why (API `q`), as a plain GET form:
+// the index is server-rendered, so it needs no client script. With a query
+// the groups keep the API's rank order within each.
+export function RequestIndex({ requests, q = "" }: { requests: RequestItem[]; q?: string }) {
   const groups: [string, RequestItem[]][] = [
     ["Open", requests.filter((r) => r.state === "open" || r.state === "addressed")],
     ["In progress", requests.filter((r) => r.state === "in_progress")],
@@ -169,6 +172,29 @@ export function RequestIndex({ requests }: { requests: RequestItem[] }) {
         programme of research. Each says why it matters and what would satisfy it. A request asks
         for what would decide the matter either way, not for a particular result.
       </p>
+      <form role="search" action="/requests" className={styles.search}>
+        <input
+          className="claims-search"
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search requests by what they ask, why, or what would satisfy them"
+          aria-label="Search requests"
+        />
+      </form>
+      {q && (
+        <p className={styles.searchMeta}>
+          {requests.length} {requests.length === 1 ? "request matches" : "requests match"} “{q}”
+          {" · "}
+          <Link href="/requests">clear</Link>
+        </p>
+      )}
+      {q && requests.length === 0 && (
+        <p className={styles.lede}>
+          Nothing matches that search. Requests are searched by the words of what they ask, why it
+          matters, and what would satisfy them.
+        </p>
+      )}
       {groups.filter(([, rs]) => rs.length > 0).map(([label, rs]) => (
         <section key={label}>
           <h2>{label}</h2>

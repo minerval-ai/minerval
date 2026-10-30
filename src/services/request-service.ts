@@ -459,6 +459,8 @@ export async function listRequests(opts: {
   state?: RequestState;
   live?: boolean;
   claimId?: string;
+  /** Words to look for in what a request asks and why (keyword match, web-search syntax). */
+  q?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<{ items: RequestView[]; total: number }> {
@@ -474,11 +476,21 @@ export async function listRequests(opts: {
     params.push(opts.claimId);
     where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.claim_id = $${params.length})`);
   }
+  // A search ranks by match (the ask weighs most; see requests.text_search),
+  // newest first among equals; without one the list is simply newest first.
+  let order = "r.created_at DESC, r.id";
+  const q = opts.q?.trim();
+  if (q) {
+    params.push(q);
+    const tsq = `websearch_to_tsquery('english', $${params.length})`;
+    where.push(`r.text_search @@ ${tsq}`);
+    order = `ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
+  }
   const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [count] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params);
   params.push(opts.limit ?? 50, opts.offset ?? 0);
   const rows = await rawQuery<RequestRowJoined>(
-    `${REQUEST_SELECT} ${clause} ORDER BY r.created_at DESC, r.id LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `${REQUEST_SELECT} ${clause} ORDER BY ${order} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
   return { items: await assemble(rows), total: count?.n ?? 0 };
