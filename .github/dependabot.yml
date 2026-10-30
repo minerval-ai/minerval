@@ -17,6 +17,12 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # @types/node tracks the Node version we run (22, in CI and the
+    # images), not the newest Node; a major bump would describe APIs the
+    # runtime doesn't have. Raise it by hand when the runtime moves.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       backend-minor-and-patch:
         update-types: [minor, patch]
@@ -27,6 +33,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore: # as for /
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       extension-minor-and-patch:
         update-types: [minor, patch]
@@ -37,6 +46,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore: # as for /
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       infra-minor-and-patch:
         update-types: [minor, patch]
@@ -47,6 +59,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore: # as for /
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       web-minor-and-patch:
         update-types: [minor, patch]
@@ -60,6 +75,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore: # as for /
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       lean-checker-minor-and-patch:
         update-types: [minor, patch]
