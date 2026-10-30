@@ -23,7 +23,11 @@ type ToolUnion = Anthropic.Messages.ToolUnion;
 type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 import { checkBudget } from "./budget-tracker.js";
-import { DEFAULT_MODEL } from "./models.js";
+import {
+  DEFAULT_MODEL,
+  modelRefusalFallbackForm,
+  modelSupportsLongRun,
+} from "./models.js";
 import { getUsageContext, runBudget } from "./usage-context.js";
 import { spendLine } from "./budget-line.js";
 import { recordAgentStep } from "../services/trace-service.js";
@@ -49,6 +53,8 @@ export type {
 };
 
 const DEFAULT_MAX_TOKENS = 8192;
+/** The streaming path's output ceiling (providers/anthropic.ts LONG_RUN_MAX_OUTPUT_TOKENS). */
+const LONG_RUN_MAX_TOKENS = 128_000;
 
 export async function complete(options: {
   messages: MessageParam[];
@@ -389,8 +395,23 @@ export async function toolUseLoop(options: {
    * caller catches its own error.
    */
   beforeTurn?: (turn: number) => Promise<void> | void;
+  /**
+   * Run each turn on the adapter's streaming path, where a turn has no
+   * request timeout to beat and may emit up to the model's full output (the
+   * long-run client's ceiling). For a loop that writes one large output, such
+   * as the Grantmaker's drafted mandate, which a non-streaming request cannot
+   * hold. Applies to the models the long-run path serves; any other model
+   * runs non-streaming as before.
+   */
+  stream?: boolean;
 }): Promise<ToolCompletionResult> {
   const messages = [...options.initialMessages];
+  const streamModel = options.model ?? DEFAULT_MODEL;
+  const streamAdapter = getAdapter(streamModel);
+  const streaming =
+    options.stream && modelSupportsLongRun(streamModel) && streamAdapter.completeWithToolsStreaming
+      ? streamAdapter.completeWithToolsStreaming.bind(streamAdapter)
+      : null;
   const maxIter = options.maxIterations ?? 5;
   const notice = options.iterationBudgetNotice ?? DEFAULT_ITERATION_BUDGET_NOTICE;
   const turnCounter = options.turnCounter ?? true;
@@ -424,16 +445,32 @@ export async function toolUseLoop(options: {
   for (let i = 0; i < maxIter; i++) {
     if (options.beforeTurn) await options.beforeTurn(i);
     const spentAtTurnStart = runBudget()?.spentMicroUsd ?? 0;
-    const result = await completeWithTools({
-      messages,
-      tools: options.tools,
-      system: options.system,
-      model: options.model,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
-      effort: options.effort,
-      container: containerId,
-    });
+    const result = streaming
+      ? await (() => {
+          checkBudget();
+          return streaming({
+            messages,
+            tools: options.tools,
+            system: options.system,
+            model: streamModel,
+            maxTokens: options.maxTokens ?? LONG_RUN_MAX_TOKENS,
+            temperature: options.temperature,
+            effort: options.effort,
+            container: containerId,
+            // The same refusal fallback the non-streaming path gives this model.
+            fallbacks: modelRefusalFallbackForm(streamModel) === "array" ? "server" : "none",
+          });
+        })()
+      : await completeWithTools({
+          messages,
+          tools: options.tools,
+          system: options.system,
+          model: options.model,
+          maxTokens: options.maxTokens,
+          temperature: options.temperature,
+          effort: options.effort,
+          container: containerId,
+        });
 
     lastResult = result;
     if (result.container) containerId = result.container;

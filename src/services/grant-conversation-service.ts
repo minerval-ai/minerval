@@ -12,8 +12,14 @@
  * Statuses: active (talking) → proposed (mandate drafted, fundable) →
  * funded (grant created). 'declined' marks a refused mandate; the
  * conversation can continue and recover to active/proposed.
+ *
+ * Turns run in the background. Sending a message saves it and claims the
+ * conversation's turn, and the caller gets the conversation back at once
+ * with turn.state "replying"; the reply lands in the transcript when the
+ * Grantmaker finishes, which can take minutes. One turn at a time, and no
+ * funding while one runs.
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import {
   budgetJobs,
@@ -53,16 +59,19 @@ export type ConverseResult =
         | "CLOSED"
         | "TOO_LONG"
         | "EMPTY_MESSAGE"
-        | "RATE_LIMITED";
+        | "RATE_LIMITED"
+        | "TURN_IN_PROGRESS";
       message: string;
-    }
-  | {
-      ok: false;
-      code: "AGENT_FAILED";
-      message: string;
-      /** The conversation with the funder's message saved and no reply. */
-      conversation: GrantConversation;
     };
+
+/** How often a running turn refreshes its heartbeat. */
+const HEARTBEAT_MS = 30_000;
+/**
+ * A turn whose heartbeat is older than this has lost its process (a deploy,
+ * a crash) and reads as failed. A liveness check, not a limit on the turn:
+ * a turn that is still running refreshes its heartbeat however long it takes.
+ */
+const TURN_LOST_AFTER_MS = 120_000;
 
 // userId → turn timestamps (ms) within the last hour. In-memory sliding
 // window, the same construction as the contribution rate limit: a blunt
@@ -77,14 +86,14 @@ export function resetGrantConversationRateLimiter(): void {
 /**
  * Per-user hourly cap on conversation turns.
  *
- * Every turn runs the Grantmaker on the best model, synchronously, and
- * deliberately free — nothing is charged until a mandate is funded. The
- * per-conversation MAX_MESSAGES ceilings above don't bound this: a user can
- * open unlimited conversations, each with its own fresh allowance. And
- * because these turns are attributed to a user, they are outside the
- * process-wide LLM breaker (budget-tracker.ts scopes that to unattributed
- * work, on the grounds that attributed work is bounded by its own money —
- * true of a funded job, and true of this only once there is a rate on it).
+ * Every turn runs the Grantmaker on the best model, deliberately free —
+ * nothing is charged until a mandate is funded. The per-conversation
+ * MAX_MESSAGES ceilings above don't bound this: a user can open unlimited
+ * conversations, each with its own fresh allowance. And because these turns
+ * are attributed to a user, they are outside the process-wide LLM breaker
+ * (budget-tracker.ts scopes that to unattributed work, on the grounds that
+ * attributed work is bounded by its own money — true of a funded job, and
+ * true of this only once there is a rate on it).
  */
 function checkTurnRateLimit(userId: string): boolean {
   const limit = loadConfig().grantConversationRateLimitPerHour;
@@ -105,29 +114,6 @@ function releaseTurn(userId: string): void {
   turnWindows.get(userId)?.pop();
 }
 
-/** Run a turn, turning an agent failure into a result the route can serve. */
-async function converse(
-  convo: GrantConversation,
-  message: string
-): Promise<ConverseResult> {
-  try {
-    return { ok: true, conversation: await runTurn(convo, message) };
-  } catch (err) {
-    if (!(err instanceof GrantmakerTurnError)) throw err;
-    releaseTurn(convo.userId);
-    console.error(`[grantmaker] turn failed on conversation ${convo.id}:`, err.cause);
-    return {
-      ok: false,
-      code: "AGENT_FAILED",
-      message:
-        "Your message was saved, but the Grantmaker failed before replying " +
-        "(this turn did not count toward your hourly limit). Do not resend " +
-        "it: send a short follow-up such as \"please reply to my last message\".",
-      conversation: err.conversation,
-    };
-  }
-}
-
 const rateLimited = (): ConverseResult => ({
   ok: false,
   code: "RATE_LIMITED",
@@ -143,102 +129,191 @@ function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
   return messages.map((m) => ({ role: m.role, content: m.content }));
 }
 
-/**
- * The agent's turn failed after the funder's message was saved. The message
- * stays in the transcript; the funder asks again rather than resending it.
- */
-export class GrantmakerTurnError extends Error {
-  constructor(
-    readonly conversation: GrantConversation,
-    readonly cause: unknown
-  ) {
-    super(cause instanceof Error ? cause.message : String(cause));
-  }
+/** True while a turn holds the conversation and its process is alive. */
+type TurnFields = Pick<GrantConversation, "turnStartedAt" | "turnHeartbeatAt" | "turnError">;
+
+function turnRunning(convo: TurnFields, now = Date.now()): boolean {
+  return (
+    !!convo.turnStartedAt &&
+    !!convo.turnHeartbeatAt &&
+    convo.turnHeartbeatAt.getTime() > now - TURN_LOST_AFTER_MS
+  );
 }
 
-async function runTurn(
+// In-flight turns, so tests (and a graceful shutdown) can wait for them.
+const pendingTurns = new Set<Promise<void>>();
+
+/** Test hook: resolves once every turn started so far has finished. */
+export async function settleGrantConversationTurns(): Promise<void> {
+  while (pendingTurns.size > 0) await Promise.all([...pendingTurns]);
+}
+
+/**
+ * Save the funder's message and claim the conversation for a turn, in one
+ * conditional write: a second message while a turn is running, or one while
+ * the mandate is being funded, claims nothing. A turn whose process died
+ * (stale heartbeat) can be taken over.
+ */
+async function claimTurn(
   convo: GrantConversation,
   userMessage: string
-): Promise<GrantConversation> {
-  const db = getDb();
-  const now = new Date().toISOString();
-  const messages = [
-    ...((convo.messages ?? []) as ConversationMessage[]),
-    { role: "user" as const, content: userMessage, at: now },
-  ];
-
-  // The funder's message is saved before the agent runs: a turn that fails
-  // (a provider error, a timeout) must not lose what they said, and a caller
-  // can then tell from the transcript whether a retry would duplicate it.
-  const [saved] = await db
+): Promise<{ claimed: GrantConversation; startedAt: Date } | null> {
+  const startedAt = new Date();
+  const entry: ConversationMessage = {
+    role: "user",
+    content: userMessage,
+    at: startedAt.toISOString(),
+  };
+  const [claimed] = await getDb()
     .update(grantConversations)
-    .set({ messages, updatedAt: new Date() })
-    .where(eq(grantConversations.id, convo.id))
-    .returning();
-
-  // A funded conversation manages its live grant: the turn runs in
-  // management mode, with the analytics and plan-adjustment tools scoped
-  // to that grant, and the usage meters to the grant's escrow (management
-  // is part of what the mandate's overhead pays for).
-  const funded = convo.status === "funded" && !!convo.grantId;
-  const jobId = funded
-    ? (
-        await rawQuery<{ budget_job_id: string }>(
-          `SELECT budget_job_id FROM grants WHERE id = $1`,
-          [convo.grantId]
+    .set({
+      messages: sql`${grantConversations.messages} || ${JSON.stringify([entry])}::jsonb`,
+      turnStartedAt: startedAt,
+      turnHeartbeatAt: startedAt,
+      turnError: null,
+      updatedAt: startedAt,
+    })
+    .where(
+      and(
+        eq(grantConversations.id, convo.id),
+        ne(grantConversations.status, "funding"),
+        or(
+          isNull(grantConversations.turnStartedAt),
+          lt(
+            grantConversations.turnHeartbeatAt,
+            new Date(startedAt.getTime() - TURN_LOST_AFTER_MS)
+          )
         )
-      )[0]?.budget_job_id
-    : undefined;
+      )
+    )
+    .returning();
+  return claimed ? { claimed, startedAt } : null;
+}
 
-  const platform = await isPlatformAccount(convo.userId);
-  let turn: Awaited<ReturnType<typeof runGrantmakerTurn>>;
+/**
+ * Run the Grantmaker's turn and record its reply. Every write is
+ * conditioned on still holding the turn (turn_started_at unchanged), so a
+ * turn that was presumed lost and taken over never writes over its
+ * successor.
+ */
+async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void> {
+  const db = getDb();
+  const holdsTurn = and(
+    eq(grantConversations.id, convo.id),
+    eq(grantConversations.turnStartedAt, startedAt)
+  );
+  const heartbeat = setInterval(() => {
+    void db
+      .update(grantConversations)
+      .set({ turnHeartbeatAt: new Date() })
+      .where(holdsTurn)
+      .catch((err) => console.error(`[grantmaker] heartbeat failed on ${convo.id}:`, err));
+  }, HEARTBEAT_MS);
+  heartbeat.unref?.();
+
   try {
-    turn = await runWithUsageContext(
+    // A funded conversation manages its live grant: the turn runs in
+    // management mode, with the analytics and plan-adjustment tools scoped
+    // to that grant, and the usage meters to the grant's escrow (management
+    // is part of what the mandate's overhead pays for).
+    const funded = convo.status === "funded" && !!convo.grantId;
+    const jobId = funded
+      ? (
+          await rawQuery<{ budget_job_id: string }>(
+            `SELECT budget_job_id FROM grants WHERE id = $1`,
+            [convo.grantId]
+          )
+        )[0]?.budget_job_id
+      : undefined;
+
+    const platform = await isPlatformAccount(convo.userId);
+    const turn = await runWithUsageContext(
       { userId: convo.userId, ...(jobId ? { jobId } : {}) },
       () =>
         runGrantmakerTurn({
-          transcript: [
-            ...transcriptOf(convo),
-            { role: "user", content: userMessage },
-          ],
+          // The claimed row's transcript already ends with the new message.
+          transcript: transcriptOf(convo),
           ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
           ...(platform ? { funder: "platform" as const } : {}),
         })
     );
+
+    const reply: ConversationMessage = {
+      role: "assistant",
+      content: turn.reply,
+      at: new Date().toISOString(),
+    };
+    const status = funded
+      ? "funded" // management mode never changes the conversation's state
+      : turn.mandate
+        ? "proposed"
+        : turn.declined
+          ? "declined"
+          : convo.status === "proposed"
+            ? "proposed" // an unchanged draft stays fundable while they talk
+            : "active";
+
+    await db
+      .update(grantConversations)
+      .set({
+        messages: sql`${grantConversations.messages} || ${JSON.stringify([reply])}::jsonb`,
+        status,
+        ...(turn.mandate ? { mandate: turn.mandate } : {}),
+        turnStartedAt: null,
+        turnHeartbeatAt: null,
+        updatedAt: new Date(),
+      })
+      .where(holdsTurn);
   } catch (err) {
-    throw new GrantmakerTurnError(saved ?? convo, err);
+    // The funder's message is already saved; record why no reply came, and
+    // give back the turn's share of the hourly allowance.
+    releaseTurn(convo.userId);
+    console.error(`[grantmaker] turn failed on conversation ${convo.id}:`, err);
+    await db
+      .update(grantConversations)
+      .set({
+        turnStartedAt: null,
+        turnHeartbeatAt: null,
+        turnError: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+        updatedAt: new Date(),
+      })
+      .where(holdsTurn)
+      .catch((e) => console.error(`[grantmaker] recording the failure on ${convo.id} failed:`, e));
+  } finally {
+    clearInterval(heartbeat);
   }
-
-  messages.push({
-    role: "assistant",
-    content: turn.reply,
-    at: new Date().toISOString(),
-  });
-
-  const status = funded
-    ? "funded" // management mode never changes the conversation's state
-    : turn.mandate
-      ? "proposed"
-      : turn.declined
-        ? "declined"
-        : convo.status === "proposed"
-          ? "proposed" // an unchanged draft stays fundable while they talk
-          : "active";
-
-  const [updated] = await db
-    .update(grantConversations)
-    .set({
-      messages,
-      status,
-      ...(turn.mandate ? { mandate: turn.mandate } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(grantConversations.id, convo.id))
-    .returning();
-  return updated!;
 }
 
-/** Open a conversation with the funder's first message and get the reply. */
+/**
+ * Claim a turn and start it in the background. The caller gets the saved
+ * conversation at once, its turn marked replying, and reads the reply from
+ * the conversation when the turn finishes: a turn can take minutes, longer
+ * than an HTTP request or an MCP tool call should be held open.
+ */
+async function beginTurn(
+  convo: GrantConversation,
+  message: string
+): Promise<ConverseResult> {
+  const claim = await claimTurn(convo, message);
+  if (!claim) {
+    releaseTurn(convo.userId);
+    return {
+      ok: false,
+      code: "TURN_IN_PROGRESS",
+      message:
+        "The Grantmaker is still replying to your last message (or the " +
+        "mandate is being funded). Your new message was not saved; read the " +
+        "conversation until its turn is idle, then send it.",
+    };
+  }
+  const running = runTurn(claim.claimed, claim.startedAt).finally(() =>
+    pendingTurns.delete(running)
+  );
+  pendingTurns.add(running);
+  return { ok: true, conversation: claim.claimed };
+}
+
+/** Open a conversation with the funder's first message; the reply follows. */
 export async function startConversation(input: {
   userId: string;
   message: string;
@@ -258,10 +333,10 @@ export async function startConversation(input: {
     .insert(grantConversations)
     .values({ userId: input.userId })
     .returning();
-  return converse(convo!, input.message.trim());
+  return beginTurn(convo!, input.message.trim());
 }
 
-/** Continue a conversation. Funded conversations are closed. */
+/** Continue a conversation; the reply follows in the background. */
 export async function addMessage(input: {
   conversationId: string;
   userId: string;
@@ -287,7 +362,7 @@ export async function addMessage(input: {
     };
   }
   if (!checkTurnRateLimit(input.userId)) return rateLimited();
-  return converse(convo, input.message.trim());
+  return beginTurn(convo, input.message.trim());
 }
 
 export type FundResult =
@@ -299,7 +374,8 @@ export type FundResult =
         | "NOT_PROPOSED"
         | "BUDGET_BELOW_QUOTE"
         | "INSUFFICIENT_OWLS"
-        | "PLATFORM_FUNDS_BY_APPROVAL";
+        | "PLATFORM_FUNDS_BY_APPROVAL"
+        | "TURN_IN_PROGRESS";
       message: string;
     };
 
@@ -337,6 +413,16 @@ export async function fundConversationMandate(input: {
       message: "There is no drafted mandate to fund yet",
     };
   }
+  // A running turn may still revise the draft; fund what it settles on.
+  if (turnRunning(convo)) {
+    return {
+      ok: false,
+      code: "TURN_IN_PROGRESS",
+      message:
+        "The Grantmaker is still replying and may revise the draft; fund it " +
+        "once the conversation's turn is idle",
+    };
+  }
   if (input.budgetOwls < mandate.expected_cost_owls) {
     return {
       ok: false,
@@ -355,14 +441,16 @@ export async function fundConversationMandate(input: {
   const claimed = await rawQuery<{ id: string }>(
     `UPDATE grant_conversations SET status = 'funding', updated_at = now()
       WHERE id = $1 AND user_id = $2 AND status = 'proposed'
+        AND (turn_started_at IS NULL
+             OR turn_heartbeat_at < now() - make_interval(secs => $3))
       RETURNING id`,
-    [convo.id, input.userId]
+    [convo.id, input.userId, TURN_LOST_AFTER_MS / 1000]
   );
   if (claimed.length === 0) {
     return {
       ok: false,
       code: "NOT_PROPOSED",
-      message: "This mandate is already being funded",
+      message: "This mandate is already being funded, or a turn just started",
     };
   }
   const revertClaim = () =>
@@ -473,6 +561,34 @@ export async function listConversations(
     .limit(limit);
 }
 
+/**
+ * The Grantmaker's turn, for a caller waiting on a reply: "replying" while
+ * it runs (read the conversation again shortly), "idle" when the last
+ * message is its reply, "failed" when it ended without one (the funder's
+ * message is saved; send a short follow-up to ask again).
+ */
+export function serializeTurn(convo: TurnFields, now = Date.now()) {
+  if (convo.turnStartedAt) {
+    if (turnRunning(convo, now)) {
+      return {
+        state: "replying" as const,
+        started_at: convo.turnStartedAt.toISOString(),
+        error: null,
+      };
+    }
+    return {
+      state: "failed" as const,
+      started_at: convo.turnStartedAt.toISOString(),
+      error:
+        "The Grantmaker's turn was interrupted (the server restarted) " +
+        "before it replied",
+    };
+  }
+  return convo.turnError
+    ? { state: "failed" as const, started_at: null, error: convo.turnError }
+    : { state: "idle" as const, started_at: null, error: null };
+}
+
 export function serializeConversation(convo: GrantConversation) {
   const mandate = convo.mandate as GrantMandate | null;
   return {
@@ -493,6 +609,7 @@ export function serializeConversation(convo: GrantConversation) {
           notes: mandate.notes ?? null,
         }
       : null,
+    turn: serializeTurn(convo),
     grant_id: convo.grantId,
     created_at: convo.createdAt?.toISOString(),
     updated_at: convo.updatedAt?.toISOString(),

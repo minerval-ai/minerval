@@ -113,10 +113,21 @@ async function converse(args: string[]): Promise<void> {
     { method: "POST", body: { message }, headers: { "x-api-key": key } }
   );
   if (status >= 300 || !body.conversation) fail(`the conversation call failed (${status}): ${JSON.stringify(body)}`);
-  // Read back through the public route: the reply, the state, and the hash
-  // a request would pin, exactly as a reviewer will see them.
-  const convo = await getPublicConversation(body.conversation.id);
+  // The reply comes in the background: read back through the public route
+  // until the turn is done, then show the reply, the state, and the hash a
+  // request would pin, exactly as a reviewer will see them.
+  let convo = await getPublicConversation(body.conversation.id);
   if (!convo) fail("the conversation is not readable as a platform conversation");
+  if (convo.turn?.state === "replying") process.stderr.write("Grantmaker is replying");
+  while (convo.turn?.state === "replying") {
+    await new Promise((r) => setTimeout(r, 10_000));
+    process.stderr.write(".");
+    convo = (await getPublicConversation(convo.id)) ?? fail("the conversation disappeared");
+  }
+  process.stderr.write("\n");
+  if (convo.turn?.state === "failed") {
+    fail(`the Grantmaker's turn failed: ${convo.turn.error ?? "no reason recorded"} (the message is saved; send a short follow-up)`);
+  }
   const last = convo.messages[convo.messages.length - 1];
   console.log(last?.role === "assistant" ? last.content : "(no reply)");
   console.log("");

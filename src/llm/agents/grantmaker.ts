@@ -30,6 +30,7 @@ import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
+import { modelSupportsLongRun } from "../models.js";
 import { skillsForGrant } from "./skill-selection.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
@@ -562,12 +563,16 @@ async function runGrantmakerTurnImpl(input: {
     tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
     system,
     model,
-    // Not a spending limit: conversation turns are rate-limited and funded
-    // turns meter to the escrow. A drafted mandate is one propose_mandate
-    // call carrying the whole plan, and thinking draws on the same allowance,
-    // so this leaves room for a full plan. The ceiling that does bind is the
-    // non-streaming request timeout (LLM_REQUEST_TIMEOUT_MS), not this.
-    maxTokens: 16384,
+    // A drafted mandate is one propose_mandate call carrying the whole plan,
+    // and thinking draws on the same allowance. Streamed, a turn takes the
+    // model's full output: nothing here is a spending limit (conversation
+    // turns are rate-limited, funded turns meter to the escrow), and the
+    // turn runs in the background, so no caller is waiting on a request. A
+    // model the streaming path does not serve runs non-streaming, where the
+    // request timeout (LLM_REQUEST_TIMEOUT_MS) is what binds; 16384 is about
+    // what fits inside it.
+    stream: true,
+    ...(modelSupportsLongRun(model) ? {} : { maxTokens: 16384 }),
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
