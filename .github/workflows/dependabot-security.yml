@@ -48,31 +48,64 @@ jobs:
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
-          github-token: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
-          alert-lookup: true
+          github-token: ${{ github.token }}
 
+      # fetch-metadata's own alert-lookup only matches alerts raised on a
+      # manifest (requirement "= 2.3.0"). An alert on an indirect
+      # dependency is raised on the lockfile (requirement "2.3.0") and never
+      # matches, and most npm security fixes are indirect. So ask the alerts
+      # API directly: the open alerts on this PR's package in this PR's
+      # directory that the new version fixes.
       - name: Decide and enable auto-merge
         env:
           GH_TOKEN: ${{ github.token }}
+          ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
           REPO: ${{ github.repository }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           ACTION: ${{ github.event.action }}
-          ALERT_STATE: ${{ steps.meta.outputs.alert-state }}
-          GHSA_ID: ${{ steps.meta.outputs.ghsa-id }}
-          CVSS: ${{ steps.meta.outputs.cvss }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           MAINTAINER_CHANGES: ${{ steps.meta.outputs.maintainer-changes }}
           DIRECTORY: ${{ steps.meta.outputs.directory }}
           DEPENDENCIES: ${{ steps.meta.outputs.dependency-names }}
+          NEW_VERSION: ${{ steps.meta.outputs.new-version }}
         run: |
           set -euo pipefail
 
+          # One dependency per PR: new-version is the first dependency's, so
+          # it can't vouch for the rest. Dependabot opens security updates
+          # one package at a time anyway.
+          case "$DEPENDENCIES" in
+            *,*) echo "Updates several dependencies ($DEPENDENCIES); leaving it for the weekly review."; exit 0 ;;
+          esac
+
+          dir="${DIRECTORY#/}"
+          manifests="${dir:+$dir/}package.json,${dir:+$dir/}package-lock.json"
+          alerts=$(GH_TOKEN="$ALERTS_TOKEN" gh api \
+            "repos/$REPO/dependabot/alerts?state=open&ecosystem=npm&package=$DEPENDENCIES&manifest=$manifests&per_page=100" \
+            --jq '.[] | [.security_advisory.ghsa_id,
+                         ([.security_advisory.cvss.score,
+                           .security_advisory.cvss_severities.cvss_v3.score,
+                           .security_advisory.cvss_severities.cvss_v4.score] | map(. // 0) | max),
+                         (.security_vulnerability.first_patched_version.identifier // "")] | @tsv')
+
+          # The highest-scoring alert this version fixes (its first patched
+          # version is at or below the new version).
+          GHSA_ID="" CVSS=0
+          while IFS=$'\t' read -r ghsa score patched; do
+            [ -n "$ghsa" ] && [ -n "$patched" ] || continue
+            [ "$(printf '%s\n%s\n' "$patched" "$NEW_VERSION" | sort -V | head -n1)" = "$patched" ] || continue
+            if awk -v a="$score" -v b="$CVSS" 'BEGIN { exit !(a > b) }'; then
+              GHSA_ID="$ghsa" CVSS="$score"
+            fi
+          done <<< "$alerts"
+
           # Version updates (no alert) and low-severity alerts are the weekly
           # review's: they have no clock on them.
-          if [ "$ALERT_STATE" != "OPEN" ] || ! awk -v c="${CVSS:-0}" 'BEGIN { exit !(c >= 7.0) }'; then
-            echo "Not an open high or critical alert (state '$ALERT_STATE', CVSS '$CVSS'); leaving it for the weekly review."
+          if [ -z "$GHSA_ID" ] || ! awk -v c="$CVSS" 'BEGIN { exit !(c >= 7.0) }'; then
+            echo "Fixes no open high or critical alert (best: '${GHSA_ID:-none}', CVSS $CVSS); leaving it for the weekly review."
             exit 0
           fi
+          echo "Fixes $GHSA_ID (CVSS $CVSS)."
 
           reason=""
           case "$UPDATE_TYPE" in
