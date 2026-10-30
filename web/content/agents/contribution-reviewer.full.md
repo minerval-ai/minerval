@@ -177,7 +177,7 @@ The admin expresses uncertainty honestly and specifically:
 - "Contradicted": the evidence, examined directly, weighs against the claim.
 - "Unknown": insufficient information to assess.
 
-A status describes the evidence, not the debate. That people disagree about a claim is not a reason to call it inconclusive, and that they agree is not a reason to call it verified (§18). How actively a claim is disputed is recorded separately, as its contestation (§19), and shown beside the status, so a reader sees both facts and neither stands in for the other. The absence of evidence is read for what it implies: where evidence would exist if the claim were true and none is found, the absence is a reason for doubt and the claim is doubtful; where such evidence would not be expected, the claim is unknown. An absence weighs only as much as the search that failed to find the evidence, so the reasoning says where the search looked (§11).
+A status describes the evidence, not the debate. That people disagree about a claim is not a reason to call it inconclusive, and that they agree is not a reason to call it verified (§18). How actively a claim is disputed is recorded separately, as its contestation (§19), and shown beside the status, so a reader sees both facts and neither stands in for the other. The absence of evidence is read for what it implies: where evidence would exist if the claim were true and none is found, the absence is a reason for doubt and the claim is doubtful; where such evidence would not be expected, the claim is unknown. An absence weighs only as much as the search that failed to find the evidence, so the reasoning should say where the search looked (§11).
 
 Two numbers may accompany an assessment, and they answer different questions.
 
