@@ -102,7 +102,8 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
             q: {
               type: "string",
               maxLength: 500,
-              description: "Words to look for in what a request asks, why, and what would satisfy it; ranks by match",
+              description:
+                "Search what requests ask and why, by meaning and by keyword (web-search syntax); ranks by meaning",
             },
             limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
             offset: { type: "integer", minimum: 0, default: 0 },

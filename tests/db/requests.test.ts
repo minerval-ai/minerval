@@ -5,7 +5,7 @@
  * the /requests routes.
  */
 import { randomUUID } from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
 import { rawQuery } from "../../src/db/client.js";
 import { seedClaim, seedGrantWithJob, seedUser, pgCode } from "./helpers.js";
@@ -15,8 +15,39 @@ import {
   listRequests,
   recordWork,
   RequestError,
+  reviseRequest,
   setRequestState,
 } from "../../src/services/request-service.js";
+
+// A stand-in embedder: text about the sun or a solar eclipse lies along one
+// axis; any other text gets a ±1 vector seeded by the text itself. Two such
+// vectors in 1536 dimensions sit near cosine 0 (typically ±0.03, rarely past
+// 0.1), well under the 0.3 floor, so texts mean the same only when the test
+// says so. `down` makes
+// every call fail, as the embedder does when it is.
+const embedder = vi.hoisted(() => ({ down: false }));
+vi.mock("../../src/services/embedding-service.js", () => ({
+  generateEmbedding: vi.fn(async (text: string) => {
+    if (embedder.down) throw new Error("embedder down");
+    if (/\b(sun|solar|eclipse)\b/i.test(text)) return [1, ...new Array(1535).fill(0)];
+    let seed = 0;
+    for (const ch of text) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    return Array.from({ length: 1536 }, () => {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      return seed & 0x10000 ? 1 : -1;
+    });
+  }),
+}));
+vi.mock("../../src/services/embedding-service.js", () => ({
+  generateEmbedding: vi.fn(async (text: string) => {
+    if (embedder.down) throw new Error("embedder down");
+    const v = new Array(1536).fill(0);
+    let h = 0;
+    for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 1535;
+    v[/\b(sun|solar|eclipse)\b/i.test(text) ? 0 : 1 + h] = 1;
+    return v;
+  }),
+}));
 import { defineQuantity } from "../../src/services/quantity-service.js";
 import { requestRoutes } from "../../src/routes/requests.js";
 
@@ -192,5 +223,46 @@ describe("listing and routes", () => {
     } finally {
       await app.close();
     }
+  });
+
+  // Search by meaning, as claim search does: a request is found by a query
+  // that shares none of its words, falls back to keywords when the embedder
+  // is down, and is re-embedded when its wording changes.
+  it("finds a request by meaning, and keeps its embedding current", async () => {
+    const filer = { kind: "admin" as const, agent: "curator" };
+    const word = `zs${randomUUID().slice(0, 8)}`;
+    const eclipse = await fileRequest({
+      ...BASE,
+      ask: `Locate the surviving 1919 solar eclipse plates (${word}).`,
+      bearsOnText: "the deflection of starlight",
+      filer,
+    });
+    const [{ embedded }] = await rawQuery<{ embedded: boolean }>(
+      `SELECT embedding IS NOT NULL AS embedded FROM requests WHERE id = $1`,
+      [eclipse.id]
+    );
+    expect(embedded).toBe(true);
+
+    // No word in common with the request, so only its meaning can match.
+    const ids = async (q: string) => (await listRequests({ q, limit: 100 })).items.map((r) => r.id);
+    expect(await ids("photographs of the sun")).toContain(eclipse.id);
+
+    // Embedder down: the query falls back to keywords, which it shares none of.
+    embedder.down = true;
+    try {
+      expect(await ids("photographs of the sun")).not.toContain(eclipse.id);
+      expect(await ids(word)).toEqual([eclipse.id]);
+      // Filing still succeeds, without an embedding.
+      const bare = await fileRequest({ ...BASE, bearsOnText: "x", filer });
+      const [row] = await rawQuery<{ embedding: unknown }>(`SELECT embedding FROM requests WHERE id = $1`, [bare.id]);
+      expect(row!.embedding).toBeNull();
+    } finally {
+      embedder.down = false;
+    }
+
+    // Reworded away from the sun, it no longer matches the sun by meaning.
+    await reviseRequest({ requestId: eclipse.id, ask: `Locate the 1919 expedition's field notebooks (${word}).` });
+    expect(await ids("photographs of the sun")).not.toContain(eclipse.id);
+    expect(await ids(word)).toEqual([eclipse.id]);
   });
 });

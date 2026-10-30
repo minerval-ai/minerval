@@ -4529,11 +4529,13 @@ export const requests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
-    // Keyword search over what a request asks (the /requests search box and
-    // list_requests' `q`), weighted so a match in the ask outranks one in
-    // its reasons: ask A, why B, what would satisfy it and what it bears on C.
-    // Keyword only, no embedding: requests are few enough that recall by
-    // meaning has not been needed.
+    // Search over what a request asks (the /requests search box and
+    // list_requests' `q`), the same hybrid as claims: the embedding of its
+    // ask and why for meaning, and a keyword vector for exact terms, weighted
+    // so a match in the ask outranks one in its reasons (ask A, why B, what
+    // would satisfy it and what it bears on C). The embedding is written on
+    // filing and on revision, and is NULL when the embedder was down.
+    embedding: vector("embedding"),
     textSearch: tsvector("text_search").generatedAlwaysAs(
       (): SQL => sql`setweight(to_tsvector('english', ${requests.ask}), 'A')
         || setweight(to_tsvector('english', ${requests.why}), 'B')

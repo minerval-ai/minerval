@@ -1,5 +1,5 @@
 {
-  "id": "5f62ea40-01f7-43dd-852e-2b4485500f3a",
+  "id": "e7632d9c-b507-49e9-96b0-ba76a8531eba",
   "prevId": "beefc747-c952-4837-bb5d-9d13f6850fd9",
   "version": "7",
   "dialect": "postgresql",
@@ -12305,6 +12305,12 @@
         "closed_at": {
           "name": "closed_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "vector(1536)",
           "primaryKey": false,
           "notNull": false
         },

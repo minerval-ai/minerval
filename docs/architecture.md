@@ -1484,7 +1484,7 @@ A Fastify service at `api.claimgraph.io`. Reads are public and unauthenticated:
 claim lookup and search, decomposition trees, dependents, assessment history,
 contributor profiles, the topic vocabulary, the findings feed
 (`GET /findings`, filterable by claim, tag, and importance), and requests
-(`GET /requests`, filterable by node and state, and searchable by keyword with `q`). A claim's detail carries its
+(`GET /requests`, filterable by node and state, and searchable with `q`, by meaning and keyword as claims are). A claim's detail carries its
 `kind`, and a quantity's or question's detail its `quantity` or `question`. Anything that writes or spends model tokens
 (`POST /sources`, `POST /claims/propose`, contributions, appeals, the
 extension and MCP endpoints) requires a key. No user surface writes to the
