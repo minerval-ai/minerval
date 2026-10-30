@@ -13,10 +13,22 @@
  *
  * There is no form: the Grantmaker agent (best model, constitution loaded)
  * designs the mandate in the conversation, quotes costs in owls, and can
- * refuse mandates that would compromise the graph. Message turns run the
- * agent synchronously, so responses take model latency; the web BFF calls
- * these with a generous timeout.
+ * refuse mandates that would compromise the graph. A message is saved and
+ * answered at once with the conversation, its turn "replying"; the
+ * Grantmaker's reply follows in the background (a drafting turn can take
+ * minutes), and callers read the conversation until the turn is idle.
  */
+
+/** How a caller gets the reply, stated on every route that starts a turn. */
+const TURN_PROTOCOL =
+  "Returns at once, before the Grantmaker replies: the conversation comes " +
+  "back with your message saved and turn.state \"replying\". Read it with " +
+  "GET /grant-conversations/:id (MCP: get_grant_conversation) every 20-30 " +
+  "seconds until turn.state is \"idle\", when the last message is the " +
+  "reply (a drafting turn can take several minutes), or \"failed\", when " +
+  "turn.error says why and a short follow-up asks again. Never resend the " +
+  "same message: it is already saved. One turn runs at a time; a message " +
+  "sent while one runs is refused with TURN_IN_PROGRESS and not saved.";
 import type { FastifyInstance } from "fastify";
 import {
   startConversation,
@@ -43,8 +55,10 @@ export async function grantConversationRoutes(
     schema: {
       tags: ["grants"],
       summary:
-        "Open a granting conversation with the Grantmaker agent (no charge; " +
-        "nothing runs until a drafted mandate is funded)",
+        "Start a granting conversation: send the Grantmaker your first " +
+        "message about the mandate you want to fund (no charge; nothing " +
+        "runs until a drafted mandate is funded)",
+      description: TURN_PROTOCOL,
       body: MESSAGE_BODY,
     },
     preHandler: [app.authenticate, app.requireUser],
@@ -108,7 +122,9 @@ export async function grantConversationRoutes(
   app.get<{ Params: { id: string } }>("/:id", {
     schema: {
       tags: ["grants"],
-      summary: "Get one granting conversation (transcript, mandate, status)",
+      summary:
+        "Get one granting conversation: transcript, drafted mandate, status, " +
+        "and turn.state (\"replying\" while the Grantmaker is still answering)",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
@@ -134,7 +150,11 @@ export async function grantConversationRoutes(
     {
       schema: {
         tags: ["grants"],
-        summary: "Send a message and get the Grantmaker's reply",
+        summary:
+          "Continue a granting conversation: send the Grantmaker a message " +
+          "about the mandate (its reply, and a drafted mandate when it " +
+          "proposes one, follow in the conversation)",
+        description: TURN_PROTOCOL,
         params: {
           type: "object",
           properties: { id: { type: "string", format: "uuid" } },
@@ -149,7 +169,7 @@ export async function grantConversationRoutes(
           message: request.body.message,
         });
         if (!result.ok) {
-          const status =
+            const status =
             result.code === "NOT_FOUND"
               ? 404
               : result.code === "RATE_LIMITED"
@@ -159,7 +179,7 @@ export async function grantConversationRoutes(
             .code(status)
             .send({ error: result.message, code: result.code });
         }
-        return reply.send({
+        return reply.code(202).send({
           conversation: serializeConversation(result.conversation),
         });
       },

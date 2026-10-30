@@ -90,7 +90,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 | Tier | Tools | Cost |
 |------|-------|------|
 | Free reads | `search_claims`, `list_tags`, `get_claim`, `get_decomposition`, `get_contribution_status`, `get_bounty_terms` | never metered |
-| Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap |
+| Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — new/low-reputation accounts get a tighter hourly cap (`CONTRIBUTION_RATE_LIMITED`), and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony |
 | Route tools | everything listed under [Route tools](#route-tools) | exactly what the REST route charges, because the route runs: reads are free, `propose_claim` / `submit_source` / `order_assessment` charge their caps, funding tools escrow owls ([accounts.md](accounts.md)) |
@@ -217,6 +217,16 @@ and the tool description says what a call spends.
   Verdicts come from pre-computed assessments, not model recollection. When
   `stance` is `"denies"`, the passage asserts the claim's negation, so the
   assessment applies inverted.
+- **`get_text_analysis`** `{job_id}` — `extract_claims` and `assess_text` run
+  in the background, because an extraction plus a Matcher loop per claim
+  takes minutes, longer than an MCP tool call should be held open. Each
+  returns a `job_id` at once; this reads it: `processing` (with the result
+  so far, for `assess_text` the judgments made so far), `complete` with the
+  full result (`{claims}` / `{claims_extracted, judgments}`), or `failed`
+  with an `error`. Only the account that started an analysis can read it,
+  and the text itself is not stored. The public `GET /jobs/:id` does not
+  serve these jobs. Free. A running analysis keeps a heartbeat; one whose
+  process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id, contribution_type, content,
   evidence_urls?, merge_target_claim_id?, proposed_canonical_form?}` — file a
   challenge / support / merge / split / edit / instance / argument. Requires
@@ -252,9 +262,10 @@ Generated from the REST routes (see [Parity](#parity-with-the-rest-api));
 each tool's description is its route's summary plus the route it runs.
 
 - **Claims:** `list_claims`, `cite_claim`, `get_claim_provenance`,
-  `export_claim_nanopub`, `get_claim_record`, `get_assessment_history`,
-  `get_assessment_trajectory`, `get_claim_events`, `propose_claim` (reviewed
-  by the Contribution Reviewer before anything enters the graph).
+  `export_claim_nanopub`, `export_claim_scasp`, `get_claim_record`,
+  `get_assessment_history`, `get_assessment_trajectory`, `get_claim_events`,
+  `propose_claim` (reviewed by the Contribution Reviewer before anything
+  enters the graph).
 - **Funding:** `order_assessment`, `fund_claim_assessment`,
   `fund_deep_decomposition`, `list_orders`, `get_order`, `cancel_order`,
   `list_budget_jobs`, `get_budget_job`, `top_up_budget_job`,

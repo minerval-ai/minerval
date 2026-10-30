@@ -163,6 +163,8 @@ async function extensionChatImpl(input: {
     status: string | null;
   }>;
   model?: string;
+  /** The reply's text as it is written, with the model turn it belongs to. */
+  onText?: (delta: string, turn: number) => void;
 }): Promise<ExtensionChatResult> {
   const contextBlock = getChatContextPrompt({
     pageUrl: input.pageUrl,
@@ -192,6 +194,10 @@ async function extensionChatImpl(input: {
     // only halts a loop that has stopped spending.
     maxIterations: RUN_TURN_GUARD,
     model: input.model,
+    // Streamed so a reader can watch the answer form (the route's
+    // event-stream form); a non-streaming caller gets the same result.
+    stream: true,
+    ...(input.onText ? { onText: input.onText } : {}),
     executeTool: async (name, toolInput) => {
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);

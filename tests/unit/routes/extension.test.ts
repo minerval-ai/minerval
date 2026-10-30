@@ -305,6 +305,67 @@ describe("extension routes", () => {
     );
   });
 
+  it("POST /extension/chat streams the reply as it forms when asked for an event stream", async () => {
+    mocks.chatAboutPage.mockImplementation(
+      async (input: { onText?: (delta: string, turn: number) => void }) => {
+        input.onText?.("Checking the graph.", 0);
+        input.onText?.("Grounded ", 1);
+        input.onText?.("answer.", 1);
+        return { reply: "Grounded answer.", citations: [] };
+      }
+    );
+    const { app, gates } = await buildTestApp();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/extension/chat",
+      headers: { accept: "text/event-stream" },
+      payload: {
+        messages: [{ role: "user", content: "is this true?" }],
+        page: { url: "https://example.com/a", title: "A", claims: [] },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(gates.quota).toBe(1);
+    const events = res.body
+      .trim()
+      .split("\n\n")
+      .map((block) => {
+        const [event, data] = block.split("\n");
+        return { event: event!.slice("event: ".length), data: JSON.parse(data!.slice("data: ".length)) };
+      });
+    expect(events).toEqual([
+      { event: "text", data: { delta: "Checking the graph.", turn: 0 } },
+      { event: "text", data: { delta: "Grounded ", turn: 1 } },
+      { event: "text", data: { delta: "answer.", turn: 1 } },
+      { event: "done", data: { reply: "Grounded answer.", citations: [] } },
+    ]);
+  });
+
+  it("POST /extension/chat ends the stream with an error event when the agent fails mid-answer", async () => {
+    mocks.chatAboutPage.mockImplementation(
+      async (input: { onText?: (delta: string, turn: number) => void }) => {
+        input.onText?.("Half an", 0);
+        throw new Error("provider went away");
+      }
+    );
+    const { app } = await buildTestApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/extension/chat",
+      headers: { accept: "text/event-stream" },
+      payload: {
+        messages: [{ role: "user", content: "is this true?" }],
+        page: { url: "https://example.com/a", title: "A", claims: [] },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("event: text");
+    expect(res.body.trim().split("\n\n").at(-1)).toMatch(/^event: error\n/);
+  });
+
   it("rejects a chat whose last message is not from the user", async () => {
     const { app } = await buildTestApp();
     const res = await app.inject({

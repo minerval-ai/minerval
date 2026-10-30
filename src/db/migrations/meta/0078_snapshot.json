@@ -1,5 +1,5 @@
 {
-  "id": "41fdbb77-a52a-4b5a-a581-44bf53ef92d6",
+  "id": "be0f9eef-1f6c-41f7-8864-2e5c250ad189",
   "prevId": "e7632d9c-b507-49e9-96b0-ba76a8531eba",
   "version": "7",
   "dialect": "postgresql",
@@ -7432,6 +7432,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "turn_started_at": {
+          "name": "turn_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_heartbeat_at": {
+          "name": "turn_heartbeat_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_error": {
+          "name": "turn_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_partial": {
+          "name": "turn_partial",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -12288,12 +12312,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "budget_micro_usd": {
-          "name": "budget_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -12440,10 +12458,6 @@
         "ck_requests_keeper_claim": {
           "name": "ck_requests_keeper_claim",
           "value": "(\"requests\".\"keeper_kind\" = 'steward') = (\"requests\".\"keeper_claim_id\" IS NOT NULL)"
-        },
-        "ck_requests_budget": {
-          "name": "ck_requests_budget",
-          "value": "\"requests\".\"budget_micro_usd\" IS NULL OR \"requests\".\"budget_micro_usd\" > 0"
         },
         "ck_requests_state": {
           "name": "ck_requests_state",

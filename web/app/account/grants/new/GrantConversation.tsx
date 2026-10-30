@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwlMark } from "../../../../components/OwlMark";
+import {
+  failedTurnMessage,
+  waitForReply,
+  type GrantTurn,
+} from "../../../../lib/grant-turn";
 
 // The granting conversation: delegating a mandate to the Grantmaker agent,
 // with the feel of briefing a capable colleague who plans before spending.
@@ -39,6 +44,7 @@ interface ConversationView {
   status: "active" | "proposed" | "funded" | "declined" | "abandoned";
   messages: Message[];
   mandate: MandateView | null;
+  turn?: GrantTurn;
   grant_id: string | null;
 }
 
@@ -66,10 +72,17 @@ export function GrantConversation({
   const [budget, setBudget] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [convo?.messages.length, busy]);
+  }, [convo?.messages.length, convo?.turn?.partial, busy]);
 
   const send = async () => {
     const message = draft.trim();
@@ -106,10 +119,15 @@ export function GrantConversation({
           c ? { ...c, messages: c.messages.filter((m) => m !== optimistic) } : c
         );
       } else {
+        // Saved; the reply follows in the background.
         setConvo(data.conversation);
-        if (data.conversation?.mandate) {
-          setBudget(data.conversation.mandate.expected_cost_owls);
-        }
+        const done = await waitForReply<ConversationView>(
+          data.conversation,
+          setConvo,
+          () => !mounted.current
+        );
+        setError(failedTurnMessage(done.turn));
+        if (done.mandate) setBudget(done.mandate.expected_cost_owls);
       }
     } catch {
       setError("The Grantmaker could not be reached. Please try again.");
@@ -176,9 +194,14 @@ export function GrantConversation({
           {busy && (
             <div className="convo-msg convo-agent">
               <span className="sc convo-who">grantmaker</span>
-              <div className="convo-body convo-thinking">
-                surveying the graph…
-              </div>
+              {convo?.turn?.partial ? (
+                // The reply as the Grantmaker writes it.
+                <div className="convo-body">{convo.turn.partial}</div>
+              ) : (
+                <div className="convo-body convo-thinking">
+                  surveying the graph…
+                </div>
+              )}
             </div>
           )}
           <div ref={endRef} />

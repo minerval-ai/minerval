@@ -26,6 +26,7 @@ import {
 import { createClaimProposal } from "../services/intake-service.js";
 import { assembleClaimCitation } from "../services/citation-service.js";
 import { assembleClaimNanopub } from "../services/nanopub-service.js";
+import { assembleClaimScasp } from "../services/scasp-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
@@ -782,6 +783,48 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         }
 
         return reply.type(result.contentType).send(result.body);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/scasp — the claim's decomposition as an s(CASP)
+  // logic program (docs/scasp.md): arguments become rules by the Steward's
+  // rating of the inference, basis claims take their verdict, and the query
+  // asks whether the claim follows. Read-only; renders existing state, the
+  // same tree get_decomposition walks, to the same depth bounds.
+  app.get<{ Params: { claim_id: string }; Querystring: { max_depth?: number } }>(
+    "/:claim_id/scasp",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Export the claim's decomposition as an s(CASP) logic program, to query whether it follows from its premises",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            max_depth: { type: "integer", minimum: 1, maximum: 8, default: 3 },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const { claim_id } = request.params;
+        const program = await assembleClaimScasp(claim_id, request.query.max_depth ?? 3);
+        if (program === null) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "Claim not found",
+              request_id: request.id,
+            },
+          });
+        }
+        return reply.type("text/x-prolog; charset=utf-8").send(program);
       },
     }
   );

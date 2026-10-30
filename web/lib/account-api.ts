@@ -21,7 +21,9 @@ class AccountApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    /** The parsed error body, for routes that return state with a failure. */
+    readonly payload?: Record<string, unknown>
   ) {
     super(message);
   }
@@ -70,6 +72,7 @@ async function accountFetch<T>(
   if (!res.ok) {
     let code: string | undefined;
     let message = `Minerval API ${res.status} for ${path}`;
+    let body: Record<string, unknown> | undefined;
     try {
       // Two error shapes exist: flat { error, code } on the account routes and
       // an { error: { code, message } } envelope on the governed write routes.
@@ -77,6 +80,7 @@ async function accountFetch<T>(
         error?: string | { code?: string; message?: string };
         code?: string;
       };
+      body = payload as Record<string, unknown>;
       if (typeof payload.error === "string") {
         code = payload.code;
         message = payload.error;
@@ -87,7 +91,7 @@ async function accountFetch<T>(
     } catch {
       // non-JSON error body; keep the generic message
     }
-    throw new AccountApiError(message, res.status, code);
+    throw new AccountApiError(message, res.status, code, body);
   }
   return (await res.json()) as T;
 }

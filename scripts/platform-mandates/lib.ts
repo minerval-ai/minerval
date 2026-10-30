@@ -44,6 +44,8 @@ export interface PublicPlatformConversation {
   messages: Array<{ role: "user" | "assistant"; content: string; at?: string }>;
   draft: DraftSnapshot | null;
   draft_sha256: string | null;
+  /** The Grantmaker's turn: "replying" until the reply lands. */
+  turn?: { state: "replying" | "idle" | "failed"; error: string | null };
   grant_id: string | null;
 }
 

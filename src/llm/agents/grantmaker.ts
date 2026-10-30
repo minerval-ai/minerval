@@ -30,6 +30,7 @@ import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { listSkills } from "../prompts/skills.js";
+import { modelSupportsLongRun } from "../models.js";
 import { skillsForGrant } from "./skill-selection.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
@@ -239,6 +240,8 @@ async function runGrantmakerTurnImpl(input: {
    * platform's confirmations are the operator key's.
    */
   funder?: "platform";
+  /** The reply's text as it is written, with the model turn it belongs to. */
+  onText?: (delta: string, turn: number) => void;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -562,7 +565,17 @@ async function runGrantmakerTurnImpl(input: {
     tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
     system,
     model,
-    maxTokens: 4096,
+    // A drafted mandate is one propose_mandate call carrying the whole plan,
+    // and thinking draws on the same allowance. Streamed, a turn takes the
+    // model's full output: nothing here is a spending limit (conversation
+    // turns are rate-limited, funded turns meter to the escrow), and the
+    // turn runs in the background, so no caller is waiting on a request. A
+    // model below the long-run tier keeps 16384, inside its own output limit
+    // and, on a provider with no streaming path, inside the request timeout
+    // (LLM_REQUEST_TIMEOUT_MS).
+    stream: true,
+    ...(modelSupportsLongRun(model) ? {} : { maxTokens: 16384 }),
+    ...(input.onText ? { onText: input.onText } : {}),
     maxIterations: 16,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);

@@ -268,23 +268,67 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
     preHandler: [app.authenticate, app.requireAgenticQuota("extension_chat")],
     handler: async (request, reply) => {
       const body = extensionChatBody.parse(request.body);
+      // A reader watching the answer form asks for an event stream: `text`
+      // events carry the reply as it is written ({delta, turn}; a new turn,
+      // after a tool call, starts the text over), then one `done` event
+      // carries what the JSON form returns, or an `error` event. The stream
+      // opens only once the charge is taken, so a quota denial is still an
+      // ordinary HTTP error.
+      const streaming = (request.headers.accept ?? "").includes("text/event-stream");
+      const send = (event: string, data: unknown) => {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
 
-      const run = await withAgenticCharge(
-        request.auth,
-        "extension_chat",
-        {},
-        () =>
-          runWithUsageContext(
-            {
-              userId: request.auth?.userId ?? null,
-              apiKeyId: request.auth?.apiKeyId ?? null,
-              requestId: request.id,
-            },
-            () => chatAboutPage(body)
-          )
-      );
+      let run;
+      try {
+        run = await withAgenticCharge(
+          request.auth,
+          "extension_chat",
+          {},
+          () => {
+            if (streaming) {
+              reply.hijack();
+              reply.raw.writeHead(200, {
+                // Headers already set on the reply (CORS among them) would
+                // be lost to the hijack otherwise.
+                ...(reply.getHeaders() as Record<string, string>),
+                "content-type": "text/event-stream; charset=utf-8",
+                "cache-control": "no-cache, no-transform",
+                connection: "keep-alive",
+                // Proxies that buffer would hold the whole stream back.
+                "x-accel-buffering": "no",
+              });
+            }
+            return runWithUsageContext(
+              {
+                userId: request.auth?.userId ?? null,
+                apiKeyId: request.auth?.apiKeyId ?? null,
+                requestId: request.id,
+              },
+              () =>
+                chatAboutPage({
+                  ...body,
+                  ...(streaming
+                    ? { onText: (delta: string, turn: number) => send("text", { delta, turn }) }
+                    : {}),
+                })
+            );
+          }
+        );
+      } catch (err) {
+        if (!streaming || !reply.sent) throw err;
+        request.log.error({ err }, "extension chat failed mid-stream");
+        send("error", { error: "The answer could not be finished. Please try again." });
+        reply.raw.end();
+        return;
+      }
       if (!run.ok) return app.sendQuotaDenial(reply, run.denied);
 
+      if (streaming) {
+        send("done", run.value);
+        reply.raw.end();
+        return;
+      }
       return reply.send(run.value);
     },
   });

@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  failedTurnMessage,
+  waitForReply,
+  type GrantTurn,
+} from "../../../lib/grant-turn";
 
 // The manager's line to the Grantmaker after funding: the same conversation
 // that designed the mandate, now in management mode. The agent can query
@@ -18,6 +23,7 @@ interface Message {
 interface ConversationView {
   id: string;
   messages: Message[];
+  turn?: GrantTurn;
 }
 
 export function MandateChat({ conversationId }: { conversationId: string }) {
@@ -27,6 +33,13 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,7 +50,22 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
         });
         if (res.ok) {
           const data = await res.json();
-          if (!cancelled) setConvo(data.conversation);
+          if (cancelled) return;
+          setConvo(data.conversation);
+          // Opened mid-reply (a reload while the Grantmaker works): wait for it.
+          if (data.conversation?.turn?.state === "replying") {
+            setBusy(true);
+            const done = await waitForReply<ConversationView>(
+              data.conversation,
+              setConvo,
+              () => cancelled
+            );
+            if (!cancelled) {
+              setBusy(false);
+              setError(failedTurnMessage(done.turn));
+              router.refresh();
+            }
+          }
         }
       } catch {
         // The transcript is a nicety; the composer still works without it.
@@ -46,11 +74,11 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, router]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [convo?.messages.length, busy]);
+  }, [convo?.messages.length, convo?.turn?.partial, busy]);
 
   const send = async () => {
     const message = draft.trim();
@@ -82,7 +110,14 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
         setError(data.error ?? "The Grantmaker could not be reached.");
         setDraft(message);
       } else {
+        // Saved; the reply follows in the background.
         setConvo(data.conversation);
+        const done = await waitForReply<ConversationView>(
+          data.conversation,
+          setConvo,
+          () => !mounted.current
+        );
+        setError(failedTurnMessage(done.turn));
         // An exchange may have amended the plan; refresh the page above.
         router.refresh();
       }
@@ -119,9 +154,14 @@ export function MandateChat({ conversationId }: { conversationId: string }) {
           {busy && (
             <div className="convo-msg convo-agent">
               <span className="sc convo-who">grantmaker</span>
-              <div className="convo-body convo-thinking">
-                looking at the numbers…
-              </div>
+              {convo?.turn?.partial ? (
+                // The reply as the Grantmaker writes it.
+                <div className="convo-body">{convo.turn.partial}</div>
+              ) : (
+                <div className="convo-body convo-thinking">
+                  looking at the numbers…
+                </div>
+              )}
             </div>
           )}
           <div ref={endRef} />

@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 11210,
-    "fullChars": 90430,
+    "roleChars": 11531,
+    "fullChars": 90889,
     "skills": [
       {
         "name": "mathematics",
@@ -35,7 +35,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 13433,
-    "fullChars": 92653,
+    "fullChars": 92791,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 24221,
-    "fullChars": 103441,
+    "roleChars": 24607,
+    "fullChars": 103965,
     "skills": [
       {
         "name": "costing",
@@ -76,6 +76,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -88,8 +94,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 55622,
-    "fullChars": 134842,
+    "roleChars": 56140,
+    "fullChars": 135498,
     "skills": [
       {
         "name": "costing",
@@ -121,6 +127,12 @@
           "For the Curator",
           "For the Extractor"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -133,8 +145,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 32041,
-    "fullChars": 111261,
+    "roleChars": 32559,
+    "fullChars": 111917,
     "skills": []
   },
   {
@@ -146,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19115,
-    "fullChars": 98335,
+    "roleChars": 19501,
+    "fullChars": 98859,
     "skills": [
       {
         "name": "costing",
@@ -169,6 +181,12 @@
           "For every administrator",
           "For the Curator"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -181,8 +199,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently disputed.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19887,
-    "fullChars": 99107,
+    "roleChars": 20273,
+    "fullChars": 99631,
     "skills": [
       {
         "name": "costing",
@@ -203,6 +221,12 @@
         "sections": [
           "For every administrator"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -215,8 +239,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 21272,
-    "fullChars": 100492,
+    "roleChars": 21658,
+    "fullChars": 101016,
     "skills": [
       {
         "name": "costing",
@@ -250,6 +274,12 @@
           "For the Extractor",
           "Standards for judging"
         ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator"
+        ]
       }
     ]
   },
@@ -262,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 25303,
-    "fullChars": 104523,
+    "roleChars": 25689,
+    "fullChars": 105047,
     "skills": [
       {
         "name": "costing",
@@ -281,6 +311,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -296,8 +332,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GPT-6 Luna",
     "hasConstitution": true,
-    "roleChars": 14183,
-    "fullChars": 93403,
+    "roleChars": 14569,
+    "fullChars": 93927,
     "skills": [
       {
         "name": "costing",
@@ -313,6 +349,12 @@
       },
       {
         "name": "provenance",
+        "sections": [
+          "For every administrator"
+        ]
+      },
+      {
+        "name": "search",
         "sections": [
           "For every administrator"
         ]
@@ -329,7 +371,7 @@
     "model": "GPT-6 Luna",
     "hasConstitution": true,
     "roleChars": 11395,
-    "fullChars": 90615,
+    "fullChars": 90753,
     "skills": []
   },
   {
@@ -354,8 +396,8 @@
     "invokedWhen": "A Claim Steward or a Grantmaker calls delegate_research with a brief, a model tier, and a budget; the run is synchronous, and the report comes back as the tool result.",
     "model": "Chosen per launch: Claude Opus 5.5 (strong), Claude Sonnet 5.5 (standard), GPT-6 Luna (cheap)",
     "hasConstitution": true,
-    "roleChars": 13587,
-    "fullChars": 92807,
+    "roleChars": 13993,
+    "fullChars": 93351,
     "skills": [
       {
         "name": "costing",
@@ -376,6 +418,13 @@
         "sections": [
           "For every administrator",
           "For the Claim Steward",
+          "For the researcher"
+        ]
+      },
+      {
+        "name": "search",
+        "sections": [
+          "For every administrator",
           "For the researcher"
         ]
       }

@@ -11,6 +11,7 @@ const CLAIM_ID = "11111111-1111-1111-1111-111111111111";
 const mocks = vi.hoisted(() => ({
   assembleClaimCitation: vi.fn(),
   assembleClaimNanopub: vi.fn(),
+  assembleClaimScasp: vi.fn(),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
@@ -48,6 +49,9 @@ vi.mock("../../../src/services/citation-service.js", () => ({
 }));
 vi.mock("../../../src/services/nanopub-service.js", () => ({
   assembleClaimNanopub: mocks.assembleClaimNanopub,
+}));
+vi.mock("../../../src/services/scasp-service.js", () => ({
+  assembleClaimScasp: mocks.assembleClaimScasp,
 }));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
@@ -202,5 +206,35 @@ describe("GET /claims/:claim_id/nanopub (#292)", () => {
       url: `/claims/${CLAIM_ID}/nanopub?format=rdfxml`,
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("GET /claims/:claim_id/scasp", () => {
+  it("404s for an unknown claim", async () => {
+    mocks.assembleClaimScasp.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/scasp` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  it("serves the program as Prolog text, three levels deep by default", async () => {
+    mocks.assembleClaimScasp.mockResolvedValue("?- holds(c_x).\n");
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/scasp` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/x-prolog");
+    expect(res.body).toBe("?- holds(c_x).\n");
+    expect(mocks.assembleClaimScasp).toHaveBeenCalledWith(CLAIM_ID, 3);
+  });
+
+  it("takes max_depth within the decomposition bounds", async () => {
+    mocks.assembleClaimScasp.mockResolvedValue("");
+    const app = await buildApp();
+    const ok = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/scasp?max_depth=6` });
+    expect(ok.statusCode).toBe(200);
+    expect(mocks.assembleClaimScasp).toHaveBeenCalledWith(CLAIM_ID, 6);
+    const tooDeep = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/scasp?max_depth=9` });
+    expect(tooDeep.statusCode).toBe(400);
   });
 });

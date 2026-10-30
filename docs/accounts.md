@@ -233,7 +233,19 @@ model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
 the budget and starts the grant with the mandate as its plan; nothing runs
-or is charged before that. The Grantmaker works for the integrity of the
+or is charged before that.
+
+The Grantmaker replies in the background. Sending a message saves it and
+returns the conversation at once with `turn.state: "replying"`; the reply
+lands in the transcript when the turn finishes (a drafting turn can take
+minutes, streamed so it has the model's full output for the plan). Callers
+read `GET /grant-conversations/:id` until the turn is `idle`, or `failed`
+with `turn.error` (the message stays saved; a short follow-up asks again).
+One turn runs at a time: a message sent meanwhile is refused with
+`TURN_IN_PROGRESS` and not saved, and the draft can't be funded until the
+turn ends, since it may still revise it. A running turn refreshes a
+heartbeat, and one whose process died (a deploy, a crash) reads as `failed`
+and can be taken over by the next message. The Grantmaker works for the integrity of the
 graph and declines mandates that attempt to steer conclusions, at any
 budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
 items. A live mandate executes through the action ledger

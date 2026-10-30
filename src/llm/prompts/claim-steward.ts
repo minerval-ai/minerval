@@ -460,7 +460,9 @@ disagree about. doubtful is the mirror of supported: the evidence weighs
 against the claim, but the examination is incomplete or the evidence is
 indirect. Where you find no evidence, ask whether evidence would exist if the
 claim were true: if it would, its absence is a reason for doubt (doubtful);
-if it would not be expected, the claim is unknown. How actively the claim is
+if it would not be expected, the claim is unknown. Either way, an absence
+weighs only as much as the search that failed to find it (the Search skill
+says how to plan and record one). How actively the claim is
 disputed is its contestation, recorded separately and shown beside the
 status.
 
