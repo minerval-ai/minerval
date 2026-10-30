@@ -1059,7 +1059,9 @@ async function executeKindToolImpl(
           filed_by: r.filed_by,
           bears_on: r.bears_on,
           bears_on_text: r.bears_on_text,
-          work: r.work,
+          // Without funded_by: the agents that judge a request see the work,
+          // never whether it was paid for (the public page discloses that).
+          work: r.work.map(({ funded_by: _funded, ...w }) => w),
         })),
       });
     }

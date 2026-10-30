@@ -661,7 +661,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
       byLabel: "Researcher",
       researchRunId: row.id,
       outcome: null,
-      summary: "Taken up with funding from a mandate.",
+      summary: "Taken up by the Researcher.",
       fundedByJobId: ctx.jobId ?? null,
     });
 
