@@ -56,6 +56,8 @@ export interface EvidenceRecord {
   claim: {
     id: string;
     text: string;
+    /** The node's kind (claim, quantity, question; src/schemas/kinds.ts). */
+    kind: string;
     claim_type: string;
     state: string;
     importance: number;
@@ -317,6 +319,7 @@ export async function assembleEvidenceRecord(
     claim: {
       id: claim.id,
       text: claim.text,
+      kind: claim.kind,
       claim_type: claim.claimType,
       state: claim.state,
       importance: claim.importance,

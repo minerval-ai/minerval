@@ -6,6 +6,9 @@ until that registration merges they are valid, non-resolving IRIs, which
 linked-data practice permits. Used by the nanopublication export (#292):
 `GET /claims/:id/nanopub` serializes a claim's evidence record as
 assertion / provenance / publication-info graphs in TriG or JSON-LD.
+The MIRA export (`GET /claims/:id/mira`, docs/mira.md) uses the same terms
+on `mv:` nodes beside MIRA's, for what MIRA has no term for; the terms only
+it uses are listed under "MIRA export" below.
 
 Established ontologies are reused where they fit; `mv:` covers only what is
 ours. PROV-O carries provenance (`prov:wasDerivedFrom`, `prov:wasQuotedFrom`,
@@ -105,6 +108,29 @@ formal statement carries, beside `mv:stance`, `mv:verdict`, and
 `mv:machineChecked` says the proof checks against the statement. Whether
 the statement is faithful to the claim is the Steward's judgment, carried
 by `mv:status`, `mv:verdict`, and the reasoning as for any other argument.
+
+## MIRA export
+
+MIRA's shapes are closed, so the MIRA export (docs/mira.md) says what MIRA
+has no term for on nodes of its own that point at the MIRA nodes. Besides
+the terms above (`mv:status`, `mv:confidence`, `mv:credence`,
+`mv:reasoningTrace`, `mv:stance`, `mv:verdict`, `mv:decisive`,
+`mv:evaluation`, `mv:hasPremise`, `mv:quote`, the publication-info terms),
+it uses:
+
+| Term | Meaning |
+| --- | --- |
+| `mv:MiraExport` | The export itself: `mv:root` (the node exported), `mv:miraSchemaVersion` and `mv:miraSchemaCommit` (the MIRA schema it was built for), with `dct:license`, `dct:source`, `dct:publisher`, `prov:generatedAtTime`. |
+| `mv:NodeRecord` | What Minerval holds about a node: `mv:describes` → the MIRA Question or Claim, `mv:kind` (`claim`, `quantity`, `question`), `mv:claimType`, and its assessment. |
+| `mv:standing` | A question's standing (`answered`, `leaning`, `open`, `ill_posed`, `unknown`). |
+| `mv:favors` | Question record → an answer its assessment favors. |
+| `mv:incomplete` | The Steward's note that a question's set of answers is incomplete. |
+| `mv:Edge` | A graph edge: `mv:from`, `mv:to`, `mv:relation` (a decomposition relation, `answers`, `part_of`, `presupposes`), and on an answer `mv:answerBasis` (`quality`, `prominence`, `both`). |
+| `mv:AnswerRelation` | How two answers of `mv:question` bear on each other: `mv:answer` (both), `mv:relation` (`excludes`, `compatible`). |
+| `mv:argues` | `mv:Argument` → the claim it argues for or against. |
+| `mv:evidence` | `mv:Instance` → the MIRA Evidence recording it, where the instance states a claim. |
+| `mv:RequestRecord` | A request's terms beside the MIRA Request (`mv:request`): `mv:bearsOn` (every node and source), `mv:satisfiedBy`, `mv:state`, `mv:stateNote`, `mv:addressedTo`, `mv:whoCould`, `mv:bearsOnText`, `mv:filerKind`, `mv:keeper`. |
+| `mv:RequestWork` | Work recorded on a request: `mv:request`, `mv:by`, `mv:outcome`, `rdfs:comment`, `prov:generatedAtTime`. |
 
 ## What is not exported
 

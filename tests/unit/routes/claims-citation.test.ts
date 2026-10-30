@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   assembleClaimCitation: vi.fn(),
   assembleClaimNanopub: vi.fn(),
   assembleClaimScasp: vi.fn(),
+  assembleClaimMira: vi.fn(),
 }));
 
 // The claims route module pulls in the whole read stack; stub every service
@@ -52,6 +53,9 @@ vi.mock("../../../src/services/nanopub-service.js", () => ({
 }));
 vi.mock("../../../src/services/scasp-service.js", () => ({
   assembleClaimScasp: mocks.assembleClaimScasp,
+}));
+vi.mock("../../../src/services/mira-service.js", () => ({
+  assembleClaimMira: mocks.assembleClaimMira,
 }));
 vi.mock("../../../src/server/contributor-gate.js", () => ({
   gateContributor: vi.fn(),
@@ -236,5 +240,29 @@ describe("GET /claims/:claim_id/scasp", () => {
     expect(mocks.assembleClaimScasp).toHaveBeenCalledWith(CLAIM_ID, 6);
     const tooDeep = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/scasp?max_depth=9` });
     expect(tooDeep.statusCode).toBe(400);
+  });
+});
+
+describe("GET /claims/:claim_id/mira (#515)", () => {
+  it("404s for an unknown claim", async () => {
+    mocks.assembleClaimMira.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/mira` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe("NOT_FOUND");
+  });
+
+  it("serves the graph as JSON-LD", async () => {
+    const doc = {
+      "@context": ["https://purl.org/mira-science/mira.jsonld"],
+      "@graph": [{ "@id": `https://w3id.org/minerval/claim/${CLAIM_ID}`, "@type": "Claim" }],
+    };
+    mocks.assembleClaimMira.mockResolvedValue(doc);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/claims/${CLAIM_ID}/mira` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/ld+json");
+    expect(res.json()).toEqual(doc);
+    expect(mocks.assembleClaimMira).toHaveBeenCalledWith(CLAIM_ID);
   });
 });

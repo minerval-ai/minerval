@@ -262,10 +262,10 @@ Generated from the REST routes (see [Parity](#parity-with-the-rest-api));
 each tool's description is its route's summary plus the route it runs.
 
 - **Claims:** `list_claims`, `cite_claim`, `get_claim_provenance`,
-  `export_claim_nanopub`, `export_claim_scasp`, `get_claim_record`,
-  `get_assessment_history`, `get_assessment_trajectory`, `get_claim_events`,
-  `propose_claim` (reviewed by the Contribution Reviewer before anything
-  enters the graph).
+  `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
+  `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
+  `get_claim_events`, `propose_claim` (reviewed by the Contribution Reviewer
+  before anything enters the graph).
 - **Funding:** `order_assessment`, `fund_claim_assessment`,
   `fund_deep_decomposition`, `list_orders`, `get_order`, `cancel_order`,
   `list_budget_jobs`, `get_budget_job`, `top_up_budget_job`,
