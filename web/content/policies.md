@@ -125,7 +125,7 @@ One document per skill, `skills/<name>/SKILL.md`, serves every role, in sections
 
 - Claim-scoped runs (Steward, Curator, Reviewer, Arbitrator, Audit, Matcher, researcher) are pointed by the claim's `domains`: the Extractor emits a prior, a new subclaim inherits its parent's tags, and the Steward's `set_claim_domains` is the authoritative call. The Reviewer and Arbitrator reach the claim through the contribution; Audit takes the union over the claims in the decisions under review. The task message names the skills the domains point to; it does not load them.
 - Mandate-scoped runs (the Grantmaker's conversation, planner and review passes, and its lookouts) are pointed by the mandate's `skills`. Funding never points an agent that writes to the graph to a skill (§19).
-- The Extractor is the exception: it makes one structured call with no tools, so it has no turn in which to load anything, and every skill's Extractor section is spliced into its prompt so it can tag.
+- The Extractor is the exception: every skill's Extractor section is spliced into its prompt. It records claims with tool calls (record_claims, then finish_extraction), but its domain tags are a choice among all the domains at once, made while it reads, so it carries them all rather than loading any.
 
 **Precedence** follows the rule stated above for role prompts: where a skill appears to diverge from the constitution or the role, the constitution wins, the role wins, and the skill is defective. A skill may refine how a role's obligations apply and may add procedures and tools; it may never remove an obligation. A conflict between two skills a run loads is a defect to fix in the texts.
 

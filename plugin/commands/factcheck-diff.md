@@ -23,7 +23,9 @@ Base ref (optional): `$ARGUMENTS`
    assess code as if it were claims.
 3. Concatenate the added prose (grouped per file) and run it through
    `assess_text` (Minerval MCP; metered — one call per file or chunk, staying
-   under the tool's size limit). Claims are scarce relative to text; most
+   under the tool's size limit). Each call returns a `job_id`; read the
+   verdicts with `get_text_analysis` until its `status` is `complete` or
+   `failed`. Claims are scarce relative to text; most
    lines will yield none, and that is the expected result, not a failure.
 4. Interpret verdicts as in `/minerval:check`: verdicts come from the graph's
    assessments, `stance: denies` inverts the reading, `unknown`/`unassessed`

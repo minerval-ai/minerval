@@ -28,7 +28,11 @@ skill bundles it in full, and the section numbers below point into it.
   little surrounding context). Returns the canonical claim it states or
   denies, plus its current assessment. Metered.
 - **A passage or document**: `assess_text`. Extracts the checkable claims
-  and returns a verdict per claim. Metered; cap `max_claims` sensibly.
+  and judges each, in the background: it returns a `job_id` at once. Read the
+  verdicts with `get_text_analysis` every 20 to 30 seconds until `status` is
+  `complete` (each judgment appears as it is made; a long passage takes
+  minutes) or `failed`. Never start the same passage twice to hurry it.
+  Metered; cap `max_claims` sensibly. `extract_claims` works the same way.
 - **Just looking**: `search_claims` / `get_claim` / `get_decomposition` are
   free reads: search the graph, fetch a claim's assessment, or see its
   subclaim tree with unsettled-vs-settled structure.
