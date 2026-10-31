@@ -15,10 +15,13 @@ Input: `$ARGUMENTS`
    check its prose. If it is inline text, check that. If it is empty, ask what
    to check.
 2. Run the passage through the `assess_text` tool (Minerval MCP). It extracts
-   the passage's disputable claims, matches each into the graph, and returns
-   per-claim verdicts from the graph's pre-computed assessments. For passages
-   over ~40k characters, chunk on section boundaries and assess each chunk.
-   This is a metered call attributed to the user's Minerval account.
+   the passage's disputable claims, matches each into the graph, and judges
+   each from the graph's pre-computed assessments, in the background: it
+   returns a `job_id` at once. Read the per-claim verdicts with
+   `get_text_analysis` every 20 to 30 seconds until `status` is `complete`
+   (or `failed`, with the reason). For passages over ~40k characters, chunk
+   on section boundaries and assess each chunk. This is a metered call
+   attributed to the user's Minerval account.
 3. Interpret each judgment carefully:
    - The `verdict` comes from the graph: `verified`, `supported`,
      `inconclusive`, `doubtful`, `contradicted`, `unknown` — or `unassessed`

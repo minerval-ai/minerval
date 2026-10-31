@@ -33,7 +33,7 @@ cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
-    "additionalContext": "Minerval fact-check (opt-in hook): you just wrote prose to ${file_path}. If the new text asserts disputable facts about the world, run it through the Minerval MCP tool assess_text and warn the user about any claim the graph holds as contradicted or doubtful with high confidence (respect stance: 'denies' inverts the reading). Be conservative: surface only egregious problems, cite each flagged claim's page_url, and stay silent if the text asserts nothing checkable — do not re-check text you already checked this session."
+    "additionalContext": "Minerval fact-check (opt-in hook): you just wrote prose to ${file_path}. If the new text asserts disputable facts about the world, run it through the Minerval MCP tool assess_text (it returns a job_id; read the verdicts with get_text_analysis until status is complete) and warn the user about any claim the graph holds as contradicted or doubtful with high confidence (respect stance: 'denies' inverts the reading). Be conservative: surface only egregious problems, cite each flagged claim's page_url, and stay silent if the text asserts nothing checkable — do not re-check text you already checked this session."
   }
 }
 EOF

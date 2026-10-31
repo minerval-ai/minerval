@@ -782,7 +782,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Claims worth minting are scarce " +
         "relative to text, so most sentences yield none. Runs a model: metered to your " +
         "account and quota-gated." +
-        RUNS_IN_BACKGROUND,
+        RUNS_IN_BACKGROUND +
+        " While it runs, the result holds the claims recorded so far.",
       inputSchema: {
         text: z.string().min(1).max(100_000).describe("The text to extract from"),
         source_type: z
@@ -799,11 +800,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "text_analysis",
         "extract_claims",
         { text_chars: text.length, source_type: source_type ?? null, max_claims },
-        async () => ({
+        async (progress) => ({
           claims: await extractClaims({
             content: text,
             sourceType: source_type,
             maxClaims: max_claims,
+            // Each claim is readable as soon as the Extractor records it.
+            onClaims: (claims) => {
+              void progress({ claims }).catch(() => {
+                // Progress is a view of the work; a missed write loses nothing.
+              });
+            },
           }),
         })
       )

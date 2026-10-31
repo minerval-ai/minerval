@@ -99,9 +99,11 @@ export MINERVAL_FACTCHECK_HOOK=1
 
 Tool tiers mirror the API (see [docs/mcp.md](../docs/mcp.md)): reads
 (`search_claims`, `get_claim`, `get_decomposition`,
-`get_contribution_status`) are free; agentic calls (`match_claim`,
-`extract_claims`, `assess_text`) run models and spend owls from your balance
-(capped per call, settled to metered cost); `submit_contribution` is free for
+`get_contribution_status`, `get_text_analysis`) are free; agentic calls
+(`match_claim`, `extract_claims`, `assess_text`) run models and spend owls
+from your balance (capped per call, settled to metered cost), and the last
+two run in the background, answered with a `job_id` that `get_text_analysis`
+reads; `submit_contribution` is free for
 good-faith contributors and goes through the contribution review pipeline and
 reputation rules. The server also carries a tool for every other REST route
 an account can call (proposing claims, submitting sources, appeals, ordering

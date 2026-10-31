@@ -17,13 +17,17 @@ presented as one.
 
 ## Tools
 
-Use only the Minerval MCP tools for judgments (`assess_text`, `match_claim`,
-`search_claims`, `get_claim`, `get_decomposition`), plus local file reads when
+Use only the Minerval MCP tools for judgments (`assess_text` with
+`get_text_analysis`, `match_claim`, `search_claims`, `get_claim`,
+`get_decomposition`), plus local file reads when
 the target is a file or diff. Do not search the web, and do not substitute
 your own knowledge where the graph is silent — silence is a finding, not a gap
 to fill.
 
 - Whole passages → `assess_text` (chunk long documents on section boundaries).
+  It answers with a `job_id`, not the verdicts: read them with
+  `get_text_analysis` every 20 to 30 seconds until `status` is `complete` or
+  `failed`. Start every chunk first, then read them; each runs on its own.
 - A single assertion → `match_claim`, then `get_claim`/`get_decomposition`
   for the full picture.
 - `assess_text` and `match_claim` run models and are metered to the user's
