@@ -287,8 +287,12 @@ export async function spawnFundedMandate(input: {
   owls: number;
   note?: string;
 }): Promise<SpawnMandateResult> {
-  const [source] = await rawQuery<{ id: string; funder_user_id: string }>(
-    `SELECT id, funder_user_id FROM grants WHERE id = $1 AND status = 'active'`,
+  const [source] = await rawQuery<{
+    id: string;
+    funder_user_id: string;
+    mandate: { funder_named?: boolean; funder_stake?: string | null } | null;
+  }>(
+    `SELECT id, funder_user_id, mandate FROM grants WHERE id = $1 AND status = 'active'`,
     [input.fromGrantId]
   );
   if (!source) {
@@ -314,6 +318,10 @@ export async function spawnFundedMandate(input: {
     plan: null,
     expected_cost_owls: input.owls,
     notes: input.note ?? null,
+    // Its money is the source mandate's, so its funder disclosure is too.
+    ...(source.mandate?.funder_named !== undefined
+      ? { funder_named: source.mandate.funder_named, funder_stake: source.mandate.funder_stake ?? null }
+      : {}),
   };
   const [grant] = await rawQuery<{ id: string }>(
     `INSERT INTO grants

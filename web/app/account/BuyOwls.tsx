@@ -12,7 +12,7 @@ function packPrice(cents: number): string {
 // Client island mirroring KeyCreator: pick a pack, hand off to Stripe-hosted
 // Checkout (the action redirects on success, so this only ever renders again
 // on error). Discounts come from the API — never re-derived here.
-export function BuyOwls({ packs }: { packs: OwlPack[] }) {
+export function BuyOwls({ packs, returnTo }: { packs: OwlPack[]; returnTo?: string | null }) {
   const [state, formAction, pending] = useActionState<BuyOwlsState, FormData>(
     buyOwlsAction,
     {}
@@ -21,6 +21,7 @@ export function BuyOwls({ packs }: { packs: OwlPack[] }) {
   return (
     <div>
       <form action={formAction} className="owl-packs">
+        {returnTo && <input type="hidden" name="return_to" value={returnTo} />}
         {packs.map((pack) => (
           <button
             key={pack.id}

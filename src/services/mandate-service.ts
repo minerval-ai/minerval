@@ -37,7 +37,14 @@ export interface MandateSummary {
   objective: string | null;
   is_platform: boolean;
   status: string;
+  /** Who funds it, as its page shows them (see funderDisclosure). */
   manager: string;
+  /**
+   * The funder's disclosure (docs/allocation.md, "Who funds a mandate"):
+   * whether they are named, and the stake they declared in its subject.
+   * `declared` is false for a mandate funded before funders were asked.
+   */
+  funder: { shown_as: string; named: boolean; declared: boolean; stake: string | null };
   budget_owls: number;
   spent_owls: number;
   contributor_count: number;
@@ -83,6 +90,32 @@ function actionMix(plan: GrantRow["plan"]): Record<string, number> {
   return mix;
 }
 
+/**
+ * How a mandate's funder is shown. The platform is Minerval. A funder who
+ * chose not to be named is "an anonymous funder", or "a reader" for a
+ * decomposition (one reader buying depth on one claim); their stake, if
+ * they declared one, is shown either way. A mandate funded before funders
+ * were asked shows its funder's display name, as it always did.
+ */
+export function funderDisclosure(row: {
+  is_platform: boolean;
+  manager_name: string;
+  mandate: GrantMandate | null;
+}): MandateSummary["funder"] {
+  const m = row.mandate;
+  const declared = m?.funder_named !== undefined;
+  const named = row.is_platform || !declared || m!.funder_named === true;
+  const shown_as = row.is_platform
+    ? "Minerval"
+    : named
+      ? row.manager_name
+      : m?.origin === "deep_decomposition"
+        ? "a reader"
+        : "an anonymous funder";
+  const stake = m?.funder_stake?.trim() || null;
+  return { shown_as, named, declared, stake };
+}
+
 async function summarize(row: GrantRow): Promise<MandateSummary> {
   // A mandate's spend is what its runs metered directly to its job PLUS
   // its consumed shares of co-funded actions (the allocation engine).
@@ -98,7 +131,8 @@ async function summarize(row: GrantRow): Promise<MandateSummary> {
     objective: row.mandate?.objective ?? null,
     is_platform: row.is_platform,
     status: row.status,
-    manager: row.is_platform ? "Minerval" : row.manager_name,
+    manager: funderDisclosure(row).shown_as,
+    funder: funderDisclosure(row),
     budget_owls: microUsdToOwls(Number(row.budget_micro_usd)),
     spent_owls: microUsdToOwls(
       Math.min(spent, Number(row.budget_micro_usd))
@@ -281,7 +315,11 @@ export async function getPublicMandate(
   );
   if (!row) return null;
   // Pre-funding conversations are private; a mandate is public once live.
-  if (!["active", "completed", "cancelled"].includes(row.status)) return null;
+  // A decomposition is funded the moment it is bought, so it is public
+  // while its plan is drafted too.
+  const live = ["active", "completed", "cancelled"].includes(row.status) ||
+    (row.status === "planning" && row.mandate?.origin === "deep_decomposition");
+  if (!live) return null;
 
   const summary = await summarize(row);
   const contributions = await getJobContributions(row.budget_job_id);
@@ -351,8 +389,8 @@ export async function getPublicMandate(
     plan_items: items,
     contributors: contributions.map((c) => ({
       name:
-        row.is_platform && c.userId === row.funder_user_id
-          ? "Minerval"
+        c.userId === row.funder_user_id
+          ? funderDisclosure(row).shown_as
           : (nameOf.get(c.userId) ?? "a Minerval user"),
       owls: microUsdToOwls(c.heldMicroUsd),
       is_manager: c.userId === row.funder_user_id,

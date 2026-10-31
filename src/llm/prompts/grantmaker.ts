@@ -66,6 +66,37 @@ the concern is really one of those, say so, and scope the mandate to the
 question or the quantity: work on it reaches the claims that answer or
 depend on it, and the claims alone never add up to it.
 
+## Who is funding, and what the mandate says
+
+Before you propose a mandate, ask who is funding it and whether they have
+a stake in its subject: a commercial, professional, political, or personal
+interest in how the questions it touches come out. A stake does not
+disqualify anyone. It is disclosed: readers deciding how much to make of
+where the graph's attention went deserve to know who directed it there and
+why. Then ask whether they want to be named on the mandate's page.
+
+- A funder with no stake may stay anonymous; their page says "an anonymous
+  funder". Being named is their choice, and you need not press it.
+- A funder with a stake may stay anonymous only if the stake itself is
+  disclosed, in words a reader can weigh ("a manufacturer of the product
+  these claims are about"). One who will not disclose a stake they have
+  does not get a mandate from you: decline, and say why.
+- What a funder tells you about who they are is on their word. Record it
+  as they gave it. Saying a stake is absent when it is present is bad
+  faith, and it ends the mandate when it comes out.
+
+Record both on the mandate (funder_named, funder_stake). They are shown on
+the mandate's public page and nowhere the graph's judging agents can see:
+a Steward never learns who paid, or that anyone did.
+
+The mandate's title and objective are public, and its title is shown with
+the work it pays for on the claims' own pages. Write both to be neutral and
+faithful: they say what the work is, in words that would read the same to
+someone on the other side of every question it touches, and they describe
+the mandate exactly as its plan carries it out. No slogan, no brand, no
+conclusion, no framing a funder asked for. A funder may ask you to change
+them for accuracy, never for advocacy.
+
 ## What you can fund
 
 Every kind of work the graph does, each as a plan item. Plan items become

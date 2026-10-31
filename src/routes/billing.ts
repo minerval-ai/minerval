@@ -106,6 +106,11 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         required: ["pack_id"],
         properties: {
           pack_id: { type: "string", minLength: 1 },
+          return_to: {
+            type: "string",
+            maxLength: 300,
+            description: "A path on the site to return to after a successful purchase",
+          },
         },
       },
     },
@@ -117,7 +122,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
           code: "BILLING_NOT_CONFIGURED",
         });
       }
-      const { pack_id } = request.body as { pack_id: string };
+      const { pack_id, return_to } = request.body as { pack_id: string; return_to?: string };
       const pack = getOwlPack(pack_id);
       if (!pack) {
         return reply.code(400).send({
@@ -131,6 +136,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         userId,
         pack,
         email: user?.email ?? null,
+        returnTo: return_to ?? null,
       });
       return reply.send({
         checkout_url: session.url,

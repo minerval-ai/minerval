@@ -49,7 +49,12 @@ export type FundJobResult =
   | { ok: true; job: BudgetJob }
   | { ok: false; code: "INSUFFICIENT_OWLS" | "CLAIM_NOT_FOUND"; message: string };
 
-/** Create and fund a deep-decomposition job on a claim. */
+/**
+ * Create and fund a deep-decomposition job on a claim. No route creates
+ * these any more: a decomposition is now a mandate
+ * (claim-mandate-service.ts). Jobs already funded run to completion on the
+ * budget-job worker, under the terms they were funded on.
+ */
 export async function createDeepDecompositionJob(input: {
   userId: string;
   claimId: string;

@@ -35,9 +35,10 @@ import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { allocateToClaimAssessment } from "../services/allocation-service.js";
 import { createOrder, serializeOrder } from "../services/order-service.js";
 import {
-  createDeepDecompositionJob,
-  serializeBudgetJob,
-} from "../services/budget-job-service.js";
+  createClaimMandate,
+  GRANTMAKER_SHARE,
+  MIN_DECOMPOSITION_OWLS,
+} from "../services/claim-mandate-service.js";
 import { getFundingLabelForJob } from "../services/grant-service.js";
 import { emptyClaimExtras, loadClaimExtras } from "../services/claim-extras-service.js";
 import { leanChecksByArgument } from "../services/formalization-service.js";
@@ -525,6 +526,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             (response.assessment as Record<string, unknown>).funding = {
               type: funding.type,
               label: funding.label,
+              ...(funding.mandate ? { mandate: funding.mandate } : {}),
             };
           }
         }
@@ -1403,17 +1405,19 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  // POST /claims/:claim_id/decompose — fund a deep-decomposition budget job.
-  // Open-ended work gets a BUDGET, not a price: the owls escrow now (that is
-  // the act of funding), the job meters real model spend against them, pauses
-  // for top-up at the floor, and refunds whatever it doesn't use.
+  // POST /claims/:claim_id/decompose — fund a decomposition of this claim:
+  // a mandate on it (claim-mandate-service.ts). The owls escrow now (that
+  // is the act of funding); its Grantmaker plans the work, opening with a
+  // fresh pass on the claim, and the plan runs on the ledger. Its own
+  // passes share a tenth of the budget; unspent budget refunds.
   app.post<{ Params: { claim_id: string }; Body: { budget_owls: number } }>(
     "/:claim_id/decompose",
     {
       schema: {
-        tags: ["budget-jobs"],
+        tags: ["claims"],
         summary:
-          "Fund deep decomposition of this claim's subtree with an owl budget",
+          "Fund a decomposition of this claim: a mandate that reassesses it, then " +
+          "decomposes and assesses what bears on it, within an owl budget (5 owls or more)",
         params: {
           type: "object",
           properties: { claim_id: { type: "string", format: "uuid" } },
@@ -1422,25 +1426,28 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           type: "object",
           required: ["budget_owls"],
           properties: {
-            budget_owls: { type: "number", exclusiveMinimum: 0 },
+            budget_owls: { type: "number", minimum: MIN_DECOMPOSITION_OWLS },
           },
         },
       },
       preHandler: [app.authenticate, app.requireUser],
       handler: async (request, reply) => {
-        const result = await createDeepDecompositionJob({
+        const result = await createClaimMandate({
           userId: request.auth!.userId!,
           claimId: request.params.claim_id,
           budgetOwls: request.body.budget_owls,
         });
         if (!result.ok) {
           return reply
-            .code(result.code === "CLAIM_NOT_FOUND" ? 404 : 402)
+            .code(result.code === "CLAIM_NOT_FOUND" ? 404 : result.code === "INSUFFICIENT_OWLS" ? 402 : 400)
             .send({ error: result.message, code: result.code });
         }
-        return reply
-          .code(201)
-          .send({ job: await serializeBudgetJob(result.job) });
+        return reply.code(201).send({
+          mandate_id: result.grantId,
+          budget_owls: request.body.budget_owls,
+          grantmaker_share_owls:
+            Math.round(request.body.budget_owls * GRANTMAKER_SHARE * 1000) / 1000,
+        });
       },
     }
   );

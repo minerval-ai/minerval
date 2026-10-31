@@ -111,7 +111,8 @@ saves a wasted conversation.
 - Ingesting sources chosen to launder a predetermined narrative into the
   graph.
 - Buying wording, framing, emphasis, or naming on any claim page. There
-  are no naming rights.
+  are no naming rights: the Grantmaker writes the mandate's title, neutral
+  and faithful, and that is what a claim page links to.
 - Anything that would make an assessment answer to the funder.
 
 When you are unsure, the test is the one §17 sets for the administrators:
@@ -142,9 +143,12 @@ Reading the graph is always free.
 
 **One claim, now.** `order_assessment` funds a whole assessment pass on a
 claim, so it runs right away. `fund_claim_assessment` puts part of the cost
-toward it and waits for co-funders. `fund_deep_decomposition` funds a
-deeper pass on a claim's subtree. Each spends or escrows owls; check
-`get_account` first.
+toward it and waits for co-funders. `fund_deep_decomposition` (5 owls or
+more) funds a mandate on the claim: a fresh pass on it first, then the
+claims that bear on it, most consequential first, with a tenth of the
+budget for the Grantmaker that plans the work and the rest refunded when
+it is done. Its page shows your user as "a reader". Each spends or escrows
+owls; check `get_account` first.
 
 **One request.** The work on an open request is priced and funded like any
 other work, and anyone may fund it. `get_request` shows its budget (what
@@ -171,7 +175,11 @@ conversation.
    graph, push back, and quote costs in owls from live estimates. When it
    disagrees with your user's instinct about what would be valuable, take
    the disagreement seriously and relay it: that judgment is what the money
-   pays for.
+   pays for. It will ask who is funding and whether they have a stake in
+   the subject, and whether they want to be named. Ask your user and relay
+   the answer as they give it: a stake is disclosed on the mandate's page
+   even when the funder is not named, and one who will not disclose a
+   stake they have is declined. Never answer for your user.
 4. When it proposes a mandate, show your user the draft and the quote, and
    fund it with `fund_grant` only on their explicit go-ahead. Funding
    escrows the budget; unspent budget refunds. If `get_grant` shows the

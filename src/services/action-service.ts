@@ -392,19 +392,24 @@ export async function reconcileActions(): Promise<{
 
   // Ingest + planning + valuation actions from live grants.
   const grants = await rawQuery<PlanGrantRow>(
-    `SELECT id, name, status, policy, plan, plan_cursor FROM grants
+    `SELECT id, name, status, policy, plan, plan_cursor, mandate FROM grants
       WHERE status IN ('active', 'planning')`
   );
   const ctx = newMaterializeContext();
   let plansFailed = 0;
   for (const g of grants) {
+    // A mandate whose Grantmaker passes have a share of the budget of their
+    // own (a decomposition: claim-mandate-service.ts) budgets each pass from
+    // what the share has left, and opens no review once it is spent.
+    const share = await grantmakerShareLeftMicroUsd(g);
     if (g.status === "planning") {
       await rawQuery(
         `INSERT INTO actions
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
          VALUES ('grant_planning', $1, 'standard', $2, $3, $4)
          ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', updated_at = now()
+           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               updated_at = now()
            -- A grant still in 'planning' with a closed planning action
            -- wants a fresh run (a failed write, a pushed-back plan).
            WHERE actions.status NOT IN ('open', 'running')`,
@@ -412,7 +417,8 @@ export async function reconcileActions(): Promise<{
           PLANNING_GROUP(g.id),
           g.id,
           `Planning run for the mandate "${g.name}"`,
-          capMicroUsd("assessment"),
+          // The opening plan takes half the share; the reviews the rest.
+          share ? Math.max(1, Math.round(share.totalMicroUsd / 2)) : capMicroUsd("assessment"),
         ]
       );
     }
@@ -425,20 +431,27 @@ export async function reconcileActions(): Promise<{
     // accumulates, and it has the same pacing, regranting and scope
     // decisions to make as any other. Exempting it left the platform's own
     // lane as the one mandate no agent was ever asked to think about.
-    if (g.status === "active") {
+    if (g.status === "active" && share && share.leftMicroUsd <= 0) {
+      await rawQuery(
+        `UPDATE actions SET status = 'cancelled', updated_at = now()
+          WHERE exclusion_group = $1 AND status = 'open'`,
+        [REVIEW_GROUP(g.id)]
+      );
+    } else if (g.status === "active") {
       await rawQuery(
         `INSERT INTO actions
            (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
          VALUES ('mandate_review', $1, 'standard', $2, $3, $4)
          ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', updated_at = now()
+           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+               updated_at = now()
            WHERE actions.status IN ('done', 'superseded', 'cancelled')
              AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
         [
           REVIEW_GROUP(g.id),
           g.id,
           `Mandate review for "${g.name}"`,
-          capMicroUsd("assessment"),
+          share ? Math.max(1, Math.round(share.leftMicroUsd)) : capMicroUsd("assessment"),
         ]
       );
     }
@@ -817,6 +830,31 @@ export interface PlanGrantRow {
   policy: string;
   plan: { strategy?: string; items?: MaterializablePlanItem[] } | null;
   plan_cursor: number;
+  mandate?: { grantmaker_share_owls?: number | null } | null;
+}
+
+/**
+ * For a mandate whose Grantmaker passes have a share of the budget of
+ * their own (`mandate.grantmaker_share_owls`, a decomposition's tenth):
+ * the share and what is left of it after the planning and review passes
+ * metered so far. Null for every other mandate, whose passes are funded
+ * out of its day like the rest of its work.
+ */
+export async function grantmakerShareLeftMicroUsd(g: {
+  id: string;
+  mandate?: { grantmaker_share_owls?: number | null } | null;
+}): Promise<{ totalMicroUsd: number; leftMicroUsd: number } | null> {
+  const owls = Number(g.mandate?.grantmaker_share_owls ?? 0);
+  if (!(owls > 0)) return null;
+  const totalMicroUsd = Math.round(owls * (loadConfig().owlCostMicroUsd ?? 1_000_000));
+  const [row] = await rawQuery<{ spent: string }>(
+    `SELECT COALESCE(SUM(metered_cost_micro_usd), 0)::bigint AS spent
+       FROM actions
+      WHERE kind IN ('grant_planning', 'mandate_review') AND target_ref = $1
+        AND status = 'done'`,
+    [g.id]
+  );
+  return { totalMicroUsd, leftMicroUsd: totalMicroUsd - Number(row?.spent ?? 0) };
 }
 
 export interface PlanItemOutcome {

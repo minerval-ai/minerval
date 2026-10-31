@@ -80,6 +80,19 @@ export interface GrantMandate {
    * agents that write to the graph take their skills from the claim.
    */
   skills?: string[];
+  /**
+   * Who funds it (docs/allocation.md, "Who funds a mandate"), asked by the
+   * Grantmaker and shown on the mandate's page, never to the agents that
+   * judge: whether the funder is named there, and the stake they declared
+   * in its subject (null for none). Absent on mandates funded before
+   * funders were asked.
+   */
+  funder_named?: boolean;
+  funder_stake?: string | null;
+  /** "deep_decomposition" for a mandate bought on one claim (claim-mandate-service.ts). */
+  origin?: string;
+  /** The part of the budget its Grantmaker passes may spend, when it has one. */
+  grantmaker_share_owls?: number;
 }
 
 export interface GrantmakerTurnResult {
@@ -94,12 +107,28 @@ const MANDATE_SCHEMA = {
     title: {
       type: "string",
       description:
-        "Your working title for the funder's dashboard. Never shown on " +
-        "claim pages.",
+        "The mandate's public title, shown on its page and with the work it " +
+        "pays for on claim pages: neutral and faithful, what the work is, in " +
+        "words that read the same to every side of the questions it touches.",
     },
     objective: {
       type: "string",
-      description: "One paragraph: what this mandate is for, in plain terms.",
+      description:
+        "One paragraph: what this mandate is for, in plain terms, as neutral " +
+        "and faithful as the title.",
+    },
+    funder_named: {
+      type: "boolean",
+      description:
+        "Whether the funder chose to be named on the mandate's page; false " +
+        "shows them as an anonymous funder.",
+    },
+    funder_stake: {
+      type: "string",
+      description:
+        "The stake the funder declared in the mandate's subject, in words a " +
+        "reader can weigh, or \"none\" when they declared none. Shown on the " +
+        "mandate's page whether or not the funder is named.",
     },
     scope_claim_id: {
       type: "string",
@@ -154,7 +183,7 @@ const MANDATE_SCHEMA = {
         "never by the mandate.",
     },
   },
-  required: ["title", "objective", "plan", "expected_cost_owls"],
+  required: ["title", "objective", "funder_named", "funder_stake", "plan", "expected_cost_owls"],
 };
 
 const UUID_RE =
@@ -171,6 +200,12 @@ export function validateMandate(raw: GrantMandate): string | null {
     }
   }
   if (!raw.title?.trim()) return "title is required";
+  if (typeof raw.funder_named !== "boolean") {
+    return "funder_named is required: ask the funder whether they want to be named on the mandate's page";
+  }
+  if (typeof raw.funder_stake !== "string" || !raw.funder_stake.trim()) {
+    return 'funder_stake is required: ask the funder about any stake in the subject, and record it or "none"';
+  }
   if (!raw.objective?.trim()) return "objective is required";
   if (!raw.plan?.items?.length) return "the plan needs at least one item";
   if (!(raw.expected_cost_owls > 0)) {
@@ -610,6 +645,10 @@ async function runGrantmakerTurnImpl(input: {
           scope_query: raw.scope_query || null,
           plan: raw.plan,
           expected_cost_owls: raw.expected_cost_owls,
+          funder_named: raw.funder_named,
+          funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
+            ? null
+            : String(raw.funder_stake).trim().slice(0, 500),
           ...(raw.notes ? { notes: String(raw.notes) } : {}),
           ...(raw.skills && raw.skills.length > 0
             ? { skills: [...new Set(raw.skills.map(String))].sort() }
@@ -1072,6 +1111,8 @@ export async function executeManagementTool(
       objective: "x",
       plan: { strategy: "x", items },
       expected_cost_owls: 1,
+      funder_named: true,
+      funder_stake: "none",
     };
     const problem = validateMandate(probe);
     if (problem) return JSON.stringify({ success: false, problem });

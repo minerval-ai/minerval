@@ -71,9 +71,12 @@ export async function buyOwlsAction(
   if (!session?.externalId) return { error: "Not signed in." };
   const packId = String(formData.get("pack_id") ?? "");
   if (!packId) return { error: "Pick a pack." };
+  // Where to come back to once paid (the claim being funded); the API
+  // honours only a same-site path.
+  const returnTo = String(formData.get("return_to") ?? "") || null;
   let checkoutUrl: string;
   try {
-    checkoutUrl = await createOwlPackCheckout(session.externalId, packId);
+    checkoutUrl = await createOwlPackCheckout(session.externalId, packId, returnTo);
   } catch (err) {
     const message =
       err instanceof AccountApiError

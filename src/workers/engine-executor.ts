@@ -98,6 +98,7 @@ import {
   completeAction,
   closeRequestActions,
   ensureCurateAction,
+  grantmakerShareLeftMicroUsd,
   ensureRequestActions,
   largestActionFunder,
   nextRunnableAction,
@@ -333,6 +334,35 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
       error: msg,
     };
   }
+}
+
+/**
+ * A decomposition's plan opens with a pass on its claim: a reassessment
+ * when the claim has been assessed, else its first (the item's kind is
+ * resolved when it materializes). Prepended unless the Grantmaker already
+ * put one first.
+ */
+function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: string }> }>(
+  plan: P,
+  claimId: string | null
+): P {
+  if (!claimId) return plan;
+  const items = plan.items ?? [];
+  const first = items[0];
+  if (first && first.claim_id === claimId && ["assess", "reassess", "deepen"].includes(first.action)) {
+    return plan;
+  }
+  return {
+    ...plan,
+    items: [
+      {
+        action: "reassess",
+        claim_id: claimId,
+        rationale: "The claim this decomposition was funded for: a fresh pass on it comes first.",
+      },
+      ...items,
+    ],
+  };
 }
 
 /**
@@ -933,9 +963,10 @@ async function runGrantAgentAction(
     scope_query: string | null;
     status: string;
     budget_micro_usd: number;
+    mandate: { origin?: string; grantmaker_share_owls?: number | null } | null;
   }>(
     `SELECT g.id, g.funder_user_id, g.budget_job_id, g.name,
-            g.scope_claim_id, g.scope_query, g.status, j.budget_micro_usd
+            g.scope_claim_id, g.scope_query, g.status, j.budget_micro_usd, g.mandate
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1`,
     [grantId]
@@ -955,16 +986,21 @@ async function runGrantAgentAction(
       () =>
         withPassBudget(actionBudget(action, "the mandate's allocation for this pass"), async () => {
           if (action.kind === "grant_planning") {
-            const plan = await runGrantor({
+            let plan = await runGrantor({
               grantId: grant.id,
               model: opts.model,
             });
+            // A decomposition (claim-mandate-service.ts) was approved when
+            // it was paid for: its plan runs as drafted, and always opens
+            // with a fresh pass on the claim it is about.
+            const decomposition = grant.mandate?.origin === "deep_decomposition";
+            if (decomposition) plan = withOpeningPass(plan, grant.scope_claim_id);
             await rawQuery(
               `UPDATE grants
-                  SET plan = $2::jsonb, status = 'pending_approval',
+                  SET plan = $2::jsonb, status = $3,
                       plan_cursor = 0, updated_at = now()
                 WHERE id = $1 AND status = 'planning'`,
-              [grant.id, JSON.stringify(plan)]
+              [grant.id, JSON.stringify(plan), decomposition ? "active" : "pending_approval"]
             );
           } else {
             const review = await runMandateReview({
@@ -984,10 +1020,19 @@ async function runGrantAgentAction(
         }`
       )
     );
-    if (continueRequested) {
+    // A mandate whose passes have a share of their own reopens a review only
+    // while the share holds something.
+    const share = await grantmakerShareLeftMicroUsd(grant).catch(() => null);
+    if (continueRequested && (!share || share.leftMicroUsd > 0)) {
       // The agent judged one pass wasn't enough: reopen its review action
       // so the next drain iteration funds and runs another out of the
       // mandate's day (fundGrantSelfActions).
+      if (share) {
+        await rawQuery(`UPDATE actions SET cost_est_micro_usd = $2 WHERE id = $1`, [
+          action.id,
+          Math.max(1, Math.round(share.leftMicroUsd)),
+        ]).catch(() => {});
+      }
       await rawQuery(
         `UPDATE actions SET status = 'open', updated_at = now()
           WHERE id = $1 AND status = 'done'`,
