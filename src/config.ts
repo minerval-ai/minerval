@@ -319,11 +319,13 @@ const configSchema = z.object({
   // obvious non-claims ("i am"), not a quality judgment — judging claim
   // well-formedness belongs to agents (the intake reviewer, the Steward),
   // per the constitution's "Judgment over Mechanism". 0 disables.
-  // Output budget for one extraction call. A document's claims fit in far
-  // less, but a reasoning model that writes its thinking into the same
-  // budget (GLM 5.3 Flash did, see OPENROUTER_MODELS) can exhaust 16k on a
-  // long post before the structured list is emitted, and the whole source
-  // then fails to extract. Raise it for such a model; the tokens are billed.
+  // Output allowance for one turn of the Extractor's loop. The Extractor
+  // records claims with tool calls across as many turns as it needs, so
+  // this no longer bounds a document's extraction: a turn cut off here keeps
+  // what it recorded and carries on. Thinking draws on the same allowance
+  // (GLM 5.3 Flash spent 16k on a long post before emitting anything, when
+  // extraction was one structured call), so raise it for a model that
+  // thinks at length; the tokens are billed.
   extractionMaxTokens: z.coerce.number().int().min(1024).default(16384),
   extractionMinConfidence: z.coerce.number().default(0.3),
   // Importance prior for user-proposed claims admitted through intake review

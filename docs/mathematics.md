@@ -478,8 +478,8 @@ under 600 lines; only recognized H2s; no em-dashes; no time-sensitive text.
 > it. A skill's tools are in the role's toolset whether or not it is
 > loaded. The money triggers still run only on a claim whose domains point
 > to a skill declaring their tools, a check on what the claim is about. The
-> Extractor, which makes one structured call with no tools, still has its
-> sections spliced. `skills/README.md` is the current account.
+> Extractor, whose domain tags are a choice among all the domains at once,
+> still has its sections spliced. `skills/README.md` is the current account.
 
 
 `src/llm/prompts/skills.ts` loads `skills/<name>/SKILL.md` the way

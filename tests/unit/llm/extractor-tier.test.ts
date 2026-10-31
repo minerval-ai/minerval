@@ -47,19 +47,43 @@ const claim = (text: string) => ({
   context: null,
   proposed_canonical_form: text,
   claim_type: "empirical_verifiable",
+  kind: "claim",
   confidence: 0.9,
   importance: 0.5,
   contestation: 0.5,
   source_location: null,
+  domains: [],
 });
 
-vi.mock("../../../src/llm/client.js", () => ({
-  completeStructuredList: vi.fn(async (opts: { model?: string }) => {
-    state.calls.push(opts.model);
-    const err = state.throwOn?.(opts.model);
-    if (err) throw err;
-    return [claim(`from ${opts.model}`), claim("second")];
+vi.mock("../../../src/llm/tools/report-tools.js", () => ({
+  createReportTools: () => ({
+    definitions: [],
+    execute: async () => null,
+    raisedCount: 0,
   }),
+}));
+
+// The Extractor's loop, standing in for a model that records its two claims
+// in one call and then finishes.
+vi.mock("../../../src/llm/client.js", () => ({
+  toolUseLoop: vi.fn(
+    async (opts: {
+      model?: string;
+      beforeTurn?: (turn: number) => void;
+      executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+    }) => {
+      state.calls.push(opts.model);
+      const err = state.throwOn?.(opts.model);
+      if (err) throw err;
+      opts.beforeTurn?.(0);
+      await opts.executeTool("record_claims", {
+        claims: [claim(`from ${opts.model}`), claim("second")],
+      });
+      await opts.executeTool("finish_extraction", {});
+      opts.beforeTurn?.(1);
+      return { stopReason: "tool_use", content: "", toolUses: [] };
+    }
+  ),
 }));
 
 import { extractClaims } from "../../../src/llm/agents/extractor.js";

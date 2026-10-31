@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 11531,
-    "fullChars": 91926,
+    "roleChars": 12118,
+    "fullChars": 92513,
     "skills": [
       {
         "name": "mathematics",

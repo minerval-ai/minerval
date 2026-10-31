@@ -189,7 +189,8 @@ async function extensionChatImpl(input: {
     initialMessages,
     tools: [...getGraphToolDefinitions(), ...reportTools.definitions],
     system: getChatSystemPrompt(),
-    maxTokens: 4096,
+    // No maxTokens: the client default leaves room for the model's thinking,
+    // which draws on the same allowance (4096 did not, on Sonnet 5.5).
     // The chat's budget is the op's cap (withAgenticCharge); the turn cap
     // only halts a loop that has stopped spending.
     maxIterations: RUN_TURN_GUARD,
