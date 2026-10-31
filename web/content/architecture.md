@@ -375,10 +375,19 @@ revise); a negative result or a refusal is a complete outcome. The keeper
 decides when the request is met, and a closed request (met, declined,
 withdrawn, moot) stays closed.
 
-A mandate's Grantmaker can fund the Researcher to take up an open request
-(`fund_request`): the request is the brief, the run writes nothing to the
-graph, and its outcome is recorded as work on the request, after which the
-keeper is asked to judge it. Contributors propose requests, answers and
+The work on a request is a row on the action ledger (kind `request`, group
+`request:<id>`; docs/allocation.md, "Requests on the ledger"). A request
+filed with a budget opens its `full` row at that price; one filed without
+opens a `scope` row, a cheap Researcher pass that returns a quote, which
+becomes the budget and opens the full work. Anyone may fund the row:
+mandates by valuing it, a Grantmaker directly with `fund_request`, readers
+with `POST /requests/:id/contribute`. Once it is covered the engine
+executor runs the Researcher on the request as filed, its ceiling the
+row's funding: the run writes nothing to the graph, its outcome is
+recorded as work on the request, and the keeper is asked to judge it.
+Neither the brief nor what the keeper reads names a funder; the public
+request says the work was funded. A closed request returns its funders'
+unspent money. Contributors propose requests, answers and
 estimates, and offer material for a request, through the Contribution
 Reviewer like any other contribution, and propose a question directly
 (`POST /claims/propose` with `kind: "question"`). Research a Grantmaker

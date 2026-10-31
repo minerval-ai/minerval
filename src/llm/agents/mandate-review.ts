@@ -177,7 +177,11 @@ async function runMandateReviewImpl(input: {
         "missing links) that a Steward, an operator, or the duplicate scan " +
         "flagged; value one in your territory when the structure there " +
         "matters to your mission. An `audit` row is an Audit Agent run; you " +
-        "may help fund one, but never one whose subject is your own mandate.",
+        "may help fund one, but never one whose subject is your own mandate. " +
+        "A `request` row is the Researcher taking up an open request: its " +
+        "`scope` variant is a cheap pass that returns a quote, its `full` " +
+        "variant costs the request's budget; value one by what its outcome " +
+        "could move in your territory, and its cost is what you weigh that against.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -194,6 +198,7 @@ async function runMandateReviewImpl(input: {
               "prize_review",
               "curate",
               "audit",
+              "request",
             ],
           },
           valued_only: { type: "boolean" },

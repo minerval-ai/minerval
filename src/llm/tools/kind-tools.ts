@@ -51,6 +51,7 @@ import {
   fileRequest,
   listRequests,
   reviseRequest,
+  setRequestBudget,
   setRequestState,
   setRequestTargets,
 } from "../../services/request-service.js";
@@ -448,7 +449,10 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
         "satisfied_by: what would satisfy it. A request asks for what would decide the matter " +
         "either way, never a particular result. It bears on nodes (claim_ids), sources " +
         "(source_urls), or something the graph does not hold yet (bears_on_text). Look at the " +
-        "open requests first (list_requests) and join one that asks for the same thing.",
+        "open requests first (list_requests) and join one that asks for the same thing. " +
+        "budget_usd: what doing it should cost, if you can say (the costing skill says how to " +
+        "estimate it); it is the price funders see and bounds the run that takes it up. Leave it " +
+        "out when you cannot, and a cheap scoping pass will quote it before anyone pays for the work.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -460,6 +464,7 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
           claim_ids: { type: "array", items: { type: "string" } },
           source_urls: { type: "array", items: { type: "string" } },
           bears_on_text: { type: "string" },
+          budget_usd: { type: "number", description: "What doing it should cost, in USD; omit to have it scoped first." },
         },
         required: ["ask", "why", "satisfied_by"],
       },
@@ -482,7 +487,9 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
       name: "revise_request",
       description:
         "Sharpen a request you keep: reword what it asks, why, or what would satisfy it, or put " +
-        "it to a party. Keep its sense; a different ask is a different request.",
+        "it to a party. Keep its sense; a different ask is a different request. budget_usd sets " +
+        "what doing it should cost: the full work is priced at it and opens for funding again, " +
+        "so when work came back short, set it to what the rest would take.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -492,6 +499,7 @@ export function getRequestToolDefinitions(role: KindToolContext["role"]): Tool[]
           satisfied_by: { type: "string" },
           who_could: { type: "string" },
           addressed_to: { type: "string" },
+          budget_usd: { type: "number" },
         },
         required: ["request_id"],
       },
@@ -1029,6 +1037,7 @@ async function executeKindToolImpl(
         bearsOnText: optStr(input.bears_on_text) ?? null,
         claimIds,
         sourceIds,
+        budgetUsd: input.budget_usd === undefined ? null : Number(input.budget_usd),
         filer: { kind: "admin", agent: ctx.role, runId: usage.runId ?? null },
       });
       const others = [...new Map(open.map((r) => [r.id, r])).values()];
@@ -1059,7 +1068,9 @@ async function executeKindToolImpl(
           filed_by: r.filed_by,
           bears_on: r.bears_on,
           bears_on_text: r.bears_on_text,
-          work: r.work,
+          // Without funded_by: the agents that judge a request see the work,
+          // never whether it was paid for (the public page discloses that).
+          work: r.work.map(({ funded_by: _funded, ...w }) => w),
         })),
       });
     }
@@ -1068,14 +1079,21 @@ async function executeKindToolImpl(
       const requestId = str(input.request_id);
       const denied = await mayKeep(requestId, ctx);
       if (denied) return refuse(denied);
-      await reviseRequest({
-        requestId,
-        ask: input.ask === undefined ? undefined : str(input.ask),
-        why: input.why === undefined ? undefined : str(input.why),
-        satisfiedBy: input.satisfied_by === undefined ? undefined : str(input.satisfied_by),
-        whoCould: input.who_could === undefined ? undefined : str(input.who_could),
-        addressedTo: input.addressed_to === undefined ? undefined : str(input.addressed_to),
-      });
+      const rewords = ["ask", "why", "satisfied_by", "who_could", "addressed_to"].some((k) => input[k] !== undefined);
+      if (!rewords && input.budget_usd === undefined) return refuse("Nothing to revise.");
+      if (rewords) {
+        await reviseRequest({
+          requestId,
+          ask: input.ask === undefined ? undefined : str(input.ask),
+          why: input.why === undefined ? undefined : str(input.why),
+          satisfiedBy: input.satisfied_by === undefined ? undefined : str(input.satisfied_by),
+          whoCould: input.who_could === undefined ? undefined : str(input.who_could),
+          addressedTo: input.addressed_to === undefined ? undefined : str(input.addressed_to),
+        });
+      }
+      if (input.budget_usd !== undefined) {
+        await setRequestBudget({ requestId, budgetUsd: Number(input.budget_usd) });
+      }
       return ok(`Request ${requestId} revised.`);
     }
 

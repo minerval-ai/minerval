@@ -55,6 +55,91 @@
   },
   "skills": [
     {
+      "name": "costing",
+      "displayName": "Costing",
+      "description": "How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on a budget someone else stated. A method skill: it belongs to no domain and is offered to every role that files, scopes, funds, or reviews requests. Use it when you put a number on work; it does not decide whether the work is worth doing, which is a judgment of value.",
+      "version": 1,
+      "sinceEpoch": "2026-09-domain-skills",
+      "kind": "method",
+      "domains": [],
+      "roles": [
+        {
+          "key": "claim-steward",
+          "sections": [
+            "For every administrator",
+            "For the Grantmaker",
+            "For the Contribution Reviewer and the Dispute Arbitrator"
+          ]
+        },
+        {
+          "key": "audit-agent",
+          "sections": [
+            "For every administrator",
+            "For the Grantmaker",
+            "For the Contribution Reviewer and the Dispute Arbitrator"
+          ]
+        },
+        {
+          "key": "grantmaker",
+          "sections": [
+            "For every administrator",
+            "For the Grantmaker"
+          ]
+        },
+        {
+          "key": "lookout",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "contribution-reviewer",
+          "sections": [
+            "For every administrator",
+            "For the Contribution Reviewer and the Dispute Arbitrator"
+          ]
+        },
+        {
+          "key": "dispute-arbitrator",
+          "sections": [
+            "For every administrator",
+            "For the Contribution Reviewer and the Dispute Arbitrator"
+          ]
+        },
+        {
+          "key": "curator",
+          "sections": [
+            "For every administrator"
+          ]
+        },
+        {
+          "key": "researcher",
+          "sections": [
+            "For every administrator",
+            "For the researcher"
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "cost_sheet",
+          "description": "The live price list for pricing work: what a research run has cost on each model tier, a Steward pass on each tier, a request's scoping pass, and the paid tools' per-call and per-word charges, from the metered costs the platform recorded (falling back to priors where too few runs exist). Each line gives a typical figure and the higher figure a ceiling should use. All figures are USD of metered spend, one owl each. It prices steps; it does not say what work is worth doing.",
+          "roles": [
+            "claim-steward",
+            "curator",
+            "researcher",
+            "contribution-reviewer"
+          ],
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      ],
+      "bodyChars": 5663
+    },
+    {
       "name": "mathematics",
       "displayName": "Mathematics",
       "description": "How the constitution applies to propositions of mathematics: what a mathematical claim is, how proofs are arguments, how the six statuses and credence read for theorems and conjectures, what a machine-checked proof is as evidence, how formal statements are published and checked in Lean 4 against a pinned Mathlib, how the platform's solver and prize program work, and what money may never touch. Applies to claims tagged mathematics and to contributions on them. Does not apply to claims that merely use a number or a model.",

@@ -187,18 +187,19 @@ export async function stewardTierCostEstimates(): Promise<{
 }
 
 /**
- * Expected cost of one `curate` or `audit` run (#363), in micro-USD: the
- * live percentile of the metered cost the ledger itself recorded on
- * completed rows of the kind (`actions.metered_cost_micro_usd`), once
- * enough exist, else the governing policy's prior (`est_curate_cost_owls`,
- * `est_audit_cost_owls`).
+ * Expected cost of one `curate` or `audit` run (#363), or of a request's
+ * scoping pass, in micro-USD: the live percentile of the metered cost the
+ * ledger itself recorded on completed rows of the kind
+ * (`actions.metered_cost_micro_usd`), once enough exist, else the governing
+ * policy's prior (`est_curate_cost_owls`, `est_audit_cost_owls`,
+ * `est_request_scope_cost_owls`).
  *
  * The ledger, not llm_usage, is the series here: one run of either kind is
  * one action, a Curator run's usage rows carry no claim id to group on, and
  * an audit has no claim at all.
  */
 export async function estimateLedgerKindCostMicroUsd(
-  kind: "curate" | "audit"
+  kind: "curate" | "audit" | "request_scope"
 ): Promise<number> {
   const config = loadConfig();
   const windowDays = config.costEstimateWindowDays ?? 14;
@@ -215,9 +216,17 @@ export async function estimateLedgerKindCostMicroUsd(
               percentile_cont($3) WITHIN GROUP (ORDER BY metered_cost_micro_usd)::bigint AS est_cost
          FROM actions
         WHERE kind = $1 AND status = 'done'
+          -- A request's scoping pass is the one request row of a known
+          -- size; its full rows cost whatever each request's budget says.
+          AND ($4::text IS NULL OR variant = $4)
           AND metered_cost_micro_usd IS NOT NULL
           AND updated_at > now() - make_interval(days => $2)`,
-      [kind, windowDays, percentile]
+      [
+        kind === "request_scope" ? "request" : kind,
+        windowDays,
+        percentile,
+        kind === "request_scope" ? "scope" : null,
+      ]
     ).catch(() => []);
     const enough = (row?.runs ?? 0) >= minRuns && row?.est_cost != null;
     live = enough ? Number(row!.est_cost) : null;
@@ -226,6 +235,10 @@ export async function estimateLedgerKindCostMicroUsd(
   if (live != null && live > 0) return live;
   const policy = await getEffectiveAllocationPolicy();
   const priorOwls =
-    kind === "curate" ? policy.est_curate_cost_owls : policy.est_audit_cost_owls;
+    kind === "curate"
+      ? policy.est_curate_cost_owls
+      : kind === "audit"
+        ? policy.est_audit_cost_owls
+        : policy.est_request_scope_cost_owls;
   return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
 }

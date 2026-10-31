@@ -146,6 +146,17 @@ toward it and waits for co-funders. `fund_deep_decomposition` funds a
 deeper pass on a claim's subtree. Each spends or escrows owls; check
 `get_account` first.
 
+**One request.** The work on an open request is priced and funded like any
+other work, and anyone may fund it. `get_request` shows its budget (what
+doing it should cost) and what is already behind it. A request with no
+budget is scoped first: a cheap pass that finds out what the work would
+take and quotes it, and the quote becomes its budget. `fund_request_work`
+puts owls toward whichever is open now, the scoping pass or the full work;
+the Researcher takes it up once the funding covers the cost, and every
+outcome, a negative result included, is paid for alike. Your user pays
+their share of what the work actually costs, and the rest comes back, as
+does everything if the request closes first.
+
 **A mandate, through the Grantmaker.** There is no form; it is a
 conversation.
 

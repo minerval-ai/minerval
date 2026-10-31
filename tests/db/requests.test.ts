@@ -178,6 +178,9 @@ describe("listing and routes", () => {
     expect(liveOnClaim.items.map((r) => r.id)).toEqual([live.id]);
 
     const app = Fastify();
+    // The reads are public; the write route (contribute) wants these.
+    app.decorate("authenticate", async () => {});
+    app.decorate("requireUser", async () => {});
     await app.register(requestRoutes, { prefix: "/requests" });
     await app.ready();
     try {
@@ -214,6 +217,9 @@ describe("listing and routes", () => {
     expect((await listRequests({ q: `${word}nothing` })).total).toBe(0);
 
     const app = Fastify();
+    // The reads are public; the write route (contribute) wants these.
+    app.decorate("authenticate", async () => {});
+    app.decorate("requireUser", async () => {});
     await app.register(requestRoutes, { prefix: "/requests" });
     await app.ready();
     try {

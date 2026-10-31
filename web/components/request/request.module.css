@@ -47,6 +47,8 @@
 .outcome { font-weight: 600; }
 .workWhen { color: var(--muted); margin-left: auto; }
 .funded { font-family: var(--sans); font-size: 0.74rem; color: var(--faint); }
+.fundingLine { font-family: var(--sans); font-size: 0.84rem; color: var(--ink); margin: 0.4rem 0 0.6rem; }
+.fundingNote { font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft); }
 
 .lede { color: var(--ink-soft); max-width: 40rem; }
 .search { margin: 1.2rem 0 0.4rem; max-width: 40rem; }

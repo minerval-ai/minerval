@@ -154,6 +154,7 @@ describe("Steward toolset without a domain tag", () => {
     const first = names.indexOf("load_skill");
     expect(names.indexOf("match_claim")).toBe(first - 1);
     const skillTools = [
+      ...getSkill("costing").tools.map((t) => t.name),
       ...getSkill("mathematics").tools.map((t) => t.name),
       ...PROVENANCE_TOOLS,
     ];

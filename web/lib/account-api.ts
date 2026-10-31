@@ -975,6 +975,27 @@ export async function allocateToClaim(
   });
 }
 
+// --- request allocations (chip in toward the work on a request) -------------
+
+export interface RequestAllocationResult {
+  allocated_owls: number;
+  backing_owls: number;
+  variant: "scope" | "full";
+  covered: boolean;
+}
+
+export async function allocateToRequest(
+  externalId: string,
+  requestId: string,
+  owls: number
+): Promise<RequestAllocationResult> {
+  return accountFetch(`/requests/${pathSegment(requestId)}/contribute`, {
+    method: "POST",
+    body: { owls },
+    actingUser: externalId,
+  });
+}
+
 // --- prize claims (docs/mathematics.md §8.4, §8.7) ---------------------------
 
 // What the filing returns (201): the new prize claim's id, the contribution

@@ -1,5 +1,5 @@
 /**
- * Price and fund a fresh maintenance or audit row at once (#363).
+ * Price and fund a fresh maintenance, audit or request row at once (#363).
  *
  * The scheduler's allocation sweep revalues and funds the whole ledger every
  * few hours; a curation request or an audit that waited for it would sit
@@ -19,6 +19,7 @@ import {
 import {
   refreshAuditValuations,
   refreshCurateValuations,
+  refreshRequestValuations,
 } from "./mandate-valuer-service.js";
 import { runMandateAllocator } from "./allocation-service.js";
 
@@ -57,6 +58,30 @@ export async function fundAuditNow(actionId: string): Promise<void> {
   } catch (err) {
     console.warn(
       `[maintenance] prompt funding of audit ${actionId} failed:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
+ * A fresh request row (a request filed, its budget set, its scoping pass
+ * returned): the General formula prices it and General's allocator passes,
+ * as for a curate row. Mandates with narrower scopes price it on their next
+ * sweep or review.
+ */
+export async function fundRequestNow(actionId: string): Promise<void> {
+  try {
+    const general = await getGeneralMandate();
+    if (!general) return;
+    await refreshRequestValuations(
+      general.grantId,
+      { scopeClaimId: null, scopeQuery: null },
+      actionId
+    );
+    await runMandateAllocator(general.grantId);
+  } catch (err) {
+    console.warn(
+      `[maintenance] prompt funding of request ${actionId} failed:`,
       err instanceof Error ? err.message : err
     );
   }

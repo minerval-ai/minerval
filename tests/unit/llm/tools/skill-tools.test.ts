@@ -27,6 +27,7 @@ describe("skill tool registry", () => {
 
   it("knows the declared skill tools and nothing else", () => {
     expect([...declaredSkillToolNames()].sort()).toEqual([
+      "cost_sheet",
       "decide_prize_claim",
       "examination_note_finding",
       "examination_outline",

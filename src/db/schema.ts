@@ -4540,6 +4540,11 @@ export const requests = pgTable(
     }),
     state: text("state").notNull().default("open"),
     stateNote: text("state_note"),
+    // What doing the request should cost, in micro-USD: the cost of its
+    // `full` row on the action ledger and the ceiling of the run that takes
+    // it up. Null until someone states it; a request without one is scoped
+    // first (a cheap pass that returns a quote, which becomes this).
+    budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -4567,6 +4572,7 @@ export const requests = pgTable(
       "ck_requests_keeper_claim",
       sql`(${table.keeperKind} = 'steward') = (${table.keeperClaimId} IS NOT NULL)`
     ),
+    check("ck_requests_budget", sql`${table.budgetMicroUsd} IS NULL OR ${table.budgetMicroUsd} > 0`),
     check(
       "ck_requests_state",
       sql`${table.state} IN ('open', 'addressed', 'in_progress', 'met', 'declined', 'withdrawn', 'moot')`

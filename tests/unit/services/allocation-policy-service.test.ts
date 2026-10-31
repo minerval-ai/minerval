@@ -72,8 +72,29 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
         "staleness_base_days",
         ...MATH_KEYS,
         ...MAINTENANCE_KEYS,
+        ...REQUEST_KEYS,
       ].sort()
     );
+  });
+});
+
+// Requests (Part VIII): the work on a request is a ledger row, valued by
+// these knobs and costed at the request's own budget.
+const REQUEST_KEYS = [
+  "request_value_weight",
+  "request_reviewed_weight",
+  "request_untargeted_importance",
+  "request_wait_days",
+  "est_request_scope_cost_owls",
+];
+
+describe("POLICY_BOUNDS (request keys, Part VIII)", () => {
+  it("bounds the request knobs", () => {
+    expect(POLICY_BOUNDS.request_value_weight).toEqual({ min: 0, max: 100 });
+    expect(POLICY_BOUNDS.request_reviewed_weight).toEqual({ min: 0, max: 1 });
+    expect(POLICY_BOUNDS.request_untargeted_importance).toEqual({ min: 0, max: 1 });
+    expect(POLICY_BOUNDS.request_wait_days).toEqual({ min: 1, max: 365 });
+    expect(POLICY_BOUNDS.est_request_scope_cost_owls).toEqual({ min: 0.01, max: 20 });
   });
 });
 

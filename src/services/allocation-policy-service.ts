@@ -90,6 +90,24 @@ export interface AllocationPolicy {
   audit_value_anomaly: number;
   audit_value_suspension: number;
   audit_value_sweep: number;
+  // --- Requests (Part VIII): a request is a ledger row like any other work.
+  // What doing it costs is the request's own (its stated budget, or the
+  // quote its scoping pass returned); what it is worth is each mandate's.
+  /** A request's formula value relative to one assessment of the most
+   *  important claim it bears on: its outcome can move several judgments,
+   *  and the work behind it is usually more than a pass. */
+  request_value_weight: number;
+  /** Weight of a request filed through review (a contributor's or a
+   *  mandate's) relative to one an agent or operator filed (1.0). */
+  request_reviewed_weight: number;
+  /** The importance a request is valued at when it bears on no claim (a
+   *  source, or something the graph does not hold yet). */
+  request_untargeted_importance: number;
+  /** A request's value rises to twice its base as it waits this many days. */
+  request_wait_days: number;
+  /** Cost prior for one scoping pass on a request with no budget, in owls,
+   *  until the ledger holds enough completed scoping passes for the p80. */
+  est_request_scope_cost_owls: number;
 }
 
 /** The bounds of the framework: what the Grantmaker may set each knob to. */
@@ -123,6 +141,11 @@ export const POLICY_BOUNDS: Record<
   audit_value_anomaly: { min: 0, max: 10 },
   audit_value_suspension: { min: 0, max: 10 },
   audit_value_sweep: { min: 0, max: 10 },
+  request_value_weight: { min: 0, max: 100 },
+  request_reviewed_weight: { min: 0, max: 1 },
+  request_untargeted_importance: { min: 0, max: 1 },
+  request_wait_days: { min: 1, max: 365 },
+  est_request_scope_cost_owls: { min: 0.01, max: 20 },
 };
 
 export interface GeneralMandate {
@@ -248,6 +271,15 @@ function defaultsFromConfig(): AllocationPolicy {
     audit_value_anomaly: 0.6,
     audit_value_suspension: 0.5,
     audit_value_sweep: 0.3,
+    // Requests (Part VIII). The design's priors: a formula values a request
+    // at a few assessments of what it bears on, so it funds the modest ones
+    // by itself; a large budget needs a mandate whose Grantmaker judges it
+    // worth that, or funders who chip in.
+    request_value_weight: 3,
+    request_reviewed_weight: 0.8,
+    request_untargeted_importance: 0.3,
+    request_wait_days: 14,
+    est_request_scope_cost_owls: 0.5,
   };
 }
 

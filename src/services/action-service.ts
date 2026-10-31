@@ -29,6 +29,7 @@ import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { capMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { duePartitions, partitionRef, reclaimAbandonedSweeps } from "./consistency-service.js";
+import { CLOSED_REQUEST_STATES } from "../schemas/kinds.js";
 
 export type ActionKind =
   | "assess"
@@ -86,7 +87,14 @@ export type ActionKind =
   // mandate that values it (the platform's Governance mandate) or, for a
   // prize audit, from the bounty's prize-review reserve. A mandate never
   // values or funds an audit whose subject it is (audit_runs.subject_grant_id).
-  | "audit";
+  | "audit"
+  // Take up one request (Part VIII): a Researcher run on the request as
+  // filed, its outcome recorded as work for the keeper to judge. Group
+  // `request:<request_id>`, target_ref the request id, one open variant at
+  // a time: `scope` (a cheap pass that returns a quote) while the request
+  // has no budget, then `full`, costed at the request's budget. Valued by
+  // mandates like any action, and fundable by anyone.
+  | "request";
 
 export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
@@ -97,6 +105,7 @@ export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
 export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
 export const AUDIT_GROUP = (auditRunId: string) => `audit:${auditRunId}`;
+export const REQUEST_GROUP = (requestId: string) => `request:${requestId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
 export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
@@ -251,6 +260,94 @@ export async function ensureAuditAction(input: {
     row!.id,
   ]);
   return row!.id;
+}
+
+/**
+ * Open the request's row for its next piece of work (Part VIII): the
+ * `full` row at its budget when it has one, else the `scope` row, whose
+ * pass returns the quote that becomes the budget. Called when a request is
+ * filed, when its budget is set or revised, and when a scoping pass
+ * returns: each is a reason for fresh work, so a done row reopens (a
+ * running one is left alone). A closed request's rows are closed instead.
+ * Returns the open row's id, or null when there is none.
+ */
+export async function ensureRequestActions(requestId: string): Promise<string | null> {
+  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null }>(
+    `SELECT ask, state, budget_micro_usd FROM requests WHERE id = $1`,
+    [requestId]
+  );
+  if (!req || (CLOSED_REQUEST_STATES as readonly string[]).includes(req.state)) {
+    await closeRequestActions(requestId);
+    return null;
+  }
+  const group = REQUEST_GROUP(requestId);
+  const budget = req.budget_micro_usd == null ? null : Number(req.budget_micro_usd);
+  const variant = budget != null ? "full" : "scope";
+  const cost = budget ?? (await estimateLedgerKindCostMicroUsd("request_scope"));
+  const label = `${variant === "scope" ? "Scope the request" : "Take up the request"}: ${req.ask.slice(0, 260)}`;
+  const [row] = await rawQuery<{ id: string }>(
+    `INSERT INTO actions
+       (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd)
+     VALUES ('request', $1, $2, $3, $4, $5)
+     ON CONFLICT (exclusion_group, variant) DO UPDATE
+       SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+           label = EXCLUDED.label,
+           status = CASE WHEN actions.status = 'running'
+                         THEN actions.status ELSE 'open' END,
+           updated_at = now()
+     RETURNING id`,
+    [group, variant, requestId, label, Math.max(1, Math.round(cost))]
+  );
+  // Once a budget exists the scoping pass has nothing left to answer.
+  if (variant === "full") {
+    await rawQuery(
+      `UPDATE actions SET status = 'superseded', updated_at = now()
+        WHERE exclusion_group = $1 AND variant = 'scope' AND status = 'open'`,
+      [group]
+    );
+  }
+  return row?.id ?? null;
+}
+
+/**
+ * Close a request's ledger rows once it is closed: nothing will take it up,
+ * so its open rows are cancelled and every unspent allocation on its group
+ * is returned. A person's owls come back to their balance; a mandate's
+ * placement simply stops counting against its escrow. A running row is left
+ * to finish (its run settles its own funders).
+ */
+export async function closeRequestActions(requestId: string): Promise<void> {
+  const group = REQUEST_GROUP(requestId);
+  await withTransaction(async (tx) => {
+    const running = await tx.query<{ id: string }>(
+      `SELECT id FROM actions WHERE exclusion_group = $1 AND status = 'running'`,
+      [group]
+    );
+    await tx.query(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE exclusion_group = $1 AND status = 'open'`,
+      [group]
+    );
+    if (running.length > 0) return;
+    const live = await tx.query<{ id: string; user_id: string | null; unspent: string }>(
+      `SELECT id, user_id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
+         FROM action_allocations
+        WHERE exclusion_group = $1 AND released_at IS NULL
+        FOR UPDATE`,
+      [group]
+    );
+    for (const al of live) {
+      await tx.query(`UPDATE action_allocations SET released_at = now() WHERE id = $1`, [al.id]);
+      if (al.user_id && Number(al.unspent) > 0) {
+        await tx.query(
+          `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
+           VALUES ($1, $2, 'refund', $3)
+           ON CONFLICT (idempotency_key) DO NOTHING`,
+          [al.user_id, Number(al.unspent), `release:${al.id}`]
+        );
+      }
+    }
+  });
 }
 
 /**
@@ -446,6 +543,20 @@ export async function reconcileActions(): Promise<{
                            AND c.steward_state IN ('pending', 'running'))
       RETURNING a.id`
   );
+
+  // Requests closed by their keeper (or withdrawn) while a row stood open:
+  // closing the request closes its rows, and this catches any it missed.
+  const closedRequests = await rawQuery<{ target_ref: string }>(
+    `SELECT DISTINCT a.target_ref FROM actions a
+       JOIN requests r ON r.id::text = a.target_ref
+      WHERE a.kind = 'request' AND r.state IN ('met', 'declined', 'withdrawn', 'moot')
+        AND (a.status = 'open'
+             OR (a.status <> 'running' AND EXISTS (
+                  SELECT 1 FROM action_allocations al
+                   WHERE al.exclusion_group = a.exclusion_group
+                     AND al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd)))`
+  );
+  for (const r of closedRequests) await closeRequestActions(r.target_ref);
 
   // A worker that died mid-run leaves its action 'running' forever;
   // return it to open so coverage can send it again. Generous window —
@@ -928,7 +1039,7 @@ export async function materializeGrantPlan(
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
-      ledger = await materializePlanItem(g, item, i, {
+      ledger = await materializePlanItem(item, i, {
         ctx,
         cursor,
         active,
@@ -974,7 +1085,6 @@ function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
 }
 
 async function materializePlanItem(
-  g: PlanGrantRow,
   item: MaterializablePlanItem,
   index: number,
   o: {
@@ -1096,9 +1206,14 @@ async function materializePlanItem(
       await enqueueSteward({
         claimId: claim.id,
         trigger: "mandate_plan",
+        // The kind of pass and nothing else: a Steward serves the graph, so
+        // neither which mandate paid nor the Grantmaker's reasons reach it.
+        // What a mandate's agents find goes in as a contribution (§19).
         context:
-          `${kind} requested by the mandate "${g.name}": ` +
-          `${String(item.rationale ?? "").trim() || "no rationale given"}`,
+          `A funded mandate scheduled a ${kind} pass on this claim.` +
+          (kind === "deepen"
+            ? " Its deferred subclaims were released into the queue."
+            : ""),
       });
     }
     await ensureAssessActions(claim.id);

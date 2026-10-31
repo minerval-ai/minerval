@@ -619,7 +619,8 @@ export function getSkillView(skill: Skill, role: SkillRole): string {
 
 /** The views of several skills for one role, in the skills' (alphabetical) order. */
 export function getSkillViews(skills: readonly Skill[], role: SkillRole): string[] {
-  return skills.map((s) => getSkillView(s, role));
+  // A skill with no section for the role has no view to give it.
+  return skills.filter((s) => sectionsForRole(s, role).length > 0).map((s) => getSkillView(s, role));
 }
 
 /**

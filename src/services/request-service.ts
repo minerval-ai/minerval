@@ -21,6 +21,7 @@ import {
   type RequestState,
 } from "../schemas/kinds.js";
 import { generateEmbedding } from "./embedding-service.js";
+import { closeRequestActions, COVERAGE_SQL, ensureRequestActions } from "./action-service.js";
 import { getFundingLabelForJob } from "./grant-service.js";
 import { enqueueSteward } from "./queue-service.js";
 
@@ -70,6 +71,11 @@ export async function fileRequest(input: {
   bearsOnText?: string | null;
   claimIds?: string[];
   sourceIds?: string[];
+  /**
+   * What doing it should cost, in USD, when the filer can say. Without one
+   * the request is scoped first: a cheap pass whose quote becomes this.
+   */
+  budgetUsd?: number | null;
   filer: RequestFiler;
 }): Promise<{ id: string }> {
   for (const [field, v] of [["ask", input.ask], ["why", input.why], ["satisfied_by", input.satisfiedBy]] as const) {
@@ -81,10 +87,11 @@ export async function fileRequest(input: {
     throw new RequestError("A request bears on a node, a source, or something described in bears_on_text");
   }
   const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
+  const budgetMicroUsd = budgetMicro(input.budgetUsd);
   const filer = input.filer;
   // Embedded before the transaction, so no row lock waits on the network.
   const embedding = await embedRequest(input.ask, input.why);
-  return withTransaction(async (tx) => {
+  const filed = await withTransaction(async (tx) => {
     if (claimIds.length > 0) {
       const live = await tx.query<{ id: string }>(
         `SELECT id FROM claims WHERE id = ANY($1::uuid[]) AND state = 'active'`,
@@ -98,8 +105,8 @@ export async function fileRequest(input: {
       `INSERT INTO requests
          (ask, why, satisfied_by, who_could, addressed_to, bears_on_text,
           filer_kind, filer_agent, filer_contributor_id, filer_grant_id, filer_run_id,
-          keeper_kind, keeper_claim_id, state, embedding)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector) RETURNING id`,
+          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16) RETURNING id`,
       [
         input.ask.trim(),
         input.why.trim(),
@@ -116,6 +123,7 @@ export async function fileRequest(input: {
         keeperClaimId,
         input.addressedTo?.trim() ? "addressed" : "open",
         embedding,
+        budgetMicroUsd,
       ]
     );
     const id = row!.id;
@@ -127,6 +135,47 @@ export async function fileRequest(input: {
     }
     return { id };
   });
+  // A filed request is work anyone may fund: its row goes on the ledger,
+  // priced and offered to the platform lane at once.
+  await openRequestWork(filed.id);
+  return filed;
+}
+
+/** Open the request's next row on the ledger and let the platform lane price it now. */
+async function openRequestWork(requestId: string): Promise<void> {
+  const actionId = await ensureRequestActions(requestId);
+  if (!actionId) return;
+  const { fundRequestNow } = await import("./maintenance-funding.js");
+  await fundRequestNow(actionId);
+}
+
+/** A stated budget in USD as micro-USD; null when none is stated. */
+function budgetMicro(usd: number | null | undefined): number | null {
+  if (usd == null) return null;
+  if (!Number.isFinite(usd) || usd <= 0) throw new RequestError("A request's budget is a positive amount in USD");
+  return Math.round(usd * 1_000_000);
+}
+
+/**
+ * Set what doing a request should cost. The request's `full` row is priced
+ * at it and reopens, so a keeper who revises a budget after work came back
+ * short asks for, and can be funded for, the rest.
+ */
+export async function setRequestBudget(input: { requestId: string; budgetUsd: number }): Promise<void> {
+  const budget = budgetMicro(input.budgetUsd);
+  await withTransaction(async (tx) => {
+    const [req] = await tx.query<{ state: RequestState }>(
+      `SELECT state FROM requests WHERE id = $1 FOR UPDATE`,
+      [input.requestId]
+    );
+    if (!req) throw new RequestError(`Request ${input.requestId} not found`);
+    if (isClosed(req.state)) throw new RequestError(`Request ${input.requestId} is ${req.state}`);
+    await tx.query(`UPDATE requests SET budget_micro_usd = $2, updated_at = now() WHERE id = $1`, [
+      input.requestId,
+      budget,
+    ]);
+  });
+  await openRequestWork(input.requestId);
 }
 
 function isClosed(state: string): boolean {
@@ -213,6 +262,9 @@ export async function setRequestState(input: {
       [input.requestId, input.state, note, isClosed(input.state)]
     );
   });
+  // A closed request takes no more work: its rows close and its funders'
+  // unspent money returns.
+  if (isClosed(input.state)) await closeRequestActions(input.requestId);
 }
 
 /** Sharpen a request's wording: what it asks, why, what would satisfy it, who could do it, whom it is put to. */
@@ -365,6 +417,20 @@ export interface RequestView {
   state: RequestState;
   state_note: string | null;
   filed_at: Date;
+  /** What doing it should cost, in USD; null until stated or quoted. */
+  budget_usd: number | null;
+  /**
+   * Its standing on the action ledger: the row now open to funding (a
+   * scoping pass, or the full work at its budget), what it costs and what
+   * is behind it. Null when no row is open or running.
+   */
+  ledger: {
+    action_id: string;
+    variant: "scope" | "full";
+    status: "open" | "running";
+    cost_usd: number;
+    backing_usd: number;
+  } | null;
   work: { by: string; outcome: RequestOutcome | null; summary: string; at: Date; funded_by: string | null }[];
 }
 
@@ -384,6 +450,7 @@ interface RequestRowJoined {
   state: RequestState;
   state_note: string | null;
   created_at: Date;
+  budget_micro_usd: string | null;
 }
 
 const AGENT_LABELS: Record<string, string> = {
@@ -415,7 +482,8 @@ function keeperLabel(r: RequestRowJoined): string {
 const REQUEST_SELECT = `
   SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text,
          r.filer_kind, r.filer_agent, fc.display_name AS contributor_name,
-         r.keeper_kind, kc.kind AS keeper_node_kind, r.state, r.state_note, r.created_at
+         r.keeper_kind, kc.kind AS keeper_node_kind, r.state, r.state_note, r.created_at,
+         r.budget_micro_usd
     FROM requests r
     LEFT JOIN contributors fc ON fc.id = r.filer_contributor_id
     LEFT JOIN claims kc ON kc.id = r.keeper_claim_id`;
@@ -423,7 +491,7 @@ const REQUEST_SELECT = `
 async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [nodes, sources, work] = await Promise.all([
+  const [nodes, sources, work, ledger] = await Promise.all([
     rawQuery<{ request_id: string; id: string; text: string; kind: NodeKind }>(
       `SELECT t.request_id, c.id, c.text, c.kind
          FROM request_targets t JOIN claims c ON c.id = t.claim_id
@@ -448,6 +516,21 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
          FROM request_work WHERE request_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       [ids]
     ),
+    rawQuery<{
+      request_id: string;
+      id: string;
+      variant: "scope" | "full";
+      status: "open" | "running";
+      cost: string;
+      backing: string;
+    }>(
+      `SELECT a.target_ref AS request_id, a.id, a.variant, a.status,
+              a.cost_est_micro_usd AS cost, ${COVERAGE_SQL} AS backing
+         FROM actions a
+        WHERE a.kind = 'request' AND a.target_ref = ANY($1::text[])
+          AND a.status IN ('open', 'running')`,
+      [ids]
+    ),
   ]);
   const jobIds = [...new Set(work.map((w) => w.funded_by_job_id).filter((j): j is string => !!j))];
   const fundingLabels = new Map<string, string | null>(
@@ -463,6 +546,8 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   const nodesBy = group(nodes);
   const sourcesBy = group(sources);
   const workBy = group(work);
+  const ledgerBy = new Map(ledger.map((l) => [l.request_id, l]));
+  const usd = (micro: string | number) => Math.round(Number(micro) / 10_000) / 100;
   return rows.map((r) => ({
     id: r.id,
     ask: r.ask,
@@ -478,6 +563,13 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     state: r.state,
     state_note: r.state_note,
     filed_at: r.created_at,
+    budget_usd: r.budget_micro_usd == null ? null : usd(r.budget_micro_usd),
+    ledger: (() => {
+      const l = ledgerBy.get(r.id);
+      return l
+        ? { action_id: l.id, variant: l.variant, status: l.status, cost_usd: usd(l.cost), backing_usd: usd(l.backing) }
+        : null;
+    })(),
     work: (workBy.get(r.id) ?? []).map((w) => ({
       by: w.by_label,
       outcome: w.outcome,
@@ -486,6 +578,34 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       funded_by: w.funded_by_job_id ? (fundingLabels.get(w.funded_by_job_id) ?? null) : null,
     })),
   }));
+}
+
+/**
+ * The brief a run that takes up (or scopes) a request works from: the
+ * request as filed, verbatim, and the work already done on it. Whoever
+ * funded it adds nothing to it.
+ */
+export function requestBrief(request: RequestView): string {
+  return [
+    `Request ${request.id}`,
+    `Asks for: ${request.ask}`,
+    `Why: ${request.why}`,
+    `What would satisfy it: ${request.satisfied_by}`,
+    request.who_could ? `Who could do it: ${request.who_could}` : null,
+    request.addressed_to ? `Addressed to: ${request.addressed_to}` : null,
+    request.bears_on.length
+      ? `Bears on: ${request.bears_on.map((n) => `${n.kind} ${n.id} ("${n.text}")`).join("; ")}`
+      : null,
+    request.bears_on_sources.length
+      ? `Bears on sources: ${request.bears_on_sources.map((src) => `${src.title}${src.url ? ` (${src.url})` : ""}`).join("; ")}`
+      : null,
+    request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
+    request.work.length
+      ? `Work already done on it: ${request.work.map((w) => `${w.by}${w.outcome ? ` (${w.outcome})` : ""}: ${w.summary}`).join(" | ")}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export async function getRequest(id: string): Promise<RequestView | null> {

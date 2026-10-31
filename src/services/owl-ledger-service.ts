@@ -29,6 +29,8 @@ export const OWL_REASONS = {
   meterSettlement: "meter_settlement",
   /** Owls put toward one claim's assessment (claim_contributions). */
   claimContribution: "claim_contribution",
+  /** Owls put toward the work on one request (its ledger row). */
+  requestContribution: "request_contribution",
   escrowHold: "escrow_hold",
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",

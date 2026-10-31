@@ -126,6 +126,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
               "formalize",
               "attempt_proof",
               "prize_review",
+              "request",
             ],
           },
           offset: { type: "integer", minimum: 0, default: 0 },

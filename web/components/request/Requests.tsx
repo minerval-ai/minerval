@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { RequestItem } from "@/lib/types";
 import { DEFINED_IN, REQUEST_OUTCOME, REQUEST_STATE } from "@/lib/ontology";
 import { Term } from "@/components/Term";
+import { RequestFunding } from "./RequestFunding";
 import styles from "./request.module.css";
 
 // Requests (Part VIII, Requests): something someone could do that would
@@ -116,7 +117,15 @@ export function RequestView({ r }: { r: RequestItem }) {
         </dd>
         <dt>Filed</dt>
         <dd>by {r.filed_by.label} ({r.filed_by.kind === "admin" ? "an agent of the graph" : r.filed_by.kind === "mandate" ? "a mandate, through the Contribution Reviewer" : "a contributor, through the Contribution Reviewer"}) · {fmtDate(r.filed_at)}</dd>
+        {r.budget_usd != null && (
+          <>
+            <dt>Budget</dt>
+            <dd>${r.budget_usd.toFixed(2)}, what doing it should cost</dd>
+          </>
+        )}
       </dl>
+
+      <RequestFunding r={r} />
 
       {r.work && r.work.length > 0 && (
         <section>

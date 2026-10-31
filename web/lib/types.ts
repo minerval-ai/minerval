@@ -736,6 +736,18 @@ export interface RequestItem {
   state: RequestState;
   state_note?: string | null;
   filed_at: string;
+  // What doing it should cost, in USD; null until stated or quoted by a
+  // scoping pass. Absent from an API older than the request ledger.
+  budget_usd?: number | null;
+  // Its standing on the action ledger: the row open to funding now (a
+  // scoping pass, or the full work at its budget), its cost and backing.
+  ledger?: {
+    action_id: string;
+    variant: "scope" | "full";
+    status: "open" | "running";
+    cost_usd: number;
+    backing_usd: number;
+  } | null;
   work?: RequestWork[];
 }
 

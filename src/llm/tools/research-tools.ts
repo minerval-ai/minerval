@@ -48,8 +48,7 @@ import {
   type ResearchModelTier,
 } from "../../services/research-run-service.js";
 import { runResearcher, type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
-import { getRequest, notifyRequestKeeper, recordWork } from "../../services/request-service.js";
-import { REQUEST_OUTCOMES, type RequestOutcome } from "../../schemas/kinds.js";
+import { allocateMandateToRequest } from "../../services/allocation-service.js";
 import {
   ExaminationError,
   linkResearchRun,
@@ -89,33 +88,32 @@ export interface ResearchToolsOptions {
 
 /** The tool definitions, with the affordances of each tier spelled out. */
 /**
- * fund_request (Part VIII, Requests): a mandate's Grantmaker pays for the
- * graph's own Researcher to take up an open request. The request is the
- * brief; the Grantmaker decides whether and how much, and nothing about
- * how the work is done or what it finds.
+ * fund_request (Part VIII, Requests): a mandate's Grantmaker puts money on
+ * the work on an open request, its row on the action ledger. The request is
+ * the brief; the Grantmaker decides whether and how much, and nothing about
+ * how the work is done or what it finds. The row runs once its funders,
+ * this mandate among them, cover its cost.
  */
 export function getFundRequestToolDefinition(): Tool {
-  const config = loadConfig();
   return {
     name: FUND_REQUEST_TOOL_NAME,
     description:
-      "Fund the Researcher to take up an open request in your scope (list_requests shows them). " +
-      "You decide whether the request is worth funding and how much; the request itself is the " +
-      "brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
-      "is a complete one and paid for alike: met, partly met, a negative result, cannot be met, " +
-      "declined, or a recommendation to revise the request. The outcome is recorded as work on " +
-      "the request for its keeper to judge. Tiers as for delegate_research; budget in USD, paid " +
-      "from the mandate's uncommitted budget and at most what that holds. The call blocks until the work reports " +
-      `(a wall-clock cap of ${config.researcherMaxWallMinutes} minutes applies).`,
+      "Put money from your mandate toward the work on an open request in your scope (list_requests " +
+      "shows them). The work is a row on the action ledger: a scoping pass while the request has no " +
+      "budget (it returns a quote, which becomes the budget), then the full work at its budget. The " +
+      "row runs once its funders cover its cost, and anyone may chip in, so you may fund part of it. " +
+      "You decide whether the request is worth that and how much to put toward it; the request is " +
+      "the brief, and how the work is done and what it finds are not yours to shape. Every outcome " +
+      "is a complete one and paid for alike, and is recorded on the request for its keeper to judge. " +
+      "budget_usd is the most you put toward it: it is clipped to what the row still lacks and what " +
+      "your uncommitted budget holds; unspent money comes back when the run settles or the request closes.",
     input_schema: {
       type: "object",
       properties: {
         request_id: { type: "string" },
-        model_tier: { type: "string", enum: [...RESEARCH_MODEL_TIERS] },
         budget_usd: { type: "number" },
-        effort: { type: "string", enum: [...EFFORT_LEVELS] },
       },
-      required: ["request_id", "model_tier", "budget_usd"],
+      required: ["request_id", "budget_usd"],
       additionalProperties: false,
     },
   };
@@ -597,109 +595,31 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   };
 
   const fund = async (input: Record<string, unknown>): Promise<string> => {
-    if (!config.researcherEnabled) return refuse("The researcher is disabled in this deployment (RESEARCHER_ENABLED).");
     if (!fundsRequests) return refuse("Only a mandate's Grantmaker funds requests.");
+    if (!options.grantId) return refuse("There is no mandate here to fund a request from.");
     const requestId = str(input.request_id);
     if (!UUID_RE.test(requestId)) return refuse(`"${requestId}" is not a request id.`);
-    const request = await getRequest(requestId);
-    if (!request) return refuse(`No request ${requestId} exists.`);
-    if (!["open", "addressed", "in_progress"].includes(request.state)) {
-      return refuse(`Request ${requestId} is ${request.state}; only a live request can be taken up.`);
-    }
-    const tierRaw = str(input.model_tier);
-    if (!(RESEARCH_MODEL_TIERS as readonly string[]).includes(tierRaw)) {
-      return refuse(`model_tier must be one of ${RESEARCH_MODEL_TIERS.join(", ")}.`);
-    }
-    const tier = tierRaw as ResearchModelTier;
     const budgetUsd = Number(input.budget_usd);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
-    const ceilingMicroUsd = Math.round(budgetUsd * 1_000_000);
-    if (await readResearcherPaused()) return refuse("The operator has paused the researcher.");
-    const short = (await unaffordable(ceilingMicroUsd)) ?? (await checkUnfundedDailyCap(ceilingMicroUsd));
-    if (short) return short;
-
-    // The request is the brief, verbatim; the funder adds nothing to it.
-    const task = [
-      `Request ${request.id}`,
-      `Asks for: ${request.ask}`,
-      `Why: ${request.why}`,
-      `What would satisfy it: ${request.satisfied_by}`,
-      request.who_could ? `Who could do it: ${request.who_could}` : null,
-      request.addressed_to ? `Addressed to: ${request.addressed_to}` : null,
-      request.bears_on.length
-        ? `Bears on: ${request.bears_on.map((n) => `${n.kind} ${n.id} ("${n.text}")`).join("; ")}`
-        : null,
-      request.bears_on_sources.length
-        ? `Bears on sources: ${request.bears_on_sources.map((src) => `${src.title}${src.url ? ` (${src.url})` : ""}`).join("; ")}`
-        : null,
-      request.bears_on_text ? `Bears on, in words: ${request.bears_on_text}` : null,
-      request.work.length
-        ? `Work already done on it: ${request.work.map((w) => `${w.by}${w.outcome ? ` (${w.outcome})` : ""}: ${w.summary}`).join(" | ")}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const ctx = getUsageContext();
-    const effortRaw = str(input.effort);
-    const row = await openResearchRun({
-      claimId: null,
-      grantId: options.grantId ?? null,
-      requestedBy: "request",
-      requesterRunId: ctx.runId ?? null,
-      jobId: ctx.jobId ?? null,
-      task,
-      model: modelForTier(tier),
-      modelTier: tier,
-      effort: tier === "strong" ? ((EFFORT_LEVELS as readonly string[]).includes(effortRaw) ? effortRaw : "high") : null,
-      includeConstitution: true,
-      ceilingMicroUsd,
+    const placed = await allocateMandateToRequest({
+      grantId: options.grantId,
       requestId,
+      microUsd: Math.round(budgetUsd * 1_000_000),
     });
-    launched++;
-    await recordWork({
-      requestId,
-      byLabel: "Researcher",
-      researchRunId: row.id,
-      outcome: null,
-      summary: "Taken up with funding from a mandate.",
-      fundedByJobId: ctx.jobId ?? null,
-    });
-
-    const { result, billed, failure } = await runOnRow(row, null, null);
-    const report = result?.report ?? null;
-    await closeResearchRun(row.id, {
-      status: failure || !result ? "failed" : result.status,
-      report,
-      spentMicroUsd: billed,
-      turns: result?.turns,
-      servedModels: result?.servedModels,
-      error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
-    }).catch(() => null);
-
-    const outcomeRaw = typeof report?.request_outcome === "string" ? report.request_outcome : null;
-    const outcome = outcomeRaw && (REQUEST_OUTCOMES as readonly string[]).includes(outcomeRaw) ? (outcomeRaw as RequestOutcome) : null;
-    const answer = typeof report?.answer === "string" ? report.answer.trim() : "";
-    const summary = outcome
-      ? answer || `Returned ${outcome}.`
-      : `The run ended without a report (${failure ? "failed" : (result?.status ?? "no report")}); the request stays open.`;
-    await recordWork({
-      requestId,
-      byLabel: "Researcher",
-      researchRunId: row.id,
-      outcome,
-      summary: summary.slice(0, 4000),
-      fundedByJobId: ctx.jobId ?? null,
-    }).catch(() => null);
-    if (outcome) await notifyRequestKeeper(requestId, `the Researcher returned ${outcome}: ${summary.slice(0, 600)}`);
+    if (!placed.ok) return refuse(`${placed.message}.`);
+    const what = placed.variant === "scope" ? "its scoping pass (it has no budget yet)" : "the full work at its budget";
     return JSON.stringify({
-      success: !!outcome,
-      research_run_id: row.id,
+      success: true,
       request_id: requestId,
-      outcome,
-      spent_usd: Math.round(billed / 10_000) / 100,
+      funded: what,
+      placed_usd: usdText(placed.placedMicroUsd),
+      backing_usd: usdText(placed.backingMicroUsd),
+      cost_usd: usdText(placed.costMicroUsd),
+      covered: placed.covered,
+      note: placed.covered
+        ? "The row is covered: the Researcher takes it up on the next pass, and its outcome is recorded on the request for its keeper."
+        : "The row waits for the rest of its cost from other funders; your money stays on it, and comes back if the request closes first.",
       ...(await budgetLeft()),
-      summary,
-      note: "The outcome is recorded on the request; its keeper decides whether the request has been met.",
     });
   };
 

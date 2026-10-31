@@ -1,0 +1,2 @@
+ALTER TABLE "requests" ADD COLUMN "budget_micro_usd" bigint;--> statement-breakpoint
+ALTER TABLE "requests" ADD CONSTRAINT "ck_requests_budget" CHECK ("requests"."budget_micro_usd" IS NULL OR "requests"."budget_micro_usd" > 0);
