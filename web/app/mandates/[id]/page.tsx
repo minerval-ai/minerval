@@ -436,6 +436,17 @@ export default async function MandatePage({
       </p>
       <h1>{mandate.title}</h1>
       {mandate.objective && <Paragraphs text={mandate.objective} />}
+      {mandate.funder && !mandate.is_platform && (
+        <p className="meter-caption">
+          {mandate.funder.declared
+            ? mandate.funder.stake
+              ? `Funded by ${mandate.funder.shown_as}, who declared a stake in its subject: ${mandate.funder.stake}.`
+              : `Funded by ${mandate.funder.shown_as}, who declared no stake in its subject.`
+            : `Funded by ${mandate.funder.shown_as}. This mandate was funded before funders were asked to declare a stake.`}{" "}
+          Funding buys attention, never conclusions; the agents that assess
+          claims are not told who funds them.
+        </p>
+      )}
       {mandate.strategy && (
         <section>
           <h2>Strategy</h2>

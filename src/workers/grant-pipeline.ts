@@ -37,6 +37,7 @@ import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { refundUnspentBudget } from "../services/budget-job-service.js";
+import { grantmakerShareLeftMicroUsd } from "../services/action-service.js";
 import { grantCommittedMicroUsd } from "../services/regrant-service.js";
 import { mandateClosureBlockers } from "../services/bounty-service.js";
 import type { PlanItem } from "../services/grant-service.js";
@@ -71,6 +72,7 @@ interface GrantRow {
   plan_cursor: number;
   budget_micro_usd: number;
   job_status: string;
+  mandate: { grantmaker_share_owls?: number | null } | null;
 }
 
 /** The scope CTE shared by every selector: subtree and/or text match. */
@@ -153,6 +155,27 @@ async function claimNextGrantTarget(
   return {
     target: await claimDeepenTarget(grant.scope_claim_id, grant.scope_query),
   };
+}
+
+/**
+ * True when a mandate with a Grantmaker share has spent it and holds no
+ * live work on the ledger: nothing it funds is open or running, and no
+ * pass of its own is.
+ */
+async function shareMandateFinished(grant: GrantRow): Promise<boolean> {
+  const share = await grantmakerShareLeftMicroUsd(grant);
+  if (!share || share.leftMicroUsd > 0) return false;
+  const [live] = await rawQuery<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM actions a
+      WHERE a.status IN ('open', 'running')
+        AND (a.target_ref = $1::text
+             OR EXISTS (SELECT 1 FROM action_allocations al
+                         WHERE al.exclusion_group = a.exclusion_group
+                           AND al.grant_id = $1::uuid AND al.released_at IS NULL
+                           AND al.spent_micro_usd < al.amount_micro_usd))`,
+    [grant.id]
+  );
+  return Number(live?.n ?? 0) === 0;
 }
 
 /** Deepen selector: pending/deferred within a subtree (and/or query scope). */
@@ -255,7 +278,7 @@ export async function processNextGrantTask(
       WHERE g.id = pick.id AND j.id = g.budget_job_id
       RETURNING g.id, g.funder_user_id, g.budget_job_id, g.name,
                 g.scope_claim_id, g.scope_query, g.policy, g.status, g.plan,
-                g.plan_cursor, j.budget_micro_usd, j.status AS job_status`
+                g.plan_cursor, j.budget_micro_usd, j.status AS job_status, g.mandate`
   );
   if (grantRows.length === 0) return { status: "empty" };
   const grant = grantRows[0]!;
@@ -281,7 +304,13 @@ export async function processNextGrantTask(
   // EXECUTION: one steward target under the policy.
   const { target, waitingOnLedger } = await claimNextGrantTarget(grant);
   if (!target) {
-    if (waitingOnLedger || grant.policy === "agent") {
+    // A mandate whose Grantmaker passes had a share of their own (a
+    // decomposition) has no review left to extend its plan once the share
+    // is spent: when its plan is done and none of its ledger work is still
+    // waiting or running, it is finished, like a mechanical deepen.
+    const finishedShareMandate =
+      grant.policy === "agent" && !waitingOnLedger && (await shareMandateFinished(grant));
+    if (!finishedShareMandate && (waitingOnLedger || grant.policy === "agent")) {
       // Ledger actions in flight, or an agent-stewarded mandate whose
       // plan is (for now) exhausted: NOT finished. The mandate's review
       // pass decides whether to extend the plan or close the mandate

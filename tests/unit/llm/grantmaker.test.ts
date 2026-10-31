@@ -17,6 +17,8 @@ function mandate(overrides: Partial<GrantMandate> = {}): GrantMandate {
       ],
     },
     expected_cost_owls: 12,
+    funder_named: false,
+    funder_stake: "none",
     ...overrides,
   };
 }

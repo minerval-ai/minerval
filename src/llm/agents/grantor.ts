@@ -51,6 +51,8 @@ import {
   type PlanItem,
 } from "../../services/grant-service.js";
 import { microUsdToOwls } from "../../services/owl.js";
+import { grantmakerShareLeftMicroUsd } from "../../services/action-service.js";
+import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 
 // The survey lives in its own service now; re-exported so the agents that
 // import it from here (grantmaker, mandate-review, lookout) keep working.
@@ -135,6 +137,14 @@ async function runGrantorImpl(input: {
     `epistemic movement. A plan you cannot fill from the graph is one you ` +
     `fill from the world. An empty plan is a last resort, and its strategy ` +
     `note must say what you looked for and did not find.`;
+
+  // A decomposition's passes share a tenth of its budget: say so, and what
+  // is left of it.
+  const shareOwls = Number((grant.mandate as { grantmaker_share_owls?: number } | null)?.grantmaker_share_owls ?? 0);
+  if (shareOwls > 0) {
+    const share = await grantmakerShareLeftMicroUsd({ id: grant.id, mandate: { grantmaker_share_owls: shareOwls } });
+    system[0] += grantmakerShareNote(shareOwls, microUsdToOwls(share?.leftMicroUsd ?? 0), "planning");
+  }
 
   const model = input.model ?? config.grantmakerModel;
   // Web search on every provider: the server runs it on an Anthropic model,

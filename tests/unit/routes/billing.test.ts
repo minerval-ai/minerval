@@ -153,7 +153,21 @@ describe("POST /billing/checkout", () => {
       userId: "u-1",
       pack: expect.objectContaining({ id: "owls_5", owls: 5 }),
       email: "buyer@example.com",
+      returnTo: null,
     });
+  });
+
+  it("passes a return path through, for coming back to what the reader was funding", async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/billing/checkout",
+      payload: { pack_id: "owls_5", return_to: "/claims/abc#fund-decomposition" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(mocks.createOwlPackCheckoutSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ returnTo: "/claims/abc#fund-decomposition" })
+    );
   });
 
   it("returns 503 when Stripe is not configured", async () => {

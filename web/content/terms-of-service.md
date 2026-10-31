@@ -463,12 +463,16 @@ wins. An allocation not yet consumed is returned if the action is released
 or superseded. Minerval does not promise when, or whether, a partially
 funded assessment will run.
 
-7.4 **Budget jobs.** Funding deep decomposition of a claim's subtree escrows
-the budget you name at once and meters real model work against it. At the
-budget floor the job pauses with a checkpoint and waits for a top-up; it
-does not silently stop. Completion, cancellation, or failure refunds the
-unspent remainder to your balance. Only you can top up your own job;
-Mandates are the public case.
+7.4 **Deep decomposition.** Funding a decomposition of a claim (at least 5
+Owls) creates a Mandate on that claim and escrows the budget you name at
+once. Its work begins with a fresh assessment of the claim and continues
+with the claims that bear on it; up to a tenth of the budget pays for the
+Grantmaker's planning. Real model work is metered against the budget, and
+the unspent remainder returns to your balance when the work is done. The
+Mandate is public under 7.5 and shows you as "a reader". Budget jobs funded
+before decompositions became Mandates run to completion under the terms
+they were funded on: at the budget floor such a job pauses for a top-up,
+and completion, cancellation, or failure refunds its unspent remainder.
 
 7.5 **Mandates.** A Mandate is designed in conversation with the Grantmaker
 agent, which surveys the scope, quotes expected costs from live estimates,
@@ -487,11 +491,16 @@ escrows the budget and starts the Mandate. Thereafter:
   funded, and, where it ingests, each source it brought in. Anyone may put
   their own Owls behind any active Mandate. You have no right to keep a
   Mandate private.
-- (c) **No naming rights.** The Grantmaker titles the Mandate for your
-  dashboard. Your wording never reaches a claim page. A funded assessment
-  discloses on the claim page only that it was paid for by a funded
-  mandate, with the explanation that funding buys scheduling and nothing
-  else.
+- (c) **No naming rights; disclosure.** The Grantmaker titles and
+  describes the Mandate in neutral words that say what the work is; your
+  wording never reaches a claim page. A funded assessment discloses on the
+  claim page that it was paid for by a Mandate, names it by that title and
+  links to its dashboard, with the explanation that funding buys
+  scheduling and nothing else. Before proposing a Mandate the Grantmaker
+  asks whether you have a stake in its subject and whether you want to be
+  named; the dashboard shows any stake you declare, and your name only if
+  you choose. If you have a stake you must disclose it, and a false
+  declaration is bad faith under these terms.
 - (d) **Self-stewardship.** A live Mandate is stewarded by its Grantmaker
   without a person in the loop: it reviews on a cadence, values the open
   ledger, extends its own plan, sets its own pace, moves money, and may

@@ -67,6 +67,8 @@ vi.mock("../../../src/services/action-service.js", () => ({
   actionBudgetMicroUsd: (a: { cost_est_micro_usd: number | string; coverage_micro_usd: number | string }) =>
     Math.max(Number(a.cost_est_micro_usd) || 0, Number(a.coverage_micro_usd) || 0),
   nextRunnableAction: vi.fn(async () => state.action),
+  // No mandate here has a Grantmaker share (a decomposition's tenth).
+  grantmakerShareLeftMicroUsd: vi.fn(async () => null),
   claimAction: vi.fn(async () => true),
   releaseAction: vi.fn(async (id: string) => {
     state.released.push(id);

@@ -139,7 +139,13 @@ export interface Assessment {
   // Funding disclosure (§19): present when this assessment was paid work —
   // a user's assessment order or a named grant. Stamped mechanically by the
   // API; absent for ordinary system work.
-  funding?: { type: "grant" | "user_order" | "job"; label: string } | null;
+  // The funding disclosure (§19). A mandate is named by its neutral title
+  // and linked to its page, where its funder and their declared stake are.
+  funding?: {
+    type: "grant" | "user_order" | "job";
+    label: string;
+    mandate?: { id: string; title: string };
+  } | null;
 }
 
 export interface ClaimCore {

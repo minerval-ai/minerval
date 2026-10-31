@@ -719,15 +719,69 @@ Design principles, in force in the implementation:
 - **Honest quotes.** Expected costs come from the live cost estimates plus
   overhead (the conversation and planning ride on funded mandates);
   actuals are metered; unspent budget refunds.
-- **No naming rights.** The agent titles the mandate for the funder's
-  dashboard. Funder-chosen wording never reaches claim surfaces; funded
-  assessments disclose only that "a funded mandate" scheduled them, at the
-  bottom of the claim page, with the explanation that funding buys
-  scheduling and nothing else.
+- **No naming rights; full traceability.** The Grantmaker writes the
+  mandate's title and objective, neutral and faithful: what the work is,
+  in words that read the same to every side of the questions it touches,
+  and nothing a funder asked for in advocacy. A funded assessment says at
+  the bottom of the claim page that a funded mandate paid for it, names
+  the mandate by that title and links to its page, with the explanation
+  that funding buys scheduling and nothing else. The agents that judge
+  are never told who paid, or that anyone did.
 - **Subsidy, not command.** A mandate's money covers costs on the ledger;
   it never enters the value estimates and never touches importance.
 
 Direct `POST /grants` creation remains for service/operator tooling only.
+
+## Who funds a mandate
+
+Readers deciding how much to make of where the graph's attention went
+deserve to know who directed it there. So before proposing a mandate the
+Grantmaker asks who is funding it and whether they have a stake in its
+subject (a commercial, professional, political or personal interest in
+how its questions come out), and whether they want to be named. Both go on
+the mandate (`funder_named`, `funder_stake`) and on its public page.
+
+- A funder with no stake may stay anonymous: "an anonymous funder".
+- A funder with a stake may stay anonymous only if the stake is disclosed
+  in words a reader can weigh. One who will not disclose a stake they have
+  is declined.
+- Declarations are on the funder's word. A false one is bad faith, and it
+  ends the mandate when it comes out.
+- A mandate a mandate spawns carries its source's declaration; the
+  platform's mandates are Minerval's.
+- A mandate funded before funders were asked says so on its page and shows
+  its funder's display name, as it always did.
+
+Disclosure is for readers. A Steward, a request's keeper, and the
+Researcher are not told who funded their work, or that anyone did: the
+agents that judge serve the graph, and the funder is not their principal.
+
+## Deep decomposition: a mandate on one claim
+
+"Decompose this claim, x owls deep" (`POST /claims/:id/decompose`, x ≥ 5)
+is a mandate, funded and started in one step
+(`src/services/claim-mandate-service.ts`):
+
+- **Its words are fixed.** The title and objective describe the work from
+  the claim's own text: a fresh pass on the claim first, then the claims
+  that bear on it (its subclaims, including the stubs the graph's own
+  budget leaves undecomposed, what it rests on, what rests on it, closely
+  linked claims), most consequential first. Nothing the funder wrote is in
+  it, so it is neutral by construction.
+- **Paying is the approval.** Its Grantmaker drafts the plan, which always
+  opens with the pass on the claim, and the plan runs at once on the
+  ledger.
+- **The Grantmaker gets a tenth.** Its own passes (planning, and the
+  reviews that pick up the subclaims each pass mints) share 10% of the
+  budget (`mandate.grantmaker_share_owls`), each pass budgeted from what
+  is left of the share and told so; planning takes half. No review opens
+  once the share is spent.
+- **It finishes.** When the share is spent and none of its work is still
+  open or running on the ledger, it completes and the rest refunds.
+- **Its funder is "a reader".** Buying depth on one claim declares no
+  stake in it.
+- **The floor is money.** Below 5 owls the Grantmaker's tenth could not pay
+  for a pass that plans anything.
 
 ## Platform mandates: the same Grantmaker, a public approval (#529)
 

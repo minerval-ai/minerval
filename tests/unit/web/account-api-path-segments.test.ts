@@ -106,7 +106,7 @@ const PATH_FNS: Array<{
   { name: "revokeApiKey", call: (a, id) => a.revokeApiKey(EXT, id), path: (s) => `/api-keys/${s}`, method: "DELETE", acting: true },
   { name: "createAssessmentOrder", call: (a, id) => a.createAssessmentOrder(EXT, id), path: (s) => `/claims/${s}/order`, method: "POST", acting: true },
   { name: "cancelAssessmentOrder", call: (a, id) => a.cancelAssessmentOrder(EXT, id), path: (s) => `/orders/${s}`, method: "DELETE", acting: true },
-  { name: "createDecompositionJob", call: (a, id) => a.createDecompositionJob(EXT, id, 5), path: (s) => `/claims/${s}/decompose`, method: "POST", acting: true },
+  { name: "createDecomposition", call: (a, id) => a.createDecomposition(EXT, id, 5), path: (s) => `/claims/${s}/decompose`, method: "POST", acting: true },
   { name: "getBudgetJob", call: (a, id) => a.getBudgetJob(EXT, id), path: (s) => `/budget-jobs/${s}`, method: "GET", acting: true },
   { name: "topUpBudgetJob", call: (a, id) => a.topUpBudgetJob(EXT, id, 3), path: (s) => `/budget-jobs/${s}/topup`, method: "POST", acting: true },
   { name: "cancelBudgetJob", call: (a, id) => a.cancelBudgetJob(EXT, id), path: (s) => `/budget-jobs/${s}/cancel`, method: "POST", acting: true },

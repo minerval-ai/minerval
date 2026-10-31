@@ -439,7 +439,18 @@ export function ClaimView({ detail }: { detail: ClaimDetail }) {
       {assessment?.funding && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
           The attention this claim received was paid for by{" "}
-          {assessment.funding.label}. Funding buys only scheduling: it can
+          {assessment.funding.mandate ? (
+            <>
+              a funded mandate,{" "}
+              <a href={`/mandates/${assessment.funding.mandate.id}`}>
+                {assessment.funding.mandate.title}
+              </a>{" "}
+              (its page says who funds it and any stake they declared)
+            </>
+          ) : (
+            assessment.funding.label
+          )}
+          . Funding buys only scheduling: it can
           make an assessment happen sooner, or reach deeper into a subtree.
           It has no influence on what the assessment concludes, and none on
           which claims enter the graph; assessments run under the same

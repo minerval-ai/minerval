@@ -90,9 +90,12 @@ function dateish(iso: string | null, whenAbsent = ""): string {
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ purchase?: string }>;
+  searchParams: Promise<{ purchase?: string; return?: string }>;
 }) {
-  const { purchase } = await searchParams;
+  const { purchase, return: back } = await searchParams;
+  // Sent here to buy owls for something (a decomposition the balance could
+  // not cover): checkout brings the reader back there. Same-site paths only.
+  const returnTo = back && /^\/(?![\/\\])/.test(back) ? back : null;
   const session = await auth();
   if (!session?.externalId) redirect("/signin");
   const externalId = session.externalId;
@@ -252,8 +255,14 @@ export default async function AccountPage({
         </table>
         {creditsEnabled && packs.length > 0 && (
           <>
-            <h3>Buy owls</h3>
-            <BuyOwls packs={packs} />
+            <h3 id="buy-owls">Buy owls</h3>
+            {returnTo && (
+              <p className="meter-caption">
+                Your balance did not cover what you were funding. Once the purchase goes through
+                you will be taken back to it.
+              </p>
+            )}
+            <BuyOwls packs={packs} returnTo={returnTo} />
           </>
         )}
         {ledger.length > 0 && (

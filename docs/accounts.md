@@ -203,10 +203,24 @@ Semantics:
 - `GET /orders` (optionally `?claim_id=` for the claim page's poll),
   `GET /orders/:id`.
 
+## Deep decomposition — a mandate on one claim
+
+`POST /claims/:id/decompose` `{budget_owls}` (5 owls or more) funds a
+DECOMPOSITION of a claim: a mandate on it, funded and started in one step
+(`src/services/claim-mandate-service.ts`; docs/allocation.md, "Deep
+decomposition: a mandate on one claim"). The owls escrow at once; its
+Grantmaker plans the work, which opens with a fresh pass on the claim and
+then buys the claims that bear on it, on the ledger. A tenth of the budget
+pays for the Grantmaker's own passes; the rest refunds when the work is
+done. The mandate is public and shows its funder as "a reader". A balance
+that cannot cover it sends the reader to the owl packs, and checkout brings
+them back to the claim (`return_to` on `POST /billing/checkout`).
+
 ## Budget jobs — funded open-ended work
 
-`POST /claims/:id/decompose` `{budget_owls}` funds DEEP DECOMPOSITION of a
-claim's subtree. Open-ended work gets a budget, not a price:
+Decompositions funded before they became mandates ran as budget jobs, and
+any still running finish that way. Open-ended work gets a budget, not a
+price:
 
 - Funding escrows the owls immediately (`escrow_hold` behind the same
   balance guard as a charge) — that's the act of committing them.
@@ -260,9 +274,11 @@ policy + budget) remains for service/operator tooling.
 
 Every
 assessment a mandate produces is stamped with `funded_by_job_id` — disclosed at
-the bottom of the claim page as scheduled by "a funded mandate", together
-with the explanation that funding buys scheduling, never conclusions or
-graph membership. Funder-chosen names never appear on claim surfaces.
+the bottom of the claim page as paid for by a funded mandate, named by its
+title and linked to its page, together with the explanation that funding
+buys scheduling, never conclusions or graph membership. The title is the
+Grantmaker's, neutral and faithful; the mandate's page says who funds it
+and any stake they declared (docs/allocation.md, "Who funds a mandate").
 Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
 `GET /grants/:id` (spend, plan, the assessments the grant bought).

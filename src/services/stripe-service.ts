@@ -44,9 +44,17 @@ export async function createOwlPackCheckoutSession(input: {
   userId: string;
   pack: OwlPack;
   email?: string | null;
+  /**
+   * A path on the site to come back to once the purchase succeeds (the
+   * claim a reader was funding when they ran short); the account page
+   * otherwise. Only a same-site path is honoured.
+   */
+  returnTo?: string | null;
 }): Promise<CheckoutSessionResult> {
   const config = loadConfig();
   const accountUrl = `${config.publicWebBaseUrl}/account`;
+  const back = safeReturnPath(input.returnTo);
+  const successUrl = back ? `${config.publicWebBaseUrl}${withPurchaseParam(back)}` : `${accountUrl}?purchase=success`;
   const session = await getStripe().checkout.sessions.create({
     mode: "payment",
     line_items: [
@@ -70,13 +78,33 @@ export async function createOwlPackCheckoutSession(input: {
     metadata: { user_id: input.userId, owls: String(input.pack.owls) },
     client_reference_id: input.userId,
     ...(input.email ? { customer_email: input.email } : {}),
-    success_url: `${accountUrl}?purchase=success`,
+    success_url: successUrl,
     cancel_url: `${accountUrl}?purchase=cancelled`,
   });
   if (!session.url) {
     throw new Error("Stripe returned a Checkout Session without a URL");
   }
   return { url: session.url, sessionId: session.id };
+}
+
+/** The path with `purchase=success` added to its query, before any fragment. */
+function withPurchaseParam(path: string): string {
+  const hash = path.indexOf("#");
+  const base = hash >= 0 ? path.slice(0, hash) : path;
+  const fragment = hash >= 0 ? path.slice(hash) : "";
+  return `${base}${base.includes("?") ? "&" : "?"}purchase=success${fragment}`;
+}
+
+/**
+ * A same-site path, or null: it starts with one slash (never `//host` or a
+ * scheme), carries no backslash or control character, and stays short.
+ */
+export function safeReturnPath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.length > 300) return null;
+  if (!/^\/(?![\/\\])/.test(path)) return null;
+  if (/[\\\u0000-\u001f]/.test(path)) return null;
+  return path;
 }
 
 /**

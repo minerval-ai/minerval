@@ -297,11 +297,12 @@ export async function createApiKey(
 /** Start a Stripe Checkout session for an owl pack; returns the payment URL. */
 export async function createOwlPackCheckout(
   externalId: string,
-  packId: string
+  packId: string,
+  returnTo?: string | null
 ): Promise<string> {
   const r = await accountFetch<{ checkout_url: string }>("/billing/checkout", {
     method: "POST",
-    body: { pack_id: packId },
+    body: { pack_id: packId, ...(returnTo ? { return_to: returnTo } : {}) },
     actingUser: externalId,
   });
   return r.checkout_url;
@@ -406,21 +407,23 @@ export interface BudgetJobView {
   completed_at: string | null;
 }
 
-/** Fund deep decomposition of a claim's subtree with an owl budget. */
-export async function createDecompositionJob(
+export interface DecompositionFunded {
+  mandate_id: string;
+  budget_owls: number;
+  grantmaker_share_owls: number;
+}
+
+/** Fund a decomposition of a claim: a mandate on it, with an owl budget. */
+export async function createDecomposition(
   externalId: string,
   claimId: string,
   budgetOwls: number
-): Promise<BudgetJobView> {
-  const r = await accountFetch<{ job: BudgetJobView }>(
-    `/claims/${pathSegment(claimId)}/decompose`,
-    {
-      method: "POST",
-      body: { budget_owls: budgetOwls },
-      actingUser: externalId,
-    }
-  );
-  return r.job;
+): Promise<DecompositionFunded> {
+  return accountFetch<DecompositionFunded>(`/claims/${pathSegment(claimId)}/decompose`, {
+    method: "POST",
+    body: { budget_owls: budgetOwls },
+    actingUser: externalId,
+  });
 }
 
 export async function listBudgetJobs(
@@ -772,6 +775,10 @@ export interface MandateSummaryView {
   is_platform: boolean;
   status: string;
   manager: string;
+  // The funder's disclosure: shown as, named or not, and the stake they
+  // declared in its subject. `declared` is false for a mandate funded
+  // before funders were asked. Absent from an older API.
+  funder?: { shown_as: string; named: boolean; declared: boolean; stake: string | null };
   budget_owls: number;
   spent_owls: number;
   contributor_count: number;
