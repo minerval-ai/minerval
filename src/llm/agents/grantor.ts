@@ -23,10 +23,8 @@
  * deepen, ingest, formalize, attempt_proof), priced against the escrow by
  * the same estimate the funder was quoted. The judgment is the essay's
  * marginal-value estimate made conversational: prefer contested,
- * consequential, unassessed or stale nodes, start from the question or
- * claims when the mission is to find something out, and ingest sources
- * when a body of work is the object; skip settled scaffolding a formula
- * might naively fund.
+ * consequential, unassessed or stale claims and sources that would seed
+ * live cruxes; skip settled scaffolding a formula might naively fund.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -134,18 +132,11 @@ async function runGrantorImpl(input: {
     `act with the judgment of a person handed the mission and the budget. ` +
     `The mission is the mandate's words. If it names sources or a ` +
     `literature, finding them is your job: search the web, read the pages ` +
-    `that matter, and propose them as ingest items. If it asks a question ` +
-    `or names claims, start from them, as Where a mandate starts says: ` +
-    `find them in the graph, deepen them, and plan to follow their ` +
-    `structure down on your review passes. If it names a scope, survey ` +
-    `the graph and propose the passes that buy the most epistemic ` +
-    `movement. When the graph lacks what the mission needs, fill the gap ` +
-    `in the form the mission calls for. Sources it is about become ingest ` +
-    `items. A question or claim the graph does not hold cannot be created ` +
-    `from a plan: put the wording you would propose in your strategy note, ` +
-    `so the funder can propose it before approving, and plan around what ` +
-    `exists. An empty plan is a last resort, and its strategy note must ` +
-    `say what you looked for and did not find.`;
+    `that matter, and propose them as ingest items. If it names claims or ` +
+    `a scope, survey the graph and propose the passes that buy the most ` +
+    `epistemic movement. A plan you cannot fill from the graph is one you ` +
+    `fill from the world. An empty plan is a last resort, and its strategy ` +
+    `note must say what you looked for and did not find.`;
 
   // A decomposition's passes share a tenth of its budget: say so, and what
   // is left of it.

@@ -91,15 +91,9 @@ saves a wasted conversation.
   the claims bearing on it.
 - Deepening a question into a programme of research: its subquestions,
   candidate answers, and the claims and quantities that would settle it.
-  A mandate that wants something found out starts from the question or
-  the claims, not from sources that seem relevant: their Stewards
-  decompose them, and later passes follow the cruxes down. If the graph
-  does not hold the question yet, the Grantmaker cannot create it. With
-  your user's agreement, propose it first with `propose_claim` (`kind:
-  "question"`), worded neutrally. It is reviewed like anyone's proposal,
-  and its price buys the first Steward pass. A proposal is public under
-  your user's account, even if they later fund the mandate anonymously.
-  Then start the conversation.
+  If the graph does not hold the question yet, the Grantmaker cannot add
+  it. With your user's agreement, propose it first with `propose_claim`
+  (`kind: "question"`); the proposal is public under their account.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find.
 - Formalizing a mathematical claim and funding proof attempts on it.

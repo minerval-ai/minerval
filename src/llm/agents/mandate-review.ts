@@ -284,9 +284,8 @@ async function runMandateReviewImpl(input: {
       name: "extend_plan",
       description:
         "Append new items to your mandate's plan — the systems-building " +
-        "move: nodes that need passes (often children a decomposition " +
-        "showed to be live cruxes, to deepen or assess), sources that " +
-        "should be ingested. Each item is priced and bounded by your escrow, and " +
+        "move: sources you found that should be ingested, claims that " +
+        "need passes. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else. Appends only; " +
         "already-planned work stays. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
