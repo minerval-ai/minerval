@@ -363,14 +363,26 @@ async function runGrantmakerTurnImpl(input: {
   const sourceClaimsTool: Tool = {
     name: "claims_from_source",
     description:
-      "The claims linked to one ingested source (by source_id from " +
-      "ingestion_report), with importance, contestation, assessment state, " +
-      "and stance. For digging into a specific source.",
+      "The nodes linked to one ingested source (by source_id from " +
+      "ingestion_report), with kind, importance, contestation, stance, " +
+      "and when each was last assessed. Pages through every node the " +
+      "source carries: the result gives the total and the next offset.",
     input_schema: {
       type: "object" as const,
       properties: {
         source_id: { type: "string" },
-        limit: { type: "number", description: "Max rows, default 40." },
+        assessed: {
+          type: "string",
+          enum: ["any", "assessed", "unassessed"],
+          description: "Only nodes with, or without, a current assessment. Default any.",
+        },
+        order: {
+          type: "string",
+          enum: ["importance", "contestation", "recent"],
+          description: "Default importance; recent is by when the node was last assessed.",
+        },
+        offset: { type: "number", description: "Rows to skip, default 0." },
+        limit: { type: "number", description: "Rows per page, default 40, at most 100." },
       },
       required: ["source_id"],
     },
@@ -418,8 +430,8 @@ async function runGrantmakerTurnImpl(input: {
     name: "regrant",
     description:
       "Put part of this mandate's uncommitted budget behind another live " +
-      "mandate (all mandates are peers; money, never command). The " +
-      "target's unspent budget refunds back here pro rata if it settles.",
+      "mandate. The target's unspent budget refunds back here pro rata if " +
+      "it settles.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -434,8 +446,7 @@ async function runGrantmakerTurnImpl(input: {
     name: "spawn_mandate",
     description:
       "Carve part of the mission into a new mandate with its own budget " +
-      "and its own Grantmaker (a peer, separately fundable, not a " +
-      "sub-unit). It starts in planning: its agent surveys and drafts its " +
+      "and its own Grantmaker. It starts in planning: its agent surveys and drafts its " +
       "own plan. Use when a slice of the work deserves dedicated " +
       "stewardship, e.g. a whole ingestion program.",
     input_schema: {
@@ -452,8 +463,8 @@ async function runGrantmakerTurnImpl(input: {
   const rateTool: Tool = {
     name: "set_daily_rate",
     description:
-      "Set this mandate's daily allocation rate, in owls per day: the " +
-      "pacing knob. The escrow is the hard bound either way.",
+      "Set this mandate's daily allocation rate, in owls per day. The " +
+      "escrow is the hard bound either way.",
     input_schema: {
       type: "object" as const,
       properties: { owls_per_day: { type: "number" } },
@@ -721,24 +732,11 @@ export function getBountyToolDefinitions(): Tool[] {
     {
       name: "post_bounty",
       description:
-        "Post a bounty (docs/mathematics.md §8.1, §10.4): owls from this " +
-        "mandate's own escrow, offered for a Lean proof or disproof of the " +
-        "claim's published formal statement and held against the escrow " +
-        "from the day it opens until it resolves. Mechanical bounds: the " +
-        "statement's review period has ended and the platform's solver " +
-        "attempted it without settling it; between the minimum and the " +
-        "maximum owls per claim; the per-pass and per-day fractions of the " +
-        "escrow; the mandate's headroom (budget less committed money) " +
-        "covers it; one live bounty per claim. Every posting is two-pass: " +
-        "the first call records the request; only a call from a later pass " +
-        "(a fresh context re-judging the mission) opens it. At or above the " +
-        "autonomy threshold the posting waits for a person's confirmation. " +
-        "State the reasoning publicly in the rationale: the discourse's " +
-        "gain from a settled answer, the effort the problem appears to " +
-        "require, the mandate's headroom and open bounties, and, where this " +
-        "mandate also funds attempts, why a prize is the better use of " +
-        "those owls than another attempt. Amounts never feed back into " +
-        "importance.",
+        "Post a bounty, from this mandate's escrow, for a Lean proof or " +
+        "disproof of a mathematical claim's published formal statement. " +
+        "Only for mathematical claims with a published Lean statement; the " +
+        "mathematics skill says when and how, and the bounds that apply. " +
+        "Otherwise do not use.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -969,23 +967,58 @@ export async function executeManagementTool(
     return JSON.stringify({ sources: pipeline.length, pipeline });
   }
   if (name === "claims_from_source") {
-    const limit = Math.min(100, Math.max(1, Number(toolInput.limit ?? 40)));
-    const rows = await rawQuery(
-      `SELECT ci.claim_id, cl.text, cl.importance, cl.contestation,
-              cl.steward_state, ci.stance,
-              a.status AS assessment_status
-         FROM claim_instances ci
-         JOIN grant_sources gs
-           ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
-         JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
-         LEFT JOIN assessments a
-           ON a.claim_id = ci.claim_id AND a.is_current = true
-        WHERE ci.source_id = $2
-        ORDER BY cl.importance DESC
-        LIMIT $3`,
-      [grantId, String(toolInput.source_id ?? ""), limit]
-    );
-    return JSON.stringify({ count: rows.length, claims: rows });
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(toolInput.limit ?? 40)) || 40));
+    const offset = Math.max(0, Math.floor(Number(toolInput.offset ?? 0)) || 0);
+    const assessed = ["assessed", "unassessed"].includes(String(toolInput.assessed))
+      ? String(toolInput.assessed)
+      : "any";
+    const orderBy =
+      toolInput.order === "contestation"
+        ? "contestation DESC NULLS LAST, importance DESC NULLS LAST"
+        : toolInput.order === "recent"
+          ? "assessed_at DESC NULLS LAST, importance DESC NULLS LAST"
+          : "importance DESC NULLS LAST, contestation DESC NULLS LAST";
+    const page = (lim: number, off: number) =>
+      rawQuery<Record<string, unknown> & { total: number }>(
+        `WITH linked AS (
+         SELECT ci.claim_id, cl.kind, cl.text, cl.importance, cl.contestation,
+                cl.steward_state, ci.stance,
+                a.status AS assessment_status,
+                -- Each kind keeps its current assessment in its own table.
+                GREATEST(
+                  a.assessed_at,
+                  (SELECT MAX(q.assessed_at) FROM quantity_estimates q
+                    WHERE q.claim_id = cl.id AND q.is_current = true),
+                  (SELECT MAX(qa.assessed_at) FROM question_assessments qa
+                    WHERE qa.claim_id = cl.id AND qa.is_current = true)
+                ) AS assessed_at
+           FROM claim_instances ci
+           JOIN grant_sources gs
+             ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
+           JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
+           LEFT JOIN assessments a
+             ON a.claim_id = ci.claim_id AND a.is_current = true
+          WHERE ci.source_id = $2
+       )
+       SELECT *, COUNT(*) OVER()::int AS total FROM linked
+        WHERE ($3 = 'any'
+               OR ($3 = 'assessed' AND assessed_at IS NOT NULL)
+               OR ($3 = 'unassessed' AND assessed_at IS NULL))
+        ORDER BY ${orderBy}
+        LIMIT $4 OFFSET $5`,
+        [grantId, String(toolInput.source_id ?? ""), assessed, lim, off]
+      );
+    const rows = await page(limit, offset);
+    // An offset past the end returns no rows to carry the window count.
+    const total = rows[0]?.total ?? (offset > 0 ? ((await page(1, 0))[0]?.total ?? 0) : 0);
+    const next = offset + rows.length < total ? offset + rows.length : null;
+    return JSON.stringify({
+      total,
+      offset,
+      returned: rows.length,
+      next_offset: next,
+      claims: rows.map(({ total: _t, ...r }) => r),
+    });
   }
   if (name === "importance_distribution") {
     const [row] = await rawQuery<Record<string, unknown>>(

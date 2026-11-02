@@ -105,16 +105,8 @@ export const PLAN_KIND_RULES =
   "rest on come in later, through their Stewards' decompositions). Use it " +
   "when the mandate wants one subject from documents that range wider; the " +
   "same URL can be ingested again later for another focus, or whole. " +
-  "formalize: an active claim with NO published statement whose recorded " +
-  "domains carry the Steward's publish_formalization tool (the " +
-  "mathematics domain); otherwise blocked, and a formalize run would be " +
-  "refused. One row per claim, two strong passes; a run that ends without " +
-  "a statement is retried on the review cadence. " +
-  "attempt_proof: a claim with a PUBLISHED statement; waits (not blocked) " +
-  "until a formalize item has published one. The n-th attempt_proof item " +
-  "on a claim entitles the n-th attempt group; an earlier open group and " +
-  "the mandate's attempt cooldown both hold the next one back, and only a " +
-  "rationale of twenty characters or more waives the cooldown.";
+  "formalize and attempt_proof: mathematical claims; the mathematics " +
+  "skill says when each becomes work.";
 
 /**
  * The JSON schema of one plan item, as the Grantmaker's tools show it

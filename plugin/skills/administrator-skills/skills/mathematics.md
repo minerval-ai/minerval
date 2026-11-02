@@ -307,7 +307,11 @@ version means one ran and stopped short.
 Post a bounty with `post_bounty` only on a published statement whose review
 period has ended and which the solver attempted without settling. The
 bounty is owls from your own mandate's escrow, held there from the day it
-opens until it resolves. Set the amount from what the discourse would gain,
+opens until it resolves. Its mechanical bounds: an amount between the
+minimum and the maximum per claim, within the per-pass and per-day
+fractions of the escrow, covered by the mandate's headroom (budget less
+committed money), and one live bounty per claim. The first call records
+the request; only a call from a later pass opens it. Set the amount from what the discourse would gain,
 what the problem appears to require of a capable claimant, and the
 mandate's headroom; where your mandate funds both attempts and prizes, say
 why a prize is the better use of those owls than another attempt; state

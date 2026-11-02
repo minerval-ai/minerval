@@ -340,7 +340,7 @@ async function runMandateReviewImpl(input: {
       name: "regrant",
       description:
         "Put part of this mandate's uncommitted budget behind another live " +
-        "mandate (all mandates are peers; money, never command). Use when " +
+        "mandate. Use when " +
         "part of the mission is better served by work someone else is " +
         "already running.",
       input_schema: {
@@ -357,8 +357,7 @@ async function runMandateReviewImpl(input: {
       name: "spawn_mandate",
       description:
         "Carve part of the mission out into a new mandate with its own " +
-        "budget and its own Grantmaker (a peer, separately fundable, not " +
-        "a sub-unit). The new mandate starts in planning: its agent " +
+        "budget and its own Grantmaker. The new mandate starts in planning: its agent " +
         "surveys and drafts its own plan. Use when a slice of the work " +
         "deserves dedicated stewardship, e.g. a whole ingestion program.",
       input_schema: {
@@ -378,9 +377,8 @@ async function runMandateReviewImpl(input: {
     {
       name: "set_daily_rate",
       description:
-        "Set your mandate's own daily allocation rate, in owls per day: " +
-        "your pacing knob. Pace the mission the way its evidence flow " +
-        "deserves; the escrow is the hard bound either way.",
+        "Set your mandate's daily allocation rate, in owls per day. The " +
+        "escrow is the hard bound either way.",
       input_schema: {
         type: "object" as const,
         properties: { owls_per_day: { type: "number" } },

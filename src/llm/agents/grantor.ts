@@ -211,7 +211,7 @@ async function runGrantorImpl(input: {
     `Your workspace (the mandate's working memory so far):\n\n` +
     (grant.workspace?.trim()
       ? grant.workspace
-      : `(empty — this is the mandate's first pass. Start the map: what ` +
+      : `(empty: this is the mandate's first pass. Start the map: what ` +
         `the territory looks like, the sources you found and what each ` +
         `is good for, what you left for the review passes.)`) +
     `\n\n---\n\n` +
