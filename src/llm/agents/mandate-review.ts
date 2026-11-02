@@ -73,6 +73,12 @@ import {
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
 import { runMandateAllocator } from "../../services/allocation-service.js";
 import {
+  WAKE_AFTER_MINUTES,
+  consumeMandateEvents,
+  describeMandateEvent,
+  pendingMandateEvents,
+} from "../../services/mandate-event-service.js";
+import {
   mandateClosureBlockers,
   closureBlockedMessage,
 } from "../../services/bounty-service.js";
@@ -544,6 +550,17 @@ async function runMandateReviewImpl(input: {
   const shareNote = shareLeft
     ? grantmakerShareNote(shareOwls, microUsdToOwls(shareLeft.leftMicroUsd), "review").trimStart() + "\n\n"
     : "";
+  // The inbox: what the mandate's work produced since the last pass
+  // (mandate-event-service.ts). Whatever this pass is shown is marked
+  // consumed when it ends; the rest waits for the next.
+  const inbox = await pendingMandateEvents(grant.id, 100).catch(() => ({ events: [], total: 0 }));
+  const inboxText =
+    inbox.total === 0
+      ? `(nothing new)`
+      : inbox.events.map((e) => `- ${describeMandateEvent(e)}`).join("\n") +
+        (inbox.total > inbox.events.length
+          ? `\n- ...and ${inbox.total - inbox.events.length} more, shown on your next pass.`
+          : ``);
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -560,6 +577,12 @@ async function runMandateReviewImpl(input: {
       : ``) +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    `Since your last pass (assessments on the nodes you funded, decisions on ` +
+    `your contributions, sources you ingested, your lookouts' flags):\n\n${inboxText}\n\n` +
+    `Your reviews wake when your mandate's work produces something like ` +
+    `this, ${WAKE_AFTER_MINUTES} minutes or more after your last pass ended so that ` +
+    `a burst is judged together, and otherwise once a day. Each pass is ` +
+    `paid from your escrow within your daily rate.\n\n` +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
     (grant.workspace?.trim()
@@ -917,6 +940,7 @@ async function runMandateReviewImpl(input: {
       WHERE id = $1`,
     [grant.id, note || "(review completed without a note)"]
   );
+  await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
   // Fund what this pass decided now, not at the next scheduled sweep
   // (hours away): the allocator is idempotent and locked per mandate, and
   // bounded by the daily rate and the escrow like every other placement.
