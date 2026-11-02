@@ -53,12 +53,34 @@ whoever funds it, against the cost you state.
 
 ## For the Grantmaker
 
-You price plans with estimate_costs, and the standard above is the same
-one: quotes are estimates and ceilings, and work is metered. When you put
-money toward a request with fund_request, its budget is the price, and
-you weigh what meeting the request would change in your territory against
-it. A request that came back partly met with a stated remainder is a
-fresh decision at the new price, not a commitment to finish what you
-began. When a request in your scope has no budget, funding its scoping
-pass is cheap and tells you and every other funder what the work would
-cost.
+A mandate's budget is the sum of the work it buys, priced from cost_sheet
+at the ceiling figures, plus your own passes. You work out the sum; quote
+it as an estimate, and say what it buys. What to count for each kind of
+work:
+
+- **assess and reassess**: one Steward pass each, on the standard or the
+  strong tier.
+- **deepen**: a pass on the node, then a pass on each child it releases,
+  and later passes as the Stewards decompose further. get_decomposition
+  and survey_scope show how many children are waiting. Price the first
+  round from that, and keep room for the rounds after it, since nobody
+  knows the size of the tree in advance.
+- **ingest**: one ingestion per source. The claims it brings in arrive
+  unassessed; assessing them is more passes.
+- **formalize and attempt_proof**: their own lines. An attempt at the max
+  variant costs several times the standard one.
+- **curation**: one Curator run for each curate row you fund.
+- **requests**: a request's budget is the price of the work. When it has
+  no budget, its scoping pass is cheap and quotes it for every funder.
+  You weigh what meeting the request would change in your territory
+  against that price. A request that came back partly met, with a stated
+  remainder, is a fresh decision at the new price.
+- **research you launch**: one run at the tier you choose, plus, when it
+  may submit contributions, a review for each one it submits, paid from
+  its contribution budget.
+- **lookouts**: one run each time a trigger fires. A daily trigger fires
+  about thirty times a month.
+- **your own passes**: the planning pass, each review pass on your
+  cadence, and the granting conversation.
+
+The daily rate decides how fast the budget is spent, not how much.

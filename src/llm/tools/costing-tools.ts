@@ -5,8 +5,10 @@
  * Every figure is metered spend the platform recorded, in USD (one owl
  * each): research runs by model tier from `research_runs`, Steward passes
  * from the cost estimator the ledger itself uses, a request's scoping pass
- * from the ledger, and the paid tools' configured charges. Each line gives
- * the typical figure and the 80th percentile, the one a ceiling should use.
+ * from the ledger, a contribution's review, the paid tools' configured
+ * charges, and every kind of work on the action ledger (what a mandate
+ * funds) from the metered cost of its finished rows. Each line gives the
+ * typical figure and the 80th percentile, the one a ceiling should use.
  * Where too few runs exist the line says so and falls back to a prior.
  * Read-only: it prices steps and never judges what work is worth.
  */
@@ -16,6 +18,9 @@ import {
   estimateLedgerKindCostMicroUsd,
   stewardTierCostEstimates,
 } from "../../services/cost-estimate-service.js";
+import { getEffectiveAllocationPolicy } from "../../services/allocation-policy-service.js";
+import { reviewCostEstimateMicroUsd } from "../../services/contribution-service.js";
+import { capMicroUsd } from "../../services/owl.js";
 import { modelForTier, RESEARCH_MODEL_TIERS } from "../../services/research-run-service.js";
 import { elicitConfigured } from "./elicit-tools.js";
 import type { SkillToolExecutor } from "./skill-tools.js";
@@ -27,6 +32,103 @@ const MIN_RUNS = 5;
 
 const usd = (micro: number | string | null | undefined): number | null =>
   micro == null ? null : Math.round(Number(micro) / 10_000) / 100;
+
+/** What each kind of ledger work is, in a funder's words. */
+const LEDGER_KINDS: Record<string, string> = {
+  assess: "a Steward pass on a node with no assessment yet (assess and deepen items)",
+  reassess: "a fresh Steward pass on an assessed node",
+  ingest: "extracting and matching one source; the claims it brings in are assessed separately",
+  formalize: "drafting and reviewing a Lean statement of a mathematical claim",
+  attempt_proof: "one proof attempt on a published statement",
+  curate: "a Curator run reconciling the structure around one node",
+  audit: "one Audit Agent run",
+  request: "a request taken up: the scope variant quotes it, the full variant costs its budget",
+  lookout_run: "one run of a standing lookout",
+  mandate_review: "one review pass by a mandate's Grantmaker",
+  grant_planning: "a Grantmaker's planning pass on a new mandate",
+  prize_review: "a review of a prize claim",
+  consistency_sweep: "a Consistency Checker sweep over one region",
+};
+
+/** The prior a ledger line falls back to when too few rows have finished. */
+async function ledgerPriorMicroUsd(kind: string, variant: string): Promise<number | null> {
+  const owl = loadConfig().owlCostMicroUsd ?? 1_000_000;
+  const policy = await getEffectiveAllocationPolicy();
+  switch (kind) {
+    case "assess":
+    case "reassess": {
+      const tiers = await stewardTierCostEstimates();
+      return variant === "strong" ? tiers.strongMicroUsd : tiers.standardMicroUsd;
+    }
+    case "ingest":
+      return capMicroUsd("source_ingest");
+    case "formalize":
+      return Math.round(policy.est_formalize_cost_owls * owl);
+    case "attempt_proof":
+      return Math.round(
+        (variant === "max" ? policy.est_attempt_max_cost_owls : policy.est_attempt_standard_cost_owls) * owl
+      );
+    case "prize_review":
+      return Math.round(policy.est_prize_review_cost_owls * owl);
+    case "curate":
+    case "audit":
+      return estimateLedgerKindCostMicroUsd(kind);
+    case "request":
+      return variant === "scope" ? estimateLedgerKindCostMicroUsd("request_scope") : null;
+    default:
+      return null;
+  }
+}
+
+/** Every kind of work on the action ledger, priced from its finished rows. */
+async function ledgerLines(): Promise<Record<string, unknown>[]> {
+  const rows = await rawQuery<{ kind: string; variant: string; runs: number; p50: string | null; p80: string | null }>(
+    `SELECT kind, variant, COUNT(*)::int AS runs,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY metered_cost_micro_usd)::bigint AS p50,
+            percentile_cont(0.8) WITHIN GROUP (ORDER BY metered_cost_micro_usd)::bigint AS p80
+       FROM actions
+      WHERE status = 'done' AND metered_cost_micro_usd > 0
+        AND updated_at > now() - make_interval(days => $1)
+      GROUP BY kind, variant`,
+    [WINDOW_DAYS]
+  );
+  const seen = new Map(rows.map((r) => [`${r.kind}:${r.variant}`, r]));
+  // Every kind a mandate can fund appears, run or not, so a thin line says so.
+  const wanted: Array<[string, string]> = [
+    ["assess", "standard"], ["assess", "strong"],
+    ["reassess", "standard"], ["reassess", "strong"],
+    ["ingest", "standard"], ["formalize", "standard"],
+    ["attempt_proof", "standard"], ["attempt_proof", "max"],
+    ["curate", "standard"], ["audit", "standard"], ["request", "scope"],
+    ["lookout_run", "standard"], ["mandate_review", "standard"], ["grant_planning", "standard"],
+  ];
+  for (const r of rows) {
+    if (!wanted.some(([k, v]) => k === r.kind && v === r.variant)) wanted.push([r.kind, r.variant]);
+  }
+  const lines: Record<string, unknown>[] = [];
+  for (const [kind, variant] of wanted) {
+    const r = seen.get(`${kind}:${variant}`);
+    const thin = (r?.runs ?? 0) < MIN_RUNS;
+    const prior = thin ? await ledgerPriorMicroUsd(kind, variant).catch(() => null) : null;
+    lines.push({
+      kind,
+      variant,
+      what: LEDGER_KINDS[kind] ?? kind,
+      runs_last_30_days: r?.runs ?? 0,
+      typical_usd: usd(r?.p50),
+      ceiling_usd: thin ? (usd(prior) ?? usd(r?.p80)) : usd(r?.p80),
+      ...(thin
+        ? {
+            note:
+              prior != null
+                ? "Too few runs to go on: the ceiling is the prior."
+                : "Too few runs to go on, and no prior: price it from the steps.",
+          }
+        : {}),
+    });
+  }
+  return lines;
+}
 
 const executeCostSheet: SkillToolExecutor = async () => {
   const config = loadConfig();
@@ -58,6 +160,8 @@ const executeCostSheet: SkillToolExecutor = async () => {
   });
   const steward = await stewardTierCostEstimates();
   const scope = await estimateLedgerKindCostMicroUsd("request_scope");
+  const review = await reviewCostEstimateMicroUsd().catch(() => null);
+  const ledger = await ledgerLines();
   const paidTools: Record<string, string> = {};
   if (elicitConfigured(config)) paidTools.elicit = `about $${config.elicitUsdPerCall} per call`;
   if (config.pangramApiKey) {
@@ -73,6 +177,8 @@ const executeCostSheet: SkillToolExecutor = async () => {
       strong_usd: usd(steward.strongMicroUsd),
     },
     request_scoping_pass_usd: usd(scope),
+    contribution_review_usd: usd(review),
+    ledger_work: ledger,
     paid_tools: paidTools,
     note:
       "USD of metered spend, one owl each. A research run's cost is mostly its model's calls; " +

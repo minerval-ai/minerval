@@ -17,8 +17,6 @@
  *    keyword slice (services/scope-survey-service.ts);
  *  - read_page: one public page in full, for when a search snippet cannot
  *    tell you whether a source matters;
- *  - estimate_costs: owl quotes for a bundle of work from live metered
- *    averages, so a plan is priced before it is proposed;
  *  - update_workspace: the mandate's durable working memory
  *    (`grants.workspace`), read back in full at the start of every pass.
  *
@@ -41,7 +39,6 @@ import { microUsdToOwls, capOwls } from "../../services/owl.js";
 
 export { READ_PAGE_TOOL_NAME };
 export const SURVEY_SCOPE_TOOL_NAME = "survey_scope";
-export const ESTIMATE_COSTS_TOOL_NAME = "estimate_costs";
 export const UPDATE_WORKSPACE_TOOL_NAME = "update_workspace";
 
 export interface MandateTools {
@@ -66,8 +63,6 @@ export interface MandateToolOptions {
   scopeQuery?: string | null;
   /** Survey rows per page; default 40. */
   surveyLimit?: number;
-  /** Include the estimate's suggested planning overhead line; default true. */
-  includeOverhead?: boolean;
 }
 
 export function getSurveyScopeToolDefinition(): Tool {
@@ -85,35 +80,6 @@ export function getSurveyScopeToolDefinition(): Tool {
         claim_id: { type: "string", description: "Subtree root (optional)." },
         query: { type: "string", description: "Keyword slice (optional)." },
         offset: { type: "number" },
-      },
-      required: [],
-    },
-  };
-}
-
-export function getEstimateCostsToolDefinition(): Tool {
-  return {
-    name: ESTIMATE_COSTS_TOOL_NAME,
-    description:
-      "Quote expected costs in owls for a bundle of work, from the live " +
-      "metered averages (falling back to priors). Owls map to dollars of " +
-      "platform spend one for one; quotes are estimates, and the funder " +
-      "pays metered actuals against the escrowed budget. Use before " +
-      "proposing or growing a plan.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        assessments: {
-          type: "number",
-          description: "Steward passes on unassessed claims (best model).",
-        },
-        reassessments: { type: "number" },
-        deepen_claims: {
-          type: "number",
-          description:
-            "Claims to deepen (each roughly three passes over its subtree).",
-        },
-        sources_to_ingest: { type: "number" },
       },
       required: [],
     },
@@ -140,39 +106,28 @@ export function getUpdateWorkspaceToolDefinition(): Tool {
 }
 
 /**
- * Price a bundle of work in owls. Exported so a planner can hold its own
- * proposal to the same estimate the tool quotes.
+ * The least a plan's ledger items can cost, in owls: one strong Steward pass
+ * for each assess, reassess, and deepen item (a deepen costs more, by the
+ * children it releases) and one ingestion for each ingest item, at the
+ * estimates the ledger itself prices rows with. The planning pass refuses a
+ * plan whose floor already overruns the escrow; it is a backstop, not a
+ * quote. The Grantmaker prices plans itself from cost_sheet.
  */
-export async function estimatePlanCosts(counts: {
-  assessments?: number;
-  reassessments?: number;
-  deepen_claims?: number;
-  sources_to_ingest?: number;
-}): Promise<{
-  unit_estimates: {
-    assessment_each_owls: number;
-    reassessment_each_owls: number;
-    deepen_each_owls: number;
-    ingest_each_owls: number;
-  };
-  subtotal_owls: number;
+export async function planCostFloorOwls(items: readonly { action: string }[]): Promise<{
+  floor_owls: number;
+  per_item_owls: { steward_pass: number; ingest: number };
 }> {
   const tiers = await stewardTierCostEstimates();
-  const passOwls = microUsdToOwls(tiers.strongMicroUsd);
-  const n = (v: unknown) => Math.max(0, Number(v ?? 0) || 0);
-  const ingestOwls = capOwls("source_ingest");
-  const subtotal =
-    (n(counts.assessments) + n(counts.reassessments)) * passOwls +
-    n(counts.deepen_claims) * passOwls * 3 +
-    n(counts.sources_to_ingest) * ingestOwls;
+  const pass = microUsdToOwls(tiers.strongMicroUsd);
+  const ingest = capOwls("source_ingest");
+  let floor = 0;
+  for (const it of items) {
+    if (it.action === "assess" || it.action === "reassess" || it.action === "deepen") floor += pass;
+    else if (it.action === "ingest") floor += ingest;
+  }
   return {
-    unit_estimates: {
-      assessment_each_owls: passOwls,
-      reassessment_each_owls: passOwls,
-      deepen_each_owls: Math.round(passOwls * 3 * 1000) / 1000,
-      ingest_each_owls: ingestOwls,
-    },
-    subtotal_owls: Math.round(subtotal * 100) / 100,
+    floor_owls: Math.round(floor * 100) / 100,
+    per_item_owls: { steward_pass: pass, ingest },
   };
 }
 
@@ -193,10 +148,8 @@ export function createMandateTools(options: MandateToolOptions = {}): MandateToo
   const definitions: Tool[] = [
     getSurveyScopeToolDefinition(),
     getReadPageToolDefinition(),
-    getEstimateCostsToolDefinition(),
   ];
   if (options.grantId) definitions.push(getUpdateWorkspaceToolDefinition());
-  const includeOverhead = options.includeOverhead ?? true;
 
   return {
     definitions,
@@ -222,27 +175,6 @@ export function createMandateTools(options: MandateToolOptions = {}): MandateToo
         return JSON.stringify({ count: rows.length, claims: rows });
       }
       if (name === READ_PAGE_TOOL_NAME) return executeReadPage(name, toolInput);
-      if (name === ESTIMATE_COSTS_TOOL_NAME) {
-        const est = await estimatePlanCosts(toolInput as Record<string, number>);
-        // Conversation + planning + review overhead rides on the mandate.
-        const overhead = Math.max(
-          0.25,
-          Math.round(est.subtotal_owls * 0.05 * 100) / 100
-        );
-        return JSON.stringify({
-          ...est,
-          ...(includeOverhead
-            ? {
-                suggested_overhead_owls: overhead,
-                suggested_total_owls:
-                  Math.round((est.subtotal_owls + overhead) * 100) / 100,
-              }
-            : {}),
-          note:
-            "Estimates from live metered averages where available, priors " +
-            "otherwise. Actual spend is metered; unspent budget refunds.",
-        });
-      }
       if (name === UPDATE_WORKSPACE_TOOL_NAME && options.grantId) {
         const chars = await updateGrantWorkspace(
           options.grantId,

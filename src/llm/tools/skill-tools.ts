@@ -162,7 +162,6 @@ const AGENT_INLINE_TOOL_NAMES = [
   "search_similar_claims",
   "submit_match_decision",
   "survey_scope",
-  "estimate_costs",
   "propose_mandate",
   "decline_mandate",
   "grant_overview",

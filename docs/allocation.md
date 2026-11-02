@@ -58,8 +58,8 @@ Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
 no owl is spent until the funder approves the plan it proposes. The
 planner has the review pass's affordances, because the first territory
 survey is the same job as every later one: the graph (search_claims,
-survey_scope) AND the open web (web_search, read_page), the shared cost
-quotes (estimate_costs), and the mandate's workspace, so its survey notes
+survey_scope) AND the open web (web_search, read_page), the live price
+list (cost_sheet, from the costing skill), and the mandate's workspace, so its survey notes
 become the mandate's opening working memory. Its briefing is the mandate's
 words, with any declared scope claim or query as a search aid rather than
 the scope; a mandate told to "map the nutrition literature" reaches its

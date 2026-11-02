@@ -37,6 +37,12 @@ import { createFindingTools } from "../tools/finding-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
+import { listSkills } from "../prompts/skills.js";
+import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
@@ -162,7 +168,7 @@ async function runMandateReviewImpl(input: {
     // not answerable from keyword hits and scalars — it needs the claim's
     // reasoning, what it rests on, and what rests on it.
     ...getGraphReadToolDefinitions(),
-    // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+    // The mandate toolbox (#333): survey_scope, read_page,
     // update_workspace — one implementation shared with the planning pass
     // and the granting conversation.
     ...mandateTools.definitions,
@@ -616,7 +622,7 @@ async function runMandateReviewImpl(input: {
     initialMessages: [
       { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS)}${skillLoader.pointerNote}` },
     ],
-    tools: [webSearch.tool, ...availableTools, ...skillLoader.definitions],
+    tools: [webSearch.tool, ...availableTools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
     system,
     model,
     maxTokens: 4096,
@@ -625,6 +631,7 @@ async function runMandateReviewImpl(input: {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
+      if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "grantmaker" });
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

@@ -34,6 +34,11 @@ import { modelSupportsLongRun } from "../models.js";
 import { skillsForGrant } from "./skill-selection.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
+import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
@@ -163,8 +168,9 @@ const MANDATE_SCHEMA = {
     expected_cost_owls: {
       type: "number",
       description:
-        "Your honest total estimate in owls, from estimate_costs, including " +
-        "overhead. The funder will be asked to escrow at least this.",
+        "Your honest total estimate in owls, priced from cost_sheet, " +
+        "including your own passes. The funder will be asked to escrow at " +
+        "least this.",
     },
     notes: {
       type: "string",
@@ -522,7 +528,7 @@ async function runGrantmakerTurnImpl(input: {
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
   const webSearch = createWebSearch(model);
-  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  // The mandate toolbox (#333): survey_scope, read_page,
   // and — once a mandate is live — its workspace, one implementation
   // shared with the planning and review passes.
   const mandateTools = createMandateTools({ grantId: input.grantId ?? null });
@@ -597,7 +603,7 @@ async function runGrantmakerTurnImpl(input: {
       role: m.role,
       content: m.content,
     })),
-    tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
+    tools: [webSearch.tool, ...tools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
     system,
     model,
     // A drafted mandate is one propose_mandate call carrying the whole plan,
@@ -616,6 +622,7 @@ async function runGrantmakerTurnImpl(input: {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
+      if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "grantmaker" });
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;

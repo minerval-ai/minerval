@@ -123,12 +123,13 @@
       "tools": [
         {
           "name": "cost_sheet",
-          "description": "The live price list for pricing work: what a research run has cost on each model tier, a Steward pass on each tier, a request's scoping pass, and the paid tools' per-call and per-word charges, from the metered costs the platform recorded (falling back to priors where too few runs exist). Each line gives a typical figure and the higher figure a ceiling should use. All figures are USD of metered spend, one owl each. It prices steps; it does not say what work is worth doing.",
+          "description": "The live price list for pricing work, from the metered costs the platform recorded (falling back to priors where too few runs exist): a research run on each model tier, a Steward pass on each tier, a request's scoping pass, a contribution's review, the paid tools' per-call and per-word charges, and every kind of work on the action ledger that a mandate can fund (assess, reassess, ingest, formalize, proof attempts, curation, audits, lookout runs, review passes). Each line gives a typical figure and the higher figure a ceiling should use. All figures are USD of metered spend, one owl each.",
           "roles": [
             "claim-steward",
             "curator",
             "researcher",
-            "contribution-reviewer"
+            "contribution-reviewer",
+            "grantmaker"
           ],
           "input_schema": {
             "type": "object",
@@ -137,7 +138,7 @@
           }
         }
       ],
-      "bodyChars": 5663
+      "bodyChars": 6817
     },
     {
       "name": "mathematics",

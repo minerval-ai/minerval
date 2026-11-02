@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
  * The mandate toolbox (llm/tools/mandate-tools.ts, #333): one
- * implementation of survey_scope, read_page, estimate_costs and
- * update_workspace for every mode of a mandate's Grantmaker. The survey
+ * implementation of survey_scope, read_page and update_workspace for every mode of a mandate's Grantmaker. The survey
  * falls back to the mandate's declared scope hints only when a call names
  * nothing; the workspace is offered only for a live mandate and is
  * bounded; anything else is "not my tool" (null).
@@ -48,7 +47,7 @@ vi.mock("../../../../src/services/owl.js", () => ({
 
 import {
   createMandateTools,
-  estimatePlanCosts,
+  planCostFloorOwls,
 } from "../../../../src/llm/tools/mandate-tools.js";
 
 beforeEach(() => {
@@ -62,12 +61,10 @@ describe("createMandateTools", () => {
     expect(createMandateTools().definitions.map((t) => t.name)).toEqual([
       "survey_scope",
       "read_page",
-      "estimate_costs",
     ]);
     expect(createMandateTools({ grantId: "g-1" }).definitions.map((t) => t.name)).toEqual([
       "survey_scope",
       "read_page",
-      "estimate_costs",
       "update_workspace",
     ]);
   });
@@ -95,7 +92,7 @@ describe("createMandateTools", () => {
     });
   });
 
-  it("reads a page, prices work, and rewrites the workspace whole", async () => {
+  it("reads a page and rewrites the workspace whole", async () => {
     const tools = createMandateTools({ grantId: "g-1" });
     expect(JSON.parse((await tools.execute("read_page", { url: "https://x.test/a" }))!)).toEqual({
       ok: true,
@@ -103,19 +100,6 @@ describe("createMandateTools", () => {
       chars: 4,
     });
     expect(state.pages).toEqual(["https://x.test/a"]);
-
-    const quote = JSON.parse(
-      (await tools.execute("estimate_costs", { assessments: 2, deepen_claims: 1, sources_to_ingest: 4 }))!
-    );
-    // 2 passes at 2 owls, one deepen at 3 passes, four ingests at 0.5.
-    expect(quote.subtotal_owls).toBe(12);
-    expect(quote.unit_estimates).toEqual({
-      assessment_each_owls: 2,
-      reassessment_each_owls: 2,
-      deepen_each_owls: 6,
-      ingest_each_owls: 0.5,
-    });
-    expect(quote.suggested_total_owls).toBe(12.6);
 
     const res = JSON.parse(
       (await tools.execute("update_workspace", { content: "x".repeat(150_000) }))!
@@ -132,8 +116,14 @@ describe("createMandateTools", () => {
     expect(state.updates).toEqual([]);
   });
 
-  it("exposes the same estimate the tool quotes, so a planner can hold its plan to it", async () => {
-    const est = await estimatePlanCosts({ reassessments: 3 });
-    expect(est.subtotal_owls).toBe(6);
+  it("prices a plan's floor at one pass per stewarding item and one ingestion per source", async () => {
+    const floor = await planCostFloorOwls([
+      { action: "assess" },
+      { action: "deepen" },
+      { action: "ingest" },
+      { action: "formalize" },
+    ]);
+    // Two passes at 2 owls, one ingestion at 0.5; formalize is priced at run time.
+    expect(floor).toEqual({ floor_owls: 4.5, per_item_owls: { steward_pass: 2, ingest: 0.5 } });
   });
 });
