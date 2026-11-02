@@ -672,7 +672,7 @@ Design principles, in force in the implementation:
   something found out (a question researched, a quantity estimated, the
   claims made about a subject checked), the mandate starts from those
   nodes: `deepen` on them, whose Stewards decompose each by what would
-  make each true (constitution §6, §7a), and review passes that fund the
+  make it true (constitution §6, §7a), and review passes that fund the
   children which turn out to be live cruxes. The plan grows as the graph
   fills out. When a body of work is itself the object (an archive to
   fact-check, a report and its studies), it starts from the sources. The

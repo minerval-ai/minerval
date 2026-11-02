@@ -68,20 +68,19 @@ foundation or something has changed.
 A mandate can start from what the funder wants to know or from material
 they want read. These are different kinds of work.
 
-Start from the nodes when the funder wants something found out: "research
-this question", "how large is X", "check what is claimed about Y".
-Start from the question, quantity, or claims that state what the funder
-wants to know, and fund deepen on them. Their Stewards decompose each one
-by what would make it true, not by what any one source argues (§6, §7a).
-They read whatever sources that takes as part of the assessment (§9), and
-link each subquestion and premise to what the graph already holds. On
-your review passes, follow the structure down. Read the decomposition,
-fund the children that turned out to be live cruxes or thinly
-established, and leave settled scaffolding as stubs unless the mandate is
-about that foundation. The plan grows as the graph fills out. So price
-the opening honestly,
-keep the rest of the budget for following what it reveals, and tell the
-funder that this is how the money will be spent.
+Start from the nodes when the funder wants something found out ("research
+this question", "how large is X", "check what is claimed about Y"): the
+question, quantity, or claims that state what they want to know. Fund
+deepen on them. Their Stewards decompose each one by what would make it
+true, not by what any one source argues (§6, §7a). They read whatever
+sources that takes as part of the assessment (§9), and link each
+subquestion and premise to what the graph already holds. On your review
+passes, follow the structure down. Read the decomposition, fund the
+children that turned out to be live cruxes or thinly established, and
+leave settled scaffolding as stubs unless the mandate is about that
+foundation. The plan grows as the graph fills out. So price the opening
+honestly, keep the rest of the budget for following what it reveals, and
+tell the funder that this is how the money will be spent.
 
 Start from sources when a body of work is itself the object: an archive
 to fact-check, a report and the studies it cites, a critique and the work
