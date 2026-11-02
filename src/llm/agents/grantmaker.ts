@@ -25,6 +25,7 @@ import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
@@ -33,6 +34,11 @@ import { listSkills } from "../prompts/skills.js";
 import { modelSupportsLongRun } from "../models.js";
 import { skillsForGrant } from "./skill-selection.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -163,8 +169,9 @@ const MANDATE_SCHEMA = {
     expected_cost_owls: {
       type: "number",
       description:
-        "Your honest total estimate in owls, from estimate_costs, including " +
-        "overhead. The funder will be asked to escrow at least this.",
+        "Your honest total estimate in owls, priced from cost_sheet, " +
+        "including your own passes. The funder will be asked to escrow at " +
+        "least this.",
     },
     notes: {
       type: "string",
@@ -356,14 +363,26 @@ async function runGrantmakerTurnImpl(input: {
   const sourceClaimsTool: Tool = {
     name: "claims_from_source",
     description:
-      "The claims linked to one ingested source (by source_id from " +
-      "ingestion_report), with importance, contestation, assessment state, " +
-      "and stance. For digging into a specific source.",
+      "The nodes linked to one ingested source (by source_id from " +
+      "ingestion_report), with kind, importance, contestation, stance, " +
+      "and when each was last assessed. Pages through every node the " +
+      "source carries: the result gives the total and the next offset.",
     input_schema: {
       type: "object" as const,
       properties: {
         source_id: { type: "string" },
-        limit: { type: "number", description: "Max rows, default 40." },
+        assessed: {
+          type: "string",
+          enum: ["any", "assessed", "unassessed"],
+          description: "Only nodes with, or without, a current assessment. Default any.",
+        },
+        order: {
+          type: "string",
+          enum: ["importance", "contestation", "recent"],
+          description: "Default importance; recent is by when the node was last assessed.",
+        },
+        offset: { type: "number", description: "Rows to skip, default 0." },
+        limit: { type: "number", description: "Rows per page, default 40, at most 100." },
       },
       required: ["source_id"],
     },
@@ -383,7 +402,7 @@ async function runGrantmakerTurnImpl(input: {
       "Amend the platform General mandate's allocation policy: the " +
       "formula knobs its bulk valuer runs on (value heuristic, cost " +
       "priors, strong-pass gain multiplier, reassessment cadence). Only " +
-      "the General mandate's spending is formula-driven — an ordinary " +
+      "the General mandate's spending is formula-driven. An ordinary " +
       "mandate's spending follows its Grantmaker's own valuations " +
       "(set_valuations), so this tool refuses on other mandates rather " +
       "than pretending a write took effect. Every key is bounded by the " +
@@ -411,8 +430,8 @@ async function runGrantmakerTurnImpl(input: {
     name: "regrant",
     description:
       "Put part of this mandate's uncommitted budget behind another live " +
-      "mandate (all mandates are peers; money, never command). The " +
-      "target's unspent budget refunds back here pro rata if it settles.",
+      "mandate. The target's unspent budget refunds back here pro rata if " +
+      "it settles.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -427,8 +446,7 @@ async function runGrantmakerTurnImpl(input: {
     name: "spawn_mandate",
     description:
       "Carve part of the mission into a new mandate with its own budget " +
-      "and its own Grantmaker (a peer, separately fundable — not a " +
-      "sub-unit). It starts in planning: its agent surveys and drafts its " +
+      "and its own Grantmaker. It starts in planning: its agent surveys and drafts its " +
       "own plan. Use when a slice of the work deserves dedicated " +
       "stewardship, e.g. a whole ingestion program.",
     input_schema: {
@@ -445,8 +463,8 @@ async function runGrantmakerTurnImpl(input: {
   const rateTool: Tool = {
     name: "set_daily_rate",
     description:
-      "Set this mandate's daily allocation rate, in owls per day — the " +
-      "pacing knob. The escrow is the hard bound either way.",
+      "Set this mandate's daily allocation rate, in owls per day. The " +
+      "escrow is the hard bound either way.",
     input_schema: {
       type: "object" as const,
       properties: { owls_per_day: { type: "number" } },
@@ -456,7 +474,7 @@ async function runGrantmakerTurnImpl(input: {
   const allocationReportTool: Tool = {
     name: "allocation_report",
     description:
-      "This mandate's live allocation view — the same data its public " +
+      "This mandate's live allocation view, the same data its public " +
       "page renders: the policy in force, budget and daily rate, today's " +
       "placements and the day's emergent value-per-owl bar, per-kind " +
       "action tiles (candidates / valued / covered), and the mandate's " +
@@ -522,7 +540,7 @@ async function runGrantmakerTurnImpl(input: {
   // says "ingest the best writing on X" is asking the Grantmaker to go and
   // find it, in the conversation as much as on a review pass.
   const webSearch = createWebSearch(model);
-  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  // The mandate toolbox (#333): survey_scope, read_page,
   // and — once a mandate is live — its workspace, one implementation
   // shared with the planning and review passes.
   const mandateTools = createMandateTools({ grantId: input.grantId ?? null });
@@ -534,11 +552,14 @@ async function runGrantmakerTurnImpl(input: {
     requestedBy: "grantmaker",
     grantId: input.grantId ?? null,
   });
+  // Contributions are paid from the escrow: a live mandate only (§19).
+  const contributionTools = managed ? createGrantContributionTools(input.grantId!) : null;
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
     ...mandateTools.definitions,
     ...(managed ? researchTools.definitions : []),
+    ...(contributionTools ? contributionTools.definitions : []),
     // The open requests a funded mandate's money may be able to meet
     // (fund_request); reading them commits nothing.
     ...(managed && researchTools.definitions.length > 0 ? [LIST_REQUESTS_TOOL] : []),
@@ -597,7 +618,7 @@ async function runGrantmakerTurnImpl(input: {
       role: m.role,
       content: m.content,
     })),
-    tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
+    tools: [webSearch.tool, ...tools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
     system,
     model,
     // A drafted mandate is one propose_mandate call carrying the whole plan,
@@ -616,11 +637,16 @@ async function runGrantmakerTurnImpl(input: {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
+      if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "grantmaker" });
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      if (contributionTools) {
+        const contributed = await contributionTools.execute(name, toolInput);
+        if (contributed !== null) return contributed;
+      }
       if (managed) {
         const research = await researchTools.execute(name, toolInput);
         if (research !== null) return research;
@@ -706,24 +732,11 @@ export function getBountyToolDefinitions(): Tool[] {
     {
       name: "post_bounty",
       description:
-        "Post a bounty (docs/mathematics.md §8.1, §10.4): owls from this " +
-        "mandate's own escrow, offered for a Lean proof or disproof of the " +
-        "claim's published formal statement and held against the escrow " +
-        "from the day it opens until it resolves. Mechanical bounds: the " +
-        "statement's review period has ended and the platform's solver " +
-        "attempted it without settling it; between the minimum and the " +
-        "maximum owls per claim; the per-pass and per-day fractions of the " +
-        "escrow; the mandate's headroom (budget less committed money) " +
-        "covers it; one live bounty per claim. Every posting is two-pass: " +
-        "the first call records the request; only a call from a later pass " +
-        "(a fresh context re-judging the mission) opens it. At or above the " +
-        "autonomy threshold the posting waits for a person's confirmation. " +
-        "State the reasoning publicly in the rationale: the discourse's " +
-        "gain from a settled answer, the effort the problem appears to " +
-        "require, the mandate's headroom and open bounties, and, where this " +
-        "mandate also funds attempts, why a prize is the better use of " +
-        "those owls than another attempt. Amounts never feed back into " +
-        "importance.",
+        "Post a bounty, from this mandate's escrow, for a Lean proof or " +
+        "disproof of a mathematical claim's published formal statement. " +
+        "Only for mathematical claims with a published Lean statement; the " +
+        "mathematics skill says when and how, and the bounds that apply. " +
+        "Otherwise do not use.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -954,23 +967,58 @@ export async function executeManagementTool(
     return JSON.stringify({ sources: pipeline.length, pipeline });
   }
   if (name === "claims_from_source") {
-    const limit = Math.min(100, Math.max(1, Number(toolInput.limit ?? 40)));
-    const rows = await rawQuery(
-      `SELECT ci.claim_id, cl.text, cl.importance, cl.contestation,
-              cl.steward_state, ci.stance,
-              a.status AS assessment_status
-         FROM claim_instances ci
-         JOIN grant_sources gs
-           ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
-         JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
-         LEFT JOIN assessments a
-           ON a.claim_id = ci.claim_id AND a.is_current = true
-        WHERE ci.source_id = $2
-        ORDER BY cl.importance DESC
-        LIMIT $3`,
-      [grantId, String(toolInput.source_id ?? ""), limit]
-    );
-    return JSON.stringify({ count: rows.length, claims: rows });
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(toolInput.limit ?? 40)) || 40));
+    const offset = Math.max(0, Math.floor(Number(toolInput.offset ?? 0)) || 0);
+    const assessed = ["assessed", "unassessed"].includes(String(toolInput.assessed))
+      ? String(toolInput.assessed)
+      : "any";
+    const orderBy =
+      toolInput.order === "contestation"
+        ? "contestation DESC NULLS LAST, importance DESC NULLS LAST"
+        : toolInput.order === "recent"
+          ? "assessed_at DESC NULLS LAST, importance DESC NULLS LAST"
+          : "importance DESC NULLS LAST, contestation DESC NULLS LAST";
+    const page = (lim: number, off: number) =>
+      rawQuery<Record<string, unknown> & { total: number }>(
+        `WITH linked AS (
+         SELECT ci.claim_id, cl.kind, cl.text, cl.importance, cl.contestation,
+                cl.steward_state, ci.stance,
+                a.status AS assessment_status,
+                -- Each kind keeps its current assessment in its own table.
+                GREATEST(
+                  a.assessed_at,
+                  (SELECT MAX(q.assessed_at) FROM quantity_estimates q
+                    WHERE q.claim_id = cl.id AND q.is_current = true),
+                  (SELECT MAX(qa.assessed_at) FROM question_assessments qa
+                    WHERE qa.claim_id = cl.id AND qa.is_current = true)
+                ) AS assessed_at
+           FROM claim_instances ci
+           JOIN grant_sources gs
+             ON gs.source_id = ci.source_id AND gs.grant_id = $1 AND ci.detached_at IS NULL
+           JOIN claims cl ON cl.id = ci.claim_id AND cl.state = 'active'
+           LEFT JOIN assessments a
+             ON a.claim_id = ci.claim_id AND a.is_current = true
+          WHERE ci.source_id = $2
+       )
+       SELECT *, COUNT(*) OVER()::int AS total FROM linked
+        WHERE ($3 = 'any'
+               OR ($3 = 'assessed' AND assessed_at IS NOT NULL)
+               OR ($3 = 'unassessed' AND assessed_at IS NULL))
+        ORDER BY ${orderBy}
+        LIMIT $4 OFFSET $5`,
+        [grantId, String(toolInput.source_id ?? ""), assessed, lim, off]
+      );
+    const rows = await page(limit, offset);
+    // An offset past the end returns no rows to carry the window count.
+    const total = rows[0]?.total ?? (offset > 0 ? ((await page(1, 0))[0]?.total ?? 0) : 0);
+    const next = offset + rows.length < total ? offset + rows.length : null;
+    return JSON.stringify({
+      total,
+      offset,
+      returned: rows.length,
+      next_offset: next,
+      claims: rows.map(({ total: _t, ...r }) => r),
+    });
   }
   if (name === "importance_distribution") {
     const [row] = await rawQuery<Record<string, unknown>>(

@@ -35,13 +35,19 @@ import { withAgent, withSkills } from "../usage-context.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
-import { createMandateTools, estimatePlanCosts } from "../tools/mandate-tools.js";
+import { createMandateTools, planCostFloorOwls } from "../tools/mandate-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import {
+  executeSkillTool,
+  getActiveSkillToolDefinitions,
+  isSkillTool,
+} from "../tools/skill-tools.js";
+import { listSkills } from "../prompts/skills.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import type { GrantMandate } from "./grantmaker.js";
 import {
@@ -154,7 +160,7 @@ async function runGrantorImpl(input: {
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
-  // The mandate toolbox (#333): survey_scope, read_page, estimate_costs,
+  // The mandate toolbox (#333): survey_scope, read_page,
   // update_workspace — one implementation shared with the review pass.
   const mandateTools = createMandateTools({
     grantId: grant.id,
@@ -166,10 +172,9 @@ async function runGrantorImpl(input: {
     description:
       "Submit the plan once you have surveyed enough. Only reference " +
       "claim ids you saw in tool results and URLs you saw in search " +
-      "results, pages, or the mandate itself; never invent either. The " +
-      "plan is checked against the escrow at the same estimate " +
-      "estimate_costs quotes, and a plan that overruns it comes back to " +
-      "you to trim. Update your workspace before submitting: it is the " +
+      "results, pages, or the mandate itself; never invent either. A " +
+      "plan whose items would cost more than the escrow even at one pass " +
+      "each comes back to you to trim. Update your workspace before submitting: it is the " +
       "mandate's opening working memory, read in full by every review pass.",
     input_schema: PLAN_SCHEMA as Tool["input_schema"],
   };
@@ -200,13 +205,13 @@ async function runGrantorImpl(input: {
         `the graph by meaning (search_claims, survey_scope with a query) ` +
         `and the world by web search.`) +
     `\n\nBudget: ${budgetOwls} owls escrowed (1 owl ≈ one dollar of metered ` +
-    `spend; estimate_costs quotes the live per-item averages). Your own ` +
+    `spend; cost_sheet lists what each kind of work has cost). Your own ` +
     `planning and review passes are part of what it pays for, so leave ` +
     `headroom rather than planning to the last owl.\n\n` +
     `Your workspace (the mandate's working memory so far):\n\n` +
     (grant.workspace?.trim()
       ? grant.workspace
-      : `(empty — this is the mandate's first pass. Start the map: what ` +
+      : `(empty: this is the mandate's first pass. Start the map: what ` +
         `the territory looks like, the sources you found and what each ` +
         `is good for, what you left for the review passes.)`) +
     `\n\n---\n\n` +
@@ -223,7 +228,7 @@ async function runGrantorImpl(input: {
   await withSkills([], () =>
     toolUseLoop({
       initialMessages: [{ role: "user", content: briefing + skillLoader.pointerNote }],
-      tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
+      tools: [webSearch.tool, ...tools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
       system,
       model,
       maxTokens: 8192,
@@ -231,6 +236,7 @@ async function runGrantorImpl(input: {
       executeTool: async (name, toolInput) => {
         const loaded = await skillLoader.execute(name, toolInput);
         if (loaded !== null) return loaded;
+        if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "grantmaker" });
         if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) {
           return webSearch.execute(toolInput);
         }
@@ -255,25 +261,19 @@ async function runGrantorImpl(input: {
           }
           const problem = validatePlanItems(items);
           if (problem) return JSON.stringify({ success: false, problem });
-          // Priced at the same estimate the tool quotes: a plan that
-          // overruns the escrow never reaches the funder.
-          const counts = { assessments: 0, reassessments: 0, deepen_claims: 0, sources_to_ingest: 0 };
-          for (const it of items) {
-            if (it.action === "assess") counts.assessments++;
-            else if (it.action === "reassess") counts.reassessments++;
-            else if (it.action === "deepen") counts.deepen_claims++;
-            else if (it.action === "ingest") counts.sources_to_ingest++;
-            // formalize and attempt_proof are priced by the ledger at run
-            // time (policy keys); they are bounded by the escrow there.
-          }
-          const est = await estimatePlanCosts(counts);
-          if (est.subtotal_owls > budgetOwls) {
+          // A backstop, not a quote: a plan whose least possible cost
+          // already overruns the escrow never reaches the funder. formalize
+          // and attempt_proof are priced by the ledger at run time and
+          // bounded by the escrow there.
+          const floor = await planCostFloorOwls(items);
+          if (floor.floor_owls > budgetOwls) {
             return JSON.stringify({
               success: false,
               problem:
-                `the plan is estimated at ${est.subtotal_owls} owls against ` +
-                `${budgetOwls} escrowed; trim it (unit estimates: ` +
-                `${JSON.stringify(est.unit_estimates)})`,
+                `the plan's items cost at least ${floor.floor_owls} owls against ` +
+                `${budgetOwls} escrowed (one Steward pass per assess, reassess, or ` +
+                `deepen item at ${floor.per_item_owls.steward_pass}, one ingestion per ` +
+                `ingest item at ${floor.per_item_owls.ingest}); trim it`,
             });
           }
           plan = {
@@ -293,7 +293,7 @@ async function runGrantorImpl(input: {
           return JSON.stringify({
             success: true,
             accepted_items: items.length,
-            estimated_owls: est.subtotal_owls,
+            floor_owls: floor.floor_owls,
             note:
               "Plan recorded for the funder's approval. If your workspace " +
               "is not current, update it now; then finish.",

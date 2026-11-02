@@ -159,7 +159,7 @@ describe("Steward toolset without a domain tag", () => {
       ...PROVENANCE_TOOLS,
     ];
     expect(names.slice(first + 1, first + 1 + skillTools.length)).toEqual(skillTools);
-    expect(names.slice(-8)).toEqual([
+    expect(names.slice(-9)).toEqual([
       "delegate_research",
       "get_research_run",
       "raise_issue",
@@ -167,6 +167,7 @@ describe("Steward toolset without a domain tag", () => {
       "search_issues",
       "get_issue",
       "note_finding",
+      "search_findings",
       "web_search",
     ]);
     // One block: the constitution and role, with the catalog of skills to load.

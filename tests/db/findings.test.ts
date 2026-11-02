@@ -1,6 +1,6 @@
 /**
- * Agent findings (#394) against real Postgres: the ref check, the
- * match-before-write search over pgvector, the join-as-sighting path, the
+ * Agent findings (#394) against real Postgres: the ref check, the search
+ * over pgvector, the join-as-sighting path, the
  * read-time stale flag, and the tag filter through the claim's taggings.
  * Embeddings are stubbed with deterministic vectors so the similarity
  * arithmetic is under the test's control.
@@ -23,6 +23,7 @@ vi.mock("../../src/services/embedding-service.js", () => ({
 
 import {
   noteFinding,
+  searchFindings,
   listFindings,
   getFindingById,
   listFindingSightings,
@@ -101,25 +102,34 @@ describe("noteFinding on a real database", () => {
     expect(row!.stale).toBe(false);
   });
 
-  it("stops the write on a near match and records a sighting when the agent joins", async () => {
-    const claimId = await seedClaim("near match");
+  it("finds a finding by meaning and records a sighting when the agent joins it", async () => {
+    const claimId = await seedClaim("search and join");
+    const otherClaim = await seedClaim("search elsewhere");
     const assessmentId = await seedAssessment(claimId);
     embedMock.next.push(axis(1));
     const first = await noteFinding(base(claimId, assessmentId));
     expect(first.outcome).toBe("recorded");
     const firstId = first.outcome === "recorded" ? first.findingId : "";
 
-    // Cosine 0.8 against the first: at the global bar, so it is shown.
+    // A query at cosine 0.8 against the first finds it, with its similarity.
+    embedMock.next.push(mix(1, 2, 4, 3));
+    const found = await searchFindings({ query: "drinking and the heart" });
+    const hit = found.find((f) => f.id === firstId);
+    expect(hit).toBeDefined();
+    expect(hit!.similarity).toBeCloseTo(0.8, 5);
+
+    // Limited to another node, it does not.
+    embedMock.next.push(mix(1, 2, 4, 3));
+    const elsewhere = await searchFindings({ query: "drinking and the heart", claimId: otherClaim });
+    expect(elsewhere.map((f) => f.id)).not.toContain(firstId);
+
+    // A near paraphrase without joins is recorded; nothing gates the write.
     embedMock.next.push(mix(1, 2, 4, 3));
     const second = await noteFinding({
       ...base(claimId, assessmentId),
       headline: "Once abstainer bias is corrected, moderate drinking shows no cardiac benefit.",
     });
-    expect(second.outcome).toBe("possible_duplicate");
-    if (second.outcome !== "possible_duplicate") return;
-    expect(second.matches.map((m) => m.id)).toEqual([firstId]);
-    expect(second.matches[0]!.same_claim).toBe(true);
-    expect(second.matches[0]!.similarity).toBeCloseTo(0.8, 5);
+    expect(second.outcome).toBe("recorded");
 
     const joined = await noteFinding({
       ...base(claimId, assessmentId),
@@ -135,35 +145,6 @@ describe("noteFinding on a real database", () => {
     expect(sightings).toHaveLength(1);
     expect(sightings[0]!.agent).toBe("curator");
     expect(sightings[0]!.account).toContain("Met again");
-
-    // Answering distinct_from excludes the match and writes a new row.
-    embedMock.next.push(mix(1, 2, 4, 3));
-    const distinct = await noteFinding({
-      ...base(claimId, assessmentId),
-      headline: "A different finding on the same claim.",
-      distinctFrom: [firstId],
-    });
-    expect(distinct.outcome).toBe("recorded");
-  });
-
-  it("applies the lower bar only to candidates on the same claim", async () => {
-    const claimA = await seedClaim("same-claim bar A");
-    const claimB = await seedClaim("same-claim bar B");
-    const assessA = await seedAssessment(claimA);
-    const assessB = await seedAssessment(claimB);
-    embedMock.next.push(axis(10));
-    const onA = await noteFinding(base(claimA, assessA));
-    expect(onA.outcome).toBe("recorded");
-
-    // Cosine 0.7: below the global 0.8, above the same-claim 0.65.
-    const seventy = mix(10, 11, 7, Math.sqrt(51));
-    embedMock.next.push(seventy);
-    const sameClaim = await noteFinding({ ...base(claimA, assessA), headline: "Reworded on claim A." });
-    expect(sameClaim.outcome).toBe("possible_duplicate");
-
-    embedMock.next.push(seventy);
-    const otherClaim = await noteFinding({ ...base(claimB, assessB), headline: "Reworded on claim B." });
-    expect(otherClaim.outcome).toBe("recorded");
   });
 
   it("flags a finding stale once its cited assessment is superseded, and lists by claim, importance, and tag", async () => {

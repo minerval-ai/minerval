@@ -84,8 +84,9 @@ export function getReportToolDefinitions(): Tool[] {
     {
       name: RAISE_ISSUE_TOOL_NAME,
       description:
-        "Report a problem with the SYSTEM you are working in, or a concrete " +
-        "idea for improving it — never a judgment about a claim. Use it when a " +
+        "Report a problem with the system you are working in, or a concrete " +
+        "idea for improving it. Not a judgment about a claim or specific " +
+        "graph content. Use it when a " +
         "tool errored or returned something the prompt says is impossible " +
         "(system_failure); when the tool you need does not exist, cannot " +
         "express what you need to say, or its result omits what you were " +

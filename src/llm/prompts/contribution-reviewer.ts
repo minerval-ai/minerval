@@ -1,7 +1,6 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { BAD_FAITH_CATEGORY_LIST } from "./bad-faith.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
-import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -207,8 +206,6 @@ its cost:
 When in doubt between reject and escalate, escalate.
 
 ${RAISING_ISSUES}
-
-${NOTING_FINDINGS}
 
 ${skillsSection("contribution-reviewer")}`;
 

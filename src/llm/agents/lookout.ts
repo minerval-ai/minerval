@@ -21,7 +21,9 @@
  *    many at a time (triage_items), and its own feeds' wake rules
  *    (set_feed_rule); read_listing for an archive or index;
  *  - three ways to raise a candidate: flag_reassessment (a valued reassess
- *    row), propose_ingest (a plan item), leave_note (for the next review).
+ *    row), propose_ingest (a plan item), leave_note (for the next review);
+ *  - submit_contribution: what it found, through the Contribution Reviewer
+ *    like anyone's, the review paid from the mandate's escrow (§19).
  *
  * What it cannot do is the point: it writes no assessment, sets no
  * importance, moves no money. Everything it raises is a candidate the
@@ -37,6 +39,7 @@ import { loadConfig } from "../../config.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
@@ -128,9 +131,12 @@ async function runLookoutImpl(input: {
     },
   });
 
+  // Contributions through the Reviewer, paid from the mandate's escrow (§19).
+  const contributionTools = createGrantContributionTools(lookout.grant_id);
   const tools: Tool[] = [
     ...reportTools.definitions,
     ...getGraphReadToolDefinitions(),
+    ...contributionTools.definitions,
     {
       name: "survey_scope",
       description:
@@ -276,7 +282,7 @@ async function runLookoutImpl(input: {
     {
       name: "update_workspace",
       description:
-        "Rewrite your workspace — your own memory between runs, read back " +
+        "Rewrite your workspace: your own memory between runs, read back " +
         "in full at the start of every run. Keep here what you have already " +
         "checked and when, what you have flagged and is still waiting (so " +
         "you do not raise it again), sources or DOIs to watch, what the " +
@@ -384,6 +390,8 @@ async function runLookoutImpl(input: {
           if (loaded !== null) return loaded;
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
+          const contributed = await contributionTools.execute(name, toolInput);
+          if (contributed !== null) return contributed;
           const graphRead = await executeGraphReadTool(name, toolInput);
           if (graphRead !== null) return graphRead;
 

@@ -31,8 +31,8 @@ export function getReadListingToolDefinition(): Tool {
   return {
     name: READ_LISTING_TOOL_NAME,
     description:
-      "List the links a listing points to — an archive page, an author's " +
-      "post index, a sitemap, a feed — 100 at a time (page with offset). " +
+      "List the links a listing points to (an archive page, an author's " +
+      "post index, a sitemap, a feed), 100 at a time (page with offset). " +
       "For a page it also names any RSS/Atom feeds the page advertises. " +
       "Use it to explore what a source has published before deciding what " +
       "to watch or ingest. Nothing is ingested; the listing is data.",

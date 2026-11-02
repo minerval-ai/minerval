@@ -1,6 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
-import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -730,8 +729,6 @@ could reasonably care, do not call it.
 `;
 
 const ROLE_PROMPT = `${OPENING}${DECOMPOSITION}${ARGUMENTS}${IMPORTANCE}${ASSESSMENT}${QUANTITIES}${PROVENANCE}${DELEGATING_RESEARCH}${REQUESTS}${RECORDING_INSTANCES}${NODE_INSTANCES}${TWO_AUDIENCES}${CANONICAL_FORM}${BOUNDARIES}${RAISING_ISSUES}
-
-${NOTING_FINDINGS}
 
 ${skillsSection("claim-steward")}`;
 

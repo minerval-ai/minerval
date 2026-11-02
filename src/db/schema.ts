@@ -4109,11 +4109,11 @@ export const agentReportSightings = pgTable(
 // sibling of agent_reports (the same fire-and-forget channel shape, the same
 // no-FK attribution snapshot so a row outlives the trace-retention sweep),
 // but a finding is about the world, not the machinery, so it is public, it
-// carries typed refs into the graph (checked on write), and it is matched by
-// meaning before it is written: the embedding is what lets note_finding show
-// an agent the finding already on record instead of minting a paraphrase.
+// carries typed refs into the graph (checked on write), and it is searchable
+// by meaning: the embedding is what lets search_findings show an agent the
+// finding already on record, so it can join it rather than mint a paraphrase.
 //
-// A repeat sighting (an agent answering the match with `joins`) is a row in
+// A repeat sighting (an agent passing `joins`) is a row in
 // agent_finding_sightings and a bumped sighting_count here; the finding keeps
 // its first wording, and the sighting keeps its account.
 // ---------------------------------------------------------------------------
@@ -4137,9 +4137,9 @@ export const agentFindings = pgTable(
     // when written; unresolved refs were dropped and named to the agent.
     refs: jsonb("refs").notNull().default([]),
     // 1..10, the importance of the finding (not of the claim): the ladder is
-    // in the noting-findings prompt block.
+    // in the note_finding tool description.
     importance: integer("importance").notNull(),
-    // Embedding of headline + account, for the match-before-write search.
+    // Embedding of headline + account, for search_findings.
     embedding: vector("embedding"),
     // Attribution snapshotted from the usage context: plain columns, no FKs,
     // as agent_reports does, so the row survives trace retention.

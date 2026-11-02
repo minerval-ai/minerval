@@ -82,20 +82,20 @@ vi.mock("../../../src/llm/tools/mandate-tools.js", () => ({
       definitions: [
         { name: "survey_scope" },
         { name: "read_page" },
-        { name: "estimate_costs" },
         { name: "update_workspace" },
       ],
       execute: async (name: string) =>
         name === "update_workspace" ? '{"success":true}' : null,
     };
   },
-  // Two owls a pass, half an owl an ingest, three passes a deepen.
-  estimatePlanCosts: async (c: Record<string, number>) => {
-    const subtotal =
-      ((c.assessments ?? 0) + (c.reassessments ?? 0)) * 2 +
-      (c.deepen_claims ?? 0) * 6 +
-      (c.sources_to_ingest ?? 0) * 0.5;
-    return { unit_estimates: { assessment_each_owls: 2 }, subtotal_owls: subtotal };
+  // Two owls a Steward pass, half an owl an ingestion.
+  planCostFloorOwls: async (items: Array<{ action: string }>) => {
+    let floor = 0;
+    for (const it of items) {
+      if (["assess", "reassess", "deepen"].includes(it.action)) floor += 2;
+      else if (it.action === "ingest") floor += 0.5;
+    }
+    return { floor_owls: floor, per_item_owls: { steward_pass: 2, ingest: 0.5 } };
   },
 }));
 vi.mock("../../../src/llm/client.js", () => ({
@@ -192,8 +192,9 @@ describe("runGrantor", () => {
       "raise_issue",
       "note_finding",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
-      "survey_scope", "read_page", "estimate_costs", "update_workspace",
+      "survey_scope", "read_page", "update_workspace",
       "submit_plan",
+      "cost_sheet",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
     expect(state.mandateCalls[0]).toContain(`"grantId":"${GRANT}"`);
@@ -208,7 +209,7 @@ describe("runGrantor", () => {
       ]),
     ];
     const res = await runGrantor({ grantId: GRANT });
-    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 3, estimated_owls: 2.5 });
+    expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 3, floor_owls: 2.5 });
     expect(res).toEqual({
       strategy: "Seed the scope with the primary sources.",
       items: [
@@ -232,7 +233,7 @@ describe("runGrantor", () => {
     expect(out[0]).toMatchObject({ success: false, problem: expect.stringContaining("claim_id") });
     expect(out[1]).toMatchObject({ success: false, problem: expect.stringContaining("http") });
     expect(out[2]).toMatchObject({ success: false, problem: expect.stringContaining("strategy") });
-    expect(out[3]).toMatchObject({ success: false, problem: expect.stringContaining("22 owls against 20") });
+    expect(out[3]).toMatchObject({ success: false, problem: expect.stringContaining("at least 22 owls against 20") });
     expect(out[4]).toMatchObject({ success: true });
     expect(res.items).toHaveLength(1);
   });

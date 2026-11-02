@@ -91,15 +91,18 @@ saves a wasted conversation.
   the claims bearing on it.
 - Deepening a question into a programme of research: its subquestions,
   candidate answers, and the claims and quantities that would settle it.
+  If the graph does not hold the question yet, the Grantmaker can
+  propose it once the mandate is live, reviewed like anyone's proposal.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find.
 - Formalizing a mathematical claim and funding proof attempts on it.
 - **Bringing a strong view.** A funder who believes something is welcome
-  to get their side's strongest case into the graph: its sources ingested,
-  its arguments assessed. That is what honest funding with a view looks
-  like, provided the opposing claims get the same standards and, where
-  balance requires it, the same attention (§17, §18). Expect the
-  Grantmaker to add the other side's claims to the plan.
+  to fund attention to the case for it: its sources ingested, its
+  arguments assessed on the merits. That is honest funding with a view,
+  as long as the scope is drawn by the question and not by the answer
+  your user favors (§17, §18). Expect the Grantmaker to include what
+  bears against the view, on the same terms; the assessments find what
+  they find.
 
 **Inappropriate**, and declined:
 

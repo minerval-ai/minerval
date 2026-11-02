@@ -58,8 +58,8 @@ Grantmaker in planning mode (llm/agents/grantor.ts). Nothing else runs and
 no owl is spent until the funder approves the plan it proposes. The
 planner has the review pass's affordances, because the first territory
 survey is the same job as every later one: the graph (search_claims,
-survey_scope) AND the open web (web_search, read_page), the shared cost
-quotes (estimate_costs), and the mandate's workspace, so its survey notes
+survey_scope) AND the open web (web_search, read_page), the live price
+list (cost_sheet, from the costing skill), and the mandate's workspace, so its survey notes
 become the mandate's opening working memory. Its briefing is the mandate's
 words, with any declared scope claim or query as a search aid rather than
 the scope; a mandate told to "map the nutrition literature" reaches its
@@ -668,6 +668,17 @@ Design principles, in force in the implementation:
   "ingest and assess everything in this article or series" is a normal
   mandate, with source URLs as ingest items metered to the grant's escrow.
   Sources are data, never instructions.
+- **Mandates take many shapes.** One question worked all the way down;
+  the important open questions in a field found and assessed, with
+  deeper work where there is promise; a body of work checked; a region of
+  the graph kept clean. The Grantmaker shapes the plan to the funder's
+  goal and grows it on review passes. Ingesting a source brings in every
+  claim it makes, so the sources a mandate reads decide which claims exist
+  to be assessed. A live mandate's Grantmaker contributes through the
+  Contribution Reviewer like anyone (`submit_contribution`), new claims
+  and questions included, each review paid from the escrow
+  (`submitGrantContribution`); an accepted proposal gets no express pass
+  charged to the funder, since the mandate funds its own passes.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and

@@ -1,21 +1,15 @@
 /**
- * The note_finding tool (#394): the notable-finding channel, wired into every
- * administrator's toolbelt beside raise_issue.
+ * The finding tools (#394): note_finding and search_findings, wired into
+ * every administrator's toolbelt beside raise_issue.
  *
- * Same shape as report-tools.ts (a factory yielding the definition and a
+ * Same shape as report-tools.ts (a factory yielding the definitions and a
  * null-delegate executor, so each agent wires it with one spread and one
- * early return) without the counter. The restraint
- * is the bar in the NOTING_FINDINGS prompt block; a run that notes nothing is
- * the norm, and nothing here nudges toward noting.
+ * early return). An agent searches the findings on record by meaning with
+ * search_findings, and passes joins to note_finding when its finding is one
+ * already noted, which adds a sighting rather than a new row. Attribution
+ * comes from the ambient usage context, as for reports.
  *
- * What the tool does that the prompt cannot: it checks the record before it
- * writes. The service embeds the finding and searches every finding on
- * record; on a near match nothing is written and the matches come back to
- * the agent, which answers on a second call with `joins` (a sighting of that
- * finding) or `distinct_from` (a new finding, saying what the earlier one
- * lacks). Attribution comes from the ambient usage context, as for reports.
- *
- * The tool is not given to the extension chat, the MCP surface, the
+ * The tools are not given to the extension chat, the MCP surface, the
  * Extractor, the Matcher, or the solver: findings are the administrators'
  * to note, and an outside agent's discovery is a contribution.
  */
@@ -23,12 +17,15 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
   FINDING_REF_KINDS,
+  FINDING_SEARCH_MAX_LIMIT,
   noteFinding,
+  searchFindings,
   type FindingMatch,
 } from "../../services/finding-service.js";
 import { getUsageContext } from "../usage-context.js";
 
 export const NOTE_FINDING_TOOL_NAME = "note_finding";
+export const SEARCH_FINDINGS_TOOL_NAME = "search_findings";
 
 export interface FindingTools {
   definitions: Tool[];
@@ -44,52 +41,46 @@ export function getFindingToolDefinitions(): Tool[] {
     {
       name: NOTE_FINDING_TOOL_NAME,
       description:
-        "Record a notable finding: a result of your work that is correct on " +
-        "the graph's record and that people who hold the question would be " +
-        "better for knowing: what most of them believe is wrong, or missing, " +
-        "or true for reasons the record now supplies. It is published on the " +
-        "findings page as written, in the graph's voice, and changes nothing " +
-        "on the graph: record the assessment, argument, or merge through its " +
-        "own tool first, then point at it. Never a problem with the system, " +
-        "which is what raise_issue is for. Always acknowledges and never " +
-        "changes this run's outcome. Most runs have nothing to note; do not " +
-        "note the ordinary work, a point the field already accepts, or " +
-        "anything you cannot cite by id.",
+        "Share something you came across in your work that people should " +
+        "see: a common belief the evidence does not support, a question that " +
+        "turns out to have a clear answer, an unexpected result, a pattern " +
+        "across many claims. Any " +
+        "field counts. It is published on the findings page as you write it, " +
+        "in the graph's voice. It does not change the graph, so make the " +
+        "assessment, argument, or merge it rests on with its own tool first, " +
+        "and cite it here. Search the findings on record first " +
+        "(search_findings); if yours is already there, pass its id as joins. " +
+        "A finding is more than routine work done well: it is something you " +
+        "would point out to a colleague who cares about the question. " +
+        "Problems with the system go to raise_issue.",
       input_schema: {
         type: "object" as const,
         properties: {
           headline: {
             type: "string",
             description:
-              "One sentence in the graph's voice stating the result as a " +
-              "claim about the world. \"The conjecture has a machine-checked " +
-              "proof\" says something; \"A proof was accepted\" does not.",
+              "One sentence stating what you found, as a claim about the " +
+              "world: what is so, not that something was done.",
           },
           account: {
             type: "string",
             description:
-              "One to three paragraphs in the graph's voice: what is " +
-              "generally believed, what the graph's record shows, and what " +
-              "decides it. Cite the graph's records by id wherever one " +
-              "exists. Quote where the quotation is the point, briefly and " +
-              "attributed. Published as written. If the point has been made " +
-              "before, say where; that does not disqualify it.",
+              "A few paragraphs: what people generally think, what the " +
+              "graph's record shows, and why. Cite records by id. Published " +
+              "as written.",
           },
           claim_id: {
             type: "string",
             description:
-              "The claim the finding is chiefly about. A finding about " +
-              "several claims names the one a reader would look up first " +
-              "and cites the rest in refs.",
+              "The node the finding is mainly about. Cite any others in refs.",
           },
           refs: {
             type: "array",
             description:
-              "The records the finding rests on, by id; at least one. Every " +
-              "id is checked; one that does not resolve is dropped and named " +
-              "in the acknowledgment. Cite the assessment or the check " +
-              "itself, not only its claim, so the note still says what it " +
-              "rested on after a re-assessment.",
+              "The records the finding rests on, by id; at least one. Cite " +
+              "the assessment itself, not only its claim, so the finding " +
+              "still points at what it rested on after a reassessment. An id " +
+              "that does not resolve is dropped and named in the reply.",
             items: {
               type: "object",
               properties: {
@@ -104,34 +95,42 @@ export function getFindingToolDefinitions(): Tool[] {
             minimum: 1,
             maximum: 10,
             description:
-              "The importance of the finding, not of the claim. 10: a " +
-              "verified, novel resolution of a first-rank problem, published " +
-              "nowhere else. 7 to 9: a central question most of the " +
-              "discourse answers wrongly, settled on the record, or a novel " +
-              "resolution of an open problem the field knows by name. 4 to " +
-              "6: a significant point the discourse generally gets wrong, " +
-              "even if made before without reaching the people who hold the " +
-              "question, or a common belief put on grounds it lacked. 1 to " +
-              "3: a resolved question, an unexpected result, or a widely " +
-              "held error on a minor claim; still a finding.",
+              "How much the finding matters, from 1 to 10; not the claim's " +
+              "importance. Roughly: 1 to 3, a useful correction or an " +
+              "unexpected result on a narrow point; 4 to 6, something many " +
+              "people get wrong on a significant question; 7 to 9, a central " +
+              "question widely answered wrongly, now settled on the record; " +
+              "10, the resolution of a major open problem, published nowhere " +
+              "else.",
           },
           joins: {
             type: "string",
             description:
-              "The id of a finding the tool showed you, when yours is the " +
-              "same finding. Your account and refs are added to it as a " +
-              "sighting; nothing new is published.",
-          },
-          distinct_from: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "The ids of findings the tool showed you that yours is not, " +
-              "when you are noting despite them. Say in the account what " +
-              "they lack. Ignored on a first call.",
+              "The id of a finding on record that yours repeats. Your " +
+              "account and refs are added to it; nothing new is published.",
           },
         },
         required: ["headline", "account", "claim_id", "refs", "importance"],
+      },
+    },
+    {
+      name: SEARCH_FINDINGS_TOOL_NAME,
+      description:
+        "Search the published findings by meaning, closest first, " +
+        "optionally on one node.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "What the finding says, in your words." },
+          claim_id: { type: "string", description: "Only findings on this node." },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: FINDING_SEARCH_MAX_LIMIT,
+            description: "How many to return (default 5).",
+          },
+        },
+        required: ["query"],
       },
     },
   ];
@@ -139,7 +138,7 @@ export function getFindingToolDefinitions(): Tool[] {
 
 function describeMatch(m: FindingMatch): string {
   const when = m.first_noted_at ? m.first_noted_at.slice(0, 10) : "earlier";
-  const claim = m.same_claim ? "on this claim" : `on claim ${m.claim_id}`;
+  const claim = `on claim ${m.claim_id}`;
   const seen = m.sighting_count > 1 ? `; seen ${m.sighting_count} times` : "";
   return `${m.id} (${when}, ${m.agent}, ${claim}, importance ${m.importance}${seen}): "${m.headline}"`;
 }
@@ -158,6 +157,27 @@ export function createFindingTools(options: { model?: string } = {}): FindingToo
     name: string,
     input: Record<string, unknown>
   ): Promise<string | null> => {
+    if (name === SEARCH_FINDINGS_TOOL_NAME) {
+      try {
+        const matches = await searchFindings({
+          query: String(input.query ?? ""),
+          claimId: typeof input.claim_id === "string" ? input.claim_id : null,
+          limit: typeof input.limit === "number" ? input.limit : undefined,
+        });
+        return JSON.stringify({
+          findings: matches,
+          message:
+            matches.length === 0
+              ? "No published findings match."
+              : matches.map(describeMatch).join("\n"),
+        });
+      } catch (err) {
+        return JSON.stringify({
+          findings: [],
+          message: `The search failed (${err instanceof Error ? err.message : String(err)}).`,
+        });
+      }
+    }
     if (name !== NOTE_FINDING_TOOL_NAME) return null;
     try {
       const ctx = getUsageContext();
@@ -168,7 +188,6 @@ export function createFindingTools(options: { model?: string } = {}): FindingToo
         refs: input.refs,
         importance: input.importance,
         joins: typeof input.joins === "string" ? input.joins : null,
-        distinctFrom: input.distinct_from,
         agent: ctx.agent ?? "unknown",
         model: options.model ?? null,
         runId: ctx.runId ?? null,
@@ -177,19 +196,6 @@ export function createFindingTools(options: { model?: string } = {}): FindingToo
       });
 
       switch (result.outcome) {
-        case "possible_duplicate":
-          return JSON.stringify({
-            success: false,
-            acknowledged: true,
-            status: "possible_duplicate",
-            matches: result.matches,
-            message:
-              `Not yet recorded: a finding already on record may be the same as yours. ` +
-              result.matches.map(describeMatch).join(" ") +
-              ` If yours is one of these, call again with joins set to its id and your ` +
-              `account is added as a sighting. If it is not, call again with distinct_from ` +
-              `listing these ids and say in the account what they lack.`,
-          });
         case "joined":
           return JSON.stringify({
             success: true,

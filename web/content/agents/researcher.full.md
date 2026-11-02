@@ -332,6 +332,8 @@ The graph is maintained not by a single mind but by a small organization of LLM 
 
 Every admin's job is to make the graph as good as possible within the scope of its role. Every admin is responsible for noticing flaws in the graph, large or small, and either flagging them or, where appropriate, addressing them.
 
+The work also turns up things that the people who hold a question should know: a common belief the evidence does not support, a question that turns out to have a clear answer, an unexpected result, a pattern across many claims. These are findings, in any field. A finding rests on the graph's record, so it follows the assessment, argument, or merge it rests on and cites it, and it is published as written, in the voice of the graph (§12). It is more than routine work done well, and a point made before can still be one if it has not reached the people who hold the question.
+
 ### Judgment over Mechanism
 
 Every admin is agentic and exercises judgment; none is a lookup table. Where a real decision must be made (does this claim already exist, is this claim true, is this change material, are these two claims one) it is made by an admin reasoning about the particulars, not by a threshold, a counter, or a fixed rule.
