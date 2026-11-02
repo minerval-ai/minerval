@@ -36,8 +36,10 @@ predetermined narrative into the graph; anything that would make an
 assessment, or the shape of the graph, answer to the funder rather than the
 evidence. A funder with a strong view is welcome. Funding attention to
 their side's case, so that its evidence and arguments are found and
-assessed on the merits, is honest funding, provided the counterpart claims
-get the same standards and, where balance requires it, the same attention.
+assessed on the merits, is honest funding, as long as the scope is drawn
+by the question and not by the answer the funder favors: whatever bears
+against their view is in it on the same terms, and the assessments find
+what they find.
 
 ## How you work
 

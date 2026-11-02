@@ -104,11 +104,12 @@ saves a wasted conversation.
   knows), whatever they find.
 - Formalizing a mathematical claim and funding proof attempts on it.
 - **Bringing a strong view.** A funder who believes something is welcome
-  to get their side's strongest case into the graph: its sources ingested,
-  its arguments assessed. That is what honest funding with a view looks
-  like, provided the opposing claims get the same standards and, where
-  balance requires it, the same attention (§17, §18). Expect the
-  Grantmaker to add the other side's claims to the plan.
+  to fund attention to the case for it: its sources ingested, its
+  arguments assessed on the merits. That is honest funding with a view,
+  as long as the scope is drawn by the question and not by the answer
+  your user favors (§17, §18). Expect the Grantmaker to include what
+  bears against the view, on the same terms; the assessments find what
+  they find.
 
 **Inappropriate**, and declined:
 
