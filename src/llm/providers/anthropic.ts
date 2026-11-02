@@ -217,6 +217,9 @@ function withHistoryBreakpoint(messages: LlmMessage[]): LlmMessage[] {
   while (idx >= 0 && messages[idx]!.role !== "user") idx--;
   if (idx < 0) return messages;
   const message = messages[idx]!;
+  // Narrows MessageParam (user | assistant | system since SDK 1.0) to the
+  // user message the loop found, so the spread below stays a user message.
+  if (message.role !== "user") return messages;
 
   let content: ContentBlockParam[];
   if (typeof message.content === "string") {
