@@ -1,16 +1,19 @@
 /**
- * note_finding (#394): attribution comes from the ambient usage context, a
- * near match on record comes back as a question rather than a write, and
- * the tool acknowledges no matter what.
+ * note_finding and search_findings (#394): attribution comes from the
+ * ambient usage context, joins adds a sighting, search returns the closest
+ * findings on record, and note_finding acknowledges no matter what.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   noteFinding: vi.fn(),
+  searchFindings: vi.fn(),
 }));
 
 vi.mock("../../../../src/services/finding-service.js", () => ({
   noteFinding: mocks.noteFinding,
+  searchFindings: mocks.searchFindings,
+  FINDING_SEARCH_MAX_LIMIT: 20,
   FINDING_REF_KINDS: [
     "claim",
     "assessment",
@@ -26,6 +29,7 @@ import {
   createFindingTools,
   getFindingToolDefinitions,
   NOTE_FINDING_TOOL_NAME,
+  SEARCH_FINDINGS_TOOL_NAME,
 } from "../../../../src/llm/tools/finding-tools.js";
 import { runWithUsageContext } from "../../../../src/llm/usage-context.js";
 
@@ -52,7 +56,7 @@ beforeEach(() => {
 });
 
 describe("note_finding tool", () => {
-  it("defines one tool with typed refs, an importance range, and the two answer fields", () => {
+  it("defines note_finding with typed refs, an importance range, and joins", () => {
     const [tool] = getFindingToolDefinitions();
     expect(tool!.name).toBe(NOTE_FINDING_TOOL_NAME);
     const props = tool!.input_schema.properties as Record<string, any>;
@@ -60,7 +64,7 @@ describe("note_finding tool", () => {
     expect(props.importance.minimum).toBe(1);
     expect(props.importance.maximum).toBe(10);
     expect(props.joins).toBeDefined();
-    expect(props.distinct_from).toBeDefined();
+    expect(props.distinct_from).toBeUndefined();
     expect(tool!.input_schema.required).toEqual([
       "headline",
       "account",
@@ -105,36 +109,7 @@ describe("note_finding tool", () => {
     expect(parsed.message).toMatch(/Continue with your task/);
   });
 
-  it("shows the near matches and asks for joins or distinct_from, writing nothing", async () => {
-    mocks.noteFinding.mockResolvedValue({
-      outcome: "possible_duplicate",
-      matches: [
-        {
-          id: OTHER_ID,
-          headline: "The conjecture is settled by a checked proof.",
-          claim_id: CLAIM_ID,
-          agent: "steward",
-          importance: 7,
-          sighting_count: 3,
-          first_noted_at: "2026-09-03T00:00:00.000Z",
-          similarity: 0.9,
-          same_claim: true,
-        },
-      ],
-    });
-    const tools = createFindingTools();
-    const parsed = JSON.parse((await tools.execute(NOTE_FINDING_TOOL_NAME, INPUT))!);
-    expect(parsed).toMatchObject({ success: false, acknowledged: true, status: "possible_duplicate" });
-    expect(parsed.matches).toHaveLength(1);
-    expect(parsed.message).toContain(OTHER_ID);
-    expect(parsed.message).toContain("2026-09-03");
-    expect(parsed.message).toContain("on this claim");
-    expect(parsed.message).toContain("seen 3 times");
-    expect(parsed.message).toMatch(/joins set to its id/);
-    expect(parsed.message).toMatch(/distinct_from/);
-  });
-
-  it("passes joins and distinct_from through on the second call", async () => {
+  it("passes joins through and reports the sighting", async () => {
     mocks.noteFinding.mockResolvedValue({
       outcome: "joined",
       findingId: OTHER_ID,
@@ -143,11 +118,9 @@ describe("note_finding tool", () => {
     });
     const tools = createFindingTools();
     const parsed = JSON.parse(
-      (await tools.execute(NOTE_FINDING_TOOL_NAME, { ...INPUT, joins: OTHER_ID, distinct_from: [FINDING_ID] }))!
+      (await tools.execute(NOTE_FINDING_TOOL_NAME, { ...INPUT, joins: OTHER_ID }))!
     );
-    expect(mocks.noteFinding).toHaveBeenCalledWith(
-      expect.objectContaining({ joins: OTHER_ID, distinctFrom: [FINDING_ID] })
-    );
+    expect(mocks.noteFinding).toHaveBeenCalledWith(expect.objectContaining({ joins: OTHER_ID }));
     expect(parsed).toMatchObject({ success: true, status: "joined", finding_id: OTHER_ID, sighting_count: 4 });
     expect(parsed.message).toMatch(/now seen 4 times/);
   });
@@ -185,5 +158,48 @@ describe("note_finding tool", () => {
     expect(parsed).toMatchObject({ success: false, acknowledged: true, status: "not_recorded" });
     expect(parsed.message).toContain("boom");
     expect(parsed.message).toMatch(/Continue with your task/);
+  });
+});
+
+describe("search_findings tool", () => {
+  it("is defined beside note_finding with a required query", () => {
+    const tool = getFindingToolDefinitions().find((t) => t.name === SEARCH_FINDINGS_TOOL_NAME);
+    expect(tool).toBeDefined();
+    expect(tool!.input_schema.required).toEqual(["query"]);
+  });
+
+  it("passes the query, node, and limit through and lists what it found", async () => {
+    mocks.searchFindings.mockResolvedValue([
+      {
+        id: OTHER_ID,
+        headline: "The conjecture is settled by a checked proof.",
+        claim_id: CLAIM_ID,
+        agent: "steward",
+        importance: 7,
+        sighting_count: 3,
+        first_noted_at: "2026-09-03T00:00:00.000Z",
+        similarity: 0.9,
+      },
+    ]);
+    const tools = createFindingTools();
+    const parsed = JSON.parse(
+      (await tools.execute(SEARCH_FINDINGS_TOOL_NAME, { query: "proof of the conjecture", claim_id: CLAIM_ID, limit: 3 }))!
+    );
+    expect(mocks.searchFindings).toHaveBeenCalledWith({ query: "proof of the conjecture", claimId: CLAIM_ID, limit: 3 });
+    expect(parsed.findings).toHaveLength(1);
+    expect(parsed.message).toContain(OTHER_ID);
+    expect(parsed.message).toContain("seen 3 times");
+  });
+
+  it("says so when nothing matches, and reports a failed search without throwing", async () => {
+    const tools = createFindingTools();
+    mocks.searchFindings.mockResolvedValue([]);
+    expect(JSON.parse((await tools.execute(SEARCH_FINDINGS_TOOL_NAME, { query: "x" }))!).message).toBe(
+      "No published findings match."
+    );
+    mocks.searchFindings.mockRejectedValue(new Error("embedding down"));
+    expect(JSON.parse((await tools.execute(SEARCH_FINDINGS_TOOL_NAME, { query: "x" }))!).message).toContain(
+      "embedding down"
+    );
   });
 });

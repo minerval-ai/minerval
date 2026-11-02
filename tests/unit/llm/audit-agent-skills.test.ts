@@ -96,6 +96,7 @@ describe("Audit toolset without a domain", () => {
       "search_issues",
       "get_issue",
       "note_finding",
+      "search_findings",
     ]);
     expect(names.filter((n) => n.startsWith("provenance_record") || n === "provenance_write_map")).toEqual([]);
     // No skill is spliced, and none is pointed to.

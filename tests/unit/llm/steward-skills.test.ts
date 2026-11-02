@@ -167,6 +167,7 @@ describe("Steward toolset without a domain tag", () => {
       "search_issues",
       "get_issue",
       "note_finding",
+      "search_findings",
       "web_search",
     ]);
     // One block: the constitution and role, with the catalog of skills to load.

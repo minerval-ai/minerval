@@ -1,24 +1,23 @@
 /**
  * Agent findings (#394): the write never throws, refs are checked against
- * the tables they name, a near match on record stops the write until the
- * agent answers, and `joins` records a sighting instead of a row.
+ * the tables they name, `joins` records a sighting instead of a row, and
+ * the search returns the closest published findings.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rawQuery: vi.fn(async (_sql: string, _params?: unknown[]): Promise<unknown[]> => []),
   generateEmbedding: vi.fn(async (_text: string): Promise<number[]> => [0.1, 0.2, 0.3]),
-  config: { findingMatchSimilarity: 0.8, findingMatchSimilaritySameClaim: 0.65 },
 }));
 
 vi.mock("../../../src/db/client.js", () => ({ rawQuery: mocks.rawQuery }));
 vi.mock("../../../src/services/embedding-service.js", () => ({
   generateEmbedding: mocks.generateEmbedding,
 }));
-vi.mock("../../../src/config.js", () => ({ loadConfig: () => mocks.config }));
 
 import {
   noteFinding,
+  searchFindings,
   parseFindingRefs,
   formatFinding,
   FINDING_ACCOUNT_MAX_CHARS,
@@ -115,6 +114,48 @@ describe("parseFindingRefs", () => {
   });
 });
 
+describe("searchFindings", () => {
+  it("embeds the query and returns the closest published findings, on a node when asked", async () => {
+    routeQueries({
+      matches: [
+        {
+          id: OTHER_FINDING_ID,
+          headline: "Moderate drinking does not protect the heart once abstainer bias is removed.",
+          claim_id: CLAIM_ID,
+          agent: "steward",
+          importance: 5,
+          sighting_count: 3,
+          first_noted_at: new Date("2026-09-03T00:00:00Z"),
+          similarity: 0.91,
+        },
+      ],
+    });
+    const found = await searchFindings({ query: "drinking and the heart", claimId: CLAIM_ID, limit: 50 });
+    expect(mocks.generateEmbedding).toHaveBeenCalledWith("drinking and the heart");
+    expect(found).toEqual([
+      expect.objectContaining({
+        id: OTHER_FINDING_ID,
+        sighting_count: 3,
+        similarity: 0.91,
+        first_noted_at: "2026-09-03T00:00:00.000Z",
+      }),
+    ]);
+    const [params] = callsMatching("<=>");
+    expect(params![1]).toBe(CLAIM_ID);
+    expect(params![2]).toBe(20);
+  });
+
+  it("searches every node by default and returns nothing for an empty query", async () => {
+    await searchFindings({ query: "x" });
+    const [params] = callsMatching("<=>");
+    expect(params![1]).toBeNull();
+    expect(params![2]).toBe(5);
+    mocks.rawQuery.mockClear();
+    expect(await searchFindings({ query: "  " })).toEqual([]);
+    expect(callsMatching("<=>")).toHaveLength(0);
+  });
+});
+
 describe("noteFinding", () => {
   it("records a finding whose refs resolve, embedding it first", async () => {
     const result = await noteFinding(GOOD);
@@ -158,47 +199,11 @@ describe("noteFinding", () => {
     expect((result as { problem: string }).problem).toMatch(/refs is required/);
   });
 
-  it("returns the near matches instead of writing when one is on record", async () => {
-    routeQueries({
-      matches: [
-        {
-          id: OTHER_FINDING_ID,
-          headline: "Moderate drinking does not protect the heart once abstainer bias is removed.",
-          claim_id: CLAIM_ID,
-          agent: "steward",
-          importance: 5,
-          sighting_count: 3,
-          first_noted_at: new Date("2026-09-03T00:00:00Z"),
-          similarity: 0.91,
-        },
-      ],
-    });
+  it("writes without a gate even when a similar finding is on record", async () => {
+    routeQueries({ matches: [{ id: OTHER_FINDING_ID }] });
     const result = await noteFinding(GOOD);
-    expect(result.outcome).toBe("possible_duplicate");
-    const matches = (result as { matches: unknown[] }).matches;
-    expect(matches).toHaveLength(1);
-    expect(matches[0]).toMatchObject({
-      id: OTHER_FINDING_ID,
-      same_claim: true,
-      sighting_count: 3,
-      similarity: 0.91,
-      first_noted_at: "2026-09-03T00:00:00.000Z",
-    });
-    expect(callsMatching("INSERT INTO agent_findings")).toHaveLength(0);
-    // The search carries both thresholds and the claim, and excludes nothing.
-    const [params] = callsMatching("<=>");
-    expect(params![1]).toBe(0.8);
-    expect(params![2]).toBe(CLAIM_ID);
-    expect(params![3]).toBe(0.65);
-    expect(params![4]).toEqual([]);
-  });
-
-  it("writes when the agent answers distinct_from, excluding those ids from the search", async () => {
-    routeQueries({ matches: [] });
-    const result = await noteFinding({ ...GOOD, distinctFrom: [OTHER_FINDING_ID, "junk"] });
     expect(result.outcome).toBe("recorded");
-    const [params] = callsMatching("<=>");
-    expect(params![4]).toEqual([OTHER_FINDING_ID]);
+    expect(callsMatching("<=>")).toHaveLength(0);
   });
 
   it("records a sighting, not a row, when the agent answers joins", async () => {
@@ -226,11 +231,10 @@ describe("noteFinding", () => {
     expect((result as { problem: string }).problem).toMatch(/joins names no published finding/);
   });
 
-  it("records without a match search when embedding fails, rather than failing the run", async () => {
+  it("records without an embedding when embedding fails, rather than failing the run", async () => {
     mocks.generateEmbedding.mockRejectedValue(new Error("openai down"));
     const result = await noteFinding(GOOD);
     expect(result.outcome).toBe("recorded");
-    expect(callsMatching("<=>")).toHaveLength(0);
     const [params] = callsMatching("INSERT INTO agent_findings");
     expect(params![5]).toBeNull();
   });

@@ -11,20 +11,16 @@
  *     ref is checked against the table it names before the row is written;
  *     an id that does not resolve is dropped and named to the agent, and a
  *     finding with no resolving ref is not recorded at all.
- *   - Matched before written. The same finding recurs across runs and across
- *     roles, and wording drifts, so an exact-title dedupe would mint
- *     paraphrases. Instead the finding is embedded and searched against every
- *     finding on record; a near match is shown to the agent and nothing is
- *     written until the agent answers with `joins` (a sighting) or
- *     `distinct_from` (a new finding, saying what the earlier lacks). The
- *     Matcher's match-or-create, applied to findings.
+ *   - Searchable before written. The same finding recurs across runs and
+ *     roles, and wording drifts, so agents search the findings on record by
+ *     meaning (searchFindings, the search_findings tool) and pass `joins`
+ *     when theirs is one already noted: a sighting, not a new row.
  *
  * Findings are public and published as written: the read side is the
  * unauthenticated /findings API and the findings page. There is no cap, no
  * kind, no triage queue; the restraint is in the prompt, and the operator's
  * only lever is `withdraw`.
  */
-import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { findingStatusEnum } from "../schemas/common.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -61,8 +57,9 @@ export interface FindingRef {
 /** Write-time caps: a finding is a record, not an essay. */
 export const FINDING_HEADLINE_MAX_CHARS = 300;
 export const FINDING_ACCOUNT_MAX_CHARS = 6000;
-/** How many near matches the tool shows before writing. */
-export const FINDING_MATCH_CANDIDATES = 3;
+/** How many findings a search returns by default, and at most. */
+export const FINDING_SEARCH_DEFAULT_LIMIT = 5;
+export const FINDING_SEARCH_MAX_LIMIT = 20;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -90,10 +87,8 @@ export interface NoteFindingInput {
   claimId: string;
   refs: unknown;
   importance: unknown;
-  /** Second call: the finding on record this one is a sighting of. */
+  /** The finding on record this one is a sighting of. */
   joins?: string | null;
-  /** Second call: the findings on record this one is not. */
-  distinctFrom?: unknown;
   agent: string;
   model?: string | null;
   runId?: string | null;
@@ -110,7 +105,6 @@ export interface FindingMatch {
   sighting_count: number;
   first_noted_at: string;
   similarity: number;
-  same_claim: boolean;
 }
 
 export type NoteFindingResult =
@@ -125,7 +119,6 @@ export type NoteFindingResult =
       sightingCount: number;
       droppedRefs: FindingRef[];
     }
-  | { outcome: "possible_duplicate"; matches: FindingMatch[] }
   | { outcome: "not_recorded"; problem: string };
 
 class FindingValidationError extends Error {}
@@ -216,16 +209,23 @@ function validate(input: NoteFindingInput): {
 }
 
 /**
- * The match-before-write search: every published finding by cosine
- * similarity of headline + account, with the lower same-claim bar applied
- * to candidates on the finding's own claim.
+ * Search the published findings by meaning: the query's embedding against
+ * each finding's headline and account, closest first, optionally limited to
+ * one node. No threshold: the agent reads the headlines and judges.
  */
-export async function findNearFindings(
-  embedding: number[],
-  claimId: string,
-  opts: { exclude?: string[] } = {}
-): Promise<FindingMatch[]> {
-  const config = loadConfig();
+export async function searchFindings(input: {
+  query: string;
+  claimId?: string | null;
+  limit?: number;
+}): Promise<FindingMatch[]> {
+  const query = input.query.trim();
+  if (!query) return [];
+  const limit = Math.min(
+    FINDING_SEARCH_MAX_LIMIT,
+    Math.max(1, Math.floor(Number(input.limit) || FINDING_SEARCH_DEFAULT_LIMIT))
+  );
+  const claimId = uuidOrNull(input.claimId);
+  const embedding = await generateEmbedding(query.slice(0, 4000));
   const rows = await rawQuery<{
     id: string;
     headline: string;
@@ -242,18 +242,10 @@ export async function findNearFindings(
        FROM agent_findings
       WHERE status = 'published'
         AND embedding IS NOT NULL
-        AND NOT (id = ANY($5::uuid[]))
-        AND (1 - (embedding <=> $1::vector) >= $2
-             OR (claim_id = $3 AND 1 - (embedding <=> $1::vector) >= $4))
+        AND ($2::uuid IS NULL OR claim_id = $2::uuid)
       ORDER BY similarity DESC
-      LIMIT ${FINDING_MATCH_CANDIDATES}`,
-    [
-      toVectorLiteral(embedding),
-      config.findingMatchSimilarity,
-      claimId,
-      config.findingMatchSimilaritySameClaim,
-      opts.exclude ?? [],
-    ]
+      LIMIT $3`,
+    [toVectorLiteral(embedding), claimId, limit]
   );
   return rows.map((r) => ({
     id: r.id,
@@ -264,7 +256,6 @@ export async function findNearFindings(
     sighting_count: Number(r.sighting_count),
     first_noted_at: iso(r.first_noted_at) ?? "",
     similarity: Number(r.similarity),
-    same_claim: r.claim_id === claimId,
   }));
 }
 
@@ -287,7 +278,7 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
       };
     }
 
-    // Second call, joining a finding on record: a sighting, no new row.
+    // Joining a finding on record: a sighting, no new row.
     const joins = uuidOrNull(input.joins);
     if (joins) {
       const rows = await rawQuery<{ id: string; sighting_count: number }>(
@@ -328,28 +319,17 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
       };
     }
 
-    // The match-before-write search. An embedding failure is not the
-    // agent's problem: the finding is recorded without one and without the
-    // search, and a later sweep can embed it.
+    // The embedding makes the finding searchable. An embedding failure is
+    // not the agent's problem: the finding is recorded without one, and a
+    // later sweep can embed it.
     let embedding: number[] | null = null;
     try {
       embedding = await generateEmbedding(findingEmbeddingText(v.headline, v.account));
     } catch (err) {
       console.error(
-        "[findings] embedding failed; recording without a match search:",
+        "[findings] embedding failed; recording without one:",
         err instanceof Error ? err.message : String(err)
       );
-    }
-
-    const distinctFrom = Array.isArray(input.distinctFrom)
-      ? input.distinctFrom.map(uuidOrNull).filter((id): id is string => !!id)
-      : [];
-
-    if (embedding) {
-      const matches = await findNearFindings(embedding, v.claimId, { exclude: distinctFrom });
-      if (matches.length > 0) {
-        return { outcome: "possible_duplicate", matches };
-      }
     }
 
     const rows = await rawQuery<{ id: string }>(
