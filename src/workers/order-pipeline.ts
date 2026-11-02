@@ -26,7 +26,6 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
-import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import {
   chargeOwls,
@@ -100,11 +99,11 @@ export async function processNextOrderTask(
   const model =
     opts.model ?? (config.stewardStrongModel || config.stewardModel);
 
-  try {
-    checkBudget();
-  } catch {
-    return { status: "budget" };
-  }
+  // No checkBudget() pre-check here. The process-wide breaker scopes to
+  // UNATTRIBUTED work (budget-tracker.ts), and an order runs as its buyer;
+  // checked out here, outside that usage context, it read the background
+  // lane's counters and refused paid orders whenever unpaid work had spent
+  // the hour. The order's own cap is its bound.
 
   const orders = await rawQuery<OrderRow>(
     `UPDATE assessment_orders

@@ -132,13 +132,10 @@ export async function processNextStewardTask(
 ): Promise<StewardProcessResult> {
   const config = loadConfig();
 
-  // Don't even claim a task if we're already over budget this window.
-  try {
-    checkBudget();
-  } catch {
-    return { status: "budget" };
-  }
-
+  // The process-wide breaker covers unattributed work only, so it is not
+  // consulted before a covered action: that run carries its funder, and the
+  // breaker exempts it. (Checked here, outside any usage context, it read
+  // the unattributed counters and stalled funded work along with them.)
   const mandate = await getGeneralMandate();
 
   // The ledger's verdict first — the engine's only execution rule.
@@ -172,6 +169,13 @@ export async function processNextStewardTask(
   if (!config.backgroundFallbackLaneEnabled) {
     const pending = await pendingStewardCount();
     return { status: pending > 0 ? "budget" : "empty" };
+  }
+  // The fallback lane IS unattributed work, so the breaker applies: don't
+  // even claim a task if it is already spent this window.
+  try {
+    checkBudget();
+  } catch {
+    return { status: "budget" };
   }
   const dailyBudgetOwls = config.backgroundDailyBudgetOwls ?? 0;
   // The pass may spend what is left of the day's background budget.

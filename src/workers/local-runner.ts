@@ -75,6 +75,12 @@ export interface DrainStats {
    * runner backs off and lowers its concurrency rather than retrying at once.
    */
   stoppedOnTransient?: boolean;
+  /**
+   * Set (only with surfaceBudgetErrors: false) when unattributed work met
+   * the spent breaker: its message was requeued and the in-memory queues
+   * were skipped for the rest of the drain.
+   */
+  unattributedBudgetSpent?: boolean;
 }
 
 export interface DrainOptions {
@@ -108,6 +114,15 @@ export interface DrainOptions {
    * running drains, not only to new ones.
    */
   shouldContinue?: () => boolean;
+  /**
+   * What the drain does when the process-wide LLM breaker (which covers
+   * UNATTRIBUTED work only) is spent. True, the default: throw the
+   * LlmBudgetExceededError, so a one-shot caller (the corpus harness) stops
+   * and reports it. False, for the continuous runner: keep going with the
+   * funded lanes, which the breaker exempts, skip the in-memory queues for
+   * the rest of the drain, and report it in `unattributedBudgetSpent`.
+   */
+  surfaceBudgetErrors?: boolean;
 }
 
 /** The window closer's work is dated in days; once a minute per process is plenty. */
@@ -153,6 +168,9 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
   // statement publishes and no bounty binds (docs/mathematics.md §5.3).
   const config = loadConfig();
   const singletonLanes = opts.singletonLanes ?? true;
+  const surfaceBudget = opts.surfaceBudgetErrors ?? true;
+  let unattributedBudgetSpent = false;
+  const budgetFlag = () => (unattributedBudgetSpent ? { unattributedBudgetSpent: true } : {});
   const prizeLanesOn =
     singletonLanes &&
     typeof config.leanCheckerUrl === "string" &&
@@ -160,12 +178,13 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
 
   while (seq < cap) {
     if (opts.shouldContinue && !opts.shouldContinue()) {
-      return { processed, errors, capped: true };
+      return { ...budgetFlag(), processed, errors, capped: true };
     }
     // 1. Drain a ready in-memory message if any.
-    const entry = singletonLanes
-      ? HANDLERS.find(([name]) => getLocalQueue(name).length > 0)
-      : undefined;
+    const entry =
+      singletonLanes && !unattributedBudgetSpent
+        ? HANDLERS.find(([name]) => getLocalQueue(name).length > 0)
+        : undefined;
     if (entry) {
       const [name, handler] = entry;
       const message = dequeue(name) as never;
@@ -181,7 +200,11 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
           // would be silently dropped (#218). Put it back at the front so the
           // next drain — after the budget pause — retries it first.
           (getLocalQueue(name) as unknown[]).unshift(message);
-          throw err;
+          if (surfaceBudget) throw err;
+          // The breaker covers this unattributed work, not the funded lanes
+          // below: leave the in-memory queues for the next window and go on.
+          unattributedBudgetSpent = true;
+          continue;
         }
         errors[name] = (errors[name] ?? 0) + 1;
         opts.onEvent?.({
@@ -201,17 +224,17 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
     //    budget-job runs are Steward runs, so they count toward the same
     //    per-drain cap as the batch drain.
     if (stewardProcessed >= stewardCap) {
-      return { processed, errors, capped: (await pendingStewardCount()) > 0 };
+      return { ...budgetFlag(), processed, errors, capped: (await pendingStewardCount()) > 0 };
     }
     {
       const startedAt = now();
       const o = await processNextOrderTask({ model: opts.stewardModel });
       if (o.status === "budget") {
-        checkBudget();
-        return { processed, errors, capped: false };
+        if (surfaceBudget) checkBudget();
+        return { ...budgetFlag(), processed, errors, capped: false };
       }
       if (o.status === "transient") {
-        return { processed, errors, capped: true, stoppedOnTransient: true };
+        return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (o.status === "processed") {
         seq++;
@@ -237,11 +260,11 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       const startedAt = now();
       const b = await processNextBudgetJobTask({ model: opts.stewardModel });
       if (b.status === "budget") {
-        checkBudget();
-        return { processed, errors, capped: false };
+        if (surfaceBudget) checkBudget();
+        return { ...budgetFlag(), processed, errors, capped: false };
       }
       if (b.status === "transient") {
-        return { processed, errors, capped: true, stoppedOnTransient: true };
+        return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (b.status === "processed") {
         seq++;
@@ -271,11 +294,11 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       const startedAt = now();
       const e = await processNextEngineAction({ model: opts.stewardModel });
       if (e.status === "budget") {
-        checkBudget();
-        return { processed, errors, capped: false };
+        if (surfaceBudget) checkBudget();
+        return { ...budgetFlag(), processed, errors, capped: false };
       }
       if (e.status === "transient") {
-        return { processed, errors, capped: true, stoppedOnTransient: true };
+        return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (e.status === "processed") {
         seq++;
@@ -365,11 +388,11 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       const startedAt = now();
       const g = await processNextGrantTask({ model: opts.stewardModel });
       if (g.status === "budget") {
-        checkBudget();
-        return { processed, errors, capped: false };
+        if (surfaceBudget) checkBudget();
+        return { ...budgetFlag(), processed, errors, capped: false };
       }
       if (g.status === "transient") {
-        return { processed, errors, capped: true, stoppedOnTransient: true };
+        return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (g.status === "processed" || g.status === "planned") {
         seq++;
@@ -398,18 +421,19 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
     const r = await processNextStewardTask({ model: opts.stewardModel });
     if (r.status === "empty") {
       // Both the in-memory queues and the Steward queue are drained.
-      return { processed, errors, capped: false };
+      return { ...budgetFlag(), processed, errors, capped: false };
     }
     if (r.status === "budget") {
       // Surface the real budget error so the run stops and reports cleanly.
-      checkBudget();
-      return { processed, errors, capped: false };
+      if (surfaceBudget) checkBudget();
+      return { ...budgetFlag(), processed, errors, capped: false };
     }
     if (r.status === "transient") {
       // A transient API/infra failure (billing/credit/429/5xx/network). The
       // claim was requeued untouched (#97). Stop this pass cleanly — the API is
       // struggling — leaving the queue for the next interval to retry.
       return {
+        ...budgetFlag(),
         processed,
         errors,
         capped: (await pendingStewardCount()) > 0,
@@ -433,7 +457,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
     });
   }
 
-  return { processed, errors, capped: inMemoryPending() };
+  return { ...budgetFlag(), processed, errors, capped: inMemoryPending() };
 }
 
 /**
@@ -447,8 +471,10 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
  *    already retried the call by then, so retrying at once only adds load.
  *  - A drain that did work and ended cleanly resets the backoff and raises
  *    the limit by one, back toward the ceiling.
- *  - An exhausted LLM budget pauses every slot for 60 s, as the
- *    single-slot runner did.
+ *
+ * The process-wide LLM breaker is not the governor's business: it covers
+ * unattributed work only, so the runner rests that work and keeps the
+ * funded lanes going (startLocalRunner).
  *
  * The runner slows down under pressure instead of stopping, so a burst of
  * rate limits costs throughput for a few minutes, never the drain.
@@ -456,7 +482,6 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
 export class RunnerGovernor {
   static readonly BASE_BACKOFF_MS = 5_000;
   static readonly MAX_BACKOFF_MS = 300_000;
-  static readonly BUDGET_PAUSE_MS = 60_000;
 
   readonly ceiling: number;
   private live: number;
@@ -495,12 +520,10 @@ export class RunnerGovernor {
     this.consecutiveTransient = 0;
     if (this.live < this.ceiling) this.live++;
   }
-
-  /** The LLM budget tracker is exhausted. */
-  onBudget(now: number): void {
-    this.pausedUntil = Math.max(this.pausedUntil, now + RunnerGovernor.BUDGET_PAUSE_MS);
-  }
 }
+
+/** How long unattributed work rests once the process-wide breaker is spent. */
+export const UNATTRIBUTED_BUDGET_PAUSE_MS = 60_000;
 
 /** An idle extra slot waits this long before looking again (slot 0 keeps the tick). */
 export const IDLE_SLOT_RECHECK_MS = 5_000;
@@ -533,6 +556,11 @@ export function startLocalRunner(options: {
   const busy: boolean[] = Array.from({ length: governor.ceiling }, () => false);
   const idleUntil: number[] = Array.from({ length: governor.ceiling }, () => 0);
   let running = true;
+  // When unattributed in-memory work meets the spent breaker, slot 0 leaves
+  // the in-memory queues (and the prize lanes beside them) alone for a
+  // minute, as the single-slot runner paused for one. The funded lanes keep
+  // running: the breaker does not cover them.
+  let singletonPausedUntil = 0;
 
   const runSlot = async (index: number) => {
     busy[index] = true;
@@ -540,12 +568,19 @@ export function startLocalRunner(options: {
       const stats = await drainLocalQueues({
         maxMessages: options.maxMessages,
         stewardModel: options.stewardModel,
-        singletonLanes: index === 0,
+        singletonLanes: index === 0 && Date.now() >= singletonPausedUntil,
+        surfaceBudgetErrors: false,
         shouldContinue: () => running && governor.mayStart(index, Date.now()),
       });
       const worked =
         Object.values(stats.processed).some((n) => n > 0) ||
         Object.values(stats.errors).some((n) => n > 0);
+      if (stats.unattributedBudgetSpent) {
+        singletonPausedUntil = Date.now() + UNATTRIBUTED_BUDGET_PAUSE_MS;
+        options.logger.error(
+          "LLM budget for unattributed work spent; in-memory queues paused 60s, funded lanes continue"
+        );
+      }
       if (stats.stoppedOnTransient) {
         const pause = governor.onTransient(Date.now());
         options.logger.error(
@@ -561,8 +596,9 @@ export function startLocalRunner(options: {
       }
     } catch (err) {
       if (err instanceof LlmBudgetExceededError) {
-        governor.onBudget(Date.now());
-        options.logger.error("Budget exceeded, pausing local runner for 60s:", err.message);
+        // Only this slot rests: the other slots' funded work is exempt.
+        idleUntil[index] = Date.now() + UNATTRIBUTED_BUDGET_PAUSE_MS;
+        options.logger.error("Budget exceeded, pausing this runner slot for 60s:", err.message);
       } else {
         options.logger.error("Local runner error", err instanceof Error ? err.message : err);
       }

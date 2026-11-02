@@ -13,6 +13,7 @@ const { state } = vi.hoisted(() => ({
     release: [] as Array<() => void>,
     orderResult: "processed" as "processed" | "transient",
     handled: [] as string[],
+    contributionBudget: false,
   },
 }));
 
@@ -20,6 +21,10 @@ vi.mock("../../../src/workers/claim-pipeline.js", () => ({ handleClaimPipeline: 
 vi.mock("../../../src/workers/url-extraction.js", () => ({ handleUrlExtraction: vi.fn() }));
 vi.mock("../../../src/workers/contribution-pipeline.js", () => ({
   handleContributionMessage: vi.fn(async (m: { contributionId: string }) => {
+    if (state.contributionBudget) {
+      const { LlmBudgetExceededError } = await import("../../../src/llm/errors.js");
+      throw new LlmBudgetExceededError("hourly_token_count", 2, 1);
+    }
     state.handled.push(m.contributionId);
   }),
 }));
@@ -74,6 +79,7 @@ beforeEach(() => {
   state.release = [];
   state.orderResult = "processed";
   state.handled = [];
+  state.contributionBudget = false;
   getLocalQueue("contribution").length = 0;
   vi.clearAllMocks();
 });
@@ -120,13 +126,6 @@ describe("RunnerGovernor", () => {
     expect(g.mayStart(2, 6_000)).toBe(false);
   });
 
-  it("pauses every slot for a minute when the LLM budget is exhausted", () => {
-    const g = new RunnerGovernor(2);
-    g.onBudget(0);
-    expect(g.mayStart(0, 59_999)).toBe(false);
-    expect(g.mayStart(0, 60_000)).toBe(true);
-    expect(g.limit).toBe(2);
-  });
 });
 
 describe("drainLocalQueues options", () => {
@@ -149,6 +148,28 @@ describe("drainLocalQueues options", () => {
     let units = 0;
     await drainLocalQueues({ shouldContinue: () => units++ < 1 });
     expect(state.handled).toEqual(["c-1"]);
+  });
+});
+
+describe("the unattributed breaker", () => {
+  it("one-shot drains still throw it, with the message requeued", async () => {
+    state.contributionBudget = true;
+    getLocalQueue("contribution").push({ contributionId: "c-1" });
+    await expect(drainLocalQueues()).rejects.toThrow();
+    expect(getLocalQueue("contribution")).toEqual([{ contributionId: "c-1" }]);
+  });
+
+  it("does not stop the funded lanes when the runner asks it not to", async () => {
+    state.contributionBudget = true;
+    getLocalQueue("contribution").push({ contributionId: "c-1" });
+    state.orders = ["o1"];
+    const drain = drainLocalQueues({ surfaceBudgetErrors: false });
+    await flush();
+    state.release.splice(0).forEach((r) => r());
+    const stats = await drain;
+    expect(stats.processed.order).toBe(1);
+    expect(stats.unattributedBudgetSpent).toBe(true);
+    expect(getLocalQueue("contribution")).toEqual([{ contributionId: "c-1" }]);
   });
 });
 

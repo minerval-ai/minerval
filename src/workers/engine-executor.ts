@@ -51,7 +51,6 @@
  * seeded never takes it.
  */
 import { rawQuery } from "../db/client.js";
-import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
@@ -140,11 +139,11 @@ async function cancelGroup(exclusionGroup: string): Promise<void> {
 export async function processNextEngineAction(
   opts: { model?: string } = {}
 ): Promise<EngineProcessResult> {
-  try {
-    checkBudget();
-  } catch {
-    return { status: "budget" };
-  }
+  // No checkBudget() pre-check: every engine action runs as the allocations'
+  // funder, which the process-wide breaker exempts; checked out here,
+  // outside that context, it would read the unattributed lane's counters
+  // and stall funded work. A run with no funder behind it still meets the
+  // breaker on its first model call, which requeues it.
   // A mandate whose work produced something since its last review gets its
   // review reopened here, then funded just below like its other own rows.
   await mandateEventsTick().catch(() => ({ recorded: 0, woken: 0 }));
