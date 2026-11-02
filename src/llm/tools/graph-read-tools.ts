@@ -142,11 +142,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
       description:
         "Walk UP: everything that rests on this claim, directly or through a " +
         "chain, ranked by importance and tagged with how many edges away it " +
-        "sits. This is how you find what is LOAD-BEARING, which is not a " +
-        "property of a claim on its own: a modest lemma carrying six " +
-        "high-importance dependents deserves more attention than an isolated " +
-        "claim that scores higher by itself. Answers 'what moves if this " +
-        "verdict changes'.",
+        "sits.",
       input_schema: {
         type: "object" as const,
         properties: {
