@@ -36,6 +36,7 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createMandateTools, planCostFloorOwls } from "../tools/mandate-tools.js";
+import { annotateOpenActions } from "../../services/open-actions-service.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -245,10 +246,11 @@ async function runGrantorImpl(input: {
         if (report !== null) return report;
         const finding = await findingTools.execute(name, toolInput);
         if (finding !== null) return finding;
+        // Each node a read returns carries the open actions on it.
         const graphRead = await executeGraphReadTool(name, toolInput);
-        if (graphRead !== null) return graphRead;
+        if (graphRead !== null) return annotateOpenActions(name, graphRead, grant.id);
         const mandateTool = await mandateTools.execute(name, toolInput);
-        if (mandateTool !== null) return mandateTool;
+        if (mandateTool !== null) return annotateOpenActions(name, mandateTool, grant.id);
         if (name === "submit_plan") {
           const raw = toolInput as unknown as Partial<GrantorPlan>;
           const items = Array.isArray(raw.items) ? (raw.items as PlanItem[]) : [];

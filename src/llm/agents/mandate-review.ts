@@ -48,6 +48,7 @@ import {
 } from "../tools/graph-read-tools.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
+import { annotateOpenActions } from "../../services/open-actions-service.js";
 import {
   validateMandate,
   executeManagementTool,
@@ -179,24 +180,24 @@ async function runMandateReviewImpl(input: {
     {
       name: "list_open_actions",
       description:
-        "Browse the open action ledger from your mandate's point of view: " +
-        "every potential action, its cost, current backing, and your " +
-        "current valuation if you hold one. Filter with query/kind, page " +
-        "with offset; valued_only=true reviews your existing judgments. " +
-        "Maintenance is work you can buy too: a `curate` row asks the " +
-        "Curator to reconcile the graph around a claim (merges, splits, " +
-        "missing links) that a Steward, an operator, or the duplicate scan " +
-        "flagged; value one in your territory when the structure there " +
-        "matters to your mission. An `audit` row is an Audit Agent run; you " +
-        "may help fund one, but never one whose subject is your own mandate. " +
-        "A `request` row is the Researcher taking up an open request: its " +
-        "`scope` variant is a cheap pass that returns a quote, its `full` " +
-        "variant costs the request's budget; value one by what its outcome " +
-        "could move in your territory, and its cost is what you weigh that against.",
+        "The open action ledger from your mandate's point of view: each " +
+        "row's cost, what its funders have put on it, the gap left to fund, " +
+        "and your valuation if you hold one, with the node it is on (kind, " +
+        "text, tags, importance, contestation, days since assessed), its " +
+        "alternatives (at most one of a set runs), and for a curate or " +
+        "request row what it is about. Filter by territory (query by " +
+        "meaning, tag, within a node's subtree, node kind, assessment " +
+        "state) and by money (unfunded only, a cost ceiling, valued by you " +
+        "or not); page with offset. The graph reads you make also carry " +
+        "each node's open actions. An audit row whose subject is your own " +
+        "mandate is never yours to fund.",
       input_schema: {
         type: "object" as const,
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "By meaning and keyword, over the nodes' text and the rows' labels." },
+          tag: { type: "string", description: "A topic tag's slug, as graph reads return it." },
+          within: { type: "string", description: "A node id: actions on it and the nodes beneath it." },
+          within_depth: { type: "number", description: "Levels beneath `within`, default 3, at most 6." },
           kind: {
             type: "string",
             enum: [
@@ -212,9 +213,18 @@ async function runMandateReviewImpl(input: {
               "request",
             ],
           },
-          valued_only: { type: "boolean" },
+          node_kind: { type: "string", enum: ["claim", "quantity", "question"] },
+          assessed: { type: "string", enum: ["any", "assessed", "unassessed"] },
+          unfunded_only: { type: "boolean", description: "Only rows whose backing does not yet cover their cost." },
+          max_cost_owls: { type: "number" },
+          valued: { type: "string", enum: ["any", "mine", "not_mine"], description: "Rows you have valued, or have not." },
+          order: {
+            type: "string",
+            enum: ["relevance", "my_value", "value_per_owl", "gap", "importance", "contestation", "stale"],
+            description: "Default relevance with a query, my_value without.",
+          },
           offset: { type: "number" },
-          limit: { type: "number" },
+          limit: { type: "number", description: "Default 25, at most 50." },
         },
         required: [],
       },
@@ -640,18 +650,28 @@ async function runMandateReviewImpl(input: {
       if (finding !== null) return finding;
       // Shared graph reads first; null means "not mine", so the mandate's own
       // handlers below still run.
+      // Each node a read returns carries the open actions on it.
       const graphRead = await executeGraphReadTool(name, toolInput);
-      if (graphRead !== null) return graphRead;
+      if (graphRead !== null) return annotateOpenActions(name, graphRead, grant.id);
       const mandateTool = await mandateTools.execute(name, toolInput);
-      if (mandateTool !== null) return mandateTool;
+      if (mandateTool !== null) return annotateOpenActions(name, mandateTool, grant.id);
       const contributed = await contributionTools.execute(name, toolInput);
       if (contributed !== null) return contributed;
       if (name === "list_open_actions") {
+        const str = (k: string) => (typeof toolInput[k] === "string" && toolInput[k] ? (toolInput[k] as string) : null);
         const res = await listOpenActions({
           grantId: grant.id,
-          query: typeof toolInput.query === "string" ? toolInput.query : null,
-          kind: typeof toolInput.kind === "string" ? toolInput.kind : null,
-          valuedOnly: toolInput.valued_only === true,
+          query: str("query"),
+          tag: str("tag"),
+          within: str("within"),
+          withinDepth: toolInput.within_depth === undefined ? undefined : Number(toolInput.within_depth),
+          kind: str("kind"),
+          nodeKind: str("node_kind") as "claim" | "quantity" | "question" | null,
+          assessed: (str("assessed") ?? "any") as "any" | "assessed" | "unassessed",
+          unfundedOnly: toolInput.unfunded_only === true,
+          maxCostOwls: toolInput.max_cost_owls === undefined ? null : Number(toolInput.max_cost_owls),
+          valued: (str("valued") ?? "any") as "any" | "mine" | "not_mine",
+          order: (str("order") ?? undefined) as Parameters<typeof listOpenActions>[0]["order"],
           offset: Number(toolInput.offset ?? 0),
           limit: Number(toolInput.limit ?? 25),
         });

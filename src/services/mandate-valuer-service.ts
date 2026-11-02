@@ -446,82 +446,8 @@ async function pruneClosedValuations(grantId: string): Promise<void> {
 // Affordances for agent valuers — what a Grantmaker's valuation pass uses.
 // ---------------------------------------------------------------------------
 
-export interface OpenActionRow {
-  action_id: string;
-  kind: string;
-  variant: string;
-  claim_id: string | null;
-  label: string;
-  cost_est_micro_usd: number;
-  backing_micro_usd: number;
-  my_value_est: number | null;
-  importance: number | null;
-  contestation: number | null;
-  assessment_status: string | null;
-  days_since_assessed: number | null;
-}
-
-/**
- * Browse the open ledger from one mandate's point of view: every open
- * action (optionally text-filtered against labels/claims — a search aid,
- * never a scope), with the shared signals and this mandate's current
- * valuation if it holds one.
- */
-export async function listOpenActions(input: {
-  grantId: string;
-  query?: string | null;
-  kind?: string | null;
-  valuedOnly?: boolean;
-  offset?: number;
-  limit?: number;
-}): Promise<{ total: number; actions: OpenActionRow[] }> {
-  const limit = Math.min(50, Math.max(1, input.limit ?? 25));
-  const offset = Math.max(0, input.offset ?? 0);
-  const rows = await rawQuery<OpenActionRow & { total: number }>(
-    `SELECT a.id AS action_id, a.kind, a.variant, a.claim_id, a.label,
-            a.cost_est_micro_usd,
-            COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
-                       WHERE al.exclusion_group = a.exclusion_group
-                         AND al.released_at IS NULL
-                         AND (al.action_id IS NULL OR al.action_id = a.id)),
-                     0)::bigint AS backing_micro_usd,
-            mv.value_est AS my_value_est,
-            c.importance, c.contestation,
-            x.status AS assessment_status,
-            CASE WHEN x.assessed_at IS NULL THEN NULL
-                 ELSE FLOOR(EXTRACT(EPOCH FROM (now() - x.assessed_at))
-                            / 86400)::int END AS days_since_assessed,
-            COUNT(*) OVER ()::int AS total
-       FROM actions a
-       LEFT JOIN mandate_valuations mv
-         ON mv.action_id = a.id AND mv.grant_id = $1
-       LEFT JOIN claims c ON c.id = a.claim_id
-       LEFT JOIN assessments x
-         ON x.claim_id = a.claim_id AND x.is_current = true
-      WHERE a.status = 'open'
-        AND ($2::text IS NULL OR a.kind = $2)
-        AND ($3::text IS NULL
-             OR a.label ILIKE '%' || $3 || '%'
-             OR (c.id IS NOT NULL
-                 AND c.text_search @@ websearch_to_tsquery('english', $3)))
-        AND ($4::boolean IS NOT TRUE OR mv.value_est IS NOT NULL)
-      ORDER BY COALESCE(mv.value_est, 0) DESC, c.importance DESC NULLS LAST
-      LIMIT $5 OFFSET $6`,
-    [
-      input.grantId,
-      input.kind ?? null,
-      input.query?.trim() || null,
-      input.valuedOnly ?? null,
-      limit,
-      offset,
-    ]
-  );
-  return {
-    total: Number(rows[0]?.total ?? 0),
-    actions: rows.map(({ total: _total, ...r }) => r),
-  };
-}
+// The open ledger as a Grantmaker browses it lives in open-actions-service.ts.
+export { listOpenActions, type OpenActionRow } from "./open-actions-service.js";
 
 export interface ValuationEntry {
   action_id: string;

@@ -26,6 +26,7 @@ import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
+import { annotateOpenActions } from "../../services/open-actions-service.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
@@ -656,10 +657,11 @@ async function runGrantmakerTurnImpl(input: {
       }
       // Shared graph reads first; returns null for anything it doesn't own,
       // so the mandate-specific handlers below still get their turn.
+      // On a live mandate, each node a read returns carries its open actions.
       const graphRead = await executeGraphReadTool(name, toolInput);
-      if (graphRead !== null) return graphRead;
+      if (graphRead !== null) return input.grantId ? annotateOpenActions(name, graphRead, input.grantId) : graphRead;
       const mandateTool = await mandateTools.execute(name, toolInput);
-      if (mandateTool !== null) return mandateTool;
+      if (mandateTool !== null) return input.grantId ? annotateOpenActions(name, mandateTool, input.grantId) : mandateTool;
       if (name === "propose_mandate") {
         const raw = toolInput as unknown as GrantMandate;
         const problem = validateMandate(raw);
