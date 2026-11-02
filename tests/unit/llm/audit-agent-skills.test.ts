@@ -84,7 +84,7 @@ describe("Audit toolset without a domain", () => {
     // Every skill's audit-agent tools are offered, loaded or not: the
     // Mathematics reads and the Provenance reads, with the attributed note
     // on an examination's finding (#507).
-    expect(names.slice(-11)).toEqual([
+    expect(names.slice(-12)).toEqual([
       "load_skill",
       "get_proof_attempt",
       "get_prize_claim",
