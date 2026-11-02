@@ -390,6 +390,35 @@ export async function fetchContribution(
   }
 }
 
+// Where a just-submitted proposal stands, read fresh (no revalidate window):
+// the propose form polls this so the link to the node a proposal became
+// appears as soon as review accepts it.
+export async function fetchContributionStatus(id: string): Promise<{
+  review_status: string;
+  became_claim_id: string | null;
+} | null> {
+  if (!BASE) return null;
+  try {
+    const res = await fetch(`${BASE}/contributions/${pathSegment(id)}`, {
+      headers: KEY ? { "x-api-key": KEY } : {},
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const { contribution: c } = (await res.json()) as ContributionDetail;
+    if (!c?.review_status) return null;
+    const became =
+      c.became_claim_id ??
+      (c.claim_id &&
+      (c.contribution_type === "propose_claim" ||
+        c.contribution_type === "propose_question")
+        ? c.claim_id
+        : null);
+    return { review_status: c.review_status, became_claim_id: became };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchLeaderboard(
   limit = 20,
 ): Promise<LeaderboardContributor[]> {

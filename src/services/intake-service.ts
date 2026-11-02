@@ -85,7 +85,8 @@ export function isIntakeContributionType(
  */
 export async function createClaimProposal(input: {
   claimText: string;
-  argumentText: string;
+  /** Optional: a proposal need not say why it belongs (stored as ""). */
+  argumentText?: string;
   contributorId: string;
   /** A question proposed directly is a propose_question (§7a). */
   kind?: "claim" | "question";
@@ -99,7 +100,7 @@ export async function createClaimProposal(input: {
       contributionType: input.kind === "question" ? "propose_question" : "propose_claim",
       // The argument is the contribution's substance; the proposed claim text
       // rides in proposed_canonical_form, same as a propose_edit.
-      content: input.argumentText,
+      content: input.argumentText ?? "",
       proposedCanonicalForm: input.claimText,
     })
     .returning();
@@ -261,9 +262,12 @@ async function materializeProposedClaim(contribution: {
         (match.instance_stance === "denies"
           ? " (the proposal asserts its negation)"
           : "") +
-        `. Proposed wording: "${claimText}". ` +
-        (proposedKind === "question" ? `Why the contributor asks it: ` : `Supporting argument from the contributor: `) +
-        contribution.content,
+        `. Proposed wording: "${claimText}".` +
+        (contribution.content.trim()
+          ? (proposedKind === "question"
+              ? ` Why the contributor asks it: `
+              : ` Supporting argument from the contributor: `) + contribution.content
+          : " The contributor gave no argument with it."),
     });
 
     // The proposal was paid for: run that steward pass on the express lane.
@@ -314,8 +318,9 @@ async function materializeProposedClaim(contribution: {
     .returning();
 
   // A proposed claim's argument is an argument for it; a proposed
-  // question's reason for asking is not, whatever kind it became.
-  if (proposedKind === "claim" && kind === "claim") {
+  // question's reason for asking is not, whatever kind it became. A claim
+  // proposed without an argument starts with none.
+  if (proposedKind === "claim" && kind === "claim" && contribution.content.trim()) {
     await db.insert(arguments_).values({
       claimId: claim!.id,
       stance: "for",

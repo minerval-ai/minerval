@@ -1,5 +1,5 @@
 ---
-description: File a challenge, evidence, or proposal on a Minerval claim
+description: File a challenge, evidence, or proposal on a Minerval claim, or propose a missing claim or question
 argument-hint: <claim id or assertion, and what you want to contribute>
 ---
 
@@ -14,8 +14,14 @@ Input: `$ARGUMENTS`
 
 1. Identify the target claim. Resolve a UUID or claim page URL directly;
    otherwise use `match_claim` or `search_claims` (Minerval MCP) to find it.
-   Contributions require an existing target claim — if the graph has no such
-   claim, say so; proposing brand-new claims is not available over MCP yet.
+   Contributions require an existing target claim. If the graph has no such
+   claim, or the user wants to contribute a question rather than a claim,
+   use `propose_claim` instead (with `kind: "question"` for a question): it
+   takes the wording and, optionally, an `argument` (the case for a claim,
+   or why a question needs asking). A proposal need not say why it belongs
+   in the graph; it is reviewed on its text. It spends owls (a rejected
+   good-faith proposal refunds), so confirm with the user and show them the
+   exact wording before submitting, as in step 5.
 2. Fetch it with `get_claim` (include `arguments` and `provenance`) so the
    contribution engages what is already on record rather than repeating it.
 3. Settle the contribution type with the user:

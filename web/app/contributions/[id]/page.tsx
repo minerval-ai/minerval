@@ -99,6 +99,14 @@ export default async function ContributionPage({
   const statusLabel =
     STATUS_LABELS[c.review_status] ?? c.review_status.replace(/_/g, " ");
   const isIntake = c.claim_id === null;
+  // An accepted proposal: the claim, question or quantity it became (#157).
+  const becameId =
+    c.became_claim_id ??
+    (c.claim_id &&
+    (c.contribution_type === "propose_claim" ||
+      c.contribution_type === "propose_question")
+      ? c.claim_id
+      : null);
 
   return (
     <div className="col">
@@ -109,7 +117,7 @@ export default async function ContributionPage({
       </div>
 
       {/* what the contribution is about: the claim, quoted, or the proposal */}
-      {isIntake && c.proposed_canonical_form ? (
+      {(isIntake || becameId) && c.proposed_canonical_form ? (
         <h1 className="claim-hero">{c.proposed_canonical_form}</h1>
       ) : claim ? (
         <h1 className="claim-hero" style={{ fontSize: "1.6rem" }}>
@@ -126,6 +134,19 @@ export default async function ContributionPage({
             "A proposed addition to the graph"
           )}
         </h1>
+      )}
+
+      {becameId && (
+        <div className="contribute-box" style={{ marginTop: "1rem" }}>
+          <p style={{ margin: 0 }}>
+            <strong>In the graph.</strong> This proposal now lives at{" "}
+            <Link href={`/claims/${becameId}`}>
+              {claim?.claim.text ?? "its page"}
+            </Link>
+            . Its assessment may still be under way; the page shows where it
+            stands.
+          </p>
+        </div>
       )}
 
       <section>

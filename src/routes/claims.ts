@@ -1167,13 +1167,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim with an initial argument, or a question with why it needs asking (user proposals enter the review queue)",
+        "Propose a new claim or question, optionally with the argument for it or why it needs asking (user proposals enter the review queue)",
       body: {
         type: "object",
-        required: ["claim", "argument"],
+        required: ["claim"],
         properties: {
           claim: { type: "string", minLength: 1, maxLength: 2000 },
-          argument: { type: "string", minLength: 1, maxLength: 5000 },
+          // Optional: the argument for a claim, or why a question needs
+          // asking. A proposal is judged on its text.
+          argument: { type: "string", maxLength: 5000 },
           // claim (default) or question (§7a).
           kind: { type: "string", enum: ["claim", "question"], default: "claim" },
         },
@@ -1299,9 +1301,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         },
         message:
           "Proposal queued for review. If accepted, it will be matched " +
-          "against existing claims and materialized into the graph; track it " +
-          "via GET /contributions/" +
-          contribution.id,
+          "against the graph and materialized into it; GET /contributions/" +
+          contribution.id +
+          " then returns became_claim_id and page_url, the node it became " +
+          "(its assessment may still be under way).",
       });
     },
   });

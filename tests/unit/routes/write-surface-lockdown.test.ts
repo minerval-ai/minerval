@@ -168,6 +168,29 @@ describe("write-surface governance (#157)", () => {
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
     });
 
+    it("takes a claim or question without an argument: why it belongs is optional", async () => {
+      mocks.createClaimProposal.mockResolvedValue(PENDING_CONTRIBUTION);
+      const app = await buildTestApp(userAuth);
+      for (const payload of [
+        { claim: "The sky is blue" },
+        { claim: "The sky is blue", argument: "   " },
+        { claim: "What sets the colour of the sky?", kind: "question" },
+      ]) {
+        const res = await app.inject({ method: "POST", url: "/claims/propose", payload });
+        expect(res.statusCode).toBe(202);
+      }
+      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(1, {
+        claimText: "The sky is blue",
+        argumentText: undefined,
+        contributorId: CONTRIBUTOR.id,
+        kind: "claim",
+      });
+      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(2,
+        expect.objectContaining({ argumentText: undefined }));
+      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(3,
+        expect.objectContaining({ argumentText: undefined, kind: "question" }));
+    });
+
     it("routes a web-BFF session (service key + acting user) to intake, not the fast path", async () => {
       mocks.createClaimProposal.mockResolvedValue(PENDING_CONTRIBUTION);
       const app = await buildTestApp(sessionAuth);

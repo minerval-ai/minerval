@@ -6,8 +6,8 @@ import {
   AccountApiError,
 } from "../../../../lib/account-api";
 
-// Propose-a-claim intake (#174 → #157): a signed-in reader suggests a claim the
-// graph does not hold. Nothing is written directly; the proposal is queued for
+// Propose-a-claim intake (#174 → #157): a signed-in reader suggests a claim or
+// a question (§7a) the graph does not hold, with or without saying why. Nothing is written directly; the proposal is queued for
 // the Contribution Reviewer, and acceptance materializes it through the Matcher.
 
 export const runtime = "nodejs";
@@ -35,7 +35,7 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
       return {
         status: 402,
         error:
-          "Proposing a claim holds up to 1 owl, and your balance cannot cover it. You can buy owls from your account page, and a free owl arrives at the start of each month.",
+          "Proposing a claim or question holds up to 1 owl, and your balance cannot cover it. You can buy owls from your account page, and a free owl arrives at the start of each month.",
       };
     default:
       return {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.externalId) {
     return NextResponse.json(
-      { error: "Proposing a claim requires signing in.", code: "SIGN_IN" },
+      { error: "Proposing a claim or question requires signing in.", code: "SIGN_IN" },
       { status: 401 },
     );
   }
@@ -61,29 +61,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string; argument?: string };
+  let body: { claim?: string; argument?: string; kind?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
+  const kind = body.kind === "question" ? "question" : "claim";
   const claim = (body.claim ?? "").trim();
   const argument = (body.argument ?? "").trim();
   if (!claim || claim.length > 500) {
     return NextResponse.json(
-      { error: "Please state the claim in one sentence (up to 500 characters)." },
+      {
+        error:
+          kind === "question"
+            ? "Please state the question in one sentence (up to 500 characters)."
+            : "Please state the claim in one sentence (up to 500 characters).",
+      },
       { status: 400 },
     );
   }
-  // The intake schema requires a supporting argument: a proposal is a claim
-  // plus the case for holding it, not a bare sentence.
-  if (!argument || argument.length > 5000) {
+  // The reasoning is optional: a proposal is judged on its text.
+  if (argument.length > 5000) {
     return NextResponse.json(
-      {
-        error:
-          "Please say why the claim belongs in the graph: the evidence or reasoning behind it (up to 5,000 characters).",
-      },
+      { error: "Please keep the reasoning to 5,000 characters." },
       { status: 400 },
     );
   }
@@ -91,7 +93,8 @@ export async function POST(request: NextRequest) {
   try {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
-      argument,
+      argument: argument || undefined,
+      kind,
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

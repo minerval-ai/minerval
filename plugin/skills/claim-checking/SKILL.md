@@ -134,8 +134,9 @@ support matters:
 - When the graph is silent on a claim that matters, or wrong about one,
   the better move is to improve it rather than fill in quietly from
   memory. With your user's agreement:
-  - **Missing claim**: `propose_claim` (reviewed before anything enters
-    the graph; spends owls; a rejected good-faith proposal refunds).
+  - **Missing claim or question**: `propose_claim` (`kind: "question"`
+    for a question; the `argument` is optional; reviewed before anything
+    enters the graph; spends owls; a rejected good-faith proposal refunds).
   - **Missing evidence or a source the graph hasn't read**:
     `submit_source`, or `submit_contribution` with `support` or
     `challenge` and the evidence URLs.

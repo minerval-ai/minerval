@@ -5,7 +5,8 @@ import { useViewerSession } from "./useViewerSession";
 
 // The claims-index contribution entry (#174): the "I know something the graph
 // is missing" path. Challenges and evidence about an existing claim belong on
-// that claim's page; what starts here is a claim the graph does not hold yet.
+// that claim's page; what starts here is a claim, or a question (§7a), the
+// graph does not hold yet. Saying why it belongs is optional.
 // The proposal is intake (#157): it goes to review, and only acceptance
 // materializes anything.
 //
@@ -23,6 +24,52 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
   const session = useViewerSession();
   const [prefill, setPrefill] = useState("");
   const [status, setStatus] = useState<SubmitState>({ kind: "idle" });
+  const [proposalKind, setProposalKind] = useState<"claim" | "question">("claim");
+  const noun = proposalKind === "question" ? "question" : "claim";
+  // Where the sent proposal stands, polled so that once review accepts it the
+  // contributor gets a link to the node it became, not a void.
+  const [outcome, setOutcome] = useState<{
+    reviewStatus: string;
+    becameClaimId: string | null;
+  } | null>(null);
+
+  const sentId = status.kind === "sent" ? status.contributionId : null;
+  useEffect(() => {
+    if (!sentId) return;
+    let stopped = false;
+    let tries = 0;
+    // Review usually lands within a few minutes; after ~10 the record page
+    // and the account page carry the outcome instead.
+    const MAX_TRIES = 120;
+    async function poll() {
+      if (stopped) return;
+      tries += 1;
+      try {
+        const res = await fetch(`/api/contributions/${sentId}`, { cache: "no-store" });
+        if (res.ok) {
+          const body = (await res.json()) as {
+            review_status?: string;
+            became_claim_id?: string | null;
+          };
+          if (!stopped && body.review_status) {
+            setOutcome({
+              reviewStatus: body.review_status,
+              becameClaimId: body.became_claim_id ?? null,
+            });
+            if (body.became_claim_id || body.review_status !== "pending") return;
+          }
+        }
+      } catch {
+        // Transient: try again on the next tick.
+      }
+      if (!stopped && tries < MAX_TRIES) setTimeout(poll, 5000);
+    }
+    const first = setTimeout(poll, 3000);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+    };
+  }, [sentId]);
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -49,6 +96,7 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
         body: JSON.stringify({
           claim: data.get("claim"),
           argument: data.get("argument"),
+          kind: proposalKind,
         }),
       });
       if (res.ok) {
@@ -85,14 +133,14 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
       <p className="contribute-lede">
         If a claim here is wrong, or missing evidence, open it: every claim page
         carries its own entry for challenges, evidence, and corrections. If the
-        graph is missing a claim entirely, propose it below. A proposal is
-        reviewed on its merits; accepted claims are matched against the graph
-        and enter it with their reasoning on record.
+        graph is missing a claim or a question entirely, propose it below. A
+        proposal is reviewed on its merits; accepted proposals are matched
+        against the graph and enter it with their reasoning on record.
       </p>
 
       {!open && (
         <button className="contribute-open" onClick={() => setOpen(true)}>
-          Propose a claim
+          Propose a claim or question
         </button>
       )}
 
@@ -122,10 +170,31 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
 
       {open && session.kind === "signed-in" && status.kind === "sent" && (
         <div className="contribute-box">
+          {outcome?.becameClaimId ? (
+            <p style={{ margin: 0 }}>
+              <strong>Accepted.</strong> It is in the graph:{" "}
+              <a href={`/claims/${outcome.becameClaimId}`}>open its page</a>.
+              Its assessment may still be under way. The review is on{" "}
+              <a href={`/contributions/${status.contributionId}`}>
+                its public record
+              </a>
+              .
+            </p>
+          ) : outcome && outcome.reviewStatus !== "pending" ? (
+            <p style={{ margin: 0 }}>
+              <strong>Reviewed</strong> (
+              {outcome.reviewStatus.replace(/_/g, " ")}). The decision and its
+              reasoning are on{" "}
+              <a href={`/contributions/${status.contributionId}`}>
+                its public record
+              </a>
+              .
+            </p>
+          ) : (
           <p style={{ margin: 0 }}>
             <strong>Received.</strong> The proposal is awaiting review. If it
-            is accepted, it is matched against existing claims and enters the
-            graph.{" "}
+            is accepted, it is matched against the graph and enters it, and a
+            link to its page appears here.{" "}
             {status.contributionId ? (
               <>
                 The decision and its reasoning will appear on{" "}
@@ -141,30 +210,60 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
               </>
             )}
           </p>
+          )}
         </div>
       )}
 
       {open && session.kind === "signed-in" && status.kind !== "sent" && (
         <form className="contribute-box" onSubmit={onSubmit}>
+          <fieldset
+            style={{ border: 0, padding: 0, margin: "0 0 .8rem" }}
+          >
+            <legend className="contribute-label">Proposing</legend>
+            {(["claim", "question"] as const).map((k) => (
+              <label
+                key={k}
+                style={{ marginRight: "1.2rem", cursor: "pointer" }}
+              >
+                <input
+                  type="radio"
+                  name="kind"
+                  value={k}
+                  checked={proposalKind === k}
+                  onChange={() => setProposalKind(k)}
+                  style={{ marginRight: ".35rem" }}
+                />
+                {k === "claim" ? "A claim" : "A question"}
+              </label>
+            ))}
+          </fieldset>
+
           <label className="contribute-label" htmlFor="propose-claim">
-            The claim
+            The {noun}
           </label>
           <input
             className="contribute-field"
             id="propose-claim"
             name="claim"
             maxLength={500}
-            placeholder="One neutral sentence stating a proposition people dispute with evidence"
+            placeholder={
+              proposalKind === "question"
+                ? "One neutral question anyone reasoning about the subject would need to ask"
+                : "One neutral sentence stating a proposition people dispute with evidence"
+            }
             defaultValue={prefill || searchQuery || ""}
             required
           />
           <p className="contribute-hint">
-            The best form is short and frame-free: the statement both sides
-            would accept as what is in dispute.
+            {proposalKind === "question"
+              ? "The best form is open and frame-free: it presupposes no answer."
+              : "The best form is short and frame-free: the statement both sides would accept as what is in dispute."}
           </p>
 
           <label className="contribute-label" htmlFor="propose-argument">
-            Why it belongs in the graph
+            {proposalKind === "question"
+              ? "Why it needs asking (optional)"
+              : "Your reasoning (optional)"}
           </label>
           <textarea
             className="contribute-field"
@@ -172,8 +271,11 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
             name="argument"
             rows={5}
             maxLength={5000}
-            placeholder="The evidence or reasoning that bears on it, with sources if you have them"
-            required
+            placeholder={
+              proposalKind === "question"
+                ? "What turns on it, if you want to say"
+                : "Evidence or reasoning that bears on it, with sources if you have them"
+            }
           />
 
           <div className="contribute-actions">

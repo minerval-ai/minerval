@@ -154,6 +154,21 @@ describe("createClaimProposal", () => {
   });
 });
 
+describe("createClaimProposal — without an argument", () => {
+  it("stores an empty content: saying why it belongs is optional", async () => {
+    await createClaimProposal({
+      claimText: "What sets the colour of the sky?",
+      contributorId: "user-1",
+      kind: "question",
+    });
+    expect(state.inserts[0]!.values).toMatchObject({
+      contributionType: "propose_question",
+      content: "",
+      proposedCanonicalForm: "What sets the colour of the sky?",
+    });
+  });
+});
+
 describe("createSourceProposal", () => {
   it("stores the source verbatim but enqueues only review, not extraction", async () => {
     const { contribution, sourceId } = await createSourceProposal({
@@ -270,6 +285,38 @@ describe("materializeAcceptedIntake — propose_claim", () => {
       canonicalDirectionNote:
         "Posed as the positive observation; the proposal denies it.",
     });
+  });
+
+  it("creates no argument for a claim proposed without one", async () => {
+    state.selectResults.push([pendingContribution({ content: "" })]);
+    mocks.matchClaim.mockResolvedValue({
+      is_match: false,
+      matched_claim_id: null,
+      new_canonical_form: "The daytime clear sky appears blue",
+      instance_stance: "affirms",
+    });
+
+    const result = await materializeAcceptedIntake("contrib-1");
+
+    expect(result.action).toBe("created_claim");
+    expect(state.inserts.find((i) => i.table === claims)).toBeDefined();
+    expect(state.inserts.find((i) => i.table === arguments_)).toBeUndefined();
+  });
+
+  it("tells the matched claim's Steward when no argument came with it", async () => {
+    state.selectResults.push([pendingContribution({ content: "" })]);
+    mocks.matchClaim.mockResolvedValue({
+      is_match: true,
+      matched_claim_id: "existing-9",
+      new_canonical_form: null,
+      instance_stance: "affirms",
+    });
+
+    await materializeAcceptedIntake("contrib-1");
+
+    const context = mocks.enqueueSteward.mock.calls[0]![0].context as string;
+    expect(context).toContain("The contributor gave no argument with it.");
+    expect(context).not.toContain("Supporting argument from the contributor");
   });
 
   it("attaches to the existing claim when the Matcher finds a match (no new claim)", async () => {
