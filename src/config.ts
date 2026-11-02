@@ -221,7 +221,11 @@ const configSchema = z.object({
     })
     .prefault("5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"),
   // Reputation / good-faith policy (#71)
-  // Hourly cap on contributions per contributor (0 = unlimited)...
+  // Hourly cap on FREE contributions per contributor (0 = unlimited): POST
+  // /contributions, submit_contribution, and prize-claim filings. Each one
+  // commands a Contribution Reviewer run that nobody pays for, so money
+  // can't bound them. Priced intake (claim proposals, sources) is exempt —
+  // its owl charge is the bound...
   contributionRateLimitPerHour: z.coerce.number().default(10),
   // ...tightened for low-reputation (< 50) or brand-new (< 24h) accounts to
   // blunt sybil floods. Reputation itself is governed by constants in

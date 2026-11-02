@@ -4,8 +4,15 @@
  * POST /contributions, POST /claims/propose, and POST /sources all accept
  * user suggestions into the review pipeline, so they share one set of checks:
  * a resolved contributor identity, not suspended, not in pay-to-contribute
- * standing, and inside the sybil/flood rate limit. Returns the contributor,
- * or null after sending the appropriate error reply.
+ * standing, and — for free surfaces only — inside the sybil/flood rate
+ * limit. Returns the contributor, or null after sending the appropriate error
+ * reply.
+ *
+ * Priced surfaces (POST /claims/propose, POST /sources) pass `priced: true`
+ * and skip the hourly count: each submission takes an owl charge before any
+ * work, so the caller's balance is what bounds them (docs/allocation.md,
+ * "Agents work to a budget they can see"). The count stays on the free
+ * surfaces because nothing prices the review they command.
  */
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getOrCreateContributor } from "../services/contributor-service.js";
@@ -14,7 +21,7 @@ import { checkContributionRateLimit } from "../services/reputation-service.js";
 export async function gateContributor(
   request: FastifyRequest,
   reply: FastifyReply,
-  opts?: { displayName?: string }
+  opts?: { displayName?: string; priced?: boolean }
 ): Promise<Awaited<ReturnType<typeof getOrCreateContributor>> | null> {
   // The acting contributor comes from the authenticated API key (issue #10)
   // — never from the request body, which would let any caller act as any
@@ -62,8 +69,13 @@ export async function gateContributor(
     return null;
   }
 
-  // Sybil / flood sandbox (#71): low-reputation and brand-new accounts
-  // get a tighter hourly cap.
+  // A priced submission is bounded by the owls it charges, not a count.
+  if (opts?.priced) return contributor;
+
+  // Sybil / flood sandbox (#71): free contributions command Contribution
+  // Reviewer runs that nobody pays for, so they carry an hourly cap,
+  // tighter for low-reputation and brand-new accounts. Stated up front in
+  // the submit_contribution tool description and docs/reputation.md.
   const rate = checkContributionRateLimit(contributor);
   if (rate.limited) {
     await reply.code(429).send({

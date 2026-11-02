@@ -44,11 +44,17 @@ suspensions this system imposed (manual suspensions remain a human call).
 From the default 50 that is ~3 bad-faith flags but ~41 sincere rejections —
 abuse escalates fast, sincerity never suspends by accident.
 
-**Sybil sandbox:** `POST /contributions` rate-limits per contributor
-(`CONTRIBUTION_RATE_LIMIT_PER_HOUR`, default 10/h), tightened for
-low-reputation (<50) or brand-new (<24h) accounts
+**Sybil sandbox:** the free contribution surfaces (`POST /contributions`,
+the MCP `submit_contribution` tool, and prize-claim filings) rate-limit per
+contributor (`CONTRIBUTION_RATE_LIMIT_PER_HOUR`, default 10/h), tightened
+for low-reputation (<50) or brand-new (<24h) accounts
 (`NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR`, default 3/h) → `429
-CONTRIBUTION_RATE_LIMITED`.
+CONTRIBUTION_RATE_LIMITED`. The cap exists because each free contribution
+commands a Contribution Reviewer run nobody pays for, so money cannot bound
+it; the `submit_contribution` description states it up front. Priced intake
+— claim proposals (`POST /claims/propose`) and source submissions (`POST
+/sources`) — is not counted: each takes an owl charge before any work, and
+the caller's balance is the bound.
 
 ## Good-faith-free / bad-faith-pay
 

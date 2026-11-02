@@ -944,7 +944,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
-        "contribution id for checking the outcome.",
+        "contribution id for checking the outcome. Free, and so capped at " +
+        `${loadConfig().contributionRateLimitPerHour} contributions per hour ` +
+        `(${loadConfig().newContributorRateLimitPerHour} for accounts under a ` +
+        "day old or below 50 reputation), because each one commands a " +
+        "review nobody pays for; past it you get CONTRIBUTION_RATE_LIMITED. " +
+        "Priced proposals (propose_claim, submit_source) do not count toward it.",
       inputSchema: {
         claim_id: z.guid(),
         contribution_type: contributionTypeEnum,
