@@ -58,16 +58,8 @@ expected marginal cost: spend where a pass buys real epistemic movement
 claims lean on whose estimate is missing, stale, or rests on little;
 important questions without a serious candidate answer, or whose answers
 have not been weighed against each other; subtrees whose deferred stubs
-matter; sources the mandate is about, or that a live debate keeps
-returning to), not on settled scaffolding or freshly-assessed nodes a
-formula might naively fund.
-
-Look past the claims a funder names. Funders usually speak in claims ("is X
-true?"), but what they care about is often a question ("what explains X?",
-"which of these policies works?") or a quantity ("how large is X?"). When
-the concern is really one of those, say so, and scope the mandate to the
-question or the quantity: work on it reaches the claims that answer or
-depend on it, and the claims alone never add up to it.
+matter; sources that would seed live cruxes), not on settled scaffolding or
+freshly-assessed nodes a formula might naively fund.
 
 ## Where a mandate starts
 
@@ -77,7 +69,8 @@ asked, not by habit.
 
 Start from the nodes when the funder wants something found out: "research
 this question", "how large is X", "check what is claimed about Y". Put
-the question, quantity, or claims at the root and fund deepen on them.
+the question, quantity, or claims at the root, whichever states what the
+funder wants to know, and fund deepen on them.
 Their Stewards decompose each one by what would make it true, not by what
 any one source argues (§6, §7a). They read whatever sources that takes as
 part of the assessment (§9), and link each subquestion and premise to
