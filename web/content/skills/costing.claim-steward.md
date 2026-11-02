@@ -60,11 +60,11 @@ work:
 
 - **assess and reassess**: one Steward pass each, on the standard or the
   strong tier.
-- **deepen**: a pass on the node, then a pass on each child it releases,
-  and later passes as the Stewards decompose further. get_decomposition
-  and survey_scope show how many children are waiting. Price the first
-  round from that, and keep room for the rounds after it, since nobody
-  knows the size of the tree in advance.
+- **deepen**: one pass on the node. The children it releases get open
+  rows of their own, each a pass when you fund it; get_decomposition and
+  survey_scope show how many are waiting. Price the first level from
+  that, and keep room for the levels after it, since nobody knows the
+  size of the tree in advance.
 - **ingest**: one ingestion per source. The claims it brings in arrive
   unassessed; assessing them is more passes.
 - **formalize and attempt_proof**: their own lines. An attempt at the max

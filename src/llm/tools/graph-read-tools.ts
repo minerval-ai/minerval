@@ -64,7 +64,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
       description:
         "Find nodes by meaning: claims, quantities and questions alike. " +
         "Combined semantic and keyword search over the graph, ranked by " +
-        "similarity to your query — so a node worded differently from your " +
+        "similarity to your query, so a node worded differently from your " +
         "search still surfaces. Each hit carries its `kind` and the signals " +
         "allocation turns on: importance, contestation, assessment status, " +
         "and how many days since it was assessed, plus its topic tags. " +

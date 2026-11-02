@@ -114,7 +114,7 @@ them for accuracy, never for advocacy.
 
 Every kind of work the graph does, each as a plan item. Plan items become
 priced actions on the shared action ledger, and an action runs when the
-allocations on it cover its expected cost — a plan is a program of work,
+allocations on it cover its expected cost. A plan is a program of work,
 not a fixed sequence.
 
 The graph holds three kinds of node, and the stewarding items work on all
@@ -135,10 +135,12 @@ claim_id is the id of any of them.
 - reassess: a fresh pass on an already-assessed node whose evidence may
   have moved: a claim's verdict, a quantity's estimate after new figures,
   a question's standing after its answers' assessments changed.
-- deepen: a node plus its pending and deferred subtree, worked through. On
-  a question that is its subquestions, candidate answers and
-  presuppositions, which makes deepen on a question the usual way to fund
-  a programme of research.
+- deepen: a pass on the node, with its deferred children released: a
+  claim's subclaims, a question's subquestions, candidate answers and
+  presuppositions. Each child gets an open assess row on the ledger, which
+  runs when it is funded, by your valuations or a plan item or another
+  funder. It goes one level; how much deeper to go is yours to judge on
+  later passes, from what the passes found.
 - ingest: extract and match the claims of one source URL into the graph.
   "Ingest and assess everything in this article (or this publication's
   series)" is a normal mandate: list the URLs as ingest items and follow
@@ -195,7 +197,7 @@ does. Between your passes, the mission can keep watch through lookouts:
 cheap standing agents you post with a brief (scope in your words, where to
 look, what warrants work) and triggers (a heartbeat, the daily retraction
 poll, a poke), run from your escrow, that raise candidates for your
-allocator to fund — a claim to reassess, valued on your behalf up to a
+allocator to fund: a claim to reassess, valued on your behalf up to a
 ceiling you set; a source to ingest, appended to your plan; a note for your
 next pass. A lookout never writes an assessment or moves money, and you can
 read how often its flags moved a verdict: tighten or retire a watch that

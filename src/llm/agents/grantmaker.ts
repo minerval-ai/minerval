@@ -389,7 +389,7 @@ async function runGrantmakerTurnImpl(input: {
       "Amend the platform General mandate's allocation policy: the " +
       "formula knobs its bulk valuer runs on (value heuristic, cost " +
       "priors, strong-pass gain multiplier, reassessment cadence). Only " +
-      "the General mandate's spending is formula-driven — an ordinary " +
+      "the General mandate's spending is formula-driven. An ordinary " +
       "mandate's spending follows its Grantmaker's own valuations " +
       "(set_valuations), so this tool refuses on other mandates rather " +
       "than pretending a write took effect. Every key is bounded by the " +
@@ -433,7 +433,7 @@ async function runGrantmakerTurnImpl(input: {
     name: "spawn_mandate",
     description:
       "Carve part of the mission into a new mandate with its own budget " +
-      "and its own Grantmaker (a peer, separately fundable — not a " +
+      "and its own Grantmaker (a peer, separately fundable, not a " +
       "sub-unit). It starts in planning: its agent surveys and drafts its " +
       "own plan. Use when a slice of the work deserves dedicated " +
       "stewardship, e.g. a whole ingestion program.",
@@ -451,7 +451,7 @@ async function runGrantmakerTurnImpl(input: {
   const rateTool: Tool = {
     name: "set_daily_rate",
     description:
-      "Set this mandate's daily allocation rate, in owls per day — the " +
+      "Set this mandate's daily allocation rate, in owls per day: the " +
       "pacing knob. The escrow is the hard bound either way.",
     input_schema: {
       type: "object" as const,
@@ -462,7 +462,7 @@ async function runGrantmakerTurnImpl(input: {
   const allocationReportTool: Tool = {
     name: "allocation_report",
     description:
-      "This mandate's live allocation view — the same data its public " +
+      "This mandate's live allocation view, the same data its public " +
       "page renders: the policy in force, budget and daily rate, today's " +
       "placements and the day's emergent value-per-owl bar, per-kind " +
       "action tiles (candidates / valued / covered), and the mandate's " +

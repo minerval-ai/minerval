@@ -71,7 +71,7 @@ export function getSurveyScopeToolDefinition(): Tool {
     description:
       "Survey a scope (a claim's subtree and/or a keyword query) with the " +
       "allocation signals: importance, contestation, assessment state and " +
-      "age, expected gain from another pass, deferred subclaims — most " +
+      "age, expected gain from another pass, deferred subclaims; most " +
       "valuable first. A search aid, not the scope: the mandate's scope is " +
       "its words. Paginate with offset.",
     input_schema: {
@@ -90,7 +90,7 @@ export function getUpdateWorkspaceToolDefinition(): Tool {
   return {
     name: UPDATE_WORKSPACE_TOOL_NAME,
     description:
-      "Rewrite your workspace — your own durable working memory, read " +
+      "Rewrite your workspace: your own durable working memory, read " +
       "back to you in full at the start of every pass on this mandate. " +
       "Keep here what a person running this mission would keep in their " +
       "working notes: the map of the territory so far, the source backlog " +

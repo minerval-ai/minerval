@@ -36,8 +36,9 @@ export interface PlanItem {
    *                 kind: a claim's verdict, a quantity's estimate, a
    *                 question's standing.
    * reassess      — a fresh pass on an already-assessed node.
-   * deepen        — the node plus its pending/deferred subtree (a
-   *                 question's subquestions and answers included).
+   * deepen        — a pass on the node, with its direct deferred children
+   *                 released into the queue (a question's subquestions,
+   *                 answers, and presuppositions included); one level.
    * ingest        — extract + match one source URL into the graph, metered
    *                 to the grant's escrow (the ingestion-pipeline primitive).
    * formalize     — write and publish the claim's formal statement

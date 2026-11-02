@@ -276,7 +276,7 @@ async function runLookoutImpl(input: {
     {
       name: "update_workspace",
       description:
-        "Rewrite your workspace — your own memory between runs, read back " +
+        "Rewrite your workspace: your own memory between runs, read back " +
         "in full at the start of every run. Keep here what you have already " +
         "checked and when, what you have flagged and is still waiting (so " +
         "you do not raise it again), sources or DOIs to watch, what the " +
