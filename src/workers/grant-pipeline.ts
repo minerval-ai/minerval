@@ -34,7 +34,6 @@ import {
   withStewardLease,
 } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
-import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { refundUnspentBudget } from "../services/budget-job-service.js";
 import { grantmakerShareLeftMicroUsd } from "../services/action-service.js";
@@ -253,11 +252,10 @@ export async function processNextGrantTask(
 ): Promise<GrantProcessResult> {
   const config = loadConfig();
 
-  try {
-    checkBudget();
-  } catch {
-    return { status: "budget" };
-  }
+  // No checkBudget() pre-check: a grant's runs carry its funder and budget
+  // job, which the process-wide breaker exempts; checked out here, outside
+  // that context, it would read the unattributed lane's counters and stall
+  // funded work. The mandate's escrow is its bound.
 
   // One statement: pick AND claim (bump updated_at, the round-robin sort
   // key) atomically. A bare SELECT ... FOR UPDATE releases its lock the

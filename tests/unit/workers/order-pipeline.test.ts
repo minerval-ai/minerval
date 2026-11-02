@@ -96,7 +96,8 @@ vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   }),
 }));
 
-vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget: vi.fn() }));
+const { checkBudget } = vi.hoisted(() => ({ checkBudget: vi.fn() }));
+vi.mock("../../../src/llm/budget-tracker.js", () => ({ checkBudget }));
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ stewardModel: "claude-sonnet-5-5", owlCostMicroUsd: 1_000_000 }),
 }));
@@ -130,6 +131,7 @@ beforeEach(() => {
   state.orderUpdates = [];
   state.claimReleases = [];
   state.throwFor = null;
+  checkBudget.mockReset();
 });
 
 describe("processNextOrderTask", () => {
@@ -171,6 +173,20 @@ describe("processNextOrderTask", () => {
       op: "assessment",
       claimId: "claim-1",
     });
+  });
+
+  it("runs a paid order while the unattributed breaker is spent", async () => {
+    // The process-wide breaker covers unattributed work only. Consulted
+    // before the order entered its buyer's usage context, it read the
+    // background lane's counters and stalled every paid order until the
+    // hour rolled over.
+    checkBudget.mockImplementation(() => {
+      throw new Error("hourly_token_count exceeded");
+    });
+    state.orders = [order()];
+    const r = await processNextOrderTask();
+    expect(r).toMatchObject({ status: "processed", ok: true, orderId: "order-1" });
+    expect(runCalls).toHaveLength(1);
   });
 
   it("runs structure_and_assess for a never-stewarded claim", async () => {

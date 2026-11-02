@@ -26,7 +26,6 @@ import {
   withStewardLease,
 } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
-import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import {
   getJobSpentMicroUsd,
@@ -143,11 +142,10 @@ export async function processNextBudgetJobTask(
 ): Promise<BudgetJobProcessResult> {
   const model = opts.model ?? loadConfig().stewardModel;
 
-  try {
-    checkBudget();
-  } catch {
-    return { status: "budget" };
-  }
+  // No checkBudget() pre-check: a job runs as its funder (userId + jobId),
+  // which the process-wide breaker exempts; checked out here, outside that
+  // context, it would read the unattributed lane's counters and stall
+  // funded work. The job's escrow is its bound.
 
   // Oldest-updated running job first, so concurrent jobs round-robin.
   // Pick AND claim in one statement (bump updated_at, the sort key): a
