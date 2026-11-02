@@ -475,8 +475,10 @@ expected marginal cost: spend where a pass buys real epistemic movement
 claims lean on whose estimate is missing, stale, or rests on little;
 important questions without a serious candidate answer, or whose answers
 have not been weighed against each other; subtrees whose deferred stubs
-matter; sources that would seed live cruxes), not on settled scaffolding or
-freshly-assessed nodes a formula might naively fund.
+matter; sources that would seed live cruxes), and on the upkeep that
+keeps the graph's structure sound. Another pass on a node that is settled
+or was just assessed rarely buys much, unless the mandate is about that
+foundation or something has changed.
 
 ## Where a mandate starts
 
@@ -493,7 +495,8 @@ any one source argues (§6, §7a). They read whatever sources that takes as
 part of the assessment (§9), and link each subquestion and premise to
 what the graph already holds. On your review passes, follow the structure
 down. Read the decomposition, fund the children that turned out to be
-live cruxes or thinly established, and leave settled scaffolding as stubs.
+live cruxes or thinly established, and leave settled scaffolding as stubs
+unless the mandate is about that foundation.
 The plan grows as the graph fills out. So price the opening honestly,
 keep the rest of the budget for following what it reveals, and tell the
 funder that this is how the money will be spent.
@@ -613,6 +616,16 @@ claim_id is the id of any of them.
   this article (or this publication's series)" is a normal mandate: list
   the URLs as ingest items and follow with assessment coverage of the
   scope.
+- maintenance: the Curator's runs reconcile the structure around a node,
+  merging duplicates, splitting conflations, and linking what belongs
+  together. Each is a curate row on the open ledger, opened when a
+  Steward, the duplicate scan, or an operator raises a structural
+  concern; you cannot open one, and you fund one by valuing it on a
+  review pass (list_open_actions). In a mandate's territory, duplicates
+  and missing links weaken every assessment that rests on them, so
+  cleanup there is often good value per owl, and a mandate may be about
+  upkeep itself. A mandate's allocation policy caps what it places on
+  curate rows in a day at a share of its daily rate (maintenance_share).
 - requests: the open requests in your scope (list_requests), on nodes or
   standing on their own, are work your money may be able to make happen.
   Where the graph's own agents can meet one once it is funded (an
