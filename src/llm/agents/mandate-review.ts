@@ -71,6 +71,7 @@ import {
   grantCommittedMicroUsd,
 } from "../../services/regrant-service.js";
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
+import { runMandateAllocator } from "../../services/allocation-service.js";
 import {
   mandateClosureBlockers,
   closureBlockedMessage,
@@ -89,6 +90,8 @@ export interface MandateReviewResult {
   /** The agent judged one pass wasn't enough: run another now (funded out
    * of the mandate's day like the rest of its work). */
   continueRequested: boolean;
+  /** Placements the mandate's allocator made when the pass ended. */
+  allocated: number;
 }
 
 export function runMandateReview(
@@ -237,7 +240,8 @@ async function runMandateReviewImpl(input: {
         "with your mandate) and a one-line rationale. Sparse by design: " +
         "value only what you know and care about; actions you skip simply " +
         "carry no opinion from you. Your allocator funds the best marginal " +
-        "value per owl among these, so this is your spending judgment.",
+        "value per owl among these, so this is your spending judgment. It " +
+        "runs as soon as this pass ends, within your daily rate and escrow.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -913,5 +917,21 @@ async function runMandateReviewImpl(input: {
       WHERE id = $1`,
     [grant.id, note || "(review completed without a note)"]
   );
-  return { note, valuationsWritten, planItemsAdded, continueRequested };
+  // Fund what this pass decided now, not at the next scheduled sweep
+  // (hours away): the allocator is idempotent and locked per mandate, and
+  // bounded by the daily rate and the escrow like every other placement.
+  // A failure here leaves the valuations for the sweep to fund.
+  let allocated = 0;
+  if (valuationsWritten > 0) {
+    try {
+      allocated = (await runMandateAllocator(grant.id)).allocated;
+    } catch (err) {
+      console.error(
+        `[mandate-review] allocation after the pass failed for ${grant.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
+  }
+  return { note, valuationsWritten, planItemsAdded, continueRequested, allocated };
 }
