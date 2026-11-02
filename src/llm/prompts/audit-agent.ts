@@ -1,6 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
-import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -163,8 +162,6 @@ on evidence that would survive that scrutiny, and lift it yourself when
 it no longer holds.
 
 ${RAISING_ISSUES}
-
-${NOTING_FINDINGS}
 
 ${skillsSection("audit-agent")}`;
 
