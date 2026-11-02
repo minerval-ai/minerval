@@ -181,7 +181,8 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       // Governed intake (#157): the source is stored verbatim but nothing is
       // extracted — no claims, no instances — until the Contribution Reviewer
       // accepts the submission.
-      const contributor = await gateContributor(request, reply);
+      // Priced: the owl charge below bounds submissions, so no hourly count.
+      const contributor = await gateContributor(request, reply, { priced: true });
       if (!contributor) return;
 
       // Charge at start: the price buys the extraction work that follows

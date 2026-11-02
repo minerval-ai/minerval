@@ -58,7 +58,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "enters the graph; track it with get_contribution_status, which " +
       "returns became_claim_id and page_url once it is accepted. " +
       SPENDS_OWLS +
-      " A rejected good-faith proposal refunds.",
+      " A rejected good-faith proposal refunds. There is no hourly cap: " +
+      "your balance is the bound.",
   },
 
   // ---- funding work on claims ----
@@ -105,7 +106,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     note:
       "The submission is reviewed before any extraction runs; track it with " +
       "get_contribution_status. " +
-      SPENDS_OWLS,
+      SPENDS_OWLS +
+      " There is no hourly cap: your balance is the bound.",
   },
   "GET /sources/:source_id": { name: "get_source" },
   "GET /sources/:source_id/context": { name: "get_source_context" },

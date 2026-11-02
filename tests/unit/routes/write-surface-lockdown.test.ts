@@ -201,6 +201,9 @@ describe("write-surface governance (#157)", () => {
       });
       expect(res.statusCode).toBe(202);
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
+      // Priced intake: the owl charge bounds it, not the hourly count.
+      expect(mocks.gateContributor).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), { priced: true });
     });
 
     it("stops at the contributor gate without creating anything", async () => {
@@ -313,7 +316,8 @@ describe("write-surface governance (#157)", () => {
       });
       expect(res.statusCode).toBe(202);
       expect(res.json().status).toBe("pending_review");
-      expect(mocks.submitSource).not.toHaveBeenCalled();
+      expect(mocks.submitSource).not.toHaveBeenCalled();      expect(mocks.gateContributor).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), { priced: true });
     });
   });
 });

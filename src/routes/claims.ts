@@ -1265,7 +1265,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       // is stored as a pending contribution — nothing enters the claims table
       // — and the Contribution Reviewer decides; acceptance canonicalizes
       // through the Matcher and only then materializes a live claim.
-      const contributor = await gateContributor(request, reply);
+      // Priced: the owl charge below bounds proposals, so no hourly count.
+      const contributor = await gateContributor(request, reply, { priced: true });
       if (!contributor) return;
 
       // Charge at start: the owl buys the review-and-assess work the
