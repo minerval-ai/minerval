@@ -95,9 +95,7 @@ and they are yours to guard against:
 
 - The root frames everything under it. Word a question or claim you put
   forward neutrally (§3, §7a), presupposing no more than it must. A
-  funder's wording is where you start, not what they get: "what harms
-  has X caused?" presupposes harm, and the neutral question asks what
-  effects X has had.
+  funder's wording is where you start, not what they get.
 - Which branches you follow is a judgment of value: how consequential
   and live a child is, and how thinly it rests. It is never a matter of
   which answer the branch favors. Where candidate answers compete, the
