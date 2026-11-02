@@ -486,6 +486,17 @@ const configSchema = z.object({
   // still works and the claim count can converge; importance-prioritized
   // processing is a follow-up.
   stewardMaxRuns: z.coerce.number().default(0),
+  // How many drains one process runs at once (each drain runs one Steward
+  // pass, order, job, or engine action at a time). Money already bounds how
+  // much work runs; this bounds how much runs AT ONCE, which money cannot:
+  // the model provider's per-organization rate limit, the 20-connection DB
+  // pool the API shares, and the task's memory. The runner halves its live
+  // concurrency on a transient failure (429, 5xx, overload) and climbs back
+  // one slot per clean drain, so this is a ceiling, not a target the
+  // provider must sustain. Every lane claims its work with SKIP LOCKED or a
+  // guarded transition, the same as when several tasks run, so raising it is
+  // safe for correctness. 1 reproduces the old one-run-per-process runner.
+  stewardConcurrency: z.coerce.number().int().min(1).default(8),
   // Economic brake on decomposition depth (#98/#68). When the Steward mints a
   // NEW subclaim, we auto-enqueue a full Steward pass for it — which itself
   // decomposes with web_search. For a subclaim the Steward judged BELOW this
@@ -1054,6 +1065,7 @@ export function loadConfig(): Config {
     grantMaintainCadenceDays: process.env.GRANT_MAINTAIN_CADENCE_DAYS,
     stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
+    stewardConcurrency: process.env.STEWARD_CONCURRENCY,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,

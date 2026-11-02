@@ -69,6 +69,12 @@ export interface DrainStats {
   processed: Record<string, number>;
   errors: Record<string, number>;
   capped: boolean;
+  /**
+   * Set when the drain stopped on a transient API/infra failure (429, 5xx,
+   * overload, network): the work was requeued untouched, and the continuous
+   * runner backs off and lowers its concurrency rather than retrying at once.
+   */
+  stoppedOnTransient?: boolean;
 }
 
 export interface DrainOptions {
@@ -86,6 +92,22 @@ export interface DrainOptions {
    * claims are left as embedded stubs — the intended under-budget steady state.
    */
   maxStewardTasks?: number;
+  /**
+   * Whether this drain also takes the in-memory queues and the prize lanes
+   * (default true). The continuous runner gives these to one slot only: the
+   * in-memory handlers were written for one consumer, and the prize lanes
+   * check their concurrency cap before submitting. Its other slots run the
+   * DB-claimed lanes, whose SKIP LOCKED and guarded transitions make
+   * concurrent drains safe.
+   */
+  singletonLanes?: boolean;
+  /**
+   * Checked before each unit of work; returning false ends the drain after
+   * the unit in flight. The continuous runner uses it to take a slot back
+   * when it lowers its concurrency or pauses, so a lower limit applies to
+   * running drains, not only to new ones.
+   */
+  shouldContinue?: () => boolean;
 }
 
 /** The window closer's work is dated in days; once a minute per process is plenty. */
@@ -130,12 +152,20 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
   // The prize lanes run only where a checker is configured: without one no
   // statement publishes and no bounty binds (docs/mathematics.md §5.3).
   const config = loadConfig();
+  const singletonLanes = opts.singletonLanes ?? true;
   const prizeLanesOn =
-    typeof config.leanCheckerUrl === "string" && config.leanCheckerUrl.trim().length > 0;
+    singletonLanes &&
+    typeof config.leanCheckerUrl === "string" &&
+    config.leanCheckerUrl.trim().length > 0;
 
   while (seq < cap) {
+    if (opts.shouldContinue && !opts.shouldContinue()) {
+      return { processed, errors, capped: true };
+    }
     // 1. Drain a ready in-memory message if any.
-    const entry = HANDLERS.find(([name]) => getLocalQueue(name).length > 0);
+    const entry = singletonLanes
+      ? HANDLERS.find(([name]) => getLocalQueue(name).length > 0)
+      : undefined;
     if (entry) {
       const [name, handler] = entry;
       const message = dequeue(name) as never;
@@ -181,7 +211,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         return { processed, errors, capped: false };
       }
       if (o.status === "transient") {
-        return { processed, errors, capped: true };
+        return { processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (o.status === "processed") {
         seq++;
@@ -211,7 +241,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         return { processed, errors, capped: false };
       }
       if (b.status === "transient") {
-        return { processed, errors, capped: true };
+        return { processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (b.status === "processed") {
         seq++;
@@ -245,7 +275,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         return { processed, errors, capped: false };
       }
       if (e.status === "transient") {
-        return { processed, errors, capped: true };
+        return { processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (e.status === "processed") {
         seq++;
@@ -339,7 +369,7 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         return { processed, errors, capped: false };
       }
       if (g.status === "transient") {
-        return { processed, errors, capped: true };
+        return { processed, errors, capped: true, stoppedOnTransient: true };
       }
       if (g.status === "processed" || g.status === "planned") {
         seq++;
@@ -379,7 +409,12 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       // A transient API/infra failure (billing/credit/429/5xx/network). The
       // claim was requeued untouched (#97). Stop this pass cleanly — the API is
       // struggling — leaving the queue for the next interval to retry.
-      return { processed, errors, capped: (await pendingStewardCount()) > 0 };
+      return {
+        processed,
+        errors,
+        capped: (await pendingStewardCount()) > 0,
+        stoppedOnTransient: true,
+      };
     }
     seq++;
     stewardProcessed++;
@@ -402,43 +437,154 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
 }
 
 /**
+ * How many drains the continuous runner may run at once, and when it may
+ * start the next one. A ceiling (STEWARD_CONCURRENCY), not a target:
+ *
+ *  - A transient failure (429, 5xx, overload, network: the provider or the
+ *    network is struggling, not the work) halves the live limit, never below
+ *    one, and pauses every slot for a backoff that doubles with each
+ *    consecutive transient stop, from 5 s to at most 5 minutes. The SDK has
+ *    already retried the call by then, so retrying at once only adds load.
+ *  - A drain that did work and ended cleanly resets the backoff and raises
+ *    the limit by one, back toward the ceiling.
+ *  - An exhausted LLM budget pauses every slot for 60 s, as the
+ *    single-slot runner did.
+ *
+ * The runner slows down under pressure instead of stopping, so a burst of
+ * rate limits costs throughput for a few minutes, never the drain.
+ */
+export class RunnerGovernor {
+  static readonly BASE_BACKOFF_MS = 5_000;
+  static readonly MAX_BACKOFF_MS = 300_000;
+  static readonly BUDGET_PAUSE_MS = 60_000;
+
+  readonly ceiling: number;
+  private live: number;
+  private consecutiveTransient = 0;
+  private pausedUntil = 0;
+
+  constructor(ceiling: number) {
+    this.ceiling = Math.max(1, Math.floor(ceiling));
+    this.live = this.ceiling;
+  }
+
+  /** The number of slots that may run now. */
+  get limit(): number {
+    return this.live;
+  }
+
+  /** Whether slot `index` (0-based) may start a drain at time `now`. */
+  mayStart(index: number, now: number): boolean {
+    return index < this.live && now >= this.pausedUntil;
+  }
+
+  /** A drain stopped on a transient failure. Returns the pause it set, in ms. */
+  onTransient(now: number): number {
+    this.consecutiveTransient++;
+    this.live = Math.max(1, Math.floor(this.live / 2));
+    const backoff = Math.min(
+      RunnerGovernor.BASE_BACKOFF_MS * 2 ** (this.consecutiveTransient - 1),
+      RunnerGovernor.MAX_BACKOFF_MS
+    );
+    this.pausedUntil = Math.max(this.pausedUntil, now + backoff);
+    return backoff;
+  }
+
+  /** A drain did work and ended without a transient failure. */
+  onClean(): void {
+    this.consecutiveTransient = 0;
+    if (this.live < this.ceiling) this.live++;
+  }
+
+  /** The LLM budget tracker is exhausted. */
+  onBudget(now: number): void {
+    this.pausedUntil = Math.max(this.pausedUntil, now + RunnerGovernor.BUDGET_PAUSE_MS);
+  }
+}
+
+/** An idle extra slot waits this long before looking again (slot 0 keeps the tick). */
+export const IDLE_SLOT_RECHECK_MS = 5_000;
+
+/**
  * Continuously drain the queues on an interval. Used in BOTH dev and prod (in
  * prod alongside the SQS ingestion pollers) so the Steward and Curator actually
- * run everywhere. Budget errors pause the loop briefly (like the SQS poller)
- * rather than killing it.
+ * run everywhere.
+ *
+ * Up to STEWARD_CONCURRENCY drains run at once, each its own loop over the
+ * lanes, so that many Steward passes (orders first) can be in flight in one
+ * process. Slot 0 alone takes the in-memory queues and the prize lanes;
+ * the others run the DB-claimed lanes, and an extra slot that found nothing
+ * waits a few seconds before looking again, so an idle process does not
+ * poll the ledger N times a tick. RunnerGovernor paces them: transient
+ * failures halve the live concurrency and back off, clean drains climb back.
  */
 export function startLocalRunner(options: {
   intervalMs?: number;
   logger: { info: (...a: unknown[]) => void; error: (...a: unknown[]) => void };
   maxMessages?: number;
   stewardModel?: string;
+  /** Override STEWARD_CONCURRENCY. */
+  concurrency?: number;
 }): { stop: () => void } {
   const interval = options.intervalMs ?? 500;
+  const governor = new RunnerGovernor(
+    options.concurrency ?? loadConfig().stewardConcurrency ?? 1
+  );
+  const busy: boolean[] = Array.from({ length: governor.ceiling }, () => false);
+  const idleUntil: number[] = Array.from({ length: governor.ceiling }, () => 0);
   let running = true;
-  let busy = false;
 
-  const tick = async () => {
-    if (!running || busy) return;
-    busy = true;
+  const runSlot = async (index: number) => {
+    busy[index] = true;
     try {
-      await drainLocalQueues({
+      const stats = await drainLocalQueues({
         maxMessages: options.maxMessages,
         stewardModel: options.stewardModel,
+        singletonLanes: index === 0,
+        shouldContinue: () => running && governor.mayStart(index, Date.now()),
       });
+      const worked =
+        Object.values(stats.processed).some((n) => n > 0) ||
+        Object.values(stats.errors).some((n) => n > 0);
+      if (stats.stoppedOnTransient) {
+        const pause = governor.onTransient(Date.now());
+        options.logger.error(
+          `Transient API failure; runner concurrency now ${governor.limit}/${governor.ceiling}, ` +
+            `all slots paused ${Math.round(pause / 1000)}s`
+        );
+      } else if (worked && governor.mayStart(index, Date.now())) {
+        // A drain the governor cut short (it paused or lowered the limit
+        // under this slot) is not a sign the pressure has passed.
+        governor.onClean();
+      } else if (index > 0) {
+        idleUntil[index] = Date.now() + IDLE_SLOT_RECHECK_MS;
+      }
     } catch (err) {
       if (err instanceof LlmBudgetExceededError) {
+        governor.onBudget(Date.now());
         options.logger.error("Budget exceeded, pausing local runner for 60s:", err.message);
-        await new Promise((r) => setTimeout(r, 60_000));
       } else {
         options.logger.error("Local runner error", err instanceof Error ? err.message : err);
       }
     } finally {
-      busy = false;
+      busy[index] = false;
     }
   };
 
-  const timer = setInterval(() => void tick(), interval);
-  options.logger.info("In-process queue runner started (in-memory queues + DB Steward drain)");
+  const tick = () => {
+    if (!running) return;
+    const now = Date.now();
+    for (let i = 0; i < governor.ceiling; i++) {
+      if (busy[i] || now < idleUntil[i]! || !governor.mayStart(i, now)) continue;
+      void runSlot(i);
+    }
+  };
+
+  const timer = setInterval(tick, interval);
+  options.logger.info(
+    `In-process queue runner started (in-memory queues + DB Steward drain, ` +
+      `up to ${governor.ceiling} at once)`
+  );
 
   return {
     stop: () => {

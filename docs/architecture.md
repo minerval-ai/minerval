@@ -1361,10 +1361,23 @@ the queues' visibility timeout. Tagging is a third DB-backed lane: an
 untagged claim row is the work item, a scheduler tick leases and tags a
 small batch most-important-first, and the same drain is the backfill.
 
+Each process runs up to `STEWARD_CONCURRENCY` drains at once (default 8), so
+that many Steward passes, paid orders first, are in flight together. One slot
+alone takes the in-memory queues and the prize lanes; the rest run the
+DB-claimed lanes, which is safe for the same reason several tasks are. Money
+bounds how much work runs; this ceiling bounds how much runs at once, which
+money cannot: the model provider's rate limit, the shared connection pool, the
+task's memory.
+
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget) requeue the claim untouched
-and do not count as attempts, and a run of consecutive transient failures trips
-a circuit breaker that stops the drain rather than poisoning healthy claims.
+and do not count as attempts. The continuous runner answers them by slowing
+down, not stopping: a drain that ends on one halves the live concurrency
+(never below one) and pauses every slot for a backoff that doubles with each
+consecutive transient stop, from five seconds to five minutes, and each clean
+drain afterwards gives one slot back. The one-shot drain the harness uses keeps
+a circuit breaker that stops after a run of consecutive transient failures.
+Either way, healthy claims are never poisoned.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be
