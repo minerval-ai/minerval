@@ -4137,7 +4137,7 @@ export const agentFindings = pgTable(
     // when written; unresolved refs were dropped and named to the agent.
     refs: jsonb("refs").notNull().default([]),
     // 1..10, the importance of the finding (not of the claim): the ladder is
-    // in the noting-findings prompt block.
+    // in the note_finding tool description.
     importance: integer("importance").notNull(),
     // Embedding of headline + account, for search_findings.
     embedding: vector("embedding"),

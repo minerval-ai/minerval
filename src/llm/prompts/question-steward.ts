@@ -1,6 +1,5 @@
 import { buildAdminPrompt } from "./constitution.js";
 import { RAISING_ISSUES } from "./raising-issues.js";
-import { NOTING_FINDINGS } from "./noting-findings.js";
 import {
   buildAdminPromptBlocks,
   skillsSection,
@@ -127,8 +126,6 @@ the whole question.
 `;
 
 const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${PROVENANCE}${DELEGATING_RESEARCH}${REQUESTS}${INSTANCES}${NODE_INSTANCES}${BOUNDARIES}${RAISING_ISSUES}
-
-${NOTING_FINDINGS}
 
 ${skillsSection("claim-steward")}`;
 

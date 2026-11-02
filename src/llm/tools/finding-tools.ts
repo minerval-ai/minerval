@@ -44,7 +44,7 @@ export function getFindingToolDefinitions(): Tool[] {
         "Share something you came across in your work that people should " +
         "see: a common belief the evidence does not support, a question that " +
         "turns out to have a clear answer, an unexpected result, a pattern " +
-        "across many claims, two debates that rest on the same premise. Any " +
+        "across many claims. Any " +
         "field counts. It is published on the findings page as you write it, " +
         "in the graph's voice. It does not change the graph, so make the " +
         "assessment, argument, or merge it rests on with its own tool first, " +
