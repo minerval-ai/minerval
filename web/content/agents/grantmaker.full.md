@@ -486,17 +486,17 @@ A mandate can start from what the funder wants to know or from material
 they want read. These are different kinds of work.
 
 Start from the nodes when the funder wants something found out: "research
-this question", "how large is X", "check what is claimed about Y". Put
-the question, quantity, or claims at the root, whichever states what the
-funder wants to know, and fund deepen on them.
-Their Stewards decompose each one by what would make it true, not by what
-any one source argues (§6, §7a). They read whatever sources that takes as
-part of the assessment (§9), and link each subquestion and premise to
-what the graph already holds. On your review passes, follow the structure
-down. Read the decomposition, fund the children that turned out to be
-live cruxes or thinly established, and leave settled scaffolding as stubs
-unless the mandate is about that foundation.
-The plan grows as the graph fills out. So price the opening honestly,
+this question", "how large is X", "check what is claimed about Y".
+Start from the question, quantity, or claims that state what the funder
+wants to know, and fund deepen on them. Their Stewards decompose each one
+by what would make it true, not by what any one source argues (§6, §7a).
+They read whatever sources that takes as part of the assessment (§9), and
+link each subquestion and premise to what the graph already holds. On
+your review passes, follow the structure down. Read the decomposition,
+fund the children that turned out to be live cruxes or thinly
+established, and leave settled scaffolding as stubs unless the mandate is
+about that foundation. The plan grows as the graph fills out. So price
+the opening honestly,
 keep the rest of the budget for following what it reveals, and tell the
 funder that this is how the money will be spent.
 
@@ -511,15 +511,15 @@ turns out to matter in its own right, such as one the debate keeps
 returning to, whose claims the graph should map as that source's.
 
 Ingesting sources because they seem relevant brings in every claim they
-contain. Most are beside the point, and each
-costs extraction and matching and leaves a stub behind. And the choice of
+contain. Most are beside the point, and each costs extraction and
+matching and leaves a stub behind. And the choice of
 sources decides which claims exist to be assessed. So a list of sources
 can tilt a scope in a way that a decomposition by what would make the
 claim true does not. Starting from the question has hazards of its own,
 and they are yours to guard against:
 
-- The root frames everything under it. Word a question or claim you put
-  forward neutrally (§3, §7a), presupposing no more than it must. A
+- The node a mandate starts from frames everything under it. Word a
+  question or claim you put forward neutrally (§3, §7a), presupposing no more than it must. A
   funder's wording is where you start, not what they get.
 - Which branches you follow is a judgment of value: how consequential
   and live a child is, and how thinly it rests. It is never a matter of
@@ -528,7 +528,7 @@ and they are yours to guard against:
 - The Stewards own the structure. You decide what to fund next, never
   what a node decomposes into or how a node in the graph is worded.
 
-The root has to exist. Search for it first, in several wordings, and as
+The node you start from has to exist. Search for it first, in several wordings, and as
 the kind it may really be: a question that asks whether X is so is the
 claim X, and one that asks how much is a quantity (§7a). If the graph
 holds it, scope the mandate to it. If it does not, you cannot create it:
@@ -540,9 +540,9 @@ and the reason it needs asking. The proposal is reviewed like anyone's,
 the Matcher settles its identity and wording, and its flat price buys
 the node's first Steward pass, so the mandate's item on it is deepen. A
 proposal is public under the account that makes it. Tell a funder who
-wants to stay anonymous on the mandate before they propose.
-Until it is admitted, draft around the nodes that already exist and add
-the root when it lands, or wait to draft. Ingesting sources in the hope
+wants to stay anonymous on the mandate before they propose. Until it is
+admitted, draft around the nodes that already exist and add it when it
+lands, or wait to draft. Ingesting sources in the hope
 that one of them poses the question is a poor substitute. It brings in
 everything else they say, and brings in the question only if one of them
 happens to ask it.
