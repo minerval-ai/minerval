@@ -33,6 +33,9 @@ export const WAKE_AFTER_MINUTES = 15;
 
 /** How often the drain collects events and checks for due wakes. */
 const TICK_MS = 60_000;
+/** How far each scan reaches back past its watermark, for rows committed late. */
+const OVERLAP_MINUTES = 5;
+
 let lastTickAt = Number.NEGATIVE_INFINITY;
 
 /** Test hook. */
@@ -69,14 +72,20 @@ const CHILDREN_SQL = (node: string) => `jsonb_build_object(
  * row), so an overlapping rescan records nothing twice.
  */
 export async function collectMandateEvents(grantId?: string): Promise<number> {
-  const grants = await rawQuery<{ id: string; from: Date | null; to: Date }>(
-    `SELECT id, events_scanned_at AS "from", now() AS "to" FROM grants
+  // Timestamps travel as text: a JS Date would drop Postgres's microseconds
+  // and the watermark's compare-and-set below would never match.
+  const grants = await rawQuery<{ id: string; from: string | null; to: string }>(
+    `SELECT id, events_scanned_at::text AS "from", now()::text AS "to" FROM grants
       WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)`,
     [grantId ?? null]
   );
   let recorded = 0;
   for (const g of grants) {
     if (g.from) {
+      // The window reaches back OVERLAP_MINUTES past the watermark: a row's
+      // timestamp is its transaction's start, so one committed just after the
+      // last scan can carry a time before it. Rescanning the overlap records
+      // nothing twice.
       const window = [g.id, g.from, g.to];
       const assessed = await rawQuery(
         `INSERT INTO mandate_events (grant_id, kind, claim_id, ref_id, payload)
@@ -90,7 +99,7 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
              SELECT id, claim_id, funded_by_job_id, assessed_at, LEFT(summary, 160) FROM quantity_estimates WHERE is_current
              UNION ALL
              SELECT id, claim_id, funded_by_job_id, assessed_at, standing FROM question_assessments WHERE is_current
-           ) x ON x.assessed_at > $2 AND x.assessed_at <= $3
+           ) x ON x.assessed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND x.assessed_at <= $3
            JOIN claims c ON c.id = x.claim_id
           WHERE g.id = $1 AND ${INTEREST_SQL("x")}
          ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
@@ -106,7 +115,7 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
                                    'text', (SELECT LEFT(c.text, 240) FROM claims c WHERE c.id = ct.claim_id))
            FROM contributions ct
            JOIN contribution_reviews r ON r.contribution_id = ct.id AND NOT r.superseded
-          WHERE ct.grant_id = $1 AND r.reviewed_at > $2 AND r.reviewed_at <= $3
+          WHERE ct.grant_id = $1 AND r.reviewed_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND r.reviewed_at <= $3
          ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
          RETURNING id`,
         window
@@ -118,7 +127,7 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
                   'nodes', (SELECT COUNT(DISTINCT ci.claim_id) FROM claim_instances ci
                              WHERE ci.source_id = gs.source_id AND ci.detached_at IS NULL))
            FROM grant_sources gs
-          WHERE gs.grant_id = $1 AND gs.created_at > $2 AND gs.created_at <= $3
+          WHERE gs.grant_id = $1 AND gs.created_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND gs.created_at <= $3
          ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
          RETURNING id`,
         window
@@ -128,14 +137,20 @@ export async function collectMandateEvents(grantId?: string): Promise<number> {
          SELECT l.grant_id, 'lookout_flag', f.claim_id, f.id,
                 jsonb_build_object('flag', f.kind, 'url', f.url, 'rationale', LEFT(f.rationale, 300))
            FROM lookout_flags f JOIN lookouts l ON l.id = f.lookout_id
-          WHERE l.grant_id = $1 AND f.created_at > $2 AND f.created_at <= $3
+          WHERE l.grant_id = $1 AND f.created_at > $2::timestamptz - make_interval(mins => ${OVERLAP_MINUTES}) AND f.created_at <= $3
          ON CONFLICT (grant_id, kind, ref_id) DO NOTHING
          RETURNING id`,
         window
       );
       recorded += assessed.length + reviewed.length + ingested.length + flagged.length;
     }
-    await rawQuery(`UPDATE grants SET events_scanned_at = $2 WHERE id = $1`, [g.id, g.to]);
+    // Advance only from the watermark this scan read: a concurrent scan that
+    // already moved it (or started it) keeps its own.
+    await rawQuery(
+      `UPDATE grants SET events_scanned_at = $2
+        WHERE id = $1 AND events_scanned_at IS NOT DISTINCT FROM $3::timestamptz`,
+      [g.id, g.to, g.from]
+    );
   }
   return recorded;
 }

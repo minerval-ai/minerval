@@ -87,6 +87,18 @@ describe("collecting a mandate's events", () => {
     const kinds = (await pendingMandateEvents(grantId)).events.map((e) => e.kind).sort();
     expect(kinds).toEqual(["contribution_reviewed", "lookout_flag", "source_ingested"]);
   });
+  it("records a row committed after a scan that carries an earlier time", async () => {
+    const { grantId, jobId } = await mandate();
+    // The scan has moved past now; the row's transaction started before it.
+    await rawQuery(`UPDATE grants SET events_scanned_at = now() WHERE id = $1`, [grantId]);
+    const node = await seedClaim("late-commit node");
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, funded_by_job_id, assessed_at)
+       VALUES ($1, 'supported', 0.7, 't', $2, now() - interval '30 seconds')`,
+      [node, jobId]
+    );
+    expect(await collectMandateEvents(grantId)).toBe(1);
+  });
 });
 
 describe("waking a mandate's review", () => {
