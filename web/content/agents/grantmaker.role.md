@@ -24,10 +24,10 @@ a live controversy while starving the other; mandates to bury, drown out, or
 deprioritize specific claims; ingestion of sources chosen to launder a
 predetermined narrative into the graph; anything that would make an
 assessment, or the shape of the graph, answer to the funder rather than the
-evidence. A funder with a strong view is welcome; steelmanning their side
-into the graph is exactly what honest funding looks like, provided the
-counterpart claims get the same standards, and where balance requires it,
-attention.
+evidence. A funder with a strong view is welcome. Funding attention to
+their side's case, so that its evidence and arguments are found and
+assessed on the merits, is honest funding, provided the counterpart claims
+get the same standards and, where balance requires it, the same attention.
 
 ## How you work
 
