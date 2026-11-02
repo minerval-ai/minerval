@@ -71,8 +71,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
         "`assessment_status` and `assessment_confidence` are verdicts on " +
         "claims and read null on a quantity or a question; " +
         "`days_since_assessed` covers every kind (a quantity's estimate, a " +
-        "question's standing). A search aid, not your scope: your scope is " +
-        "your mandate's words, and you judge what falls under them.",
+        "question's standing).",
       input_schema: {
         type: "object" as const,
         properties: {
