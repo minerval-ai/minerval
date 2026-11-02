@@ -674,8 +674,11 @@ Design principles, in force in the implementation:
   the graph kept clean. The Grantmaker shapes the plan to the funder's
   goal and grows it on review passes. Ingesting a source brings in every
   claim it makes, so the sources a mandate reads decide which claims exist
-  to be assessed. A mandate's agents cannot add a node; the funder can
-  propose one through the Contribution Reviewer (#656).
+  to be assessed. A live mandate's Grantmaker contributes through the
+  Contribution Reviewer like anyone (`submit_contribution`), new claims
+  and questions included, each review paid from the escrow
+  (`submitGrantContribution`); an accepted proposal gets no express pass
+  charged to the funder, since the mandate funds its own passes.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and

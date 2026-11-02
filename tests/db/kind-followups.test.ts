@@ -50,6 +50,7 @@ import {
   getContributionRecordForClaim,
   mandateContributionBudget,
   reviewCostEstimateMicroUsd,
+  submitGrantContribution,
   submitMandateContribution,
 } from "../../src/services/contribution-service.js";
 import { applyReviewOutcome } from "../../src/services/reputation-service.js";
@@ -267,5 +268,72 @@ describe("contributions from a mandate's research", () => {
     expect(ok).toMatchObject({ success: true, budget_left: "$8.00 left in the mandate's uncommitted budget" });
     const over = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "strong", budget_usd: 9 }))!);
     expect(over.message).toMatch(/asks for \$9\.00, and the mandate's uncommitted budget has \$8\.00 left/);
+  });
+});
+
+describe("contributions from a mandate's Grantmaker", () => {
+  it("are filed under the mandate, metered to its job, and shown as a funded mandate", async () => {
+    const funder = await seedUser("gm-funder");
+    const { grantId, jobId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50_000_000 });
+    const claim = await seedClaim("gm node");
+    const out = await submitGrantContribution({
+      grantId,
+      input: { claim_id: claim, contribution_type: "challenge", content: FINDING, evidence_urls: ["https://example.org/r"] },
+    });
+    expect(out.success).toBe(true);
+    const [row] = await rawQuery<Record<string, unknown>>(
+      `SELECT claim_id, contributor_id, grant_id, funded_by_job_id, research_run_id FROM contributions WHERE id = $1`,
+      [out.contribution_id]
+    );
+    expect(row).toEqual({ claim_id: claim, contributor_id: funder, grant_id: grantId, funded_by_job_id: jobId, research_run_id: null });
+    const record = await getContributionRecordForClaim(claim);
+    expect(record[0]!.contributorDisplayName).toBe("a funded mandate");
+  });
+
+  it("refuse a type outside the list, a node that does not exist, a proposal with no wording, and a mandate not live", async () => {
+    const funder = await seedUser("gm-funder-2");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50_000_000 });
+    const claim = await seedClaim("gm node 2");
+    expect((await submitGrantContribution({ grantId, input: { claim_id: claim, contribution_type: "propose_merge", content: FINDING } })).success).toBe(false);
+    expect((await submitGrantContribution({ grantId, input: { claim_id: "nope", contribution_type: "support", content: FINDING } })).message).toMatch(/No active node/);
+    expect((await submitGrantContribution({ grantId, input: { contribution_type: "propose_question", content: FINDING } })).message).toMatch(/proposed_text/);
+    const paused = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50_000_000, grantStatus: "planning" });
+    expect((await submitGrantContribution({ grantId: paused.grantId, input: { claim_id: claim, contribution_type: "support", content: FINDING } })).message).toMatch(/planning/);
+  });
+
+  it("propose a question that the Matcher admits, with no order charged to the funder", async () => {
+    const funder = await seedUser("gm-funder-3");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50_000_000 });
+    mocks.matchKind = null;
+    const out = await submitGrantContribution({
+      grantId,
+      input: {
+        contribution_type: "propose_question",
+        proposed_text: "Which open problems in knot theory have the most results resting on them?",
+        content: "The mandate maps open problems in topology, and this question organizes that map.",
+      },
+    });
+    expect(out.success).toBe(true);
+    const [pending] = await rawQuery<{ claim_id: string | null; proposed_canonical_form: string }>(
+      `SELECT claim_id, proposed_canonical_form FROM contributions WHERE id = $1`,
+      [out.contribution_id]
+    );
+    expect(pending).toEqual({ claim_id: null, proposed_canonical_form: expect.stringContaining("knot theory") });
+    await materializeAcceptedIntake(out.contribution_id!);
+    const [made] = await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM contributions WHERE id = $1`, [out.contribution_id]);
+    expect(await rawQuery(`SELECT kind FROM claims WHERE id = $1`, [made!.claim_id])).toEqual([{ kind: "question" }]);
+    expect(await rawQuery(`SELECT 1 FROM assessment_orders WHERE user_id = $1`, [funder])).toEqual([]);
+  });
+
+  it("reserve the estimated review against the uncommitted escrow, pending reviews included", async () => {
+    const estimate = await reviewCostEstimateMicroUsd();
+    const funder = await seedUser("gm-funder-4");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: Math.round(estimate * 1.5) });
+    const claim = await seedClaim("gm node 4");
+    const first = await submitGrantContribution({ grantId, input: { claim_id: claim, contribution_type: "support", content: FINDING } });
+    expect(first.success).toBe(true);
+    // The first review has not run, so its estimate is still reserved: no room for a second.
+    const second = await submitGrantContribution({ grantId, input: { claim_id: claim, contribution_type: "support", content: FINDING } });
+    expect(second).toMatchObject({ success: false, message: expect.stringContaining("does not cover a review") });
   });
 });

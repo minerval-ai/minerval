@@ -80,6 +80,7 @@ work:
   its contribution budget.
 - **lookouts**: one run each time a trigger fires. A daily trigger fires
   about thirty times a month.
+- **contributions you submit**: a review each.
 - **your own passes**: the planning pass, each review pass on your
   cadence, and the granting conversation.
 

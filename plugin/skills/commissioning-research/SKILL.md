@@ -91,9 +91,8 @@ saves a wasted conversation.
   the claims bearing on it.
 - Deepening a question into a programme of research: its subquestions,
   candidate answers, and the claims and quantities that would settle it.
-  If the graph does not hold the question yet, the Grantmaker cannot add
-  it. With your user's agreement, propose it first with `propose_claim`
-  (`kind: "question"`); the proposal is public under their account.
+  If the graph does not hold the question yet, the Grantmaker can
+  propose it once the mandate is live, reviewed like anyone's proposal.
 - Funding open requests (work the graph has said would improve what it
   knows), whatever they find.
 - Formalizing a mathematical claim and funding proof attempts on it.

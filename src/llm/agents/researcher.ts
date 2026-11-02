@@ -79,21 +79,13 @@ import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.
 import { REQUEST_OUTCOMES } from "../../schemas/kinds.js";
 import {
   contributionBudgetLine,
+  MANDATE_CONTRIBUTION_TYPES,
   mandateContributionBudget,
   reviewCostEstimateMicroUsd,
   submitMandateContribution,
 } from "../../services/contribution-service.js";
 
-export const MANDATE_CONTRIBUTION_TYPES = [
-  "challenge",
-  "support",
-  "add_instance",
-  "add_estimate",
-  "propose_argument",
-  "propose_answer",
-  "propose_request",
-  "answer_request",
-] as const;
+export { MANDATE_CONTRIBUTION_TYPES };
 
 /** For research a mandate funds: submit a finding the graph should hold, as a contribution under the mandate. */
 export const SUBMIT_CONTRIBUTION_TOOL: Tool = {

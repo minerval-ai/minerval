@@ -199,6 +199,8 @@ async function materializeProposedClaim(contribution: {
   id: string;
   claimId: string | null;
   contributorId: string;
+  /** Set when a mandate submitted it: its passes are the mandate's to fund. */
+  grantId?: string | null;
   contributionType: string;
   content: string;
   proposedCanonicalForm: string | null;
@@ -265,7 +267,9 @@ async function materializeProposedClaim(contribution: {
     });
 
     // The proposal was paid for: run that steward pass on the express lane.
-    await createProposalFundedOrder(contribution, match.matched_claim_id);
+    // A mandate's proposal paid only for its review; the mandate funds any
+    // pass from its own escrow, never the funder's balance.
+    if (!contribution.grantId) await createProposalFundedOrder(contribution, match.matched_claim_id);
 
     return {
       action: "matched_existing_claim",
@@ -334,7 +338,8 @@ async function materializeProposedClaim(contribution: {
 
   // The proposal was paid for: the new claim's first Steward pass runs on
   // the express lane instead of waiting its turn in the background queue.
-  await createProposalFundedOrder(contribution, claim!.id);
+  // Not for a mandate's proposal, whose passes the mandate funds.
+  if (!contribution.grantId) await createProposalFundedOrder(contribution, claim!.id);
 
   return {
     action: "created_claim",

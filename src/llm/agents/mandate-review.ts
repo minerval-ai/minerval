@@ -47,6 +47,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
+import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import {
   validateMandate,
   executeManagementTool,
@@ -160,6 +161,8 @@ async function runMandateReviewImpl(input: {
   // ...and the finding channel (#394), the same shape without a cap.
   const findingTools = createFindingTools({ model });
   const mandateTools = createMandateTools({ grantId: grant.id, surveyLimit: 25 });
+  // Contributions through the Reviewer, paid from the escrow (§19).
+  const contributionTools = createGrantContributionTools(grant.id);
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
@@ -172,6 +175,7 @@ async function runMandateReviewImpl(input: {
     // update_workspace — one implementation shared with the planning pass
     // and the granting conversation.
     ...mandateTools.definitions,
+    ...contributionTools.definitions,
     {
       name: "list_open_actions",
       description:
@@ -642,6 +646,8 @@ async function runMandateReviewImpl(input: {
       if (graphRead !== null) return graphRead;
       const mandateTool = await mandateTools.execute(name, toolInput);
       if (mandateTool !== null) return mandateTool;
+      const contributed = await contributionTools.execute(name, toolInput);
+      if (contributed !== null) return contributed;
       if (name === "list_open_actions") {
         const res = await listOpenActions({
           grantId: grant.id,

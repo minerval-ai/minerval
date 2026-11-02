@@ -5,6 +5,7 @@ import { eq, sql, desc, inArray } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { enqueueContribution } from "./queue-service.js";
+import { grantCommittedMicroUsd } from "./regrant-service.js";
 import {
   contributions,
   contributionReviews,
@@ -93,7 +94,7 @@ export async function submitMandateContribution(input: {
   const claimId = text(input.input.claim_id);
   const type = text(input.input.contribution_type);
   const content = text(input.input.content);
-  const allowed = ["challenge", "support", "add_instance", "add_estimate", "propose_argument", "propose_answer", "propose_request", "answer_request"];
+  const allowed: readonly string[] = MANDATE_CONTRIBUTION_TYPES;
   if (!allowed.includes(type)) return { success: false, message: `contribution_type must be one of ${allowed.join(", ")}.` };
   if (content.length < 40) return { success: false, message: "content must say what you found and what it rests on." };
   const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
@@ -140,6 +141,124 @@ export async function submitMandateContribution(input: {
     message: `Contribution ${outcome.id} submitted for review under the mandate.`,
     contribution_id: outcome.id,
     budget: outcome.budget,
+  };
+}
+
+/** The contributions a mandate's research may submit: on existing nodes. */
+export const MANDATE_CONTRIBUTION_TYPES = [
+  "challenge",
+  "support",
+  "add_instance",
+  "add_estimate",
+  "propose_argument",
+  "propose_answer",
+  "propose_request",
+  "answer_request",
+] as const;
+
+/** What a mandate's Grantmaker may submit: the same, and new claims and questions. */
+export const GRANTMAKER_CONTRIBUTION_TYPES = [
+  ...MANDATE_CONTRIBUTION_TYPES,
+  "propose_claim",
+  "propose_question",
+] as const;
+
+/**
+ * A contribution a live mandate's Grantmaker submits (constitution §19: a
+ * mandate's agents write nothing to the graph directly, and like anyone may
+ * contribute through the Contribution Reviewer, paying for the review). It
+ * is filed under the funder's account and shown as "a funded mandate", its
+ * review metered to the mandate's budget job. A proposed claim or question
+ * has no node yet: it is an intake contribution, and an accept materializes
+ * it through the Matcher. Before writing, the mandate's uncommitted escrow
+ * must cover the estimated review, counting the reviews still pending on
+ * its earlier submissions.
+ */
+export async function submitGrantContribution(input: {
+  grantId: string;
+  input: Record<string, unknown>;
+}): Promise<{ success: boolean; message: string; contribution_id?: string }> {
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const type = text(input.input.contribution_type);
+  const content = text(input.input.content);
+  const claimId = text(input.input.claim_id);
+  const proposed = text(input.input.proposed_text);
+  if (!(GRANTMAKER_CONTRIBUTION_TYPES as readonly string[]).includes(type)) {
+    return { success: false, message: `contribution_type must be one of ${GRANTMAKER_CONTRIBUTION_TYPES.join(", ")}.` };
+  }
+  if (content.length < 40) {
+    return { success: false, message: "content must say what you found and what it rests on, or why the question needs asking." };
+  }
+  const intake = type === "propose_claim" || type === "propose_question";
+  if (intake) {
+    if (!proposed) return { success: false, message: `${type} needs proposed_text: the wording you propose.` };
+    if (proposed.length > 2000) return { success: false, message: "proposed_text is too long: a claim or question, not an essay." };
+  } else {
+    const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id::text = $1 AND state = 'active'`, [claimId]);
+    if (!node) return { success: false, message: `No active node ${claimId || "(none given)"}; ${type} is about an existing node.` };
+  }
+  const urls = Array.isArray(input.input.evidence_urls)
+    ? input.input.evidence_urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 20)
+    : [];
+  const estimate = await reviewCostEstimateMicroUsd();
+
+  const outcome = await withTransaction(async (tx) => {
+    // The grant row is the lock: two submissions cannot both reserve the
+    // escrow's last dollars.
+    const [grant] = await tx.query<{ funder_user_id: string; status: string; budget_job_id: string; budget: string }>(
+      `SELECT g.funder_user_id, g.status, g.budget_job_id, j.budget_micro_usd AS budget
+         FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
+        WHERE g.id = $1 FOR UPDATE OF g`,
+      [input.grantId]
+    );
+    if (!grant) return { success: false as const, message: "The mandate does not exist." };
+    if (grant.status !== "active") {
+      return { success: false as const, message: `The mandate is ${grant.status}; contributions are paid from a live mandate's escrow.` };
+    }
+    const committed = await grantCommittedMicroUsd({ id: input.grantId, budgetJobId: grant.budget_job_id }, tx);
+    // Reviews not yet run are not metered yet: reserve the estimate for each.
+    const [pending] = await tx.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM contributions
+        WHERE grant_id = $1 AND research_run_id IS NULL
+          AND review_status = 'pending' AND review_cost_micro_usd IS NULL`,
+      [input.grantId]
+    );
+    const left = Number(grant.budget) - committed - Number(pending?.n ?? 0) * estimate;
+    if (left < estimate) {
+      return {
+        success: false as const,
+        message:
+          `The mandate's uncommitted escrow (${usdText(Math.max(0, left))}) does not cover a review ` +
+          `(about ${usdText(estimate)}).`,
+      };
+    }
+    const [row] = await tx.query<{ id: string }>(
+      `INSERT INTO contributions
+         (claim_id, contributor_id, contribution_type, content, proposed_canonical_form,
+          evidence_urls, grant_id, funded_by_job_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [
+        intake ? null : claimId,
+        grant.funder_user_id,
+        type,
+        content.slice(0, 10_000),
+        intake ? proposed : null,
+        urls,
+        input.grantId,
+        grant.budget_job_id,
+      ]
+    );
+    return { success: true as const, id: row!.id, left: left - estimate };
+  });
+  if (!outcome.success) return outcome;
+  await enqueueContribution({ contributionId: outcome.id });
+  return {
+    success: true,
+    message:
+      `Contribution ${outcome.id} submitted for review under the mandate; its review (about ` +
+      `${usdText(estimate)}) is paid from the escrow, about ${usdText(Math.max(0, outcome.left))} of which ` +
+      `is left uncommitted.`,
+    contribution_id: outcome.id,
   };
 }
 

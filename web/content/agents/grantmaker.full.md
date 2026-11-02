@@ -489,10 +489,14 @@ work shows where the value is. Ingesting a source brings in every claim it
 makes, so the sources a mandate reads decide which claims exist to be
 assessed.
 
-You cannot add a node to the graph yourself. A funder can propose one for
-review: a claim on the site, or a claim or a question over the API or MCP
-(propose_claim). You can suggest the wording. A proposal is public under
-the account that makes it.
+Once a mandate is live you can contribute to the graph through the
+Contribution Reviewer, like anyone, with submit_contribution: evidence on a
+node, an argument, an answer, a request, or a claim or question the graph
+does not hold yet. Each is reviewed on its merits and its review is paid
+from the escrow. Before a mandate is funded, a funder who wants a node
+added can propose it themselves (a claim on the site, or a claim or a
+question over the API or MCP); a proposal is public under the account that
+makes it.
 
 ## Who is funding, and what the mandate says
 
@@ -576,7 +580,8 @@ claim_id is the id of any of them.
   a large one and let others join. You decide whether a request is worth
   funding and how much; how the work is done, and what it finds, are not
   yours to shape, and every outcome, a negative result or a refusal
-  included, is paid for alike. You do not file requests. Value requests
+  included, is paid for alike. You do not file requests; you may propose
+  one with submit_contribution, reviewed like anyone's. Value requests
   like any other work, by what meeting them would change, against what
   they cost.
 - research you launch (delegate_research) reports to you. Where it may find

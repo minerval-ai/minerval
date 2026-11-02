@@ -25,6 +25,7 @@ import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
@@ -540,11 +541,14 @@ async function runGrantmakerTurnImpl(input: {
     requestedBy: "grantmaker",
     grantId: input.grantId ?? null,
   });
+  // Contributions are paid from the escrow: a live mandate only (§19).
+  const contributionTools = managed ? createGrantContributionTools(input.grantId!) : null;
   const tools: Tool[] = [
     ...graphReadTools,
     ...reportTools.definitions, ...findingTools.definitions,
     ...mandateTools.definitions,
     ...(managed ? researchTools.definitions : []),
+    ...(contributionTools ? contributionTools.definitions : []),
     // The open requests a funded mandate's money may be able to meet
     // (fund_request); reading them commits nothing.
     ...(managed && researchTools.definitions.length > 0 ? [LIST_REQUESTS_TOOL] : []),
@@ -628,6 +632,10 @@ async function runGrantmakerTurnImpl(input: {
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      if (contributionTools) {
+        const contributed = await contributionTools.execute(name, toolInput);
+        if (contributed !== null) return contributed;
+      }
       if (managed) {
         const research = await researchTools.execute(name, toolInput);
         if (research !== null) return research;
