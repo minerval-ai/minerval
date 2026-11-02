@@ -5,13 +5,18 @@ import { useViewerSession } from "./useViewerSession";
 
 // The claims-index contribution entry (#174): the "I know something the graph
 // is missing" path. Challenges and evidence about an existing claim belong on
-// that claim's page; what starts here is a claim, or a question (§7a), the
-// graph does not hold yet. Saying why it belongs is optional.
+// that claim's page; what starts here is something the graph does not hold
+// yet. The proposer does not choose its kind: the Matcher decides whether it
+// enters as a claim, a question or a quantity (§2, §7a). Saying why it
+// belongs is optional.
 // The proposal is intake (#157): it goes to review, and only acceptance
 // materializes anything.
 //
 // Deep link: ?propose=<text> prefills and opens the form (used by the browser
 // extension when a highlighted statement matches nothing in the graph).
+// Otherwise the form starts from the reader's search, if there is one, so a
+// search that found nothing, or nothing quite right, is one click from
+// proposing it.
 
 type SubmitState =
   | { kind: "idle" }
@@ -24,8 +29,6 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
   const session = useViewerSession();
   const [prefill, setPrefill] = useState("");
   const [status, setStatus] = useState<SubmitState>({ kind: "idle" });
-  const [proposalKind, setProposalKind] = useState<"claim" | "question">("claim");
-  const noun = proposalKind === "question" ? "question" : "claim";
   // Where the sent proposal stands, polled so that once review accepts it the
   // contributor gets a link to the node it became, not a void.
   const [outcome, setOutcome] = useState<{
@@ -96,7 +99,6 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
         body: JSON.stringify({
           claim: data.get("claim"),
           argument: data.get("argument"),
-          kind: proposalKind,
         }),
       });
       if (res.ok) {
@@ -124,8 +126,12 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
     }
   }
 
+  const initialText = prefill || searchQuery?.trim() || "";
+  // Signing in comes back to the form with the text still in it.
   const callback =
-    typeof window === "undefined" ? "/claims" : `${window.location.pathname}?propose=`;
+    typeof window === "undefined"
+      ? "/claims"
+      : `${window.location.pathname}?propose=${encodeURIComponent(initialText)}`;
 
   return (
     <section id="propose" ref={sectionRef} style={{ marginTop: "2.6rem" }}>
@@ -140,7 +146,9 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
 
       {!open && (
         <button className="contribute-open" onClick={() => setOpen(true)}>
-          Propose a claim or question
+          {initialText
+            ? `Propose “${initialText.length > 80 ? `${initialText.slice(0, 80)}…` : initialText}” `
+            : "Propose a claim or question"}
         </button>
       )}
 
@@ -216,54 +224,30 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
 
       {open && session.kind === "signed-in" && status.kind !== "sent" && (
         <form className="contribute-box" onSubmit={onSubmit}>
-          <fieldset
-            style={{ border: 0, padding: 0, margin: "0 0 .8rem" }}
-          >
-            <legend className="contribute-label">Proposing</legend>
-            {(["claim", "question"] as const).map((k) => (
-              <label
-                key={k}
-                style={{ marginRight: "1.2rem", cursor: "pointer" }}
-              >
-                <input
-                  type="radio"
-                  name="kind"
-                  value={k}
-                  checked={proposalKind === k}
-                  onChange={() => setProposalKind(k)}
-                  style={{ marginRight: ".35rem" }}
-                />
-                {k === "claim" ? "A claim" : "A question"}
-              </label>
-            ))}
-          </fieldset>
 
           <label className="contribute-label" htmlFor="propose-claim">
-            The {noun}
+            What the graph is missing
           </label>
           <input
             className="contribute-field"
             id="propose-claim"
             name="claim"
             maxLength={500}
-            placeholder={
-              proposalKind === "question"
-                ? "One neutral question anyone reasoning about the subject would need to ask"
-                : "One neutral sentence stating a proposition people dispute with evidence"
-            }
-            defaultValue={prefill || searchQuery || ""}
+            placeholder="One neutral sentence: a claim, or a question"
+            // Keyed on the text so a new search (a client-side navigation
+            // that keeps this component mounted) refills the field.
+            key={initialText}
+            defaultValue={initialText}
             required
           />
           <p className="contribute-hint">
-            {proposalKind === "question"
-              ? "The best form is open and frame-free: it presupposes no answer."
-              : "The best form is short and frame-free: the statement both sides would accept as what is in dispute."}
+            The best form is short and frame-free: it presupposes no answer.
+            Whether it enters as a claim, a question or a quantity is decided
+            when it is matched against the graph.
           </p>
 
           <label className="contribute-label" htmlFor="propose-argument">
-            {proposalKind === "question"
-              ? "Why it needs asking (optional)"
-              : "Your reasoning (optional)"}
+            Your reasoning (optional)
           </label>
           <textarea
             className="contribute-field"
@@ -271,11 +255,7 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
             name="argument"
             rows={5}
             maxLength={5000}
-            placeholder={
-              proposalKind === "question"
-                ? "What turns on it, if you want to say"
-                : "Evidence or reasoning that bears on it, with sources if you have them"
-            }
+            placeholder="Evidence or reasoning that bears on it, or why it needs asking, with sources if you have them"
           />
 
           <div className="contribute-actions">

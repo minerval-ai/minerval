@@ -630,7 +630,7 @@ export async function submitContribution(
 /** Intake (#157): propose a claim not yet in the graph; reviewed before it materializes. */
 export async function proposeClaimIntake(
   externalId: string,
-  input: { claim: string; argument?: string; kind?: "claim" | "question" }
+  input: { claim: string; argument?: string }
 ): Promise<{ id: string; review_status: string }> {
   const r = await accountFetch<{
     contribution: { id: string; review_status: string };
@@ -640,7 +640,6 @@ export async function proposeClaimIntake(
     body: {
       claim: input.claim,
       ...(input.argument ? { argument: input.argument } : {}),
-      kind: input.kind ?? "claim",
     },
   });
   return r.contribution;
