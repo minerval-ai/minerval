@@ -561,6 +561,13 @@
       "when": 1793397605922,
       "tag": "0079_request_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793635039886,
+      "tag": "0080_mandate_events",
+      "breakpoints": true
     }
   ]
 }

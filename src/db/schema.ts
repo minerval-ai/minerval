@@ -2155,6 +2155,11 @@ export const grants = pgTable(
     // entirely by the agent; a mandate-scale mission is impossible
     // without durable working state between passes.
     workspace: text("workspace"),
+    // How far the inbox collector (mandate-event-service.ts) has read the
+    // graph for this mandate: events are what happened after this. Null
+    // until the first scan, which starts from then rather than replaying
+    // the mandate's history.
+    eventsScannedAt: timestamp("events_scanned_at", { withTimezone: true }),
     // The domain skills this mandate's Grantmaker carries (skill names): its
     // conversation and review passes splice these views in. They select the
     // Grantmaker's view and nothing else; the agents that write to the graph
@@ -2427,6 +2432,41 @@ export const lookoutEvents = pgTable(
     index("idx_lookout_events_pending")
       .on(table.lookoutId, table.createdAt)
       .where(sql`consumed_at IS NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// mandate_events — a mandate's inbox: what its work produced since its
+// Grantmaker last looked (an assessment on a node it funded, with the
+// children that pass surfaced; a decision on a contribution it submitted;
+// a source it ingested; a lookout's flag). Pending events wake a review
+// pass; the pass reads them and marks them consumed
+// (mandate-event-service.ts).
+// ---------------------------------------------------------------------------
+
+export const mandateEvents = pgTable(
+  "mandate_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => grants.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    claimId: uuid("claim_id"),
+    // The row the event is about (an assessment, a contribution, a source,
+    // a lookout flag), so a rescan never records it twice.
+    refId: uuid("ref_id").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_mandate_events_pending")
+      .on(table.grantId, table.createdAt)
+      .where(sql`consumed_at IS NULL`),
+    uniqueIndex("uq_mandate_events_ref").on(table.grantId, table.kind, table.refId),
   ]
 );
 

@@ -55,6 +55,7 @@ import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
+import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { runMandateReview } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
@@ -144,6 +145,9 @@ export async function processNextEngineAction(
   } catch {
     return { status: "budget" };
   }
+  // A mandate whose work produced something since its last review gets its
+  // review reopened here, then funded just below like its other own rows.
+  await mandateEventsTick().catch(() => ({ recorded: 0, woken: 0 }));
   await fundGrantSelfActions().catch(() => 0);
 
   // Request rows wait, funded, while the operator has the researcher off
