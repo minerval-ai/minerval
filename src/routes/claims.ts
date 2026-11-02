@@ -1176,8 +1176,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           // Optional: the argument for a claim, or why a question needs
           // asking. A proposal is judged on its text.
           argument: { type: "string", maxLength: 5000 },
-          // claim (default) or question (§7a).
-          kind: { type: "string", enum: ["claim", "question"], default: "claim" },
+          // A starting guess (§7a): the Matcher settles the node's kind, and
+          // review never rejects a proposal for arriving as the wrong one.
+          kind: {
+            type: "string",
+            enum: ["claim", "question"],
+            default: "claim",
+            description:
+              "Optional guess at the kind. The Matcher decides whether the node enters as a claim, a question or a quantity.",
+          },
         },
       },
       response: {

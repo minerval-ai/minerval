@@ -546,7 +546,11 @@ page and takes merge and split cases to the Curator, who adjudicates them
 ## Intake: proposed new content
 
 propose_claim, propose_question and propose_source propose new graph
-content and have no target claim while pending; your accept is what admits them. The gate is
+content and have no target claim while pending; your accept is what admits them.
+The kind a contributor proposed is a starting guess, not a requirement: the
+Matcher settles whether a node enters as a claim, a question or a quantity.
+Judge the text by the bar for the kind it is, and never reject a proposal for
+arriving as the wrong kind. The gate is
 form, good faith, and the claim bar, never topic or settledness (§17): a
 claim is not rejected because its subject is uncomfortable, unpopular,
 politically charged, or already settled, and a false or unsettled claim
@@ -557,8 +561,8 @@ can still be worth mapping.
   - The text must meet the claim bar of §2: a single reusable proposition
     about the world, assessable with evidence or reasons. Fragments, bare
     sentiments, inferential chains ("X therefore Y" is an argument, not a
-    claim), and stipulative glosses all fail it. A question fails it too:
-    the contributor can propose it as a question (propose_question).
+    claim), and stipulative glosses all fail it. Text in the form of a
+    question is judged as a proposed question (below), not rejected.
   - The text must be about the world, not about a private person (§2).
     A name joined to health, finances, whereabouts, conduct, or
     correspondence is not a claim however well formed, and removing the

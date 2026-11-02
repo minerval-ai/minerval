@@ -6,8 +6,8 @@ import {
   AccountApiError,
 } from "../../../../lib/account-api";
 
-// Propose-a-claim intake (#174 → #157): a signed-in reader suggests a claim or
-// a question (§7a) the graph does not hold, with or without saying why. Nothing is written directly; the proposal is queued for
+// Propose-a-claim intake (#174 → #157): a signed-in reader suggests something
+// the graph does not hold (the Matcher decides its kind, §7a), with or without saying why. Nothing is written directly; the proposal is queued for
 // the Contribution Reviewer, and acceptance materializes it through the Matcher.
 
 export const runtime = "nodejs";
@@ -61,23 +61,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string; argument?: string; kind?: string };
+  let body: { claim?: string; argument?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const kind = body.kind === "question" ? "question" : "claim";
   const claim = (body.claim ?? "").trim();
   const argument = (body.argument ?? "").trim();
   if (!claim || claim.length > 500) {
     return NextResponse.json(
       {
-        error:
-          kind === "question"
-            ? "Please state the question in one sentence (up to 500 characters)."
-            : "Please state the claim in one sentence (up to 500 characters).",
+        error: "Please state it in one sentence (up to 500 characters).",
       },
       { status: 400 },
     );
@@ -94,7 +90,6 @@ export async function POST(request: NextRequest) {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
       argument: argument || undefined,
-      kind,
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

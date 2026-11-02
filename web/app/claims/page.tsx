@@ -251,8 +251,10 @@ export default async function ClaimsIndex({
       )}
 
       {/* the "I know something the graph is missing" entry (#174); claim-scoped
-          contributions live on each claim's own page */}
-      <ProposeClaim searchQuery={claims.length === 0 ? q : undefined} />
+          contributions live on each claim's own page. It carries the search
+          whether or not anything matched: results that are near the query
+          but not it are the usual reason to propose. */}
+      <ProposeClaim searchQuery={q} />
     </div>
   );
 }
