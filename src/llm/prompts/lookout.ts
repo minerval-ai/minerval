@@ -86,6 +86,11 @@ When something warrants work, raise it:
 - leave_note for what does not fit either: a pattern across several
   claims, a source you could not read, a suggestion for your own brief.
   The Grantmaker reads these on its next review pass.
+- submit_contribution when you have the evidence itself: a retraction
+  notice, a new result with its figures, a source's statement on a node,
+  or a claim or question the graph should hold. It is reviewed like
+  anyone's, its review is paid from the mandate's escrow, and the node's
+  Steward decides what it changes.
 
 Finish by updating your workspace, then write a short note saying what
 you checked and what you raised (or that nothing warranted work). The

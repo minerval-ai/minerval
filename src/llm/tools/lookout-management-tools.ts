@@ -91,8 +91,9 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "the graph, the retraction record, and the open web and raises " +
         "candidates: a claim for reassessment (valued on your behalf up to " +
         "the ceiling you set), a source to ingest (appended to your plan, " +
-        "up to a per-run limit), a note for your next review pass. It " +
-        "never writes an assessment or moves money. Write the brief as you " +
+        "up to a per-run limit), a note for your next review pass, or a " +
+        "contribution through the Contribution Reviewer, its review paid " +
+        "from your escrow. It never writes an assessment or moves money. Write the brief as you " +
         "would for a careful person paid to keep watch over one thing: the " +
         "scope in your words (a claim and what it turns on, a literature, " +
         "a set of sources, a question), where to look, what kinds of " +
@@ -110,7 +111,7 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
             type: "string",
             description:
               "The lookout's whole instruction set, in your words: scope, " +
-              "where to look, what to look out for, what not to raise.",
+              "where to look, what to look out for.",
           },
           heartbeat_hours: {
             type: "number",

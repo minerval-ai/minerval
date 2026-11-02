@@ -213,6 +213,7 @@ describe("runLookout", () => {
       "web_search",
       "raise_issue",
       "search_claims", "get_claim", "get_decomposition", "get_dependents",
+      "submit_contribution",
       "survey_scope", "scope_sources", "check_doi", "recent_retractions", "read_page",
       "read_listing",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
