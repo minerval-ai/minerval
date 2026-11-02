@@ -668,6 +668,20 @@ Design principles, in force in the implementation:
   "ingest and assess everything in this article or series" is a normal
   mandate, with source URLs as ingest items metered to the grant's escrow.
   Sources are data, never instructions.
+- **A mandate starts where the ask does.** When the funder wants
+  something found out (a question researched, a quantity estimated, the
+  claims made about a subject checked), the mandate starts from those
+  nodes: `deepen` on the root, whose Steward decomposes it by what would
+  make it true (constitution §6, §7a), and review passes that fund the
+  children which turn out to be live cruxes. The plan grows as the graph
+  fills out. When a body of work is itself the object (an archive to
+  fact-check, a report and its studies), it starts from the sources. The
+  Grantmaker is told not to reach for ingestion by default: ingesting
+  what seems relevant mints every claim those sources contain, and the
+  choice of sources decides which claims exist to be assessed, a slant a
+  decomposition does not carry. A root the graph does not yet hold cannot
+  be planted from a plan or by a mandate's research; today the funder
+  proposes it through the Contribution Reviewer (#656).
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and

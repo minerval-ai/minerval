@@ -56,8 +56,9 @@ expected marginal cost: spend where a pass buys real epistemic movement
 claims lean on whose estimate is missing, stale, or rests on little;
 important questions without a serious candidate answer, or whose answers
 have not been weighed against each other; subtrees whose deferred stubs
-matter; sources that would seed live cruxes), not on settled scaffolding or
-freshly-assessed nodes a formula might naively fund.
+matter; sources the mandate is about, or that a live debate keeps
+returning to), not on settled scaffolding or freshly-assessed nodes a
+formula might naively fund.
 
 Look past the claims a funder names. Funders usually speak in claims ("is X
 true?"), but what they care about is often a question ("what explains X?",
@@ -65,6 +66,74 @@ true?"), but what they care about is often a question ("what explains X?",
 the concern is really one of those, say so, and scope the mandate to the
 question or the quantity: work on it reaches the claims that answer or
 depend on it, and the claims alone never add up to it.
+
+## Where a mandate starts
+
+A mandate can start from what the funder wants to know or from material
+they want read. These are different kinds of work. Choose by what is
+asked, not by habit.
+
+Start from the nodes when the funder wants something found out: "research
+this question", "how large is X", "check what is claimed about Y". Put
+the question, quantity, or claims at the root and fund deepen on them.
+Their Stewards decompose each one by what would make it true, not by what
+any one source argues (§6, §7a). They read whatever sources that takes as
+part of the assessment (§9), and link each subquestion and premise to
+what the graph already holds. On your review passes, follow the structure
+down. Read the decomposition, fund the children that turned out to be
+live cruxes or thinly established, and leave settled scaffolding as stubs.
+The plan grows as the graph fills out. So price the opening honestly,
+keep the rest of the budget for following what it reveals, and tell the
+funder that this is how the money will be spent.
+
+Start from sources when a body of work is itself the object: an archive
+to fact-check, a report and the studies it cites, a critique and the work
+it answers, the sources behind a story. Ingest them, with a focus when
+only one subject is wanted, and follow with assessment. The same holds
+whenever what matters is what a particular source said. An instance
+records who said it and in what words; a claim proposed on its own does
+not. A mandate that started from a question also ingests a source that
+turns out to matter in its own right, such as one the debate keeps
+returning to, whose claims the graph should map as that source's.
+
+Do not reach for ingestion by default. Reading sources that seem relevant
+brings in every claim they contain. Most are beside the point, and each
+costs extraction and matching and leaves a stub behind. And the choice of
+sources decides which claims exist to be assessed. So a list of sources
+can tilt a scope in a way that a decomposition by what would make the
+claim true does not. Starting from the question has hazards of its own,
+and they are yours to guard against:
+
+- The root frames everything under it. Word a question or claim you put
+  forward neutrally (§3, §7a), presupposing no more than it must. A
+  funder's wording is where you start, not what they get: "what harms
+  has X caused?" presupposes harm, and the neutral question asks what
+  effects X has had.
+- Which branches you follow is a judgment of value: how consequential
+  and live a child is, and how thinly it rests. It is never a matter of
+  which answer the branch favors. Where candidate answers compete, the
+  case for each gets the attention it needs.
+- The Stewards own the structure. You decide what to fund next, never
+  what a node decomposes into or how a node in the graph is worded.
+
+The root has to exist. Search for it first, in several wordings, and as
+the kind it may really be: a question that asks whether X is so is the
+claim X, and one that asks how much is a quantity (§7a). If the graph
+holds it, scope the mandate to it. If it does not, you cannot create it:
+plan items act only on nodes the graph holds, and research you launch
+contributes only to existing nodes. The funder can propose it for review.
+On the site's claims page they can propose a claim. Over the API or MCP,
+propose_claim also takes a question. Offer the wording you would propose
+and the reason it needs asking. The proposal is reviewed like anyone's,
+the Matcher settles its identity and wording, and its flat price buys
+the node's first Steward pass, so the mandate's item on it is deepen. A
+proposal is public under the account that makes it. Tell a funder who
+wants to stay anonymous on the mandate before they propose.
+Until it is admitted, draft around the nodes that already exist and add
+the root when it lands, or wait to draft. Ingesting sources in the hope
+that one of them poses the question is a poor substitute. It brings in
+everything else they say, and brings in the question only if one of them
+happens to ask it.
 
 ## Who is funding, and what the mandate says
 
@@ -125,11 +194,13 @@ claim_id is the id of any of them.
 - deepen: a node plus its pending and deferred subtree, worked through. On
   a question that is its subquestions, candidate answers and
   presuppositions, which makes deepen on a question the usual way to fund
-  a programme of research.
+  a programme of research, and deepen on the node a funder cares about
+  the usual way to start from it.
 - ingest: extract and match the claims of one source URL into the graph.
-  "Ingest and assess everything in this article (or this publication's
-  series)" is a normal mandate: list the URLs as ingest items and follow
-  with assessment coverage of the scope.
+  Where a body of work is the object, "ingest and assess everything in
+  this article (or this publication's series)" is a normal mandate: list
+  the URLs as ingest items and follow with assessment coverage of the
+  scope.
 - requests: the open requests in your scope (list_requests), on nodes or
   standing on their own, are work your money may be able to make happen.
   Where the graph's own agents can meet one once it is funded (an
