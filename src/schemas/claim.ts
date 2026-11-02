@@ -55,9 +55,15 @@ export const claimDependentsParams = z.object({
 
 export const claimProposeBody = z.object({
   claim: z.string().min(1).max(2000),
-  // For a claim, the argument for it; for a question, why anyone reasoning
-  // about the subject would need to ask it (§7a).
-  argument: z.string().min(1).max(5000),
+  // Optional: for a claim, the argument for it; for a question, why anyone
+  // reasoning about the subject would need to ask it (§7a). A proposal is
+  // judged on its text, so the case for it is welcome but never required.
+  // Blank reads as absent.
+  argument: z
+    .string()
+    .max(5000)
+    .optional()
+    .transform((v) => (v && v.trim() ? v : undefined)),
   kind: z.enum(["claim", "question"]).default("claim"),
 });
 

@@ -1015,6 +1015,10 @@ export interface ContributionDetail {
     review_status: string;
     merge_target_claim_id: string | null;
     proposed_canonical_form: string | null;
+    // An accepted propose_claim / propose_question: the node it became or
+    // landed on. Optional so an older API reads as "not yet".
+    became_claim_id?: string | null;
+    page_url?: string | null;
   };
   review: {
     id: string;

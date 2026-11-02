@@ -24,7 +24,8 @@ import type { NodeKind } from "../schemas/kinds.js";
  */
 export async function proposeClaim(input: {
   claim: string;
-  argument: string;
+  /** Optional: a claim proposed without one starts with no argument. */
+  argument?: string;
   /** A question carries no argument of its own (§7a); its argument text is not stored as one. */
   kind?: "claim" | "question";
   createdBy?: string;
@@ -55,14 +56,14 @@ export async function proposeClaim(input: {
 
   // Create argument
   const [argument] =
-    input.kind === "question"
+    input.kind === "question" || !input.argument?.trim()
       ? [null]
       : await db
           .insert(arguments_)
           .values({
             claimId: claim!.id,
             stance: "for",
-            content: input.argument,
+            content: input.argument!,
             createdBy,
           })
           .returning();

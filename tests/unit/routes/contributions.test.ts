@@ -224,6 +224,35 @@ describe("GET /contributions/:id serialization", () => {
 
     expect(contribution.claim_id).toBeNull();
     expect(contribution.proposed_canonical_form).toBe("A proposed claim.");
+    expect(contribution.became_claim_id).toBeNull();
+    expect(contribution.page_url).toBeNull();
+  });
+
+  it("names the node an accepted proposal became, with its page", async () => {
+    mocks.getContributionById.mockResolvedValueOnce({
+      ...row,
+      contributionType: "propose_question",
+      reviewStatus: "accepted",
+      proposedCanonicalForm: "What sets the colour of the sky?",
+    } as never);
+    const app = await buildApp();
+
+    const { contribution } = (
+      await app.inject({ method: "GET", url: `/contributions/${row.id}` })
+    ).json();
+
+    expect(contribution.became_claim_id).toBe(CLAIM_ID);
+    expect(contribution.page_url).toMatch(new RegExp(`/claims/${CLAIM_ID}$`));
+  });
+
+  it("does not call an ordinary contribution's target something it became", async () => {
+    mocks.getContributionById.mockResolvedValueOnce(row as never);
+    const app = await buildApp();
+    const { contribution } = (
+      await app.inject({ method: "GET", url: `/contributions/${row.id}` })
+    ).json();
+    expect(contribution.became_claim_id).toBeNull();
+    expect(contribution.page_url).toMatch(new RegExp(`/claims/${CLAIM_ID}$`));
   });
 
   it("serializes the review's reasoning when one has landed", async () => {

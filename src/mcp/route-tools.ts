@@ -55,7 +55,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     name: "propose_claim",
     note:
       "The proposal is reviewed by the Contribution Reviewer before anything " +
-      "enters the graph; track it with get_contribution_status. " +
+      "enters the graph; track it with get_contribution_status, which " +
+      "returns became_claim_id and page_url once it is accepted. " +
       SPENDS_OWLS +
       " A rejected good-faith proposal refunds.",
   },

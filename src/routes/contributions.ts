@@ -12,6 +12,7 @@ import {
 import { getClaimById } from "../services/claim-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
+import { loadConfig } from "../config.js";
 
 export async function contributionRoutes(app: FastifyInstance): Promise<void> {
   // POST /contributions
@@ -47,6 +48,8 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
                 evidence_urls: { type: "array", items: { type: "string" } },
                 submitted_at: { type: "string", format: "date-time" },
                 review_status: { type: "string" },
+                page_url: { type: "string", nullable: true },
+                became_claim_id: { type: "string", format: "uuid", nullable: true },
               },
             },
           },
@@ -171,6 +174,8 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
                   evidence_urls: { type: "array", items: { type: "string" } },
                   submitted_at: { type: "string", format: "date-time" },
                   review_status: { type: "string" },
+                  page_url: { type: "string", nullable: true },
+                  became_claim_id: { type: "string", format: "uuid", nullable: true },
                 },
               },
             },
@@ -286,5 +291,19 @@ function formatContribution(c: {
     review_status: c.reviewStatus,
     merge_target_claim_id: c.mergeTargetClaimId,
     proposed_canonical_form: c.proposedCanonicalForm,
+    // The node's page on the public site: the claim contributed to, or, for
+    // an accepted proposal, the claim, question or quantity it became (which
+    // may still be under assessment). Null while a proposal is pending.
+    page_url: c.claimId
+      ? `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${c.claimId}`
+      : null,
+    // Set only for an accepted propose_claim / propose_question: the node it
+    // became or landed on, so the contributor can follow it. (An accepted
+    // propose_source mints its claims through extraction, not here.)
+    became_claim_id:
+      c.claimId &&
+      (c.contributionType === "propose_claim" || c.contributionType === "propose_question")
+        ? c.claimId
+        : null,
   };
 }
