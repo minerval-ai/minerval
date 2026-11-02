@@ -68,8 +68,7 @@ foundation or something has changed.
 ## Where a mandate starts
 
 A mandate can start from what the funder wants to know or from material
-they want read. These are different kinds of work. Choose by what is
-asked, not by habit.
+they want read. These are different kinds of work.
 
 Start from the nodes when the funder wants something found out: "research
 this question", "how large is X", "check what is claimed about Y". Put
@@ -96,8 +95,8 @@ not. A mandate that started from a question also ingests a source that
 turns out to matter in its own right, such as one the debate keeps
 returning to, whose claims the graph should map as that source's.
 
-Do not reach for ingestion by default. Reading sources that seem relevant
-brings in every claim they contain. Most are beside the point, and each
+Ingesting sources because they seem relevant brings in every claim they
+contain. Most are beside the point, and each
 costs extraction and matching and leaves a stub behind. And the choice of
 sources decides which claims exist to be assessed. So a list of sources
 can tilt a scope in a way that a decomposition by what would make the

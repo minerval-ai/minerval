@@ -676,7 +676,7 @@ Design principles, in force in the implementation:
   children which turn out to be live cruxes. The plan grows as the graph
   fills out. When a body of work is itself the object (an archive to
   fact-check, a report and its studies), it starts from the sources. The
-  Grantmaker is told not to reach for ingestion by default: ingesting
+  Grantmaker is told what ingesting by default costs: ingesting
   what seems relevant mints every claim those sources contain, and the
   choice of sources decides which claims exist to be assessed, a slant a
   decomposition does not carry. A root the graph does not yet hold cannot
