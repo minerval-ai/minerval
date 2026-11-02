@@ -91,27 +91,15 @@ export function getGraphReadToolDefinitions(): Tool[] {
     {
       name: "get_claim",
       description:
-        "Open one node (a claim, quantity or question) in full: its canonical wording and its current " +
-        "assessment WITH the reasoning behind the verdict, plus — via " +
-        "`include` — the named arguments bearing on it, where it was seen in " +
-        "the wild (provenance), and the claims that directly depend on it. " +
-        "Use this when a scalar is not enough and you need to know why a " +
-        "claim landed where it did. A mathematical claim also carries its " +
-        "formalization record: `formalization` is the published Lean " +
-        "statement (source, hashes, Mathlib pin, correspondence note, " +
-        "review-period end) or null; `formalization_pending` is the newest " +
-        "draft or reviewed version still awaiting publication, with the " +
-        "reviewer's notes; `formalization_history` lists every version's " +
-        "status, retired ones included; `verification` is the " +
-        "machine-checked badge; `lean_checks` are the newest checker " +
-        "verdicts on any version. Empty history means formalize has never " +
-        "recorded anything on this claim. Every node carries its `kind`; a " +
-        "quantity also carries `quantity` (its definition, current estimate " +
-        "and when it was set, readings, and the claims that cut it), and a " +
-        "question carries `question` (its standing, presuppositions, " +
-        "subquestions, candidate answers, and what depends on it). On those " +
-        "two kinds `assessment` is null: their assessment is the estimate " +
-        "or the standing.",
+        "Open one node (a claim, quantity or question) in full: its canonical " +
+        "wording and its current assessment with the reasoning behind the " +
+        "verdict, plus (via `include`) the named arguments bearing on it, its " +
+        "provenance, and the nodes that depend on it. Mathematical claims also " +
+        "carry `formalization`, `formalization_pending`, " +
+        "`formalization_history`, `verification`, and `lean_checks`. Every " +
+        "node carries its `kind`: claim, quantity, or question. On a quantity " +
+        "or a question `assessment` is null: its assessment is the estimate " +
+        "(in `quantity`) or the standing (in `question`).",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -136,10 +124,7 @@ export function getGraphReadToolDefinitions(): Tool[] {
         "Walk DOWN: the tree of subclaims a claim rests on. Each edge is " +
         "typed (requires, supports, contradicts, …) and grouped into a named " +
         "argument where one exists, and each node carries its own assessment " +
-        "status — so a disputed subclaim under a well-supported parent marks " +
-        `exactly where the disagreement lives. Depth defaults to ${DEFAULT_TREE_DEPTH}; ` +
-        "ask for more only when drilling into one claim, since every level " +
-        "you request is context you pay for.",
+        "status.",
       input_schema: {
         type: "object" as const,
         properties: {
