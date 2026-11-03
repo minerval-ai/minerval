@@ -1226,9 +1226,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         429: errorEnvelopeSchema,
       },
     },
-    // Proposing a claim commands a full Steward pass on it — the flat
-    // claim_proposal price (1 owl; this is what the signup grant's "5 free
-    // claims" buys). See src/services/owl.ts.
+    // Proposing a claim commands a full Steward pass on it, capped at the
+    // claim_proposal cap (the same as an assessment order's). See
+    // src/services/owl.ts.
     preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
     handler: async (request, reply) => {
       const body = claimProposeBody.parse(request.body);
@@ -1317,7 +1317,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /claims/:claim_id/order — buy an assessment of this claim (1 owl).
+  // POST /claims/:claim_id/order — buy an assessment of this claim (up to
+  // the assessment cap, CAP_ASSESSMENT_OWLS).
   // A purchase fully funds the action, and a fully funded action has
   // nothing to wait for: it runs now. Charge-at-start: nothing is debited here — the
   // owl is charged when the Steward run begins, and a pending order cancels

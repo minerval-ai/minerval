@@ -132,10 +132,17 @@ const configSchema = z.object({
   // metered at cost-plus; the cap is charged up front, the unused fraction
   // settles back after the run, and overage past the cap is absorbed. Set
   // each cap near the operation's average cost so the figure on the button
-  // is honest. See src/services/owl.ts. Open-ended work (deep
-  // decomposition, grants) is budgeted, not capped per run.
-  capClaimProposalOwls: z.coerce.number().default(1),
-  capAssessmentOwls: z.coerce.number().default(1),
+  // is honest, except where the cap is also an agent's budget (below). See
+  // src/services/owl.ts. Open-ended work (deep decomposition, grants) is
+  // budgeted, not capped per run.
+  //
+  // A proposal and an assessment order fund the same Steward pass, and the
+  // cap is also that pass's budget: the Steward is shown it and works to it.
+  // At 1 owl a strong-tier pass ran out before it could search or read its
+  // sources, so it concluded on what it already knew; 5 owls leaves room for
+  // the evidence. Keep the two equal (a proposal's charge funds its order).
+  capClaimProposalOwls: z.coerce.number().default(5),
+  capAssessmentOwls: z.coerce.number().default(5),
   capSourceIngestOwls: z.coerce.number().default(0.1),
   capExtensionAnalysisOwls: z.coerce.number().default(0.1),
   capExtensionChatOwls: z.coerce.number().default(0.1),
@@ -152,7 +159,8 @@ const configSchema = z.object({
   // the sweep asks for. The lookout's cap.
   capConsistencySweepOwls: z.coerce.number().default(0.05),
   // Free tier: a one-time signup grant (the "see a claim you care about,
-  // get it assessed" hook — 5 owls = 5 free claims) plus a small monthly
+  // get it assessed" hook — 5 owls covers one capped assessment, and most
+  // of the cap settles back after the run) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
   signupGrantOwls: z.coerce.number().default(5),
   monthlyGrantOwls: z.coerce.number().default(1),

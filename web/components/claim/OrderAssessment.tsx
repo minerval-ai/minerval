@@ -13,7 +13,7 @@ interface OrderView {
 
 // The claim page's order surface: one button that becomes a live status line.
 // Everything is transparent about money: the button carries the ceiling ("up
-// to 1 owl"), a pending order is cancellable and uncharged, the ceiling is
+// to 5 owls"), a pending order is cancellable and uncharged, the ceiling is
 // charged only when the run starts, and whatever the run doesn't use settles
 // back afterward. Polls while an order is open; when the assessment lands
 // the page refreshes and the real verdict replaces this.
@@ -111,7 +111,7 @@ export function OrderAssessment({
     return (
       <p className="order-line">
         <a href="/signin">Sign in</a> to have this claim assessed. It costs
-        at most 1 owl, and new accounts start with 5 free.
+        at most 5 owls, and new accounts start with 5 free.
       </p>
     );
   }
@@ -130,8 +130,8 @@ export function OrderAssessment({
   if (order?.status === "running") {
     return (
       <p className="order-line" role="status">
-        Assessment in progress: the Steward is examining evidence now. One
-        owl is held while it works; whatever the run doesn&rsquo;t use comes
+        Assessment in progress: the Steward is examining evidence now. Up to
+        5 owls are held while it works; whatever the run doesn&rsquo;t use comes
         back when it finishes. This page will update when the verdict lands.
       </p>
     );
@@ -139,7 +139,7 @@ export function OrderAssessment({
   if (order?.status === "failed") {
     return (
       <p className="order-line">
-        The assessment failed{order.charged ? " and your owl was refunded" : ""}
+        The assessment failed{order.charged ? " and your owls were refunded" : ""}
         {order.error ? ` (${order.error})` : ""}.{" "}
         <button className="linklike" onClick={place} disabled={busy}>
           try again
@@ -157,19 +157,19 @@ export function OrderAssessment({
           ) : (
             <>
               Assess this claim · up to{" "}
-              <OwlMark size={14} className="owl-mark" />1 owl
+              <OwlMark size={14} className="owl-mark" />5 owls
             </>
           )}
         </button>
       ) : (
         <button className="linklike" onClick={place} disabled={busy}>
-          {busy ? "placing order…" : "order a fresh assessment (up to 1 owl)"}
+          {busy ? "placing order…" : "order a fresh assessment (up to 5 owls)"}
         </button>
       )}
       {variant === "unassessed" && (
         <span className="order-caption">
           A Steward agent examines the evidence and records a verdict,
-          usually within minutes. The owl is held only when the run starts,
+          usually within minutes. The owls are held only when the run starts,
           and the unused part is returned when it finishes.{" "}
           <ChipIn claimId={claimId} />
         </span>

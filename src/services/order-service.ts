@@ -77,6 +77,21 @@ export async function createOrder(input: {
     };
   }
 
+  // A pre-paid order's cap is what its charge actually took, so the
+  // settlement after the run returns the unused part of that charge and no
+  // more. Read from the ledger rather than today's cap: the proposal was
+  // charged at the claim_proposal cap in force when it was submitted, and a
+  // cap changed since (or a proposal cap below the assessment cap) must not
+  // settle back owls the buyer never paid.
+  let priceMicroUsd = capMicroUsd("assessment");
+  if (input.chargeEntryId) {
+    const [charge] = await rawQuery<{ amount: string }>(
+      `SELECT amount_micro_usd::bigint AS amount FROM owl_ledger WHERE id = $1`,
+      [input.chargeEntryId]
+    );
+    if (charge) priceMicroUsd = Math.abs(Number(charge.amount));
+  }
+
   // The partial unique index (uq_orders_open_per_claim) is the real guard:
   // two racing creates cannot both insert an open order. The select above
   // is just the friendly-message fast path.
@@ -90,7 +105,7 @@ export async function createOrder(input: {
       // The row's price_micro_usd is the CAP quoted at order time: the most
       // this assessment can cost. The dispatcher charges it at run start and
       // settles the unused fraction back once the meter has the real cost.
-      priceMicroUsd: capMicroUsd("assessment"),
+      priceMicroUsd,
     })
     .onConflictDoNothing()
     .returning();

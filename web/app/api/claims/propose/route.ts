@@ -35,7 +35,7 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
       return {
         status: 402,
         error:
-          "Proposing a claim or question holds up to 1 owl, and your balance cannot cover it. You can buy owls from your account page, and a free owl arrives at the start of each month.",
+          "Proposing a claim or question holds up to 5 owls while its assessment runs, and your balance cannot cover it. You can buy owls from your account page; the unused part of the hold comes back when the run finishes.",
       };
     default:
       return {
