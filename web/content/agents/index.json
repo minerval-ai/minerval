@@ -292,8 +292,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 22939,
-    "fullChars": 103913,
+    "roleChars": 23019,
+    "fullChars": 103993,
     "skills": [
       {
         "name": "costing",

@@ -85,9 +85,22 @@ with a budget and a mission would need:
 - **a workspace** (`grants.workspace`): the agent's own durable working
   document, read back in full every pass — its map of the territory,
   source backlog, strategy. Mandate-scale missions are impossible
-  without working memory;
+  without working memory. update_workspace replaces it whole, appends to
+  it, or rewrites one section, so a large workspace never has to be
+  re-emitted to change a line;
 - **write valuations** (set_valuations): value 0–10 with rationale, over
-  exactly the actions it judges relevant — this is its spending judgment;
+  exactly the actions it judges relevant — this is its spending judgment.
+  The result names any valued row the day cannot cover (the allocator
+  never part-funds an increment), and the next briefing lists the rows
+  the closing allocation skipped for room. A formula mandate (General,
+  Governance) amends its formula instead (update_allocation_policy); a
+  judgment mandate's update_allocation_policy holds the keys its own
+  allocator reads: `maintenance_share` and its attempt priors and bounds;
+- **see what its money bought** (allocation_report,
+  list_funded_assessments, claims_from_source, pipeline_report);
+- **launch research and fund requests** (delegate_research,
+  get_research_run, list_requests, fund_request), the same instrument and
+  the same request funding the owner's chat carries;
 - **grow its own plan** (extend_plan): append the ingest/assess items it
   discovered; each is priced, escrow-bounded, and executes through the
   ledger;
@@ -96,6 +109,9 @@ with a budget and a mission would need:
   funded out of the mandate's day like the rest of its work, and the
   briefing says what the day has left — cost discipline lives in the
   money the agent can see, never in narrowed affordances;
+- **tell the funder** (note_to_funder): what only the funder can decide
+  (a move above the pass's cap, a bounty confirmation, a top-up), kept on
+  the mandate and shown in the funder's chat and grant_overview;
 - **move money** (regrant, spawn_mandate — below) and **close the
   mission** (complete_mandate): an exhausted plan is a waypoint, not an
   end; only the agent's judgment (or the funder) completes an
@@ -433,8 +449,11 @@ the order. `maintenance_share` (default 0.1) is the most of a mandate's
 daily rate its allocator places on curate rows in a day: maintenance
 increments are funded first, best value per owl first, up to the share,
 and whatever they leave stays in the day for everything else, so the
-share is a ceiling with first claim, never a reservation that wastes. A
-formula mandate values curate rows as
+share is a ceiling with first claim, never a reservation that wastes.
+Every mandate's Grantmaker may set its own share
+(`update_allocation_policy`), and the review briefing states it beside the
+daily rate: a mandate whose mission is upkeep should not be held to a tenth
+of its pace without being told. A formula mandate values curate rows as
 
     value = anchor importance
           × request weight   (a Steward's or operator's request 1.0; a
@@ -626,6 +645,12 @@ The formulas above live on the governing mandate
 (`grants.allocation_policy`), not in code: the General mandate's
 Grantmaker amends them in conversation (`update_allocation_policy`,
 bounded by `POLICY_BOUNDS`) as we learn what allocation should look like.
+Each mandate may set exactly the keys its own machinery reads
+(`policyKnobs`): every key for General, the audit weights and the mandate
+keys for Governance, and for a judgment mandate the mandate keys alone
+(`maintenance_share` and the attempt priors and bounds). A key the
+mandate's machinery never reads is refused with the list, so the tool
+never reports a lever that does nothing.
 Env config supplies the shared defaults every mandate inherits, so the
 machinery is replicable: anyone's mandate can carry its own policy and
 daily rate, our learnings ship as defaults, and the platform dogfoods the

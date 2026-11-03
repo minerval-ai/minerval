@@ -54,9 +54,11 @@ import type { GrantMandate } from "./grantmaker.js";
 import {
   PLAN_KIND_RULES,
   PLAN_ITEM_SCHEMA,
+  normalizePlanItems,
   validatePlanItems,
   type PlanItem,
 } from "../../services/grant-service.js";
+import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.js";
 import { microUsdToOwls } from "../../services/owl.js";
 import { grantmakerShareLeftMicroUsd } from "../../services/action-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
@@ -71,6 +73,8 @@ export interface GrantorPlan {
 }
 
 const PLANNING_MAX_TURNS = RUN_TURN_GUARD;
+
+const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
 
 const PLAN_SCHEMA = {
   type: "object" as const,
@@ -184,6 +188,10 @@ async function runGrantorImpl(input: {
     ...findingTools.definitions,
     ...getGraphReadToolDefinitions(),
     ...mandateTools.definitions,
+    // The open requests in the territory (#683): work the plan may make
+    // happen once the mandate runs. Reading them commits nothing; the
+    // review passes fund them.
+    LIST_REQUESTS_TOOL,
     submitTool,
   ];
 
@@ -251,6 +259,9 @@ async function runGrantorImpl(input: {
         if (graphRead !== null) return annotateOpenActions(name, graphRead, grant.id);
         const mandateTool = await mandateTools.execute(name, toolInput);
         if (mandateTool !== null) return annotateOpenActions(name, mandateTool, grant.id);
+        if (name === LIST_REQUESTS_TOOL.name) {
+          return (await executeKindTool(name, toolInput, { role: "grantmaker", model }))!;
+        }
         if (name === "submit_plan") {
           const raw = toolInput as unknown as Partial<GrantorPlan>;
           const items = Array.isArray(raw.items) ? (raw.items as PlanItem[]) : [];
@@ -280,16 +291,11 @@ async function runGrantorImpl(input: {
           }
           plan = {
             strategy: strategy.slice(0, 4000),
-            items: items.map((it) => ({
-              action: it.action,
-              rationale: String(it.rationale ?? "").slice(0, 1000),
-              ...(it.claim_id ? { claim_id: it.claim_id } : {}),
-              ...(it.url ? { url: it.url } : {}),
-              ...(it.variant ? { variant: it.variant } : {}),
-              ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
-              ...(it.lifetime_cap_owls !== undefined
-                ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) }
-                : {}),
+            // The validated items in their stored form, focus included
+            // (#684): a whitelist here once dropped it.
+            items: normalizePlanItems(items).map((it) => ({
+              ...it,
+              rationale: it.rationale.slice(0, 1000),
             })),
           };
           return JSON.stringify({

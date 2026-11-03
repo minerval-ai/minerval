@@ -46,6 +46,7 @@ vi.mock("../../../../src/services/owl.js", () => ({
 }));
 
 import {
+  applyWorkspaceWrite,
   createMandateTools,
   planCostFloorOwls,
 } from "../../../../src/llm/tools/mandate-tools.js";
@@ -105,9 +106,19 @@ describe("createMandateTools", () => {
       (await tools.execute("update_workspace", { content: "x".repeat(150_000) }))!
     );
     // Stored whole: the workspace is the agent's own memory, paid for in tokens.
-    expect(res).toEqual({ success: true, chars: 150_000 });
+    expect(res).toEqual({ success: true, mode: "replace", chars: 150_000 });
     expect(state.updates[0]!.sql).toContain("UPDATE grants SET workspace");
     expect(state.updates[0]!.params[0]).toBe("g-1");
+  });
+
+  it("appends and rewrites one section without the agent re-sending the rest (#690)", async () => {
+    const tools = createMandateTools({ grantId: "g-1" });
+    const refused = JSON.parse((await tools.execute("update_workspace", { content: "x", mode: "replace_section" }))!);
+    expect(refused.success).toBe(false);
+    const res = JSON.parse((await tools.execute("update_workspace", { content: "more", mode: "append" }))!);
+    expect(res).toMatchObject({ success: true, mode: "append" });
+    expect(state.updates[0]!.sql).toContain("SELECT workspace");
+    expect(state.updates[1]!.params[1]).toBe("more");
   });
 
   it("is not the owner of any other tool, and declines the workspace without a mandate", async () => {
@@ -125,5 +136,23 @@ describe("createMandateTools", () => {
     ]);
     // Two passes at 2 owls, one ingestion at 0.5; formalize is priced at run time.
     expect(floor).toEqual({ floor_owls: 4.5, per_item_owls: { steward_pass: 2, ingest: 0.5 } });
+  });
+});
+
+describe("applyWorkspaceWrite", () => {
+  const doc = "# Map\n\nintro\n\n## Backlog\n\n- a\n- b\n\n### Detail\n\nd\n\n## Next\n\nn";
+  it("replaces the whole document by default", () => {
+    expect(applyWorkspaceWrite(doc, "new")).toBe("new");
+  });
+  it("appends after the existing text, or starts an empty one", () => {
+    expect(applyWorkspaceWrite("a\n\n", "b", "append")).toBe("a\n\nb");
+    expect(applyWorkspaceWrite("", "b", "append")).toBe("b");
+  });
+  it("rewrites one section with its subsections, up to the next heading at its level", () => {
+    const out = applyWorkspaceWrite(doc, "- c", "replace_section", "## Backlog");
+    expect(out).toBe("# Map\n\nintro\n\n## Backlog\n- c\n\n## Next\n\nn");
+  });
+  it("adds a section that is not there yet at the end", () => {
+    expect(applyWorkspaceWrite("x", "## New\nbody", "replace_section", "## New")).toBe("x\n\n## New\nbody");
   });
 });
