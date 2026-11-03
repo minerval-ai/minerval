@@ -15,8 +15,8 @@
  *
  *  - survey_scope: the graph's allocation signals over a subtree and/or a
  *    keyword slice (services/scope-survey-service.ts);
- *  - read_page: one public page in full, for when a search snippet cannot
- *    tell you whether a source matters;
+ *  - read_page: one public page, read in windows to its end if it matters,
+ *    for when a search snippet cannot tell you whether a source matters;
  *  - update_workspace: the mandate's durable working memory
  *    (`grants.workspace`), read back in full at the start of every pass.
  *

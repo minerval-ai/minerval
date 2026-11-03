@@ -155,7 +155,47 @@ describe("htmlToText / readPage", () => {
     const start = performance.now();
     const res = await readPage("https://attacker.example/brief");
     expect(performance.now() - start).toBeLessThan(500);
-    expect(res).toEqual({ ok: true, text: `${"<".repeat(12_000)}\n[truncated]`, chars: 12_012 });
+    expect(res).toEqual({
+      ok: true,
+      url: "https://attacker.example/brief",
+      text: "<".repeat(12_000),
+      chars: 12_000,
+      total_chars: n,
+      offset: 0,
+      truncated: true,
+      next_offset: 12_000,
+    });
+  });
+
+  it("reads a long page whole by paging, with the window contract of provenance_read_source", async () => {
+    // A paper past the old 12,000-character cut: its methods sit at the end.
+    const body = `<html><body><p>${"Introduction. ".repeat(1_500)}</p><p>METHODS: n = 412, randomised.</p></body></html>`;
+    state.responses.set("https://journal.example/", body);
+    const first = await readPage("https://journal.example/paper");
+    expect(first).toMatchObject({ ok: true, offset: 0, chars: 12_000, truncated: true, next_offset: 12_000 });
+    if (!first.ok) throw new Error("unreachable");
+    expect(first.text).not.toContain("METHODS");
+
+    let window = first;
+    const read = [first.text];
+    while (window.ok && window.next_offset !== null) {
+      window = await readPage("https://journal.example/paper", { offset: window.next_offset });
+      if (window.ok) read.push(window.text);
+    }
+    expect(window).toMatchObject({ ok: true, truncated: false, next_offset: null });
+    expect(read.join("")).toHaveLength(first.total_chars);
+    expect(read.join("")).toContain("METHODS: n = 412, randomised.");
+  });
+
+  it("sizes a window by max_chars, within the reader's maximum", async () => {
+    state.responses.set("https://plain.example/", "x".repeat(50_000));
+    expect(await readPage("https://plain.example/a", { maxChars: 100, offset: 10 })).toMatchObject({
+      chars: 100, offset: 10, next_offset: 110, total_chars: 50_000,
+    });
+    expect(await readPage("https://plain.example/a", { maxChars: 1_000_000 })).toMatchObject({ chars: 20_000 });
+    expect(await readPage("https://plain.example/a", { offset: 60_000 })).toMatchObject({
+      chars: 0, truncated: false, next_offset: null,
+    });
   });
 
   it("returns a problem rather than throwing on an unfetchable page", async () => {
