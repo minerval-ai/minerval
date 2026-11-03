@@ -69,10 +69,12 @@ export const decompositionRelationEnum = z.enum(RELATION_TYPES);
 // which partitions the vocabulary cleanly and generalizes to cases no example
 // list anticipates.
 export const RELATION_GUIDANCE =
-  "How the child bears on the parent. Decide by what the child being false " +
-  "would do to the parent. " +
-  "'requires': the parent is false without it — a load-bearing premise in the " +
-  "inference. " +
+  "How the child bears on the parent (constitution §6). Decide by what the " +
+  "child being false would do to the parent itself, not to one argument for it. " +
+  "'requires': the parent is false if the child is, whatever else supports it. " +
+  "A premise of one argument, where the parent has other lines of support that " +
+  "do not rest on it, is not required: record it as supports, or contradicts " +
+  "under an argument against. " +
   "'supports': evidence that raises confidence in the parent without being " +
   "logically required. " +
   "'contradicts': evidence or argument that weighs against the parent. " +
