@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string; argument?: string };
+  let body: { claim?: string };
   try {
     body = await request.json();
   } catch {
@@ -69,7 +69,6 @@ export async function POST(request: NextRequest) {
   }
 
   const claim = (body.claim ?? "").trim();
-  const argument = (body.argument ?? "").trim();
   if (!claim || claim.length > 500) {
     return NextResponse.json(
       {
@@ -78,18 +77,9 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  // The reasoning is optional: a proposal is judged on its text.
-  if (argument.length > 5000) {
-    return NextResponse.json(
-      { error: "Please keep the reasoning to 5,000 characters." },
-      { status: 400 },
-    );
-  }
-
   try {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
-      argument: argument || undefined,
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

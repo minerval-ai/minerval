@@ -98,7 +98,6 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           claim: data.get("claim"),
-          argument: data.get("argument"),
         }),
       });
       if (res.ok) {
@@ -140,8 +139,8 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
         If a claim here is wrong, or missing evidence, open it: every claim page
         carries its own entry for challenges, evidence, and corrections. If the
         graph is missing a claim or a question entirely, propose it below. A
-        proposal is reviewed on its merits; accepted proposals are matched
-        against the graph and enter it with their reasoning on record.
+        proposal is reviewed on its wording; accepted proposals are matched
+        against the graph before they enter it.
       </p>
 
       {!open && (
@@ -246,17 +245,11 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
             when it is matched against the graph.
           </p>
 
-          <label className="contribute-label" htmlFor="propose-argument">
-            Your reasoning (optional)
-          </label>
-          <textarea
-            className="contribute-field"
-            id="propose-argument"
-            name="argument"
-            rows={5}
-            maxLength={5000}
-            placeholder="Evidence or reasoning that bears on it, or why it needs asking, with sources if you have them"
-          />
+          <p className="contribute-hint">
+            A proposal is judged on its wording alone. Once it is in the
+            graph, evidence and arguments for or against it go on its page,
+            where each is reviewed on its merits.
+          </p>
 
           <div className="contribute-actions">
             <button

@@ -49,7 +49,11 @@ export function getGrantContributionToolDefinition(): Tool {
           type: "string",
           description:
             "For the Reviewer and the Steward: what you found and what it rests " +
-            "on, with locators; for a proposal, why the graph needs it.",
+            "on, with locators. For propose_claim and propose_question, why the " +
+            "graph needs the node: that stays on the mandate's public record of " +
+            "the contribution and never enters the graph or reaches the Steward " +
+            "(the Reviewer judges the wording alone). An argument for the node, " +
+            "once it exists, is a contribution of its own.",
         },
         evidence_urls: { type: "array", items: { type: "string" } },
       },

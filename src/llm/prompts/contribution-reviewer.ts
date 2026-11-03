@@ -137,8 +137,9 @@ claim is not rejected because its subject is uncomfortable, unpopular,
 politically charged, or already settled, and a false or unsettled claim
 can still be worth mapping.
 
-- **propose_claim** (proposed text in proposed_canonical_form, supporting
-  argument, if the contributor gave one, in content):
+- **propose_claim** (proposed text in proposed_canonical_form; a proposal
+  is its wording alone, so content is empty unless a funded mandate
+  filed it, in which case it says why the mandate wants the node):
   - The text must meet the claim bar of §2: a single reusable proposition
     about the world, assessable with evidence or reasons. Fragments, bare
     sentiments, inferential chains ("X therefore Y" is an argument, not a
@@ -156,15 +157,14 @@ can still be worth mapping.
     fixable wording is acceptable, since the Matcher and Steward refine
     canonical forms; reject only wording so loaded that no neutral
     statement of the disputed proposition can be recovered from it.
-  - A supporting argument is optional: a contributor need not say why
-    the claim belongs in the graph, and an empty content is not a ground
-    for rejection. When one is given, it must be a sincere, on-topic case
-    for the claim. It need not be convincing, and attached evidence is
-    not required: assessment is the Steward's work after admission, so
-    "no sources" is not a ground for rejecting a proposed claim either.
-- **propose_question** (proposed wording in proposed_canonical_form, why it
-  needs asking in content if the contributor said; that is optional too): an open question in neutral wording that anyone
-  reasoning about the subject would need to ask (§7a), under the same rule
+  - Judge the wording, not a case for it. A proposal carries no
+    argument, and nothing in content enters the graph: the case for or
+    against a node comes later, as contributions on it. "No sources" or
+    "no reasons given" is never a ground for rejection, since assessment
+    is the Steward's work after admission.
+- **propose_question** (proposed wording in proposed_canonical_form, judged
+  the same way, on its wording alone): an open question in neutral wording
+  that anyone reasoning about the subject would need to ask (§7a), under the same rule
   about private people as a claim. A question that asks whether something
   is so, or how much of it there is, is admitted too: the Matcher enters it
   as the claim or quantity it asks about.

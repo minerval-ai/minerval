@@ -151,7 +151,9 @@ function ContributionEntry({ e }: { e: Extract<ClaimEvent, { kind: "contribution
           {typeLabel(e.contribution_type)} submitted
           {e.review_status === "pending" && <span className="tag">awaiting review</span>}
         </p>
-        <blockquote className={styles.quote}>{e.content}</blockquote>
+        {/* A claim or question proposal carries its wording alone, so its
+            content is usually empty. */}
+        {e.content.trim() && <blockquote className={styles.quote}>{e.content}</blockquote>}
         {e.evidence_urls.length > 0 && (
           <p className={styles.evidence}>
             {e.evidence_urls.map((url) => (

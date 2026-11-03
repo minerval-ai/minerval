@@ -136,8 +136,10 @@ support matters:
   memory. With your user's agreement:
   - **Missing claim or question**: `propose_claim` (the Matcher decides
     whether it enters as a claim, a question or a quantity, so `kind` is
-    only a guess; the `argument` is optional; reviewed before anything
-    enters the graph; spends owls; a rejected good-faith proposal refunds).
+    only a guess; it takes the wording alone and is reviewed on it before
+    anything enters the graph; spends owls; a rejected good-faith proposal
+    refunds). The case for or against it, once it is a node, is a
+    `submit_contribution` of its own.
   - **Missing evidence or a source the graph hasn't read**:
     `submit_source`, or `submit_contribution` with `support` or
     `challenge` and the evidence URLs.

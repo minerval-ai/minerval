@@ -87,12 +87,11 @@ describe("argument evaluations on a quantity", () => {
 });
 
 describe("propose_question", () => {
-  it("materializes a question with no argument, or the claim it asks about", async () => {
+  it("materializes a question, or the claim it asks about, with no argument", async () => {
     const user = await seedUser("asker");
     mocks.matchKind = null;
     const asked = await createClaimProposal({
       claimText: "Where did the 1918 influenza pandemic begin?",
-      argumentText: "Every account of its spread turns on where it started.",
       contributorId: user,
       kind: "question",
     });
@@ -107,7 +106,6 @@ describe("propose_question", () => {
     mocks.matchKind = "claim";
     const whether = await createClaimProposal({
       claimText: "Did the 1918 pandemic begin in Kansas?",
-      argumentText: "It is the most cited origin.",
       contributorId: user,
       kind: "question",
     });

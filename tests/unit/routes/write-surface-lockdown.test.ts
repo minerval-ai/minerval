@@ -151,7 +151,7 @@ describe("write-surface governance (#157)", () => {
       const res = await app.inject({
         method: "POST",
         url: "/claims/propose",
-        payload: { claim: "The sky is blue", argument: "Look up." },
+        payload: { claim: "The sky is blue" },
       });
       expect(res.statusCode).toBe(202);
       expect(res.json().contribution).toMatchObject({
@@ -161,19 +161,17 @@ describe("write-surface governance (#157)", () => {
       });
       expect(mocks.createClaimProposal).toHaveBeenCalledWith({
         claimText: "The sky is blue",
-        argumentText: "Look up.",
         contributorId: CONTRIBUTOR.id,
         kind: "claim",
       });
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
     });
 
-    it("takes a claim or question without an argument: why it belongs is optional", async () => {
+    it("takes the wording alone: an argument an older client sends never reaches intake", async () => {
       mocks.createClaimProposal.mockResolvedValue(PENDING_CONTRIBUTION);
       const app = await buildTestApp(userAuth);
       for (const payload of [
-        { claim: "The sky is blue" },
-        { claim: "The sky is blue", argument: "   " },
+        { claim: "The sky is blue", argument: "Look up." },
         { claim: "What sets the colour of the sky?", kind: "question" },
       ]) {
         const res = await app.inject({ method: "POST", url: "/claims/propose", payload });
@@ -181,14 +179,14 @@ describe("write-surface governance (#157)", () => {
       }
       expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(1, {
         claimText: "The sky is blue",
-        argumentText: undefined,
         contributorId: CONTRIBUTOR.id,
         kind: "claim",
       });
-      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(2,
-        expect.objectContaining({ argumentText: undefined }));
-      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(3,
-        expect.objectContaining({ argumentText: undefined, kind: "question" }));
+      expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(2, {
+        claimText: "What sets the colour of the sky?",
+        contributorId: CONTRIBUTOR.id,
+        kind: "question",
+      });
     });
 
     it("routes a web-BFF session (service key + acting user) to intake, not the fast path", async () => {
@@ -197,7 +195,7 @@ describe("write-surface governance (#157)", () => {
       const res = await app.inject({
         method: "POST",
         url: "/claims/propose",
-        payload: { claim: "The sky is blue", argument: "Look up." },
+        payload: { claim: "The sky is blue" },
       });
       expect(res.statusCode).toBe(202);
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
@@ -218,7 +216,7 @@ describe("write-surface governance (#157)", () => {
       const res = await app.inject({
         method: "POST",
         url: "/claims/propose",
-        payload: { claim: "The sky is blue", argument: "Look up." },
+        payload: { claim: "The sky is blue" },
       });
       expect(res.statusCode).toBe(429);
       expect(mocks.createClaimProposal).not.toHaveBeenCalled();
@@ -239,23 +237,18 @@ describe("write-surface governance (#157)", () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         },
-        argument: {
-          id: "22222222-2222-2222-2222-222222222222",
-          stance: "for",
-          content: "Look up.",
-          createdBy: "user",
-          createdAt: new Date(),
-        },
         jobId: "33333333-3333-3333-3333-333333333333",
       });
       const app = await buildTestApp(serviceAuth);
       const res = await app.inject({
         method: "POST",
         url: "/claims/propose",
-        payload: { claim: "The sky is blue", argument: "Look up." },
+        payload: { claim: "The sky is blue" },
       });
       expect(res.statusCode).toBe(201);
-      expect(mocks.proposeClaim).toHaveBeenCalledOnce();
+      expect(mocks.proposeClaim).toHaveBeenCalledWith(
+        expect.not.objectContaining({ argument: expect.anything() }));
+      expect(res.json()).not.toHaveProperty("argument");
       expect(mocks.createClaimProposal).not.toHaveBeenCalled();
     });
   });

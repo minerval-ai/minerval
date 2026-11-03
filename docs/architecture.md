@@ -557,8 +557,9 @@ evidence. Contributions flow through review (`contribution_reviews`), can be
 appealed (`appeals`), and escalated to arbitration (`arbitration_results`).
 
 Two **intake** types extend the same machinery to brand-new content:
-`propose_claim` (a suggested claim, or with `propose_question` a question,
-plus an optional supporting argument or reason for asking) and
+`propose_claim` (a suggested claim, or with `propose_question` a question:
+its wording alone, with no argument, since the case for or against a node
+comes through contributions on it once it exists) and
 `propose_source` (a document submitted for extraction). These have no target
 claim while pending — nothing touches the claims table — and only an accepted
 review materializes them: a proposed claim is canonicalized through the

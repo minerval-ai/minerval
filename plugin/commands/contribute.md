@@ -17,11 +17,12 @@ Input: `$ARGUMENTS`
    Contributions require an existing target claim. If the graph has no such
    claim, or the user wants to contribute a question rather than a claim,
    use `propose_claim` instead (with `kind: "question"` for a question): it
-   takes the wording and, optionally, an `argument` (the case for a claim,
-   or why a question needs asking). A proposal need not say why it belongs
-   in the graph; it is reviewed on its text. It spends owls (a rejected
-   good-faith proposal refunds), so confirm with the user and show them the
-   exact wording before submitting, as in step 5.
+   takes the wording alone, and is reviewed on it. Proposing a node and
+   arguing about it are separate acts: once the proposal is accepted and
+   the node exists (`get_contribution_status` returns `became_claim_id`),
+   the case for or against it is a contribution on it, as below. A proposal
+   spends owls (a rejected good-faith proposal refunds), so confirm with the
+   user and show them the exact wording before submitting, as in step 5.
 2. Fetch it with `get_claim` (include `arguments` and `provenance`) so the
    contribution engages what is already on record rather than repeating it.
 3. Settle the contribution type with the user:
