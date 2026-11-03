@@ -110,8 +110,9 @@ with outcome "undecided" is no verdict at all (the Matcher ran out of budget):
 never create from it; retry once, then take the recoverable path.
 
 Relation types: requires, supports, contradicts, specifies, defines, assumes.
-Pick by what the child being false would do to the parent: requires when it
-makes the parent false (a load-bearing premise), assumes when it makes the
+Pick by what the child being false would do to the parent itself, not to one
+argument for it (§6): requires when it makes the parent false whatever else
+supports it, assumes when it makes the
 parent ill-posed or beside the point rather than false (a framework the claim
 takes as given). supports is evidence that
 moves confidence without being logically required. Add a defines edge only
