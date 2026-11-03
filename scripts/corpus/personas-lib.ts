@@ -169,7 +169,8 @@ export interface PersonaContribution {
 export interface PersonaProposal {
   contributionId: string | null;
   claimText: string;
-  argumentText: string;
+  /** Runs before proposals lost their argument field carried one. */
+  argumentText?: string;
   error: string | null;
   reviewStatus: string | null;
   review: ReviewOutcome | null;
@@ -537,8 +538,10 @@ export function renderReport(input: {
       L.push("");
       L.push(`**propose_claim** "${p.claimText}"${p.contributionId ? ` — contribution ${p.contributionId.slice(0, 8)}` : ""}`);
       L.push("");
-      L.push(`> ${p.argumentText.replace(/\n/g, "\n> ")}`);
-      L.push("");
+      if (p.argumentText) {
+        L.push(`> ${p.argumentText.replace(/\n/g, "\n> ")}`);
+        L.push("");
+      }
       if (p.error) L.push(`- submission failed: ${p.error}`);
       if (p.review) {
         L.push(`- review: **${p.review.decision}** (confidence ${p.review.confidence.toFixed(2)}${p.review.suspectedBadFaith ? ", bad faith" : ""})${p.createdClaimId ? ` → claim ${p.createdClaimId.slice(0, 8)} created` : ""}`);

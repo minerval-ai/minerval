@@ -224,18 +224,17 @@ async function executePersonaTool(s: Session, name: string, input: Record<string
       const record: PersonaProposal = {
         contributionId: null,
         claimText: String(input.claim_text ?? ""),
-        argumentText: String(input.argument_text ?? ""),
         error: null,
         reviewStatus: null,
         review: null,
         createdClaimId: null,
       };
       s.proposals.push(record);
-      if (!record.claimText.trim() || !record.argumentText.trim()) {
-        record.error = "claim_text and argument_text are both required";
+      if (!record.claimText.trim()) {
+        record.error = "claim_text is required";
         return `Error: ${record.error}.`;
       }
-      const contribution = await createClaimProposal({ claimText: record.claimText, argumentText: record.argumentText, contributorId: s.contributorId });
+      const contribution = await createClaimProposal({ claimText: record.claimText, contributorId: s.contributorId });
       record.contributionId = contribution.id;
       return JSON.stringify({ ok: true, contribution_id: contribution.id, status: "pending review", note: "If accepted, the claim is created and assessed; you will not see that in this session." });
     }

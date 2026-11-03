@@ -79,16 +79,16 @@ export function personaActionToolDefinitions(): Tool[] {
     {
       name: "propose_claim",
       description:
-        "Propose a claim that is not in the graph yet, with the argument for it — " +
-        "the intake path a user takes when search finds nothing. It goes to review " +
-        "like any contribution; if accepted, the claim is created and assessed.",
+        "Propose a claim that is not in the graph yet — the intake path a user " +
+        "takes when search finds nothing. It is the wording alone, reviewed on " +
+        "that; if accepted, the claim is created and assessed. Arguments for or " +
+        "against it are contributions on it once it exists.",
       input_schema: {
         type: "object" as const,
         properties: {
           claim_text: { type: "string", description: "The claim, as one clear proposition." },
-          argument_text: { type: "string", description: "Why you think it belongs in the graph and what supports it." },
         },
-        required: ["claim_text", "argument_text"],
+        required: ["claim_text"],
       },
     },
     {
