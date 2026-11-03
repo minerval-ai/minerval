@@ -10,16 +10,17 @@
  * no domain skill however plainly mathematical the claim, while the role
  * prompt's catalog told the Matcher the skill existed.
  *
- * This is that prior, made on its own: one structured call under the
- * Extractor's system prompt (constitution, role, every skill's "For the
- * Extractor" view, which says what belongs in each domain), returning only
- * tags from the closed list. Metered as the Extractor, since it is the
- * Extractor's judgment on a one-claim document. It degrades, never fails:
+ * This is that prior, made on its own: one structured call returning only
+ * tags from the closed list, under a short prompt of its own built from the
+ * domain skills (what each domain covers, and what the Extractor is told
+ * about it), not the Extractor's whole system prompt with its constitution
+ * and recording-tool instructions (#682). Metered as the Extractor, since
+ * it is the Extractor's judgment on a one-claim document. It degrades, never fails:
  * an error yields no tags and a warning, and the run proceeds unskilled as
  * it did before, with the Steward's `set_claim_domains` still authoritative.
  */
 import { completeStructured } from "../client.js";
-import { getExtractorSystemPromptBlocks } from "../prompts/extractor.js";
+import { getDomainPriorSystemPrompt } from "../prompts/domain-prior.js";
 import { knownDomains, listSkills } from "../prompts/skills.js";
 import { sanitizeDomains } from "./skill-selection.js";
 import { withAgent } from "../usage-context.js";
@@ -46,12 +47,10 @@ async function inferDomainPriorImpl(input: {
   if (!text) return [];
 
   const config = loadConfig();
-  const system = getExtractorSystemPromptBlocks({ skills: listSkills() });
+  const system = getDomainPriorSystemPrompt(listSkills());
   const userPrompt =
-    `Tag one proposition with its domains, from the closed list of domains ` +
-    `that have a skill (${domains.join(", ")}). This is the domain prior ` +
-    `you would attach to the claim at extraction; emit an empty list when ` +
-    `none applies. Judge the subject of the proposition, not its merit.\n\n` +
+    `Tag this proposition with its domains, from the closed list ` +
+    `(${domains.join(", ")}); an empty list when none applies.\n\n` +
     `Proposition: "${text}"` +
     (input.context?.trim() ? `\n\nContext: ${input.context.trim()}` : "");
 
