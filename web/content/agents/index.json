@@ -158,8 +158,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 13673,
-    "fullChars": 96199,
+    "roleChars": 13020,
+    "fullChars": 95546,
     "skills": [
       {
         "name": "costing",

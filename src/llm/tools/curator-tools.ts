@@ -12,8 +12,14 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
+import { ZodError } from "zod";
 import {
   mergeClaims,
+  setQuantityDefinition,
+  reclassifyClaim,
+  listReconciliationEvents,
+  reverseReconciliation,
+  RECONCILIATION_EVENTS_LIMIT,
   createClaim,
   addRelationshipEdge,
   removeRelationshipEdge,
@@ -30,7 +36,28 @@ import {
   CLAIM_LINK_GUIDANCE,
 } from "../../schemas/common.js";
 
+import { claimTypeEnum } from "../../schemas/common.js";
+import { NODE_KINDS, type QuantityDefinitionInput } from "../../schemas/kinds.js";
+import { knownDomains } from "../prompts/skills.js";
+import { DEFINITION_PROPERTIES } from "./kind-tools.js";
+
 const RELATION_ENUM = RELATION_TYPES;
+const CLAIM_TYPES = claimTypeEnum.options;
+
+/** A quantity definition from a tool call's flat properties (as kind-tools reads them). */
+function definitionFrom(input: Record<string, unknown>): QuantityDefinitionInput {
+  const opt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return {
+    measures: typeof input.measures === "string" ? input.measures.trim() : "",
+    population: opt(input.population),
+    conditions: opt(input.conditions),
+    unit: input.unit as QuantityDefinitionInput["unit"],
+  };
+}
+
+function zodMessage(err: ZodError): string {
+  return err.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`).join("; ");
+}
 
 export function getCuratorToolDefinitions(): Tool[] {
   return [
@@ -43,7 +70,8 @@ export function getCuratorToolDefinitions(): Tool[] {
         "stance_relation='opposed' when the loser is the survivor's negation/" +
         "counterpart; moved instance/argument stances are then flipped. After " +
         "merging, notify the survivor's Steward to reconcile wording/arguments and " +
-        "re-assess. Nodes merge within a kind; across kinds, only a claim that " +
+        "re-assess. Returns the event_id that reverse_reconciliation takes. Nodes " +
+        "merge within a kind; across kinds, only a claim that " +
         "states a value into its quantity, or a question into the claim or " +
         "quantity it asks about (stance_relation 'same'), and their instances " +
         "take the survivor's stances. A quantity's readings and cuts, a " +
@@ -68,15 +96,30 @@ export function getCuratorToolDefinitions(): Tool[] {
     {
       name: "create_claim",
       description:
-        "Create a new claim node (embedded immediately). Use when splitting a " +
-        "conflated claim into a fresh one. Match first if you suspect it exists.",
+        "Create a new node (embedded immediately) when splitting a conflated one: " +
+        "a claim, a quantity (with its definition), or a question. Call " +
+        "match_claim first, every time: a split-off part often already exists " +
+        "under another wording or as a negation. Returns the claim_id and the " +
+        "event_id that reverse_reconciliation takes.",
       input_schema: {
         type: "object" as const,
         properties: {
-          text: { type: "string", description: "Canonical text of the new claim" },
+          text: { type: "string", description: "Canonical text of the new node" },
+          kind: {
+            type: "string",
+            enum: [...NODE_KINDS],
+            description: "The node's kind (default claim).",
+          },
           claim_type: {
             type: "string",
-            description: "Claim type (optional; defaults to empirical_derived)",
+            enum: [...CLAIM_TYPES],
+            description: "The proposition's type (optional; defaults to empirical_derived)",
+          },
+          definition: {
+            type: "object",
+            description: "Required for a quantity: what its value is a value of (§3).",
+            properties: DEFINITION_PROPERTIES,
+            required: ["measures", "unit"],
           },
         },
         required: ["text"],
@@ -182,6 +225,84 @@ export function getCuratorToolDefinitions(): Tool[] {
       },
     },
     {
+      name: "complete_quantity_definition",
+      description:
+        "Complete or correct the definition of an existing quantity whose " +
+        "definition leaves its value open (Part VIII), where one completion is " +
+        "plainly what the discourse means: what its value is a value of, for " +
+        "what population, under what conditions, in what unit. Where several " +
+        "completions are in use, split instead (create_claim a quantity for each). " +
+        "The quantity's Steward is asked to re-estimate. Logged; reversible with " +
+        "reverse_reconciliation (the result carries the event_id).",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The quantity" },
+          ...DEFINITION_PROPERTIES,
+          reasoning: { type: "string", description: "Why this completion is the one meant" },
+        },
+        required: ["claim_id", "measures", "unit", "reasoning"],
+      },
+    },
+    {
+      name: "reclassify_claim",
+      description:
+        "Correct a node's proposition type (claim_type) or its domain tags " +
+        "(domains), which point every administrator's run on it to the domain " +
+        "skills that cover its subject. Use it when a node is mistyped, such as " +
+        "a published theorem typed empirical_derived. Give either or both; " +
+        "domains replaces the whole list (an empty list for a node no domain " +
+        "skill covers). The node's Steward is told. Logged; reversible with " +
+        "reverse_reconciliation (the result carries the event_id).",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string" },
+          claim_type: { type: "string", enum: [...CLAIM_TYPES] },
+          domains: {
+            type: "array",
+            items: { type: "string" },
+            description: "Domain tags, from the domains that have a skill (see the Skills section).",
+          },
+          reasoning: { type: "string", description: "Why the type or tags were wrong" },
+        },
+        required: ["claim_id", "reasoning"],
+      },
+    },
+    {
+      name: "list_reconciliation_events",
+      description:
+        "The logged structural operations (merges, kind changes, created nodes, " +
+        "edge and instance moves, links, definitions, reclassifications) that " +
+        `touched a node, newest first, at most ${RECONCILIATION_EVENTS_LIMIT}: ` +
+        "each with its event_id, the nodes it touched, its reasoning, and " +
+        "whether it was reversed. Use it to find a wrong operation to reverse.",
+      input_schema: {
+        type: "object" as const,
+        properties: { claim_id: { type: "string" } },
+        required: ["claim_id"],
+      },
+    },
+    {
+      name: "reverse_reconciliation",
+      description:
+        "Undo a logged operation (§5: structure is always recoverable): a merge " +
+        "un-merges the loser and moves back what moved, a kind change restores " +
+        "the old kind and its records, a created node is deprecated, an edge, " +
+        "instance, link, definition or classification goes back as it was. " +
+        "Refused while a later, unreversed operation touched the same nodes: " +
+        "reverse those first, newest first. The reversal is logged with your " +
+        "reasoning. Afterwards notify the Stewards of the nodes involved.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          event_id: { type: "string", description: "From a surgery tool's result or list_reconciliation_events" },
+          reasoning: { type: "string", description: "Why the operation was wrong" },
+        },
+        required: ["event_id", "reasoning"],
+      },
+    },
+    {
       name: "suggest_edge_to_steward",
       description:
         "Propose a structural edge into a claim you are NOT reconciling: routine " +
@@ -247,19 +368,130 @@ export async function executeCuratorTool(
           success: true,
           message: `Merged ${result.loserId} into ${result.survivorId}. Now notify the survivor's Steward to reconcile and re-assess.`,
           survivor_id: result.survivorId,
+          event_id: result.eventId,
         });
       }
 
       case "create_claim": {
-        const { id } = await createClaim({
-          text: String(input.text),
-          claimType: input.claim_type ? String(input.claim_type) : undefined,
+        const kind = input.kind === undefined ? "claim" : String(input.kind);
+        if (!(NODE_KINDS as readonly string[]).includes(kind)) {
+          return JSON.stringify({ success: false, message: `Unknown kind "${kind}". Use one of: ${NODE_KINDS.join(", ")}.` });
+        }
+        const claimType = input.claim_type ? String(input.claim_type) : undefined;
+        if (claimType !== undefined && !(CLAIM_TYPES as readonly string[]).includes(claimType)) {
+          return JSON.stringify({ success: false, message: `Unknown claim_type "${claimType}". Use one of: ${CLAIM_TYPES.join(", ")}.` });
+        }
+        const rawDefinition = input.definition as Record<string, unknown> | undefined;
+        if (kind === "quantity" && !rawDefinition) {
+          return JSON.stringify({ success: false, message: "A quantity needs its definition (measures and unit at least). Nothing was created." });
+        }
+        try {
+          const { id, eventId } = await createClaim({
+            text: String(input.text),
+            claimType,
+            kind: kind as "claim" | "quantity" | "question",
+            definition: kind === "quantity" && rawDefinition ? definitionFrom(rawDefinition) : null,
+          });
+          return JSON.stringify({ success: true, claim_id: id, kind, event_id: eventId });
+        } catch (err) {
+          if (err instanceof ZodError) {
+            return JSON.stringify({ success: false, message: `Nothing was created: ${zodMessage(err)}.` });
+          }
+          throw err;
+        }
+      }
+
+      case "complete_quantity_definition": {
+        const claimId = String(input.claim_id ?? "");
+        const reasoning = String(input.reasoning ?? "");
+        let eventId: string | undefined;
+        try {
+          ({ eventId } = await setQuantityDefinition({ claimId, definition: definitionFrom(input), reasoning }));
+        } catch (err) {
+          if (err instanceof ZodError) {
+            return JSON.stringify({ success: false, message: `Not recorded: ${zodMessage(err)}.` });
+          }
+          throw err;
+        }
+        await enqueueSteward({
+          claimId,
+          trigger: "curator_change",
+          context: `The Curator completed this quantity's definition; re-estimate it against the definition as it now stands: ${reasoning}`,
         });
-        return JSON.stringify({ success: true, claim_id: id });
+        return JSON.stringify({
+          success: true,
+          message: `Definition of ${claimId} recorded; its Steward is asked to re-estimate.`,
+          event_id: eventId,
+        });
+      }
+
+      case "reclassify_claim": {
+        const claimId = String(input.claim_id ?? "");
+        const claimType = input.claim_type === undefined ? undefined : String(input.claim_type);
+        if (claimType !== undefined && !(CLAIM_TYPES as readonly string[]).includes(claimType)) {
+          return JSON.stringify({ success: false, message: `Unknown claim_type "${claimType}". Use one of: ${CLAIM_TYPES.join(", ")}.` });
+        }
+        let domains: string[] | undefined;
+        if (input.domains !== undefined) {
+          if (!Array.isArray(input.domains)) {
+            return JSON.stringify({ success: false, message: "domains must be an array of domain names." });
+          }
+          const known = knownDomains();
+          domains = [...new Set(input.domains.map((d) => String(d).trim().toLowerCase()).filter(Boolean))].sort();
+          const unknown = domains.filter((d) => !known.includes(d));
+          if (unknown.length > 0) {
+            return JSON.stringify({
+              success: false,
+              message: `Unknown domain(s): ${unknown.join(", ")}. The domains that exist are: ${known.join(", ") || "(none)"}.`,
+            });
+          }
+        }
+        if (claimType === undefined && domains === undefined) {
+          return JSON.stringify({ success: false, message: "Give claim_type, domains, or both." });
+        }
+        const reasoning = String(input.reasoning ?? "");
+        const { changed, eventId } = await reclassifyClaim({ claimId, claimType, domains, reasoning });
+        if (!changed) {
+          return JSON.stringify({ success: true, changed: false, message: "The node already carries that type and those tags." });
+        }
+        await enqueueSteward({
+          claimId,
+          trigger: "curator_change",
+          context:
+            `The Curator reclassified this node` +
+            `${claimType !== undefined ? `: claim_type ${claimType}` : ""}` +
+            `${domains !== undefined ? `; domains [${domains.join(", ")}]` : ""}. ${reasoning}`,
+        });
+        return JSON.stringify({ success: true, changed: true, event_id: eventId });
+      }
+
+      case "list_reconciliation_events": {
+        const claimId = String(input.claim_id ?? "");
+        return JSON.stringify({ success: true, events: await listReconciliationEvents(claimId) });
+      }
+
+      case "reverse_reconciliation": {
+        const eventId = String(input.event_id ?? "").trim();
+        const reasoning = String(input.reasoning ?? "").trim();
+        if (!reasoning) {
+          return JSON.stringify({ success: false, message: "Say why the operation was wrong (reasoning). Nothing was reversed." });
+        }
+        const result = await reverseReconciliation(eventId, { reasoning });
+        if (!result.reversed) {
+          return JSON.stringify({
+            success: false,
+            message: `Not reversed: ${result.reason}.`,
+            ...(result.blockedBy ? { reverse_first: result.blockedBy } : {}),
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          message: `Reversed ${eventId}. Notify the Stewards of the nodes it touched.`,
+        });
       }
 
       case "add_relationship_edge": {
-        const { added } = await addRelationshipEdge({
+        const { added, eventId } = await addRelationshipEdge({
           parentId: String(input.parent_id),
           childId: String(input.child_id),
           relationType: String(input.relation),
@@ -269,24 +501,25 @@ export async function executeCuratorTool(
           success: true,
           added,
           message: added ? "Edge added." : "Edge already existed or was a self-edge.",
+          ...(eventId ? { event_id: eventId } : {}),
         });
       }
 
       case "remove_relationship_edge": {
-        const { removed } = await removeRelationshipEdge({
+        const { removed, eventId } = await removeRelationshipEdge({
           parentId: String(input.parent_id),
           childId: String(input.child_id),
           relationType: input.relation ? String(input.relation) : undefined,
         });
-        return JSON.stringify({ success: true, removed });
+        return JSON.stringify({ success: true, removed, ...(eventId ? { event_id: eventId } : {}) });
       }
 
       case "reassign_instance": {
-        const { reassigned } = await reassignInstance({
+        const { reassigned, eventId } = await reassignInstance({
           instanceId: String(input.instance_id),
           toClaimId: String(input.to_claim_id),
         });
-        return JSON.stringify({ success: reassigned, reassigned });
+        return JSON.stringify({ success: reassigned, reassigned, ...(eventId ? { event_id: eventId } : {}) });
       }
 
       case "link_claims": {

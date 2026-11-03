@@ -626,6 +626,11 @@ export async function listRequests(opts: {
   live?: boolean;
   claimId?: string;
   /**
+   * Who keeps it: the Curator (a request bearing on several nodes or on
+   * none) or a node's Steward (#764), so the Curator can list what it keeps.
+   */
+  keeper?: "curator" | "steward";
+  /**
    * A search over what requests ask and why: by meaning, and by keyword
    * (web-search syntax) for exact terms, ranked by meaning.
    */
@@ -640,6 +645,10 @@ export async function listRequests(opts: {
     where.push(`r.state = $${params.length}`);
   } else if (opts.live) {
     where.push(`r.state IN ('open', 'addressed', 'in_progress')`);
+  }
+  if (opts.keeper) {
+    params.push(opts.keeper);
+    where.push(`r.keeper_kind = $${params.length}`);
   }
   if (opts.claimId) {
     params.push(opts.claimId);

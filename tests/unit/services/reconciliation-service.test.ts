@@ -161,7 +161,7 @@ describe("reverseReconciliation", () => {
       },
     };
     rawQuery.mockImplementation(async (sql: unknown) =>
-      /SELECT operation, payload, reversed FROM reconciliation_events/.test(String(sql))
+      /SELECT operation, payload, reversed, created_at FROM reconciliation_events/.test(String(sql))
         ? [event]
         : []
     );
@@ -186,5 +186,57 @@ describe("reverseReconciliation", () => {
     const result = await reverseReconciliation("evt-2");
     expect(result.reversed).toBe(false);
     expect(result.reason).toBe("already reversed");
+  });
+
+  it("refuses while a later operation touched the same nodes, naming it (#761)", async () => {
+    rawQuery.mockImplementation(async (sql: unknown) => {
+      const s = String(sql);
+      if (/SELECT operation, payload, reversed, created_at/.test(s)) {
+        return [{
+          operation: "merge",
+          reversed: false,
+          created_at: new Date("2026-10-01"),
+          payload: { survivor_id: "s", loser_id: "l" },
+        }];
+      }
+      if (/WHERE created_at > \$1 AND reversed = false/.test(s)) return [{ id: "evt-later" }];
+      return [];
+    });
+    const result = await reverseReconciliation("evt-3", { reasoning: "wrong merge" });
+    expect(result).toMatchObject({ reversed: false, blockedBy: ["evt-later"] });
+    const sqlsRun = rawQuery.mock.calls.map((c) => String(c[0]));
+    expect(sqlsRun.some((s) => /UPDATE claims SET merged_into = NULL/.test(s))).toBe(false);
+    // The check looks for the merge's own nodes in later payloads.
+    const check = rawQuery.mock.calls.find((c) => /WHERE created_at > \$1/.test(String(c[0])));
+    expect(check?.[1]?.[1]).toEqual(["%s%", "%l%"]);
+  });
+
+  it("logs a reversal with its reasoning, and restores a reclassified node (#640)", async () => {
+    rawQuery.mockImplementation(async (sql: unknown) =>
+      /SELECT operation, payload, reversed, created_at/.test(String(sql))
+        ? [{
+            operation: "reclassify",
+            reversed: false,
+            payload: { claim_id: "c", prior_claim_type: "empirical_derived", prior_domains: [], prior_domains_source: null },
+          }]
+        : []
+    );
+    const result = await reverseReconciliation("evt-4", { reasoning: "it was right before" });
+    expect(result.reversed).toBe(true);
+    const restore = rawQuery.mock.calls.find((c) => /UPDATE claims SET claim_type = \$2/.test(String(c[0])));
+    expect(restore?.[1]).toEqual(["c", "empirical_derived", [], null]);
+    const logged = rawQuery.mock.calls.find((c) => /INSERT INTO reconciliation_events/.test(String(c[0])));
+    expect(logged?.[1]?.[0]).toBe("reverse");
+    expect(logged?.[1]?.[1]).toBe("it was right before");
+  });
+
+  it("will not reverse a reversal", async () => {
+    rawQuery.mockImplementation(async (sql: unknown) =>
+      /SELECT operation, payload, reversed, created_at/.test(String(sql))
+        ? [{ operation: "reverse", reversed: false, payload: { reversed_event_id: "x" } }]
+        : []
+    );
+    const result = await reverseReconciliation("evt-5");
+    expect(result.reversed).toBe(false);
   });
 });

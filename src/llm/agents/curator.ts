@@ -17,9 +17,9 @@ import {
 } from "../tools/skill-tools.js";
 import { domainsForClaim } from "./skill-selection.js";
 import {
-  getGraphToolDefinitions,
-  executeGraphTool,
-} from "../tools/graph-tools.js";
+  executeGraphReadTool,
+  getGraphReadToolDefinitions,
+} from "../tools/graph-read-tools.js";
 import {
   getClaimContextToolDefinitions,
   executeGovernanceTool,
@@ -60,10 +60,18 @@ async function runCuratorImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.curatorModel;
 
-  const graphTools = getGraphToolDefinitions();
-  // Claim-scoped subset only: the contribution/contributor/decision tools in
-  // the full governance bundle are never referenced by the Curator's prompt.
-  const claimContextTools = getClaimContextToolDefinitions();
+  // The shared graph reads the Checker and the MCP surface use (#766):
+  // search_claims (hybrid keyword and semantic, every kind, a tag filter),
+  // get_decomposition and get_dependents. Their get_claim is left out: the
+  // governance get_claim below carries what the Curator corrects (type,
+  // state, kind detail, findings, Steward state). The legacy graph-tools
+  // reads overlapped these and omitted a node's kind.
+  const graphTools = getGraphReadToolDefinitions().filter((t) => t.name !== "get_claim");
+  // Claim-scoped subset: get_claim and get_claim_instances (get_dependents
+  // above replaces get_claim_dependents).
+  const claimContextTools = getClaimContextToolDefinitions().filter(
+    (t) => t.name !== "get_claim_dependents"
+  );
   const curatorTools = getCuratorToolDefinitions();
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -104,18 +112,18 @@ Anchor claim ID: ${input.claimId}
 Context: ${input.context}
 
 Proceed:
-1. Use get_claim and search_similar_claims (and match_claim) to examine the
-   anchor claim and its neighborhood; get_claim_instances shows how its
-   sources state it when wording or identity turns on that.
-2. Look for: duplicates / counterparts to merge; a conflated claim to split;
-   related-but-disconnected claims that should be linked; a node of the wrong
-   kind; and requests you keep that need sharpening, retargeting or closing
-   (list_requests).
-3. For merges/splits, perform the surgery, then notify_steward the affected
-   claims. For a routine edge into a claim you are not reconciling, use
-   suggest_edge_to_steward (do not write it yourself).
-4. Be conservative: act only when the structure is clearly wrong. Doing
-   nothing is a fine outcome.
+1. Use get_claim, search_claims and match_claim to examine the anchor and
+   its neighborhood; get_claim_instances shows how its sources state it
+   when wording or identity turns on that.
+2. Look for: duplicates or counterparts to merge; a conflated node to split;
+   related but disconnected claims to link; a node of the wrong kind, type
+   or domains; an earlier operation of yours that was wrong
+   (list_reconciliation_events); and requests you keep that need
+   sharpening, retargeting or closing (list_requests with keeper: curator).
+3. Act as your role describes. The concerns above are what this run was
+   funded to answer. Merge or split only when identity is clear after real
+   looking; otherwise a link, a suggestion or nothing is the recoverable
+   path. Doing nothing is a fine outcome.
 
 ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
 
@@ -130,8 +138,9 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
     // the extractor's post-incident ceiling; pacing belongs to the iteration
     // budget notice, not this cap.
     maxTokens: 16384,
-    // Backstop only; one reconciliation can take many steps. Total Curator spend
-    // is bounded by curatorMaxRuns + the LLM budget tracker.
+    // Backstop only; one reconciliation can take many steps. The pass
+    // budget bounds the run (curatorMaxRuns caps only the unfunded
+    // fallback lane).
     maxIterations: CURATOR_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       const loaded = await skillLoader.execute(name, toolInput);
@@ -146,7 +155,10 @@ ${turnBudgetLine(CURATOR_MAX_TURNS)}${skillLoader.pointerNote}`;
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });
       }
-      if (graphNames.has(name)) return executeGraphTool(name, toolInput);
+      if (graphNames.has(name)) {
+        const read = await executeGraphReadTool(name, toolInput);
+        if (read !== null) return read;
+      }
       if (claimContextNames.has(name)) return executeGovernanceTool(name, toolInput);
       const kindOutput = await executeKindTool(name, toolInput, { role: "curator", model });
       if (kindOutput !== null) return kindOutput;
