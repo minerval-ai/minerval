@@ -29,6 +29,7 @@ const TURN_PROTOCOL =
   "turn.error says why and a short follow-up asks again. Never resend the " +
   "same message: it is already saved. One turn runs at a time; a message " +
   "sent while one runs is refused with TURN_IN_PROGRESS and not saved.";
+import { FUNDING_CALL_MAX_OWLS, FUNDING_CALL_MAX_NOTE } from "../services/owl.js";
 import type { FastifyInstance } from "fastify";
 import {
   startConversation,
@@ -201,10 +202,14 @@ export async function grantConversationRoutes(
           type: "object",
           required: ["budget_owls"],
           properties: {
+            // One call's ceiling, a guard against a mistyped amount: the
+            // caller's balance bounds the spend, and top_up_grant adds more,
+            // so the cap limits a slip, not what a funder may commit (#729).
             budget_owls: {
               type: "number",
               exclusiveMinimum: 0,
-              maximum: 10000,
+              maximum: FUNDING_CALL_MAX_OWLS,
+              description: FUNDING_CALL_MAX_NOTE,
             },
           },
         },

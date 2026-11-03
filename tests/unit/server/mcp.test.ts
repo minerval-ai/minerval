@@ -75,6 +75,7 @@ const mocks = vi.hoisted(() => ({
   getQuestionDetail: vi.fn(async () => null as unknown),
   getCurrentStanding: vi.fn(async () => null as unknown),
   listRequests: vi.fn(async () => ({ items: [] as unknown[], total: 0 })),
+  getRequest: vi.fn(async () => null as unknown),
   usageContexts: [] as unknown[],
 }));
 
@@ -114,7 +115,9 @@ vi.mock("../../../src/llm/agents/extractor.js", () => ({
 vi.mock("../../../src/llm/agents/domain-prior.js", () => ({
   inferDomainPrior: mocks.inferDomainPrior,
 }));
-vi.mock("../../../src/services/contribution-service.js", () => ({
+// The formatter and the answer_request check are the real ones.
+vi.mock("../../../src/services/contribution-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/contribution-service.js")>()),
   createContribution: mocks.createContribution,
   getContributionById: mocks.getContributionById,
   getReviewForContribution: mocks.getReviewForContribution,
@@ -137,6 +140,7 @@ vi.mock("../../../src/services/question-service.js", () => ({
 }));
 vi.mock("../../../src/services/request-service.js", () => ({
   listRequests: mocks.listRequests,
+  getRequest: mocks.getRequest,
 }));
 vi.mock("../../../src/services/api-key-service.js", () => ({
   resolveApiKey: mocks.resolveApiKey,
