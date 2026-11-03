@@ -648,6 +648,12 @@ which re-judges with the same materiality test. Most changes are absorbed
 within a level or two, because a superior claim is rarely the right locus for a
 dispute about one of its subclaims.
 
+The same tool, `notify_steward`, reaches any node's Steward. A Steward that
+thinks a node its claim depends on is assessed wrongly sends that node's
+Steward its reasons (trigger `dependent_note`); one that writes to a node not
+joined to its own by an edge does so under `steward_note`. In every case the
+receiving Steward decides, since only the owner writes.
+
 ---
 
 ## The Agent Pipeline
