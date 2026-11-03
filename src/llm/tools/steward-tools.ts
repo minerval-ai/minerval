@@ -255,19 +255,17 @@ export function getStewardToolDefinitions(): Tool[] {
     {
       name: "record_claim_instance",
       description:
-        "Record an in-the-wild instance of the claim you steward: a source " +
-        "you read during this pass that itself asserts the claim (or its " +
-        "negation). A cheap side effect of the evidence reading you are " +
-        "doing anyway — never search just to farm instances. Record only " +
-        "genuine assertions: a source that merely mentions the claim, " +
-        "questions it, or reports on the debate without taking a side is " +
-        "not an instance; a source quoting someone who asserts it is an " +
-        "instance whose speaker is the person quoted. One instance per " +
-        "(claim, source, speaker): re-recording the same source is " +
-        "deduplicated, so re-assessments never pile up duplicates, but a " +
-        "document in which several people each assert the claim in their " +
-        "own voice (the signed sections of a jointly authored paper, a " +
-        "panel transcript) holds one instance per speaker. Set speaker on " +
+        "Record a source for the claim you steward: one you read that asserts " +
+        "the claim, denies it, or poses it as an open question, with the " +
+        "passage as it states it. Instances are what the claim page shows of " +
+        "the discourse, and the provenance tools record what each one rests " +
+        "on. A source that merely mentions the claim, or reports that others " +
+        "hold a view without taking one, is not an instance; a source quoting " +
+        "someone is an instance whose speaker is the person quoted. One " +
+        "instance per (claim, source, speaker): re-recording the same source " +
+        "is deduplicated, but a document in which several people each speak " +
+        "in their own voice (the signed sections of a jointly authored paper, " +
+        "a panel transcript) holds one instance per speaker. Set speaker on " +
         "each; a call without one deduplicates against the whole source.",
       input_schema: {
         type: "object" as const,

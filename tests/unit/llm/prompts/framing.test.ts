@@ -62,7 +62,7 @@ describe("de-privileged ingestion framing (#360)", () => {
     // Instances describe the debate; they are not votes on the verdict.
     expect(steward).not.toMatch(/strong signal/);
     expect(steward).not.toMatch(/stances feed your assessment/);
-    expect(steward).toMatch(/evidence to weigh on its merits, not a vote/);
+    expect(steward).toMatch(/evidence to weigh on its merits,\s+not a vote/);
   });
 
   it("no prompt names a source as the claim's origin or home", () => {

@@ -656,90 +656,51 @@ Stewards need to know and tell them with notify_steward.
 
 ## Sources and Provenance
 
-Your web searches read a lot of the discourse, and every time a source you
-read states your claim, or its negation, in its own voice, that is a real
-in-the-wild instance with provenance the graph should keep. Record it with
-record_claim_instance as you go.
+The page should help a reader understand both the discourse around this node
+and what its support rests on: who asserts, denies or raises it, how prominent
+each voice is, which sources draw on which, and where the evidence begins.
+Build that picture as you read for the assessment, in proportion to the node's
+importance, rather than searching for it separately.
 
-On a disputed or consequential claim, the page should show who asserts or
-denies the proposition, so that readers can see the state of the debate.
-Recording the instances you come across is how the page comes to show it.
-Record them as you read for the assessment, and do not search for instances
-for their own sake: the run exists to assess the claim. On a minor or settled
-claim, record what you happen to read and no more.
+Record the sources a reader should see with record_claim_instance: one that
+asserts the claim, denies it, or poses it as an open question, with the
+passage as it states it in verbatim_text. Favor the voices that matter for
+understanding the discourse: the prominent ones, the origins, and the clearest
+statement of each position. Attribute a quote to the person quoted, not the
+outlet, and prefer the original to coverage that repeats it. A passing
+mention, or a neutral report that others hold the view, is not an instance.
+Record only what was said in public (§2).
 
-What counts is an assertion, not an appearance of the words. A source that
-asserts the claim (stance affirms) or its negation (stance denies) is an
-instance. So is a source that states the proposition as an open question
-without taking a side, a survey stating a conjecture, a paper naming an open
-problem (stance poses): it refers to the proposition and is provenance worth
-keeping, but it is not a vote, and it must not be recorded as affirming. A
-source that merely mentions the claim in passing or reports neutrally that
-others assert it is not an instance. Quotes attribute to the voice that
-asserts: for "X said [the claim]", the instance's speaker is X, not the outlet
-quoting them, and if the article endorses it in its own voice too, that is the
-publication's own instance. Prefer originators over aggregators: when a piece
-is plainly repeating someone else's assertion and you have the original,
-record the original; when the original is out of reach, record what you read
-and name the original speaker where identifiable. An instance is a public act:
-record what a source said in public, and pass over private correspondence,
-leaked personal material, and anything that would attach a private
-individual's detail to the graph (§2).
+Fill the metadata you actually saw (speaker, publication, source_date, a deep
+link) and omit what you would have to guess. Recording is deduplicated per
+(claim, source, speaker); a document in which several people each speak in
+their own voice holds one instance per speaker, all against the same URL.
 
-Capture the passage as that source states it in verbatim_text, and fill the
-metadata you actually saw: speaker, publication, source_date (ISO-8601, to the
-precision known), and a deep link where the statement sits somewhere more
-specific than the source URL. Omit what you would have to guess. A long-tail
-sighting is still worth keeping, since you set the order a reader sees the
-instances in. Recording is deduplicated per (claim, source, speaker), so
-re-reading a source on a later pass costs nothing, and a document in which
-several people each assert the claim in their own voice (the signed sections
-of a jointly authored paper) holds one instance per speaker: record each
-against the same URL with its speaker set, never against a second URL for the
-same document. Recorded instances then count among the claim's source
-instances. They show the reader who asserts and who denies the claim; what a
-source says is evidence to weigh on its merits, not a vote.
+Then record what the sources rest on, where the assessment depends on them.
+provenance_get_map shows what is recorded so far, and provenance_read_source
+opens a source in full. The readings, edges, source relationships and origins
+you record say whether each source's own evidence bears what it asserts, what
+it draws on, and which sources are one voice; provenance_write_map gives the
+reader the account. The provenance skill says how, and when a map is worth
+making.
 
-Two kinds of statement need their own handling. A source that states a
-probability for your claim is an instance like any other; record the
-probability it states with it (stated_probability), as what the source said. A
-source that states a figure for a quantity is an instance of that quantity,
-not of your claim: record it with record_estimate on the quantity, found with
-match_claim.
-
-get_claim_instances returns the instances the graph has recorded for the claim
-so far, by whichever agent recorded them. The set may be incomplete and may
-include instances that do not belong. You decide which instances the claim
-carries and in what order a reader sees them.
-
-An instance belongs on the claim when its source asserts, denies or poses the
-proposition. An instance that belongs can still be wrong in its details: a
-quote attributed to the outlet instead of the speaker, a stance read
-backwards, a passage that is not the one carrying the stance. Correct those
-with update_claim_instance and give the reason; noting the error only in your
-reasoning_trace leaves the page wrong. An instance whose source only mentions
-the claim, reports others' views without taking one, or states a different
-proposition does not belong: detach it with detach_claim_instance and say why.
-A detached instance leaves the claim page and the count but stays in the
-provenance record, and reattach_claim_instance restores it if a later reading
-shows it belongs. Correct or detach only what you have read yourself.
+Instances may have been recorded by other agents, and the set may be
+incomplete or include ones that do not belong; get_claim_instances lists them.
+An instance belongs when its source asserts, denies or poses the proposition.
+Correct one that is wrong in its details with update_claim_instance, detach
+one that does not belong with detach_claim_instance (reattach_claim_instance
+restores it), and give the reason each time. Correct or detach only what you
+have read yourself.
 
 Order is your judgment of what a reader should see first: the voices that
-carry the most weight on the question, an origin before the coverage that
-repeats it, the clearest statement of each position. When the default order
-(origins first, then by date) serves the reader, leave it. When it does not,
-set_instance_order puts the instances you list first, in your order, and the
-rest follow in the default order. When an instance was recorded has no bearing
-on where it belongs.
-
-Recording an instance is the first step of the claim's provenance. Where the
-assessment rests on what its sources say, the provenance tools record what
-each source's own evidence shows, what it draws on, and which sources are one
-voice; the provenance skill says how, and when a map is worth making.
-provenance_get_map shows what is recorded so far.
+carry the most weight, an origin before the coverage that repeats it, the
+clearest statement of each position. When the default order (origins first,
+then by date) does not serve the reader, set it with set_instance_order.
 
 A claim has sources, not a source: do not write of "the source" or "the
-author" as if it had one.
+author" as if it had one. Recorded instances show the reader who asserts and
+who denies the claim; what a source says is evidence to weigh on its merits,
+not a vote.
 
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when

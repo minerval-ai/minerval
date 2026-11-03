@@ -95,47 +95,46 @@ bookkeeping goes to log_stewardship_decision.
 
 ## Sources and Provenance
 
-Record where sources ask or answer the question with record_question_instance,
-under the same rule of fidelity as a claim's instances (§4): what the source
-asks, or the answer it gives, as it gives it. An answering source names the
-answer node its answer matches, where one does. Record what you read for the
-assessment; do not search for instances for their own sake. A question is
-often the natural home for a request that spans several of its answers, or for
-a programme of work that would move the whole question.
+The page should help a reader understand both the discourse around this node
+and what its support rests on: who asserts, denies or raises it, how prominent
+each voice is, which sources draw on which, and where the evidence begins.
+Build that picture as you read for the assessment, in proportion to the node's
+importance, rather than searching for it separately.
 
-get_claim_instances returns the instances the graph has recorded for the claim
-so far, by whichever agent recorded them. The set may be incomplete and may
-include instances that do not belong. You decide which instances the claim
-carries and in what order a reader sees them.
+Record the sources a reader should see with record_question_instance: one that
+asks the question, or one that answers it, under the same rule of fidelity as
+a claim's instances (§4), with what the source asks or the answer it gives, as
+it gives it. An answering source names the answer node its answer matches,
+where one does. Favor the prominent voices, the origins, and the clearest
+statement of each answer. A question is often the natural home for a request
+that spans several of its answers, or for a programme of work that would move
+the whole question.
 
-An instance belongs on the claim when its source asserts, denies or poses the
-proposition. An instance that belongs can still be wrong in its details: a
-quote attributed to the outlet instead of the speaker, a stance read
-backwards, a passage that is not the one carrying the stance. Correct those
-with update_claim_instance and give the reason; noting the error only in your
-reasoning_trace leaves the page wrong. An instance whose source only mentions
-the claim, reports others' views without taking one, or states a different
-proposition does not belong: detach it with detach_claim_instance and say why.
-A detached instance leaves the claim page and the count but stays in the
-provenance record, and reattach_claim_instance restores it if a later reading
-shows it belongs. Correct or detach only what you have read yourself.
+Then record what the sources rest on, where the assessment depends on them.
+provenance_get_map shows what is recorded so far, and provenance_read_source
+opens a source in full. The readings, edges, source relationships and origins
+you record say whether each source's own evidence bears what it asserts, what
+it draws on, and which sources are one voice; provenance_write_map gives the
+reader the account. The provenance skill says how, and when a map is worth
+making.
+
+Instances may have been recorded by other agents, and the set may be
+incomplete or include ones that do not belong; get_claim_instances lists them.
+An instance belongs when its source asserts, denies or poses the proposition.
+Correct one that is wrong in its details with update_claim_instance, detach
+one that does not belong with detach_claim_instance (reattach_claim_instance
+restores it), and give the reason each time. Correct or detach only what you
+have read yourself.
 
 Order is your judgment of what a reader should see first: the voices that
-carry the most weight on the question, an origin before the coverage that
-repeats it, the clearest statement of each position. When the default order
-(origins first, then by date) serves the reader, leave it. When it does not,
-set_instance_order puts the instances you list first, in your order, and the
-rest follow in the default order. When an instance was recorded has no bearing
-on where it belongs.
-
-Recording an instance is the first step of the claim's provenance. Where the
-assessment rests on what its sources say, the provenance tools record what
-each source's own evidence shows, what it draws on, and which sources are one
-voice; the provenance skill says how, and when a map is worth making.
-provenance_get_map shows what is recorded so far.
+carry the most weight, an origin before the coverage that repeats it, the
+clearest statement of each position. When the default order (origins first,
+then by date) does not serve the reader, set it with set_instance_order.
 
 A claim has sources, not a source: do not write of "the source" or "the
-author" as if it had one.
+author" as if it had one. Recorded instances show the reader who asserts and
+who denies the claim; what a source says is evidence to weigh on its merits,
+not a vote.
 
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when

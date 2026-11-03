@@ -9,6 +9,7 @@ import {
   DELEGATING_RESEARCH,
   IMPORTANCE,
   NODE_INSTANCES_BODY,
+  SOURCES_AIM,
   PROVENANCE_BODY,
   PROVENANCE_POINTER,
   REQUESTS,
@@ -90,15 +91,16 @@ bookkeeping goes to log_stewardship_decision.
 
 const SOURCES = `## Sources and Provenance
 
-Record where sources ask or answer the question with record_question_instance,
-under the same rule of fidelity as a claim's instances (§4): what the source
-asks, or the answer it gives, as it gives it. An answering source names the
-answer node its answer matches, where one does. Record what you read for the
-assessment; do not search for instances for their own sake. A question is
-often the natural home for a request that spans several of its answers, or for
-a programme of work that would move the whole question.
+${SOURCES_AIM}Record the sources a reader should see with record_question_instance: one that
+asks the question, or one that answers it, under the same rule of fidelity as
+a claim's instances (§4), with what the source asks or the answer it gives, as
+it gives it. An answering source names the answer node its answer matches,
+where one does. Favor the prominent voices, the origins, and the clearest
+statement of each answer. A question is often the natural home for a request
+that spans several of its answers, or for a programme of work that would move
+the whole question.
 
-${NODE_INSTANCES_BODY}${PROVENANCE_POINTER}${PROVENANCE_BODY}`;
+${PROVENANCE_POINTER}${NODE_INSTANCES_BODY}${PROVENANCE_BODY}`;
 
 const ROLE_PROMPT = `${OPENING}${WORDING}${DECOMPOSITION}${IMPORTANCE}${ASSESSMENT}${SOURCES}${DELEGATING_RESEARCH}${REQUESTS}${BOUNDARIES}${RAISING_ISSUES}
 
