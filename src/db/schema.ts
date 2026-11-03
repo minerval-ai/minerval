@@ -2291,6 +2291,17 @@ export const sourceExtractions = pgTable(
     claimsExtracted: integer("claims_extracted").notNull().default(0),
     claimsCreated: integer("claims_created").notNull().default(0),
     claimsMatched: integer("claims_matched").notNull().default(0),
+    // Proposals the Matcher could not decide on, even after a second run at
+    // the end of the job (#738): kept here (proposal, form, kind, context)
+    // rather than dropped, so the source record shows them and a reading
+    // that left any does not count as covering the document.
+    claimsUndecided: integer("claims_undecided").notNull().default(0),
+    undecided: jsonb("undecided"),
+    // What the Extractor reported about the document itself (#740):
+    // unreadable | not_the_document | injected_instructions, with its note.
+    // A reading with a problem does not count as covering the document.
+    documentProblem: text("document_problem"),
+    documentProblemNote: text("document_problem_note"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3184,7 +3195,8 @@ export const curationRequests = pgTable(
     otherClaimId: uuid("other_claim_id").references(() => claims.id, {
       onDelete: "cascade",
     }),
-    // steward_escalation | reconcile_candidate | operator
+    // steward_escalation | reconcile_candidate | operator | matcher (a
+    // Matcher's curator_review on a node it minted on balance, #738)
     source: text("source").notNull(),
     concern: text("concern").notNull(),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
@@ -3221,7 +3233,7 @@ export const curationRequests = pgTable(
       .where(sql`consumed_at IS NULL`),
     check(
       "ck_curation_requests_source",
-      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator')`
+      sql`source IN ('steward_escalation', 'reconcile_candidate', 'operator', 'matcher')`
     ),
   ]
 );

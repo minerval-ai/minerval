@@ -503,10 +503,12 @@ async function analyzePageUncached(
       ? `Page title: ${input.title} (URL: ${input.url})`
       : `URL: ${input.url}`,
     maxClaims: config.extensionMaxClaims,
+    // The floor is stated to the Extractor (#748).
+    minConfidence: config.extensionMinConfidence,
   });
 
   // Low-confidence extractions aren't worth a Matcher run from a live page.
-  const candidates = extracted.filter((c) => c.confidence >= 0.5);
+  const candidates = extracted.filter((c) => c.confidence >= config.extensionMinConfidence);
 
   // Matching dominates analyze wall-clock: one multi-turn Matcher loop per
   // claim on the cheap tier (OPENROUTER_MODELS.flash). 8 roughly halved

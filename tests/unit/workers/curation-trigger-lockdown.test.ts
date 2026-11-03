@@ -12,7 +12,8 @@
  * request records a concern, a mandate values and funds the row, and the
  * engine executor runs it. This suite pins that shape rather than a number:
  * the Curator is reachable only through the executor, and requests come only
- * from an agent's judgment (a Steward's escalation) or the bounded scan. It
+ * from an agent's judgment (a Steward's escalation, or the Matcher's
+ * curator_review on a node it minted on balance, #738) or the bounded scan. It
  * reads the sources, because the failure it prevents is a one-line
  * reintroduction of an automatic trigger somewhere in the pipeline — which no
  * behavioural test over the current wiring would catch (same approach as
@@ -54,10 +55,11 @@ describe("what can invoke the Curator", () => {
     ]);
   });
 
-  it("is requested only by a Steward's escalation (the scan lives beside requestCuration)", () => {
+  it("is requested only by an agent's judgment (the scan lives beside requestCuration)", () => {
+    // A Steward's escalation, and the Matcher's curator_review at ingestion.
     expect(
       callersOf(/\brequestCuration\s*\(/, "src/services/curation-service.ts")
-    ).toEqual(["src/llm/tools/steward-tools.ts"]);
+    ).toEqual(["src/llm/tools/steward-tools.ts", "src/workers/url-extraction.ts"]);
   });
 
   it("has no curate row opened outside the ledger's own producer", () => {
@@ -71,10 +73,18 @@ describe("what can invoke the Curator", () => {
     }
   });
 
-  it("is not triggered by source extraction", () => {
+  it("is not triggered by source extraction on its own", () => {
     // The specific regression: one new claim minted = one frontier-model sweep.
     const extraction = readFileSync(join(src, "workers/url-extraction.ts"), "utf8");
-    expect(extraction).not.toMatch(/requestCuration|runCurator|scanReconcileCandidates/);
+    expect(extraction).not.toMatch(/runCurator|scanReconcileCandidates/);
+    // Its one request is the Matcher's judgment on a pair (#738): made only
+    // inside requestNearMissCuration, which returns before asking when the
+    // Matcher wrote no curator_review.
+    const calls = extraction.match(/\brequestCuration\s*\(/g) ?? [];
+    expect(calls).toHaveLength(1);
+    const helper = extraction.slice(extraction.indexOf("export async function requestNearMissCuration"));
+    expect(helper.indexOf("if (!review")).toBeGreaterThan(0);
+    expect(helper.indexOf("if (!review")).toBeLessThan(helper.indexOf("requestCuration("));
   });
 
   it("has no scheduled trigger but the bounded scan, and the scan ships off", () => {

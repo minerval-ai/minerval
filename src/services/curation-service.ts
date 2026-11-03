@@ -26,7 +26,13 @@ import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 
-export type CurationSource = "steward_escalation" | "reconcile_candidate" | "operator";
+/**
+ * Who asked. `matcher`: ingestion minted a node the Matcher decided was new
+ * on balance, and the Matcher named a near-miss a Curator should check
+ * (curator_review, #738). An agent's judgment on one pair, not a sweep:
+ * extraction never requests curation for a node on its own.
+ */
+export type CurationSource = "steward_escalation" | "reconcile_candidate" | "operator" | "matcher";
 
 export interface CurationRequestInput {
   anchorClaimId: string;
@@ -172,7 +178,9 @@ export function describeCurationRequests(requests: LiveCurationRequest[]): strin
           ? "A Steward escalated"
           : r.source === "reconcile_candidate"
             ? `The reconcile-candidate scan paired it (similarity ${Number(r.signal ?? 0).toFixed(3)})`
-            : "An operator asked";
+            : r.source === "matcher"
+              ? "The Matcher minted it on balance and asked for a check"
+              : "An operator asked";
       const other = r.other_claim_id ? ` with claim ${r.other_claim_id}` : "";
       return `${i + 1}. ${who}${other}: ${r.concern}`;
     })

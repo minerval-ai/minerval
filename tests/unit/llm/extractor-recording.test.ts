@@ -161,4 +161,42 @@ describe("the Extractor's recording", () => {
     respondWith(turn([["finish_extraction", {}]]));
     await expect(extractClaims({ content: "a recipe" })).resolves.toEqual([]);
   });
+
+  it("reports a document problem given on finish_extraction, and refuses one without a kind (#740)", async () => {
+    respondWith(
+      turn([["finish_extraction", { document_problem: { kind: "paywall", note: "x" } }]]),
+      turn([["finish_extraction", { document_problem: { kind: "unreadable", note: "A paywall page." } }]])
+    );
+    const problems: unknown[] = [];
+    const claims = await extractClaims({ content: "subscribe to read", onDocumentProblem: (p) => problems.push(p) });
+    expect(claims).toEqual([]);
+    expect(toolResults(1)[0]).toMatchObject({ success: false });
+    expect(problems).toEqual([{ kind: "unreadable", note: "A paywall page." }]);
+  });
+
+  it("keeps a quantity's stated figure and a stated probability, and refuses a figure on a claim (#744)", async () => {
+    respondWith(
+      turn([
+        [
+          "record_claims",
+          {
+            claims: [
+              claim("CPI rose 6.5%", { kind: "quantity", stated_value: { form: "point", central: 6.5, low: null } }),
+              claim("a 30% chance", { stated_probability: 0.3 }),
+              claim("bad figure", { stated_value: { form: "point", central: 1 } }),
+              claim("bad interval", { kind: "quantity", stated_value: { form: "interval", low: 5 } }),
+            ],
+          },
+        ],
+      ]),
+      turn([["finish_extraction", {}]])
+    );
+    const claims = await extractClaims({ content: "doc" });
+    expect(claims.map((c) => c.verbatim_text)).toEqual(["CPI rose 6.5%", "a 30% chance"]);
+    expect(claims[0]!.stated_value).toEqual({ form: "point", central: 6.5 });
+    expect(claims[1]!.stated_probability).toBe(0.3);
+    const problems = (toolResults(1)[0]!.rejected as Array<{ problem: string }>).map((r) => r.problem);
+    expect(problems[0]).toMatch(/stated_value is for a quantity/);
+    expect(problems[1]).toMatch(/an interval gives low and high/);
+  });
 });

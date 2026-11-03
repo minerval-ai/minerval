@@ -53,6 +53,13 @@ export interface MatchDecision {
   reasoning: string;
   alternative_matches: string[];
   relationship_notes: string | null;
+  /**
+   * For a "new" decision taken on balance: what a Curator should check
+   * about a near-miss that might still be the same node (#738). Null when
+   * the near-misses are clearly different claims. A caller that mints the
+   * node turns it into a curation request.
+   */
+  curator_review?: string | null;
 }
 
 const MATCH_DECISION_SCHEMA = {
@@ -68,6 +75,7 @@ const MATCH_DECISION_SCHEMA = {
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
     alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
     relationship_notes: { type: ["string", "null"], description: "How the near-misses relate to this proposition: specification, generalization, rival (a contrary), or possibly the same node. The caller reads this to decide whether to link or escalate." },
+    curator_review: { type: ["string", "null"], description: "Only for is_match false taken on balance: what a Curator should check about a near-miss (in alternative_matches) that might still be the same node or its negation. It opens a curation request on the new node. Null when the near-misses are clearly different claims." },
   },
   required: ["is_match", "confidence", "reasoning", "instance_stance"],
 };

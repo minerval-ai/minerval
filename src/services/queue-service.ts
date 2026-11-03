@@ -383,7 +383,10 @@ export async function requestAudit(input: {
     // a prize claim, and a checker failure that holds a statement's queue.
     | "bounty_posted"
     | "prize_acceptance"
-    | "prize_check_error";
+    | "prize_check_error"
+    // The Extractor reported text addressed to the agents rather than to a
+    // source's readers (#740): deduped per source.
+    | "injected_source";
   dedupeKey?: string;
   /** The mandate the audit examines, if any: it may not fund its own audit. */
   subjectGrantId?: string | null;
