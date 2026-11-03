@@ -57,7 +57,7 @@ import {
 import { requestCuration } from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 import { setArgumentShows } from "../../services/quantity-service.js";
-import { NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
+import { KIND_INSTANCE_STANCES, NODE_KINDS, quantityDefinitionSchema, valueShownSchema } from "../../schemas/kinds.js";
 import {
   ClaimInstanceError,
   detachClaimInstance,
@@ -386,7 +386,8 @@ export function getStewardToolDefinitions(): Tool[] {
               "Corrected stance: whether this source asserts the canonical " +
               "claim (affirms), its negation (denies), or states the " +
               "proposition as an open question without taking a side " +
-              "(poses). Omit to leave as is.",
+              "(poses). Omit to leave as is; always omit it on a question's or " +
+              "quantity's instance, whose role (asks, answers, states) it would overwrite.",
           },
           confidence: {
             type: "number",
@@ -1651,6 +1652,25 @@ export async function executeStewardTool(
             message:
               `Instance not found: ${instanceId} is not a recorded instance ` +
               `of claim ${claimId}.`,
+          });
+        }
+        // A question's instances ask or answer it and a quantity's state a
+        // figure (§7a, §10); the proposition stances would overwrite that
+        // role and drop the instance from its page (#711). Its other
+        // fields correct as on any instance.
+        if (
+          patch.stance !== undefined &&
+          (KIND_INSTANCE_STANCES as readonly string[]).includes(existing.stance)
+        ) {
+          return JSON.stringify({
+            success: false,
+            message:
+              `Instance ${instanceId} is recorded as "${existing.stance}", a role ` +
+              `the proposition stances do not describe. Leave stance out to ` +
+              `correct its other fields; if its role is wrong, detach it with ` +
+              `detach_claim_instance and record it again with ` +
+              (existing.stance === "states" ? "record_estimate" : "record_question_instance") +
+              `.`,
           });
         }
 
